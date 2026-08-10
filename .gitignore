@@ -1,0 +1,15 @@
+.env
+*.db
+data/
+bin/
+
+# Go
+*.exe
+*.test
+*.prof
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp

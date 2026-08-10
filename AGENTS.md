@@ -1,0 +1,132 @@
+# AGENTS.md - omega-agent
+
+## Purpose
+
+omega-agent is a Go port of the Pi/Tau event-stream agent architecture.
+Three layers, one job each. Events are the contract. The whole thing is
+readable as a textbook.
+
+This is a fresh implementation, not a port of agent.d. No RSI, no
+self-awareness, no evolution tracking. Just a clean event-stream agent
+in Go.
+
+## Ownership
+
+- **Repository:** `D:\Code\ideas\omega-agent-golang\omega-agent`
+- **Language:** Go 1.26.5
+- **Module:** `github.com/EndoTheDev/omega-agent`
+- **Dependencies:** Added when a layer requires them, not before.
+  Prefer the standard library.
+- **Entry point:** `omega` (single binary: `serve`, `run`, `health`)
+
+## Architecture
+
+```txt
+gateway (HTTP API) → agent (loop + tools) → ai (provider streaming)
+```
+
+Each layer has a single responsibility. No layer skips over another.
+Events are typed structs, dispatched via type switch. The provider
+layer emits events on a channel. The agent layer consumes them and
+runs the tool loop. The gateway layer exposes everything over HTTP.
+
+## Local Contracts
+
+- **No layer skipping.** Each layer imports only from the layer
+  directly below it. Clients (CLI, web UI) talk to the gateway over
+  HTTP only — they do not import internal layer packages.
+- **No re-exports at intermediate layers.** If a type is defined in
+  a layer, consumers import it from that layer.
+- **`model_name` everywhere.** Provider references use `model_name`,
+  not `model` or `provider_model`.
+- **Tool errors are structured returns.** Tools do not panic into
+  the agent. They return a structured error response.
+- **No backwards compatibility.** Breaking changes are normal. They
+  are not marked with `!` in commit messages (see `agents/COMMIT.md`).
+- **Secrets never committed.** `.env` is gitignored. See `.gitignore`.
+
+## Read Before Editing
+
+1. `agents/COMMIT.md` — commit convention and voice.
+2. Check the Child DOX Index below for the layer you are editing.
+3. If a layer has an AGENTS.md, read it before touching its code.
+
+## Update After Editing
+
+1. If you add, remove, or rename a symbol referenced in any AGENTS.md,
+   update that AGENTS.md in the same change.
+2. If you add a new package directory with non-trivial code, create an
+   AGENTS.md for it and add it to the Child DOX Index.
+3. Run the relevant tests before declaring done.
+
+## Work Guidance
+
+- Voice, commit format: `agents/COMMIT.md`.
+- Dependencies: add only when a layer requires them. Prefer the
+  standard library. Prefer a dependency already in `go.mod`.
+- Go: 1.26.5. Build with `go build`, test with `go test ./...`.
+
+## Verification
+
+Each non-trivial package leaves a `_test.go` file behind — the
+Go equivalent of an assert-based self-check. No frameworks until
+there is a reason for one.
+
+```bash
+go test ./...     # all layer tests
+go build ./...    # all packages compile
+go vet ./...      # no suspicious constructs
+```
+
+## Hierarchy
+
+```txt
+AGENTS.md (root — this file)
+├── agents/                   # conventions (COMMIT.md)
+├── internal/
+│   ├── ai/                   # provider abstraction, stream events, message types
+│   ├── agent/                # multi-turn loop, tool execution
+│   └── gateway/              # HTTP server, SSE streaming, session store
+└── cmd/
+    └── omega/                # single binary: serve, run, health
+```
+
+## Child Doc Shape
+
+Every child AGENTS.md must follow this section order:
+
+1. **Purpose** — what this layer does in one paragraph.
+2. **Ownership** — what files and directories it owns.
+3. **Local Contracts** — rules specific to this layer.
+4. **Work Guidance** — conventions, patterns, pitfalls.
+5. **Verification** — how to check this layer's code.
+6. **Child DOX Index** — sub-directories with AGENTS.md, if any.
+
+No child doc may weaken the root contract. A child may add local
+rules but cannot override core contracts.
+
+## Style
+
+- Markdown is linted. Wrap bare URLs in angle brackets:
+  `<https://example.com>`.
+- No diary entries or TODO comments in AGENTS.md. Keep docs factual
+  and contract-focused.
+- No emoji in AGENTS.md.
+- Descriptive variable names. No cryptic abbreviations — `message`
+  not `msg`, `tool_call` not `tc`, `process` not `proc`.
+- No long dashes. Use normal hyphens (`-`).
+
+## User Preferences
+
+- Commit voice: see `agents/COMMIT.md` — the sole authority on voice.
+- Approve-then-apply: present a plan, wait for "lgtm", then act.
+
+## Child DOX Index
+
+| Path                | Status      | What it owns                                              |
+| ------------------- | ----------- | --------------------------------------------------------- |
+| `agents/`           | Reference   | Commit conventions (COMMIT.md)                            |
+| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types |
+| `internal/agent/`   | Planned     | Multi-turn loop, tool execution, agent lifecycle events   |
+| `internal/gateway/` | Planned     | HTTP server, SSE streaming, session store, config         |
+| `cmd/omega/`        | Planned     | Single binary: serve, run, health                         |
