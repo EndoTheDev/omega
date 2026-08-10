@@ -10,7 +10,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/EndoTheDev/omega-agent/internal/ai"
+	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
 
 // ErrNotFound is returned when a session does not exist.
@@ -166,6 +166,14 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]ai.Message
 		out = append(out, msg)
 	}
 	return out, rows.Err()
+}
+
+// CountMessages returns the number of messages in a session.
+func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM messages WHERE session_id = ?`, sessionID).Scan(&n)
+	return n, err
 }
 
 // nowISO returns a UTC timestamp in ISO 8601 format.

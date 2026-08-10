@@ -1,8 +1,8 @@
-# AGENTS.md - omega-agent
+# AGENTS.md - omega-dev
 
 ## Purpose
 
-omega-agent is a Go port of the Pi/Tau event-stream agent architecture.
+omega-dev is a Go port of the Pi/Tau event-stream agent architecture.
 Three layers, one job each. Events are the contract. The whole thing is
 readable as a textbook.
 
@@ -12,12 +12,12 @@ in Go.
 
 ## Ownership
 
-- **Repository:** `D:\Code\ideas\omega-agent-golang\omega-agent`
+- **Repository:** `D:\Code\ideas\omega-dev-golang\omega-dev`
 - **Language:** Go 1.26.5
-- **Module:** `github.com/EndoTheDev/omega-agent`
+- **Module:** `github.com/EndoTheDev/omega-dev`
 - **Dependencies:** Added when a layer requires them, not before.
   Prefer the standard library.
-- **Entry point:** `omega` (single binary: `serve`, `run`, `health`)
+- **Entry point:** `omega` (single binary: `serve`, `run`, `health`, `chat`)
 
 ## Architecture
 
@@ -88,7 +88,7 @@ AGENTS.md (root — this file)
 │   ├── agent/                # multi-turn loop, tool execution
 │   └── gateway/              # HTTP server, SSE streaming, session store
 └── cmd/
-    └── omega/                # single binary: serve, run, health
+    └── omega/                # single binary: serve, run, health, chat
 ```
 
 ## Child Doc Shape
@@ -127,6 +127,6 @@ rules but cannot override core contracts.
 | ------------------- | ----------- | --------------------------------------------------------- |
 | `agents/`           | Reference   | Commit conventions (COMMIT.md)                            |
 | `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types |
-| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, agent lifecycle events |
-| `internal/gateway/` | Planned     | HTTP server, SSE streaming, session store, config         |
-| `cmd/omega/`        | Planned     | Single binary: serve, run, health                         |
+| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, agent lifecycle events   |
+| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config         |
+| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat                   |

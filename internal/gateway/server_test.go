@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega-agent/internal/agent"
-	"github.com/EndoTheDev/omega-agent/internal/ai"
+	"github.com/EndoTheDev/omega-dev/internal/agent"
+	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
 
 // mockProvider is a scripted Provider for gateway tests. Each call
@@ -56,7 +56,17 @@ func newTestServer() *Server {
 		},
 	}
 	a := agent.NewAgent(provider, nil, 0)
-	return NewServer(a, nil)
+	return NewServer(a, nil, nil)
+}
+
+// newTestServerWithStore returns a server with an in-memory store and a
+// store that is cleaned up with the test.
+func newTestServerWithStore(t *testing.T) (*Server, *Store) {
+	t.Helper()
+	s := newTestServer()
+	store := newTestStore(t)
+	s.store = store
+	return s, store
 }
 
 func TestHealth(t *testing.T) {
@@ -165,7 +175,7 @@ func TestStaticIndex(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "omega-agent") {
+	if !strings.Contains(rec.Body.String(), "omega-dev") {
 		t.Fatalf("index body missing title")
 	}
 }
@@ -174,6 +184,157 @@ func TestStaticIndex(t *testing.T) {
 type sseFrame struct {
 	event string
 	data  []byte
+}
+
+func TestSessionsCRUD(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	h := s.Handler()
+
+	// POST /sessions creates a session.
+	body, _ := json.Marshal(map[string]string{"id": "s1"})
+	req := httptest.NewRequest(http.MethodPost, "/sessions", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201", rec.Code)
+	}
+	var created Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if created.ID != "s1" {
+		t.Fatalf("created id = %q, want s1", created.ID)
+	}
+
+	// GET /sessions lists it.
+	req = httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", rec.Code)
+	}
+	var list []Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != "s1" {
+		t.Fatalf("list = %+v, want [s1]", list)
+	}
+
+	// GET /sessions/s1 returns session + empty messages.
+	req = httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200", rec.Code)
+	}
+	var detail struct {
+		Session  Session      `json:"session"`
+		Messages []ai.Message `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if detail.Session.ID != "s1" || len(detail.Messages) != 0 {
+		t.Fatalf("detail = %+v, want s1 with no messages", detail)
+	}
+
+	// DELETE /sessions/s1 removes it.
+	req = httptest.NewRequest(http.MethodDelete, "/sessions/s1", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204", rec.Code)
+	}
+
+	// GET now returns 404.
+	req = httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("get after delete status = %d, want 404", rec.Code)
+	}
+}
+
+func TestSessionsNoStore(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501", rec.Code)
+	}
+}
+
+func TestChatWithSessionPersists(t *testing.T) {
+	s, store := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := store.CreateSession(ctx, "s1"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"session_id": "s1",
+		"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	messages, err := store.GetMessages(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("len = %d, want 2 (user + assistant)", len(messages))
+	}
+	if _, ok := messages[0].(ai.User); !ok {
+		t.Fatalf("messages[0] = %T, want ai.User", messages[0])
+	}
+	assistant, ok := messages[1].(ai.Assistant)
+	if !ok {
+		t.Fatalf("messages[1] = %T, want ai.Assistant", messages[1])
+	}
+	if assistant.Content != "hello" {
+		t.Fatalf("assistant content = %q, want hello", assistant.Content)
+	}
+}
+
+func TestChatWithSessionMissing(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	body, _ := json.Marshal(map[string]any{
+		"session_id": "nope",
+		"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestChatWithoutSessionStateless(t *testing.T) {
+	s, store := newTestServerWithStore(t)
+	body, _ := json.Marshal(map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	sessions, err := store.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("stateless chat should persist nothing, got %d sessions", len(sessions))
+	}
 }
 
 // parseSSE parses "event: <type>\ndata: <json>\n\n" frames.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/EndoTheDev/omega-agent/internal/ai"
+	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.

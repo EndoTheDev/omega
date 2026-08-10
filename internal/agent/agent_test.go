@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega-agent/internal/ai"
+	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
 
 // mockProvider is a scripted Provider for tests. Each call returns the

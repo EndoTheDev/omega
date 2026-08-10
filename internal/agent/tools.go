@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -52,19 +51,18 @@ func NewRegistry() map[string]Tool {
 			},
 			Run: runWriteFile,
 		},
-		"search_files": {
-			Description: "Search file contents or file names under a directory.",
+		"edit": {
+			Description: "Apply a targeted find-and-replace patch to a file.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"pattern":   map[string]any{"type": "string", "description": "Regex to match."},
-					"target":    map[string]any{"type": "string", "description": "content or files (default content)."},
-					"path":      map[string]any{"type": "string", "description": "Directory to search (default .)."},
-					"file_glob": map[string]any{"type": "string", "description": "Only search files whose name matches this regex."},
+					"path":       map[string]any{"type": "string", "description": "Path of the file to edit."},
+					"old_string": map[string]any{"type": "string", "description": "Exact text to find; must occur exactly once."},
+					"new_string": map[string]any{"type": "string", "description": "Replacement text."},
 				},
-				"required": []string{"pattern"},
+				"required": []string{"path", "old_string", "new_string"},
 			},
-			Run: runSearchFiles,
+			Run: runEdit,
 		},
 	}
 }
@@ -193,93 +191,62 @@ func runWriteFile(_ context.Context, args map[string]any) (string, error) {
 	return fmt.Sprintf("wrote %d bytes to %s", len(content), path), nil
 }
 
-// runSearchFiles searches file contents (target "content") or file names
-// (target "files") under a directory using a regex pattern.
-func runSearchFiles(_ context.Context, args map[string]any) (string, error) {
-	pattern, err := argString(args, "pattern")
+// runEdit applies a targeted find-and-replace patch to a file. It reads the
+// file, requires old_string to occur exactly once, replaces it with
+// new_string, and writes the result back. It returns the patched path and a
+// diff summary built from the standard library.
+func runEdit(_ context.Context, args map[string]any) (string, error) {
+	path, err := argString(args, "path")
 	if err != nil {
 		return "", err
 	}
-	re, err := regexp.Compile(pattern)
+	oldString, err := argString(args, "old_string")
 	if err != nil {
-		return "", fmt.Errorf("invalid pattern: %w", err)
+		return "", err
+	}
+	newString, err := argString(args, "new_string")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("path must not be empty")
+	}
+	if oldString == "" {
+		return "", fmt.Errorf("old_string must not be empty")
 	}
 
-	target := "content"
-	if v, ok := args["target"]; ok {
-		s, ok := v.(string)
-		if !ok {
-			return "", fmt.Errorf("argument %q must be a string", "target")
-		}
-		target = s
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
 	}
-	if target != "content" && target != "files" {
-		return "", fmt.Errorf("target must be %q or %q, got %q", "content", "files", target)
+	text := string(content)
+
+	count := strings.Count(text, oldString)
+	if count == 0 {
+		return "", fmt.Errorf("old_string not found in %s", path)
+	}
+	if count > 1 {
+		return "", fmt.Errorf("old_string occurs %d times in %s; it must be unique", count, path)
 	}
 
-	root := "."
-	if v, ok := args["path"]; ok {
-		s, ok := v.(string)
-		if !ok {
-			return "", fmt.Errorf("argument %q must be a string", "path")
-		}
-		root = s
+	patched := strings.Replace(text, oldString, newString, 1)
+	if err := os.WriteFile(path, []byte(patched), 0o644); err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
 	}
 
-	var glob *regexp.Regexp
-	if v, ok := args["file_glob"]; ok {
-		s, ok := v.(string)
-		if !ok {
-			return "", fmt.Errorf("argument %q must be a string", "file_glob")
-		}
-		glob, err = regexp.Compile(s)
-		if err != nil {
-			return "", fmt.Errorf("invalid file_glob: %w", err)
-		}
-	}
+	summary := diffSummary(oldString, newString)
+	return fmt.Sprintf("patched %s\n%s", path, summary), nil
+}
 
+// diffSummary renders a minimal unified-style diff for a single replacement
+// using only the standard library. It shows the removed and added lines.
+func diffSummary(oldString, newString string) string {
 	var out strings.Builder
-	matches := 0
-	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil // skip unreadable entries
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if glob != nil && !glob.MatchString(d.Name()) {
-			return nil
-		}
-		if target == "files" {
-			if re.MatchString(d.Name()) {
-				fmt.Fprintln(&out, path)
-				matches++
-			}
-			return nil
-		}
-		// content search
-		file, openErr := os.Open(path)
-		if openErr != nil {
-			return nil
-		}
-		scanner := bufio.NewScanner(file)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		line := 0
-		for scanner.Scan() {
-			line++
-			if re.MatchString(scanner.Text()) {
-				fmt.Fprintf(&out, "%s:%d:%s\n", path, line, scanner.Text())
-				matches++
-			}
-		}
-		file.Close()
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("walk %s: %w", root, err)
+	for _, line := range strings.Split(strings.TrimSuffix(oldString, "\n"), "\n") {
+		fmt.Fprintf(&out, "-%s\n", line)
 	}
-	if matches == 0 {
-		return "no matches", nil
+	for _, line := range strings.Split(strings.TrimSuffix(newString, "\n"), "\n") {
+		fmt.Fprintf(&out, "+%s\n", line)
 	}
-	return out.String(), nil
+	return strings.TrimSuffix(out.String(), "\n")
 }

@@ -33,7 +33,7 @@ func inTempDir(t *testing.T) string {
 
 func TestRegistryContainsAllTools(t *testing.T) {
 	registry := NewRegistry()
-	for _, name := range []string{"shell", "read_file", "write_file", "search_files"} {
+	for _, name := range []string{"shell", "read_file", "write_file", "edit"} {
 		if _, ok := registry[name]; !ok {
 			t.Errorf("registry missing tool %q", name)
 		}
@@ -120,66 +120,84 @@ func TestWriteFileRejectsMissingContent(t *testing.T) {
 	}
 }
 
-func TestSearchFilesContent(t *testing.T) {
+func TestEditReplacesUniqueString(t *testing.T) {
 	dir := inTempDir(t)
-	files := map[string]string{
-		"a.go":     "package main\nfunc hello() {}\n",
-		"b.go":     "package main\nvar x = 1\n",
-		"notes.md": "hello world\n",
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-			t.Fatalf("write fixture %s: %v", name, err)
-		}
+	path := filepath.Join(dir, "file.txt")
+	content := "alpha\nbeta\ngamma\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
 	}
 
-	tool := requireTool(t, "search_files")
+	tool := requireTool(t, "edit")
 	out, err := tool.Run(context.Background(), map[string]any{
-		"pattern": "hello",
-		"path":    dir,
+		"path":       path,
+		"old_string": "beta",
+		"new_string": "BETA",
 	})
 	if err != nil {
-		t.Fatalf("search_files failed: %v", err)
+		t.Fatalf("edit failed: %v", err)
 	}
-	if !strings.Contains(out, "a.go") || !strings.Contains(out, "notes.md") {
-		t.Fatalf("content search output = %q, want matches for a.go and notes.md", out)
+	if !strings.Contains(out, path) {
+		t.Fatalf("edit output = %q, want it to contain the path %q", out, path)
 	}
-	if strings.Contains(out, "b.go") {
-		t.Fatalf("content search matched b.go, which has no hello: %q", out)
+	if !strings.Contains(out, "-beta") || !strings.Contains(out, "+BETA") {
+		t.Fatalf("edit output = %q, want diff summary with -beta and +BETA", out)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read patched file: %v", err)
+	}
+	if string(got) != "alpha\nBETA\ngamma\n" {
+		t.Fatalf("patched content = %q, want %q", string(got), "alpha\nBETA\ngamma\n")
 	}
 }
 
-func TestSearchFilesNames(t *testing.T) {
+func TestEditRejectsMissingOldString(t *testing.T) {
 	dir := inTempDir(t)
-	for _, name := range []string{"one_test.go", "two.txt", "three_test.go"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-			t.Fatalf("write fixture %s: %v", name, err)
-		}
+	path := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(path, []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
 	}
 
-	tool := requireTool(t, "search_files")
-	out, err := tool.Run(context.Background(), map[string]any{
-		"pattern": `_test\.go$`,
-		"target":  "files",
-		"path":    dir,
-	})
-	if err != nil {
-		t.Fatalf("search_files failed: %v", err)
-	}
-	if !strings.Contains(out, "one_test.go") || !strings.Contains(out, "three_test.go") {
-		t.Fatalf("filename search output = %q, want both _test.go files", out)
-	}
-	if strings.Contains(out, "two.txt") {
-		t.Fatalf("filename search matched two.txt: %q", out)
-	}
-}
-
-func TestSearchFilesRejectsInvalidTarget(t *testing.T) {
-	tool := requireTool(t, "search_files")
+	tool := requireTool(t, "edit")
 	if _, err := tool.Run(context.Background(), map[string]any{
-		"pattern": "x",
-		"target":  "bogus",
+		"path":       path,
+		"old_string": "nope",
+		"new_string": "x",
 	}); err == nil {
-		t.Fatal("expected error for invalid target, got nil")
+		t.Fatal("expected error for missing old_string, got nil")
+	}
+}
+
+func TestEditRejectsNonUniqueOldString(t *testing.T) {
+	dir := inTempDir(t)
+	path := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(path, []byte("dup\ndup\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	tool := requireTool(t, "edit")
+	if _, err := tool.Run(context.Background(), map[string]any{
+		"path":       path,
+		"old_string": "dup",
+		"new_string": "x",
+	}); err == nil {
+		t.Fatal("expected error for non-unique old_string, got nil")
+	}
+}
+
+func TestEditRejectsMissingArguments(t *testing.T) {
+	tool := requireTool(t, "edit")
+	if _, err := tool.Run(context.Background(), map[string]any{
+		"path": "x.txt",
+	}); err == nil {
+		t.Fatal("expected error for missing old_string, got nil")
+	}
+	if _, err := tool.Run(context.Background(), map[string]any{
+		"old_string": "a",
+		"new_string": "b",
+	}); err == nil {
+		t.Fatal("expected error for missing path, got nil")
 	}
 }
