@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// NewProvider creates a Provider of the given type ("ollama" or
-// "openai"). apiKey may be empty; OpenAI falls back
-// to their OPENAI_API_KEY env vars, and Ollama
+// NewProvider creates a Provider of the given type ("ollama", "openai",
+// or "anthropic"). apiKey may be empty; OpenAI and Anthropic fall back
+// to their OPENAI_API_KEY / ANTHROPIC_API_KEY / ANTHROPIC_API_KEY env vars, and Ollama
 // ignores it. host may be empty to use the provider default base URL.
 func NewProvider(providerType, model, host, apiKey string) (Provider, error) {
 	switch providerType {
@@ -17,8 +17,10 @@ func NewProvider(providerType, model, host, apiKey string) (Provider, error) {
 		return NewOllamaProvider(model, host), nil
 	case "openai":
 		return NewOpenAIProvider(model, host, apiKey), nil
-		default:
-		return nil, fmt.Errorf("unknown provider type %q (want ollama or openai)", providerType)
+	case "anthropic":
+		return NewAnthropicProvider(model, host, apiKey), nil
+	default:
+		return nil, fmt.Errorf("unknown provider type %q (want ollama, openai, or anthropic)", providerType)
 	}
 }
 

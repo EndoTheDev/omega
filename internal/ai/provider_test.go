@@ -11,6 +11,7 @@ func TestNewProvider(t *testing.T) {
 		{"default ollama", "", false},
 		{"explicit ollama", "ollama", false},
 		{"openai", "openai", false},
+		{"anthropic", "anthropic", false},
 		{"unknown", "grok", true},
 	}
 	for _, tc := range cases {
