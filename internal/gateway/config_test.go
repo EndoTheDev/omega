@@ -136,31 +136,3 @@ server:
 		t.Fatal("expected error for port 0, got nil")
 	}
 }
-
-func TestCompactionDefaults(t *testing.T) {
-	cfg := DefaultConfig()
-	if !cfg.Compaction.Enabled {
-		t.Error("compaction.enabled default = false, want true")
-	}
-	if cfg.Compaction.Threshold != 0.8 {
-		t.Errorf("compaction.threshold default = %v, want 0.8", cfg.Compaction.Threshold)
-	}
-	if cfg.Compaction.KeepFirst != 2 || cfg.Compaction.KeepLast != 10 {
-		t.Errorf("compaction keep defaults = %d/%d, want 2/10", cfg.Compaction.KeepFirst, cfg.Compaction.KeepLast)
-	}
-}
-
-func TestCompactionEnvOverride(t *testing.T) {
-	path := writeTempConfig(t, `
-provider:
-  model_name: llama3
-`)
-	t.Setenv("OMEGA_COMPACTION_THRESHOLD", "0.5")
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
-	}
-	if cfg.Compaction.Threshold != 0.5 {
-		t.Errorf("compaction.threshold = %v, want 0.5 (env override)", cfg.Compaction.Threshold)
-	}
-}

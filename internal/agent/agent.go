@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega-agent/internal/ai"
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
@@ -21,21 +21,14 @@ type Tool struct {
 // set of tools. It consumes provider stream events, executes tool calls,
 // and appends results back into the message history.
 type Agent struct {
-	provider   ai.Provider
-	tools      map[string]Tool
-	maxTurns   int
-	compaction *CompactionConfig
+	provider ai.Provider
+	tools    map[string]Tool
+	maxTurns int
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{provider: provider, tools: tools, maxTurns: maxTurns}
-}
-
-// SetCompaction enables context compaction for this agent. A nil config
-// disables it.
-func (a *Agent) SetCompaction(cfg *CompactionConfig) {
-	a.compaction = cfg
 }
 
 // ModelName returns the name of the model the agent's provider serves.
@@ -74,17 +67,6 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		if turns >= maxTurns {
 			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
 			return
-		}
-
-		if a.compaction != nil && a.compaction.Enabled {
-			if estimateTokens(messages) > a.compaction.budget() {
-				compacted, err := compact(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast)
-				if err != nil {
-					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
-					return
-				}
-				messages = compacted
-			}
 		}
 
 		turns++

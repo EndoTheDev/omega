@@ -2,17 +2,15 @@ package gateway
 
 import (
 	"context"
-	"crypto/rand"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
-	"github.com/EndoTheDev/omega-dev/internal/agent"
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega-agent/internal/agent"
+	"github.com/EndoTheDev/omega-agent/internal/ai"
 )
 
 //go:embed static/*
@@ -22,26 +20,21 @@ var staticFS embed.FS
 type Server struct {
 	agent   *agent.Agent
 	tools   map[string]agent.Tool
-	store   *Store
 	httpSrv *http.Server
 }
 
 // NewServer creates a Server. tools is the registry of executable tools
-// the agent may call; a nil map uses the built-in registry. store is the
-// optional session persistence; a nil store disables persistence and the
-// session CRUD endpoints.
-func NewServer(a *agent.Agent, tools map[string]agent.Tool, store *Store) *Server {
+// the agent may call; a nil map uses the built-in registry.
+func NewServer(a *agent.Agent, tools map[string]agent.Tool) *Server {
 	if tools == nil {
 		tools = agent.NewRegistry()
 	}
-	s := &Server{agent: a, tools: tools, store: store}
+	s := &Server{agent: a, tools: tools}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
-	mux.HandleFunc("/sessions", s.handleSessions)
-	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 	s.httpSrv = &http.Server{Handler: mux}
 	return s
@@ -92,11 +85,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 // chatRequest is the /chat body. tools is an optional list of tool names
 // to enable for this run; empty enables the full server registry.
-// session_id, when set, persists the conversation to that session.
 type chatRequest struct {
-	Messages  []json.RawMessage `json:"messages"`
-	Tools     []string          `json:"tools,omitempty"`
-	SessionID string            `json:"session_id,omitempty"`
+	Messages []json.RawMessage `json:"messages"`
+	Tools    []string          `json:"tools,omitempty"`
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -115,28 +106,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tools := s.selectTools(req.Tools)
-	ctx := r.Context()
-
-	// With a session, load persisted history, append the incoming user
-	// messages, and persist each appended message.
-	if s.store != nil && req.SessionID != "" {
-		if _, err := s.store.GetSession(ctx, req.SessionID); err != nil {
-			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
-			return
-		}
-		history, err := s.store.GetMessages(ctx, req.SessionID)
-		if err != nil {
-			http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		messages = append(history, messages...)
-		for _, m := range messages[len(history):] {
-			if err := s.store.AppendMessage(ctx, req.SessionID, m); err != nil {
-				http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -147,15 +116,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var lastAssistant string
+	ctx := r.Context()
 	for event := range s.agent.Run(ctx, messages, tools) {
-		if s.store != nil && req.SessionID != "" {
-			if se, ok := event.(agent.StreamEvent); ok {
-				if chunk, ok := se.Event.(ai.ResponseChunk); ok {
-					lastAssistant += chunk.Content
-				}
-			}
-		}
 		eventType, data, err := sseEvent(event)
 		if err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
@@ -165,118 +127,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeSSE(w, eventType, data)
 		flusher.Flush()
 	}
-
-	// Persist the final assistant response once streaming completes.
-	// ponytail: intermediate tool-loop messages (assistant-with-toolcalls
-	// + tool results) are not flushed mid-run; only the user message and
-	// the final assistant response are persisted. Matches the spec. If a
-	// session needs full multi-turn fidelity, surface agent history via
-	// the event stream and persist it here.
-	if s.store != nil && req.SessionID != "" && lastAssistant != "" {
-		if err := s.store.AppendMessage(ctx, req.SessionID, ai.NewAssistant(lastAssistant)); err != nil {
-			writeSSE(w, "error", []byte("persist response: "+err.Error()))
-			flusher.Flush()
-			return
-		}
-	}
-}
-
-// handleSessions serves GET /sessions (list) and POST /sessions (create).
-// It returns 501 when the server has no store.
-func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "session store not configured", http.StatusNotImplemented)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		sessions, err := s.store.ListSessions(r.Context())
-		if err != nil {
-			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, sessions)
-	case http.MethodPost:
-		var req struct {
-			ID string `json:"id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.ID == "" {
-			req.ID = newSessionID()
-		}
-		if err := s.store.CreateSession(r.Context(), req.ID); err != nil {
-			http.Error(w, "create session: "+err.Error(), http.StatusConflict)
-			return
-		}
-		sess, err := s.store.GetSession(r.Context(), req.ID)
-		if err != nil {
-			http.Error(w, "get session: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusCreated, sess)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleSessionByID serves GET /sessions/{id} (session + messages) and
-// DELETE /sessions/{id}. It returns 501 when the server has no store.
-func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "session store not configured", http.StatusNotImplemented)
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, "missing session id", http.StatusBadRequest)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		sess, err := s.store.GetSession(r.Context(), id)
-		if err != nil {
-			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
-			return
-		}
-		messages, err := s.store.GetMessages(r.Context(), id)
-		if err != nil {
-			http.Error(w, "get messages: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"session":  sess,
-			"messages": messages,
-		})
-	case http.MethodDelete:
-		if err := s.store.DeleteSession(r.Context(), id); err != nil {
-			http.Error(w, "delete session: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// newSessionID returns a random hex session id.
-func newSessionID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// ponytail: crypto/rand never fails on supported platforms; a
-		// fallback timestamp keeps the server alive if it ever does.
-		return fmt.Sprintf("sess-%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
-}
-
-// writeJSON writes v as a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
 }
 
 // selectTools filters the server registry to the requested tool names.

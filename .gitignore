@@ -1,6 +1,5 @@
 .env
 *.db
-config.yaml
 data/
 bin/
 

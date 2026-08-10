@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/EndoTheDev/omega-dev/internal/agent"
-	"github.com/EndoTheDev/omega-dev/internal/ai"
-	"github.com/EndoTheDev/omega-dev/internal/gateway"
+	"github.com/EndoTheDev/omega-agent/internal/agent"
+	"github.com/EndoTheDev/omega-agent/internal/ai"
+	"github.com/EndoTheDev/omega-agent/internal/gateway"
 )
 
 func main() {
@@ -35,12 +35,10 @@ func run(args []string) error {
 		return cmdRun(parseConfigFlag(rest), rest)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
-	case "chat":
-		return cmdChat(parseConfigFlag(rest))
 	case "":
-		return fmt.Errorf("no subcommand; expected serve, run, health, or chat")
+		return fmt.Errorf("no subcommand; expected serve, run, or health")
 	default:
-		return fmt.Errorf("unknown subcommand %q; expected serve, run, health, or chat", sub)
+		return fmt.Errorf("unknown subcommand %q; expected serve, run, or health", sub)
 	}
 }
 
@@ -104,7 +102,6 @@ func resolveConfigPath(flagPath string) string {
 func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, error) {
 	provider := ai.NewOllamaProvider(cfg.Provider.ModelName, cfg.Provider.Host)
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
-	ag.SetCompaction(&cfg.Compaction)
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
@@ -133,7 +130,7 @@ func cmdServe(configPath string) error {
 	ctx, stop := signalContext()
 	defer stop()
 
-	srv := gateway.NewServer(ag, nil, store)
+	srv := gateway.NewServer(ag, nil)
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	fmt.Printf("omega: serving on %s (model %s)\n", addr, ag.ModelName())
 	return srv.Serve(ctx, addr)
@@ -179,23 +176,6 @@ func cmdRun(configPath string, args []string) error {
 		fmt.Println()
 	}
 	return nil
-}
-
-// cmdChat loads config and launches the interactive Bubble Tea TUI.
-func cmdChat(configPath string) error {
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
-	if err != nil {
-		return err
-	}
-	// Open the session store so the TUI can persist conversations across
-	// runs. cmdChat owns the store and closes it on every exit path
-	// (/exit, Ctrl+C, or an error in p.Run).
-	store, err := gateway.Open(cfg.Store.DBPath)
-	if err != nil {
-		return fmt.Errorf("open store: %w", err)
-	}
-	defer store.Close()
-	return runChat(cfg.Provider.ModelName, cfg.Provider.Host, &cfg.Compaction, store)
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.

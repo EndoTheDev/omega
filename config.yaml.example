@@ -16,21 +16,8 @@ store:
   # SQLite database path for the session store. Default: omega.db
   db_path: omega.db
 
-compaction:
-  # Summarize old messages when the conversation nears the context
-  # window. Default: enabled.
-  enabled: true
-  # Fraction of the context window at which compaction triggers.
-  # Default: 0.8
-  threshold: 0.8
-  # Messages preserved verbatim at the start and end of the history.
-  # Default: 2 first, 10 last.
-  keep_first: 2
-  keep_last: 10
-
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_MODEL     -> provider.model_name
 #   OMEGA_HOST      -> provider.host
 #   OMEGA_PORT      -> server.port
 #   OMEGA_DB_PATH   -> store.db_path
-#   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold

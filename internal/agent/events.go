@@ -1,6 +1,6 @@
 package agent
 
-import "github.com/EndoTheDev/omega-dev/internal/ai"
+import "github.com/EndoTheDev/omega-agent/internal/ai"
 
 // Event is the sealed interface for all agent events.
 type Event interface {

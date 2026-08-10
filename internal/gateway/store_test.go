@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega-agent/internal/ai"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -171,25 +171,6 @@ func TestDeleteSessionCascadesMessages(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("len = %d, want 0 after cascade", len(got))
-	}
-}
-
-func TestCountMessages(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	if err := s.CreateSession(ctx, "s1"); err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	if n, err := s.CountMessages(ctx, "s1"); err != nil || n != 0 {
-		t.Fatalf("count empty = %d, err %v; want 0", n, err)
-	}
-	for _, m := range []ai.Message{ai.NewUser("a"), ai.NewAssistant("b"), ai.NewUser("c")} {
-		if err := s.AppendMessage(ctx, "s1", m); err != nil {
-			t.Fatalf("append: %v", err)
-		}
-	}
-	if n, err := s.CountMessages(ctx, "s1"); err != nil || n != 3 {
-		t.Fatalf("count = %d, err %v; want 3", n, err)
 	}
 }
 
