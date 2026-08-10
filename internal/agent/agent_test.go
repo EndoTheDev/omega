@@ -20,7 +20,11 @@ type mockProvider struct {
 
 func (m *mockProvider) ModelName() string { return m.modelName }
 
-func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+// lastMessages records the messages passed to the most recent Stream call.
+var lastMessages []ai.Message
+
+func (m *mockProvider) Stream(_ context.Context, messages []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+	lastMessages = messages
 	events := make(chan ai.StreamEvent)
 	go func() {
 		defer close(events)
@@ -199,6 +203,32 @@ func TestRunContextCancellation(t *testing.T) {
 	}
 	if end.FinishReason != "cancelled" || end.Error == "" {
 		t.Fatalf("AgentEnd = %+v, want cancelled with error", end)
+	}
+}
+
+func TestRunPrependsSystemPrompt(t *testing.T) {
+	provider := &mockProvider{
+		modelName: "mock",
+		scripts: [][]ai.StreamEvent{
+			scripted(
+				ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+			),
+		},
+	}
+	agent := NewAgent(provider, nil, 0)
+	agent.SetSystemPrompt("you are a coding agent")
+	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+
+	if len(lastMessages) != 2 {
+		t.Fatalf("messages = %d, want 2 (system + user)", len(lastMessages))
+	}
+	sys, ok := lastMessages[0].(ai.System)
+	if !ok || sys.Content != "you are a coding agent" {
+		t.Fatalf("first message = %#v, want system prompt", lastMessages[0])
+	}
+	if _, ok := lastMessages[1].(ai.User); !ok {
+		t.Fatalf("second message = %#v, want user", lastMessages[1])
 	}
 }
 

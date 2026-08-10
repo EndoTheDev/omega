@@ -21,15 +21,22 @@ type Tool struct {
 // set of tools. It consumes provider stream events, executes tool calls,
 // and appends results back into the message history.
 type Agent struct {
-	provider   ai.Provider
-	tools      map[string]Tool
-	maxTurns   int
-	compaction *CompactionConfig
+	provider     ai.Provider
+	tools        map[string]Tool
+	maxTurns     int
+	compaction   *CompactionConfig
+	systemPrompt string
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{provider: provider, tools: tools, maxTurns: maxTurns}
+}
+
+// SetSystemPrompt sets the system prompt prepended to every run's
+// message history. An empty prompt is ignored.
+func (a *Agent) SetSystemPrompt(prompt string) {
+	a.systemPrompt = prompt
 }
 
 // SetCompaction enables context compaction for this agent. A nil config
@@ -61,6 +68,12 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 	maxTurns := a.maxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
+	}
+
+	// Prepend the system prompt once, before the loop. It is not
+	// persisted to the store; it is injected per run.
+	if a.systemPrompt != "" {
+		messages = append([]ai.Message{ai.NewSystem(a.systemPrompt)}, messages...)
 	}
 
 	events <- AgentStart{Type: "agent_start", ModelName: a.provider.ModelName()}

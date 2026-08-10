@@ -13,10 +13,11 @@ import (
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider   ProviderConfig          `yaml:"provider"`
-	Server     ServerConfig            `yaml:"server"`
-	Store      StoreConfig             `yaml:"store"`
-	Compaction agent.CompactionConfig  `yaml:"compaction"`
+	Provider     ProviderConfig          `yaml:"provider"`
+	Server       ServerConfig            `yaml:"server"`
+	Store        StoreConfig             `yaml:"store"`
+	Compaction   agent.CompactionConfig  `yaml:"compaction"`
+	SystemPrompt string                  `yaml:"system_prompt"`
 }
 
 // ProviderConfig configures the LLM provider connection.

@@ -15,7 +15,7 @@ import (
 // channel yields streamDoneMsg. This guards the regression where the
 // goroutine's Send never reached the program (m.program was always nil).
 func TestDrainEventsDeliversStream(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 	m.events = make(chan agent.Event, 64)
 
 	// Simulate the run goroutine: one event, then close.
@@ -40,7 +40,7 @@ func TestDrainEventsDeliversStream(t *testing.T) {
 // so a second submit wrote to a closed channel and panicked. submit() must
 // allocate a fresh channel per run.
 func TestSubmitCreatesFreshChannel(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 	m.textarea.SetValue("hello")
 	// Simulate a completed first run: the channel is closed.
 	m.events = make(chan agent.Event, 64)
@@ -63,7 +63,7 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 // TestHandleEventFoldsStream verifies that response chunks, tool calls, and
 // the agent end fold into the transcript and history in the right order.
 func TestHandleEventFoldsStream(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
@@ -86,7 +86,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 
 // TestHandleEventError verifies a stream error is surfaced and folded.
 func TestHandleEventError(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 	m.handleEvent(agent.StreamEvent{Event: ai.StreamEnd{FinishReason: "error", Error: "boom"}})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
 
@@ -100,7 +100,7 @@ func TestHandleEventError(t *testing.T) {
 
 // TestSlashCommands verifies /clear, /model, /help, and unknown handling.
 func TestSlashCommands(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 
 	// /model sets the model for the next run. handleCommand returns a new
 	// model copy (value receiver); the caller must use the return value.
@@ -144,7 +144,7 @@ func TestSlashCommands(t *testing.T) {
 // TestProviderCommand verifies /provider switches the provider type and
 // rejects unknown names.
 func TestProviderCommand(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 
 	updated, _ := m.handleCommand("/provider openai")
 	m = updated.(model)
@@ -200,7 +200,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
 	m.textarea.SetValue("hello")
 
 	// Simulate a completed prior run so submit creates a fresh channel and
@@ -252,7 +252,7 @@ func TestClearKeepsSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
 	m.sessionID = "sess1"
 	m.history = append(m.history, ai.NewUser("hi"))
 	m.transcript = "old text"
@@ -288,7 +288,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
 
 	updated, _ := m.handleCommand("/sessions")
 	m = updated.(model)
@@ -320,7 +320,7 @@ func TestResumeUnknownSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
 	updated, _ := m.handleCommand("/resume nope")
 	m = updated.(model)
 	if m.err == "" {

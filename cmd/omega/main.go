@@ -108,11 +108,28 @@ func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, error) {
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(&cfg.Compaction)
+	ag.SetSystemPrompt(buildSystemPrompt(cfg))
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
 	}
 	return ag, store, nil
+}
+
+// buildSystemPrompt assembles the agent's system prompt from the
+// project context (AGENTS.md in the working directory), the built-in
+// tools, the environment, and the config's custom prompt.
+func buildSystemPrompt(cfg gateway.Config) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	return agent.BuildSystemPrompt(agent.PromptOptions{
+		ProjectContext: agent.LoadProjectContext(cwd),
+		Tools:          agent.NewRegistry(),
+		CWD:            cwd,
+		Custom:         cfg.SystemPrompt,
+	})
 }
 
 // signalContext returns a context cancelled on SIGINT/SIGTERM.
@@ -198,7 +215,7 @@ func cmdChat(configPath string) error {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer store.Close()
-	return runChat(cfg.Provider, &cfg.Compaction, store)
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg), store)
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.

@@ -35,6 +35,14 @@ compaction:
   keep_first: 2
   keep_last: 10
 
+system_prompt:
+  # Optional custom prompt appended to the built-in system prompt
+  # (project context, tools, environment). Leave empty to skip.
+  # Multi-line YAML block:
+  #   |
+  #     You are a helpful assistant.
+  #     Be concise.
+
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_PROVIDER  -> provider.type
 #   OMEGA_API_KEY   -> provider.api_key

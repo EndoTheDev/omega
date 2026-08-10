@@ -49,6 +49,7 @@ type model struct {
 	host            string
 	apiKey          string
 	compaction      *agent.CompactionConfig
+	systemPrompt    string
 	busy            bool             // a run is in flight; input is ignored
 	err             string           // last run error, shown in the status line
 	events          chan agent.Event // run goroutine writes here; Update drains via cmd
@@ -60,7 +61,7 @@ type model struct {
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, store *gateway.Store) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) model {
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
@@ -74,6 +75,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		host:         host,
 		apiKey:       apiKey,
 		compaction:   compaction,
+		systemPrompt: systemPrompt,
 		store:        store,
 	}
 }
@@ -213,6 +215,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(m.compaction)
+	ag.SetSystemPrompt(m.systemPrompt)
 
 	// The goroutine writes events to the channel; Update drains it via
 	// drainEvents. The channel is a reference type, so it survives the
@@ -579,8 +582,8 @@ func renderHelp() string {
 }
 
 // runChat starts the TUI and returns after it quits.
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, store *gateway.Store) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, store)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
