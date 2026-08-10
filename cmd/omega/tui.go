@@ -44,8 +44,11 @@ type model struct {
 	transcript      string       // rendered content of completed exchanges
 	buffer          string       // streaming response currently being received
 	thinkingStarted bool         // true after the first thinking chunk is rendered
+	providerType    string
 	modelName       string
 	host            string
+	apiKey          string
+	compaction      *agent.CompactionConfig
 	busy            bool             // a run is in flight; input is ignored
 	err             string           // last run error, shown in the status line
 	events          chan agent.Event // run goroutine writes here; Update drains via cmd
@@ -57,18 +60,21 @@ type model struct {
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
 
-func newChatModel(modelName, host string, store *gateway.Store) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, store *gateway.Store) model {
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
 	return model{
-		textarea:  ta,
-		viewport:  vp,
-		modelName: modelName,
-		host:      host,
-		store:     store,
+		textarea:     ta,
+		viewport:     vp,
+		providerType: providerType,
+		modelName:    modelName,
+		host:         host,
+		apiKey:       apiKey,
+		compaction:   compaction,
+		store:        store,
 	}
 }
 
@@ -195,11 +201,18 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Capture the current provider settings; /model applies next turn.
-	modelName, host := m.modelName, m.host
+	// Capture the current provider settings; /model and /provider apply next turn.
+	providerType, modelName, host, apiKey := m.providerType, m.modelName, m.host, m.apiKey
 	ctx := context.Background()
-	provider := ai.NewOllamaProvider(modelName, host)
+	provider, err := ai.NewProvider(providerType, modelName, host, apiKey)
+	if err != nil {
+		m.err = err.Error()
+		m.busy = false
+		m.refresh()
+		return m, nil
+	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
+	ag.SetCompaction(m.compaction)
 
 	// The goroutine writes events to the channel; Update drains it via
 	// drainEvents. The channel is a reference type, so it survives the
@@ -310,6 +323,21 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		}
 		m.modelName = fields[1]
 		m.transcript += "\n" + styleInfo.Render("[model set to "+m.modelName+"]") + "\n"
+		m.refresh()
+		return m, nil
+	case "/provider":
+		if len(fields) < 2 {
+			m.err = "usage: /provider <ollama|openai|anthropic>"
+			return m, nil
+		}
+		name := fields[1]
+		if _, err := ai.NewProvider(name, m.modelName, m.host, m.apiKey); err != nil {
+			m.err = err.Error()
+			m.refresh()
+			return m, nil
+		}
+		m.providerType = name
+		m.transcript += "\n" + styleInfo.Render("[provider set to "+m.providerType+"]") + "\n"
 		m.refresh()
 		return m, nil
 	default:
@@ -440,8 +468,66 @@ func newSessionID() (string, error) {
 // refresh re-renders the viewport content from the transcript and buffer.
 func (m *model) refresh() {
 	content := m.transcript + m.buffer
-	m.viewport.SetContent(content)
+	m.viewport.SetContent(wrapText(content, m.viewport.Width))
 	m.viewport.GotoBottom()
+}
+
+// wrapText wraps text to the given width, preserving ANSI escape codes.
+// Lines longer than width are split at word boundaries. Lines already
+// containing newlines are handled by splitting first.
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var out strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			out.WriteString("\n")
+		}
+		wrapLine(&out, line, width)
+	}
+	return out.String()
+}
+
+// wrapLine writes a single line to out, breaking it at word boundaries
+// when it exceeds width. ANSI escape codes are preserved and re-emitted
+// on continuation lines.
+func wrapLine(out *strings.Builder, line string, width int) {
+	// Collect leading ANSI codes so continuation lines keep styling.
+	prefix := ""
+	for len(line) > 0 && line[0] == '\x1b' {
+		end := strings.IndexByte(line[1:], 'm')
+		if end == -1 {
+			break
+		}
+		end += 2 // skip past the 'm'
+		prefix += line[:end]
+		line = line[end:]
+	}
+
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		out.WriteString(prefix)
+		return
+	}
+	cur := prefix
+	for _, w := range words {
+		// +1 for the space before this word (except first word)
+		sep := " "
+		if cur == prefix {
+			sep = ""
+		}
+		candidate := cur + sep + w
+		if lipgloss.Width(candidate) > width && cur != prefix {
+			out.WriteString(cur)
+			out.WriteString("\n")
+			cur = prefix + w
+		} else {
+			cur = candidate
+		}
+	}
+	out.WriteString(cur)
 }
 
 // View renders the full screen: viewport on top, textarea below, status last.
@@ -466,7 +552,7 @@ func (m model) statusLine() string {
 	} else if len(sess) > 8 {
 		sess = sess[:8]
 	}
-	line := fmt.Sprintf("omega | model: %s | sess: %s | %s | ctrl+enter send | /help", m.modelName, sess, state)
+	line := fmt.Sprintf("omega | %s/%s | sess: %s | %s | enter to send | /help", m.providerType, m.modelName, sess, state)
 	if m.err != "" {
 		line += " | " + styleError.Render("error: "+m.err)
 	}
@@ -487,13 +573,14 @@ func renderHelp() string {
   /resume <id>   load a session and continue it
   /help          show this help
   /model <name>  switch the model for the next message
+  /provider <p>  switch provider: ollama, openai, or anthropic
   ctrl+c         quit
 `)
 }
 
 // runChat starts the TUI and returns after it quits.
-func runChat(modelName, host string, store *gateway.Store) error {
-	m := newChatModel(modelName, host, store)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, store *gateway.Store) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, store)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)

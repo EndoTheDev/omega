@@ -102,8 +102,12 @@ func resolveConfigPath(flagPath string) string {
 // newAgent wires config into a provider, agent, and store. The store is
 // returned so the caller can close it.
 func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, error) {
-	provider := ai.NewOllamaProvider(cfg.Provider.ModelName, cfg.Provider.Host)
+	provider, err := ai.NewProvider(cfg.Provider.Type, cfg.Provider.ModelName, cfg.Provider.Host, cfg.Provider.APIKey)
+	if err != nil {
+		return nil, nil, err
+	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
+	ag.SetCompaction(&cfg.Compaction)
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
@@ -194,7 +198,7 @@ func cmdChat(configPath string) error {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer store.Close()
-	return runChat(cfg.Provider.ModelName, cfg.Provider.Host, store)
+	return runChat(cfg.Provider, &cfg.Compaction, store)
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.

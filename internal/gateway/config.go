@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/EndoTheDev/omega-dev/internal/agent"
 	"gopkg.in/yaml.v3"
 )
 
@@ -12,15 +13,18 @@ import (
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider ProviderConfig `yaml:"provider"`
-	Server   ServerConfig   `yaml:"server"`
-	Store    StoreConfig    `yaml:"store"`
+	Provider   ProviderConfig          `yaml:"provider"`
+	Server     ServerConfig            `yaml:"server"`
+	Store      StoreConfig             `yaml:"store"`
+	Compaction agent.CompactionConfig  `yaml:"compaction"`
 }
 
 // ProviderConfig configures the LLM provider connection.
 type ProviderConfig struct {
+	Type      string `yaml:"type"`
 	ModelName string `yaml:"model_name"`
 	Host      string `yaml:"host"`
+	APIKey    string `yaml:"api_key"`
 }
 
 // ServerConfig configures the HTTP listener.
@@ -45,6 +49,12 @@ func DefaultConfig() Config {
 		},
 		Store: StoreConfig{
 			DBPath: "omega.db",
+		},
+		Compaction: agent.CompactionConfig{
+			Enabled:   true,
+			Threshold: 0.8,
+			KeepFirst: 2,
+			KeepLast:  10,
 		},
 	}
 }
@@ -75,6 +85,12 @@ func LoadConfig(path string) (Config, error) {
 
 // applyEnv overrides config fields from OMEGA_* environment variables.
 func applyEnv(cfg *Config) {
+	if v := os.Getenv("OMEGA_PROVIDER"); v != "" {
+		cfg.Provider.Type = v
+	}
+	if v := os.Getenv("OMEGA_API_KEY"); v != "" {
+		cfg.Provider.APIKey = v
+	}
 	if v := os.Getenv("OMEGA_MODEL"); v != "" {
 		cfg.Provider.ModelName = v
 	}
@@ -88,6 +104,11 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("OMEGA_DB_PATH"); v != "" {
 		cfg.Store.DBPath = v
+	}
+	if v := os.Getenv("OMEGA_COMPACTION_THRESHOLD"); v != "" {
+		if threshold, err := strconv.ParseFloat(v, 64); err == nil && threshold > 0 && threshold <= 1 {
+			cfg.Compaction.Threshold = threshold
+		}
 	}
 }
 
