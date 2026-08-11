@@ -33,6 +33,7 @@ var (
 	styleTool     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	styleStatus   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleMatch    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
@@ -42,27 +43,29 @@ var knownCommands = []string{"/exit", "/clear", "/sessions", "/resume", "/help",
 // model is the Bubble Tea state for the chat TUI. It owns the message
 // history, the streaming buffer, and the two widgets (viewport + textarea).
 type model struct {
-	textarea     textarea.Model
-	viewport     viewport.Model
-	history      []ai.Message // full conversation fed to the agent each turn
-	transcript   string       // rendered content of completed exchanges
-	buffer       string       // streaming response currently being received
-	thinking     string       // streaming thinking, rendered with lipgloss
-	providerType string
-	modelName    string
-	host         string
-	apiKey       string
-	compaction   *agent.CompactionConfig
-	systemPrompt string
-	busy         bool             // a run is in flight; input is ignored
-	err          string           // last run error, shown in the status line
-	cancel       context.CancelFunc // cancels the in-flight run; nil when idle
-	events       <-chan agent.Event // run goroutine writes here; Update drains via cmd
-	store        *gateway.Store
-	sessionID    string // current session; "" until the first message creates one
-	storeErr     string // store open/persistence error, shown in the status line
-	promptHistory []string // previously submitted prompts, for Up/Down recall
-	historyIndex   int      // position in promptHistory; 0 = empty/current input
+	textarea            textarea.Model
+	viewport            viewport.Model
+	history             []ai.Message // full conversation fed to the agent each turn
+	transcript          string       // rendered content of completed exchanges
+	buffer              string       // streaming response currently being received
+	thinking            string       // streaming thinking, rendered with lipgloss
+	providerType        string
+	modelName           string
+	host                string
+	apiKey              string
+	compaction          *agent.CompactionConfig
+	systemPrompt        string
+	busy                bool               // a run is in flight; input is ignored
+	err                 string             // last run error, shown in the status line
+	cancel              context.CancelFunc // cancels the in-flight run; nil when idle
+	events              <-chan agent.Event // run goroutine writes here; Update drains via cmd
+	store               *gateway.Store
+	sessionID           string   // current session; "" until the first message creates one
+	storeErr            string   // store open/persistence error, shown in the status line
+	promptHistory       []string // previously submitted prompts, for Up/Down recall
+	historyIndex        int      // position in promptHistory; 0 = empty/current input
+	autocompleteMatches []string // slash commands matching the current input
+	autocompleteIndex   int      // highlighted match; -1 = none selected
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -84,15 +87,16 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
 	return model{
-		textarea:     ta,
-		viewport:     vp,
-		providerType: providerType,
-		modelName:    modelName,
-		host:         host,
-		apiKey:       apiKey,
-		compaction:   compaction,
-		systemPrompt: systemPrompt,
-		store:        store,
+		textarea:          ta,
+		viewport:          vp,
+		providerType:      providerType,
+		modelName:         modelName,
+		host:              host,
+		apiKey:            apiKey,
+		compaction:        compaction,
+		systemPrompt:      systemPrompt,
+		store:             store,
+		autocompleteIndex: -1,
 	}
 }
 
@@ -131,18 +135,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Ctrl+J inserts a newline for multi-line input.
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\n'}})
+			m.updateAutocomplete()
 			m.resizeTextarea()
 			return m, cmd
 		}
-		if msg.String() == "enter" { // Enter submits
+		if msg.String() == "enter" { // Enter accepts the selected match or submits
+			if m.autocompleteIndex >= 0 && m.autocompleteIndex < len(m.autocompleteMatches) {
+				if cmd := m.acceptMatch(); cmd != nil {
+					return m, cmd
+				}
+			}
 			return m.submit()
 		}
 		if msg.String() == "esc" {
 			m.err = ""
+			m.autocompleteMatches = nil
+			m.autocompleteIndex = -1
 			m.refresh()
 			return m, nil
 		}
-		// Tab completes a slash command when the input starts with "/".
+		// Tab completes the selected match (or accepts a single match).
 		if msg.String() == "tab" {
 			return m.handleTabComplete()
 		}
@@ -151,6 +163,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
+		}
+		// Up/Down cycle autocomplete matches when active; otherwise recall
+		// prompt history. From none selected (-1), the first press picks a
+		// starting match; subsequent presses wrap.
+		if msg.String() == "up" && len(m.autocompleteMatches) > 0 {
+			if m.autocompleteIndex < 0 {
+				m.autocompleteIndex = len(m.autocompleteMatches) - 1
+			} else {
+				m.autocompleteIndex--
+				if m.autocompleteIndex < 0 {
+					m.autocompleteIndex = len(m.autocompleteMatches) - 1
+				}
+			}
+			return m, nil
+		}
+		if msg.String() == "down" && len(m.autocompleteMatches) > 0 {
+			if m.autocompleteIndex < 0 {
+				m.autocompleteIndex = 0
+			} else {
+				m.autocompleteIndex++
+				if m.autocompleteIndex >= len(m.autocompleteMatches) {
+					m.autocompleteIndex = 0
+				}
+			}
+			return m, nil
 		}
 		// Up/Down recall prompt history when not scrolled into it. The
 		// guard allows stepping through history once it's active; typing
@@ -180,6 +217,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.historyIndex != 0 {
 			m.historyIndex = 0
 		}
+		m.updateAutocomplete()
 		m.resizeTextarea()
 		return m, cmd
 
@@ -394,33 +432,63 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	}
 }
 
-// handleTabComplete completes a slash command from the current textarea
-// input. If the input starts with "/", it matches against knownCommands:
-// one match completes the command in the textarea; multiple matches show
-// the options in the status line; none does nothing.
+// handleTabComplete accepts the currently selected autocomplete match (a
+// single match is already auto-selected by updateAutocomplete), and leaves
+// the input unchanged otherwise.
 func (m model) handleTabComplete() (tea.Model, tea.Cmd) {
-	val := m.textarea.Value()
-	if !strings.HasPrefix(val, "/") {
+	if len(m.autocompleteMatches) == 0 {
 		return m, nil
 	}
-	var matches []string
+	m.acceptMatch()
+	m.refresh()
+	return m, nil
+}
+
+// updateAutocomplete recomputes the live slash-command matches from the
+// current input. It runs after every keystroke. When the input stops
+// starting with "/", the match list clears and the highlight resets.
+func (m *model) updateAutocomplete() {
+	val := m.textarea.Value()
+	if !strings.HasPrefix(val, "/") {
+		m.autocompleteMatches = nil
+		m.autocompleteIndex = -1
+		return
+	}
+	matches := m.autocompleteMatches[:0]
 	for _, cmd := range knownCommands {
 		if strings.HasPrefix(cmd, val) {
 			matches = append(matches, cmd)
 		}
 	}
-	switch len(matches) {
-	case 1:
-		m.textarea.SetValue(matches[0])
-		m.textarea.CursorEnd()
-		m.err = ""
-	case 0:
-		return m, nil // no match — do nothing
-	default:
-		m.err = "complete: " + strings.Join(matches, " ")
+	m.autocompleteMatches = matches
+	// Keep the highlight in range. A single match is auto-selected so
+	// Enter/Tab accept it immediately without an explicit arrow.
+	if len(matches) == 1 {
+		m.autocompleteIndex = 0
+	} else if m.autocompleteIndex >= len(matches) {
+		m.autocompleteIndex = len(matches) - 1
 	}
+}
+
+// acceptMatch accepts the selected match into the textarea. It returns a
+// command (never nil) when it actually changed the input; nil when the input
+// already equals the match, so Enter falls through to submit.
+func (m *model) acceptMatch() tea.Cmd {
+	if m.autocompleteIndex < 0 || m.autocompleteIndex >= len(m.autocompleteMatches) {
+		return nil
+	}
+	completion := m.autocompleteMatches[m.autocompleteIndex]
+	m.autocompleteMatches = nil
+	m.autocompleteIndex = -1
+	if completion == m.textarea.Value() {
+		return nil
+	}
+	m.textarea.SetValue(completion)
+	m.textarea.CursorEnd()
+	m.err = ""
+	m.resizeTextarea()
 	m.refresh()
-	return m, nil
+	return func() tea.Msg { return m.textarea.Focus() }
 }
 
 // handleSessions lists all sessions from the store.
@@ -595,6 +663,17 @@ func (m model) statusLine() string {
 	}
 	if m.storeErr != "" {
 		line += " | " + styleError.Render("store: "+m.storeErr)
+	}
+	if len(m.autocompleteMatches) > 0 {
+		var matches []string
+		for i, cmd := range m.autocompleteMatches {
+			if i == m.autocompleteIndex {
+				matches = append(matches, styleMatch.Render(cmd))
+			} else {
+				matches = append(matches, cmd)
+			}
+		}
+		line += " | " + strings.Join(matches, "  ")
 	}
 	return line
 }

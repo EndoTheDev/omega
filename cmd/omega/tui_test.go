@@ -9,6 +9,7 @@ import (
 	"github.com/EndoTheDev/omega-dev/internal/agent"
 	"github.com/EndoTheDev/omega-dev/internal/ai"
 	"github.com/EndoTheDev/omega-dev/internal/gateway"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // ansiStrips ANSI escape sequences so tests can assert on plain content
@@ -388,8 +389,10 @@ func TestResumeUnknownSession(t *testing.T) {
 
 // TestTabComplete verifies slash-command completion: a single match
 // completes the command and moves the cursor to the end, multiple matches
-// list options in the status line (err), and no match or non-command input
-// leaves the model unchanged.
+// highlight the selected one in the status line, and no match or
+// non-command input leaves the model unchanged. Matches are computed by
+// updateAutocomplete (run after every keystroke), so the test drives that
+// path before pressing Tab.
 func TestTabComplete(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 
@@ -398,6 +401,7 @@ func TestTabComplete(t *testing.T) {
 	// it behaviorally: a char inserted after completion must land at the
 	// end, not mid-command.
 	m.textarea.SetValue("/ex")
+	m.updateAutocomplete()
 	updated, _ := m.handleTabComplete()
 	m = updated.(model)
 	if got := m.textarea.Value(); got != "/exit" {
@@ -413,38 +417,193 @@ func TestTabComplete(t *testing.T) {
 	}
 
 	// Multiple matches: "/" matches every known command, so the status
-	// line lists the options.
+	// line lists the options with the selected one highlighted.
 	m.textarea.SetValue("/")
-	updated, _ = m.handleTabComplete()
-	m = updated.(model)
-	if !strings.HasPrefix(m.err, "complete: ") {
-		t.Fatalf("expected options in status line, got err %q", m.err)
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != len(knownCommands) {
+		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
-	if !strings.Contains(m.err, "/exit") || !strings.Contains(m.err, "/model") {
-		t.Fatalf("status line missing options: %q", m.err)
+	line := ansiStrip(m.statusLine())
+	if !strings.Contains(line, "/exit") || !strings.Contains(line, "/model") {
+		t.Fatalf("status line missing options: %q", line)
+	}
+	// Nothing selected initially.
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("initial index = %d, want -1", m.autocompleteIndex)
+	}
+	// Down selects the first match.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = up.(model)
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("down index = %d, want 0", m.autocompleteIndex)
 	}
 
-	// No match: "/zzz" leaves the model unchanged.
+	// No match: "/zzz" leaves the input and match state unchanged.
 	m.textarea.SetValue("/zzz")
-	before := m
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("expected 0 matches for /zzz, got %d", len(m.autocompleteMatches))
+	}
 	updated, _ = m.handleTabComplete()
 	m = updated.(model)
 	if m.textarea.Value() != "/zzz" {
 		t.Fatalf("no-match changed input to %q", m.textarea.Value())
 	}
-	if m.err != before.err {
-		t.Fatalf("no-match changed err from %q to %q", before.err, m.err)
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("no-match left matches: %v", m.autocompleteMatches)
 	}
 
 	// Non-command input: "hello" does nothing.
 	m.textarea.SetValue("hello")
-	before = m
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("non-command produced matches: %v", m.autocompleteMatches)
+	}
 	updated, _ = m.handleTabComplete()
 	m = updated.(model)
 	if m.textarea.Value() != "hello" {
 		t.Fatalf("non-command changed input to %q", m.textarea.Value())
 	}
-	if m.err != before.err {
-		t.Fatalf("non-command changed err from %q to %q", before.err, m.err)
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("non-command set matches: %v", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("non-command left index %d, want -1", m.autocompleteIndex)
+	}
+}
+
+// TestAutocompleteLiveFilter verifies matches are recomputed from the input
+// on every update, clear when the input stops starting with "/", and that a
+// single match is auto-selected for immediate Enter/Tab acceptance.
+func TestAutocompleteLiveFilter(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+
+	// "/" matches every known command, nothing selected.
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != len(knownCommands) {
+		t.Fatalf("/ matches = %d, want %d", len(m.autocompleteMatches), len(knownCommands))
+	}
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("/ index = %d, want -1 (no single match)", m.autocompleteIndex)
+	}
+
+	// "/p" narrows to a single match and auto-selects it.
+	m.textarea.SetValue("/p")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/provider" {
+		t.Fatalf("/p matches = %v, want [/provider]", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("/p index = %d, want 0 (auto-selected single match)", m.autocompleteIndex)
+	}
+
+	// "/model" is an exact single match and is auto-selected.
+	m.textarea.SetValue("/model")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/model" {
+		t.Fatalf("/model matches = %v, want [/model]", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("/model index = %d, want 0 (auto-selected)", m.autocompleteIndex)
+	}
+
+	// Typing a non-slash clears matches and resets the highlight.
+	m.textarea.SetValue("hello")
+	m.updateAutocomplete()
+	if m.autocompleteMatches != nil {
+		t.Fatalf("non-slash left matches: %v", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("non-slash left index %d, want -1", m.autocompleteIndex)
+	}
+}
+
+// TestAutocompleteArrows verifies Up/Down cycle the selection across
+// matches, wrapping at both ends.
+func TestAutocompleteArrows(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("start index = %d, want -1", m.autocompleteIndex)
+	}
+	n := len(m.autocompleteMatches)
+
+	// Down from none selects the first.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = up.(model)
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("down from none index = %d, want 0", m.autocompleteIndex)
+	}
+
+	// Down wraps to the first after the last.
+	for i := 0; i < n; i++ {
+		up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = up.(model)
+	}
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("down wrap index = %d, want 0", m.autocompleteIndex)
+	}
+
+	// Up from the first wraps to the last.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = up.(model)
+	if m.autocompleteIndex != n-1 {
+		t.Fatalf("up wrap index = %d, want %d", m.autocompleteIndex, n-1)
+	}
+}
+
+// TestAutocompleteAccept verifies Enter accepts the selected match and that
+// Enter on a fully-typed command falls through to submit.
+func TestAutocompleteAccept(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+
+	// "/mo" is a single match auto-selected; a Down is not needed. Use "/"
+	// (multiple matches) to test arrow-driven selection instead: select
+	// /provider via Down, then Enter accepts it.
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown}) // select first match
+	m = up.(model)
+	// Find /provider and advance to it.
+	for m.autocompleteMatches[m.autocompleteIndex] != "/provider" {
+		up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = up.(model)
+	}
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if m.textarea.Value() != "/provider" {
+		t.Fatalf("enter accepted %q, want /provider", m.textarea.Value())
+	}
+	if m.autocompleteMatches != nil || m.autocompleteIndex != -1 {
+		t.Fatalf("match state not cleared after accept: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
+	}
+
+	// Enter on a single-match auto-selected command completes it.
+	m.textarea.SetValue("/ex")
+	m.updateAutocomplete()
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if m.textarea.Value() != "/exit" {
+		t.Fatalf("enter single match = %q, want /exit", m.textarea.Value())
+	}
+
+	// Enter on a fully-typed command is unchanged, so it falls through to
+	// submit. submit() trims, so we can't observe a no-op; instead verify
+	// the autocomplete is inactive (no auto-selected match) and the input
+	// is submitted as a command.
+	m.textarea.SetValue("/exit")
+	m.updateAutocomplete()
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("/exit should be single auto-selected, got index %d", m.autocompleteIndex)
+	}
+	// Accepting an exact match returns nil (no input change) and clears
+	// the match state, so a subsequent Enter submits the command.
+	if cmd := m.acceptMatch(); cmd != nil {
+		t.Fatalf("acceptMatch on exact match returned a cmd, want nil")
+	}
+	if m.autocompleteMatches != nil || m.autocompleteIndex != -1 {
+		t.Fatalf("acceptMatch on exact match left state: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
 	}
 }
