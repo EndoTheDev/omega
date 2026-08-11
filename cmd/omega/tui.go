@@ -53,6 +53,7 @@ type model struct {
 	systemPrompt string
 	busy         bool             // a run is in flight; input is ignored
 	err          string           // last run error, shown in the status line
+	cancel       context.CancelFunc // cancels the in-flight run; nil when idle
 	events       <-chan agent.Event // run goroutine writes here; Update drains via cmd
 	store        *gateway.Store
 	sessionID    string // current session; "" until the first message creates one
@@ -114,6 +115,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.busy {
+			// Escape cancels the in-flight run; the agent loop observes
+			// ctx.Err() and emits AgentEnd("cancelled"), which clears busy.
+			if msg.String() == "esc" && m.cancel != nil {
+				m.cancel()
+			}
 			return m, nil
 		}
 		if msg.String() == "ctrl+j" {
@@ -157,6 +163,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamDoneMsg:
 		m.busy = false
+		m.cancel = nil
 		m.refresh()
 		return m, m.textarea.Focus()
 
@@ -215,7 +222,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 
 	// Capture the current provider settings; /model and /provider apply next turn.
 	providerType, modelName, host, apiKey := m.providerType, m.modelName, m.host, m.apiKey
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
 	provider, err := ai.NewProvider(providerType, modelName, host, apiKey)
 	if err != nil {
 		m.err = err.Error()
