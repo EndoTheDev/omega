@@ -36,6 +36,9 @@ var (
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
+// knownCommands are the slash commands tab-completion matches against.
+var knownCommands = []string{"/exit", "/clear", "/sessions", "/resume", "/help", "/model", "/provider"}
+
 // model is the Bubble Tea state for the chat TUI. It owns the message
 // history, the streaming buffer, and the two widgets (viewport + textarea).
 type model struct {
@@ -138,6 +141,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = ""
 			m.refresh()
 			return m, nil
+		}
+		// Tab completes a slash command when the input starts with "/".
+		if msg.String() == "tab" {
+			return m.handleTabComplete()
 		}
 		// PgUp/PgDn/Up/Down scroll the viewport.
 		if msg.String() == "pgup" || msg.String() == "pgdown" {
@@ -385,6 +392,35 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.err = "unknown command: " + fields[0]
 		return m, nil
 	}
+}
+
+// handleTabComplete completes a slash command from the current textarea
+// input. If the input starts with "/", it matches against knownCommands:
+// one match completes the command in the textarea; multiple matches show
+// the options in the status line; none does nothing.
+func (m model) handleTabComplete() (tea.Model, tea.Cmd) {
+	val := m.textarea.Value()
+	if !strings.HasPrefix(val, "/") {
+		return m, nil
+	}
+	var matches []string
+	for _, cmd := range knownCommands {
+		if strings.HasPrefix(cmd, val) {
+			matches = append(matches, cmd)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		m.textarea.SetValue(matches[0])
+		m.textarea.CursorEnd()
+		m.err = ""
+	case 0:
+		return m, nil // no match — do nothing
+	default:
+		m.err = "complete: " + strings.Join(matches, " ")
+	}
+	m.refresh()
+	return m, nil
 }
 
 // handleSessions lists all sessions from the store.

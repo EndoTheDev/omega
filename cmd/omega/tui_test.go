@@ -385,3 +385,66 @@ func TestResumeUnknownSession(t *testing.T) {
 		t.Fatal("expected error for unknown session")
 	}
 }
+
+// TestTabComplete verifies slash-command completion: a single match
+// completes the command and moves the cursor to the end, multiple matches
+// list options in the status line (err), and no match or non-command input
+// leaves the model unchanged.
+func TestTabComplete(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+
+	// Single match: "/ex" -> "/exit". CursorEnd() moves the cursor to the
+	// end; the cursor position is private on textarea.Model, so we verify
+	// it behaviorally: a char inserted after completion must land at the
+	// end, not mid-command.
+	m.textarea.SetValue("/ex")
+	updated, _ := m.handleTabComplete()
+	m = updated.(model)
+	if got := m.textarea.Value(); got != "/exit" {
+		t.Fatalf("tab complete = %q, want /exit", got)
+	}
+	m.textarea.InsertString("X")
+	if got := m.textarea.Value(); got != "/exitX" {
+		t.Fatalf("cursor not at end after completion: insert gave %q, want /exitX", got)
+	}
+	m.textarea.SetValue("/exit")
+	if m.err != "" {
+		t.Fatalf("err not cleared on single match: %q", m.err)
+	}
+
+	// Multiple matches: "/" matches every known command, so the status
+	// line lists the options.
+	m.textarea.SetValue("/")
+	updated, _ = m.handleTabComplete()
+	m = updated.(model)
+	if !strings.HasPrefix(m.err, "complete: ") {
+		t.Fatalf("expected options in status line, got err %q", m.err)
+	}
+	if !strings.Contains(m.err, "/exit") || !strings.Contains(m.err, "/model") {
+		t.Fatalf("status line missing options: %q", m.err)
+	}
+
+	// No match: "/zzz" leaves the model unchanged.
+	m.textarea.SetValue("/zzz")
+	before := m
+	updated, _ = m.handleTabComplete()
+	m = updated.(model)
+	if m.textarea.Value() != "/zzz" {
+		t.Fatalf("no-match changed input to %q", m.textarea.Value())
+	}
+	if m.err != before.err {
+		t.Fatalf("no-match changed err from %q to %q", before.err, m.err)
+	}
+
+	// Non-command input: "hello" does nothing.
+	m.textarea.SetValue("hello")
+	before = m
+	updated, _ = m.handleTabComplete()
+	m = updated.(model)
+	if m.textarea.Value() != "hello" {
+		t.Fatalf("non-command changed input to %q", m.textarea.Value())
+	}
+	if m.err != before.err {
+		t.Fatalf("non-command changed err from %q to %q", before.err, m.err)
+	}
+}
