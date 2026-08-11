@@ -58,6 +58,8 @@ type model struct {
 	store        *gateway.Store
 	sessionID    string // current session; "" until the first message creates one
 	storeErr     string // store open/persistence error, shown in the status line
+	promptHistory []string // previously submitted prompts, for Up/Down recall
+	historyIndex   int      // position in promptHistory; 0 = empty/current input
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -138,14 +140,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// PgUp/PgDn/Up/Down scroll the viewport.
-		if msg.String() == "pgup" || msg.String() == "pgdown" ||
-			msg.String() == "up" || msg.String() == "down" {
+		if msg.String() == "pgup" || msg.String() == "pgdown" {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
 		}
+		// Up/Down recall prompt history when not scrolled into it. The
+		// guard allows stepping through history once it's active; typing
+		// (below) resets historyIndex so the next Up restarts from recent.
+		if msg.String() == "up" && (m.textarea.Value() == "" || m.historyIndex > 0) {
+			if m.historyIndex < len(m.promptHistory) {
+				m.historyIndex++
+				m.textarea.SetValue(m.promptHistory[len(m.promptHistory)-m.historyIndex])
+				m.textarea.CursorEnd()
+			}
+			return m, nil
+		}
+		if msg.String() == "down" && m.historyIndex > 0 {
+			m.historyIndex--
+			if m.historyIndex == 0 {
+				m.textarea.SetValue("")
+			} else {
+				m.textarea.SetValue(m.promptHistory[len(m.promptHistory)-m.historyIndex])
+				m.textarea.CursorEnd()
+			}
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
+		// Any other key (typing, backspace, etc.) restarts recall from recent.
+		// Up/Down returned early above, so reaching here means a non-nav key.
+		if m.historyIndex != 0 {
+			m.historyIndex = 0
+		}
 		m.resizeTextarea()
 		return m, cmd
 
@@ -181,6 +208,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.textarea.SetValue("")
+	m.promptHistory = append(m.promptHistory, input)
+	m.historyIndex = 0
 
 	// Slash commands run locally and never hit the agent.
 	if strings.HasPrefix(input, "/") {
