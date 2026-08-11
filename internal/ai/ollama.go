@@ -140,7 +140,7 @@ func (p *OllamaProvider) stream(ctx context.Context, events chan<- StreamEvent, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := retryHTTP(ctx, req)
 	if err != nil {
 		emitError(events, err)
 		return

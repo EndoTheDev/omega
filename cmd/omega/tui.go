@@ -279,8 +279,10 @@ func (m *model) handleEvent(event agent.Event) {
 			m.err = e.Error
 		}
 		// Fold the completed response into the transcript and history.
+		// Wrap the buffer before appending so the transcript is
+		// pre-wrapped and never re-processed on subsequent refreshes.
 		response := ai.NewAssistant(strings.TrimSuffix(m.buffer, "\n"))
-		m.transcript += "\n" + response.Content + "\n"
+		m.transcript += "\n" + wrapText(response.Content, m.viewport.Width) + "\n"
 		m.history = append(m.history, response)
 		m.buffer = ""
 		m.thinkingStarted = false
@@ -469,9 +471,12 @@ func newSessionID() (string, error) {
 }
 
 // refresh re-renders the viewport content from the transcript and buffer.
+// The buffer is not wrapped during streaming — wrapping is deferred to
+// AgentEnd so the UI thread stays responsive. The viewport handles long
+// lines natively via horizontal scrolling.
 func (m *model) refresh() {
 	content := m.transcript + m.buffer
-	m.viewport.SetContent(wrapText(content, m.viewport.Width))
+	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
 

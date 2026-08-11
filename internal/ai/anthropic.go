@@ -150,7 +150,7 @@ func (p *AnthropicProvider) stream(ctx context.Context, events chan<- StreamEven
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := retryHTTP(ctx, req)
 	if err != nil {
 		emitError(events, err)
 		return

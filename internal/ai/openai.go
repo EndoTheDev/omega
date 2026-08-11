@@ -143,7 +143,7 @@ func (p *OpenAIProvider) stream(ctx context.Context, events chan<- StreamEvent, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := retryHTTP(ctx, req)
 	if err != nil {
 		emitError(events, err)
 		return
