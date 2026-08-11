@@ -52,10 +52,11 @@ func DefaultConfig() Config {
 			DBPath: "omega.db",
 		},
 		Compaction: agent.CompactionConfig{
-			Enabled:   true,
-			Threshold: 0.8,
-			KeepFirst: 2,
-			KeepLast:  10,
+			Enabled:       true,
+			Threshold:     0.6,
+			ContextWindow: 32768,
+			KeepFirst:     2,
+			KeepLast:      10,
 		},
 	}
 }
@@ -109,6 +110,11 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("OMEGA_COMPACTION_THRESHOLD"); v != "" {
 		if threshold, err := strconv.ParseFloat(v, 64); err == nil && threshold > 0 && threshold <= 1 {
 			cfg.Compaction.Threshold = threshold
+		}
+	}
+	if v := os.Getenv("OMEGA_COMPACTION_CONTEXT_WINDOW"); v != "" {
+		if window, err := strconv.Atoi(v); err == nil && window > 0 {
+			cfg.Compaction.ContextWindow = window
 		}
 	}
 }

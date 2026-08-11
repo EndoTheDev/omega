@@ -13,7 +13,7 @@ func TestEstimateTokens(t *testing.T) {
 		ai.NewUser("hello world"), // 11 chars -> 2 tokens
 		ai.NewAssistant("a longer assistant response here"), // 32 chars -> 8 tokens
 	}
-	got := estimateTokens(history)
+	got := EstimateTokens(history)
 	if got != 10 { // (11+32)/4 = 10
 		t.Fatalf("estimateTokens = %d, want 10", got)
 	}

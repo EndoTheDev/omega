@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/EndoTheDev/omega-dev/internal/agent"
@@ -38,7 +39,15 @@ var (
 )
 
 // knownCommands are the slash commands tab-completion matches against.
-var knownCommands = []string{"/exit", "/clear", "/sessions", "/resume", "/help", "/model", "/provider"}
+var knownCommands = []string{"/exit", "/new", "/sessions", "/resume", "/help", "/model", "/provider", "/compact"}
+
+// streamSegment is one ordered piece of a streaming turn. Segments are
+// appended in the order the model emits them, preserving the narrative
+// flow (thinking → tool → response → more thinking → ...).
+type streamSegment struct {
+	kind    string // "thinking", "tool", "response"
+	content string
+}
 
 // model is the Bubble Tea state for the chat TUI. It owns the message
 // history, the streaming buffer, and the two widgets (viewport + textarea).
@@ -47,8 +56,7 @@ type model struct {
 	viewport            viewport.Model
 	history             []ai.Message // full conversation fed to the agent each turn
 	transcript          string       // rendered content of completed exchanges
-	buffer              string       // streaming response currently being received
-	thinking            string       // streaming thinking, rendered with lipgloss
+	segments            []streamSegment // ordered streaming segments for the current turn
 	providerType        string
 	modelName           string
 	host                string
@@ -73,7 +81,7 @@ type streamDoneMsg struct{}
 
 func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) error {
 	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
 	}
@@ -265,8 +273,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.transcript += "\n" + styleUser.Render("> "+input) + "\n"
 	m.history = append(m.history, ai.NewUser(input))
 	m.busy = true
-	m.buffer = ""
-	m.thinking = ""
+	m.segments = nil
+	m.err = ""
 
 	// Persist the user message; auto-create a session on the first one.
 	if m.store != nil {
@@ -331,50 +339,78 @@ func (m model) drainEvents() tea.Cmd {
 	}
 }
 
-// handleEvent folds one agent event into the streaming buffer or transcript.
+// handleEvent folds one agent event into the streaming segments.
+// Segments are appended in the order the model emits them, preserving
+// the narrative flow (thinking → tool → response → more thinking → ...).
 func (m *model) handleEvent(event agent.Event) {
 	switch e := event.(type) {
 	case agent.StreamEvent:
 		switch chunk := e.Event.(type) {
 		case ai.ResponseChunk:
-			m.buffer += chunk.Content
+			m.appendSegment("response", chunk.Content)
 		case ai.ThinkingChunk:
-			m.thinking += chunk.Content
+			m.appendSegment("thinking", chunk.Content)
 		case ai.ToolCallEvent:
-			m.buffer += "\n" + styleTool.Render("[tool: "+chunk.ToolCall.Name+"]") + "\n"
+			var sb strings.Builder
+			sb.WriteString("\n")
+			sb.WriteString(styleTool.Render("[tool: " + chunk.ToolCall.Name + "]"))
+			sb.WriteString("\n")
 			if len(chunk.ToolCall.Arguments) > 0 {
 				for k, v := range chunk.ToolCall.Arguments {
-					m.buffer += fmt.Sprintf("  %s: %v\n", k, v)
+					sb.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
 				}
+				sb.WriteString("\n")
 			}
+			m.segments = append(m.segments, streamSegment{kind: "tool", content: sb.String()})
 		case ai.StreamEnd:
 			if chunk.Error != "" {
-				m.buffer += "\n" + styleError.Render("error: "+chunk.Error) + "\n"
+				m.appendSegment("response", "\n"+styleError.Render("error: "+chunk.Error)+"\n")
 			}
 		}
 	case agent.AgentEnd:
 		if e.Error != "" {
 			m.err = e.Error
 		}
-		// Prepend thinking (lipgloss-styled) to the transcript, then
-		// render the response through glamour for markdown styling.
-		if m.thinking != "" {
-			m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
-			m.transcript += styleThinking.Render(m.thinking) + "\n"
-		}
-		response := ai.NewAssistant(strings.TrimSuffix(m.buffer, "\n"))
-		m.transcript += "\n" + renderAssistant(response.Content, m.viewport.Width) + "\n"
-		m.history = append(m.history, response)
-		m.buffer = ""
-		m.thinking = ""
-		// Persist the assistant response.
-		if m.store != nil && m.sessionID != "" {
-			if err := m.store.AppendMessage(context.Background(), m.sessionID, response); err != nil {
-				m.storeErr = "save response: " + err.Error()
-			} else {
-				m.storeErr = ""
+		// Fold segments into the transcript in order. Thinking and tool
+		// segments are lipgloss-styled; response segments go through
+		// glamour for markdown rendering.
+		var responseBuf strings.Builder
+		for _, seg := range m.segments {
+			switch seg.kind {
+			case "thinking":
+				m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
+				m.transcript += styleThinking.Render(seg.content) + "\n"
+			case "tool":
+				m.transcript += seg.content
+			case "response":
+				responseBuf.WriteString(seg.content)
 			}
 		}
+		if responseBuf.Len() > 0 {
+			response := ai.NewAssistant(strings.TrimSuffix(responseBuf.String(), "\n"))
+			m.transcript += "\n" + renderAssistant(response.Content, m.viewport.Width) + "\n"
+			m.history = append(m.history, response)
+			// Persist the assistant response.
+			if m.store != nil && m.sessionID != "" {
+				if err := m.store.AppendMessage(context.Background(), m.sessionID, response); err != nil {
+					m.storeErr = "save response: " + err.Error()
+				} else {
+					m.storeErr = ""
+				}
+			}
+		}
+		m.segments = nil
+	}
+}
+
+// appendSegment appends content to the last segment if it has the same
+// kind, or creates a new segment. This keeps consecutive chunks of the
+// same type (e.g. multiple ResponseChunks) in one segment.
+func (m *model) appendSegment(kind, content string) {
+	if len(m.segments) > 0 && m.segments[len(m.segments)-1].kind == kind {
+		m.segments[len(m.segments)-1].content += content
+	} else {
+		m.segments = append(m.segments, streamSegment{kind: kind, content: content})
 	}
 }
 
@@ -384,13 +420,12 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	switch fields[0] {
 	case "/exit":
 		return m, tea.Quit
-	case "/clear":
+	case "/new":
 		// Clear in-memory history but keep the session; messages already
 		// persisted stay in the store.
 		m.history = nil
 		m.transcript = ""
-		m.buffer = ""
-		m.thinking = ""
+		m.segments = nil
 		m.err = ""
 		m.refresh()
 		return m, nil
@@ -398,6 +433,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleSessions()
 	case "/resume":
 		return m.handleResume(fields)
+	case "/compact":
+		return m.handleCompact(fields)
 	case "/help":
 		m.transcript += renderHelp()
 		m.refresh()
@@ -544,10 +581,44 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	m.sessionID = id
 	m.history = messages
 	m.transcript = renderTranscript(messages, m.viewport.Width)
-	m.buffer = ""
-	m.thinking = ""
+	m.segments = nil
 	m.err = ""
 	m.storeErr = ""
+	m.refresh()
+	return m, nil
+}
+
+// handleCompact triggers manual compaction of the conversation history.
+// /compact uses the default summarizer; /compact <focus> passes a custom
+// focus instruction to the summarizer (e.g. "focus on the last implementation").
+func (m model) handleCompact(fields []string) (tea.Model, tea.Cmd) {
+	if len(m.history) < 3 {
+		m.err = "not enough history to compact"
+		return m, nil
+	}
+	provider, err := ai.NewProvider(m.providerType, m.modelName, m.host, m.apiKey)
+	if err != nil {
+		m.err = "compact: " + err.Error()
+		return m, nil
+	}
+	keepFirst := 2
+	keepLast := 10
+	if m.compaction != nil {
+		keepFirst = m.compaction.KeepFirst
+		keepLast = m.compaction.KeepLast
+	}
+	focus := ""
+	if len(fields) > 1 {
+		focus = strings.Join(fields[1:], " ")
+	}
+	compacted, err := agent.CompactWithFocus(context.Background(), provider, m.history, keepFirst, keepLast, focus)
+	if err != nil {
+		m.err = "compact: " + err.Error()
+		return m, nil
+	}
+	before := len(m.history)
+	m.history = compacted
+	m.transcript += "\n" + styleInfo.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", before, len(compacted))+"]") + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -600,19 +671,42 @@ func renderTranscript(messages []ai.Message, width int) string {
 	return sb.String()
 }
 
-// refresh re-renders the viewport content from the transcript and buffer.
+// refresh re-renders the viewport content from the transcript and segments.
 // The buffer is not wrapped during streaming — wrapping is deferred to
 // AgentEnd so the UI thread stays responsive. The viewport handles long
 // lines natively via horizontal scrolling.
 func (m *model) refresh() {
-	content := m.transcript + m.thinking + m.buffer
-	m.viewport.SetContent(content)
+	var sb strings.Builder
+	sb.WriteString(m.transcript)
+	for _, seg := range m.segments {
+		switch seg.kind {
+		case "thinking":
+			sb.WriteString("\n")
+			sb.WriteString(styleThinking.Render("[thinking]"))
+			sb.WriteString("\n")
+			sb.WriteString(styleThinking.Render(seg.content))
+			sb.WriteString("\n")
+		case "tool":
+			sb.WriteString(seg.content)
+		case "response":
+			sb.WriteString(seg.content)
+		}
+	}
+	m.viewport.SetContent(sb.String())
 	m.viewport.GotoBottom()
 }
 
+// ansiRegex strips ANSI SGR escape codes from lipgloss-styled text
+// before glamour processes it, so color codes don't render as literal
+// characters in the transcript.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 // renderAssistant renders markdown content through glamour to styled
-// terminal output. Falls back to raw text if rendering fails.
+// terminal output. ANSI escape codes from lipgloss are stripped first
+// so glamour doesn't render them as literal text. Falls back to raw
+// text if rendering fails.
 func renderAssistant(content string, width int) string {
+	content = ansiRegex.ReplaceAllString(content, "")
 	if width <= 0 {
 		width = 80
 	}
@@ -630,14 +724,15 @@ func renderAssistant(content string, width int) string {
 	return strings.TrimRight(out, "\n")
 }
 
-// View renders the full screen: viewport on top, textarea below, status last.
+// View renders the full screen: viewport on top, status bar in the middle,
+// textarea at the bottom.
 func (m model) View() string {
 	var sb strings.Builder
 	sb.WriteString(m.viewport.View())
 	sb.WriteString("\n")
-	sb.WriteString(m.textarea.View())
-	sb.WriteString("\n")
 	sb.WriteString(styleStatus.Render(m.statusLine()))
+	sb.WriteString("\n")
+	sb.WriteString(m.textarea.View())
 	return sb.String()
 }
 
@@ -650,14 +745,17 @@ func (m model) statusLine() string {
 	sess := m.sessionID
 	if sess == "" {
 		sess = "none"
-	} else if len(sess) > 8 {
-		sess = sess[:8]
 	}
 	provider := m.providerType
 	if provider == "" {
 		provider = "ollama"
 	}
-	line := fmt.Sprintf("omega | %s/%s | sess: %s | %s | enter to send | /help", provider, m.modelName, sess, state)
+	tokens := agent.EstimateTokens(m.history)
+	window := 8192
+	if m.compaction != nil && m.compaction.ContextWindow > 0 {
+		window = m.compaction.ContextWindow
+	}
+	line := fmt.Sprintf("omega | %s | %s/%s | tokens: %d/%d | sess: %s", state, provider, m.modelName, tokens, window, sess)
 	if m.err != "" {
 		line += " | " + styleError.Render("error: "+m.err)
 	}
@@ -685,11 +783,12 @@ func renderHelp() string {
   ctrl+j inserts a newline (multi-line input)
 
   /exit          quit
-  /clear         clear the conversation (keeps the session)
+  /new           start a new conversation (keeps the session)
   /sessions      list saved sessions
   /resume <id>   resume a session
   /model <name>  switch the model
   /provider <n>  switch provider (ollama, openai, anthropic)
+  /compact       summarize conversation history
   /help          show this help
 `) + "\n"
 }

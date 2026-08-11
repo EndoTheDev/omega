@@ -28,8 +28,10 @@ compaction:
   # window. Default: enabled.
   enabled: true
   # Fraction of the context window at which compaction triggers.
-  # Default: 0.8
-  threshold: 0.8
+  # Default: 0.6
+  threshold: 0.6
+  # Model context window in tokens. Default: 32768
+  context_window: 32768
   # Messages preserved verbatim at the start and end of the history.
   # Default: 2 first, 10 last.
   keep_first: 2
@@ -51,3 +53,4 @@ system_prompt:
 #   OMEGA_PORT      -> server.port
 #   OMEGA_DB_PATH   -> store.db_path
 #   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold
+#   OMEGA_COMPACTION_CONTEXT_WINDOW -> compaction.context_window

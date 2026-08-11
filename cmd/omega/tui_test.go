@@ -90,8 +90,8 @@ func TestHandleEventFoldsStream(t *testing.T) {
 	if len(m.history) != 1 {
 		t.Fatalf("expected 1 assistant message in history, got %d", len(m.history))
 	}
-	if m.buffer != "" {
-		t.Fatalf("buffer should be cleared after AgentEnd, got %q", m.buffer)
+	if len(m.segments) != 0 {
+		t.Fatalf("segments should be cleared after AgentEnd, got %d", len(m.segments))
 	}
 }
 
@@ -109,7 +109,7 @@ func TestHandleEventError(t *testing.T) {
 	}
 }
 
-// TestSlashCommands verifies /clear, /model, /help, and unknown handling.
+// TestSlashCommands verifies /new, /model, /help, and unknown handling.
 func TestSlashCommands(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 
@@ -135,10 +135,10 @@ func TestSlashCommands(t *testing.T) {
 		t.Fatalf("help text missing /exit: %q", m.transcript)
 	}
 
-	// /clear wipes history and transcript.
+	// /new wipes history and transcript.
 	m.history = append(m.history, ai.NewUser("hi"))
 	m.transcript = "some old text"
-	updated, _ = m.handleCommand("/clear")
+	updated, _ = m.handleCommand("/new")
 	m = updated.(model)
 	if len(m.history) != 0 || m.transcript != "" {
 		t.Fatalf("clear failed: history=%d transcript=%q", len(m.history), m.transcript)
@@ -277,6 +277,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 
 	// Fold an assistant response.
+	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "ok"}})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	sessions, err := s.ListSessions(context.Background())
@@ -302,7 +303,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 }
 
-// TestClearKeepsSession verifies /clear wipes in-memory history but keeps
+// TestNewKeepsSession verifies /new wipes in-memory history but keeps
 // the session ID so the current conversation stays persisted.
 func TestClearKeepsSession(t *testing.T) {
 	s, err := gateway.Open(":memory:")
@@ -316,7 +317,7 @@ func TestClearKeepsSession(t *testing.T) {
 	m.history = append(m.history, ai.NewUser("hi"))
 	m.transcript = "old text"
 
-	updated, _ := m.handleCommand("/clear")
+	updated, _ := m.handleCommand("/new")
 	m = updated.(model)
 
 	if len(m.history) != 0 || m.transcript != "" {

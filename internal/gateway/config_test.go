@@ -169,8 +169,8 @@ func TestCompactionDefaults(t *testing.T) {
 	if !cfg.Compaction.Enabled {
 		t.Error("compaction.enabled default = false, want true")
 	}
-	if cfg.Compaction.Threshold != 0.8 {
-		t.Errorf("compaction.threshold default = %v, want 0.8", cfg.Compaction.Threshold)
+	if cfg.Compaction.Threshold != 0.6 {
+		t.Errorf("compaction.threshold default = %v, want 0.6", cfg.Compaction.Threshold)
 	}
 	if cfg.Compaction.KeepFirst != 2 || cfg.Compaction.KeepLast != 10 {
 		t.Errorf("compaction keep defaults = %d/%d, want 2/10", cfg.Compaction.KeepFirst, cfg.Compaction.KeepLast)

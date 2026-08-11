@@ -109,7 +109,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		}
 
 		if a.compaction != nil && a.compaction.Enabled {
-			if estimateTokens(messages) > a.compaction.budget() {
+			if EstimateTokens(messages) > a.compaction.budget() {
 				compacted, err := compact(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast)
 				if err != nil {
 					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
