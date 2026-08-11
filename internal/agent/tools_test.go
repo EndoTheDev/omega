@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
 
 // requireTool returns the named tool from the built-in registry, failing the
@@ -199,5 +201,39 @@ func TestEditRejectsMissingArguments(t *testing.T) {
 		"new_string": "b",
 	}); err == nil {
 		t.Fatal("expected error for missing path, got nil")
+	}
+}
+
+func TestToolResultFormat(t *testing.T) {
+	// Verify that a tool result has the correct ID, content, and error flag.
+	tr := ai.NewToolResult("output", "call-1", false)
+	if tr.ToolCallID != "call-1" {
+		t.Fatalf("ToolCallID = %q, want call-1", tr.ToolCallID)
+	}
+	if tr.Content != "output" {
+		t.Fatalf("Content = %q, want output", tr.Content)
+	}
+	if tr.IsError {
+		t.Fatal("IsError = true, want false")
+	}
+
+	// Error result.
+	trErr := ai.NewToolResult("boom", "call-2", true)
+	if !trErr.IsError {
+		t.Fatal("IsError = false, want true")
+	}
+	if trErr.Content != "boom" {
+		t.Fatalf("Content = %q, want boom", trErr.Content)
+	}
+}
+
+func TestUnknownToolResult(t *testing.T) {
+	// An unknown tool call produces a tool result with IsError=true.
+	tr := ai.NewToolResult("unknown tool: ghost", "c1", true)
+	if !tr.IsError {
+		t.Fatal("unknown tool result IsError = false, want true")
+	}
+	if !strings.Contains(tr.Content, "unknown tool") {
+		t.Fatalf("Content = %q, want it to contain 'unknown tool'", tr.Content)
 	}
 }

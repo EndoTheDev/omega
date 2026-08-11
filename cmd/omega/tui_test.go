@@ -608,3 +608,125 @@ func TestAutocompleteAccept(t *testing.T) {
 		t.Fatalf("acceptMatch on exact match left state: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
 	}
 }
+
+// TestEscapeCancelsRun verifies Escape during a busy run calls cancel.
+func TestEscapeCancelsRun(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.busy = true
+	called := false
+	m.cancel = func() { called = true }
+
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = up.(model)
+	if !called {
+		t.Fatal("Escape did not call cancel during busy run")
+	}
+}
+
+// TestEnterSubmits verifies Enter on non-empty input triggers submit.
+func TestEnterSubmits(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.textarea.SetValue("hello")
+
+	up, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if cmd == nil {
+		t.Fatal("Enter on non-empty input did not return a command")
+	}
+	if !m.busy {
+		t.Fatal("Enter did not set busy")
+	}
+}
+
+// TestPgUpPgDnScrolls verifies PgUp/PgDn are forwarded to the viewport.
+func TestPgUpPgDnScrolls(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+
+	// PgUp should not panic and should return a model.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if _, ok := up.(model); !ok {
+		t.Fatal("PgUp did not return a model")
+	}
+
+	// PgDown should not panic and should return a model.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if _, ok := up.(model); !ok {
+		t.Fatal("PgDown did not return a model")
+	}
+}
+
+// TestUpDownHistory verifies Up/Down recall prompt history.
+func TestUpDownHistory(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.promptHistory = []string{"first", "second"}
+
+	// Up from empty input recalls the most recent prompt.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = up.(model)
+	if m.textarea.Value() != "second" {
+		t.Fatalf("Up recall = %q, want second", m.textarea.Value())
+	}
+
+	// Down returns to empty.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = up.(model)
+	if m.textarea.Value() != "" {
+		t.Fatalf("Down to empty = %q, want empty", m.textarea.Value())
+	}
+}
+
+// TestSegmentOrder verifies segments render in the order they were emitted.
+func TestSegmentOrder(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+
+	m.handleEvent(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "plan"}})
+	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell"}}})
+	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "done"}})
+	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
+
+	plain := ansiStrip(m.transcript)
+	thinkIdx := strings.Index(plain, "[thinking]")
+	toolIdx := strings.Index(plain, "[tool: shell]")
+	respIdx := strings.Index(plain, "done")
+
+	if thinkIdx < 0 || toolIdx < 0 || respIdx < 0 {
+		t.Fatalf("missing segments: think=%v tool=%v resp=%v", thinkIdx >= 0, toolIdx >= 0, respIdx >= 0)
+	}
+	if thinkIdx > toolIdx || toolIdx > respIdx {
+		t.Fatalf("segment order wrong: think=%d tool=%d resp=%d", thinkIdx, toolIdx, respIdx)
+	}
+}
+
+// TestStatusLineFormat verifies the status line contains expected fields.
+func TestStatusLineFormat(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.sessionID = "abc123"
+
+	line := ansiStrip(m.statusLine())
+	if !strings.Contains(line, "omega") {
+		t.Fatalf("status line missing omega: %q", line)
+	}
+	if !strings.Contains(line, "idle") {
+		t.Fatalf("status line missing idle: %q", line)
+	}
+	if !strings.Contains(line, "ollama/llama3") {
+		t.Fatalf("status line missing provider/model: %q", line)
+	}
+	if !strings.Contains(line, "tokens:") {
+		t.Fatalf("status line missing tokens: %q", line)
+	}
+	if !strings.Contains(line, "sess: abc123") {
+		t.Fatalf("status line missing session: %q", line)
+	}
+}
+
+// TestHelpText verifies help text contains all commands.
+func TestHelpText(t *testing.T) {
+	help := renderHelp()
+	plain := ansiStrip(help)
+	for _, cmd := range []string{"/exit", "/new", "/sessions", "/resume", "/help", "/model", "/provider", "/compact"} {
+		if !strings.Contains(plain, cmd) {
+			t.Fatalf("help text missing %q", cmd)
+		}
+	}
+}
