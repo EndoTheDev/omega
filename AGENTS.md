@@ -84,9 +84,9 @@ go vet ./...      # no suspicious constructs
 AGENTS.md (root — this file)
 ├── agents/                   # conventions (COMMIT.md)
 ├── internal/
-│   ├── ai/                   # provider abstraction, stream events, message types
-│   ├── agent/                # multi-turn loop, tool execution
-│   └── gateway/              # HTTP server, SSE streaming, session store
+│   ├── ai/                   # provider abstraction, stream events, message types, retry, multi-provider
+│   ├── agent/                # multi-turn loop, tool execution, compaction, project context, system prompt
+│   └── gateway/              # HTTP server, SSE streaming, session store, config
 └── cmd/
     └── omega/                # single binary: serve, run, health, chat
 ```
@@ -123,10 +123,10 @@ rules but cannot override core contracts.
 
 ## Child DOX Index
 
-| Path                | Status      | What it owns                                              |
-| ------------------- | ----------- | --------------------------------------------------------- |
-| `agents/`           | Reference   | Commit conventions (COMMIT.md)                            |
-| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types |
-| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, agent lifecycle events   |
-| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config         |
-| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat                   |
+| Path                | Status      | What it owns                                                                     |
+| ------------------- | ----------- | -------------------------------------------------------------------------------- |
+| `agents/`           | Reference   | Commit conventions (COMMIT.md)                                                   |
+| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types, retry, multi-provider |
+| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, compaction, project context, system prompt      |
+| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config                                |
+| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat                                          |

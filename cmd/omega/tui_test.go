@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -10,17 +11,24 @@ import (
 	"github.com/EndoTheDev/omega-dev/internal/gateway"
 )
 
+// ansiStrips ANSI escape sequences so tests can assert on plain content
+// regardless of glamour styling.
+var ansi = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
+
 // TestDrainEventsDeliversStream verifies the channel-drain path: events
 // written by the run goroutine are delivered to Update, and the closed
 // channel yields streamDoneMsg. This guards the regression where the
 // goroutine's Send never reached the program (m.program was always nil).
 func TestDrainEventsDeliversStream(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
-	m.events = make(chan agent.Event, 64)
+	ch := make(chan agent.Event, 64)
+	m.events = ch
 
 	// Simulate the run goroutine: one event, then close.
-	m.events <- agent.StreamEvent{Event: ai.ResponseChunk{Content: "hi"}}
-	close(m.events)
+	ch <- agent.StreamEvent{Event: ai.ResponseChunk{Content: "hi"}}
+	close(ch)
 
 	// First drain delivers the event.
 	msg := m.drainEvents()()
@@ -43,8 +51,9 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
 	m.textarea.SetValue("hello")
 	// Simulate a completed first run: the channel is closed.
-	m.events = make(chan agent.Event, 64)
-	close(m.events)
+	ch := make(chan agent.Event, 64)
+	m.events = ch
+	close(ch)
 
 	updated, _ := m.submit()
 	m = updated.(model)
@@ -70,11 +79,12 @@ func TestHandleEventFoldsStream(t *testing.T) {
 	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell"}}})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
-	if !strings.Contains(m.transcript, "hello world") {
-		t.Fatalf("transcript missing streamed content: %q", m.transcript)
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "hello world") {
+		t.Fatalf("transcript missing streamed content: %q", plain)
 	}
-	if !strings.Contains(m.transcript, "[tool: shell]") {
-		t.Fatalf("transcript missing tool label: %q", m.transcript)
+	if !strings.Contains(plain, "[tool: shell]") {
+		t.Fatalf("transcript missing tool label: %q", plain)
 	}
 	if len(m.history) != 1 {
 		t.Fatalf("expected 1 assistant message in history, got %d", len(m.history))
@@ -93,7 +103,7 @@ func TestHandleEventError(t *testing.T) {
 	if m.err != "boom" {
 		t.Fatalf("expected err boom, got %q", m.err)
 	}
-	if !strings.Contains(m.transcript, "error: boom") {
+	if !strings.Contains(ansiStrip(m.transcript), "error: boom") {
 		t.Fatalf("transcript missing error: %q", m.transcript)
 	}
 }
@@ -171,6 +181,53 @@ func TestProviderCommand(t *testing.T) {
 	}
 }
 
+// TestRenderAssistant renders markdown through glamour: bold becomes
+// ANSI-styled output (contains escape sequences), code blocks are preserved,
+// and plain text still appears verbatim.
+func TestRenderAssistant(t *testing.T) {
+	out := renderAssistant("**bold** `code`", 80)
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("expected ANSI escape codes in rendered markdown, got %q", out)
+	}
+	if !strings.Contains(out, "bold") {
+		t.Fatalf("expected bold text preserved, got %q", out)
+	}
+	if !strings.Contains(out, "code") {
+		t.Fatalf("expected inline code preserved, got %q", out)
+	}
+
+	// Fallback: a zero width is normalized to 80, not a panic.
+	if out := renderAssistant("plain", 0); !strings.Contains(out, "plain") {
+		t.Fatalf("plain text missing at zero width: %q", out)
+	}
+}
+
+// TestRenderTranscriptRendersAssistant verifies the resume path routes
+// Assistant content through glamour: a markdown message yields ANSI-styled
+// output (escape codes present) with the text preserved, while a User
+// message stays plain-styled.
+func TestRenderTranscriptRendersAssistant(t *testing.T) {
+	messages := []ai.Message{
+		ai.NewUser("hi"),
+		ai.NewAssistant("**bold** `code`"),
+	}
+	out := renderTranscript(messages, 80)
+
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("expected ANSI escape codes in rendered transcript, got %q", out)
+	}
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "bold") {
+		t.Fatalf("expected bold text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "code") {
+		t.Fatalf("expected inline code preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "hi") {
+		t.Fatalf("expected user content preserved, got %q", plain)
+	}
+}
+
 // TestNewSessionIDCryptoRand verifies session IDs are generated from
 // crypto/rand and are the expected hex length.
 func TestNewSessionIDCryptoRand(t *testing.T) {
@@ -205,8 +262,9 @@ func TestSubmitPersistsMessages(t *testing.T) {
 
 	// Simulate a completed prior run so submit creates a fresh channel and
 	// the goroutine's AgentStart lands synchronously.
-	m.events = make(chan agent.Event, 64)
-	close(m.events)
+	ch := make(chan agent.Event, 64)
+	m.events = ch
+	close(ch)
 	updated, _ := m.submit()
 	m = updated.(model)
 

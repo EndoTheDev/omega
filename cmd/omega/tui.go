@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -27,39 +28,48 @@ const (
 
 // Styles for the TUI.
 var (
-	styleUser      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	styleThinking  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleTool      = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleInfo      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleStatus    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	styleUser     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	styleThinking = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleTool     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	styleInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleStatus   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
 // model is the Bubble Tea state for the chat TUI. It owns the message
 // history, the streaming buffer, and the two widgets (viewport + textarea).
 type model struct {
-	textarea        textarea.Model
-	viewport        viewport.Model
-	history         []ai.Message // full conversation fed to the agent each turn
-	transcript      string       // rendered content of completed exchanges
-	buffer          string       // streaming response currently being received
-	thinkingStarted bool         // true after the first thinking chunk is rendered
-	providerType    string
-	modelName       string
-	host            string
-	apiKey          string
-	compaction      *agent.CompactionConfig
-	systemPrompt    string
-	busy            bool             // a run is in flight; input is ignored
-	err             string           // last run error, shown in the status line
-	events          chan agent.Event // run goroutine writes here; Update drains via cmd
-	store           *gateway.Store
-	sessionID       string // current session; "" until the first message creates one
-	storeErr        string // store open/persistence error, shown in the status line
+	textarea     textarea.Model
+	viewport     viewport.Model
+	history      []ai.Message // full conversation fed to the agent each turn
+	transcript   string       // rendered content of completed exchanges
+	buffer       string       // streaming response currently being received
+	thinking     string       // streaming thinking, rendered with lipgloss
+	providerType string
+	modelName    string
+	host         string
+	apiKey       string
+	compaction   *agent.CompactionConfig
+	systemPrompt string
+	busy         bool             // a run is in flight; input is ignored
+	err          string           // last run error, shown in the status line
+	events       <-chan agent.Event // run goroutine writes here; Update drains via cmd
+	store        *gateway.Store
+	sessionID    string // current session; "" until the first message creates one
+	storeErr     string // store open/persistence error, shown in the status line
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
+
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("chat: %w", err)
+	}
+	return nil
+}
 
 func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) model {
 	ta := textarea.New()
@@ -175,7 +185,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.history = append(m.history, ai.NewUser(input))
 	m.busy = true
 	m.buffer = ""
-	m.thinkingStarted = false
+	m.thinking = ""
 
 	// Persist the user message; auto-create a session on the first one.
 	if m.store != nil {
@@ -222,13 +232,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// value copy Bubble Tea makes of the model. A fresh channel per run:
 	// it is closed when the run ends, so reusing one across runs would
 	// panic on the second write.
-	m.events = make(chan agent.Event, 64)
-	go func() {
-		for event := range ag.Run(ctx, m.history, nil) {
-			m.events <- event
-		}
-		close(m.events)
-	}()
+	m.events = ag.Run(ctx, m.history, nil)
 	return m, m.drainEvents()
 }
 
@@ -251,17 +255,9 @@ func (m *model) handleEvent(event agent.Event) {
 	case agent.StreamEvent:
 		switch chunk := e.Event.(type) {
 		case ai.ResponseChunk:
-			if m.thinkingStarted {
-				m.buffer += "\n"
-			}
-			m.thinkingStarted = false
 			m.buffer += chunk.Content
 		case ai.ThinkingChunk:
-			if !m.thinkingStarted {
-				m.buffer += styleThinking.Render("[thinking]") + "\n"
-				m.thinkingStarted = true
-			}
-			m.buffer += styleThinking.Render(chunk.Content)
+			m.thinking += chunk.Content
 		case ai.ToolCallEvent:
 			m.buffer += "\n" + styleTool.Render("[tool: "+chunk.ToolCall.Name+"]") + "\n"
 			if len(chunk.ToolCall.Arguments) > 0 {
@@ -278,14 +274,17 @@ func (m *model) handleEvent(event agent.Event) {
 		if e.Error != "" {
 			m.err = e.Error
 		}
-		// Fold the completed response into the transcript and history.
-		// Wrap the buffer before appending so the transcript is
-		// pre-wrapped and never re-processed on subsequent refreshes.
+		// Prepend thinking (lipgloss-styled) to the transcript, then
+		// render the response through glamour for markdown styling.
+		if m.thinking != "" {
+			m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
+			m.transcript += styleThinking.Render(m.thinking) + "\n"
+		}
 		response := ai.NewAssistant(strings.TrimSuffix(m.buffer, "\n"))
-		m.transcript += "\n" + wrapText(response.Content, m.viewport.Width) + "\n"
+		m.transcript += "\n" + renderAssistant(response.Content, m.viewport.Width) + "\n"
 		m.history = append(m.history, response)
 		m.buffer = ""
-		m.thinkingStarted = false
+		m.thinking = ""
 		// Persist the assistant response.
 		if m.store != nil && m.sessionID != "" {
 			if err := m.store.AppendMessage(context.Background(), m.sessionID, response); err != nil {
@@ -309,7 +308,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.history = nil
 		m.transcript = ""
 		m.buffer = ""
-		m.thinkingStarted = false
+		m.thinking = ""
 		m.err = ""
 		m.refresh()
 		return m, nil
@@ -347,27 +346,24 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	default:
 		m.err = "unknown command: " + fields[0]
-		m.refresh()
 		return m, nil
 	}
 }
 
-// handleSessions lists all persisted sessions with ID, created time, and
-// message count.
+// handleSessions lists all sessions from the store.
 func (m model) handleSessions() (tea.Model, tea.Cmd) {
 	if m.store == nil {
-		m.err = "no session store"
-		m.refresh()
+		m.err = "no store available"
 		return m, nil
 	}
 	sessions, err := m.store.ListSessions(context.Background())
 	if err != nil {
-		m.err = "list sessions: " + err.Error()
-		m.refresh()
+		m.storeErr = "list sessions: " + err.Error()
 		return m, nil
 	}
+	m.storeErr = ""
 	if len(sessions) == 0 {
-		m.transcript += "\n" + styleInfo.Render("[no sessions yet]")
+		m.transcript += "\n" + styleInfo.Render("[no sessions yet]") + "\n"
 		m.refresh()
 		return m, nil
 	}
@@ -376,56 +372,48 @@ func (m model) handleSessions() (tea.Model, tea.Cmd) {
 	sb.WriteString(styleInfo.Render("[sessions]"))
 	sb.WriteString("\n")
 	for _, s := range sessions {
-		count, err := m.store.CountMessages(context.Background(), s.ID)
-		if err != nil {
-			count = -1
-		}
-		marker := " "
-		if s.ID == m.sessionID {
-			marker = "*"
-		}
-		sb.WriteString(fmt.Sprintf("%s %s  %s  %d msgs\n", marker, s.ID, s.CreatedAt, count))
+		count, _ := m.store.CountMessages(context.Background(), s.ID)
+		fmt.Fprintf(&sb, "  %s  %d messages\n", s.ID, count)
 	}
 	m.transcript += sb.String()
+	m.refresh()
+	return m, nil
+}
+
+// handleResume loads a session from the store and displays its transcript.
+func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no store available"
+		return m, nil
+	}
+	if len(fields) < 2 {
+		m.err = "usage: /resume <session-id>"
+		return m, nil
+	}
+	id := fields[1]
+	messages, err := m.store.GetMessages(context.Background(), id)
+	if err != nil {
+		m.storeErr = "resume: " + err.Error()
+		return m, nil
+	}
+	m.sessionID = id
+	m.history = messages
+	m.transcript = renderTranscript(messages, m.viewport.Width)
+	m.buffer = ""
+	m.thinking = ""
+	m.err = ""
 	m.storeErr = ""
 	m.refresh()
 	return m, nil
 }
 
-// handleResume loads a session's history, renders the transcript, and
-// continues the conversation in that session.
-func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no session store"
-		m.refresh()
-		return m, nil
+// newSessionID generates a random 8-character hex session identifier.
+func newSessionID() (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
 	}
-	if len(fields) < 2 {
-		m.err = "usage: /resume <id>"
-		m.refresh()
-		return m, nil
-	}
-	id := fields[1]
-	if _, err := m.store.GetSession(context.Background(), id); err != nil {
-		m.err = "resume: " + err.Error()
-		m.refresh()
-		return m, nil
-	}
-	messages, err := m.store.GetMessages(context.Background(), id)
-	if err != nil {
-		m.err = "resume: " + err.Error()
-		m.refresh()
-		return m, nil
-	}
-	m.sessionID = id
-	m.history = messages
-	m.transcript = renderTranscript(messages)
-	m.buffer = ""
-	m.thinkingStarted = false
-	m.err = ""
-	m.storeErr = ""
-	m.refresh()
-	return m, nil
+	return hex.EncodeToString(b), nil
 }
 
 // resizeTextarea adjusts the textarea height based on its current content,
@@ -433,18 +421,24 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 // the viewport to fill the remaining space.
 func (m *model) resizeTextarea() {
 	lines := strings.Count(m.textarea.Value(), "\n") + 1
-	h := minTextareaHeight
-	if lines > h {
-		h = lines
+	if lines < minTextareaHeight {
+		lines = minTextareaHeight
 	}
-	if h > maxTextareaHeight {
-		h = maxTextareaHeight
+	if lines > maxTextareaHeight {
+		lines = maxTextareaHeight
 	}
-	m.textarea.SetHeight(h)
+	m.textarea.SetHeight(lines)
+	vpHeight := m.viewport.Height + m.textarea.Height() - lines
+	if vpHeight < 1 {
+		vpHeight = 1
+	}
+	m.viewport.Height = vpHeight
 }
 
 // renderTranscript renders a message history as the TUI transcript.
-func renderTranscript(messages []ai.Message) string {
+// Assistant messages are routed through renderAssistant so resumed
+// sessions render markdown identically to the live AgentEnd path.
+func renderTranscript(messages []ai.Message, width int) string {
 	var sb strings.Builder
 	for _, msg := range messages {
 		switch m := msg.(type) {
@@ -454,20 +448,11 @@ func renderTranscript(messages []ai.Message) string {
 			sb.WriteString("\n")
 		case ai.Assistant:
 			sb.WriteString("\n")
-			sb.WriteString(m.Content)
+			sb.WriteString(renderAssistant(m.Content, width))
 			sb.WriteString("\n")
 		}
 	}
 	return sb.String()
-}
-
-// newSessionID returns a random 16-byte hex session ID from crypto/rand.
-func newSessionID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // refresh re-renders the viewport content from the transcript and buffer.
@@ -475,67 +460,29 @@ func newSessionID() (string, error) {
 // AgentEnd so the UI thread stays responsive. The viewport handles long
 // lines natively via horizontal scrolling.
 func (m *model) refresh() {
-	content := m.transcript + m.buffer
+	content := m.transcript + m.thinking + m.buffer
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
 
-// wrapText wraps text to the given width, preserving ANSI escape codes.
-// Lines longer than width are split at word boundaries. Lines already
-// containing newlines are handled by splitting first.
-func wrapText(text string, width int) string {
+// renderAssistant renders markdown content through glamour to styled
+// terminal output. Falls back to raw text if rendering fails.
+func renderAssistant(content string, width int) string {
 	if width <= 0 {
-		return text
+		width = 80
 	}
-	lines := strings.Split(text, "\n")
-	var out strings.Builder
-	for i, line := range lines {
-		if i > 0 {
-			out.WriteString("\n")
-		}
-		wrapLine(&out, line, width)
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return content
 	}
-	return out.String()
-}
-
-// wrapLine writes a single line to out, breaking it at word boundaries
-// when it exceeds width. ANSI escape codes are preserved and re-emitted
-// on continuation lines.
-func wrapLine(out *strings.Builder, line string, width int) {
-	// Collect leading ANSI codes so continuation lines keep styling.
-	prefix := ""
-	for len(line) > 0 && line[0] == '\x1b' {
-		end := strings.IndexByte(line[1:], 'm')
-		if end == -1 {
-			break
-		}
-		end += 2 // skip past the 'm'
-		prefix += line[:end]
-		line = line[end:]
+	out, err := r.Render(content)
+	if err != nil {
+		return content
 	}
-
-	words := strings.Fields(line)
-	if len(words) == 0 {
-		out.WriteString(prefix)
-		return
-	}
-	cur := prefix
-	for _, w := range words {
-		// +1 for the space before this word (except first word)
-		sep := " "
-		if cur == prefix {
-			sep = ""
-		}
-		candidate := cur + sep + w
-		if lipgloss.Width(candidate) > width && cur != prefix {
-			out.WriteString(cur)
-			out.WriteString("\n")
-			cur = prefix + w
-		} else {
-			cur = candidate
-		}
-	}
-	out.WriteString(cur)
+	return strings.TrimRight(out, "\n")
 }
 
 // View renders the full screen: viewport on top, textarea below, status last.
@@ -549,10 +496,11 @@ func (m model) View() string {
 	return sb.String()
 }
 
+// statusLine returns the bottom status bar text.
 func (m model) statusLine() string {
 	state := "idle"
 	if m.busy {
-		state = "working..."
+		state = "running"
 	}
 	sess := m.sessionID
 	if sess == "" {
@@ -560,7 +508,11 @@ func (m model) statusLine() string {
 	} else if len(sess) > 8 {
 		sess = sess[:8]
 	}
-	line := fmt.Sprintf("omega | %s/%s | sess: %s | %s | enter to send | /help", m.providerType, m.modelName, sess, state)
+	provider := m.providerType
+	if provider == "" {
+		provider = "ollama"
+	}
+	line := fmt.Sprintf("omega | %s/%s | sess: %s | %s | enter to send | /help", provider, m.modelName, sess, state)
 	if m.err != "" {
 		line += " | " + styleError.Render("error: "+m.err)
 	}
@@ -570,6 +522,7 @@ func (m model) statusLine() string {
 	return line
 }
 
+// renderHelp returns the /help text.
 func renderHelp() string {
 	return "\n" + styleInfo.Render(`[omega chat]
   type a message and press enter to send
@@ -577,21 +530,10 @@ func renderHelp() string {
 
   /exit          quit
   /clear         clear the conversation (keeps the session)
-  /sessions      list persisted sessions
-  /resume <id>   load a session and continue it
+  /sessions      list saved sessions
+  /resume <id>   resume a session
+  /model <name>  switch the model
+  /provider <n>  switch provider (ollama, openai, anthropic)
   /help          show this help
-  /model <name>  switch the model for the next message
-  /provider <p>  switch provider: ollama, openai, or anthropic
-  ctrl+c         quit
-`)
-}
-
-// runChat starts the TUI and returns after it quits.
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("chat: %w", err)
-	}
-	return nil
+`) + "\n"
 }
