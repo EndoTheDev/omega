@@ -11,13 +11,25 @@ import (
 type FakeProvider struct {
 	modelName string
 	script    []StreamEvent
+	scripts   [][]StreamEvent // per-call scripts; the last repeats
 	delay     time.Duration
+	calls     int
+	// LastMessages records the messages passed to the most recent Stream
+	// call, so tests can assert on the history the agent built up.
+	LastMessages []Message
 }
 
 // NewFakeProvider creates a FakeProvider that replays script in order
 // on each Stream call. A non-zero delay is applied before each event.
 func NewFakeProvider(model string, script ...StreamEvent) *FakeProvider {
 	return &FakeProvider{modelName: model, script: script}
+}
+
+// NewFakeProviderScripts creates a FakeProvider that replays each script
+// in order on successive Stream calls; the last script repeats. Use it
+// for multi-turn loops where each turn needs different events.
+func NewFakeProviderScripts(model string, scripts ...[]StreamEvent) *FakeProvider {
+	return &FakeProvider{modelName: model, scripts: scripts}
 }
 
 // WithDelay returns a copy of the provider that sleeps delay before
@@ -36,11 +48,22 @@ func (p *FakeProvider) ModelName() string {
 // Stream replays the scripted events on a channel, respecting context
 // cancellation, and closes the channel when done. An empty script
 // closes the channel immediately.
-func (p *FakeProvider) Stream(ctx context.Context, _ []Message, _ []ToolSchema) <-chan StreamEvent {
+func (p *FakeProvider) Stream(ctx context.Context, messages []Message, _ []ToolSchema) <-chan StreamEvent {
+	p.LastMessages = messages
 	events := make(chan StreamEvent)
 	go func() {
 		defer close(events)
-		for _, event := range p.script {
+		script := p.script
+		if p.scripts != nil {
+			index := p.calls
+			if index >= len(p.scripts) {
+				index = len(p.scripts) - 1
+			}
+			if index >= 0 {
+				script = p.scripts[index]
+			}
+		}
+		for _, event := range script {
 			if p.delay > 0 {
 				select {
 				case <-ctx.Done():
@@ -54,6 +77,7 @@ func (p *FakeProvider) Stream(ctx context.Context, _ []Message, _ []ToolSchema) 
 			case events <- event:
 			}
 		}
+		p.calls++
 	}()
 	return events
 }

@@ -2,47 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
-
-// mockProvider is a scripted Provider for tests. Each call returns the
-// next scripted stream; the final script repeats indefinitely so loops
-// that must keep going (e.g. max-turns) stay alive. A script that ends
-// with no tool calls terminates the loop regardless.
-type mockProvider struct {
-	modelName string
-	scripts   [][]ai.StreamEvent
-	calls     int
-}
-
-func (m *mockProvider) ModelName() string { return m.modelName }
-
-// lastMessages records the messages passed to the most recent Stream call.
-var lastMessages []ai.Message
-
-func (m *mockProvider) Stream(_ context.Context, messages []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
-	lastMessages = messages
-	events := make(chan ai.StreamEvent)
-	go func() {
-		defer close(events)
-		index := m.calls
-		if index >= len(m.scripts) {
-			index = len(m.scripts) - 1
-		}
-		if index >= 0 {
-			for _, e := range m.scripts[index] {
-				events <- e
-			}
-		}
-		m.calls++
-	}()
-	return events
-}
-
-func scripted(events ...ai.StreamEvent) []ai.StreamEvent { return events }
 
 func collect(t *testing.T, events <-chan Event) []Event {
 	t.Helper()
@@ -72,16 +37,21 @@ func eventTypes(events []Event) []string {
 	return out
 }
 
-func TestRunSingleTurn(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-			),
-		},
+func lastAgentEnd(events []Event) AgentEnd {
+	var end AgentEnd
+	for _, e := range events {
+		if v, ok := e.(AgentEnd); ok {
+			end = v
+		}
 	}
+	return end
+}
+
+func TestRunSingleTurn(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
 	agent := NewAgent(provider, nil, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 
@@ -91,31 +61,23 @@ func TestRunSingleTurn(t *testing.T) {
 		t.Fatalf("event order = %v, want %v", types, want)
 	}
 
-	var end AgentEnd
-	for _, e := range events {
-		if v, ok := e.(AgentEnd); ok {
-			end = v
-		}
-	}
+	end := lastAgentEnd(events)
 	if end.Turns != 1 || end.FinishReason != "stop" {
 		t.Fatalf("AgentEnd = %+v, want 1 turn / stop", end)
 	}
 }
 
 func TestRunMultiTurnToolLoop(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
-			),
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-			),
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-	}
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
 	tools := map[string]Tool{
 		"echo": {
 			Description: "echo text",
@@ -134,27 +96,19 @@ func TestRunMultiTurnToolLoop(t *testing.T) {
 		t.Fatalf("event order = %v, want %v", types, want)
 	}
 
-	var end AgentEnd
-	for _, e := range events {
-		if v, ok := e.(AgentEnd); ok {
-			end = v
-		}
-	}
+	end := lastAgentEnd(events)
 	if end.Turns != 2 || end.FinishReason != "stop" {
 		t.Fatalf("AgentEnd = %+v, want 2 turns / stop", end)
 	}
 }
 
 func TestRunMaxTurnsCap(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
-			),
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-	}
+	)
 	tools := map[string]Tool{
 		"echo": {
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
@@ -163,27 +117,17 @@ func TestRunMaxTurnsCap(t *testing.T) {
 	agent := NewAgent(provider, tools, 2)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
-	var end AgentEnd
-	for _, e := range events {
-		if v, ok := e.(AgentEnd); ok {
-			end = v
-		}
-	}
+	end := lastAgentEnd(events)
 	if end.Turns != 2 || end.FinishReason != "max_turns" {
 		t.Fatalf("AgentEnd = %+v, want 2 turns / max_turns", end)
 	}
 }
 
 func TestRunContextCancellation(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
-			),
-		},
-	}
+	provider := ai.NewFakeProvider("fake",
+		ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+	)
 	tools := map[string]Tool{
 		"echo": {
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
@@ -195,67 +139,159 @@ func TestRunContextCancellation(t *testing.T) {
 
 	events := collect(t, agent.Run(ctx, []ai.Message{ai.NewUser("go")}, nil))
 
-	var end AgentEnd
-	for _, e := range events {
-		if v, ok := e.(AgentEnd); ok {
-			end = v
-		}
-	}
+	end := lastAgentEnd(events)
 	if end.FinishReason != "cancelled" || end.Error == "" {
 		t.Fatalf("AgentEnd = %+v, want cancelled with error", end)
 	}
 }
 
 func TestRunPrependsSystemPrompt(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-			),
-		},
-	}
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
 	agent := NewAgent(provider, nil, 0)
 	agent.SetSystemPrompt("you are a coding agent")
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 
-	if len(lastMessages) != 2 {
-		t.Fatalf("messages = %d, want 2 (system + user)", len(lastMessages))
+	if len(provider.LastMessages) != 2 {
+		t.Fatalf("messages = %d, want 2 (system + user)", len(provider.LastMessages))
 	}
-	sys, ok := lastMessages[0].(ai.System)
+	sys, ok := provider.LastMessages[0].(ai.System)
 	if !ok || sys.Content != "you are a coding agent" {
-		t.Fatalf("first message = %#v, want system prompt", lastMessages[0])
+		t.Fatalf("first message = %#v, want system prompt", provider.LastMessages[0])
 	}
-	if _, ok := lastMessages[1].(ai.User); !ok {
-		t.Fatalf("second message = %#v, want user", lastMessages[1])
+	if _, ok := provider.LastMessages[1].(ai.User); !ok {
+		t.Fatalf("second message = %#v, want user", provider.LastMessages[1])
 	}
 }
 
 func TestRunUnknownTool(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nope", Arguments: map[string]any{}}},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
-			),
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-			),
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nope", Arguments: map[string]any{}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-	}
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
 	agent := NewAgent(provider, nil, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
-	var end AgentEnd
-	for _, e := range events {
-		if v, ok := e.(AgentEnd); ok {
-			end = v
-		}
-	}
+	end := lastAgentEnd(events)
 	if end.Turns != 2 || end.FinishReason != "stop" {
 		t.Fatalf("AgentEnd = %+v, want 2 turns / stop (unknown tool handled as error result)", end)
+	}
+}
+
+func TestRunToolExecutionLifecycle(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	tools := map[string]Tool{
+		"echo": {
+			Run: func(_ context.Context, args map[string]any) (string, error) {
+				return args["text"].(string), nil
+			},
+		},
+	}
+	agent := NewAgent(provider, tools, 0)
+	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+
+	// The tool result must be appended to the history fed to the second turn.
+	// LastMessages holds the messages from the most recent (second) Stream call.
+	var found bool
+	for _, m := range provider.LastMessages {
+		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "x" && !tr.IsError {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("tool result not appended to history: %#v", provider.LastMessages)
+	}
+
+	end := lastAgentEnd(events)
+	if end.Turns != 2 || end.FinishReason != "stop" {
+		t.Fatalf("AgentEnd = %+v, want 2 turns / stop", end)
+	}
+}
+
+func TestRunToolErrorHandling(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	tools := map[string]Tool{
+		"boom": {
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				return "", errors.New("kaboom")
+			},
+		},
+	}
+	agent := NewAgent(provider, tools, 0)
+	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+
+	// The error result must be fed back to the model as a tool result.
+	var found bool
+	for _, m := range provider.LastMessages {
+		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "kaboom" && tr.IsError {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("error result not fed back to model: %#v", provider.LastMessages)
+	}
+
+	end := lastAgentEnd(events)
+	if end.Turns != 2 || end.FinishReason != "stop" {
+		t.Fatalf("AgentEnd = %+v, want 2 turns / stop", end)
+	}
+}
+
+func TestRunConcurrentPromptRejection(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "first"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	agent := NewAgent(provider, nil, 0)
+
+	first := agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil)
+	if first == nil {
+		t.Fatal("first Run() returned nil, want a live channel")
+	}
+
+	// Second Run() while the first is active must be rejected.
+	if second := agent.Run(context.Background(), []ai.Message{ai.NewUser("again")}, nil); second != nil {
+		t.Fatal("second Run() returned a channel, want nil (rejected)")
+	}
+
+	collect(t, first)
+}
+
+func TestRunErrorBodyPassthrough(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
+	)
+	agent := NewAgent(provider, nil, 0)
+	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+
+	end := lastAgentEnd(events)
+	if end.FinishReason != "error" || end.Error != "upstream exploded" {
+		t.Fatalf("AgentEnd = %+v, want error / upstream exploded", end)
 	}
 }

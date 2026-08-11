@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/EndoTheDev/omega-dev/internal/ai"
 )
@@ -26,6 +27,8 @@ type Agent struct {
 	maxTurns     int
 	compaction   *CompactionConfig
 	systemPrompt string
+	mu           sync.Mutex
+	running      bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
@@ -52,10 +55,26 @@ func (a *Agent) ModelName() string {
 
 // Run executes the conversation loop and returns a channel of events.
 // The channel is closed when the loop ends. A non-nil tools map overrides
-// the agent's registered tools for this run.
+// the agent's registered tools for this run. Run returns nil if the agent
+// is already running a loop.
 func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string]Tool) <-chan Event {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return nil
+	}
+	a.running = true
+	a.mu.Unlock()
+
 	events := make(chan Event)
-	go a.run(ctx, events, messages, tools)
+	go func() {
+		defer func() {
+			a.mu.Lock()
+			a.running = false
+			a.mu.Unlock()
+		}()
+		a.run(ctx, events, messages, tools)
+	}()
 	return events
 }
 

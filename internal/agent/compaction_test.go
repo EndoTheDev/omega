@@ -20,15 +20,10 @@ func TestEstimateTokens(t *testing.T) {
 }
 
 func TestCompactReplacesMiddle(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "summary text"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-			),
-		},
-	}
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "summary text"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
 	history := []ai.Message{
 		ai.NewSystem("sys"),
 		ai.NewUser("u1"),
@@ -60,7 +55,7 @@ func TestCompactReplacesMiddle(t *testing.T) {
 }
 
 func TestCompactNoOpWhenNothingToCompact(t *testing.T) {
-	provider := &mockProvider{modelName: "mock"}
+	provider := ai.NewFakeProvider("fake")
 	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b")}
 	got, err := compact(context.Background(), provider, history, 1, 1)
 	if err != nil {
@@ -72,12 +67,9 @@ func TestCompactNoOpWhenNothingToCompact(t *testing.T) {
 }
 
 func TestCompactPropagatesSummaryError(t *testing.T) {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "boom"}),
-		},
-	}
+	provider := ai.NewFakeProvider("fake",
+		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "boom"},
+	)
 	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b"), ai.NewUser("c")}
 	if _, err := compact(context.Background(), provider, history, 1, 1); err == nil {
 		t.Fatal("expected error from summarize, got nil")

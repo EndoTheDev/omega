@@ -353,7 +353,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 	if !strings.Contains(m.transcript, "abc123") {
 		t.Fatalf("/sessions missing session id: %q", m.transcript)
 	}
-	if !strings.Contains(m.transcript, "2 msgs") {
+	if !strings.Contains(m.transcript, "2 messages") {
 		t.Fatalf("/sessions missing message count: %q", m.transcript)
 	}
 
@@ -381,7 +381,7 @@ func TestResumeUnknownSession(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
 	updated, _ := m.handleCommand("/resume nope")
 	m = updated.(model)
-	if m.err == "" {
+	if m.storeErr == "" {
 		t.Fatal("expected error for unknown session")
 	}
 }

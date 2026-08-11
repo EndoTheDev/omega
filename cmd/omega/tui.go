@@ -428,6 +428,10 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	id := fields[1]
+	if _, err := m.store.GetSession(context.Background(), id); err != nil {
+		m.storeErr = "resume: " + err.Error()
+		return m, nil
+	}
 	messages, err := m.store.GetMessages(context.Background(), id)
 	if err != nil {
 		m.storeErr = "resume: " + err.Error()
@@ -446,7 +450,7 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 
 // newSessionID generates a random 8-character hex session identifier.
 func newSessionID() (string, error) {
-	b := make([]byte, 4)
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
