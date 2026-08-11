@@ -108,7 +108,7 @@ func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, error) {
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(&cfg.Compaction)
-	ag.SetSystemPrompt(buildSystemPrompt(cfg))
+	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil))
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open store: %w", err)
@@ -118,8 +118,8 @@ func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, error) {
 
 // buildSystemPrompt assembles the agent's system prompt from the
 // project context (AGENTS.md in the working directory), the built-in
-// tools, the environment, and the config's custom prompt.
-func buildSystemPrompt(cfg gateway.Config) string {
+// tools, loaded skills, the environment, and the config's custom prompt.
+func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill) string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
@@ -127,6 +127,7 @@ func buildSystemPrompt(cfg gateway.Config) string {
 	return agent.BuildSystemPrompt(agent.PromptOptions{
 		ProjectContext: agent.LoadProjectContext(cwd),
 		Tools:          agent.NewRegistry(),
+		Skills:         skills,
 		CWD:            cwd,
 		Custom:         cfg.SystemPrompt,
 	})
@@ -215,7 +216,20 @@ func cmdChat(configPath string) error {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer store.Close()
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg), store)
+	skills, err := loadSkills()
+	if err != nil {
+		return fmt.Errorf("load skills: %w", err)
+	}
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills), store, skills)
+}
+
+// loadSkills reads skills from the skills/ directory (or OMEGA_SKILLS_DIR).
+func loadSkills() ([]agent.Skill, error) {
+	dir := os.Getenv("OMEGA_SKILLS_DIR")
+	if dir == "" {
+		dir = "skills"
+	}
+	return agent.LoadSkills(dir)
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.

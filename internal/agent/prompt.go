@@ -8,14 +8,15 @@ import (
 
 // PromptOptions configures the system prompt builder.
 type PromptOptions struct {
-	ProjectContext string       // AGENTS.md contents, may be empty
-	Tools          map[string]Tool // available tools, may be empty
+	ProjectContext string            // AGENTS.md contents, may be empty
+	Tools          map[string]Tool   // available tools, may be empty
+	Skills         []Skill           // loaded skills, may be empty
 	CWD            string
 	Custom         string // user-supplied prompt from config, may be empty
 }
 
 // BuildSystemPrompt constructs the agent's system prompt from the
-// project context, available tools, environment, and any custom prompt.
+// project context, available tools, skills, environment, and any custom prompt.
 // Empty sections are omitted.
 func BuildSystemPrompt(opts PromptOptions) string {
 	var b strings.Builder
@@ -31,6 +32,14 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		b.WriteString("\n## Available Tools\n")
 		for name, tool := range opts.Tools {
 			fmt.Fprintf(&b, "- %s: %s\n", name, tool.Description)
+		}
+	}
+
+	if len(opts.Skills) > 0 {
+		b.WriteString("\n## Available Skills\n")
+		b.WriteString("Invoke a skill by typing its slash command (e.g. /learn-skill).\n")
+		for _, skill := range opts.Skills {
+			fmt.Fprintf(&b, "- /%s: %s\n", skill.Name, skill.Description)
 		}
 	}
 

@@ -23,7 +23,7 @@ func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
 // channel yields streamDoneMsg. This guards the regression where the
 // goroutine's Send never reached the program (m.program was always nil).
 func TestDrainEventsDeliversStream(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 	ch := make(chan agent.Event, 64)
 	m.events = ch
 
@@ -49,7 +49,7 @@ func TestDrainEventsDeliversStream(t *testing.T) {
 // so a second submit wrote to a closed channel and panicked. submit() must
 // allocate a fresh channel per run.
 func TestSubmitCreatesFreshChannel(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 	m.textarea.SetValue("hello")
 	// Simulate a completed first run: the channel is closed.
 	ch := make(chan agent.Event, 64)
@@ -73,7 +73,7 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 // TestHandleEventFoldsStream verifies that response chunks, tool calls, and
 // the agent end fold into the transcript and history in the right order.
 func TestHandleEventFoldsStream(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
@@ -97,7 +97,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 
 // TestHandleEventError verifies a stream error is surfaced and folded.
 func TestHandleEventError(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 	m.handleEvent(agent.StreamEvent{Event: ai.StreamEnd{FinishReason: "error", Error: "boom"}})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
 
@@ -111,7 +111,7 @@ func TestHandleEventError(t *testing.T) {
 
 // TestSlashCommands verifies /new, /model, /help, and unknown handling.
 func TestSlashCommands(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 
 	// /model sets the model for the next run. handleCommand returns a new
 	// model copy (value receiver); the caller must use the return value.
@@ -155,7 +155,7 @@ func TestSlashCommands(t *testing.T) {
 // TestProviderCommand verifies /provider switches the provider type and
 // rejects unknown names.
 func TestProviderCommand(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 
 	updated, _ := m.handleCommand("/provider openai")
 	m = updated.(model)
@@ -258,7 +258,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
 	m.textarea.SetValue("hello")
 
 	// Simulate a completed prior run so submit creates a fresh channel and
@@ -312,7 +312,7 @@ func TestClearKeepsSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
 	m.sessionID = "sess1"
 	m.history = append(m.history, ai.NewUser("hi"))
 	m.transcript = "old text"
@@ -348,7 +348,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
 
 	updated, _ := m.handleCommand("/sessions")
 	m = updated.(model)
@@ -380,7 +380,7 @@ func TestResumeUnknownSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
 	updated, _ := m.handleCommand("/resume nope")
 	m = updated.(model)
 	if m.storeErr == "" {
@@ -395,7 +395,7 @@ func TestResumeUnknownSession(t *testing.T) {
 // updateAutocomplete (run after every keystroke), so the test drives that
 // path before pressing Tab.
 func TestTabComplete(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 
 	// Single match: "/ex" -> "/exit". CursorEnd() moves the cursor to the
 	// end; the cursor position is private on textarea.Model, so we verify
@@ -477,7 +477,7 @@ func TestTabComplete(t *testing.T) {
 // on every update, clear when the input stops starting with "/", and that a
 // single match is auto-selected for immediate Enter/Tab acceptance.
 func TestAutocompleteLiveFilter(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 
 	// "/" matches every known command, nothing selected.
 	m.textarea.SetValue("/")
@@ -523,7 +523,7 @@ func TestAutocompleteLiveFilter(t *testing.T) {
 // TestAutocompleteArrows verifies Up/Down cycle the selection across
 // matches, wrapping at both ends.
 func TestAutocompleteArrows(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	if m.autocompleteIndex != -1 {
@@ -558,7 +558,7 @@ func TestAutocompleteArrows(t *testing.T) {
 // TestAutocompleteAccept verifies Enter accepts the selected match and that
 // Enter on a fully-typed command falls through to submit.
 func TestAutocompleteAccept(t *testing.T) {
-	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil)
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
 
 	// "/mo" is a single match auto-selected; a Down is not needed. Use "/"
 	// (multiple matches) to test arrow-driven selection instead: select

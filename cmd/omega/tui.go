@@ -38,7 +38,8 @@ var (
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
-// knownCommands are the slash commands tab-completion matches against.
+// knownCommands are the built-in slash commands. Skill names are appended
+// at startup, so autocomplete matches both built-ins and loaded skills.
 var knownCommands = []string{"/exit", "/new", "/sessions", "/resume", "/help", "/model", "/provider", "/compact"}
 
 // streamSegment is one ordered piece of a streaming turn. Segments are
@@ -74,13 +75,14 @@ type model struct {
 	historyIndex        int      // position in promptHistory; 0 = empty/current input
 	autocompleteMatches []string // slash commands matching the current input
 	autocompleteIndex   int      // highlighted match; -1 = none selected
+	skills              []agent.Skill // loaded skills, for autocomplete and invocation
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -88,12 +90,16 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, syst
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill) model {
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
+	// Append skill names to knownCommands for autocomplete.
+	for _, s := range skills {
+		knownCommands = append(knownCommands, "/"+s.Name)
+	}
 	return model{
 		textarea:          ta,
 		viewport:          vp,
@@ -104,6 +110,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		compaction:        compaction,
 		systemPrompt:      systemPrompt,
 		store:             store,
+		skills:            skills,
 		autocompleteIndex: -1,
 	}
 }
@@ -464,6 +471,16 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	default:
+		// Check if the command matches a loaded skill.
+		cmd := fields[0]
+		for _, s := range m.skills {
+			if "/"+s.Name == cmd {
+				m.transcript += "\n" + styleInfo.Render("[skill: "+s.Name+"]") + "\n"
+				m.history = append(m.history, ai.NewSystem(s.Content))
+				m.refresh()
+				return m, nil
+			}
+		}
 		m.err = "unknown command: " + fields[0]
 		return m, nil
 	}
