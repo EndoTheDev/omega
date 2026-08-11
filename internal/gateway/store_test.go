@@ -22,7 +22,7 @@ func TestCreateAndGetSession(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	if err := s.CreateSession(ctx, "s1"); err != nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	sess, err := s.GetSession(ctx, "s1")
@@ -34,6 +34,9 @@ func TestCreateAndGetSession(t *testing.T) {
 	}
 	if sess.CreatedAt == "" || sess.UpdatedAt == "" {
 		t.Fatalf("timestamps not set: %+v", sess)
+	}
+	if sess.ParentID != "" || sess.Label != "" {
+		t.Fatalf("new session should have empty parent and label: %+v", sess)
 	}
 }
 
@@ -48,10 +51,10 @@ func TestGetSessionNotFound(t *testing.T) {
 func TestCreateSessionDuplicate(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.CreateSession(ctx, "s1"); err != nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.CreateSession(ctx, "s1"); err == nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err == nil {
 		t.Fatalf("duplicate create should error")
 	}
 }
@@ -60,7 +63,7 @@ func TestListSessions(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	for _, id := range []string{"a", "b", "c"} {
-		if err := s.CreateSession(ctx, id); err != nil {
+		if err := s.CreateSession(ctx, id, "", ""); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
@@ -76,7 +79,7 @@ func TestListSessions(t *testing.T) {
 func TestDeleteSession(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.CreateSession(ctx, "s1"); err != nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := s.DeleteSession(ctx, "s1"); err != nil {
@@ -87,10 +90,145 @@ func TestDeleteSession(t *testing.T) {
 	}
 }
 
+func TestBranchSession(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.BranchSession(ctx, "root", "child"); err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	child, err := s.GetSession(ctx, "child")
+	if err != nil {
+		t.Fatalf("get child: %v", err)
+	}
+	if child.ParentID != "root" {
+		t.Fatalf("child parent = %q, want root", child.ParentID)
+	}
+	// Branching from a missing parent must fail.
+	if err := s.BranchSession(ctx, "missing", "orphan"); err == nil {
+		t.Fatal("branch from missing parent should error")
+	}
+}
+
+func TestSetLabel(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.SetLabel(ctx, "s1", "my label"); err != nil {
+		t.Fatalf("set label: %v", err)
+	}
+	sess, err := s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.Label != "my label" {
+		t.Fatalf("label = %q, want my label", sess.Label)
+	}
+	// Empty label clears it.
+	if err := s.SetLabel(ctx, "s1", ""); err != nil {
+		t.Fatalf("clear label: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.Label != "" {
+		t.Fatalf("label = %q, want empty after clear", sess.Label)
+	}
+}
+
+func TestGetSessionTree(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// root -> child -> grandchild, plus a second root.
+	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := s.CreateSession(ctx, "grand", "child", ""); err != nil {
+		t.Fatalf("create grand: %v", err)
+	}
+	if err := s.CreateSession(ctx, "other", "", ""); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	roots, err := s.GetSessionTree(ctx)
+	if err != nil {
+		t.Fatalf("get tree: %v", err)
+	}
+	if len(roots) != 2 {
+		t.Fatalf("roots = %d, want 2", len(roots))
+	}
+	// Find the root with a child.
+	var root *SessionNode
+	for _, r := range roots {
+		if r.ID == "root" {
+			root = r
+		}
+	}
+	if root == nil {
+		t.Fatal("root session missing from tree")
+	}
+	if len(root.Children) != 1 || root.Children[0].ID != "child" {
+		t.Fatalf("root children = %v, want [child]", root.Children)
+	}
+	if len(root.Children[0].Children) != 1 || root.Children[0].Children[0].ID != "grand" {
+		t.Fatalf("child children = %v, want [grand]", root.Children[0].Children)
+	}
+}
+
+func TestDeleteSessionCascadesToChildren(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := s.DeleteSession(ctx, "root"); err != nil {
+		t.Fatalf("delete root: %v", err)
+	}
+	if _, err := s.GetSession(ctx, "child"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("child err = %v, want ErrNotFound after parent delete", err)
+	}
+}
+
+func TestGetAncestorMessages(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "root", ai.NewUser("root msg")); err != nil {
+		t.Fatalf("append root: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "child", ai.NewUser("child msg")); err != nil {
+		t.Fatalf("append child: %v", err)
+	}
+	got, err := s.GetAncestorMessages(ctx, "child")
+	if err != nil {
+		t.Fatalf("get ancestor messages: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	assertUser(t, got[0], "root msg")
+	assertUser(t, got[1], "child msg")
+}
+
 func TestAppendAndGetMessages(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.CreateSession(ctx, "s1"); err != nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
@@ -130,7 +268,7 @@ func TestMessagesPersistAcrossStoreReopen(t *testing.T) {
 		t.Fatalf("open store 1: %v", err)
 	}
 	ctx := context.Background()
-	if err := s1.CreateSession(ctx, "s1"); err != nil {
+	if err := s1.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := s1.AppendMessage(ctx, "s1", ai.NewUser("persist me")); err != nil {
@@ -156,7 +294,7 @@ func TestMessagesPersistAcrossStoreReopen(t *testing.T) {
 func TestDeleteSessionCascadesMessages(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.CreateSession(ctx, "s1"); err != nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := s.AppendMessage(ctx, "s1", ai.NewUser("bye")); err != nil {
@@ -177,7 +315,7 @@ func TestDeleteSessionCascadesMessages(t *testing.T) {
 func TestCountMessages(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.CreateSession(ctx, "s1"); err != nil {
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if n, err := s.CountMessages(ctx, "s1"); err != nil || n != 0 {

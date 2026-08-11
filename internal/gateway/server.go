@@ -207,7 +207,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		if req.ID == "" {
 			req.ID = newSessionID()
 		}
-		if err := s.store.CreateSession(r.Context(), req.ID); err != nil {
+		if err := s.store.CreateSession(r.Context(), req.ID, "", ""); err != nil {
 			http.Error(w, "create session: "+err.Error(), http.StatusConflict)
 			return
 		}

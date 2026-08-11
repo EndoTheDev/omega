@@ -338,7 +338,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 
-	if err := s.CreateSession(ctx, "abc123"); err != nil {
+	if err := s.CreateSession(ctx, "abc123", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := s.AppendMessage(ctx, "abc123", ai.NewUser("first")); err != nil {
@@ -385,6 +385,162 @@ func TestResumeUnknownSession(t *testing.T) {
 	m = updated.(model)
 	if m.storeErr == "" {
 		t.Fatal("expected error for unknown session")
+	}
+}
+
+// TestBranchCommand verifies /branch creates a child session, inherits the
+// parent's history, and switches the active session to the branch.
+func TestBranchCommand(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "parent", "", ""); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "parent", ai.NewUser("root msg")); err != nil {
+		t.Fatalf("append parent: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+	m.sessionID = "parent"
+
+	updated, _ := m.handleCommand("/branch")
+	m = updated.(model)
+
+	// A new session was created and inherited the parent history.
+	if m.sessionID == "" || m.sessionID == "parent" {
+		t.Fatalf("branch session = %q, want a new id", m.sessionID)
+	}
+	sess, err := s.GetSession(ctx, m.sessionID)
+	if err != nil {
+		t.Fatalf("get branch session: %v", err)
+	}
+	if sess.ParentID != "parent" {
+		t.Fatalf("branch parent = %q, want parent", sess.ParentID)
+	}
+	if len(m.history) != 1 {
+		t.Fatalf("branch history len = %d, want 1", len(m.history))
+	}
+	if !strings.Contains(m.transcript, "root msg") {
+		t.Fatalf("branch transcript missing inherited history: %q", m.transcript)
+	}
+
+	// Branch from an explicit id.
+	updated, _ = m.handleCommand("/branch parent")
+	m = updated.(model)
+	if m.sessionID == "parent" {
+		t.Fatalf("explicit branch left session as parent")
+	}
+	if sess, _ := s.GetSession(ctx, m.sessionID); sess.ParentID != "parent" {
+		t.Fatalf("explicit branch parent = %q, want parent", sess.ParentID)
+	}
+
+	// Branch from a missing session reports an error.
+	updated, _ = m.handleCommand("/branch nope")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected error branching from unknown session")
+	}
+}
+
+// TestLabelCommand verifies /label sets and clears a session label.
+func TestLabelCommand(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+	m.sessionID = "s1"
+
+	updated, _ := m.handleCommand("/label my branch")
+	m = updated.(model)
+	if m.storeErr != "" {
+		t.Fatalf("label store error: %s", m.storeErr)
+	}
+	sess, err := s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.Label != "my branch" {
+		t.Fatalf("label = %q, want my branch", sess.Label)
+	}
+	if !strings.Contains(m.transcript, "[label: my branch]") {
+		t.Fatalf("transcript missing label confirm: %q", m.transcript)
+	}
+
+	// No text clears the label.
+	updated, _ = m.handleCommand("/label")
+	m = updated.(model)
+	sess, _ = s.GetSession(ctx, "s1")
+	if sess.Label != "" {
+		t.Fatalf("label = %q, want empty after clear", sess.Label)
+	}
+
+	// No current session reports an error.
+	m2 := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+	updated, _ = m2.handleCommand("/label x")
+	m2 = updated.(model)
+	if m2.err == "" {
+		t.Fatal("expected error labeling with no current session")
+	}
+}
+
+// TestTreeCommand verifies /tree renders the session tree with nesting,
+// labels, and message counts.
+func TestTreeCommand(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := s.SetLabel(ctx, "root", "main"); err != nil {
+		t.Fatalf("set label: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "root", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append root: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+	updated, _ := m.handleCommand("/tree")
+	m = updated.(model)
+	if m.storeErr != "" {
+		t.Fatalf("tree store error: %s", m.storeErr)
+	}
+
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "root") || !strings.Contains(plain, "child") {
+		t.Fatalf("tree missing session ids: %q", plain)
+	}
+	if !strings.Contains(plain, "main") {
+		t.Fatalf("tree missing label: %q", plain)
+	}
+	if !strings.Contains(plain, "1 messages") {
+		t.Fatalf("tree missing message count: %q", plain)
+	}
+	// Child is indented deeper than root.
+	rootIdx := strings.Index(plain, "root")
+	childIdx := strings.Index(plain, "child")
+	if rootIdx < 0 || childIdx <= rootIdx {
+		t.Fatalf("tree order wrong: root=%d child=%d", rootIdx, childIdx)
 	}
 }
 

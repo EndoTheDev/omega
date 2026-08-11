@@ -86,9 +86,9 @@ AGENTS.md (root — this file)
 ├── internal/
 │   ├── ai/                   # provider abstraction, stream events, message types, retry, multi-provider
 │   ├── agent/                # multi-turn loop, tool execution, compaction, project context, system prompt, skills
-│   └── gateway/              # HTTP server, SSE streaming, session store, config
+│   └── gateway/              # HTTP server, SSE streaming, session store, config, session tree
 └── cmd/
-    └── omega/                # single binary: serve, run, health, chat
+    └── omega/                # single binary: serve, run, health, chat; /branch, /label, /tree
 ```
 
 ## Child Doc Shape
@@ -128,5 +128,5 @@ rules but cannot override core contracts.
 | `agents/`           | Reference   | Commit conventions (COMMIT.md)                                                      |
 | `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types, retry, multi-provider    |
 | `internal/agent/`   | Implemented | Multi-turn loop, tool execution, compaction, project context, system prompt, skills |
-| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config                                   |
+| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config, session tree                                   |
 | `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat                                             |

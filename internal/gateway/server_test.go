@@ -269,7 +269,7 @@ func TestSessionsNoStore(t *testing.T) {
 func TestChatWithSessionPersists(t *testing.T) {
 	s, store := newTestServerWithStore(t)
 	ctx := context.Background()
-	if err := store.CreateSession(ctx, "s1"); err != nil {
+	if err := store.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 

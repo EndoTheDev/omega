@@ -40,7 +40,7 @@ var (
 
 // knownCommands are the built-in slash commands. Skill names are appended
 // at startup, so autocomplete matches both built-ins and loaded skills.
-var knownCommands = []string{"/exit", "/new", "/sessions", "/resume", "/help", "/model", "/provider", "/compact"}
+var knownCommands = []string{"/exit", "/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/help", "/model", "/provider", "/compact"}
 
 // streamSegment is one ordered piece of a streaming turn. Segments are
 // appended in the order the model emits them, preserving the narrative
@@ -293,7 +293,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 				m.refresh()
 				return m, nil
 			}
-			if err := m.store.CreateSession(context.Background(), id); err != nil {
+			if err := m.store.CreateSession(context.Background(), id, "", ""); err != nil {
 				m.storeErr = "create session: " + err.Error()
 				m.busy = false
 				m.refresh()
@@ -440,6 +440,12 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleSessions()
 	case "/resume":
 		return m.handleResume(fields)
+	case "/branch":
+		return m.handleBranch(fields)
+	case "/label":
+		return m.handleLabel(fields)
+	case "/tree":
+		return m.handleTree()
 	case "/compact":
 		return m.handleCompact(fields)
 	case "/help":
@@ -601,6 +607,120 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	m.segments = nil
 	m.err = ""
 	m.storeErr = ""
+	m.refresh()
+	return m, nil
+}
+
+// handleBranch creates a new session under the current (or given) session
+// and switches to it. The branch inherits the parent's history via
+// GetAncestorMessages.
+func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no store available"
+		return m, nil
+	}
+	parentID := m.sessionID
+	if len(fields) > 1 {
+		parentID = fields[1]
+	}
+	if parentID == "" {
+		m.err = "no current session to branch; /resume <id> first or pass one: /branch <id>"
+		return m, nil
+	}
+	if _, err := m.store.GetSession(context.Background(), parentID); err != nil {
+		m.err = "branch: " + err.Error()
+		return m, nil
+	}
+	id, err := newSessionID()
+	if err != nil {
+		m.err = "branch: " + err.Error()
+		return m, nil
+	}
+	if err := m.store.BranchSession(context.Background(), parentID, id); err != nil {
+		m.storeErr = "branch: " + err.Error()
+		return m, nil
+	}
+	m.storeErr = ""
+	messages, err := m.store.GetAncestorMessages(context.Background(), id)
+	if err != nil {
+		m.storeErr = "branch: " + err.Error()
+		return m, nil
+	}
+	m.sessionID = id
+	m.history = messages
+	m.transcript = renderTranscript(messages, m.viewport.Width)
+	m.segments = nil
+	m.err = ""
+	m.refresh()
+	return m, nil
+}
+
+// handleLabel sets (or clears, with no text) a label on the current session.
+func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no store available"
+		return m, nil
+	}
+	if m.sessionID == "" {
+		m.err = "no current session to label"
+		return m, nil
+	}
+	label := ""
+	if len(fields) > 1 {
+		label = strings.Join(fields[1:], " ")
+	}
+	if err := m.store.SetLabel(context.Background(), m.sessionID, label); err != nil {
+		m.storeErr = "label: " + err.Error()
+		return m, nil
+	}
+	m.storeErr = ""
+	if label == "" {
+		m.transcript += "\n" + styleInfo.Render("[label cleared]") + "\n"
+	} else {
+		m.transcript += "\n" + styleInfo.Render("[label: "+label+"]") + "\n"
+	}
+	m.refresh()
+	return m, nil
+}
+
+// handleTree renders the session tree with labels and message counts.
+func (m model) handleTree() (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no store available"
+		return m, nil
+	}
+	roots, err := m.store.GetSessionTree(context.Background())
+	if err != nil {
+		m.storeErr = "tree: " + err.Error()
+		return m, nil
+	}
+	m.storeErr = ""
+	if len(roots) == 0 {
+		m.transcript += "\n" + styleInfo.Render("[no sessions yet]") + "\n"
+		m.refresh()
+		return m, nil
+	}
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(styleInfo.Render("[session tree]"))
+	sb.WriteString("\n")
+	var render func(node *gateway.SessionNode, depth int)
+	render = func(node *gateway.SessionNode, depth int) {
+		indent := strings.Repeat("  ", depth)
+		count, _ := m.store.CountMessages(context.Background(), node.ID)
+		label := node.Label
+		if label != "" {
+			label = "  " + label
+		}
+		fmt.Fprintf(&sb, "%s%s%s  %d messages\n", indent, node.ID, label, count)
+		for _, child := range node.Children {
+			render(child, depth+1)
+		}
+	}
+	for _, root := range roots {
+		render(root, 0)
+	}
+	m.transcript += sb.String()
 	m.refresh()
 	return m, nil
 }
@@ -803,6 +923,9 @@ func renderHelp() string {
   /new           start a new conversation (keeps the session)
   /sessions      list saved sessions
   /resume <id>   resume a session
+  /branch [id]   branch a new session from the current (or given) one
+  /label [text]  set a label on the current session (no text clears it)
+  /tree          show the session tree
   /model <name>  switch the model
   /provider <n>  switch provider (ollama, openai, anthropic)
   /compact       summarize conversation history
