@@ -18,7 +18,7 @@ func TestOllamaStream(t *testing.T) {
 		t.Skip("OLLAMA_HOST and OLLAMA_MODEL not set; skipping live stream test")
 	}
 
-	provider := NewOllamaProvider(model, host)
+	provider := NewOllamaProvider(model, host, "")
 	if provider.ModelName() != model {
 		t.Fatalf("expected model %q, got %q", model, provider.ModelName())
 	}

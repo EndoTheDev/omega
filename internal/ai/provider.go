@@ -9,12 +9,12 @@ import (
 
 // NewProvider creates a Provider of the given type ("ollama", "openai",
 // or "anthropic"). apiKey may be empty; OpenAI and Anthropic fall back
-// to their OPENAI_API_KEY / ANTHROPIC_API_KEY / ANTHROPIC_API_KEY env vars, and Ollama
-// ignores it. host may be empty to use the provider default base URL.
+// to their OPENAI_API_KEY / ANTHROPIC_API_KEY env vars, and Ollama uses
+// it for Ollama Cloud direct connections (empty for local). host may be empty to use the provider default base URL.
 func NewProvider(providerType, model, host, apiKey string) (Provider, error) {
 	switch providerType {
 	case "", "ollama":
-		return NewOllamaProvider(model, host), nil
+		return NewOllamaProvider(model, host, apiKey), nil
 	case "openai":
 		return NewOpenAIProvider(model, host, apiKey), nil
 	case "anthropic":

@@ -1,4 +1,4 @@
-# omega
+# Ω omega
 
 omega is a terminal-based AI assistant that can read your files, run
 commands, and edit code. It talks to LLM providers (Ollama, OpenAI,

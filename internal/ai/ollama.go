@@ -16,12 +16,14 @@ import (
 type OllamaProvider struct {
 	modelName string
 	baseURL   string
+	apiKey    string
 }
 
 // NewOllamaProvider creates an OllamaProvider. If baseURL is empty,
 // it defaults to OLLAMA_HOST or "http://localhost:11434". If
-// modelName is empty, it defaults to OLLAMA_MODEL.
-func NewOllamaProvider(modelName, baseURL string) *OllamaProvider {
+// modelName is empty, it defaults to OLLAMA_MODEL. apiKey is used
+// for Ollama Cloud direct connections; empty for local.
+func NewOllamaProvider(modelName, baseURL, apiKey string) *OllamaProvider {
 	if baseURL == "" {
 		baseURL = os.Getenv("OLLAMA_HOST")
 	}
@@ -34,6 +36,7 @@ func NewOllamaProvider(modelName, baseURL string) *OllamaProvider {
 	return &OllamaProvider{
 		modelName: modelName,
 		baseURL:   strings.TrimRight(baseURL, "/"),
+		apiKey:    apiKey,
 	}
 }
 
@@ -139,6 +142,9 @@ func (p *OllamaProvider) stream(ctx context.Context, events chan<- StreamEvent, 
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
 
 	resp, err := retryHTTP(ctx, req)
 	if err != nil {
