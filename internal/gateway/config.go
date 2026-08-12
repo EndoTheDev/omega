@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/EndoTheDev/omega-dev/internal/agent"
+	"github.com/EndoTheDev/omega/internal/agent"
 	"gopkg.in/yaml.v3"
 )
 

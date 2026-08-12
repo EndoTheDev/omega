@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega/internal/ai"
 )
 
 // requireTool returns the named tool from the built-in registry, failing the

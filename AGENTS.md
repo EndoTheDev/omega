@@ -1,8 +1,8 @@
-# AGENTS.md - omega-dev
+# AGENTS.md - omega
 
 ## Purpose
 
-omega-dev is a Go port of the Pi/Tau event-stream agent architecture.
+omega is a Go port of the Pi/Tau event-stream agent architecture.
 Three layers, one job each. Events are the contract. The whole thing is
 readable as a textbook.
 
@@ -14,7 +14,7 @@ in Go.
 
 - **Repository:** `D:\Code\ideas\omega-dev-golang\omega-dev`
 - **Language:** Go 1.26.5
-- **Module:** `github.com/EndoTheDev/omega-dev`
+- **Module:** `github.com/EndoTheDev/omega`
 - **Dependencies:** Added when a layer requires them, not before.
   Prefer the standard library.
 - **Entry point:** `omega` (single binary: `serve`, `run`, `health`, `chat`)

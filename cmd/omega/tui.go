@@ -12,9 +12,9 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"github.com/EndoTheDev/omega-dev/internal/agent"
-	"github.com/EndoTheDev/omega-dev/internal/ai"
-	"github.com/EndoTheDev/omega-dev/internal/gateway"
+	"github.com/EndoTheDev/omega/internal/agent"
+	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/internal/gateway"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -1371,11 +1371,21 @@ func renderAssistant(content string, width int) string {
 	return strings.TrimRight(out, "\n")
 }
 
+// omegaVersion is the displayed version. ponytail: hardcoded; upgrade
+// path: ldflags injection (-ldflags "-X main.omegaVersion=v0.2.0").
+const omegaVersion = "v0.1.0"
+
 // View renders the full screen: viewport on top, status bar, then the
-// autocomplete dropup panel (when open), textarea at the bottom.
+// autocomplete dropup panel (when open), textarea at the bottom. When
+// the conversation is empty (fresh start or /new), a startup splash
+// replaces the viewport.
 func (m model) View() string {
 	var sb strings.Builder
-	sb.WriteString(m.viewport.View())
+	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
+		sb.WriteString(m.splashView())
+	} else {
+		sb.WriteString(m.viewport.View())
+	}
 	sb.WriteString("\n")
 	sb.WriteString(styleStatus.Render(m.statusLine()))
 	sb.WriteString("\n")
@@ -1387,9 +1397,49 @@ func (m model) View() string {
 	return sb.String()
 }
 
+// splashView renders the startup splash: the ASCII omega logo on the
+// left and version/model/tools/hints on the right, side by side. Shown
+// when the conversation is empty; scrolls away on first message or
+// command.
+func (m model) splashView() string {
+	provider := m.providerType
+	if provider == "" {
+		provider = "ollama"
+	}
+	toolCount := len(agent.NewRegistry())
+	skillCount := len(m.skills)
+	logo := []string{
+		`   #"""#  `,
+		`  #     # `,
+		`  #     # `,
+		`  m#   #m `,
+	}
+	info := []string{
+		"omega " + omegaVersion,
+		provider + "/" + m.modelName,
+		fmt.Sprintf("%d tools | %d skills", toolCount, skillCount),
+		"/help for commands - enter to start",
+	}
+	var lines []string
+	lines = append(lines, "") // blank line at the top
+	for i := 0; i < len(logo); i++ {
+		lines = append(lines, styleInfo.Render(fmt.Sprintf("%-6s  %s", logo[i], info[i])))
+	}
+	// Pad with blank lines to fill the viewport height so the
+	// status bar and textarea stay at the bottom of the terminal.
+	splashHeight := m.viewport.Height
+	if splashHeight <= 0 {
+		splashHeight = 20
+	}
+	for len(lines) < splashHeight {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // windowTitle builds the terminal title: state + model.
 func windowTitle(state, modelName string) string {
-	return fmt.Sprintf("omega | %s | %s", state, modelName)
+	return fmt.Sprintf("Ω | %s | %s", state, modelName)
 }
 
 // titleCmd returns a Bubble Tea command that sets the window title to
@@ -1426,7 +1476,7 @@ func (m model) statusLine() string {
 	if m.compaction != nil && m.compaction.ContextWindow > 0 {
 		window = m.compaction.ContextWindow
 	}
-	line := fmt.Sprintf("omega | %s | %s/%s | tokens: %d/%d | %s", state, provider, m.modelName, tokens, window, sess)
+	line := fmt.Sprintf("Ω | %s | %s/%s | tokens: %d/%d | %s", state, provider, m.modelName, tokens, window, sess)
 	if m.err != "" {
 		line += " | " + styleError.Render("error: "+m.err)
 	}

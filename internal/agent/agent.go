@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega/internal/ai"
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.

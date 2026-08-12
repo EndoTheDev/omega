@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega/internal/ai"
 )
 
 // charsPerToken is the char-to-token ratio used by estimateTokens.

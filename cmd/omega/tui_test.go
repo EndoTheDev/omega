@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega-dev/internal/agent"
-	"github.com/EndoTheDev/omega-dev/internal/ai"
-	"github.com/EndoTheDev/omega-dev/internal/gateway"
+	"github.com/EndoTheDev/omega/internal/agent"
+	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/internal/gateway"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -864,8 +864,8 @@ func TestStatusLineFormat(t *testing.T) {
 	m.sessionID = "abc123"
 
 	line := ansiStrip(m.statusLine())
-	if !strings.Contains(line, "omega") {
-		t.Fatalf("status line missing omega: %q", line)
+	if !strings.Contains(line, "Ω") {
+		t.Fatalf("status line missing Ω: %q", line)
 	}
 	if !strings.Contains(line, "idle") {
 		t.Fatalf("status line missing idle: %q", line)
@@ -1219,11 +1219,11 @@ func TestRenderTranscriptCompacted(t *testing.T) {
 
 // TestWindowTitle verifies the terminal title format.
 func TestWindowTitle(t *testing.T) {
-	if got := windowTitle("idle", "glm-5.2"); got != "omega | idle | glm-5.2" {
-		t.Fatalf("idle title = %q, want %q", got, "omega | idle | glm-5.2")
+	if got := windowTitle("idle", "glm-5.2"); got != "Ω | idle | glm-5.2" {
+		t.Fatalf("idle title = %q, want %q", got, "Ω | idle | glm-5.2")
 	}
-	if got := windowTitle("running", "glm-5.2"); got != "omega | running | glm-5.2" {
-		t.Fatalf("running title = %q, want %q", got, "omega | running | glm-5.2")
+	if got := windowTitle("running", "glm-5.2"); got != "Ω | running | glm-5.2" {
+		t.Fatalf("running title = %q, want %q", got, "Ω | running | glm-5.2")
 	}
 }
 
@@ -1337,5 +1337,56 @@ func TestAutoNameIgnoredAfterNew(t *testing.T) {
 	}
 	if m.autoNamed {
 		t.Fatal("stale auto-name blocked re-naming (autoNamed set)")
+	}
+}
+
+// TestSplashView verifies the startup splash contains the logo,
+// version, model, tool count, and help hint.
+func TestSplashView(t *testing.T) {
+	m := newChatModel("ollama", "glm-5.2", "http://localhost:11434", "", nil, "", nil, nil)
+	splash := ansiStrip(m.splashView())
+	for _, want := range []string{`#"""#`, "omega", "v0.1.0", "ollama/glm-5.2", "tools", "/help"} {
+		if !strings.Contains(splash, want) {
+			t.Fatalf("splash missing %q: %q", want, splash)
+		}
+	}
+}
+
+// TestSplashDisappearsAfterSubmit verifies the splash is replaced by
+// the viewport once a message is submitted.
+func TestSplashDisappearsAfterSubmit(t *testing.T) {
+	m := newChatModel("ollama", "glm-5.2", "http://localhost:11434", "", nil, "", nil, nil)
+	// Fresh model shows splash.
+	view := ansiStrip(m.View())
+	if !strings.Contains(view, `#"""#`) {
+		t.Fatal("fresh model should show splash")
+	}
+	// After submit, transcript is non-empty; View no longer shows splash.
+	m.textarea.SetValue("hello")
+	up, _ := m.submit()
+	m = up.(model)
+	view = ansiStrip(m.View())
+	if strings.Contains(view, `#"""#`) {
+		t.Fatal("splash should disappear after submit")
+	}
+}
+
+// TestSplashReappearsAfterNew verifies the splash returns after /new
+// clears the conversation.
+func TestSplashReappearsAfterNew(t *testing.T) {
+	m := newChatModel("ollama", "glm-5.2", "http://localhost:11434", "", nil, "", nil, nil)
+	m.transcript = "some content"
+	m.history = append(m.history, ai.NewUser("hi"))
+	// Not showing splash (has content).
+	view := ansiStrip(m.View())
+	if strings.Contains(view, `#"""#`) {
+		t.Fatal("should not show splash with content")
+	}
+	// /new clears everything; splash returns.
+	up, _ := m.handleCommand("/new")
+	m = up.(model)
+	view = ansiStrip(m.View())
+	if !strings.Contains(view, `#"""#`) {
+		t.Fatal("splash should reappear after /new")
 	}
 }

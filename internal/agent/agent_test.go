@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega-dev/internal/ai"
+	"github.com/EndoTheDev/omega/internal/ai"
 )
 
 func collect(t *testing.T, events <-chan Event) []Event {

@@ -1,4 +1,4 @@
-module github.com/EndoTheDev/omega-dev
+module github.com/EndoTheDev/omega
 
 go 1.26.5
 
