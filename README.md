@@ -51,7 +51,7 @@ provider abstraction, and the standard library for everything HTTP.
 
 - Go 1.26.5+
 - An LLM provider:
-  - [Ollama](https://ollama.com) (local, free, default)
+  - [Ollama](https://ollama.com) - local (free, default) or Ollama Cloud (API key)
   - OpenAI API key
   - Anthropic API key
 
@@ -78,8 +78,8 @@ Edit `config.yaml` to set your provider, model, and API key:
 provider:
   type: ollama # ollama, openai, or anthropic
   model_name: llama3 # required
-  host: http://localhost:11434
-  api_key: # openai/anthropic only
+  host: http://localhost:11434 # use https://ollama.com for Ollama Cloud
+  api_key: # required for Ollama Cloud, OpenAI, and Anthropic
 ```
 
 ### Run
@@ -120,27 +120,39 @@ everything over HTTP.
 All values can be set in `config.yaml` or overridden by environment
 variables.
 
-| Key                         | Env var                           | Default                  | Description                                                                      |
-| --------------------------- | --------------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
-| `provider.type`             | `OMEGA_PROVIDER`                  | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`                                        |
-| `provider.model_name`       | `OMEGA_MODEL`                     | `llama3`                 | Model name                                                                       |
-| `provider.host`             | `OMEGA_HOST`                      | `http://localhost:11434` | Provider base URL                                                                |
-| `provider.api_key`          | `OMEGA_API_KEY`                   |                          | API key (OpenAI/Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
-| `server.port`               | `OMEGA_PORT`                      | `8099`                   | HTTP listen port                                                                 |
-| `store.db_path`             | `OMEGA_DB_PATH`                   | `omega.db`               | SQLite database path                                                             |
-| `compaction.enabled`        |                                   | `true`                   | Enable context compaction                                                        |
-| `compaction.threshold`      | `OMEGA_COMPACTION_THRESHOLD`      | `0.6`                    | Fraction of context window that triggers compaction                              |
-| `compaction.context_window` | `OMEGA_COMPACTION_CONTEXT_WINDOW` | `32768`                  | Model context window in tokens                                                   |
-| `compaction.keep_first`     |                                   | `2`                      | Messages preserved verbatim at start                                             |
-| `compaction.keep_last`      |                                   | `10`                     | Messages preserved verbatim at end                                               |
+| Key                         | Env var                           | Default                  | Description                                                                                     |
+| --------------------------- | --------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| `provider.type`             | `OMEGA_PROVIDER`                  | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`                                                       |
+| `provider.model_name`       | `OMEGA_MODEL`                     | `llama3`                 | Model name                                                                                      |
+| `provider.host`             | `OMEGA_HOST`                      | `http://localhost:11434` | Provider base URL                                                                               |
+| `provider.api_key`          | `OMEGA_API_KEY`                   |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
+| `server.port`               | `OMEGA_PORT`                      | `8099`                   | HTTP listen port                                                                                |
+| `store.db_path`             | `OMEGA_DB_PATH`                   | `omega.db`               | SQLite database path                                                                            |
+| `compaction.enabled`        |                                   | `true`                   | Enable context compaction                                                                       |
+| `compaction.threshold`      | `OMEGA_COMPACTION_THRESHOLD`      | `0.6`                    | Fraction of context window that triggers compaction                                             |
+| `compaction.context_window` | `OMEGA_COMPACTION_CONTEXT_WINDOW` | `32768`                  | Model context window in tokens                                                                  |
+| `compaction.keep_first`     |                                   | `2`                      | Messages preserved verbatim at start                                                            |
+| `compaction.keep_last`      |                                   | `10`                     | Messages preserved verbatim at end                                                              |
 
 ## Providers
 
-| Provider  | Type        | Requires      | Default Host                   |
-| --------- | ----------- | ------------- | ------------------------------ |
-| Ollama    | `ollama`    | Local install | `http://localhost:11434`       |
-| OpenAI    | `openai`    | API key       | `https://api.openai.com/v1`    |
-| Anthropic | `anthropic` | API key       | `https://api.anthropic.com/v1` |
+| Provider       | Type        | Requires      | Default Host                   |
+| -------------- | ----------- | ------------- | ------------------------------ |
+| Ollama (local) | `ollama`    | Local install | `http://localhost:11434`       |
+| Ollama Cloud   | `ollama`    | API key       | `https://ollama.com`           |
+| OpenAI         | `openai`    | API key       | `https://api.openai.com/v1`    |
+| Anthropic      | `anthropic` | API key       | `https://api.anthropic.com/v1` |
+
+Ollama supports three connection modes:
+
+- **Local** - Default. Set `host: http://localhost:11434`, leave
+  `api_key` empty.
+- **Cloud via local proxy** - Keep `host` as localhost. Your local
+  Ollama instance handles cloud auth transparently (e.g.
+  `ollama run gpt-oss:120b-cloud`).
+- **Cloud direct** - Set `host: https://ollama.com` and
+  `api_key: <your-key>`. omega sends a Bearer token in the
+  Authorization header.
 
 Switch providers at runtime in the TUI:
 
