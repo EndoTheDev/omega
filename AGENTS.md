@@ -33,8 +33,10 @@ runs the tool loop. The gateway layer exposes everything over HTTP.
 ## Local Contracts
 
 - **No layer skipping.** Each layer imports only from the layer
-  directly below it. Clients (CLI, web UI) talk to the gateway over
-  HTTP only — they do not import internal layer packages.
+  directly below it. The `chat` subcommand (TUI) imports internal
+  packages for in-process streaming. The `serve` subcommand exposes
+  everything over HTTP for external clients. External clients talk to
+  the gateway over HTTP only.
 - **No re-exports at intermediate layers.** If a type is defined in
   a layer, consumers import it from that layer.
 - **`model_name` everywhere.** Provider references use `model_name`,
@@ -85,7 +87,7 @@ AGENTS.md (root — this file)
 ├── agents/                   # conventions (COMMIT.md)
 ├── internal/
 │   ├── ai/                   # provider abstraction, stream events, message types, retry, multi-provider
-│   ├── agent/                # multi-turn loop, tool execution, compaction (threshold + overflow auto-retry), project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), AssistantMessageEvent, ToolResultEvent
+│   ├── agent/                # multi-turn loop, tool execution, compaction (threshold + overflow auto-retry), project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), StreamEvent, AssistantMessageEvent, ToolResultEvent
 │   └── gateway/              # HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end
 └── cmd/
     └── omega/                # single binary: serve, run, health, chat; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /thinking, /tools
@@ -112,8 +114,8 @@ rules but cannot override core contracts.
 - No diary entries or TODO comments in AGENTS.md. Keep docs factual
   and contract-focused.
 - No emoji in AGENTS.md.
-- Descriptive variable names. No cryptic abbreviations — `message`
-  not `msg`, `tool_call` not `tc`, `process` not `proc`.
+- Descriptive variable names in public APIs. Short names OK for
+  local variables (Go convention).
 - No long dashes. Use normal hyphens (`-`).
 
 ## User Preferences
@@ -123,10 +125,10 @@ rules but cannot override core contracts.
 
 ## Child DOX Index
 
-| Path                | Status      | What it owns                                                                                                                                                                                                                                |
-| ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents/`           | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                              |
-| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types, retry, multi-provider                                                                                                                                                            |
-| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, compaction (threshold + overflow auto-retry), project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), AssistantMessageEvent, ToolResultEvent |
-| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end                            |
-| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /thinking, /tools                                                                                         |
+| Path                | Status      | What it owns                                                                                                                                                                                                                                             |
+| ------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents/`           | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                                           |
+| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types, retry, multi-provider                                                                                                                                                                         |
+| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, compaction (threshold + overflow auto-retry), project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), StreamEvent, AssistantMessageEvent, ToolResultEvent |
+| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end                                         |
+| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /thinking, /tools                                                                                                      |

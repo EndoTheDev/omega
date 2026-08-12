@@ -32,7 +32,7 @@ func TestCompactReplacesMiddle(t *testing.T) {
 		ai.NewUser("u4"),
 		ai.NewUser("u5"),
 	}
-	got, err := compact(context.Background(), provider, history, 2, 2)
+	got, err := CompactWithFocus(context.Background(), provider, history, 2, 2, "")
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCompactReplacesMiddle(t *testing.T) {
 func TestCompactNoOpWhenNothingToCompact(t *testing.T) {
 	provider := ai.NewFakeProvider("fake")
 	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b")}
-	got, err := compact(context.Background(), provider, history, 1, 1)
+	got, err := CompactWithFocus(context.Background(), provider, history, 1, 1, "")
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestCompactPropagatesSummaryError(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "boom"},
 	)
 	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b"), ai.NewUser("c")}
-	if _, err := compact(context.Background(), provider, history, 1, 1); err == nil {
+	if _, err := CompactWithFocus(context.Background(), provider, history, 1, 1, ""); err == nil {
 		t.Fatal("expected error from summarize, got nil")
 	}
 }

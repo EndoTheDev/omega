@@ -66,35 +66,17 @@ func messageText(m ai.Message) string {
 	return ""
 }
 
-// compact summarizes the middle of history and replaces it with a single
-// system message. The first keepFirst and last keepLast messages are
-// preserved verbatim. If there is nothing to compact, history is
-// returned unchanged.
-func compact(ctx context.Context, provider ai.Provider, history []ai.Message, keepFirst, keepLast int) ([]ai.Message, error) {
+// CompactWithFocus summarizes the middle of history with an optional
+// focus instruction, replacing it with a single system message. The
+// first keepFirst and last keepLast messages are preserved verbatim.
+// If there is nothing to compact, history is returned unchanged.
+func CompactWithFocus(ctx context.Context, provider ai.Provider, history []ai.Message, keepFirst, keepLast int, focus string) ([]ai.Message, error) {
 	if keepFirst+keepLast >= len(history) {
 		return history, nil
 	}
 	middle := history[keepFirst : len(history)-keepLast]
-	summary, err := summarize(ctx, provider, middle)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]ai.Message, 0, keepFirst+keepLast+1)
-	result = append(result, history[:keepFirst]...)
-	result = append(result, ai.NewSystem("[compacted: "+summary+"]"))
-	result = append(result, history[len(history)-keepLast:]...)
-	return result, nil
-}
 
-// summarize asks the provider to condense the given messages into a
-// short summary preserving key facts and decisions.
-func summarize(ctx context.Context, provider ai.Provider, messages []ai.Message) (string, error) {
-	return summarizeWithFocus(ctx, provider, messages, "")
-}
-
-// summarizeWithFocus is like summarize but prepends a focus instruction
-// to the prompt when focus is non-empty.
-func summarizeWithFocus(ctx context.Context, provider ai.Provider, messages []ai.Message, focus string) (string, error) {
+	// Build the summarization prompt.
 	var b strings.Builder
 	b.WriteString("Summarize the following conversation concisely, preserving key facts, decisions, and context.")
 	if focus != "" {
@@ -103,7 +85,7 @@ func summarizeWithFocus(ctx context.Context, provider ai.Provider, messages []ai
 		b.WriteString(".")
 	}
 	b.WriteString(" Output only the summary.\n\n")
-	for _, m := range messages {
+	for _, m := range middle {
 		b.WriteString("- ")
 		b.WriteString(messageText(m))
 		b.WriteString("\n")
@@ -117,32 +99,17 @@ func summarizeWithFocus(ctx context.Context, provider ai.Provider, messages []ai
 			summary.WriteString(e.Content)
 		case ai.StreamEnd:
 			if e.FinishReason == "error" {
-				return "", fmt.Errorf("summarize: %s", e.Error)
+				return nil, fmt.Errorf("summarize: %s", e.Error)
 			}
 		}
 	}
 	if summary.Len() == 0 {
-		return "", fmt.Errorf("summarize: empty summary")
+		return nil, fmt.Errorf("summarize: empty summary")
 	}
-	return strings.TrimSpace(summary.String()), nil
-}
 
-// CompactWithFocus summarizes the middle of history with an optional
-// focus instruction, replacing it with a single system message. The
-// first keepFirst and last keepLast messages are preserved verbatim.
-// If there is nothing to compact, history is returned unchanged.
-func CompactWithFocus(ctx context.Context, provider ai.Provider, history []ai.Message, keepFirst, keepLast int, focus string) ([]ai.Message, error) {
-	if keepFirst+keepLast >= len(history) {
-		return history, nil
-	}
-	middle := history[keepFirst : len(history)-keepLast]
-	summary, err := summarizeWithFocus(ctx, provider, middle, focus)
-	if err != nil {
-		return nil, err
-	}
 	result := make([]ai.Message, 0, keepFirst+keepLast+1)
 	result = append(result, history[:keepFirst]...)
-	result = append(result, ai.NewSystem("[compacted: "+summary+"]"))
+	result = append(result, ai.NewSystem("[compacted: "+strings.TrimSpace(summary.String())+"]"))
 	result = append(result, history[len(history)-keepLast:]...)
 	return result, nil
 }

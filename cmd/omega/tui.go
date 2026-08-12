@@ -105,6 +105,7 @@ type model struct {
 	autocompleteOffset  int      // first visible row in the dropup window
 	screenHeight        int      // terminal height from the last resize
 	skills              []agent.Skill // loaded skills, for autocomplete and invocation
+	commands            []string      // knownCommands + skill names, per-model copy
 	showThinking        bool          // /thinking toggle; default true
 	showToolResults     bool          // /tools toggle; default false (collapsed)
 	toolResultsAuto     bool          // /tools auto; short results full, long ones collapsed
@@ -142,9 +143,12 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 	ta.SetHeight(minTextareaHeight)
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
-	// Append skill names to knownCommands for autocomplete.
+	// Build the per-model command list: clone the built-in commands and
+	// append skill names. This avoids mutating the package-level slice.
+	commands := make([]string, len(knownCommands))
+	copy(commands, knownCommands)
 	for _, s := range skills {
-		knownCommands = append(knownCommands, "/"+s.Name)
+		commands = append(commands, "/"+s.Name)
 	}
 	return model{
 		textarea:          ta,
@@ -157,6 +161,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		systemPrompt:      systemPrompt,
 		store:             store,
 		skills:            skills,
+		commands:          commands,
 		autocompleteIndex: -1,
 		showThinking:      true,
 	}
@@ -313,6 +318,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.drainEvents()
 
 	case streamDoneMsg:
+		fmt.Print("\x07") // terminal bell: signals turn complete
 		m.busy = false
 		m.cancel = nil
 		m.textarea.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
@@ -363,7 +369,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.historyIndex = 0
 
 	// Echo the input as a user message in the transcript.
-	m.transcript += "\n" + styleUser.Render("> "+input) + "\n"
+	m.transcript += "\n" + styleUser.Render("> "+wordWrap(input, m.viewport.Width)) + "\n"
 
 	// Slash commands run locally and never hit the agent.
 	if strings.HasPrefix(input, "/") {
@@ -463,7 +469,8 @@ func (m *model) handleEvent(event agent.Event) {
 			sb.WriteString("\n")
 			if len(chunk.ToolCall.Arguments) > 0 {
 				for k, v := range chunk.ToolCall.Arguments {
-					sb.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
+					sb.WriteString(wordWrap(fmt.Sprintf("  %s: %v", k, v), m.viewport.Width))
+					sb.WriteString("\n")
 				}
 				sb.WriteString("\n")
 			}
@@ -486,7 +493,7 @@ func (m *model) handleEvent(event agent.Event) {
 			case "thinking":
 				if m.showThinking {
 					m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
-					m.transcript += styleThinking.Render(seg.content) + "\n"
+					m.transcript += styleThinking.Render(wordWrap(seg.content, m.viewport.Width)) + "\n"
 				}
 			case "tool":
 				m.transcript += seg.content
@@ -518,9 +525,9 @@ func (m *model) handleEvent(event agent.Event) {
 		lines := strings.Count(e.Message.Content, "\n") + 1
 		switch {
 		case m.showToolResults && !m.toolResultsAuto:
-			m.appendSegment("tool_result", e.Message.Content)
+			m.appendSegment("tool_result", wordWrap(e.Message.Content, m.viewport.Width))
 		case m.toolResultsAuto && lines <= toolResultAutoThreshold:
-			m.appendSegment("tool_result", e.Message.Content)
+			m.appendSegment("tool_result", wordWrap(e.Message.Content, m.viewport.Width))
 		default:
 			m.appendSegment("tool_result", fmt.Sprintf("[tool result: %d lines]", lines))
 		}
@@ -757,7 +764,7 @@ func (m *model) updateAutocomplete() {
 			}
 		}
 	} else {
-		for _, c := range knownCommands {
+		for _, c := range m.commands {
 			if strings.HasPrefix(c, val) {
 				matches = append(matches, c)
 			}
@@ -1263,14 +1270,14 @@ func renderTranscript(messages []ai.Message, width int) string {
 		switch m := msg.(type) {
 		case ai.User:
 			sb.WriteString("\n")
-			sb.WriteString(styleUser.Render("> " + m.Content))
+			sb.WriteString(styleUser.Render("> " + wordWrap(m.Content, width)))
 			sb.WriteString("\n")
 		case ai.Assistant:
 			sb.WriteString("\n")
 			if m.Thinking != nil && *m.Thinking != "" {
 				sb.WriteString(styleThinking.Render("[thinking]"))
 				sb.WriteString("\n")
-				sb.WriteString(styleThinking.Render(*m.Thinking))
+				sb.WriteString(styleThinking.Render(wordWrap(*m.Thinking, width)))
 				sb.WriteString("\n")
 			}
 			for _, call := range m.ToolCalls {
@@ -1278,7 +1285,8 @@ func renderTranscript(messages []ai.Message, width int) string {
 				sb.WriteString("\n")
 				if len(call.Arguments) > 0 {
 					for k, v := range call.Arguments {
-						sb.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
+						sb.WriteString(wordWrap(fmt.Sprintf("  %s: %v", k, v), width))
+						sb.WriteString("\n")
 					}
 					sb.WriteString("\n")
 				}
@@ -1295,7 +1303,7 @@ func renderTranscript(messages []ai.Message, width int) string {
 				sb.WriteString(styleTool.Render("[tool result]"))
 			}
 			sb.WriteString("\n")
-			sb.WriteString(styleTool.Render(m.Content))
+			sb.WriteString(styleTool.Render(wordWrap(m.Content, width)))
 			sb.WriteString("\n")
 		case ai.System:
 			// Only compaction summaries are persisted; render them so
@@ -1323,7 +1331,7 @@ func (m *model) refresh() {
 			sb.WriteString("\n")
 			sb.WriteString(styleThinking.Render("[thinking]"))
 			sb.WriteString("\n")
-			sb.WriteString(styleThinking.Render(seg.content))
+			sb.WriteString(styleThinking.Render(wordWrap(seg.content, m.viewport.Width)))
 			sb.WriteString("\n")
 		case "tool":
 			sb.WriteString(seg.content)
@@ -1563,6 +1571,37 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// wordWrap wraps s at width columns by splitting on spaces. Long words
+// exceeding width are not broken. ponytail: simple space-based wrap,
+// no ANSI-awareness needed — wrapping is applied to raw text before
+// lipgloss styling.
+func wordWrap(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		col := 0
+		first := true
+		for _, word := range strings.Fields(line) {
+			if !first && col+1+len(word) > width {
+				b.WriteString("\n")
+				col = 0
+				first = true
+			}
+			if !first {
+				b.WriteString(" ")
+				col++
+			}
+			b.WriteString(word)
+			col += len(word)
+			first = false
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // renderHelp returns the /help text. Commands are laid out as a

@@ -117,7 +117,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 
 		if a.compaction != nil && a.compaction.Enabled {
 			if EstimateTokens(messages) > a.compaction.budget() {
-				compacted, err := compact(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast)
+				compacted, err := CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, "")
 				if err != nil {
 					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					return
@@ -149,14 +149,16 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			events <- StreamEvent{Event: event}
 		}
 
-		if streamErr != "" {
+			if streamErr != "" {
 			// A context overflow error triggers one auto-compaction and
 			// retry of the turn. The failed attempt counts as a turn and
 			// emits TurnStart without TurnEnd - acceptable asymmetry, the
-			// retried turn reports its own TurnEnd.
-			if isOverflowError(streamErr) && a.compaction != nil && a.compaction.Enabled && overflowRetries < maxOverflowRetries {
+			// retried turn reports its own TurnEnd. Skip the retry when
+			// response content was already streamed: the user saw it, and
+			// retrying would duplicate it.
+			if isOverflowError(streamErr) && a.compaction != nil && a.compaction.Enabled && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
-				compacted, err := compact(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast)
+				compacted, err := CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, "")
 				if err != nil {
 					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					return

@@ -484,3 +484,32 @@ func TestRunOverflowRetryCap(t *testing.T) {
 		t.Fatalf("AgentEnd = %+v, want error surfaced after retry cap", end)
 	}
 }
+
+// TestRunOverflowNoRetryAfterContent verifies that an overflow error
+// after response chunks were already streamed does not retry - the
+// user saw the partial output and retrying would duplicate it.
+func TestRunOverflowNoRetryAfterContent(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "partial "},
+			ai.ResponseChunk{Type: "response_chunk", Content: "response"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "should not appear"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	history := []ai.Message{ai.NewUser("hi")}
+	events := collect(t, agent.Run(context.Background(), history, nil))
+
+	if provider.Calls() != 1 {
+		t.Fatalf("provider calls = %d, want 1 (no retry after content emitted)", provider.Calls())
+	}
+	end := lastAgentEnd(events)
+	if end.FinishReason != "error" {
+		t.Fatalf("AgentEnd finish = %q, want error", end.FinishReason)
+	}
+}
