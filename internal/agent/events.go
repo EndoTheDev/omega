@@ -32,12 +32,15 @@ type TurnEnd struct {
 
 func (TurnEnd) isEvent() {}
 
-// AgentEnd is emitted when Run finishes.
+// AgentEnd is emitted when Run finishes. Message carries the final
+// assistant response (with thinking) so the TUI can persist it without
+// reconstructing from the stream buffer.
 type AgentEnd struct {
-	Type         string `json:"type"`
-	Turns        int    `json:"turns"`
-	FinishReason string `json:"finish_reason"`
-	Error        string `json:"error,omitempty"`
+	Type         string        `json:"type"`
+	Turns        int           `json:"turns"`
+	FinishReason string        `json:"finish_reason"`
+	Error        string        `json:"error,omitempty"`
+	Message      ai.Assistant  `json:"message,omitempty"`
 }
 
 func (AgentEnd) isEvent() {}
@@ -48,3 +51,22 @@ type StreamEvent struct {
 }
 
 func (StreamEvent) isEvent() {}
+
+// ToolResultEvent is emitted after a tool executes, carrying the result
+// message so the TUI can persist it to the session store.
+type ToolResultEvent struct {
+	Type    string        `json:"type"`
+	Message ai.ToolResult `json:"message"`
+}
+
+func (ToolResultEvent) isEvent() {}
+
+// AssistantMessageEvent is emitted after the provider finishes a turn,
+// carrying the assistant message (with thinking and tool calls) so the
+// TUI can persist it to the session store.
+type AssistantMessageEvent struct {
+	Type    string       `json:"type"`
+	Message ai.Assistant `json:"message"`
+}
+
+func (AssistantMessageEvent) isEvent() {}

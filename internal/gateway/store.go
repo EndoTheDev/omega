@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -92,7 +93,24 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	// Add columns that may be missing from older databases. SQLite
+	// does not support IF NOT EXISTS on ALTER TABLE, so we catch
+	// the "duplicate column" error and ignore it.
+	for _, stmt := range []string{
+		`ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
+		`ALTER TABLE sessions ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			// SQLite error for duplicate column: "duplicate column name"
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // CreateSession creates a session with the given id. parentID links it to

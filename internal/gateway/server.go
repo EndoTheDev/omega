@@ -379,6 +379,10 @@ func eventTypeOf(event agent.Event) string {
 		return "turn_end"
 	case agent.AgentEnd:
 		return "agent_end"
+	case agent.AssistantMessageEvent:
+		return "assistant_message"
+	case agent.ToolResultEvent:
+		return "tool_result"
 	}
 	return "event"
 }

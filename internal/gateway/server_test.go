@@ -126,7 +126,7 @@ func TestChatSSE(t *testing.T) {
 	for _, e := range events {
 		types = append(types, e.event)
 	}
-	want := []string{"agent_start", "turn_start", "response_chunk", "stream_end", "turn_end", "agent_end"}
+	want := []string{"agent_start", "turn_start", "response_chunk", "stream_end", "assistant_message", "turn_end", "agent_end"}
 	if strings.Join(types, ",") != strings.Join(want, ",") {
 		t.Fatalf("event types = %v, want %v", types, want)
 	}

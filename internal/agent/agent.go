@@ -149,6 +149,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		}
 		assistant.ToolCalls = toolCalls
 		messages = append(messages, assistant)
+		events <- AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 
 		if streamErr != "" {
 			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
@@ -159,23 +160,28 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		for _, call := range toolCalls {
 			tool, ok := tools[call.Name]
 			if !ok {
-				messages = append(messages, ai.NewToolResult("unknown tool: "+call.Name, call.ID, true))
+				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
+				messages = append(messages, msg)
+				events <- ToolResultEvent{Type: "tool_result", Message: msg}
 				executed++
 				continue
 			}
 			result, err := tool.Run(ctx, call.Arguments)
+			var msg ai.ToolResult
 			if err != nil {
-				messages = append(messages, ai.NewToolResult(err.Error(), call.ID, true))
+				msg = ai.NewToolResult(err.Error(), call.ID, true)
 			} else {
-				messages = append(messages, ai.NewToolResult(result, call.ID, false))
+				msg = ai.NewToolResult(result, call.ID, false)
 			}
+			messages = append(messages, msg)
+			events <- ToolResultEvent{Type: "tool_result", Message: msg}
 			executed++
 		}
 
 		events <- TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
 
 		if len(toolCalls) == 0 {
-			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason}
+			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			return
 		}
 	}

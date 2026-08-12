@@ -24,7 +24,7 @@ import (
 const (
 	minTextareaHeight = 1
 	maxTextareaHeight = 8
-	statusLines       = 1
+	statusLines       = 2 // status bar + autocomplete line
 )
 
 // Styles for the TUI.
@@ -394,19 +394,31 @@ func (m *model) handleEvent(event agent.Event) {
 			}
 		}
 		if responseBuf.Len() > 0 {
-			response := ai.NewAssistant(strings.TrimSuffix(responseBuf.String(), "\n"))
-			m.transcript += "\n" + renderAssistant(response.Content, m.viewport.Width) + "\n"
-			m.history = append(m.history, response)
-			// Persist the assistant response.
-			if m.store != nil && m.sessionID != "" {
-				if err := m.store.AppendMessage(context.Background(), m.sessionID, response); err != nil {
-					m.storeErr = "save response: " + err.Error()
-				} else {
-					m.storeErr = ""
-				}
+			response := e.Message
+			if response.Content == "" {
+				response.Content = strings.TrimSuffix(responseBuf.String(), "\n")
 			}
+			m.transcript += "\n" + renderAssistant(response.Content, m.viewport.Width) + "\n"
 		}
 		m.segments = nil
+	case agent.ToolResultEvent:
+		m.history = append(m.history, e.Message)
+		if m.store != nil && m.sessionID != "" {
+			if err := m.store.AppendMessage(context.Background(), m.sessionID, e.Message); err != nil {
+				m.storeErr = "save tool result: " + err.Error()
+			} else {
+				m.storeErr = ""
+			}
+		}
+	case agent.AssistantMessageEvent:
+		m.history = append(m.history, e.Message)
+		if m.store != nil && m.sessionID != "" {
+			if err := m.store.AppendMessage(context.Background(), m.sessionID, e.Message); err != nil {
+				m.storeErr = "save assistant: " + err.Error()
+			} else {
+				m.storeErr = ""
+			}
+		}
 	}
 }
 
@@ -869,6 +881,10 @@ func (m model) View() string {
 	sb.WriteString("\n")
 	sb.WriteString(styleStatus.Render(m.statusLine()))
 	sb.WriteString("\n")
+	if line := m.autocompleteLine(); line != "" {
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
 	sb.WriteString(m.textarea.View())
 	return sb.String()
 }
@@ -899,18 +915,25 @@ func (m model) statusLine() string {
 	if m.storeErr != "" {
 		line += " | " + styleError.Render("store: "+m.storeErr)
 	}
-	if len(m.autocompleteMatches) > 0 {
-		var matches []string
-		for i, cmd := range m.autocompleteMatches {
-			if i == m.autocompleteIndex {
-				matches = append(matches, styleMatch.Render(cmd))
-			} else {
-				matches = append(matches, cmd)
-			}
-		}
-		line += " | " + strings.Join(matches, "  ")
-	}
 	return line
+}
+
+// autocompleteLine returns the slash-command match list with the
+// selected match highlighted, or an empty string when there are no
+// matches. It sits between the status bar and the textarea.
+func (m model) autocompleteLine() string {
+	if len(m.autocompleteMatches) == 0 {
+		return ""
+	}
+	var matches []string
+	for i, cmd := range m.autocompleteMatches {
+		if i == m.autocompleteIndex {
+			matches = append(matches, styleMatch.Render(cmd))
+		} else {
+			matches = append(matches, cmd)
+		}
+	}
+	return strings.Join(matches, "  ")
 }
 
 // renderHelp returns the /help text.

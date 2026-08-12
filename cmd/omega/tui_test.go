@@ -78,6 +78,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell"}}})
+	m.handleEvent(agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hello world")})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	plain := ansiStrip(m.transcript)
@@ -278,6 +279,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 
 	// Fold an assistant response.
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "ok"}})
+	m.handleEvent(agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("ok")})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	sessions, err := s.ListSessions(context.Background())
@@ -573,16 +575,16 @@ func TestTabComplete(t *testing.T) {
 		t.Fatalf("err not cleared on single match: %q", m.err)
 	}
 
-	// Multiple matches: "/" matches every known command, so the status
-	// line lists the options with the selected one highlighted.
+	// Multiple matches: "/" matches every known command, so the
+	// autocomplete line lists the options with the selected one highlighted.
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	if len(m.autocompleteMatches) != len(knownCommands) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
-	line := ansiStrip(m.statusLine())
+	line := ansiStrip(m.autocompleteLine())
 	if !strings.Contains(line, "/exit") || !strings.Contains(line, "/model") {
-		t.Fatalf("status line missing options: %q", line)
+		t.Fatalf("autocomplete line missing options: %q", line)
 	}
 	// Nothing selected initially.
 	if m.autocompleteIndex != -1 {
