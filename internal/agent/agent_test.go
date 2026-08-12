@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -293,5 +294,193 @@ func TestRunErrorBodyPassthrough(t *testing.T) {
 	end := lastAgentEnd(events)
 	if end.FinishReason != "error" || end.Error != "upstream exploded" {
 		t.Fatalf("AgentEnd = %+v, want error / upstream exploded", end)
+	}
+}
+
+// compactionConfig returns a config with a small budget so tests can
+// trigger compaction with short histories.
+func compactionConfig() *CompactionConfig {
+	return &CompactionConfig{
+		Enabled:       true,
+		Threshold:     0.5,
+		ContextWindow: 100, // budget = 50 tokens
+		KeepFirst:     1,
+		KeepLast:      1,
+	}
+}
+
+// bigHistory returns 20 user messages of 20 chars each: 400 chars = 100
+// tokens, well over the 50-token budget.
+func bigHistory() []ai.Message {
+	history := make([]ai.Message, 0, 20)
+	for i := 0; i < 20; i++ {
+		history = append(history, ai.NewUser("message number "+fmt.Sprint(i)))
+	}
+	return history
+}
+
+func hasCompactedSystem(history []ai.Message) bool {
+	for _, m := range history {
+		if s, ok := m.(ai.System); ok && strings.Contains(s.Content, "[compacted:") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRunCompactionTriggersAtThreshold(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	collect(t, agent.Run(context.Background(), bigHistory(), nil))
+
+	if !hasCompactedSystem(provider.LastMessages) {
+		t.Fatalf("expected compacted system message in history fed to provider: %#v", provider.LastMessages)
+	}
+}
+
+func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // ~10 tokens < 50
+	collect(t, agent.Run(context.Background(), history, nil))
+
+	if hasCompactedSystem(provider.LastMessages) {
+		t.Fatalf("unexpected compacted system message: %#v", provider.LastMessages)
+	}
+}
+
+func TestRunCompactionDisabled(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	agent := NewAgent(provider, nil, 0)
+	cfg := compactionConfig()
+	cfg.Enabled = false
+	agent.SetCompaction(cfg)
+	collect(t, agent.Run(context.Background(), bigHistory(), nil))
+
+	if hasCompactedSystem(provider.LastMessages) {
+		t.Fatalf("unexpected compacted system message with compaction disabled: %#v", provider.LastMessages)
+	}
+}
+
+func TestRunCompactionErrorPropagates(t *testing.T) {
+	// The first Stream call (the turn) succeeds; the second (the
+	// summarize call inside compact) fails.
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+		[]ai.StreamEvent{
+			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "summarize boom"},
+		},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	events := collect(t, agent.Run(context.Background(), bigHistory(), nil))
+
+	end := lastAgentEnd(events)
+	if end.FinishReason != "error" || !strings.Contains(end.Error, "summarize boom") {
+		t.Fatalf("AgentEnd = %+v, want error / summarize boom", end)
+	}
+}
+
+func TestRunOverflowTriggersRetry(t *testing.T) {
+	// First call overflows; second call succeeds. Small history so the
+	// threshold compaction does not consume the first script.
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // below budget
+	events := collect(t, agent.Run(context.Background(), history, nil))
+
+	if provider.Calls() != 2 {
+		t.Fatalf("provider calls = %d, want 2 (overflow + retry)", provider.Calls())
+	}
+	end := lastAgentEnd(events)
+	if end.FinishReason != "stop" {
+		t.Fatalf("AgentEnd = %+v, want stop after retry", end)
+	}
+}
+
+func TestRunOverflowNoRetryWhenCompactionDisabled(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+	)
+	agent := NewAgent(provider, nil, 0) // no compaction set
+	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
+	events := collect(t, agent.Run(context.Background(), history, nil))
+
+	if provider.Calls() != 1 {
+		t.Fatalf("provider calls = %d, want 1 (no retry)", provider.Calls())
+	}
+	end := lastAgentEnd(events)
+	if end.FinishReason != "error" {
+		t.Fatalf("AgentEnd = %+v, want error", end)
+	}
+}
+
+func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
+	events := collect(t, agent.Run(context.Background(), history, nil))
+
+	if provider.Calls() != 1 {
+		t.Fatalf("provider calls = %d, want 1 (non-overflow error, no retry)", provider.Calls())
+	}
+	end := lastAgentEnd(events)
+	if end.FinishReason != "error" || end.Error != "upstream exploded" {
+		t.Fatalf("AgentEnd = %+v, want error / upstream exploded", end)
+	}
+}
+
+func TestRunOverflowRetryCap(t *testing.T) {
+	// Two overflow scripts then success; the retry cap (1) must surface
+	// the second overflow as an error.
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		},
+		[]ai.StreamEvent{
+			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetCompaction(compactionConfig())
+	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
+	events := collect(t, agent.Run(context.Background(), history, nil))
+
+	if provider.Calls() != 2 {
+		t.Fatalf("provider calls = %d, want 2 (retry cap reached)", provider.Calls())
+	}
+	end := lastAgentEnd(events)
+	if end.FinishReason != "error" || !strings.Contains(end.Error, "context length") {
+		t.Fatalf("AgentEnd = %+v, want error surfaced after retry cap", end)
 	}
 }

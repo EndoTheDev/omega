@@ -40,6 +40,13 @@ func (p *FakeProvider) WithDelay(delay time.Duration) *FakeProvider {
 	return &cp
 }
 
+// Calls returns the number of Stream calls made. Safe to read after the
+// caller has drained a stream channel: the counter increments before the
+// channel closes.
+func (p *FakeProvider) Calls() int {
+	return p.calls
+}
+
 // ModelName returns the model name used by this provider.
 func (p *FakeProvider) ModelName() string {
 	return p.modelName

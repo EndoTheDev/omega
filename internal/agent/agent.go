@@ -11,6 +11,12 @@ import (
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
 const defaultMaxTurns = 10
 
+// maxOverflowRetries caps how many times a turn is retried after a
+// context overflow error; a second overflow surfaces the error.
+// ponytail: fixed cap like the compaction threshold; upgrade path:
+// expose as a config knob next to compaction settings.
+const maxOverflowRetries = 1
+
 // Tool is a callable the model may invoke. The map key is the tool name.
 type Tool struct {
 	Description string
@@ -98,6 +104,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 	events <- AgentStart{Type: "agent_start", ModelName: a.provider.ModelName()}
 
 	turns := 0
+	overflowRetries := 0
 	for {
 		if ctx.Err() != nil {
 			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
@@ -142,6 +149,25 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			events <- StreamEvent{Event: event}
 		}
 
+		if streamErr != "" {
+			// A context overflow error triggers one auto-compaction and
+			// retry of the turn. The failed attempt counts as a turn and
+			// emits TurnStart without TurnEnd - acceptable asymmetry, the
+			// retried turn reports its own TurnEnd.
+			if isOverflowError(streamErr) && a.compaction != nil && a.compaction.Enabled && overflowRetries < maxOverflowRetries {
+				overflowRetries++
+				compacted, err := compact(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast)
+				if err != nil {
+					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					return
+				}
+				messages = compacted
+				continue
+			}
+			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
+			return
+		}
+
 		assistant := ai.NewAssistant(content.String())
 		if thinking.Len() > 0 {
 			text := thinking.String()
@@ -150,11 +176,6 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		assistant.ToolCalls = toolCalls
 		messages = append(messages, assistant)
 		events <- AssistantMessageEvent{Type: "assistant_message", Message: assistant}
-
-		if streamErr != "" {
-			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
-			return
-		}
 
 		executed := 0
 		for _, call := range toolCalls {
@@ -185,6 +206,19 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			return
 		}
 	}
+}
+
+// isOverflowError reports whether a provider error indicates the context
+// window was exceeded. ponytail: substring match on common provider
+// wording. Upgrade path: structured error codes per provider.
+func isOverflowError(err string) bool {
+	lower := strings.ToLower(err)
+	for _, phrase := range []string{"context length", "context_length", "too long", "token limit", "maximum context"} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // toolSchemas converts a tools map to the provider schema list.

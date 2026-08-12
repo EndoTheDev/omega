@@ -364,3 +364,50 @@ func assertToolResult(t *testing.T, m ai.Message, wantContent, wantID string, wa
 			tr, wantContent, wantID, wantErr)
 	}
 }
+
+// TestDeleteSessionCascades verifies deleting a session removes its
+// messages and child branches via foreign key cascade.
+func TestDeleteSessionCascades(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "root", "", "root"); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.CreateSession(ctx, "child", "root", "child"); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "root", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append root: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "child", ai.NewUser("yo")); err != nil {
+		t.Fatalf("append child: %v", err)
+	}
+
+	if err := s.DeleteSession(ctx, "root"); err != nil {
+		t.Fatalf("delete root: %v", err)
+	}
+
+	// Parent gone.
+	if _, err := s.GetSession(ctx, "root"); err == nil {
+		t.Fatal("root still exists after delete")
+	}
+	// Child gone (cascade).
+	if _, err := s.GetSession(ctx, "child"); err == nil {
+		t.Fatal("child still exists after parent delete (cascade failed)")
+	}
+	// Messages gone (cascade).
+	msgs, err := s.GetMessages(ctx, "root")
+	if err == nil && len(msgs) != 0 {
+		t.Fatalf("root messages remain: %d", len(msgs))
+	}
+}
+
+// TestDeleteSessionMissingIsNoOp verifies deleting a nonexistent session
+// is not an error.
+func TestDeleteSessionMissingIsNoOp(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.DeleteSession(context.Background(), "nope"); err != nil {
+		t.Fatalf("delete missing session: %v", err)
+	}
+}

@@ -6,7 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/atotto/clipboard"
 
 	"github.com/EndoTheDev/omega-dev/internal/agent"
 	"github.com/EndoTheDev/omega-dev/internal/ai"
@@ -20,11 +24,21 @@ import (
 
 // Fixed layout: textarea starts at minTextareaHeight lines and grows up to
 // maxTextareaHeight as the user types. The viewport fills the rest minus
-// the status line.
+// the status line and the autocomplete panel (when open).
 const (
 	minTextareaHeight = 1
 	maxTextareaHeight = 8
-	statusLines       = 2 // status bar + autocomplete line
+	statusLines       = 1 // status bar only; autocomplete panel is dynamic
+
+	// maxAutocompleteRows caps the dropup panel so a loaded skill
+	// directory cannot eat the whole viewport. ponytail: fixed cap;
+	// upgrade path: config knob.
+	maxAutocompleteRows = 8
+
+	// toolResultAutoThreshold is the line count at which /tools auto
+	// collapses a result. ponytail: fixed constant; upgrade path: config
+	// knob.
+	toolResultAutoThreshold = 20
 )
 
 // Styles for the TUI.
@@ -38,9 +52,22 @@ var (
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 )
 
-// knownCommands are the built-in slash commands. Skill names are appended
-// at startup, so autocomplete matches both built-ins and loaded skills.
-var knownCommands = []string{"/exit", "/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/help", "/model", "/provider", "/compact"}
+// knownCommands are the built-in slash commands, ordered semantically:
+// session lifecycle, then model control, then transcript tools, then
+// app commands. Skill names are appended at startup, so autocomplete
+// matches both built-ins and loaded skills.
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/provider", "/compact", "/copy", "/thinking", "/tools", "/exit", "/help"}
+
+// commandOptions maps commands with enum arguments to their valid values.
+// The autocomplete offers these as second-level completions once the
+// input equals the command (or the command plus a partial option).
+// Commands with free-form or dynamic arguments are not listed here.
+var commandOptions = map[string][]string{
+	"/new":      {"--ephemeral"},
+	"/thinking": {"on", "off"},
+	"/tools":    {"on", "off", "auto"},
+	"/sessions": {"delete"},
+}
 
 // streamSegment is one ordered piece of a streaming turn. Segments are
 // appended in the order the model emits them, preserving the narrative
@@ -75,11 +102,30 @@ type model struct {
 	historyIndex        int      // position in promptHistory; 0 = empty/current input
 	autocompleteMatches []string // slash commands matching the current input
 	autocompleteIndex   int      // highlighted match; -1 = none selected
+	autocompleteOffset  int      // first visible row in the dropup window
+	screenHeight        int      // terminal height from the last resize
 	skills              []agent.Skill // loaded skills, for autocomplete and invocation
+	showThinking        bool          // /thinking toggle; default true
+	showToolResults     bool          // /tools toggle; default false (collapsed)
+	toolResultsAuto     bool          // /tools auto; short results full, long ones collapsed
+	queuedInput         string        // follow-up typed while agent runs; auto-submits on done
+	autoNamed           bool              // true after the first auto-name attempt
+	sessionLabel        string            // model-generated title, shown in status bar
+	autoNameGen         int               // bumped on /new; stale auto-name results are dropped
+	sessionList         []gateway.Session // cached from last /sessions, for /resume by #
+	ephemeral           bool              // /new --ephemeral; nothing persisted
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
+
+// autoNameMsg carries the result of a background auto-name call.
+type autoNameMsg struct {
+	sessionID string // session the title was generated for
+	gen       int    // autoNameGen at spawn; stale results are dropped
+	label     string
+	err       error
+}
 
 func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill) error {
 	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills)
@@ -112,24 +158,21 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		store:             store,
 		skills:            skills,
 		autocompleteIndex: -1,
+		showThinking:      true,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.textarea.Focus(), tea.EnterAltScreen)
+	return tea.Batch(m.textarea.Focus(), tea.EnterAltScreen, m.titleCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.textarea.SetWidth(msg.Width)
-		m.resizeTextarea()
-		vpHeight := msg.Height - m.textarea.Height() - statusLines
-		if vpHeight < 1 {
-			vpHeight = 1
-		}
+		m.screenHeight = msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = vpHeight
+		m.resizeTextarea()
 		m.refresh()
 		return m, m.textarea.Focus()
 
@@ -143,8 +186,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// ctx.Err() and emits AgentEnd("cancelled"), which clears busy.
 			if msg.String() == "esc" && m.cancel != nil {
 				m.cancel()
+				m.queuedInput = ""
 			}
-			return m, nil
+			// Enter queues the current input to auto-submit when the
+			// agent finishes. Typing is still allowed while busy.
+			if msg.String() == "enter" {
+				queue := strings.TrimSpace(m.textarea.Value())
+				if queue == "" {
+					return m, nil
+				}
+				m.queuedInput = queue
+				m.textarea.SetValue("")
+				m.textarea.Placeholder = "message (queued: " + truncate(m.queuedInput, 40) + ")"
+				return m, nil
+			}
+			// Allow typing while busy; just don't submit.
+			var cmd tea.Cmd
+			m.textarea, cmd = m.textarea.Update(msg)
+			m.updateAutocomplete()
+			return m, cmd
 		}
 		if msg.String() == "ctrl+j" {
 			// Ctrl+J inserts a newline for multi-line input.
@@ -166,6 +226,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = ""
 			m.autocompleteMatches = nil
 			m.autocompleteIndex = -1
+			m.autocompleteOffset = 0
+			m.resizeTextarea() // panel closed; give the rows back to the viewport
 			m.refresh()
 			return m, nil
 		}
@@ -191,6 +253,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.autocompleteIndex = len(m.autocompleteMatches) - 1
 				}
 			}
+			m.clampAutocompleteOffset()
 			return m, nil
 		}
 		if msg.String() == "down" && len(m.autocompleteMatches) > 0 {
@@ -202,6 +265,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.autocompleteIndex = 0
 				}
 			}
+			m.clampAutocompleteOffset()
 			return m, nil
 		}
 		// Up/Down recall prompt history when not scrolled into it. The
@@ -251,8 +315,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamDoneMsg:
 		m.busy = false
 		m.cancel = nil
+		m.textarea.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 		m.refresh()
-		return m, m.textarea.Focus()
+		// Auto-submit queued input from while the agent was running.
+		if m.queuedInput != "" {
+			m.textarea.SetValue(m.queuedInput)
+			m.queuedInput = ""
+			return m.submit()
+		}
+		// Auto-name the session after the first exchange if it has no
+		// label yet. Runs in background; result arrives as autoNameMsg.
+		// Ephemeral sessions have no session to name. The title must be
+		// reset on this path too (it is no longer running).
+		if !m.autoNamed && !m.ephemeral && m.store != nil && m.sessionID != "" && len(m.history) >= 2 {
+			return m, tea.Batch(m.autoNameSession(), m.titleCmd())
+		}
+		return m, tea.Batch(m.textarea.Focus(), m.titleCmd())
+
+	case autoNameMsg:
+		// Drop stale results: a /new (gen mismatch) or a session switch
+		// (id mismatch) while the goroutine ran. A stale result must not
+		// re-apply an old title or block auto-naming for the new view.
+		if msg.gen != m.autoNameGen || msg.sessionID != m.sessionID {
+			return m, nil
+		}
+		m.autoNamed = true
+		if msg.err == nil && msg.label != "" {
+			m.sessionLabel = msg.label
+		}
+		return m, nil
 
 	default:
 		var cmd tea.Cmd
@@ -271,20 +362,28 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.promptHistory = append(m.promptHistory, input)
 	m.historyIndex = 0
 
+	// Echo the input as a user message in the transcript.
+	m.transcript += "\n" + styleUser.Render("> "+input) + "\n"
+
 	// Slash commands run locally and never hit the agent.
 	if strings.HasPrefix(input, "/") {
 		return m.handleCommand(input)
 	}
 
-	m.textarea.Blur()
-	m.transcript += "\n" + styleUser.Render("> "+input) + "\n"
+	// Inline skill invocation: "/name" tokens inside a normal message
+	// inject the matching skill's content as a system message. The user
+	// text is left unchanged so the model sees both the reference and
+	// the skill. Unknown tokens (URLs, paths) are ignored.
+	m = m.invokeInlineSkills(input)
+
 	m.history = append(m.history, ai.NewUser(input))
 	m.busy = true
 	m.segments = nil
 	m.err = ""
 
 	// Persist the user message; auto-create a session on the first one.
-	if m.store != nil {
+	// Ephemeral sessions skip the store entirely.
+	if m.store != nil && !m.ephemeral {
 		if m.sessionID == "" {
 			id, err := newSessionID()
 			if err != nil {
@@ -330,7 +429,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// it is closed when the run ends, so reusing one across runs would
 	// panic on the second write.
 	m.events = ag.Run(ctx, m.history, nil)
-	return m, m.drainEvents()
+	return m, tea.Batch(m.drainEvents(), m.titleCmd())
 }
 
 // drainEvents returns a command that reads one event from the channel and
@@ -385,10 +484,14 @@ func (m *model) handleEvent(event agent.Event) {
 		for _, seg := range m.segments {
 			switch seg.kind {
 			case "thinking":
-				m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
-				m.transcript += styleThinking.Render(seg.content) + "\n"
+				if m.showThinking {
+					m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
+					m.transcript += styleThinking.Render(seg.content) + "\n"
+				}
 			case "tool":
 				m.transcript += seg.content
+			case "tool_result":
+				m.transcript += "\n" + styleTool.Render(seg.content) + "\n"
 			case "response":
 				responseBuf.WriteString(seg.content)
 			}
@@ -409,6 +512,17 @@ func (m *model) handleEvent(event agent.Event) {
 			} else {
 				m.storeErr = ""
 			}
+		}
+		// Append as a segment so it renders in order with thinking
+		// and tool calls at AgentEnd, not out of sequence.
+		lines := strings.Count(e.Message.Content, "\n") + 1
+		switch {
+		case m.showToolResults && !m.toolResultsAuto:
+			m.appendSegment("tool_result", e.Message.Content)
+		case m.toolResultsAuto && lines <= toolResultAutoThreshold:
+			m.appendSegment("tool_result", e.Message.Content)
+		default:
+			m.appendSegment("tool_result", fmt.Sprintf("[tool result: %d lines]", lines))
 		}
 	case agent.AssistantMessageEvent:
 		m.history = append(m.history, e.Message)
@@ -440,26 +554,101 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/exit":
 		return m, tea.Quit
 	case "/new":
-		// Clear in-memory history but keep the session; messages already
-		// persisted stay in the store.
+		// Start a fresh conversation: clear in-memory history and detach
+		// from the current session. The old session stays persisted in
+		// the store (reachable via /sessions + /resume). --ephemeral
+		// additionally means nothing is persisted at all.
 		m.history = nil
 		m.transcript = ""
 		m.segments = nil
 		m.err = ""
+		m.sessionLabel = ""
+		m.autoNamed = false
+		m.autoNameGen++ // invalidate any auto-name goroutine in flight
+		m.sessionID = ""
+		if len(fields) > 1 && fields[1] == "--ephemeral" {
+			m.ephemeral = true
+		} else {
+			m.ephemeral = false
+		}
 		m.refresh()
 		return m, nil
-	case "/sessions":
-		return m.handleSessions()
-	case "/resume":
-		return m.handleResume(fields)
-	case "/branch":
-		return m.handleBranch(fields)
-	case "/label":
-		return m.handleLabel(fields)
-	case "/tree":
-		return m.handleTree()
+	// Store-dependent commands are unavailable in ephemeral mode.
+	case "/sessions", "/resume", "/branch", "/label", "/tree":
+		if m.ephemeral {
+			m.err = "no sessions in ephemeral mode"
+			return m, nil
+		}
+		switch fields[0] {
+		case "/sessions":
+			if len(fields) > 1 && fields[1] == "delete" {
+				return m.handleSessionDelete(fields[2:])
+			}
+			return m.handleSessions()
+		case "/resume":
+			return m.handleResume(fields)
+		case "/branch":
+			return m.handleBranch(fields)
+		case "/label":
+			return m.handleLabel(fields)
+		case "/tree":
+			return m.handleTree()
+		}
+		return m, nil // unreachable; all cases return
 	case "/compact":
 		return m.handleCompact(fields)
+	case "/copy":
+		return m.handleCopy()
+	case "/thinking":
+		if len(fields) > 1 {
+			switch fields[1] {
+			case "on":
+				m.showThinking = true
+			case "off":
+				m.showThinking = false
+			default:
+				m.err = "usage: /thinking [on|off]"
+				return m, nil
+			}
+		} else {
+			m.showThinking = !m.showThinking
+		}
+		state := "on"
+		if !m.showThinking {
+			state = "off"
+		}
+		m.transcript += "\n" + styleInfo.Render("[thinking "+state+"]") + "\n"
+		m.refresh()
+		return m, nil
+	case "/tools":
+		if len(fields) > 1 {
+			switch fields[1] {
+			case "on", "expanded":
+				m.showToolResults = true
+				m.toolResultsAuto = false
+			case "off", "collapsed":
+				m.showToolResults = false
+				m.toolResultsAuto = false
+			case "auto":
+				m.showToolResults = true
+				m.toolResultsAuto = true
+			default:
+				m.err = "usage: /tools [on|off|auto]"
+				return m, nil
+			}
+		} else {
+			m.showToolResults = !m.showToolResults
+			m.toolResultsAuto = false
+		}
+		state := "expanded"
+		if m.toolResultsAuto {
+			state = "auto"
+		} else if !m.showToolResults {
+			state = "collapsed"
+		}
+		m.transcript += "\n" + styleInfo.Render("[tool results "+state+"]") + "\n"
+		m.refresh()
+		return m, nil
 	case "/help":
 		m.transcript += renderHelp()
 		m.refresh()
@@ -472,7 +661,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.modelName = fields[1]
 		m.transcript += "\n" + styleInfo.Render("[model set to "+m.modelName+"]") + "\n"
 		m.refresh()
-		return m, nil
+		return m, m.titleCmd()
 	case "/provider":
 		if len(fields) < 2 {
 			m.err = "usage: /provider <ollama|openai|anthropic>"
@@ -504,6 +693,31 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	}
 }
 
+// inlineSkillPattern matches "/name" tokens inside a normal message.
+// Restricted to [a-z0-9-] so URLs (//, dots) and file paths (/d/...) do
+// not match skill names by accident.
+var inlineSkillPattern = regexp.MustCompile(`/([a-z0-9-]+)`)
+
+// invokeInlineSkills scans a non-command message for "/name" tokens that
+// match a loaded skill and injects each skill's content as a system
+// message. The user text is left unchanged. Unknown tokens are ignored.
+func (m model) invokeInlineSkills(input string) model {
+	if len(m.skills) == 0 {
+		return m
+	}
+	for _, match := range inlineSkillPattern.FindAllStringSubmatch(input, -1) {
+		name := match[1]
+		for _, s := range m.skills {
+			if s.Name == name {
+				m.history = append(m.history, ai.NewSystem(s.Content))
+				m.transcript += "\n" + styleInfo.Render("[skill: "+s.Name+"]") + "\n"
+				break
+			}
+		}
+	}
+	return m
+}
+
 // handleTabComplete accepts the currently selected autocomplete match (a
 // single match is already auto-selected by updateAutocomplete), and leaves
 // the input unchanged otherwise.
@@ -519,17 +733,34 @@ func (m model) handleTabComplete() (tea.Model, tea.Cmd) {
 // updateAutocomplete recomputes the live slash-command matches from the
 // current input. It runs after every keystroke. When the input stops
 // starting with "/", the match list clears and the highlight resets.
+// Two levels: a bare command matches against knownCommands; a command
+// with enum arguments (see commandOptions) matches against its options.
 func (m *model) updateAutocomplete() {
 	val := m.textarea.Value()
 	if !strings.HasPrefix(val, "/") {
 		m.autocompleteMatches = nil
 		m.autocompleteIndex = -1
+		m.autocompleteOffset = 0
+		m.resizeTextarea() // panel closed; give the rows back to the viewport
 		return
 	}
 	matches := m.autocompleteMatches[:0]
-	for _, cmd := range knownCommands {
-		if strings.HasPrefix(cmd, val) {
-			matches = append(matches, cmd)
+	// Split at the first space: cmd is the command part.
+	cmd, _, _ := strings.Cut(val, " ")
+	if options, ok := commandOptions[cmd]; ok {
+		// Second level: match options by prefix. Full strings so
+		// acceptMatch replaces the whole input unchanged.
+		for _, opt := range options {
+			full := cmd + " " + opt
+			if strings.HasPrefix(full, val) {
+				matches = append(matches, full)
+			}
+		}
+	} else {
+		for _, c := range knownCommands {
+			if strings.HasPrefix(c, val) {
+				matches = append(matches, c)
+			}
 		}
 	}
 	m.autocompleteMatches = matches
@@ -540,6 +771,15 @@ func (m *model) updateAutocomplete() {
 	} else if m.autocompleteIndex >= len(matches) {
 		m.autocompleteIndex = len(matches) - 1
 	}
+	// Keep the window in range when the match list shrinks.
+	if m.autocompleteOffset > len(matches)-1 {
+		m.autocompleteOffset = len(matches) - 1
+	}
+	if m.autocompleteOffset < 0 {
+		m.autocompleteOffset = 0
+	}
+	// The panel height changed; re-layout so the viewport breathes.
+	m.resizeTextarea()
 }
 
 // acceptMatch accepts the selected match into the textarea. It returns a
@@ -563,7 +803,8 @@ func (m *model) acceptMatch() tea.Cmd {
 	return func() tea.Msg { return m.textarea.Focus() }
 }
 
-// handleSessions lists all sessions from the store.
+// handleSessions lists all sessions from the store in a table with
+// name, message count, and session ID columns.
 func (m model) handleSessions() (tea.Model, tea.Cmd) {
 	if m.store == nil {
 		m.err = "no store available"
@@ -580,30 +821,131 @@ func (m model) handleSessions() (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	}
+	// Cache the list for /resume by #.
+	m.sessionList = sessions
+	// Compute column widths from the data.
+	type row struct {
+		name  string
+		count int
+		id    string
+	}
+	rows := make([]row, len(sessions))
+	maxName := 4  // "NAME"
+	maxCount := 4 // "MSGS"
+	for i, s := range sessions {
+		count, _ := m.store.CountMessages(context.Background(), s.ID)
+		name := sessionDisplayName(s.Label, s.ID)
+		rows[i] = row{name: name, count: count, id: s.ID}
+		if len(name) > maxName {
+			maxName = len(name)
+		}
+		countStr := fmt.Sprintf("%d", count)
+		if len(countStr) > maxCount {
+			maxCount = len(countStr)
+		}
+	}
 	var sb strings.Builder
 	sb.WriteString("\n")
 	sb.WriteString(styleInfo.Render("[sessions]"))
 	sb.WriteString("\n")
-	for _, s := range sessions {
-		count, _ := m.store.CountMessages(context.Background(), s.ID)
-		fmt.Fprintf(&sb, "  %s  %d messages\n", s.ID, count)
+	// Header.
+	fmt.Fprintf(&sb, "  %-3s  %-*s  %*s  %s\n", "#", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
+	for i, r := range rows {
+		prefix := "  "
+		if sessions[i].ID == m.sessionID {
+			prefix = "* "
+		}
+		fmt.Fprintf(&sb, "%s%-3d  %-*s  %*d  %s\n", prefix, i+1, maxName, r.name, maxCount, r.count, r.id)
 	}
 	m.transcript += sb.String()
 	m.refresh()
 	return m, nil
 }
 
+// handleSessionDelete deletes a session (by #, id, or label) from the
+// store. Messages and child branches cascade. Deleting the current
+// session resets the in-memory state like /new.
+func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no store available"
+		return m, nil
+	}
+	if len(args) == 0 {
+		m.err = "usage: /sessions delete <#|id|label>"
+		return m, nil
+	}
+	id := m.resolveSession(args[0])
+	if id == "" {
+		m.err = "session not found: " + args[0]
+		return m, nil
+	}
+	name := sessionDisplayName(m.labelOf(id), id)
+	if err := m.store.DeleteSession(context.Background(), id); err != nil {
+		m.storeErr = "delete: " + err.Error()
+		return m, nil
+	}
+	m.storeErr = ""
+	// Drop the deleted session from the resolve cache so # lookups
+	// stay accurate.
+	for i, s := range m.sessionList {
+		if s.ID == id {
+			m.sessionList = append(m.sessionList[:i], m.sessionList[i+1:]...)
+			break
+		}
+	}
+	// If the deleted session was the active one, or the active session
+	// was a branch that cascaded away with it, reset like /new so no
+	// dead session id survives in the status bar or store writes.
+	if id == m.sessionID {
+		m.resetSession()
+	} else if m.sessionID != "" {
+		if _, err := m.store.GetSession(context.Background(), m.sessionID); err != nil {
+			m.resetSession()
+		}
+	}
+	m.transcript += "\n" + styleInfo.Render("[deleted: "+name+"]") + "\n"
+	m.refresh()
+	return m, nil
+}
+
+// resetSession clears the active session state, like /new.
+func (m *model) resetSession() {
+	m.sessionID = ""
+	m.sessionLabel = ""
+	m.autoNamed = false
+	m.history = nil
+	m.transcript = ""
+	m.segments = nil
+}
+
+// labelOf returns the stored label for a session, or "" when it has
+// none or cannot be read.
+func (m model) labelOf(id string) string {
+	sess, err := m.store.GetSession(context.Background(), id)
+	if err != nil {
+		return ""
+	}
+	return sess.Label
+}
+
 // handleResume loads a session from the store and displays its transcript.
+// Accepts: a line number (#3 or 3) from the last /sessions, a session ID,
+// or a label (case-insensitive prefix match).
 func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	if m.store == nil {
 		m.err = "no store available"
 		return m, nil
 	}
 	if len(fields) < 2 {
-		m.err = "usage: /resume <session-id>"
+		m.err = "usage: /resume <# | id | label>"
 		return m, nil
 	}
-	id := fields[1]
+	arg := fields[1]
+	id := m.resolveSession(arg)
+	if id == "" {
+		m.err = "session not found: " + arg
+		return m, nil
+	}
 	if _, err := m.store.GetSession(context.Background(), id); err != nil {
 		m.storeErr = "resume: " + err.Error()
 		return m, nil
@@ -619,8 +961,54 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	m.segments = nil
 	m.err = ""
 	m.storeErr = ""
+	// Load the session label for the status bar.
+	if sess, err := m.store.GetSession(context.Background(), id); err == nil && sess.Label != "" {
+		m.sessionLabel = sess.Label
+		m.autoNamed = true
+	}
 	m.refresh()
 	return m, nil
+}
+
+// resolveSession resolves a /resume argument to a session ID.
+// Tries: line number (#3 or 3) from the cached session list,
+// exact session ID match, then case-insensitive label prefix match.
+func (m model) resolveSession(arg string) string {
+	// Strip leading # for line numbers.
+	numStr := strings.TrimPrefix(arg, "#")
+	if n, err := strconv.Atoi(numStr); err == nil && n >= 1 && n <= len(m.sessionList) {
+		return m.sessionList[n-1].ID
+	}
+	// Try exact ID match.
+	for _, s := range m.sessionList {
+		if s.ID == arg {
+			return s.ID
+		}
+	}
+	// Try case-insensitive label prefix match.
+	lower := strings.ToLower(arg)
+	for _, s := range m.sessionList {
+		if s.Label != "" && strings.HasPrefix(strings.ToLower(s.Label), lower) {
+			return s.ID
+		}
+	}
+	// Fallback: try the store directly (for IDs not in the cached list).
+	if _, err := m.store.GetSession(context.Background(), arg); err == nil {
+		return arg
+	}
+	return ""
+}
+
+// sessionDisplayName returns the label when set, otherwise a truncated
+// session ID (first 12 chars + "...").
+func sessionDisplayName(label, id string) string {
+	if label != "" {
+		return label
+	}
+	if len(id) > 12 {
+		return id[:12] + "..."
+	}
+	return id
 }
 
 // handleBranch creates a new session under the current (or given) session
@@ -686,6 +1074,7 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.storeErr = ""
+	m.sessionLabel = label // keep status bar in sync
 	if label == "" {
 		m.transcript += "\n" + styleInfo.Render("[label cleared]") + "\n"
 	} else {
@@ -696,6 +1085,8 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 }
 
 // handleTree renders the session tree with labels and message counts.
+// Uses the same NAME/MSGS/SESSION ID columns as /sessions, with tree
+// glyphs (├─/└─) marking children and * marking the current session.
 func (m model) handleTree() (tea.Model, tea.Cmd) {
 	if m.store == nil {
 		m.err = "no store available"
@@ -712,28 +1103,88 @@ func (m model) handleTree() (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	}
+	// Flatten the tree into rows so column widths can be computed.
+	type row struct {
+		name  string
+		count int
+		id    string
+		glyph string // tree prefix: "" for roots, "├─ " or "└─ " for children
+	}
+	var rows []row
+	var flatten func(node *gateway.SessionNode, depth int, last bool)
+	flatten = func(node *gateway.SessionNode, depth int, last bool) {
+		count, _ := m.store.CountMessages(context.Background(), node.ID)
+		name := sessionDisplayName(node.Label, node.ID)
+		glyph := ""
+		if depth > 0 {
+			if last {
+				glyph = "└─ "
+			} else {
+				glyph = "├─ "
+			}
+			glyph = strings.Repeat("  ", depth-1) + glyph
+		}
+		rows = append(rows, row{name: name, count: count, id: node.ID, glyph: glyph})
+		for i, child := range node.Children {
+			flatten(child, depth+1, i == len(node.Children)-1)
+		}
+	}
+	for _, root := range roots {
+		flatten(root, 0, false)
+	}
+	// Column widths from the data.
+	maxName := 4 // "NAME"
+	maxCount := 4
+	for _, r := range rows {
+		if len(r.glyph)+len(r.name) > maxName {
+			maxName = len(r.glyph) + len(r.name)
+		}
+		count := fmt.Sprint(r.count)
+		if len(count) > maxCount {
+			maxCount = len(count)
+		}
+	}
 	var sb strings.Builder
 	sb.WriteString("\n")
 	sb.WriteString(styleInfo.Render("[session tree]"))
 	sb.WriteString("\n")
-	var render func(node *gateway.SessionNode, depth int)
-	render = func(node *gateway.SessionNode, depth int) {
-		indent := strings.Repeat("  ", depth)
-		count, _ := m.store.CountMessages(context.Background(), node.ID)
-		label := node.Label
-		if label != "" {
-			label = "  " + label
+	fmt.Fprintf(&sb, "%s %-*s %*s  %s\n", "", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
+	for _, r := range rows {
+		marker := ""
+		if r.id == m.sessionID {
+			marker = "*"
 		}
-		fmt.Fprintf(&sb, "%s%s%s  %d messages\n", indent, node.ID, label, count)
-		for _, child := range node.Children {
-			render(child, depth+1)
-		}
-	}
-	for _, root := range roots {
-		render(root, 0)
+		fmt.Fprintf(&sb, "%s %-*s %*d  %s\n", marker, maxName, r.glyph+r.name, maxCount, r.count, r.id)
 	}
 	m.transcript += sb.String()
 	m.refresh()
+	return m, nil
+}
+
+// handleCopy copies the last message in the transcript to the system
+// clipboard. Works on user, assistant, and tool result messages.
+func (m model) handleCopy() (tea.Model, tea.Cmd) {
+	if len(m.history) == 0 {
+		m.err = "nothing to copy"
+		return m, nil
+	}
+	last := m.history[len(m.history)-1]
+	var text string
+	switch msg := last.(type) {
+	case ai.User:
+		text = msg.Content
+	case ai.Assistant:
+		text = msg.Content
+	case ai.ToolResult:
+		text = msg.Content
+	}
+	if text == "" {
+		m.err = "nothing to copy"
+		return m, nil
+	}
+	if err := clipboard.WriteAll(text); err != nil {
+		m.err = "copy failed: " + err.Error()
+	}
 	return m, nil
 }
 
@@ -783,7 +1234,8 @@ func newSessionID() (string, error) {
 
 // resizeTextarea adjusts the textarea height based on its current content,
 // clamped between minTextareaHeight and maxTextareaHeight. It also resizes
-// the viewport to fill the remaining space.
+// the viewport to fill the remaining space minus the status bar and the
+// autocomplete panel (when open).
 func (m *model) resizeTextarea() {
 	lines := strings.Count(m.textarea.Value(), "\n") + 1
 	if lines < minTextareaHeight {
@@ -793,7 +1245,7 @@ func (m *model) resizeTextarea() {
 		lines = maxTextareaHeight
 	}
 	m.textarea.SetHeight(lines)
-	vpHeight := m.viewport.Height + m.textarea.Height() - lines
+	vpHeight := m.screenHeight - m.textarea.Height() - statusLines - m.autocompleteHeight()
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
@@ -801,8 +1253,10 @@ func (m *model) resizeTextarea() {
 }
 
 // renderTranscript renders a message history as the TUI transcript.
-// Assistant messages are routed through renderAssistant so resumed
-// sessions render markdown identically to the live AgentEnd path.
+// Assistant messages render thinking, tool calls, and content in order
+// (matching the live AgentEnd path); tool results render full; compacted
+// summaries render dimmed. Other system messages (skills, injected
+// prompts) are not persisted and never appear here.
 func renderTranscript(messages []ai.Message, width int) string {
 	var sb strings.Builder
 	for _, msg := range messages {
@@ -813,8 +1267,44 @@ func renderTranscript(messages []ai.Message, width int) string {
 			sb.WriteString("\n")
 		case ai.Assistant:
 			sb.WriteString("\n")
-			sb.WriteString(renderAssistant(m.Content, width))
+			if m.Thinking != nil && *m.Thinking != "" {
+				sb.WriteString(styleThinking.Render("[thinking]"))
+				sb.WriteString("\n")
+				sb.WriteString(styleThinking.Render(*m.Thinking))
+				sb.WriteString("\n")
+			}
+			for _, call := range m.ToolCalls {
+				sb.WriteString(styleTool.Render("[tool: " + call.Name + "]"))
+				sb.WriteString("\n")
+				if len(call.Arguments) > 0 {
+					for k, v := range call.Arguments {
+						sb.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
+					}
+					sb.WriteString("\n")
+				}
+			}
+			if m.Content != "" {
+				sb.WriteString(renderAssistant(m.Content, width))
+				sb.WriteString("\n")
+			}
+		case ai.ToolResult:
 			sb.WriteString("\n")
+			if m.IsError {
+				sb.WriteString(styleError.Render("[tool result: error]"))
+			} else {
+				sb.WriteString(styleTool.Render("[tool result]"))
+			}
+			sb.WriteString("\n")
+			sb.WriteString(styleTool.Render(m.Content))
+			sb.WriteString("\n")
+		case ai.System:
+			// Only compaction summaries are persisted; render them so
+			// the user sees the history was summarized.
+			if strings.HasPrefix(m.Content, "[compacted:") {
+				sb.WriteString("\n")
+				sb.WriteString(styleInfo.Render(m.Content))
+				sb.WriteString("\n")
+			}
 		}
 	}
 	return sb.String()
@@ -873,20 +1363,35 @@ func renderAssistant(content string, width int) string {
 	return strings.TrimRight(out, "\n")
 }
 
-// View renders the full screen: viewport on top, status bar in the middle,
-// textarea at the bottom.
+// View renders the full screen: viewport on top, status bar, then the
+// autocomplete dropup panel (when open), textarea at the bottom.
 func (m model) View() string {
 	var sb strings.Builder
 	sb.WriteString(m.viewport.View())
 	sb.WriteString("\n")
 	sb.WriteString(styleStatus.Render(m.statusLine()))
 	sb.WriteString("\n")
-	if line := m.autocompleteLine(); line != "" {
-		sb.WriteString(line)
+	if panel := m.autocompletePanel(); panel != "" {
+		sb.WriteString(panel)
 		sb.WriteString("\n")
 	}
 	sb.WriteString(m.textarea.View())
 	return sb.String()
+}
+
+// windowTitle builds the terminal title: state + model.
+func windowTitle(state, modelName string) string {
+	return fmt.Sprintf("omega | %s | %s", state, modelName)
+}
+
+// titleCmd returns a Bubble Tea command that sets the window title to
+// the current state and model.
+func (m model) titleCmd() tea.Cmd {
+	state := "idle"
+	if m.busy {
+		state = "running"
+	}
+	return tea.SetWindowTitle(windowTitle(state, m.modelName))
 }
 
 // statusLine returns the bottom status bar text.
@@ -896,8 +1401,13 @@ func (m model) statusLine() string {
 		state = "running"
 	}
 	sess := m.sessionID
-	if sess == "" {
+	if m.ephemeral {
+		sess = "ephemeral"
+	} else if sess == "" {
 		sess = "none"
+	}
+	if m.sessionLabel != "" {
+		sess = m.sessionLabel
 	}
 	provider := m.providerType
 	if provider == "" {
@@ -908,7 +1418,7 @@ func (m model) statusLine() string {
 	if m.compaction != nil && m.compaction.ContextWindow > 0 {
 		window = m.compaction.ContextWindow
 	}
-	line := fmt.Sprintf("omega | %s | %s/%s | tokens: %d/%d | sess: %s", state, provider, m.modelName, tokens, window, sess)
+	line := fmt.Sprintf("omega | %s | %s/%s | tokens: %d/%d | %s", state, provider, m.modelName, tokens, window, sess)
 	if m.err != "" {
 		line += " | " + styleError.Render("error: "+m.err)
 	}
@@ -918,40 +1428,179 @@ func (m model) statusLine() string {
 	return line
 }
 
-// autocompleteLine returns the slash-command match list with the
-// selected match highlighted, or an empty string when there are no
-// matches. It sits between the status bar and the textarea.
-func (m model) autocompleteLine() string {
+// autoNameSession returns a command that calls the provider in a
+// background goroutine to generate a short title for the session.
+// The result is delivered as an autoNameMsg.
+func (m model) autoNameSession() tea.Cmd {
+	if len(m.history) < 2 {
+		return nil
+	}
+	firstUser := ""
+	firstAssistant := ""
+	for _, msg := range m.history {
+		switch msg := msg.(type) {
+		case ai.User:
+			if firstUser == "" {
+				firstUser = msg.Content
+			}
+		case ai.Assistant:
+			if firstAssistant == "" {
+				firstAssistant = msg.Content
+			}
+		}
+	}
+	if firstUser == "" || firstAssistant == "" {
+		return nil
+	}
+	// Truncate to avoid blowing up the title prompt.
+	if len(firstUser) > 200 {
+		firstUser = firstUser[:200]
+	}
+	if len(firstAssistant) > 200 {
+		firstAssistant = firstAssistant[:200]
+	}
+	prompt := fmt.Sprintf("Generate a short title (3-5 words) for this conversation. Reply with only the title, no quotes or punctuation.\n\nUser: %s\nAssistant: %s", firstUser, firstAssistant)
+
+	providerType, modelName, host, apiKey := m.providerType, m.modelName, m.host, m.apiKey
+	sessionID := m.sessionID
+	gen := m.autoNameGen
+	store := m.store
+
+	return func() tea.Msg {
+		provider, err := ai.NewProvider(providerType, modelName, host, apiKey)
+		if err != nil {
+			return autoNameMsg{sessionID: sessionID, gen: gen, err: err}
+		}
+		messages := []ai.Message{
+			ai.NewUser(prompt),
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		events := provider.Stream(ctx, messages, nil)
+		var title strings.Builder
+		for event := range events {
+			if chunk, ok := event.(ai.ResponseChunk); ok {
+				title.WriteString(chunk.Content)
+			}
+		}
+		label := strings.TrimSpace(title.String())
+		if label == "" {
+			return autoNameMsg{sessionID: sessionID, gen: gen, err: fmt.Errorf("empty title")}
+		}
+		if len(label) > 80 {
+			label = label[:80]
+		}
+		if err := store.SetLabel(context.Background(), sessionID, label); err != nil {
+			return autoNameMsg{sessionID: sessionID, gen: gen, err: err}
+		}
+		return autoNameMsg{sessionID: sessionID, gen: gen, label: label}
+	}
+}
+
+// clampAutocompleteOffset keeps the selected row inside the dropup
+// window, scrolling the window as the selection moves past its edges.
+func (m *model) clampAutocompleteOffset() {
+	if m.autocompleteIndex < m.autocompleteOffset {
+		m.autocompleteOffset = m.autocompleteIndex
+	}
+	if m.autocompleteIndex >= m.autocompleteOffset+maxAutocompleteRows {
+		m.autocompleteOffset = m.autocompleteIndex - maxAutocompleteRows + 1
+	}
+	if m.autocompleteOffset < 0 {
+		m.autocompleteOffset = 0
+	}
+}
+
+// autocompleteHeight returns the height the dropup panel occupies:
+// 0 when there are no matches, otherwise the visible row count plus the
+// border, capped at maxAutocompleteRows. When the list is truncated, the
+// "..." row adds one more line.
+func (m model) autocompleteHeight() int {
+	if len(m.autocompleteMatches) == 0 {
+		return 0
+	}
+	rows := len(m.autocompleteMatches)
+	if rows > maxAutocompleteRows {
+		rows = maxAutocompleteRows
+	}
+	height := rows + 2 // +2 for the border
+	if len(m.autocompleteMatches) > maxAutocompleteRows {
+		height++ // the "..." row
+	}
+	return height
+}
+
+// autocompletePanel renders the slash-command matches as a vertical
+// dropup list with the selected match highlighted, or an empty string
+// when there are no matches. It sits between the status bar and the
+// textarea. The visible window follows autocompleteOffset so the
+// selection stays on screen as it cycles.
+func (m model) autocompletePanel() string {
 	if len(m.autocompleteMatches) == 0 {
 		return ""
 	}
-	var matches []string
-	for i, cmd := range m.autocompleteMatches {
+	var lines []string
+	end := m.autocompleteOffset + maxAutocompleteRows
+	if end > len(m.autocompleteMatches) {
+		end = len(m.autocompleteMatches)
+	}
+	for i := m.autocompleteOffset; i < end; i++ {
 		if i == m.autocompleteIndex {
-			matches = append(matches, styleMatch.Render(cmd))
+			lines = append(lines, styleMatch.Render(m.autocompleteMatches[i]))
 		} else {
-			matches = append(matches, cmd)
+			lines = append(lines, m.autocompleteMatches[i])
 		}
 	}
-	return strings.Join(matches, "  ")
+	if end < len(m.autocompleteMatches) {
+		lines = append(lines, "...")
+	}
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Width(m.viewport.Width - 2).Render(strings.Join(lines, "\n"))
 }
 
-// renderHelp returns the /help text.
-func renderHelp() string {
-	return "\n" + styleInfo.Render(`[omega chat]
-  type a message and press enter to send
-  ctrl+j inserts a newline (multi-line input)
+// truncate shortens s to maxLen characters, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
 
-  /exit          quit
-  /new           start a new conversation (keeps the session)
-  /sessions      list saved sessions
-  /resume <id>   resume a session
-  /branch [id]   branch a new session from the current (or given) one
-  /label [text]  set a label on the current session (no text clears it)
-  /tree          show the session tree
-  /model <name>  switch the model
-  /provider <n>  switch provider (ollama, openai, anthropic)
-  /compact       summarize conversation history
-  /help          show this help
-`) + "\n"
+// renderHelp returns the /help text. Commands are laid out as a
+// two-column table with widths computed from the data, matching the
+// /sessions and /tree tables.
+func renderHelp() string {
+	rows := [][2]string{
+		{"/exit", "quit"},
+		{"/new [--ephemeral]", "start a new conversation (--ephemeral: nothing persisted)"},
+		{"/sessions", "list saved sessions"},
+		{"/resume <#|id|label>", "resume a session (line # from /sessions, id, or label)"},
+		{"/branch [id]", "branch a new session from the current (or given) one"},
+		{"/label [text]", "set a label on the current session (no text clears it)"},
+		{"/tree", "show the session tree"},
+		{"/model <name>", "switch the model"},
+		{"/provider <n>", "switch provider (ollama, openai, anthropic)"},
+		{"/compact [focus]", "summarize conversation history (optional focus)"},
+		{"/copy", "copy the last message to clipboard"},
+		{"/thinking [on|off]", "show/hide thinking blocks (no arg toggles)"},
+		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
+		{"/help", "show this help"},
+	}
+	maxCmd := len("COMMAND")
+	for _, r := range rows {
+		if len(r[0]) > maxCmd {
+			maxCmd = len(r[0])
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(styleInfo.Render("[omega chat]"))
+	sb.WriteString("\n")
+	sb.WriteString("  type a message and press enter to send\n")
+	sb.WriteString("  ctrl+j inserts a newline (multi-line input)\n")
+	sb.WriteString("\n")
+	fmt.Fprintf(&sb, "  %-*s  %s\n", maxCmd, "COMMAND", "DESCRIPTION")
+	for _, r := range rows {
+		fmt.Fprintf(&sb, "  %-*s  %s\n", maxCmd, r[0], r[1])
+	}
+	return sb.String()
 }

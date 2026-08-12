@@ -85,10 +85,10 @@ AGENTS.md (root — this file)
 ├── agents/                   # conventions (COMMIT.md)
 ├── internal/
 │   ├── ai/                   # provider abstraction, stream events, message types, retry, multi-provider
-│   ├── agent/                # multi-turn loop, tool execution, compaction, project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), AssistantMessageEvent, ToolResultEvent
+│   ├── agent/                # multi-turn loop, tool execution, compaction (threshold + overflow auto-retry), project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), AssistantMessageEvent, ToolResultEvent
 │   └── gateway/              # HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end
 └── cmd/
-    └── omega/                # single binary: serve, run, health, chat; /branch, /label, /tree
+    └── omega/                # single binary: serve, run, health, chat; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /thinking, /tools
 ```
 
 ## Child Doc Shape
@@ -123,10 +123,10 @@ rules but cannot override core contracts.
 
 ## Child DOX Index
 
-| Path                | Status      | What it owns                                                                                                                                                                                                     |
-| ------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents/`           | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                   |
-| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types, retry, multi-provider                                                                                                                                 |
-| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, compaction, project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), AssistantMessageEvent, ToolResultEvent        |
-| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end |
-| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat                                                                                                                                                                          |
+| Path                | Status      | What it owns                                                                                                                                                                                                                                |
+| ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents/`           | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                              |
+| `internal/ai/`      | Implemented | Provider abstraction, stream events, message + tool types, retry, multi-provider                                                                                                                                                            |
+| `internal/agent/`   | Implemented | Multi-turn loop, tool execution, compaction (threshold + overflow auto-retry), project context, system prompt, skills; events: AgentStart, TurnStart, TurnEnd, AgentEnd (carries assistant message), AssistantMessageEvent, ToolResultEvent |
+| `internal/gateway/` | Implemented | HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end                            |
+| `cmd/omega/`        | Implemented | Single binary: serve, run, health, chat; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /thinking, /tools                                                                                         |

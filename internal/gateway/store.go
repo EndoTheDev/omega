@@ -175,7 +175,9 @@ func (s *Store) ListSessions(ctx context.Context) ([]Session, error) {
 	return out, rows.Err()
 }
 
-// DeleteSession removes a session and its messages (cascade).
+// DeleteSession removes a session. Messages and child branches cascade
+// via the ON DELETE CASCADE foreign keys. It is a no-op (nil) when the
+// session does not exist.
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
 	return err

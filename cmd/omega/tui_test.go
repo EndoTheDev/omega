@@ -305,9 +305,9 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 }
 
-// TestNewKeepsSession verifies /new wipes in-memory history but keeps
-// the session ID so the current conversation stays persisted.
-func TestClearKeepsSession(t *testing.T) {
+// TestClearStartsFreshSession verifies /new wipes in-memory history and
+// detaches from the current session so the next message starts a new one.
+func TestClearStartsFreshSession(t *testing.T) {
 	s, err := gateway.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -325,8 +325,11 @@ func TestClearKeepsSession(t *testing.T) {
 	if len(m.history) != 0 || m.transcript != "" {
 		t.Fatalf("clear failed: history=%d transcript=%q", len(m.history), m.transcript)
 	}
-	if m.sessionID != "sess1" {
-		t.Fatalf("clear dropped session: %q", m.sessionID)
+	if m.sessionID != "" {
+		t.Fatalf("clear kept session: %q", m.sessionID)
+	}
+	if m.ephemeral {
+		t.Fatal("/new without --ephemeral must not enter ephemeral mode")
 	}
 }
 
@@ -357,8 +360,8 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 	if !strings.Contains(m.transcript, "abc123") {
 		t.Fatalf("/sessions missing session id: %q", m.transcript)
 	}
-	if !strings.Contains(m.transcript, "2 messages") {
-		t.Fatalf("/sessions missing message count: %q", m.transcript)
+	if !strings.Contains(m.transcript, "MSGS") {
+		t.Fatalf("/sessions missing table header: %q", m.transcript)
 	}
 
 	updated, _ = m.handleCommand("/resume abc123")
@@ -385,7 +388,7 @@ func TestResumeUnknownSession(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
 	updated, _ := m.handleCommand("/resume nope")
 	m = updated.(model)
-	if m.storeErr == "" {
+	if m.err == "" {
 		t.Fatal("expected error for unknown session")
 	}
 }
@@ -535,7 +538,7 @@ func TestTreeCommand(t *testing.T) {
 	if !strings.Contains(plain, "main") {
 		t.Fatalf("tree missing label: %q", plain)
 	}
-	if !strings.Contains(plain, "1 messages") {
+	if !strings.Contains(plain, "1") || !strings.Contains(plain, "MSGS") {
 		t.Fatalf("tree missing message count: %q", plain)
 	}
 	// Child is indented deeper than root.
@@ -576,15 +579,15 @@ func TestTabComplete(t *testing.T) {
 	}
 
 	// Multiple matches: "/" matches every known command, so the
-	// autocomplete line lists the options with the selected one highlighted.
+	// autocomplete panel lists the options with the selected one highlighted.
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	if len(m.autocompleteMatches) != len(knownCommands) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
-	line := ansiStrip(m.autocompleteLine())
-	if !strings.Contains(line, "/exit") || !strings.Contains(line, "/model") {
-		t.Fatalf("autocomplete line missing options: %q", line)
+	panel := ansiStrip(m.autocompletePanel())
+	if !strings.Contains(panel, "/new") || !strings.Contains(panel, "/sessions") {
+		t.Fatalf("autocomplete panel missing options: %q", panel)
 	}
 	// Nothing selected initially.
 	if m.autocompleteIndex != -1 {
@@ -873,7 +876,7 @@ func TestStatusLineFormat(t *testing.T) {
 	if !strings.Contains(line, "tokens:") {
 		t.Fatalf("status line missing tokens: %q", line)
 	}
-	if !strings.Contains(line, "sess: abc123") {
+	if !strings.Contains(line, "abc123") {
 		t.Fatalf("status line missing session: %q", line)
 	}
 }
@@ -886,5 +889,453 @@ func TestHelpText(t *testing.T) {
 		if !strings.Contains(plain, cmd) {
 			t.Fatalf("help text missing %q", cmd)
 		}
+	}
+}
+
+func TestEphemeralNewClearsSession(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.sessionID = "abc123"
+	m.ephemeral = false
+
+	updated, _ := m.handleCommand("/new --ephemeral")
+	m = updated.(model)
+	if !m.ephemeral {
+		t.Fatal("expected ephemeral mode after /new --ephemeral")
+	}
+	if m.sessionID != "" {
+		t.Fatalf("session id = %q, want empty in ephemeral mode", m.sessionID)
+	}
+}
+
+func TestEphemeralSkipsStoreOnSubmit(t *testing.T) {
+	// A store is present, but ephemeral mode must not create or persist.
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+	m.ephemeral = true
+	m.textarea.SetValue("hello ephemeral")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	if m.sessionID != "" {
+		t.Fatalf("session id = %q, want empty (ephemeral must not create sessions)", m.sessionID)
+	}
+	sessions, _ := s.ListSessions(context.Background())
+	if len(sessions) != 0 {
+		t.Fatalf("store has %d sessions, want 0", len(sessions))
+	}
+}
+
+func TestEphemeralBlocksStoreCommands(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.ephemeral = true
+
+	for _, cmd := range []string{"/sessions", "/resume abc", "/branch", "/label x", "/tree"} {
+		updated, _ := m.handleCommand(cmd)
+		m = updated.(model)
+		if m.err != "no sessions in ephemeral mode" {
+			t.Fatalf("%s in ephemeral mode: err = %q, want %q", cmd, m.err, "no sessions in ephemeral mode")
+		}
+		m.err = ""
+	}
+}
+
+func TestEphemeralStatusLine(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.ephemeral = true
+	line := ansiStrip(m.statusLine())
+	if !strings.Contains(line, "ephemeral") {
+		t.Fatalf("status line missing ephemeral marker: %q", line)
+	}
+}
+
+// TestAutocompleteArgLevel verifies the second-level autocomplete: when
+// the input equals (or starts) a command with enum options, the matches
+// are the full command+option strings, sorted.
+func TestAutocompleteArgLevel(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+
+	// Bare /thinking offers its options as full strings, in map order.
+	m.textarea.SetValue("/thinking")
+	m.updateAutocomplete()
+	want := []string{"/thinking on", "/thinking off"}
+	if len(m.autocompleteMatches) != 2 {
+		t.Fatalf("/thinking matches = %v, want %v", m.autocompleteMatches, want)
+	}
+	for i, w := range want {
+		if m.autocompleteMatches[i] != w {
+			t.Fatalf("/thinking match[%d] = %q, want %q", i, m.autocompleteMatches[i], w)
+		}
+	}
+
+	// /tools offers on/off/auto.
+	m.textarea.SetValue("/tools")
+	m.updateAutocomplete()
+	want = []string{"/tools on", "/tools off", "/tools auto"}
+	if len(m.autocompleteMatches) != 3 {
+		t.Fatalf("/tools matches = %v, want %v", m.autocompleteMatches, want)
+	}
+	for i, w := range want {
+		if m.autocompleteMatches[i] != w {
+			t.Fatalf("/tools match[%d] = %q, want %q", i, m.autocompleteMatches[i], w)
+		}
+	}
+
+	// Partial option filters: "/tools a" -> "/tools auto" only.
+	m.textarea.SetValue("/tools a")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/tools auto" {
+		t.Fatalf("/tools a matches = %v, want [/tools auto]", m.autocompleteMatches)
+	}
+
+	// /new offers --ephemeral.
+	m.textarea.SetValue("/new")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/new --ephemeral" {
+		t.Fatalf("/new matches = %v, want [/new --ephemeral]", m.autocompleteMatches)
+	}
+
+	// Unknown option matches nothing.
+	m.textarea.SetValue("/thinking x")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("/thinking x matches = %v, want none", m.autocompleteMatches)
+	}
+
+	// A command without options keeps first-level matching.
+	m.textarea.SetValue("/com")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/compact" {
+		t.Fatalf("/com matches = %v, want [/compact]", m.autocompleteMatches)
+	}
+}
+
+// TestAutocompleteSemanticOrder verifies matches follow the semantic
+// command order: /new first, /help last.
+func TestAutocompleteSemanticOrder(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != len(knownCommands) {
+		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
+	}
+	if m.autocompleteMatches[0] != "/new" {
+		t.Fatalf("first match = %q, want /new", m.autocompleteMatches[0])
+	}
+	if m.autocompleteMatches[len(m.autocompleteMatches)-1] != "/help" {
+		t.Fatalf("last match = %q, want /help", m.autocompleteMatches[len(m.autocompleteMatches)-1])
+	}
+}
+
+// TestAutocompletePanelVertical verifies the panel renders matches as
+// newline-separated rows (vertical, not horizontal).
+func TestAutocompletePanelVertical(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	panel := ansiStrip(m.autocompletePanel())
+	if panel == "" {
+		t.Fatal("expected non-empty panel for /")
+	}
+	// Border adds a top and bottom row; the rows between contain matches.
+	lines := strings.Split(panel, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("panel has %d lines, want a bordered vertical list", len(lines))
+	}
+	if !strings.Contains(lines[1], "/new") {
+		t.Fatalf("first match row = %q, want /new", lines[1])
+	}
+}
+
+// TestAutocompleteHeightMatchesPanel verifies height accounting: 0 when
+// empty, rows+2 when matches exist.
+func TestAutocompleteHeightMatchesPanel(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.textarea.SetValue("hello")
+	m.updateAutocomplete()
+	if h := m.autocompleteHeight(); h != 0 {
+		t.Fatalf("height with no matches = %d, want 0", h)
+	}
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	h := m.autocompleteHeight()
+	if h != maxAutocompleteRows+3 {
+		t.Fatalf("height with matches = %d, want %d (capped + ... row)", h, maxAutocompleteRows+3)
+	}
+}
+
+// TestAutocompleteWindowScrolls verifies the dropup window follows the
+// selection: pressing Down past the last visible row advances the offset
+// so the selected command stays on screen.
+func TestAutocompleteWindowScrolls(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+
+	// Press Down repeatedly to walk through the matches.
+	for i := 0; i < len(knownCommands); i++ {
+		up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = up.(model)
+	}
+	// After cycling through all matches, the last one (/help) is selected.
+	if m.autocompleteIndex != len(knownCommands)-1 {
+		t.Fatalf("index after %d downs = %d, want %d", len(knownCommands), m.autocompleteIndex, len(knownCommands)-1)
+	}
+	// The window must have scrolled: the selected row is visible.
+	panel := ansiStrip(m.autocompletePanel())
+	if !strings.Contains(panel, "/help") {
+		t.Fatalf("panel does not show selected /help after scroll: %q", panel)
+	}
+	// And the window start moved past the first command.
+	if m.autocompleteOffset <= 0 {
+		t.Fatalf("offset = %d, want > 0 after scrolling to the end", m.autocompleteOffset)
+	}
+}
+
+// TestAutocompleteWhileBusy verifies the autocomplete recomputes while a
+// run is in flight (the busy guard previously swallowed typing without
+// recomputing matches).
+func TestAutocompleteWhileBusy(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.busy = true
+	m.textarea.SetValue("/")
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = up.(model)
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) == 0 {
+		t.Fatal("no autocomplete matches while busy")
+	}
+}
+
+// TestInlineSkillInvocation verifies a "/name" token inside a normal
+// message injects the matching skill's content as a system message while
+// leaving the user text unchanged.
+func TestInlineSkillInvocation(t *testing.T) {
+	skill := agent.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, []agent.Skill{skill})
+	m.textarea.SetValue("go ahead and /learn-skill from my notes")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	// The user message is persisted intact.
+	foundUser := false
+	foundSystem := false
+	for _, msg := range m.history {
+		if u, ok := msg.(ai.User); ok && u.Content == "go ahead and /learn-skill from my notes" {
+			foundUser = true
+		}
+		if s, ok := msg.(ai.System); ok && s.Content == "skill body here" {
+			foundSystem = true
+		}
+	}
+	if !foundUser {
+		t.Fatal("user message not preserved intact")
+	}
+	if !foundSystem {
+		t.Fatal("skill content not injected as system message")
+	}
+	if !strings.Contains(m.transcript, "[skill: learn-skill]") {
+		t.Fatalf("transcript missing skill marker: %q", m.transcript)
+	}
+}
+
+// TestInlineSkillUnknownTokenIgnored verifies non-skill "/tokens" (URLs,
+// paths) pass through without injection.
+func TestInlineSkillUnknownTokenIgnored(t *testing.T) {
+	skill := agent.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, []agent.Skill{skill})
+	m.textarea.SetValue("check /path/to/x please")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	for _, msg := range m.history {
+		if s, ok := msg.(ai.System); ok && s.Content == "skill body here" {
+			t.Fatal("unknown token injected a skill")
+		}
+	}
+	if len(m.history) != 1 {
+		t.Fatalf("history = %d messages, want 1 (user only)", len(m.history))
+	}
+}
+
+// TestRenderTranscriptToolResults verifies the resume path renders the
+// full conversation: thinking, tool calls, tool results, and final
+// content, in order, with no blank blocks.
+func TestRenderTranscriptToolResults(t *testing.T) {
+	thinking := "let me check the time"
+	assistant := ai.NewAssistant("")
+	assistant.Thinking = &thinking
+	assistant.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "shell", Arguments: map[string]any{"command": "date"}}}
+	messages := []ai.Message{
+		ai.NewUser("whats the time rn?"),
+		assistant,
+		ai.NewToolResult("11:12 AM", "c1", false),
+		ai.NewAssistant("It's 11:12 AM."),
+	}
+	out := ansiStrip(renderTranscript(messages, 80))
+
+	if !strings.Contains(out, "whats the time rn?") {
+		t.Fatalf("missing user message: %q", out)
+	}
+	if !strings.Contains(out, "[thinking]") || !strings.Contains(out, "let me check the time") {
+		t.Fatalf("missing thinking block: %q", out)
+	}
+	if !strings.Contains(out, "[tool: shell]") || !strings.Contains(out, "command: date") {
+		t.Fatalf("missing tool call: %q", out)
+	}
+	if !strings.Contains(out, "[tool result]") || !strings.Contains(out, "11:12 AM") {
+		t.Fatalf("missing tool result: %q", out)
+	}
+	if !strings.Contains(out, "It's 11:12 AM.") {
+		t.Fatalf("missing final content: %q", out)
+	}
+	// Order check: thinking before tool before result before content.
+	idx := func(s string) int { return strings.Index(out, s) }
+	if !(idx("[thinking]") < idx("[tool: shell]") && idx("[tool: shell]") < idx("[tool result]") && idx("[tool result]") < idx("It's 11:12 AM.")) {
+		t.Fatalf("blocks out of order: %q", out)
+	}
+}
+
+// TestRenderTranscriptCompacted verifies compaction summaries render
+// while other system messages are skipped.
+func TestRenderTranscriptCompacted(t *testing.T) {
+	messages := []ai.Message{
+		ai.NewSystem("[compacted: user asked about the time]"),
+		ai.NewSystem("injected prompt - never persisted, skip"),
+		ai.NewUser("continue"),
+	}
+	out := ansiStrip(renderTranscript(messages, 80))
+	if !strings.Contains(out, "[compacted:") {
+		t.Fatalf("missing compaction summary: %q", out)
+	}
+	if strings.Contains(out, "injected prompt") {
+		t.Fatalf("plain system message rendered: %q", out)
+	}
+}
+
+// TestWindowTitle verifies the terminal title format.
+func TestWindowTitle(t *testing.T) {
+	if got := windowTitle("idle", "glm-5.2"); got != "omega | idle | glm-5.2" {
+		t.Fatalf("idle title = %q, want %q", got, "omega | idle | glm-5.2")
+	}
+	if got := windowTitle("running", "glm-5.2"); got != "omega | running | glm-5.2" {
+		t.Fatalf("running title = %q, want %q", got, "omega | running | glm-5.2")
+	}
+}
+
+// TestSessionsDeleteCommand verifies /sessions delete removes a session
+// by #, id, or label, and resets state when the active session is
+// deleted.
+func TestSessionsDeleteCommand(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "abc123", "", "old name"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "abc123", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Delete by label (the /sessions list populates the resolve cache).
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+	m.sessionID = "abc123"
+	listed, _ := m.handleCommand("/sessions")
+	m = listed.(model)
+	updated, _ := m.handleCommand("/sessions delete old name")
+	m = updated.(model)
+	if m.storeErr != "" {
+		t.Fatalf("delete store error: %s", m.storeErr)
+	}
+	if _, err := s.GetSession(ctx, "abc123"); err == nil {
+		t.Fatal("session still exists after delete")
+	}
+	// Active session deleted: state reset like /new.
+	if m.sessionID != "" || m.history != nil {
+		t.Fatalf("active session not reset: id=%q history=%v", m.sessionID, m.history)
+	}
+	if !strings.Contains(m.transcript, "deleted") {
+		t.Fatalf("transcript missing deleted marker: %q", m.transcript)
+	}
+}
+
+// TestSessionsDeleteUsage verifies missing or unknown targets error.
+func TestSessionsDeleteUsage(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", s, nil)
+
+	updated, _ := m.handleCommand("/sessions delete")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected usage error for /sessions delete without arg")
+	}
+	updated, _ = m.handleCommand("/sessions delete nope")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected not-found error for unknown session")
+	}
+}
+
+// TestAutoNameAppliedWhenSessionMatches verifies the auto-name result
+// updates the status bar label when the session still matches.
+func TestAutoNameAppliedWhenSessionMatches(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.sessionID = "abc123"
+	up, _ := m.Update(autoNameMsg{sessionID: "abc123", gen: 0, label: "Checking the time"})
+	m = up.(model)
+	if m.sessionLabel != "Checking the time" {
+		t.Fatalf("sessionLabel = %q, want %q", m.sessionLabel, "Checking the time")
+	}
+	if !m.autoNamed {
+		t.Fatal("autoNamed not set")
+	}
+}
+
+// TestAutoNameIgnoredOnSessionMismatch verifies a stale auto-name result
+// (session switched mid-flight) does not overwrite the current label.
+func TestAutoNameIgnoredOnSessionMismatch(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.sessionID = "abc123"
+	m.sessionLabel = "Keep me"
+	up, _ := m.Update(autoNameMsg{sessionID: "other", gen: 0, label: "Stale title"})
+	m = up.(model)
+	if m.sessionLabel != "Keep me" {
+		t.Fatalf("sessionLabel = %q, want %q (stale result must be ignored)", m.sessionLabel, "Keep me")
+	}
+}
+
+// TestAutoNameIgnoredAfterNew verifies a stale auto-name result from
+// before /new does not re-apply the old title or block re-naming.
+func TestAutoNameIgnoredAfterNew(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil)
+	m.sessionID = "abc123"
+	m.sessionLabel = "Old title"
+	m.autoNamed = true
+	// /new bumps the generation and detaches the session.
+	up, _ := m.handleCommand("/new")
+	m = up.(model)
+	if m.sessionLabel != "" {
+		t.Fatalf("sessionLabel = %q after /new, want empty", m.sessionLabel)
+	}
+	// A stale result (old gen, old session) must be dropped entirely.
+	up, _ = m.Update(autoNameMsg{sessionID: "abc123", gen: 0, label: "Old title"})
+	m = up.(model)
+	if m.sessionLabel != "" {
+		t.Fatalf("stale auto-name re-applied label: %q", m.sessionLabel)
+	}
+	if m.autoNamed {
+		t.Fatal("stale auto-name blocked re-naming (autoNamed set)")
 	}
 }
