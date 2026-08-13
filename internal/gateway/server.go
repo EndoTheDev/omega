@@ -86,8 +86,16 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	models, err := s.agent.ListModels()
+	if err != nil {
+		http.Error(w, "list models: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"model": s.agent.ModelName()})
+	json.NewEncoder(w).Encode(map[string]any{
+		"current": s.agent.ModelName(),
+		"models":  models,
+	})
 }
 
 // chatRequest is the /chat body. tools is an optional list of tool names

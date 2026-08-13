@@ -125,7 +125,7 @@ func TestSlashCommands(t *testing.T) {
 	// /model with no arg reports usage.
 	updated, _ = m.handleCommand("/model")
 	m = updated.(model)
-	if m.err != "usage: /model <name>" {
+	if m.err != "usage: /model <#|name>" {
 		t.Fatalf("expected usage error, got %q", m.err)
 	}
 
@@ -191,10 +191,11 @@ func TestProviderCommand(t *testing.T) {
 		t.Fatalf("transcript missing provider confirm: %q", m.transcript)
 	}
 
+	// /provider with no args shows current provider.
 	updated, _ = m.handleCommand("/provider")
 	m = updated.(model)
-	if m.err != "usage: /provider <ollama|openai|anthropic>" {
-		t.Fatalf("expected usage error, got %q", m.err)
+	if !strings.Contains(m.transcript, "current: openai") {
+		t.Fatalf("transcript should show current provider, got: %q", m.transcript)
 	}
 
 	updated, _ = m.handleCommand("/provider grok")
@@ -684,11 +685,12 @@ func TestAutocompleteLiveFilter(t *testing.T) {
 		t.Fatalf("/p index = %d, want 0 (auto-selected single match)", m.autocompleteIndex)
 	}
 
-	// "/model" is an exact single match and is auto-selected.
+	// "/model" narrows to /model and /models, auto-selects the first.
 	m.textarea.SetValue("/model")
 	m.updateAutocomplete()
-	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/model" {
-		t.Fatalf("/model matches = %v, want [/model]", m.autocompleteMatches)
+	want := []string{"/model", "/models"}
+	if len(m.autocompleteMatches) != 2 || m.autocompleteMatches[0] != want[0] || m.autocompleteMatches[1] != want[1] {
+		t.Fatalf("/model matches = %v, want %v", m.autocompleteMatches, want)
 	}
 	if m.autocompleteIndex != 0 {
 		t.Fatalf("/model index = %d, want 0 (auto-selected)", m.autocompleteIndex)
@@ -1517,5 +1519,83 @@ func TestThinkingLevelInvalid(t *testing.T) {
 	}
 	if m.err == "" {
 		t.Error("expected error for invalid thinking level")
+	}
+}
+
+func TestModelsCommand(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	up, _ := m.handleCommand("/models")
+	m = up.(model)
+	// Should show a table with model names. The fake provider isn't used here
+	// (handleModels creates its own provider), so the result depends on
+	// whether Ollama is running. Just check it doesn't crash and produces
+	// output or an error.
+	if m.err != "" && m.transcript == "" {
+		// Error with no transcript is fine — Ollama might not be running.
+		return
+	}
+	if !strings.Contains(m.transcript, "NAME") {
+		t.Errorf("transcript should contain table header, got: %q", m.transcript)
+	}
+}
+
+func TestModelSelectByNumber(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	m.modelList = []string{"alpha", "beta", "gamma"}
+	up, _ := m.handleCommand("/model 2")
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("modelName = %q, want beta", m.modelName)
+	}
+	if !strings.Contains(m.transcript, "model set to beta") {
+		t.Errorf("transcript should confirm model switch: %q", m.transcript)
+	}
+}
+
+func TestModelSelectOutOfRange(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	m.modelList = []string{"alpha", "beta"}
+	up, _ := m.handleCommand("/model 99")
+	m = up.(model)
+	if m.modelName != "llama3" {
+		t.Fatalf("modelName should be unchanged, got %q", m.modelName)
+	}
+	if m.err == "" {
+		t.Error("expected out-of-range error")
+	}
+}
+
+func TestModelValidationWithCache(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	m.modelList = []string{"alpha", "beta", "gamma"}
+
+	// Valid model accepted.
+	up, _ := m.handleCommand("/model beta")
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("modelName = %q, want beta", m.modelName)
+	}
+
+	// Invalid model rejected.
+	up, _ = m.handleCommand("/model bogus")
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("modelName should be unchanged, got %q", m.modelName)
+	}
+	if m.err == "" {
+		t.Error("expected not-found error for bogus model")
+	}
+}
+
+func TestModelValidationNoCache(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	// No cache — any model name accepted.
+	up, _ := m.handleCommand("/model anything-goes")
+	m = up.(model)
+	if m.modelName != "anything-goes" {
+		t.Fatalf("modelName = %q, want anything-goes", m.modelName)
+	}
+	if m.err != "" {
+		t.Errorf("expected no error without cache, got %q", m.err)
 	}
 }

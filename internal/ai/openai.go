@@ -49,6 +49,37 @@ func (p *OpenAIProvider) SetThinkingLevel(level string) {
 	p.thinkingLevel = level
 }
 
+// ListModels fetches available models from the OpenAI API (/v1/models).
+func (p *OpenAIProvider) ListModels() ([]string, error) {
+	req, err := http.NewRequest("GET", p.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openai: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		names = append(names, m.ID)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
 // messagesToAPI converts internal Message types to OpenAI format.
 // Assistant tool_calls and tool results use OpenAI's role/id shape.
 func (p *OpenAIProvider) messagesToAPI(messages []Message) []map[string]any {

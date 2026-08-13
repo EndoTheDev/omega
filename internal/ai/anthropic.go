@@ -49,6 +49,38 @@ func (p *AnthropicProvider) SetThinkingLevel(level string) {
 	p.thinkingLevel = level
 }
 
+// ListModels fetches available models from the Anthropic API (/v1/models).
+func (p *AnthropicProvider) ListModels() ([]string, error) {
+	req, err := http.NewRequest("GET", p.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", p.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("anthropic: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		names = append(names, m.ID)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
 // messagesToAPI converts internal Message types to Anthropic format.
 // The system prompt is lifted to the top-level "system" field, and
 // consecutive tool results are folded into a single user message of

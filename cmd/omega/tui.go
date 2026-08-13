@@ -56,7 +56,7 @@ var (
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/provider", "/compact", "/copy", "/thinking", "/tools", "/extensions", "/skills", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/thinking", "/tools", "/extensions", "/skills", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -117,6 +117,7 @@ type model struct {
 	sessionLabel        string            // model-generated title, shown in status bar
 	autoNameGen         int               // bumped on /new; stale auto-name results are dropped
 	sessionList         []gateway.Session // cached from last /sessions, for /resume by #
+	modelList           []string          // cached from last /models, for /model <#> selection
 	ephemeral           bool              // /new --ephemeral; nothing persisted
 }
 
@@ -692,16 +693,51 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "/model":
 		if len(fields) < 2 {
-			m.err = "usage: /model <name>"
+			m.err = "usage: /model <#|name>"
 			return m, nil
 		}
-		m.modelName = fields[1]
+		arg := fields[1]
+		// If numeric and cache is populated, select by line number.
+		if n, err := strconv.Atoi(arg); err == nil && len(m.modelList) > 0 {
+			if n < 1 || n > len(m.modelList) {
+				m.err = fmt.Sprintf("model number %d out of range (1-%d)", n, len(m.modelList))
+				m.refresh()
+				return m, nil
+			}
+			m.modelName = m.modelList[n-1]
+			m.transcript += "\n" + styleInfo.Render("[model set to "+m.modelName+"]") + "\n"
+			m.refresh()
+			return m, m.titleCmd()
+		}
+		// Validate against cached model list if available.
+		if len(m.modelList) > 0 {
+			found := false
+			for _, name := range m.modelList {
+				if name == arg {
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.err = fmt.Sprintf("model %q not found. Use /models to list available models.", arg)
+				m.refresh()
+				return m, nil
+			}
+		}
+		m.modelName = arg
 		m.transcript += "\n" + styleInfo.Render("[model set to "+m.modelName+"]") + "\n"
 		m.refresh()
 		return m, m.titleCmd()
+	case "/models":
+		return m.handleModels()
 	case "/provider":
 		if len(fields) < 2 {
-			m.err = "usage: /provider <ollama|openai|anthropic>"
+			provider := m.providerType
+			if provider == "" {
+				provider = "ollama"
+			}
+			m.transcript += "\n" + styleInfo.Render("current: " + provider) + "\n"
+			m.refresh()
 			return m, nil
 		}
 		name := fields[1]
@@ -922,10 +958,10 @@ func (m model) handleSessions() (tea.Model, tea.Cmd) {
 	}
 	var sb strings.Builder
 	sb.WriteString("\n")
-	sb.WriteString(styleInfo.Render("[sessions]"))
-	sb.WriteString("\n")
 	// Header.
-	fmt.Fprintf(&sb, "  %-3s  %-*s  %*s  %s\n", "#", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
+	header := fmt.Sprintf("  %-3s  %-*s  %*s  %s", "#", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
+	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString("\n")
 	for i, r := range rows {
 		prefix := "  "
 		if sessions[i].ID == m.sessionID {
@@ -1050,6 +1086,56 @@ func (m model) handleSkills() (tea.Model, tea.Cmd) {
 	m.transcript += sb.String()
 	m.refresh()
 	return m, nil
+}
+
+// handleModels fetches available models from the current provider and
+// renders them as a numbered table. Caches the list for /model <#>.
+func (m model) handleModels() (tea.Model, tea.Cmd) {
+	models, err := m.fetchModels()
+	if err != nil {
+		m.err = err.Error()
+		m.refresh()
+		return m, nil
+	}
+	m.modelList = models
+
+	if len(models) == 0 {
+		m.transcript += "\n" + styleInfo.Render("[no models available]") + "\n"
+		m.refresh()
+		return m, nil
+	}
+
+	nameWidth := 4 // "NAME"
+	for _, name := range models {
+		if len(name) > nameWidth {
+			nameWidth = len(name)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	header := fmt.Sprintf("  %-3s  %-*s", "#", nameWidth, "NAME")
+	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString("\n")
+	for i, name := range models {
+		marker := "  "
+		if name == m.modelName {
+			marker = "> "
+		}
+		fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, name)
+	}
+	m.transcript += sb.String()
+	m.refresh()
+	return m, nil
+}
+
+// fetchModels creates a provider and calls ListModels.
+func (m model) fetchModels() ([]string, error) {
+	provider, err := ai.NewProvider(m.providerType, m.modelName, m.host, m.apiKey)
+	if err != nil {
+		return nil, err
+	}
+	return provider.ListModels()
 }
 
 // handleExtensionCommand runs an extension-provided slash command.
@@ -1294,9 +1380,9 @@ func (m model) handleTree() (tea.Model, tea.Cmd) {
 	}
 	var sb strings.Builder
 	sb.WriteString("\n")
-	sb.WriteString(styleInfo.Render("[session tree]"))
+	header := fmt.Sprintf("%s %-*s %*s  %s", "", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
+	sb.WriteString(styleInfo.Render(header))
 	sb.WriteString("\n")
-	fmt.Fprintf(&sb, "%s %-*s %*s  %s\n", "", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
 	for _, r := range rows {
 		marker := ""
 		if r.id == m.sessionID {
@@ -1811,7 +1897,8 @@ func renderHelp() string {
 		{"/branch [id]", "branch a new session from the current (or given) one"},
 		{"/label [text]", "set a label on the current session (no text clears it)"},
 		{"/tree", "show the session tree"},
-		{"/model <name>", "switch the model"},
+		{"/model <#|name>", "switch the model (line # from /models, or name)"},
+		{"/models", "list available models from the current provider"},
 		{"/provider <n>", "switch provider (ollama, openai, anthropic)"},
 		{"/compact [focus]", "summarize conversation history (optional focus)"},
 		{"/copy", "copy the last message to clipboard"},
@@ -1834,7 +1921,9 @@ func renderHelp() string {
 	sb.WriteString("  type a message and press enter to send\n")
 	sb.WriteString("  ctrl+j inserts a newline (multi-line input)\n")
 	sb.WriteString("\n")
-	fmt.Fprintf(&sb, "  %-*s  %s\n", maxCmd, "COMMAND", "DESCRIPTION")
+	header := fmt.Sprintf("  %-*s  %s", maxCmd, "COMMAND", "DESCRIPTION")
+	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString("\n")
 	for _, r := range rows {
 		fmt.Fprintf(&sb, "  %-*s  %s\n", maxCmd, r[0], r[1])
 	}

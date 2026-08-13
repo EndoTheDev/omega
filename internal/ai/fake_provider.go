@@ -55,6 +55,11 @@ func (p *FakeProvider) ModelName() string {
 // SetThinkingLevel is a no-op for the fake provider.
 func (p *FakeProvider) SetThinkingLevel(level string) {}
 
+// ListModels returns a hardcoded list for testing.
+func (p *FakeProvider) ListModels() ([]string, error) {
+	return []string{p.modelName, "other-model"}, nil
+}
+
 // Stream replays the scripted events on a channel, respecting context
 // cancellation, and closes the channel when done. An empty script
 // closes the channel immediately.

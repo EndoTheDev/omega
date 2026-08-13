@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -50,6 +51,39 @@ func (p *OllamaProvider) ModelName() string {
 // any level except "none" and "off" enables thinking.
 func (p *OllamaProvider) SetThinkingLevel(level string) {
 	p.thinkingLevel = level
+}
+
+// ListModels fetches available models from the Ollama API (/api/tags).
+func (p *OllamaProvider) ListModels() ([]string, error) {
+	req, err := http.NewRequest("GET", p.baseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(result.Models))
+	for _, m := range result.Models {
+		names = append(names, m.Name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // messagesToAPI converts internal Message types to Ollama API format.

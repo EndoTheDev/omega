@@ -61,6 +61,7 @@ type Provider interface {
 	Stream(ctx context.Context, messages []Message, tools []ToolSchema) <-chan StreamEvent
 	ModelName() string
 	SetThinkingLevel(level string)
+	ListModels() ([]string, error)
 }
 
 // ThinkingLevels is the ordered list of thinking levels the user can

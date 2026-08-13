@@ -259,7 +259,8 @@ See `extensions/example/main.go` for a complete reference implementation.
 | `/branch [id]`                        | Branch a new session from the current (or given) one                                                  |
 | `/label [text]`                       | Set or clear the current session's label                                                              |
 | `/tree`                               | Show the session tree                                                                                 |
-| `/model <name>`                       | Switch the model at runtime                                                                           |
+| `/model <# \| name>`                  | Switch the model (line # from /models, or name)                                                       |
+| `/models`                             | List available models from the current provider                                                       |
 | `/provider <type>`                    | Switch the provider at runtime                                                                        |
 | `/compact [focus]`                    | Manually compact conversation history                                                                 |
 | `/copy`                               | Copy last message to clipboard                                                                        |

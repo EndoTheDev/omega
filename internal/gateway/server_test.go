@@ -27,6 +27,10 @@ func (m *mockProvider) ModelName() string { return m.modelName }
 
 func (m *mockProvider) SetThinkingLevel(level string) {}
 
+func (m *mockProvider) ListModels() ([]string, error) {
+	return []string{"test-model", "other-model"}, nil
+}
+
 func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
 	events := make(chan ai.StreamEvent)
 	go func() {
@@ -98,12 +102,18 @@ func TestModels(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var body map[string]string
+	var body struct {
+		Current string   `json:"current"`
+		Models  []string `json:"models"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if body["model"] != "mock" {
-		t.Fatalf("model = %q, want mock", body["model"])
+	if body.Current != "mock" {
+		t.Fatalf("current = %q, want mock", body.Current)
+	}
+	if len(body.Models) != 2 || body.Models[0] != "test-model" || body.Models[1] != "other-model" {
+		t.Fatalf("models = %v, want [test-model, other-model]", body.Models)
 	}
 }
 

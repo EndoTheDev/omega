@@ -99,6 +99,11 @@ func (a *Agent) ModelName() string {
 	return a.provider.ModelName()
 }
 
+// ListModels returns the models available from the agent's provider.
+func (a *Agent) ListModels() ([]string, error) {
+	return a.provider.ListModels()
+}
+
 // Run executes the conversation loop and returns a channel of events.
 // The channel is closed when the loop ends. A non-nil tools map overrides
 // the agent's registered tools for this run. Run returns nil if the agent
