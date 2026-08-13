@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -56,7 +58,7 @@ var (
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/thinking", "/tools", "/extensions", "/skills", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/thinking", "/tools", "/extensions", "/skills", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -625,6 +627,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleCompact(fields)
 	case "/copy":
 		return m.handleCopy()
+	case "/export":
+		return m.handleExport(fields[1:])
 	case "/thinking":
 		if len(fields) > 1 {
 			valid := false
@@ -1247,7 +1251,9 @@ func sessionDisplayName(label, id string) string {
 
 // handleBranch creates a new session under the current (or given) session
 // and switches to it. The branch inherits the parent's history via
-// GetAncestorMessages.
+// GetAncestorMessages. If the inherited history is long, only the
+// compaction summary and recent messages are loaded to keep the
+// branch manageable.
 func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 	if m.store == nil {
 		m.err = "no store available"
@@ -1280,6 +1286,13 @@ func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 		m.storeErr = "branch: " + err.Error()
 		return m, nil
 	}
+	// Branch summarization: if the inherited history is long, trim to
+	// the first keepFirst messages, a synthetic summary, and the last
+	// keepLast messages. This keeps the branch manageable without a
+	// provider call.
+	if m.compaction != nil && len(messages) > m.compaction.KeepFirst+m.compaction.KeepLast+5 {
+		messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
+	}
 	m.sessionID = id
 	m.history = messages
 	m.transcript = renderTranscript(messages, m.viewport.Width)
@@ -1287,6 +1300,21 @@ func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 	m.err = ""
 	m.refresh()
 	return m, nil
+}
+
+// summarizeForBranch trims a long message history for a branch by
+// keeping the first keepFirst messages, a synthetic summary placeholder,
+// and the last keepLast messages. This is a heuristic trim, not an
+// LLM-generated summary — the agent will auto-compact on its first
+// turn if needed.
+func summarizeForBranch(messages []ai.Message, keepFirst, keepLast int) []ai.Message {
+	if keepFirst+keepLast >= len(messages) {
+		return messages
+	}
+	head := messages[:keepFirst]
+	tail := messages[len(messages)-keepLast:]
+	summary := ai.NewSystem(fmt.Sprintf("[branch summary: %d messages omitted from parent session]", len(messages)-keepFirst-keepLast))
+	return append(append(head, summary), tail...)
 }
 
 // handleLabel sets (or clears, with no text) a label on the current session.
@@ -1420,6 +1448,60 @@ func (m model) handleCopy() (tea.Model, tea.Cmd) {
 		m.err = "copy failed: " + err.Error()
 	}
 	return m, nil
+}
+
+// handleExport writes the current session's messages to a JSONL file.
+// With no path, writes to <session_id>.jsonl in the CWD.
+func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
+	if m.store == nil || m.sessionID == "" {
+		m.err = "no active session to export"
+		return m, nil
+	}
+	messages, err := m.store.GetMessages(context.Background(), m.sessionID)
+	if err != nil {
+		m.err = "export: " + err.Error()
+		return m, nil
+	}
+	path := m.sessionID + ".jsonl"
+	if len(args) > 0 {
+		path = args[0]
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		m.err = "export: " + err.Error()
+		return m, nil
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, msg := range messages {
+		entry := map[string]any{
+			"role":    messageRole(msg),
+			"content": agent.MessageText(msg),
+		}
+		if err := enc.Encode(entry); err != nil {
+			m.err = "export: " + err.Error()
+			return m, nil
+		}
+	}
+	m.transcript += "\n" + styleInfo.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
+	m.refresh()
+	return m, nil
+}
+
+// messageRole returns the role string for a message.
+func messageRole(m ai.Message) string {
+	switch m.(type) {
+	case ai.User:
+		return "user"
+	case ai.Assistant:
+		return "assistant"
+	case ai.System:
+		return "system"
+	case ai.ToolResult:
+		return "tool"
+	default:
+		return "unknown"
+	}
 }
 
 // handleCompact triggers manual compaction of the conversation history.
@@ -1902,6 +1984,7 @@ func renderHelp() string {
 		{"/provider <n>", "switch provider (ollama, openai, anthropic)"},
 		{"/compact [focus]", "summarize conversation history (optional focus)"},
 		{"/copy", "copy the last message to clipboard"},
+		{"/export [path]", "export session messages to JSONL (default: <session_id>.jsonl)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
 		{"/extensions", "list loaded extensions"},

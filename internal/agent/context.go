@@ -1,18 +1,50 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// LoadProjectContext reads AGENTS.md from dir and returns its contents.
-// It returns "" when the file does not exist, so an agent can run
-// without project context. ponytail: only AGENTS.md is read — no
-// .pi/ or .agents/ directory scanning.
+// LoadProjectContext walks from dir up to the filesystem root,
+// collecting AGENTS.md files at each level. Results are concatenated
+// in root-to-leaf order (outermost project first, nearest last) so
+// the nearest context has the most influence. Non-existent files are
+// silently skipped. Read errors (permission denied, etc.) produce a
+// warning line instead of being silently dropped.
 func LoadProjectContext(dir string) string {
-	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
-	if err != nil {
-		return ""
+	var parts []string
+	visited := map[string]bool{}
+
+	for {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			break
+		}
+		if visited[abs] {
+			break
+		}
+		visited[abs] = true
+
+		path := filepath.Join(abs, "AGENTS.md")
+		data, err := os.ReadFile(path)
+		if err == nil {
+			parts = append(parts, string(data))
+		} else if !os.IsNotExist(err) {
+			parts = append(parts, fmt.Sprintf("[warning: could not read %s: %v]", path, err))
+		}
+
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			break
+		}
+		dir = parent
 	}
-	return string(data)
+
+	// Reverse so root is first, CWD is last.
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	return strings.Join(parts, "\n\n")
 }

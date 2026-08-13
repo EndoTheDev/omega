@@ -51,7 +51,7 @@ func retryHTTP(ctx context.Context, req *http.Request) (*http.Response, error) {
 				req.Body = body
 			}
 		}
-		resp, err = http.DefaultClient.Do(req)
+		resp, err = httpClient.Do(req)
 		if err != nil {
 			// Context cancellation is not transient; stop.
 			if ctx.Err() != nil {

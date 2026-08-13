@@ -37,12 +37,22 @@ func TestBuildSystemPromptSections(t *testing.T) {
 
 func TestBuildSystemPromptOmitsEmptySections(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{CWD: "/tmp"})
-	for _, absent := range []string{"## Project Context", "## Available Skills", "Be concise."} {
+	for _, absent := range []string{"## Project Context", "## Available Skills"} {
 		if strings.Contains(prompt, absent) {
 			t.Errorf("prompt should omit %q\n%s", absent, prompt)
 		}
 	}
 	if !strings.Contains(prompt, "CWD: /tmp") {
 		t.Errorf("prompt missing CWD\n%s", prompt)
+	}
+}
+
+func TestBuildSystemPromptHasGuidelines(t *testing.T) {
+	prompt := BuildSystemPrompt(PromptOptions{})
+	if !strings.Contains(prompt, "## Guidelines") {
+		t.Errorf("prompt missing Guidelines section\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "simplest solution") {
+		t.Errorf("prompt missing guideline bullets\n%s", prompt)
 	}
 }

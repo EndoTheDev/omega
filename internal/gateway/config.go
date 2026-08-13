@@ -72,6 +72,8 @@ func DefaultConfig() Config {
 			ContextWindow: 32768,
 			KeepFirst:     2,
 			KeepLast:      10,
+			ReserveTokens: 16384,
+			MaxToolOutput: 32768,
 		},
 		Extensions: ExtensionsConfig{
 			Enabled: false,
