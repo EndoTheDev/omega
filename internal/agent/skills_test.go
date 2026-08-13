@@ -8,7 +8,7 @@ import (
 
 func TestLoadSkills(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "learn.md"), `---
+	writeSkill(t, dir, "learn-skill", `---
 name: learn-skill
 description: Teaches the agent a new skill
 ---
@@ -33,6 +33,23 @@ parse its YAML frontmatter and add it to the skills directory.
 	}
 	if s.Content == "" {
 		t.Error("content is empty")
+	}
+	if s.Dir != filepath.Join(dir, "learn-skill") {
+		t.Errorf("dir = %q, want %q", s.Dir, filepath.Join(dir, "learn-skill"))
+	}
+}
+
+func TestLoadSkillsMultiple(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "alpha", "---\nname: alpha\ndescription: Alpha skill\n---\nAlpha content.")
+	writeSkill(t, dir, "beta", "---\nname: beta\ndescription: Beta skill\n---\nBeta content.")
+
+	skills, err := LoadSkills(dir)
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	if len(skills) != 2 {
+		t.Fatalf("expected 2 skills, got %d", len(skills))
 	}
 }
 
@@ -59,7 +76,7 @@ func TestLoadSkillsMissingDir(t *testing.T) {
 
 func TestLoadSkillsNoFrontmatter(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "plain.md"), "Just some markdown content.\nNo frontmatter here.")
+	writeSkill(t, dir, "plain", "Just some markdown content.\nNo frontmatter here.")
 
 	skills, err := LoadSkills(dir)
 	if err != nil {
@@ -76,9 +93,15 @@ func TestLoadSkillsNoFrontmatter(t *testing.T) {
 	}
 }
 
-func TestLoadSkillsSkipsNonMD(t *testing.T) {
+func TestLoadSkillsSkipsHiddenDirs(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "notes.txt"), "not a skill")
+	// Hidden directory should be skipped.
+	if err := os.Mkdir(filepath.Join(dir, ".hidden"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".hidden", ".hidden.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	skills, err := LoadSkills(dir)
 	if err != nil {
 		t.Fatalf("LoadSkills: %v", err)
@@ -88,9 +111,30 @@ func TestLoadSkillsSkipsNonMD(t *testing.T) {
 	}
 }
 
-func writeFile(t *testing.T, path, content string) {
+func TestLoadSkillsSkipsDirWithoutSkillFile(t *testing.T) {
+	dir := t.TempDir()
+	// Directory with no matching .md file should be skipped silently.
+	if err := os.Mkdir(filepath.Join(dir, "empty-skill"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	skills, err := LoadSkills(dir)
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	if len(skills) != 0 {
+		t.Fatalf("expected 0 skills, got %d", len(skills))
+	}
+}
+
+// writeSkill creates a skill directory with a <name>/<name>.md file
+// inside dir.
+func writeSkill(t *testing.T, dir, name, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatalf("writeFile %s: %v", path, err)
+	skillDir := filepath.Join(dir, name)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("mkdir %s: %v", skillDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, name+".md"), []byte(content), 0644); err != nil {
+		t.Fatalf("writeFile %s: %v", filepath.Join(skillDir, name+".md"), err)
 	}
 }

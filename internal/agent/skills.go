@@ -8,18 +8,22 @@ import (
 	"strings"
 )
 
-// Skill is a loaded skill from a SKILL.md file. The YAML frontmatter
-// provides name and description; the markdown body is the skill content
-// injected into the system prompt when invoked.
+// Skill is a loaded skill from a skill directory. The YAML frontmatter
+// in the skill file provides name and description; the markdown body is
+// the skill content injected into the system prompt when invoked. Dir
+// is the path to the skill's directory, so the skill can reference its
+// own files (scripts, references, templates) by relative path.
 type Skill struct {
 	Name        string
 	Description string
 	Content     string
+	Dir         string
 }
 
-// LoadSkills reads all .md files from dir, parses their YAML frontmatter,
-// and returns the loaded skills. An empty or missing dir returns an empty
-// slice with no error.
+// LoadSkills scans dir for subdirectories, each containing a skill file
+// named <dirname>.md. It parses the YAML frontmatter and returns the
+// loaded skills. An empty or missing dir returns an empty slice with
+// no error.
 func LoadSkills(dir string) ([]Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -30,21 +34,26 @@ func LoadSkills(dir string) ([]Skill, error) {
 	}
 	var skills []Skill
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		skill, err := loadSkill(filepath.Join(dir, entry.Name()))
+		skillFile := filepath.Join(dir, entry.Name(), entry.Name()+".md")
+		skill, err := loadSkill(skillFile)
 		if err != nil {
+			if os.IsNotExist(err) {
+				continue // no <name>.md in this directory, skip
+			}
 			return nil, fmt.Errorf("%s: %w", entry.Name(), err)
 		}
+		skill.Dir = filepath.Join(dir, entry.Name())
 		skills = append(skills, skill)
 	}
 	return skills, nil
 }
 
-// loadSkill reads a single SKILL.md file and parses its YAML frontmatter.
-// The frontmatter is delimited by --- lines. The body is everything after
-// the closing ---.
+// loadSkill reads a single skill .md file and parses its YAML
+// frontmatter. The frontmatter is delimited by --- lines. The body is
+// everything after the closing ---.
 func loadSkill(path string) (Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {

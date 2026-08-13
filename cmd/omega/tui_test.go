@@ -153,6 +153,30 @@ func TestSlashCommands(t *testing.T) {
 	}
 }
 
+// TestSkillsCommand verifies /skills lists loaded skills and handles
+// the empty case.
+func TestSkillsCommand(t *testing.T) {
+	// No skills loaded.
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	updated, _ := m.handleCommand("/skills")
+	m = updated.(model)
+	if !strings.Contains(m.transcript, "[no skills loaded]") {
+		t.Fatalf("expected [no skills loaded], got %q", m.transcript)
+	}
+
+	// With a skill loaded.
+	skill := agent.Skill{Name: "test-skill", Description: "A test skill", Content: "body"}
+	m = newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, []agent.Skill{skill}, nil)
+	updated, _ = m.handleCommand("/skills")
+	m = updated.(model)
+	if !strings.Contains(m.transcript, "test-skill") {
+		t.Fatalf("expected test-skill in transcript, got %q", m.transcript)
+	}
+	if !strings.Contains(m.transcript, "A test skill") {
+		t.Fatalf("expected description in transcript, got %q", m.transcript)
+	}
+}
+
 // TestProviderCommand verifies /provider switches the provider type and
 // rejects unknown names.
 func TestProviderCommand(t *testing.T) {
@@ -767,6 +791,47 @@ func TestAutocompleteAccept(t *testing.T) {
 	}
 	if m.autocompleteMatches != nil || m.autocompleteIndex != -1 {
 		t.Fatalf("acceptMatch on exact match left state: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
+	}
+}
+
+// TestAutocompleteMidSentence verifies that typing / after a space
+// triggers autocomplete mid-sentence, and accepting a match splices
+// the completion while preserving the text before the slash.
+func TestAutocompleteMidSentence(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+
+	// "go ahead and /exi" should trigger autocomplete on /exi.
+	m.textarea.SetValue("go ahead and /exi")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 {
+		t.Fatalf("expected 1 match for /exi, got %v", m.autocompleteMatches)
+	}
+	if m.autocompleteMatches[0] != "/exit" {
+		t.Fatalf("match = %q, want /exit", m.autocompleteMatches[0])
+	}
+	if m.autocompleteSlashPos != 13 {
+		t.Fatalf("slashPos = %d, want 13", m.autocompleteSlashPos)
+	}
+
+	// Accept the match: should splice /exit after "go ahead and ".
+	m.acceptMatch()
+	if m.textarea.Value() != "go ahead and /exit" {
+		t.Fatalf("value = %q, want 'go ahead and /exit'", m.textarea.Value())
+	}
+}
+
+// TestAutocompleteMidSentenceNoSpaceBeforeSlash verifies that / not
+// preceded by a space (e.g. in a URL) does not trigger autocomplete.
+func TestAutocompleteMidSentenceNoSpaceBeforeSlash(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+
+	m.textarea.SetValue("check http://example.com")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("expected 0 matches for URL, got %v", m.autocompleteMatches)
+	}
+	if m.autocompleteSlashPos != -1 {
+		t.Fatalf("slashPos = %d, want -1", m.autocompleteSlashPos)
 	}
 }
 

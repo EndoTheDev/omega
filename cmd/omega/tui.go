@@ -56,7 +56,7 @@ var (
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/provider", "/compact", "/copy", "/thinking", "/tools", "/extensions", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/provider", "/compact", "/copy", "/thinking", "/tools", "/extensions", "/skills", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -103,6 +103,7 @@ type model struct {
 	autocompleteMatches []string // slash commands matching the current input
 	autocompleteIndex   int      // highlighted match; -1 = none selected
 	autocompleteOffset  int      // first visible row in the dropup window
+	autocompleteSlashPos int     // byte offset of the / triggering autocomplete, -1 = none
 	screenHeight        int      // terminal height from the last resize
 	skills              []agent.Skill      // loaded skills, for autocomplete and invocation
 	extensions          agent.ExtensionManager // loaded extensions, for tools/commands/events
@@ -175,6 +176,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		extensions:        extMgr,
 		commands:          commands,
 		autocompleteIndex: -1,
+		autocompleteSlashPos: -1,
 		showThinking:      true,
 	}
 }
@@ -670,6 +672,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "/extensions":
 		return m.handleExtensions()
+	case "/skills":
+		return m.handleSkills()
 	case "/help":
 		m.transcript += renderHelp()
 		m.refresh()
@@ -759,35 +763,56 @@ func (m model) handleTabComplete() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// findSlashToken returns the byte offset of the last / in val that is
+// either at position 0 or preceded by a space. This is the slash that
+// triggers autocomplete. Returns -1 when no qualifying slash exists.
+func findSlashToken(val string) int {
+	for i := len(val) - 1; i >= 0; i-- {
+		if val[i] != '/' {
+			continue
+		}
+		if i == 0 || val[i-1] == ' ' {
+			return i
+		}
+	}
+	return -1
+}
+
 // updateAutocomplete recomputes the live slash-command matches from the
-// current input. It runs after every keystroke. When the input stops
-// starting with "/", the match list clears and the highlight resets.
+// current input. It runs after every keystroke. The autocomplete triggers
+// when a / appears at the start of the input or after a space, so skills
+// can be autocompleted mid-sentence (e.g. "go ahead and /lear...").
 // Two levels: a bare command matches against knownCommands; a command
 // with enum arguments (see commandOptions) matches against its options.
 func (m *model) updateAutocomplete() {
 	val := m.textarea.Value()
-	if !strings.HasPrefix(val, "/") {
+	slashPos := findSlashToken(val)
+	if slashPos < 0 {
 		m.autocompleteMatches = nil
 		m.autocompleteIndex = -1
 		m.autocompleteOffset = 0
+		m.autocompleteSlashPos = -1
 		m.resizeTextarea() // panel closed; give the rows back to the viewport
 		return
 	}
+	m.autocompleteSlashPos = slashPos
+	// Extract the partial command after the slash.
+	partial := val[slashPos:]
 	matches := m.autocompleteMatches[:0]
 	// Split at the first space: cmd is the command part.
-	cmd, _, _ := strings.Cut(val, " ")
+	cmd, _, _ := strings.Cut(partial, " ")
 	if options, ok := commandOptions[cmd]; ok {
 		// Second level: match options by prefix. Full strings so
-		// acceptMatch replaces the whole input unchanged.
+		// acceptMatch replaces the whole token unchanged.
 		for _, opt := range options {
 			full := cmd + " " + opt
-			if strings.HasPrefix(full, val) {
+			if strings.HasPrefix(full, partial) {
 				matches = append(matches, full)
 			}
 		}
 	} else {
 		for _, c := range m.commands {
-			if strings.HasPrefix(c, val) {
+			if strings.HasPrefix(c, partial) {
 				matches = append(matches, c)
 			}
 		}
@@ -811,9 +836,11 @@ func (m *model) updateAutocomplete() {
 	m.resizeTextarea()
 }
 
-// acceptMatch accepts the selected match into the textarea. It returns a
-// command (never nil) when it actually changed the input; nil when the input
-// already equals the match, so Enter falls through to submit.
+// acceptMatch accepts the selected match into the textarea. It splices
+// the completion at the slash position, preserving any text before it.
+// It returns a command (never nil) when it actually changed the input;
+// nil when the token already equals the match, so Enter falls through
+// to submit.
 func (m *model) acceptMatch() tea.Cmd {
 	if m.autocompleteIndex < 0 || m.autocompleteIndex >= len(m.autocompleteMatches) {
 		return nil
@@ -821,10 +848,18 @@ func (m *model) acceptMatch() tea.Cmd {
 	completion := m.autocompleteMatches[m.autocompleteIndex]
 	m.autocompleteMatches = nil
 	m.autocompleteIndex = -1
-	if completion == m.textarea.Value() {
+	val := m.textarea.Value()
+	slashPos := m.autocompleteSlashPos
+	if slashPos < 0 {
+		slashPos = 0
+	}
+	// Build the new value: everything before the slash + the completion.
+	newVal := val[:slashPos] + completion
+	// Check if the current token already equals the completion.
+	if newVal == val {
 		return nil
 	}
-	m.textarea.SetValue(completion)
+	m.textarea.SetValue(newVal)
 	m.textarea.CursorEnd()
 	m.err = ""
 	m.resizeTextarea()
@@ -971,6 +1006,34 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	sb.WriteString("\n")
 	for _, info := range infos {
 		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, info.Status)
+	}
+	m.transcript += sb.String()
+	m.refresh()
+	return m, nil
+}
+
+// handleSkills lists loaded skills with name and description.
+func (m model) handleSkills() (tea.Model, tea.Cmd) {
+	if len(m.skills) == 0 {
+		m.transcript += "\n" + styleInfo.Render("[no skills loaded]") + "\n"
+		m.refresh()
+		return m, nil
+	}
+
+	nameWidth := 12
+	for _, s := range m.skills {
+		if len(s.Name) > nameWidth {
+			nameWidth = len(s.Name)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	header := fmt.Sprintf("%-*s  %s", nameWidth, "NAME", "DESCRIPTION")
+	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString("\n")
+	for _, s := range m.skills {
+		fmt.Fprintf(&sb, "%-*s  %s\n", nameWidth, s.Name, s.Description)
 	}
 	m.transcript += sb.String()
 	m.refresh()
@@ -1739,6 +1802,7 @@ func renderHelp() string {
 		{"/thinking [on|off]", "show/hide thinking blocks (no arg toggles)"},
 		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
 		{"/extensions", "list loaded extensions"},
+		{"/skills", "list loaded skills"},
 		{"/help", "show this help"},
 	}
 	maxCmd := len("COMMAND")

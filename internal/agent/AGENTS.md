@@ -17,7 +17,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `extension_stdio.go` - stdio JSON-RPC extension transport
 - `testdata/mock_extension/` - mock extension binary for extension tests
 - `prompt.go` - system prompt construction
-- `skills.go` - SKILL.md loader
+- `skills.go` - skill directory loader
 - `tools.go` - built-in tool registry
 - `*_test.go` - self-check tests for each non-trivial package
 
