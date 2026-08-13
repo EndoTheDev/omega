@@ -53,13 +53,20 @@ extensions:
   dir: extensions
 
 # Environment variable overrides (take precedence over this file):
-#   OMEGA_PROVIDER  -> provider.type
-#   OMEGA_API_KEY   -> provider.api_key
-#   OMEGA_MODEL     -> provider.model_name
-#   OMEGA_HOST      -> provider.host
-#   OMEGA_PORT      -> server.port
-#   OMEGA_DB_PATH   -> store.db_path
+#   OMEGA_HOME              -> omega home directory (default: binary dir, fallback ~/.omega/)
+#   OMEGA_PROVIDER          -> provider.type
+#   OMEGA_API_KEY           -> provider.api_key
+#   OMEGA_MODEL             -> provider.model_name
+#   OMEGA_HOST              -> provider.host
+#   OMEGA_PORT              -> server.port
+#   OMEGA_DB_PATH           -> store.db_path
 #   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold
 #   OMEGA_COMPACTION_CONTEXT_WINDOW -> compaction.context_window
 #   OMEGA_EXTENSIONS_ENABLED -> extensions.enabled (true/1 or false/0)
 #   OMEGA_EXTENSIONS_DIR     -> extensions.dir
+#   OMEGA_SKILLS_DIR        -> skills directory
+#
+# When omega is installed globally (in PATH), it looks for config.yaml,
+# omega.db, skills/, and extensions/ in OMEGA_HOME (default: the binary's
+# directory, fallback ~/.omega/). The working directory is used only for
+# AGENTS.md project context and tool file operations.

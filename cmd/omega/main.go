@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -87,16 +88,56 @@ func stripConfigFlag(args []string) []string {
 	return out
 }
 
-// resolveConfigPath returns the --config value, or ./config.yaml when it
-// exists in the working directory, or "" to skip YAML entirely.
+// omegaHome returns the omega home directory: OMEGA_HOME env var,
+// or the directory containing the omega binary, or ~/.omega/ as a
+// last-resort fallback. This is where config, db, skills, and
+// extensions live when omega is installed globally and invoked from
+// any directory.
+func omegaHome() string {
+	if dir := os.Getenv("OMEGA_HOME"); dir != "" {
+		return dir
+	}
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Dir(exe)
+	}
+	// Fallback: ~/.omega/ if the binary path is unresolvable.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
+	}
+	return home + "/.omega"
+}
+
+// resolveConfigPath returns the --config value, or <home>/config.yaml
+// when it exists, or "" to skip YAML entirely.
 func resolveConfigPath(flagPath string) string {
 	if flagPath != "" {
 		return flagPath
 	}
-	if _, err := os.Stat("config.yaml"); err == nil {
-		return "config.yaml"
+	homePath := omegaHome() + "/config.yaml"
+	if _, err := os.Stat(homePath); err == nil {
+		return homePath
 	}
 	return ""
+}
+
+// resolveHomePaths fills in home-relative defaults for DBPath and
+// Extensions.Dir when the config left them at their relative defaults
+// and no env var overrode them. This lets omega find its db and
+// extensions from any CWD. It also ensures the home directory exists
+// so the SQLite store can open its file.
+func resolveHomePaths(cfg *gateway.Config) {
+	home := omegaHome()
+	if cfg.Store.DBPath == "omega.db" {
+		cfg.Store.DBPath = home + "/omega.db"
+	}
+	if cfg.Extensions.Dir == "extensions" {
+		cfg.Extensions.Dir = home + "/extensions"
+	}
+	// Ensure the home directory exists so SQLite and extensions can
+	// create their files. Non-fatal: if mkdir fails, the store open
+	// will produce a clearer error.
+	_ = os.MkdirAll(home, 0755)
 }
 
 // newAgent wires config into a provider, agent, store, and extensions.
@@ -154,6 +195,7 @@ func cmdServe(configPath string) error {
 	if err != nil {
 		return err
 	}
+	resolveHomePaths(&cfg)
 	ag, store, mgr, err := newAgent(cfg)
 	if err != nil {
 		return err
@@ -182,6 +224,7 @@ func cmdRun(configPath string, args []string) error {
 	if err != nil {
 		return err
 	}
+	resolveHomePaths(&cfg)
 	ag, store, mgr, err := newAgent(cfg)
 	if err != nil {
 		return err
@@ -219,6 +262,7 @@ func cmdChat(configPath string) error {
 	if err != nil {
 		return err
 	}
+	resolveHomePaths(&cfg)
 	// Open the session store so the TUI can persist conversations across
 	// runs. cmdChat owns the store and closes it on every exit path
 	// (/exit, Ctrl+C, or an error in p.Run).
@@ -254,11 +298,11 @@ func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.Extensio
 	return mgr, nil
 }
 
-// loadSkills reads skills from the skills/ directory (or OMEGA_SKILLS_DIR).
+// loadSkills reads skills from OMEGA_SKILLS_DIR, or ~/.omega/skills/.
 func loadSkills() ([]agent.Skill, error) {
 	dir := os.Getenv("OMEGA_SKILLS_DIR")
 	if dir == "" {
-		dir = "skills"
+		dir = omegaHome() + "/skills"
 	}
 	return agent.LoadSkills(dir)
 }
