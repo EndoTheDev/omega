@@ -111,12 +111,9 @@ func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, agent.Extension
 	ag.SetCompaction(&cfg.Compaction)
 	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil))
 
-	var mgr agent.ExtensionManager = agent.NoopManager{}
-	if cfg.Extensions.Enabled {
-		mgr = &agent.StdioManager{}
-		if err := mgr.Load(cfg.Extensions.Dir, cfg.Provider.APIKey); err != nil {
-			return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
-		}
+	mgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
 	}
 	ag.SetExtensions(mgr)
 
