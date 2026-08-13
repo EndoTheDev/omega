@@ -52,6 +52,9 @@ func (p *FakeProvider) ModelName() string {
 	return p.modelName
 }
 
+// SetThinkingLevel is a no-op for the fake provider.
+func (p *FakeProvider) SetThinkingLevel(level string) {}
+
 // Stream replays the scripted events on a channel, respecting context
 // cancellation, and closes the channel when done. An empty script
 // closes the channel immediately.

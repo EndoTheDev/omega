@@ -250,25 +250,25 @@ See `extensions/example/main.go` for a complete reference implementation.
 
 ## TUI Commands
 
-| Command                               | Description                                          |
-| ------------------------------------- | ---------------------------------------------------- |
-| `/new [--ephemeral]`                  | Start a new session (`--ephemeral` = no persistence) |
-| `/sessions`                           | List persisted sessions as a table                   |
-| `/sessions delete <# \| id \| label>` | Delete a session                                     |
-| `/resume <# \| id \| label>`          | Resume a session by line number, ID, or label        |
-| `/branch [id]`                        | Branch a new session from the current (or given) one |
-| `/label [text]`                       | Set or clear the current session's label             |
-| `/tree`                               | Show the session tree                                |
-| `/model <name>`                       | Switch the model at runtime                          |
-| `/provider <type>`                    | Switch the provider at runtime                       |
-| `/compact [focus]`                    | Manually compact conversation history                |
-| `/copy`                               | Copy last message to clipboard                       |
-| `/thinking [on \| off]`               | Toggle thinking block visibility                     |
-| `/tools [on \| off \| auto]`          | Toggle tool result display mode                      |
-| `/extensions`                         | List loaded extensions                               |
-| `/skills`                             | List loaded skills                                   |
-| `/help`                               | Show help                                            |
-| `/exit`                               | Quit                                                 |
+| Command                               | Description                                                                                           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `/new [--ephemeral]`                  | Start a new session (`--ephemeral` = no persistence)                                                  |
+| `/sessions`                           | List persisted sessions as a table                                                                    |
+| `/sessions delete <# \| id \| label>` | Delete a session                                                                                      |
+| `/resume <# \| id \| label>`          | Resume a session by line number, ID, or label                                                         |
+| `/branch [id]`                        | Branch a new session from the current (or given) one                                                  |
+| `/label [text]`                       | Set or clear the current session's label                                                              |
+| `/tree`                               | Show the session tree                                                                                 |
+| `/model <name>`                       | Switch the model at runtime                                                                           |
+| `/provider <type>`                    | Switch the provider at runtime                                                                        |
+| `/compact [focus]`                    | Manually compact conversation history                                                                 |
+| `/copy`                               | Copy last message to clipboard                                                                        |
+| `/thinking [level]`                   | Set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles) |
+| `/tools [on \| off \| auto]`          | Toggle tool result display mode                                                                       |
+| `/extensions`                         | List loaded extensions                                                                                |
+| `/skills`                             | List loaded skills                                                                                    |
+| `/help`                               | Show help                                                                                             |
+| `/exit`                               | Quit                                                                                                  |
 
 ## Project Structure
 
@@ -307,11 +307,6 @@ provider that scripts stream events.
 - Extension system with JSON-RPC over stdio, crash isolation, event dispatch
 - Complete TUI with streaming, markdown, autocomplete, and history
 - Global installation via PATH with binary-dir resolution
-
-### In Progress
-
-- Extension slash commands that inject context into the LLM conversation
-- Skill linked files (scripts, references, templates) integration with agent tools
 
 ### Planned
 

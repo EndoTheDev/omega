@@ -64,7 +64,7 @@ var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label"
 // Commands with free-form or dynamic arguments are not listed here.
 var commandOptions = map[string][]string{
 	"/new":      {"--ephemeral"},
-	"/thinking": {"on", "off"},
+	"/thinking": {"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"},
 	"/tools":    {"on", "off", "auto"},
 	"/sessions": {"delete"},
 }
@@ -108,7 +108,8 @@ type model struct {
 	skills              []agent.Skill      // loaded skills, for autocomplete and invocation
 	extensions          agent.ExtensionManager // loaded extensions, for tools/commands/events
 	commands            []string           // knownCommands + skill names, per-model copy
-	showThinking        bool          // /thinking toggle; default true
+	showThinking        bool          // /thinking display toggle; auto-set from thinkingLevel
+	thinkingLevel       string        // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
 	showToolResults     bool          // /tools toggle; default false (collapsed)
 	toolResultsAuto     bool          // /tools auto; short results full, long ones collapsed
 	queuedInput         string        // follow-up typed while agent runs; auto-submits on done
@@ -177,7 +178,8 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		commands:          commands,
 		autocompleteIndex: -1,
 		autocompleteSlashPos: -1,
-		showThinking:      true,
+		showThinking:      false,
+		thinkingLevel:     "none",
 	}
 }
 
@@ -439,6 +441,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	}
+	provider.SetThinkingLevel(m.thinkingLevel)
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(m.compaction)
 	ag.SetSystemPrompt(m.systemPrompt)
@@ -623,23 +626,31 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleCopy()
 	case "/thinking":
 		if len(fields) > 1 {
-			switch fields[1] {
-			case "on":
-				m.showThinking = true
-			case "off":
-				m.showThinking = false
-			default:
-				m.err = "usage: /thinking [on|off]"
+			valid := false
+			for _, lvl := range ai.ThinkingLevels {
+				if fields[1] == lvl {
+					m.thinkingLevel = lvl
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				m.err = "usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]"
 				return m, nil
 			}
 		} else {
-			m.showThinking = !m.showThinking
+			// Cycle to next level.
+			idx := 0
+			for i, lvl := range ai.ThinkingLevels {
+				if lvl == m.thinkingLevel {
+					idx = i
+					break
+				}
+			}
+			m.thinkingLevel = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
 		}
-		state := "on"
-		if !m.showThinking {
-			state = "off"
-		}
-		m.transcript += "\n" + styleInfo.Render("[thinking "+state+"]") + "\n"
+		m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
+		m.transcript += "\n" + styleInfo.Render("[thinking "+m.thinkingLevel+"]") + "\n"
 		m.refresh()
 		return m, nil
 	case "/tools":
@@ -1606,7 +1617,11 @@ func (m model) statusLine() string {
 	if m.compaction != nil && m.compaction.ContextWindow > 0 {
 		window = m.compaction.ContextWindow
 	}
-	line := fmt.Sprintf("Ω | %s | %s/%s | tokens: %d/%d | %s", state, provider, m.modelName, tokens, window, sess)
+	line := fmt.Sprintf("Ω | %s | %s/%s", state, provider, m.modelName)
+	if m.thinkingLevel != "none" && m.thinkingLevel != "" {
+		line += " | thinking: " + m.thinkingLevel
+	}
+	line += fmt.Sprintf(" | tokens: %d/%d | %s", tokens, window, sess)
 	if m.err != "" {
 		line += " | " + styleError.Render("error: "+m.err)
 	}
@@ -1800,7 +1815,7 @@ func renderHelp() string {
 		{"/provider <n>", "switch provider (ollama, openai, anthropic)"},
 		{"/compact [focus]", "summarize conversation history (optional focus)"},
 		{"/copy", "copy the last message to clipboard"},
-		{"/thinking [on|off]", "show/hide thinking blocks (no arg toggles)"},
+		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
 		{"/extensions", "list loaded extensions"},
 		{"/skills", "list loaded skills"},

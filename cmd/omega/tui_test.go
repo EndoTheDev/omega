@@ -904,6 +904,8 @@ func TestUpDownHistory(t *testing.T) {
 // TestSegmentOrder verifies segments render in the order they were emitted.
 func TestSegmentOrder(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	m.thinkingLevel = "on"
+	m.showThinking = true
 
 	m.handleEvent(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "plan"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell"}}})
@@ -1027,8 +1029,8 @@ func TestAutocompleteArgLevel(t *testing.T) {
 	// Bare /thinking offers its options as full strings, in map order.
 	m.textarea.SetValue("/thinking")
 	m.updateAutocomplete()
-	want := []string{"/thinking on", "/thinking off"}
-	if len(m.autocompleteMatches) != 2 {
+	want := []string{"/thinking none", "/thinking off", "/thinking on", "/thinking minimal", "/thinking low", "/thinking medium", "/thinking high", "/thinking extra high", "/thinking max", "/thinking ultra"}
+	if len(m.autocompleteMatches) != len(want) {
 		t.Fatalf("/thinking matches = %v, want %v", m.autocompleteMatches, want)
 	}
 	for i, w := range want {
@@ -1453,5 +1455,67 @@ func TestSplashReappearsAfterNew(t *testing.T) {
 	view = ansiStrip(m.View())
 	if !strings.Contains(view, `#"""#`) {
 		t.Fatal("splash should reappear after /new")
+	}
+}
+
+func TestThinkingLevelSet(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	if m.thinkingLevel != "none" {
+		t.Fatalf("default thinkingLevel = %q, want none", m.thinkingLevel)
+	}
+	// Set a specific level.
+	up, _ := m.handleCommand("/thinking high")
+	m = up.(model)
+	if m.thinkingLevel != "high" {
+		t.Fatalf("thinkingLevel = %q, want high", m.thinkingLevel)
+	}
+	if !m.showThinking {
+		t.Error("showThinking should be true for high")
+	}
+	// Set to none — display off.
+	up, _ = m.handleCommand("/thinking none")
+	m = up.(model)
+	if m.thinkingLevel != "none" {
+		t.Fatalf("thinkingLevel = %q, want none", m.thinkingLevel)
+	}
+	if m.showThinking {
+		t.Error("showThinking should be false for none")
+	}
+	// Set to off — display off.
+	up, _ = m.handleCommand("/thinking off")
+	m = up.(model)
+	if m.thinkingLevel != "off" {
+		t.Fatalf("thinkingLevel = %q, want off", m.thinkingLevel)
+	}
+	if m.showThinking {
+		t.Error("showThinking should be false for off")
+	}
+}
+
+func TestThinkingLevelCycle(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	if m.thinkingLevel != "none" {
+		t.Fatalf("default thinkingLevel = %q, want none", m.thinkingLevel)
+	}
+	// Cycle: none -> off -> on -> minimal -> low -> medium -> high -> extra high -> max -> ultra -> none
+	expected := []string{"off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra", "none"}
+	for _, want := range expected {
+		up, _ := m.handleCommand("/thinking")
+		m = up.(model)
+		if m.thinkingLevel != want {
+			t.Fatalf("cycled to %q, want %q", m.thinkingLevel, want)
+		}
+	}
+}
+
+func TestThinkingLevelInvalid(t *testing.T) {
+	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
+	up, _ := m.handleCommand("/thinking bogus")
+	m = up.(model)
+	if m.thinkingLevel != "none" {
+		t.Fatalf("thinkingLevel = %q, want none (unchanged)", m.thinkingLevel)
+	}
+	if m.err == "" {
+		t.Error("expected error for invalid thinking level")
 	}
 }

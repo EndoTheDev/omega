@@ -14,9 +14,10 @@ import (
 
 // OllamaProvider implements Provider for the Ollama API.
 type OllamaProvider struct {
-	modelName string
-	baseURL   string
-	apiKey    string
+	modelName     string
+	baseURL       string
+	apiKey        string
+	thinkingLevel string
 }
 
 // NewOllamaProvider creates an OllamaProvider. If baseURL is empty,
@@ -43,6 +44,12 @@ func NewOllamaProvider(modelName, baseURL, apiKey string) *OllamaProvider {
 // ModelName returns the model name used by this provider.
 func (p *OllamaProvider) ModelName() string {
 	return p.modelName
+}
+
+// SetThinkingLevel sets the thinking level. Ollama only supports on/off;
+// any level except "none" and "off" enables thinking.
+func (p *OllamaProvider) SetThinkingLevel(level string) {
+	p.thinkingLevel = level
 }
 
 // messagesToAPI converts internal Message types to Ollama API format.
@@ -113,6 +120,9 @@ func (p *OllamaProvider) stream(ctx context.Context, events chan<- StreamEvent, 
 		"model":    p.modelName,
 		"messages": p.messagesToAPI(messages),
 		"stream":   true,
+	}
+	if v := ollamaThinkValue(p.thinkingLevel); v != nil {
+		payload["think"] = v
 	}
 	if len(tools) > 0 {
 		apiTools := make([]map[string]any, 0, len(tools))

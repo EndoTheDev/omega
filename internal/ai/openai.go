@@ -15,9 +15,10 @@ import (
 
 // OpenAIProvider implements Provider for the OpenAI Chat Completions API.
 type OpenAIProvider struct {
-	modelName string
-	baseURL   string
-	apiKey    string
+	modelName     string
+	baseURL       string
+	apiKey        string
+	thinkingLevel string
 }
 
 // NewOpenAIProvider creates an OpenAIProvider. If baseURL is empty it
@@ -40,6 +41,12 @@ func NewOpenAIProvider(modelName, baseURL, apiKey string) *OpenAIProvider {
 // ModelName returns the model name used by this provider.
 func (p *OpenAIProvider) ModelName() string {
 	return p.modelName
+}
+
+// SetThinkingLevel sets the thinking level. OpenAI supports
+// reasoning_effort (low/medium/high) on o-series models only.
+func (p *OpenAIProvider) SetThinkingLevel(level string) {
+	p.thinkingLevel = level
 }
 
 // messagesToAPI converts internal Message types to OpenAI format.
@@ -112,6 +119,9 @@ func (p *OpenAIProvider) stream(ctx context.Context, events chan<- StreamEvent, 
 		"model":    p.modelName,
 		"messages": p.messagesToAPI(messages),
 		"stream":   true,
+	}
+	if effort := openaiReasoningEffort(p.thinkingLevel); effort != "" {
+		payload["reasoning_effort"] = effort
 	}
 	if len(tools) > 0 {
 		apiTools := make([]map[string]any, 0, len(tools))

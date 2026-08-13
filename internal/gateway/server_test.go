@@ -25,6 +25,8 @@ type mockProvider struct {
 
 func (m *mockProvider) ModelName() string { return m.modelName }
 
+func (m *mockProvider) SetThinkingLevel(level string) {}
+
 func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
 	events := make(chan ai.StreamEvent)
 	go func() {

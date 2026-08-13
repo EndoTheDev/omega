@@ -60,4 +60,76 @@ type ToolSchema struct {
 type Provider interface {
 	Stream(ctx context.Context, messages []Message, tools []ToolSchema) <-chan StreamEvent
 	ModelName() string
+	SetThinkingLevel(level string)
+}
+
+// ThinkingLevels is the ordered list of thinking levels the user can
+// cycle through with /thinking (no argument). "none" is the default:
+// no thinking parameter is sent to the provider. "off" explicitly
+// disables thinking. The rest enable thinking at increasing intensity.
+var ThinkingLevels = []string{"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"}
+
+// ThinkingEnabled returns true if the level enables thinking (anything
+// except "none" and "off").
+func ThinkingEnabled(level string) bool {
+	return level != "" && level != "none" && level != "off"
+}
+
+// openaiReasoningEffort maps a thinking level to OpenAI's
+// reasoning_effort parameter. OpenAI supports only low/medium/high.
+func openaiReasoningEffort(level string) string {
+	switch level {
+	case "minimal", "low":
+		return "low"
+	case "medium":
+		return "medium"
+	case "high", "extra high", "max", "ultra":
+		return "high"
+	default:
+		return ""
+	}
+}
+
+// anthropicBudgetTokens maps a thinking level to Anthropic's
+// budget_tokens parameter. Higher levels get more tokens.
+func anthropicBudgetTokens(level string) int {
+	switch level {
+	case "minimal":
+		return 1024
+	case "low":
+		return 2048
+	case "medium":
+		return 4096
+	case "high":
+		return 8192
+	case "extra high":
+		return 16384
+	case "max":
+		return 24576
+	case "ultra":
+		return 32768
+	default:
+		return 0
+	}
+}
+
+// ollamaThinkValue maps a thinking level to Ollama's think parameter.
+// Ollama accepts true/false or levels (low, medium, high, max).
+func ollamaThinkValue(level string) any {
+	switch level {
+	case "off":
+		return false
+	case "on":
+		return true
+	case "minimal", "low":
+		return "low"
+	case "medium":
+		return "medium"
+	case "high":
+		return "high"
+	case "extra high", "max", "ultra":
+		return "max"
+	default:
+		return nil
+	}
 }

@@ -15,9 +15,10 @@ import (
 
 // AnthropicProvider implements Provider for the Anthropic Messages API.
 type AnthropicProvider struct {
-	modelName string
-	baseURL   string
-	apiKey    string
+	modelName     string
+	baseURL       string
+	apiKey        string
+	thinkingLevel string
 }
 
 // NewAnthropicProvider creates an AnthropicProvider. If baseURL is empty
@@ -40,6 +41,12 @@ func NewAnthropicProvider(modelName, baseURL, apiKey string) *AnthropicProvider 
 // ModelName returns the model name used by this provider.
 func (p *AnthropicProvider) ModelName() string {
 	return p.modelName
+}
+
+// SetThinkingLevel sets the thinking level. Anthropic supports
+// thinking blocks with a budget_tokens parameter.
+func (p *AnthropicProvider) SetThinkingLevel(level string) {
+	p.thinkingLevel = level
 }
 
 // messagesToAPI converts internal Message types to Anthropic format.
@@ -118,6 +125,12 @@ func (p *AnthropicProvider) stream(ctx context.Context, events chan<- StreamEven
 		"messages":   apiMessages,
 		"max_tokens": 4096,
 		"stream":     true,
+	}
+	if budget := anthropicBudgetTokens(p.thinkingLevel); budget > 0 {
+		payload["thinking"] = map[string]any{
+			"type":          "enabled",
+			"budget_tokens": budget,
+		}
 	}
 	if system != "" {
 		payload["system"] = system
