@@ -1,5 +1,9 @@
 # Ω omega
 
+![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Status](https://img.shields.io/badge/status-WIP-orange)
+
 omega is a terminal-based AI assistant that can read your files, run
 commands, and edit code. It talks to LLM providers (Ollama, OpenAI,
 Anthropic) and streams responses in real time. It ships as a single
@@ -27,6 +31,21 @@ provider abstraction, and the standard library for everything HTTP.
   auto-compacts + retries once.
 - **Tools** - `shell`, `read_file`, `write_file`, `edit`. Structured
   error returns, no panics.
+- **Extensions** - Load external tools and slash commands via JSON-RPC
+  over stdio. Each extension is a separate process with crash
+  isolation.
+- **Skills** - Self-contained skill directories (`<name>/<name>.md`)
+  with frontmatter. Invoke via `/skill-name` slash commands or inline
+  in messages. Each skill folder can hold its own scripts, references,
+  and templates.
+- **Ephemeral sessions** - `/new --ephemeral` for throwaway
+  conversations with no persistence.
+- **Session auto-naming** - Generates a title from the first exchange
+  using the active model.
+- **Prompt history** - Up/Down recalls previous prompts.
+- **Slash-command autocomplete** - Vertical dropup panel with
+  two-level matching (commands + enum arguments). Triggers mid-sentence
+  on any `/` after a space.
 
 > **Warning:** The shell tool executes commands the LLM generates with
 > no sandboxing, allowlist, or confirmation prompt. The agent can read,
@@ -34,16 +53,6 @@ provider abstraction, and the standard library for everything HTTP.
 > (OpenAI, Anthropic), file contents read by `read_file` and command
 > output from `shell` are sent to the provider's API. Use Ollama for
 > sensitive work.
-
-- **Skills** - Load `SKILL.md` files from a `skills/` directory.
-  Invoke via `/skill-name` slash commands or inline in messages.
-- **Ephemeral sessions** - `/new --ephemeral` for throwaway
-  conversations with no persistence.
-- **Session auto-naming** - Generates a title from the first exchange
-  using the active model.
-- **Prompt history** - Up/Down recalls previous prompts.
-- **Slash-command autocomplete** - Vertical dropup panel with
-  two-level matching (commands + enum arguments).
 
 ## Quick Start
 
@@ -66,6 +75,18 @@ go build -o omega ./cmd/omega
 On Windows the build produces `omega.exe` - use `.\omega.exe` instead of
 `./omega` in the commands below.
 
+### Install
+
+Add the build directory to your `PATH`. omega resolves config, skills,
+extensions, and the session database from the directory containing the
+binary. Your working directory is used only for AGENTS.md project
+context and tool file operations.
+
+```bash
+# Example: add to PATH in your shell profile
+export PATH="$PATH:/path/to/omega"
+```
+
 ### Configure
 
 ```bash
@@ -77,7 +98,7 @@ Edit `config.yaml` to set your provider, model, and API key:
 ```yaml
 provider:
   type: ollama # ollama, openai, or anthropic
-  model_name: llama3 # required
+  model_name: # required - e.g. llama3, gpt-4o, claude-sonnet-4-20250514
   host: http://localhost:11434 # use https://ollama.com for Ollama Cloud
   api_key: # required for Ollama Cloud, OpenAI, and Anthropic
 ```
@@ -104,11 +125,11 @@ provider:
 gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 ```
 
-| Layer    | Package            | Responsibility                                                                       |
-| -------- | ------------------ | ------------------------------------------------------------------------------------ |
-| Gateway  | `internal/gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree             |
-| Agent    | `internal/agent`   | Multi-turn loop, tool execution, compaction, project context, system prompt, skills  |
-| Provider | `internal/ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry |
+| Layer    | Package            | Responsibility                                                                                  |
+| -------- | ------------------ | ----------------------------------------------------------------------------------------------- |
+| Gateway  | `internal/gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree                        |
+| Agent    | `internal/agent`   | Multi-turn loop, tool execution, compaction, project context, system prompt, skills, extensions |
+| Provider | `internal/ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry            |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -118,21 +139,28 @@ everything over HTTP.
 ## Configuration
 
 All values can be set in `config.yaml` or overridden by environment
-variables.
+variables. When omega is installed globally (in PATH), it looks for
+`config.yaml`, `omega.db`, `skills/`, and `extensions/` in the binary's
+directory (or `OMEGA_HOME`). The working directory is used only for
+AGENTS.md project context and tool file operations.
 
 | Key                         | Env var                           | Default                  | Description                                                                                     |
 | --------------------------- | --------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| -                           | `OMEGA_HOME`                      | Binary directory         | Omega home: config, db, skills, extensions live here                                            |
 | `provider.type`             | `OMEGA_PROVIDER`                  | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`                                                       |
-| `provider.model_name`       | `OMEGA_MODEL`                     | `llama3`                 | Model name                                                                                      |
+| `provider.model_name`       | `OMEGA_MODEL`                     | (required)               | Model name                                                                                      |
 | `provider.host`             | `OMEGA_HOST`                      | `http://localhost:11434` | Provider base URL                                                                               |
 | `provider.api_key`          | `OMEGA_API_KEY`                   |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
 | `server.port`               | `OMEGA_PORT`                      | `8099`                   | HTTP listen port                                                                                |
-| `store.db_path`             | `OMEGA_DB_PATH`                   | `omega.db`               | SQLite database path                                                                            |
+| `store.db_path`             | `OMEGA_DB_PATH`                   | `<home>/omega.db`        | SQLite database path                                                                            |
 | `compaction.enabled`        |                                   | `true`                   | Enable context compaction                                                                       |
 | `compaction.threshold`      | `OMEGA_COMPACTION_THRESHOLD`      | `0.6`                    | Fraction of context window that triggers compaction                                             |
 | `compaction.context_window` | `OMEGA_COMPACTION_CONTEXT_WINDOW` | `32768`                  | Model context window in tokens                                                                  |
 | `compaction.keep_first`     |                                   | `2`                      | Messages preserved verbatim at start                                                            |
 | `compaction.keep_last`      |                                   | `10`                     | Messages preserved verbatim at end                                                              |
+| `extensions.enabled`        | `OMEGA_EXTENSIONS_ENABLED`        | `false`                  | Enable extension loading                                                                        |
+| `extensions.dir`            | `OMEGA_EXTENSIONS_DIR`            | `<home>/extensions`      | Directory to scan for extension executables                                                     |
+| `skills.dir`                | `OMEGA_SKILLS_DIR`                | `<home>/skills`          | Skills directory                                                                                |
 
 ## Providers
 
@@ -161,6 +189,54 @@ Switch providers at runtime in the TUI:
 /model gpt-4o
 ```
 
+## Extensions
+
+Extensions are external processes that provide tools, slash commands,
+and event subscriptions to omega. Each extension runs as a separate
+process and communicates via JSON-RPC over stdio. A crash in one
+extension does not affect others or the host.
+
+### Enabling
+
+```yaml
+extensions:
+  enabled: true
+  dir: extensions # relative to omega home, or absolute path
+```
+
+### Example: Web Extension
+
+omega ships an example extension in `extensions/example/` that provides
+web search and fetch tools via the [Ollama Cloud API](https://ollama.com).
+
+```bash
+# Build the example extension
+go build -o extensions/example/example.exe ./extensions/example/
+
+# Enable extensions in config.yaml (see above), then:
+./omega chat
+# The web extension provides web.search and web.fetch tools,
+# plus a /web slash command for quick searches.
+```
+
+The extension receives the provider API key via the `OLLAMA_API_KEY`
+environment variable, passed by the host from `config.yaml`.
+
+### Building Custom Extensions
+
+An extension is any executable that speaks JSON-RPC over stdio:
+
+1. On startup, receive an `initialize` request. Respond with your
+   extension name, tools, commands, and event subscriptions.
+2. Receive `tool_call` requests when the agent invokes your tools.
+3. Receive `command` requests when the user types your slash command.
+4. Receive `event` notifications for subscribed lifecycle events
+   (`agent_start`, `turn_start`, `turn_end`, `assistant_message`,
+   `tool_result`, `agent_end`).
+5. Receive a `shutdown` notification on exit.
+
+See `extensions/example/main.go` for a complete reference implementation.
+
 ## TUI Commands
 
 | Command                               | Description                                          |
@@ -178,6 +254,9 @@ Switch providers at runtime in the TUI:
 | `/copy`                               | Copy last message to clipboard                       |
 | `/thinking [on \| off]`               | Toggle thinking block visibility                     |
 | `/tools [on \| off \| auto]`          | Toggle tool result display mode                      |
+| `/extensions`                         | List loaded extensions                               |
+| `/skills`                             | List loaded skills                                   |
+| `/help`                               | Show help                                            |
 | `/exit`                               | Quit                                                 |
 
 ## Project Structure
@@ -185,10 +264,11 @@ Switch providers at runtime in the TUI:
 ```txt
 cmd/omega/        Single binary entry point (serve, run, health, chat)
 internal/ai/      Provider abstraction, stream events, message types, retry
-internal/agent/   Multi-turn loop, tool execution, compaction, skills
+internal/agent/   Multi-turn loop, tool execution, compaction, skills, extensions
 internal/gateway/ HTTP server, SSE streaming, session store, config
 agents/           Commit conventions (COMMIT.md)
-skills/           Skill files (SKILL.md), loaded at startup
+skills/           Skill directories (<name>/<name>.md), loaded at startup
+extensions/       Extension binaries (JSON-RPC over stdio)
 config.yaml       Configuration (copy from config.yaml.example)
 ```
 
@@ -204,26 +284,31 @@ Each package includes test files with no external test framework -
 just the Go testing package. Tests are deterministic via a fake
 provider that scripts stream events.
 
-## Status
+## Roadmap
 
-Early alpha. All four layers are implemented and tested. The TUI is
-fully functional. Expect breaking changes - this project does not
-maintain backwards compatibility.
-
-### What works
+### Done
 
 - Three providers with streaming, retry, and backoff
 - Multi-turn agent loop with tool execution
 - Session tree with branching, labeling, and full persistence
 - Context compaction with overflow auto-retry
-- Skills system with slash-command and inline invocation
+- Skills system with folder-per-skill, slash-command, and inline invocation
+- Extension system with JSON-RPC over stdio, crash isolation, event dispatch
 - Complete TUI with streaming, markdown, autocomplete, and history
+- Global installation via PATH with binary-dir resolution
 
-### What is planned
+### In Progress
+
+- Extension slash commands that inject context into the LLM conversation
+- Skill linked files (scripts, references, templates) integration
+
+### Planned
 
 - Desktop notifications
-- More tools
+- More tools (grep, glob, multi-file edit)
 - Web UI (via the gateway HTTP API)
+- Project trust system for per-project skills and extensions
+- AGENTS.md ancestor walk (CWD to root)
 
 ### Known Limitations
 

@@ -7,8 +7,9 @@ provider:
   # For openai, host defaults to https://api.openai.com/v1; for
   # anthropic, https://api.anthropic.com/v1.
   type: ollama
-  # Required. The model to use.
-  model_name: llama3
+  # Required. The model to use. No default - must be set.
+  # Examples: llama3, gpt-4o, claude-sonnet-4-20250514
+  model_name:
   # Base URL. Ollama default: http://localhost:11434
   host: http://localhost:11434
   # API key for openai/anthropic. Falls back to OPENAI_API_KEY or
@@ -51,6 +52,10 @@ extensions:
   enabled: false
   # Directory to scan for extension executables. Default: extensions
   dir: extensions
+
+skills:
+  # Directory to scan for skill folders. Default: skills
+  dir: skills
 
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_HOME              -> omega home directory (default: binary dir, fallback ~/.omega/)

@@ -20,6 +20,7 @@ type Config struct {
 	Compaction   agent.CompactionConfig  `yaml:"compaction"`
 	SystemPrompt string                  `yaml:"system_prompt"`
 	Extensions   ExtensionsConfig        `yaml:"extensions"`
+	Skills       SkillsConfig            `yaml:"skills"`
 }
 
 // ExtensionsConfig controls whether extensions are loaded and from
@@ -27,6 +28,11 @@ type Config struct {
 type ExtensionsConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Dir     string `yaml:"dir"`
+}
+
+// SkillsConfig controls where skills are loaded from.
+type SkillsConfig struct {
+	Dir string `yaml:"dir"`
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -70,6 +76,9 @@ func DefaultConfig() Config {
 		Extensions: ExtensionsConfig{
 			Enabled: false,
 			Dir:     "extensions",
+		},
+		Skills: SkillsConfig{
+			Dir: "skills",
 		},
 	}
 }
@@ -135,6 +144,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("OMEGA_EXTENSIONS_DIR"); v != "" {
 		cfg.Extensions.Dir = v
+	}
+	if v := os.Getenv("OMEGA_SKILLS_DIR"); v != "" {
+		cfg.Skills.Dir = v
 	}
 }
 

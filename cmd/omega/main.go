@@ -134,6 +134,9 @@ func resolveHomePaths(cfg *gateway.Config) {
 	if cfg.Extensions.Dir == "extensions" {
 		cfg.Extensions.Dir = home + "/extensions"
 	}
+	if cfg.Skills.Dir == "skills" {
+		cfg.Skills.Dir = home + "/skills"
+	}
 	// Ensure the home directory exists so SQLite and extensions can
 	// create their files. Non-fatal: if mkdir fails, the store open
 	// will produce a clearer error.
@@ -278,7 +281,7 @@ func cmdChat(configPath string) error {
 	}
 	defer extMgr.Close()
 
-	skills, err := loadSkills()
+	skills, err := loadSkills(cfg)
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
@@ -298,13 +301,9 @@ func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.Extensio
 	return mgr, nil
 }
 
-// loadSkills reads skills from OMEGA_SKILLS_DIR, or ~/.omega/skills/.
-func loadSkills() ([]agent.Skill, error) {
-	dir := os.Getenv("OMEGA_SKILLS_DIR")
-	if dir == "" {
-		dir = omegaHome() + "/skills"
-	}
-	return agent.LoadSkills(dir)
+// loadSkills reads skills from the configured skills directory.
+func loadSkills(cfg gateway.Config) ([]agent.Skill, error) {
+	return agent.LoadSkills(cfg.Skills.Dir)
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.
