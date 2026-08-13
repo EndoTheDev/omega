@@ -4,6 +4,7 @@ config.yaml
 bin/
 data/
 skills/
+extensions/
 
 # Go
 *.exe
