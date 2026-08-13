@@ -99,21 +99,33 @@ func resolveConfigPath(flagPath string) string {
 	return ""
 }
 
-// newAgent wires config into a provider, agent, and store. The store is
-// returned so the caller can close it.
-func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, error) {
+// newAgent wires config into a provider, agent, store, and extensions.
+// The store is returned so the caller can close it. The extension manager
+// is returned so callers that run the TUI can close extensions on shutdown.
+func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
 	provider, err := ai.NewProvider(cfg.Provider.Type, cfg.Provider.ModelName, cfg.Provider.Host, cfg.Provider.APIKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(&cfg.Compaction)
 	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil))
+
+	var mgr agent.ExtensionManager = agent.NoopManager{}
+	if cfg.Extensions.Enabled {
+		mgr = &agent.StdioManager{}
+		if err := mgr.Load(cfg.Extensions.Dir); err != nil {
+			return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
+		}
+	}
+	ag.SetExtensions(mgr)
+
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open store: %w", err)
+		mgr.Close()
+		return nil, nil, nil, fmt.Errorf("open store: %w", err)
 	}
-	return ag, store, nil
+	return ag, store, mgr, nil
 }
 
 // buildSystemPrompt assembles the agent's system prompt from the
@@ -145,11 +157,12 @@ func cmdServe(configPath string) error {
 	if err != nil {
 		return err
 	}
-	ag, store, err := newAgent(cfg)
+	ag, store, mgr, err := newAgent(cfg)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	defer mgr.Close()
 
 	ctx, stop := signalContext()
 	defer stop()
@@ -172,11 +185,12 @@ func cmdRun(configPath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	ag, store, err := newAgent(cfg)
+	ag, store, mgr, err := newAgent(cfg)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	defer mgr.Close()
 
 	ctx, stop := signalContext()
 	defer stop()
@@ -216,11 +230,31 @@ func cmdChat(configPath string) error {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer store.Close()
+
+	extMgr, err := loadExtensions(cfg.Extensions)
+	if err != nil {
+		return fmt.Errorf("load extensions: %w", err)
+	}
+	defer extMgr.Close()
+
 	skills, err := loadSkills()
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills), store, skills)
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills), store, skills, extMgr)
+}
+
+// loadExtensions returns an extension manager configured by the user. If
+// extensions are disabled it returns a no-op manager.
+func loadExtensions(cfg gateway.ExtensionsConfig) (agent.ExtensionManager, error) {
+	if !cfg.Enabled {
+		return agent.NoopManager{}, nil
+	}
+	mgr := &agent.StdioManager{}
+	if err := mgr.Load(cfg.Dir); err != nil {
+		return nil, err
+	}
+	return mgr, nil
 }
 
 // loadSkills reads skills from the skills/ directory (or OMEGA_SKILLS_DIR).
