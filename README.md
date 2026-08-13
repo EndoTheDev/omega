@@ -77,6 +77,16 @@ On Windows the build produces `omega.exe` - use `.\omega.exe` instead of
 
 ### Install
 
+Install with `go install` (requires Go 1.26.5+):
+
+```bash
+go install github.com/EndoTheDev/omega/cmd/omega@latest
+```
+
+The binary is placed in `$GOPATH/bin` (typically already in your PATH).
+
+Or build from source:
+
 Add the build directory to your `PATH`. omega resolves config, skills,
 extensions, and the session database from the directory containing the
 binary. Your working directory is used only for AGENTS.md project
