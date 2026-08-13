@@ -114,7 +114,7 @@ func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, agent.Extension
 	var mgr agent.ExtensionManager = agent.NoopManager{}
 	if cfg.Extensions.Enabled {
 		mgr = &agent.StdioManager{}
-		if err := mgr.Load(cfg.Extensions.Dir); err != nil {
+		if err := mgr.Load(cfg.Extensions.Dir, cfg.Provider.APIKey); err != nil {
 			return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
 		}
 	}
@@ -231,7 +231,7 @@ func cmdChat(configPath string) error {
 	}
 	defer store.Close()
 
-	extMgr, err := loadExtensions(cfg.Extensions)
+	extMgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
 		return fmt.Errorf("load extensions: %w", err)
 	}
@@ -246,12 +246,12 @@ func cmdChat(configPath string) error {
 
 // loadExtensions returns an extension manager configured by the user. If
 // extensions are disabled it returns a no-op manager.
-func loadExtensions(cfg gateway.ExtensionsConfig) (agent.ExtensionManager, error) {
+func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.ExtensionManager, error) {
 	if !cfg.Enabled {
 		return agent.NoopManager{}, nil
 	}
 	mgr := &agent.StdioManager{}
-	if err := mgr.Load(cfg.Dir); err != nil {
+	if err := mgr.Load(cfg.Dir, apiKey); err != nil {
 		return nil, err
 	}
 	return mgr, nil
