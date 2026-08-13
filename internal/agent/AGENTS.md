@@ -15,6 +15,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `events.go` - event types emitted by the agent loop
 - `extension.go` - ExtensionManager interface and no-op manager
 - `extension_stdio.go` - stdio JSON-RPC extension transport
+- `testdata/mock_extension/` - mock extension binary for extension tests
 - `prompt.go` - system prompt construction
 - `skills.go` - SKILL.md loader
 - `tools.go` - built-in tool registry
@@ -35,6 +36,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
   the error becomes an `IsError` tool result message, never a panic.
 - **No re-exports.** Types defined in `internal/ai/` are imported from
   there, not re-exported from this package.
+- **API key passing.** `Load` receives the provider API key and passes
+  it to extensions via the `OLLAMA_API_KEY` env var (stdio transport).
 
 ## Work Guidance
 
@@ -48,7 +51,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `extension_stdio.go` when adding new event types, otherwise extensions
   over stdio will not receive them.
 - Prefer stdlib-only solutions for transports. JSON-RPC over stdio
-  uses only `encoding/json` and `os/exec`.
+  uses only stdlib packages.
 
 ## Verification
 

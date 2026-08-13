@@ -558,11 +558,11 @@ func TestTreeCommand(t *testing.T) {
 func TestTabComplete(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, nil, nil)
 
-	// Single match: "/ex" -> "/exit". CursorEnd() moves the cursor to the
+	// Single match: "/exi" -> "/exit". CursorEnd() moves the cursor to the
 	// end; the cursor position is private on textarea.Model, so we verify
 	// it behaviorally: a char inserted after completion must land at the
 	// end, not mid-command.
-	m.textarea.SetValue("/ex")
+	m.textarea.SetValue("/exi")
 	m.updateAutocomplete()
 	updated, _ := m.handleTabComplete()
 	m = updated.(model)
@@ -743,7 +743,7 @@ func TestAutocompleteAccept(t *testing.T) {
 	}
 
 	// Enter on a single-match auto-selected command completes it.
-	m.textarea.SetValue("/ex")
+	m.textarea.SetValue("/exi")
 	m.updateAutocomplete()
 	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = up.(model)

@@ -200,7 +200,7 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 	)
 
 	mgr := &StdioManager{}
-	if err := mgr.Load(mockExtensionDir(t)); err != nil {
+	if err := mgr.Load(mockExtensionDir(t), ""); err != nil {
 		t.Fatalf("load extension: %v", err)
 	}
 	defer mgr.Close()
@@ -249,7 +249,7 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 	}
 
 	mgr := &StdioManager{}
-	if err := mgr.Load(mockExtensionDir(t)); err != nil {
+	if err := mgr.Load(mockExtensionDir(t), ""); err != nil {
 		t.Fatalf("load extension: %v", err)
 	}
 	defer mgr.Close()
@@ -277,7 +277,7 @@ func TestRunExtensionEventsDispatched(t *testing.T) {
 	)
 
 	mgr := &StdioManager{}
-	if err := mgr.Load(mockExtensionDir(t)); err != nil {
+	if err := mgr.Load(mockExtensionDir(t), ""); err != nil {
 		t.Fatalf("load extension: %v", err)
 	}
 	defer mgr.Close()

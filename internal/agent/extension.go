@@ -19,8 +19,10 @@ const ExtensionProtocolVersion = "0.1"
 // detail.
 type ExtensionManager interface {
 	// Load discovers and initializes extensions from dir. A missing or
-	// empty dir is not an error — it loads zero extensions.
-	Load(dir string) error
+	// empty dir is not an error — it loads zero extensions. apiKey is
+	// passed to extensions for authentication; the transport determines
+	// how it reaches them.
+	Load(dir string, apiKey string) error
 
 	// Tools returns extension-provided tools keyed by tool name. The
 	// agent merges these with built-in tools; built-ins win on name
@@ -65,7 +67,7 @@ type ExtensionInfo struct {
 // disabled or the directory is empty. Every method is a no-op.
 type NoopManager struct{}
 
-func (NoopManager) Load(dir string) error                         { return nil }
+func (NoopManager) Load(dir string, apiKey string) error          { return nil }
 func (NoopManager) Tools() map[string]Tool                        { return nil }
 func (NoopManager) Commands() []ExtensionCommand                  { return nil }
 func (NoopManager) Infos() []ExtensionInfo                        { return nil }

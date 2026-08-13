@@ -56,7 +56,7 @@ var (
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/provider", "/compact", "/copy", "/thinking", "/tools", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/provider", "/compact", "/copy", "/thinking", "/tools", "/extensions", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -967,7 +967,8 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	header := fmt.Sprintf("%-*s  %5s  %8s  %s", nameWidth, "NAME", "TOOLS", "COMMANDS", "STATUS")
-	sb.WriteString(styleInfo.Render(header) + "\n")
+	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString("\n")
 	for _, info := range infos {
 		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, info.Status)
 	}

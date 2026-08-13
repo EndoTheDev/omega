@@ -34,7 +34,7 @@ func mockExtensionDir(t *testing.T) string {
 // TestNoopManager verifies the no-op manager does nothing.
 func TestNoopManager(t *testing.T) {
 	m := NoopManager{}
-	if err := m.Load("/nonexistent"); err != nil {
+	if err := m.Load("/nonexistent", ""); err != nil {
 		t.Fatalf("NoopManager.Load returned error: %v", err)
 	}
 	if tools := m.Tools(); len(tools) != 0 {
@@ -59,7 +59,7 @@ func TestNoopManager(t *testing.T) {
 // extensions without error.
 func TestStdioManagerLoadMissingDir(t *testing.T) {
 	m := &StdioManager{}
-	if err := m.Load("/nonexistent/path"); err != nil {
+	if err := m.Load("/nonexistent/path", ""); err != nil {
 		t.Fatalf("Load missing dir: %v", err)
 	}
 	if len(m.Tools()) != 0 {
@@ -74,7 +74,7 @@ func TestStdioManagerLoadMissingDir(t *testing.T) {
 func TestStdioManagerInitialize(t *testing.T) {
 	dir := mockExtensionDir(t)
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
@@ -118,7 +118,7 @@ func TestStdioManagerInitialize(t *testing.T) {
 func TestStdioManagerToolCall(t *testing.T) {
 	dir := mockExtensionDir(t)
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
@@ -141,7 +141,7 @@ func TestStdioManagerToolCall(t *testing.T) {
 func TestStdioManagerCommand(t *testing.T) {
 	dir := mockExtensionDir(t)
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
@@ -164,7 +164,7 @@ func TestStdioManagerEventDispatch(t *testing.T) {
 	defer os.Unsetenv("OMEGA_TEST_EVENTS")
 
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
@@ -191,7 +191,7 @@ func TestStdioManagerEventDispatch(t *testing.T) {
 func TestStdioManagerClose(t *testing.T) {
 	dir := mockExtensionDir(t)
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 
@@ -233,7 +233,7 @@ func TestStdioManagerSkipNonExecutable(t *testing.T) {
 	}
 
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
@@ -249,7 +249,7 @@ func TestStdioManagerSkipNonExecutable(t *testing.T) {
 func TestStdioManagerConflictWinsFirst(t *testing.T) {
 	dir := mockExtensionDir(t)
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()
@@ -273,7 +273,7 @@ func TestExtensionManagerSeam(t *testing.T) {
 func TestStdioManagerProcessDeath(t *testing.T) {
 	dir := mockExtensionDir(t)
 	m := &StdioManager{}
-	if err := m.Load(dir); err != nil {
+	if err := m.Load(dir, ""); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	defer m.Close()

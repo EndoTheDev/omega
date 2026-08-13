@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,48 +107,57 @@ type commandResult struct {
 	Output string `json:"output"`
 }
 
-// eventParams is the params for the event JSON-RPC notification.
-type eventParams struct {
-	Type string `json:"type"`
-	Data any    `json:"data,omitempty"`
-}
-
 // writeTimeout is the max time to block writing to an extension's stdin.
 // A stalled extension that can't accept input is logged and skipped.
 const writeTimeout = 2 * time.Second
 
-// Load discovers and initializes extensions from dir. Files starting
-// with "." are skipped. Files ending in ".md" or ".txt" are skipped
-// (documentation). Everything else is treated as a candidate extension.
+// skipExts are file extensions that are never extension executables.
+// Source, config, and documentation files are skipped so a folder can
+// hold both the extension binary and its source without false spawns.
+var skipExts = map[string]bool{
+	".md":   true,
+	".txt":  true,
+	".go":   true,
+	".json": true,
+	".yaml": true,
+	".yml":  true,
+	".toml": true,
+}
+
+// Load discovers and initializes extensions from dir, recursing into
+// subdirectories. Files starting with "." are skipped. Files with an
+// extension in skipExts are skipped. Everything else is treated as a
+// candidate extension.
 //
 // On Windows, files without a known extension are checked for a shebang
 // line to route through the right interpreter. Files with .sh extension
 // are run via bash.
-func (m *StdioManager) Load(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // missing dir = zero extensions, not an error
-		}
-		return fmt.Errorf("read extensions dir: %w", err)
-	}
-
+func (m *StdioManager) Load(dir string, apiKey string) error {
 	m.toolMap = make(map[string]Tool)
 
-	for _, entry := range entries {
-		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // missing dir = zero extensions, not an error
+			}
+			return nil // skip unreadable entries, don't abort the walk
 		}
-		if strings.HasSuffix(entry.Name(), ".md") || strings.HasSuffix(entry.Name(), ".txt") {
-			continue
+		if d.IsDir() {
+			return nil // walk into directories
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, ".") {
+			return nil
+		}
+		if skipExts[filepath.Ext(name)] {
+			return nil
 		}
 
-		path := filepath.Join(dir, entry.Name())
-		ext, err := spawnExtension(path)
+		ext, err := spawnExtension(path, apiKey)
 		if err != nil {
 			// Non-fatal: log and skip. One bad extension does not kill the manager.
-			fmt.Fprintf(os.Stderr, "omega: extension %s: %v\n", entry.Name(), err)
-			continue
+			fmt.Fprintf(os.Stderr, "omega: extension %s: %v\n", path, err)
+			return nil
 		}
 
 		m.exts = append(m.exts, ext)
@@ -166,17 +176,25 @@ func (m *StdioManager) Load(dir string) error {
 				},
 			}
 		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // spawnExtension spawns a single extension process and runs initialize.
-func spawnExtension(path string) (*stdioExt, error) {
+// apiKey is passed to the extension via the OLLAMA_API_KEY env var.
+func spawnExtension(path string, apiKey string) (*stdioExt, error) {
+	// WalkDir returns paths relative to the working directory. On Windows,
+	// exec.Command can't resolve relative paths with backslashes, so
+	// convert to absolute first.
+	path, _ = filepath.Abs(path)
+
 	cmd, err := buildCommand(path)
 	if err != nil {
 		return nil, fmt.Errorf("build command: %w", err)
 	}
+
+	// Pass the API key to the extension via env.
+	cmd.Env = append(os.Environ(), "OLLAMA_API_KEY="+apiKey)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -253,16 +271,23 @@ func spawnExtension(path string) (*stdioExt, error) {
 
 // buildCommand creates an exec.Cmd for an extension file. On Windows,
 // .sh files are routed through bash. Files with a shebang line use the
-// declared interpreter.
+// declared interpreter. On Windows, if a file has no extension and a
+// .exe variant exists, the .exe variant is used (exec.Command does not
+// auto-append .exe for absolute paths).
 func buildCommand(path string) (*exec.Cmd, error) {
 	ext := filepath.Ext(path)
 
 	// .sh files go through bash everywhere.
 	if ext == ".sh" {
-		if runtime.GOOS == "windows" {
-			return exec.Command("bash", path), nil
-		}
 		return exec.Command("bash", path), nil
+	}
+
+	// On Windows, try appending .exe for extensionless binaries.
+	if runtime.GOOS == "windows" && ext == "" {
+		exePath := path + ".exe"
+		if _, err := os.Stat(exePath); err == nil {
+			path = exePath
+		}
 	}
 
 	// Check for shebang line.
