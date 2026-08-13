@@ -187,6 +187,121 @@ func TestRunUnknownTool(t *testing.T) {
 	}
 }
 
+func TestRunExtensionToolInLoop(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "hello"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	mgr := &StdioManager{}
+	if err := mgr.Load(mockExtensionDir(t)); err != nil {
+		t.Fatalf("load extension: %v", err)
+	}
+	defer mgr.Close()
+
+	agent := NewAgent(provider, nil, 0)
+	agent.SetExtensions(mgr)
+
+	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+
+	// Extension tool result must reach the provider as a ToolResult message.
+	var found bool
+	for _, m := range provider.LastMessages {
+		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && strings.Contains(tr.Content, "echo: hello") && !tr.IsError {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("extension tool result not fed back: %#v", provider.LastMessages)
+	}
+
+	end := lastAgentEnd(events)
+	if end.Turns != 2 || end.FinishReason != "stop" {
+		t.Fatalf("AgentEnd = %+v, want 2 turns / stop", end)
+	}
+}
+
+func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("fake",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "x"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	// Built-in "echo_tool" should shadow the extension "echo_tool".
+	builtIn := map[string]Tool{
+		"echo_tool": {
+			Run: func(_ context.Context, args map[string]any) (string, error) {
+				return "built-in", nil
+			},
+		},
+	}
+
+	mgr := &StdioManager{}
+	if err := mgr.Load(mockExtensionDir(t)); err != nil {
+		t.Fatalf("load extension: %v", err)
+	}
+	defer mgr.Close()
+
+	agent := NewAgent(provider, builtIn, 0)
+	agent.SetExtensions(mgr)
+
+	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+
+	var found bool
+	for _, m := range provider.LastMessages {
+		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "built-in" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("built-in tool should win on name conflict: %#v", provider.LastMessages)
+	}
+}
+
+func TestRunExtensionEventsDispatched(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+
+	mgr := &StdioManager{}
+	if err := mgr.Load(mockExtensionDir(t)); err != nil {
+		t.Fatalf("load extension: %v", err)
+	}
+	defer mgr.Close()
+
+	agent := NewAgent(provider, nil, 0)
+	agent.SetExtensions(mgr)
+
+	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+}
+
+func TestRunSetExtensionsNilFallsBackToNoop(t *testing.T) {
+	provider := ai.NewFakeProvider("fake",
+		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	agent := NewAgent(provider, nil, 0)
+	agent.SetExtensions(nil)
+
+	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	if len(events) == 0 {
+		t.Fatal("expected events with nil extension manager")
+	}
+}
+
 func TestRunToolExecutionLifecycle(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
 		[]ai.StreamEvent{

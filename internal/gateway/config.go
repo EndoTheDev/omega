@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/EndoTheDev/omega/internal/agent"
 	"gopkg.in/yaml.v3"
@@ -18,6 +19,14 @@ type Config struct {
 	Store        StoreConfig             `yaml:"store"`
 	Compaction   agent.CompactionConfig  `yaml:"compaction"`
 	SystemPrompt string                  `yaml:"system_prompt"`
+	Extensions   ExtensionsConfig        `yaml:"extensions"`
+}
+
+// ExtensionsConfig controls whether extensions are loaded and from
+// where.
+type ExtensionsConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Dir     string `yaml:"dir"`
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -57,6 +66,10 @@ func DefaultConfig() Config {
 			ContextWindow: 32768,
 			KeepFirst:     2,
 			KeepLast:      10,
+		},
+		Extensions: ExtensionsConfig{
+			Enabled: false,
+			Dir:     "extensions",
 		},
 	}
 }
@@ -116,6 +129,12 @@ func applyEnv(cfg *Config) {
 		if window, err := strconv.Atoi(v); err == nil && window > 0 {
 			cfg.Compaction.ContextWindow = window
 		}
+	}
+	if v := os.Getenv("OMEGA_EXTENSIONS_ENABLED"); v != "" {
+		cfg.Extensions.Enabled = v == "1" || strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("OMEGA_EXTENSIONS_DIR"); v != "" {
+		cfg.Extensions.Dir = v
 	}
 }
 

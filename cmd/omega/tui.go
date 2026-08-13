@@ -104,8 +104,9 @@ type model struct {
 	autocompleteIndex   int      // highlighted match; -1 = none selected
 	autocompleteOffset  int      // first visible row in the dropup window
 	screenHeight        int      // terminal height from the last resize
-	skills              []agent.Skill // loaded skills, for autocomplete and invocation
-	commands            []string      // knownCommands + skill names, per-model copy
+	skills              []agent.Skill      // loaded skills, for autocomplete and invocation
+	extensions          agent.ExtensionManager // loaded extensions, for tools/commands/events
+	commands            []string           // knownCommands + skill names, per-model copy
 	showThinking        bool          // /thinking toggle; default true
 	showToolResults     bool          // /tools toggle; default false (collapsed)
 	toolResultsAuto     bool          // /tools auto; short results full, long ones collapsed
@@ -128,8 +129,8 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, extensions)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -137,16 +138,26 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, syst
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions ...agent.ExtensionManager) model {
+	extMgr := agent.ExtensionManager(agent.NoopManager{})
+	if len(extensions) > 0 {
+		extMgr = extensions[0]
+	}
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
-	// Build the per-model command list: clone the built-in commands and
-	// append skill names. This avoids mutating the package-level slice.
+	// Build the per-model command list: clone the built-in commands,
+	// append extension commands, then skill names. This avoids mutating
+	// the package-level slice.
 	commands := make([]string, len(knownCommands))
 	copy(commands, knownCommands)
+	if extMgr != nil {
+		for _, c := range extMgr.Commands() {
+			commands = append(commands, c.Name)
+		}
+	}
 	for _, s := range skills {
 		commands = append(commands, "/"+s.Name)
 	}
@@ -161,6 +172,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		systemPrompt:      systemPrompt,
 		store:             store,
 		skills:            skills,
+		extensions:        extMgr,
 		commands:          commands,
 		autocompleteIndex: -1,
 		showThinking:      true,
@@ -428,7 +440,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(m.compaction)
 	ag.SetSystemPrompt(m.systemPrompt)
-
+	ag.SetExtensions(m.extensions)
 	// The goroutine writes events to the channel; Update drains it via
 	// drainEvents. The channel is a reference type, so it survives the
 	// value copy Bubble Tea makes of the model. A fresh channel per run:
@@ -656,6 +668,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.transcript += "\n" + styleInfo.Render("[tool results "+state+"]") + "\n"
 		m.refresh()
 		return m, nil
+	case "/extensions":
+		return m.handleExtensions()
 	case "/help":
 		m.transcript += renderHelp()
 		m.refresh()
@@ -685,8 +699,16 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	default:
-		// Check if the command matches a loaded skill.
+		// Check if the command matches a loaded extension command.
 		cmd := fields[0]
+		if m.extensions != nil {
+			for _, c := range m.extensions.Commands() {
+				if c.Name == cmd {
+					return m.handleExtensionCommand(c.Name, strings.TrimSpace(strings.TrimPrefix(input, cmd)))
+				}
+			}
+		}
+		// Check if the command matches a loaded skill.
 		for _, s := range m.skills {
 			if "/"+s.Name == cmd {
 				m.transcript += "\n" + styleInfo.Render("[skill: "+s.Name+"]") + "\n"
@@ -923,6 +945,47 @@ func (m *model) resetSession() {
 	m.history = nil
 	m.transcript = ""
 	m.segments = nil
+}
+
+// handleExtensions lists loaded extensions with name, tool count,
+// command count, and status.
+func (m model) handleExtensions() (tea.Model, tea.Cmd) {
+	infos := m.extensions.Infos()
+	if len(infos) == 0 {
+		m.transcript += "\n" + styleInfo.Render("[no extensions loaded]") + "\n"
+		m.refresh()
+		return m, nil
+	}
+
+	nameWidth := 12
+	for _, info := range infos {
+		if len(info.Name) > nameWidth {
+			nameWidth = len(info.Name)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	header := fmt.Sprintf("%-*s  %5s  %8s  %s", nameWidth, "NAME", "TOOLS", "COMMANDS", "STATUS")
+	sb.WriteString(styleInfo.Render(header) + "\n")
+	for _, info := range infos {
+		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, info.Status)
+	}
+	m.transcript += sb.String()
+	m.refresh()
+	return m, nil
+}
+
+// handleExtensionCommand runs an extension-provided slash command.
+func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
+	output, err := m.extensions.CallCommand(context.Background(), name, args)
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.transcript += "\n" + styleInfo.Render("["+name+"]") + "\n" + wordWrap(output, m.viewport.Width) + "\n"
+	m.refresh()
+	return m, nil
 }
 
 // labelOf returns the stored label for a session, or "" when it has
@@ -1672,6 +1735,7 @@ func renderHelp() string {
 		{"/copy", "copy the last message to clipboard"},
 		{"/thinking [on|off]", "show/hide thinking blocks (no arg toggles)"},
 		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
+		{"/extensions", "list loaded extensions"},
 		{"/help", "show this help"},
 	}
 	maxCmd := len("COMMAND")

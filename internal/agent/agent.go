@@ -30,6 +30,7 @@ type Tool struct {
 type Agent struct {
 	provider     ai.Provider
 	tools        map[string]Tool
+	extensions   ExtensionManager
 	maxTurns     int
 	compaction   *CompactionConfig
 	systemPrompt string
@@ -39,7 +40,22 @@ type Agent struct {
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
-	return &Agent{provider: provider, tools: tools, maxTurns: maxTurns}
+	return &Agent{
+		provider:   provider,
+		tools:      tools,
+		extensions: NoopManager{},
+		maxTurns:   maxTurns,
+	}
+}
+
+// SetExtensions installs the extension manager. A nil value sets the
+// default no-op manager.
+func (a *Agent) SetExtensions(mgr ExtensionManager) {
+	if mgr == nil {
+		a.extensions = NoopManager{}
+		return
+	}
+	a.extensions = mgr
 }
 
 // SetSystemPrompt sets the system prompt prepended to every run's
@@ -84,12 +100,29 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 	return events
 }
 
-func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Message, tools map[string]Tool) {
+func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Message, runTools map[string]Tool) {
 	defer close(events)
 
+	tools := runTools
 	if tools == nil {
 		tools = a.tools
 	}
+
+	// Merge extension tools into the active tool set. Built-in tools
+	// take precedence on name conflict.
+	if extTools := a.extensions.Tools(); len(extTools) > 0 {
+		merged := make(map[string]Tool, len(tools)+len(extTools))
+		for name, t := range tools {
+			merged[name] = t
+		}
+		for name, t := range extTools {
+			if _, exists := merged[name]; !exists {
+				merged[name] = t
+			}
+		}
+		tools = merged
+	}
+
 	maxTurns := a.maxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
@@ -101,17 +134,23 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		messages = append([]ai.Message{ai.NewSystem(a.systemPrompt)}, messages...)
 	}
 
-	events <- AgentStart{Type: "agent_start", ModelName: a.provider.ModelName()}
+	start := AgentStart{Type: "agent_start", ModelName: a.provider.ModelName()}
+	events <- start
+	a.extensions.DispatchEvent(start)
 
 	turns := 0
 	overflowRetries := 0
 	for {
 		if ctx.Err() != nil {
-			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			events <- end
+			a.extensions.DispatchEvent(end)
 			return
 		}
 		if turns >= maxTurns {
-			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
+			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
+			events <- end
+			a.extensions.DispatchEvent(end)
 			return
 		}
 
@@ -119,7 +158,9 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			if EstimateTokens(messages) > a.compaction.budget() {
 				compacted, err := CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, "")
 				if err != nil {
-					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					events <- end
+					a.extensions.DispatchEvent(end)
 					return
 				}
 				messages = compacted
@@ -127,7 +168,9 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		}
 
 		turns++
-		events <- TurnStart{Type: "turn_start", Turn: turns}
+		turnStart := TurnStart{Type: "turn_start", Turn: turns}
+		events <- turnStart
+		a.extensions.DispatchEvent(turnStart)
 
 		var content, thinking strings.Builder
 		var toolCalls []ai.ToolCall
@@ -149,7 +192,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			events <- StreamEvent{Event: event}
 		}
 
-			if streamErr != "" {
+		if streamErr != "" {
 			// A context overflow error triggers one auto-compaction and
 			// retry of the turn. The failed attempt counts as a turn and
 			// emits TurnStart without TurnEnd - acceptable asymmetry, the
@@ -160,13 +203,17 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 				overflowRetries++
 				compacted, err := CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, "")
 				if err != nil {
-					events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					events <- end
+					a.extensions.DispatchEvent(end)
 					return
 				}
 				messages = compacted
 				continue
 			}
-			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
+			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
+			events <- end
+			a.extensions.DispatchEvent(end)
 			return
 		}
 
@@ -177,7 +224,9 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		}
 		assistant.ToolCalls = toolCalls
 		messages = append(messages, assistant)
-		events <- AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+		assistantEvent := AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+		events <- assistantEvent
+		a.extensions.DispatchEvent(assistantEvent)
 
 		executed := 0
 		for _, call := range toolCalls {
@@ -186,6 +235,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
 				messages = append(messages, msg)
 				events <- ToolResultEvent{Type: "tool_result", Message: msg}
+				a.extensions.DispatchEvent(ToolResultEvent{Type: "tool_result", Message: msg})
 				executed++
 				continue
 			}
@@ -197,14 +247,20 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 				msg = ai.NewToolResult(result, call.ID, false)
 			}
 			messages = append(messages, msg)
-			events <- ToolResultEvent{Type: "tool_result", Message: msg}
+			toolResultEvent := ToolResultEvent{Type: "tool_result", Message: msg}
+			events <- toolResultEvent
+			a.extensions.DispatchEvent(toolResultEvent)
 			executed++
 		}
 
-		events <- TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+		turnEnd := TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+		events <- turnEnd
+		a.extensions.DispatchEvent(turnEnd)
 
 		if len(toolCalls) == 0 {
-			events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			events <- end
+			a.extensions.DispatchEvent(end)
 			return
 		}
 	}
