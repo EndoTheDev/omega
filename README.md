@@ -29,14 +29,15 @@ provider abstraction, and the standard library for everything HTTP.
   context window size.
 - **Overflow recovery** - Detects context overflow errors and
   auto-compacts + retries once.
-- **Tools** - `shell`, `read_file`, `write_file`, `edit`. Structured
+- **Tools** - `shell`, `read_file`, `write_file`, `edit`, `load_skill`. Structured
   error returns, no panics.
 - **Extensions** - Load external tools and slash commands via JSON-RPC
   over stdio. Each extension is a separate process with crash
   isolation.
 - **Skills** - Self-contained skill directories (`<name>/<name>.md`)
-  with frontmatter. Invoke via `/skill-name` slash commands or inline
-  in messages. Each skill folder can hold its own scripts, references,
+  with frontmatter. The agent can load skill content on demand via the
+  `load_skill` tool, or the user can invoke via `/skill-name` slash
+  commands. Each skill folder can hold its own scripts, references,
   and templates.
 - **Ephemeral sessions** - `/new --ephemeral` for throwaway
   conversations with no persistence.
@@ -302,7 +303,7 @@ provider that scripts stream events.
 - Multi-turn agent loop with tool execution
 - Session tree with branching, labeling, and full persistence
 - Context compaction with overflow auto-retry
-- Skills system with folder-per-skill, slash-command, and inline invocation
+- Skills system with folder-per-skill, agent-driven `load_skill` tool, and slash-command invocation
 - Extension system with JSON-RPC over stdio, crash isolation, event dispatch
 - Complete TUI with streaming, markdown, autocomplete, and history
 - Global installation via PATH with binary-dir resolution
@@ -310,7 +311,7 @@ provider that scripts stream events.
 ### In Progress
 
 - Extension slash commands that inject context into the LLM conversation
-- Skill linked files (scripts, references, templates) integration
+- Skill linked files (scripts, references, templates) integration with agent tools
 
 ### Planned
 

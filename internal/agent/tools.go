@@ -81,6 +81,31 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
+// runLoadSkill looks up a skill by name and returns its content and
+// directory path. The skills slice is captured by the closure in
+// SetSkills.
+func runLoadSkill(skills []Skill, args map[string]any) (string, error) {
+	name, err := argString(args, "name")
+	if err != nil {
+		return "", err
+	}
+	for _, s := range skills {
+		if s.Name == name {
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "Skill: %s\n", s.Name)
+			fmt.Fprintf(&sb, "Directory: %s\n\n", s.Dir)
+			sb.WriteString(s.Content)
+			return sb.String(), nil
+		}
+	}
+	// Not found: list available skill names to help the agent.
+	var names []string
+	for _, s := range skills {
+		names = append(names, s.Name)
+	}
+	return "", fmt.Errorf("skill %q not found. Available skills: %s", name, strings.Join(names, ", "))
+}
+
 // runShell executes a command through the platform shell and returns its
 // combined stdout and stderr.
 func runShell(ctx context.Context, args map[string]any) (string, error) {

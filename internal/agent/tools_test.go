@@ -237,3 +237,62 @@ func TestUnknownToolResult(t *testing.T) {
 		t.Fatalf("Content = %q, want it to contain 'unknown tool'", tr.Content)
 	}
 }
+
+func TestSetSkillsRegistersLoadSkillTool(t *testing.T) {
+	ag := NewAgent(nil, NewRegistry(), 0)
+	if _, ok := ag.tools["load_skill"]; ok {
+		t.Fatal("load_skill tool should not exist before SetSkills")
+	}
+	skills := []Skill{
+		{Name: "test-skill", Description: "A test", Content: "Do the thing.", Dir: "/tmp/skills/test-skill"},
+	}
+	ag.SetSkills(skills)
+	tool, ok := ag.tools["load_skill"]
+	if !ok {
+		t.Fatal("load_skill tool not registered after SetSkills")
+	}
+	if tool.Description == "" {
+		t.Error("load_skill description is empty")
+	}
+}
+
+func TestSetSkillsNoopOnEmpty(t *testing.T) {
+	ag := NewAgent(nil, NewRegistry(), 0)
+	ag.SetSkills(nil)
+	if _, ok := ag.tools["load_skill"]; ok {
+		t.Fatal("load_skill tool should not be registered for nil skills")
+	}
+}
+
+func TestRunLoadSkill(t *testing.T) {
+	skills := []Skill{
+		{Name: "learn-skill", Description: "Teaches", Content: "Learn by doing.", Dir: "/home/skills/learn-skill"},
+		{Name: "deploy-skill", Description: "Deploys", Content: "Deploy with care.", Dir: "/home/skills/deploy-skill"},
+	}
+	result, err := runLoadSkill(skills, map[string]any{"name": "learn-skill"})
+	if err != nil {
+		t.Fatalf("runLoadSkill: %v", err)
+	}
+	if !strings.Contains(result, "Learn by doing.") {
+		t.Errorf("result missing skill content: %q", result)
+	}
+	if !strings.Contains(result, "/home/skills/learn-skill") {
+		t.Errorf("result missing skill directory: %q", result)
+	}
+}
+
+func TestRunLoadSkillNotFound(t *testing.T) {
+	skills := []Skill{
+		{Name: "learn-skill", Description: "Teaches", Content: "Learn by doing.", Dir: "/home/skills/learn-skill"},
+	}
+	_, err := runLoadSkill(skills, map[string]any{"name": "ghost"})
+	if err == nil {
+		t.Fatal("expected error for unknown skill, got nil")
+	}
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("error should mention skill name: %v", err)
+	}
+	if !strings.Contains(err.Error(), "learn-skill") {
+		t.Errorf("error should list available skills: %v", err)
+	}
+}

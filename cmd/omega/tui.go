@@ -443,6 +443,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	ag.SetCompaction(m.compaction)
 	ag.SetSystemPrompt(m.systemPrompt)
 	ag.SetExtensions(m.extensions)
+	ag.SetSkills(m.skills)
 	// The goroutine writes events to the channel; Update drains it via
 	// drainEvents. The channel is a reference type, so it survives the
 	// value copy Bubble Tea makes of the model. A fresh channel per run:

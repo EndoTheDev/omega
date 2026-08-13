@@ -64,6 +64,30 @@ func (a *Agent) SetSystemPrompt(prompt string) {
 	a.systemPrompt = prompt
 }
 
+// SetSkills registers a load_skill tool that lets the agent pull in a
+// skill's full content on demand. The system prompt advertises skills
+// by name and description; this tool gives the agent a way to read the
+// actual skill body and its directory path when it needs to follow the
+// skill's instructions.
+func (a *Agent) SetSkills(skills []Skill) {
+	if len(skills) == 0 {
+		return
+	}
+	a.tools["load_skill"] = Tool{
+		Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string", "description": "The skill name (from the Available Skills list)"},
+			},
+			"required": []string{"name"},
+		},
+		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			return runLoadSkill(skills, args)
+		},
+	}
+}
+
 // SetCompaction enables context compaction for this agent. A nil config
 // disables it.
 func (a *Agent) SetCompaction(cfg *CompactionConfig) {

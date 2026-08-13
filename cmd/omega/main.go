@@ -179,7 +179,6 @@ func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill) string {
 	}
 	return agent.BuildSystemPrompt(agent.PromptOptions{
 		ProjectContext: agent.LoadProjectContext(cwd),
-		Tools:          agent.NewRegistry(),
 		Skills:         skills,
 		CWD:            cwd,
 		Custom:         cfg.SystemPrompt,
