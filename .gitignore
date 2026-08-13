@@ -4,7 +4,9 @@ config.yaml
 bin/
 data/
 skills/
-extensions/
+extensions/*
+!extensions/example/
+!extensions/example/**
 
 # Go
 *.exe

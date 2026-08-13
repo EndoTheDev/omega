@@ -45,6 +45,13 @@ system_prompt:
   #     You are a helpful assistant.
   #     Be concise.
 
+extensions:
+  # Load extensions from a directory of executables.
+  # Disabled by default. Set enabled: true to load everything in dir.
+  enabled: false
+  # Directory to scan for extension executables. Default: extensions
+  dir: extensions
+
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_PROVIDER  -> provider.type
 #   OMEGA_API_KEY   -> provider.api_key
@@ -54,3 +61,5 @@ system_prompt:
 #   OMEGA_DB_PATH   -> store.db_path
 #   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold
 #   OMEGA_COMPACTION_CONTEXT_WINDOW -> compaction.context_window
+#   OMEGA_EXTENSIONS_ENABLED -> extensions.enabled (true/1 or false/0)
+#   OMEGA_EXTENSIONS_DIR     -> extensions.dir
