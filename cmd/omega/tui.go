@@ -979,7 +979,9 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 
 // handleExtensionCommand runs an extension-provided slash command.
 func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
-	output, err := m.extensions.CallCommand(context.Background(), name, args)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	output, err := m.extensions.CallCommand(ctx, name, args)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil

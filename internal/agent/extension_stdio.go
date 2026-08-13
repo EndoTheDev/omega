@@ -47,7 +47,7 @@ type stdioExt struct {
 
 	tools       map[string]toolDef
 	commands    []ExtensionCommand
-	subscriptns map[string]bool // event types this extension wants
+	subscribed  map[string]bool // event types this extension wants
 	pending     map[int64]chan rpcResponse // pending request responses
 	pendingMu   sync.Mutex
 	nextID      int64
@@ -164,7 +164,6 @@ func (m *StdioManager) Load(dir string, apiKey string) error {
 
 		// Wrap extension tools as agent.Tool values.
 		for _, t := range ext.tools {
-			t := t // capture for closure
 			if _, exists := m.toolMap[t.Name]; exists {
 				continue // first registration wins
 			}
@@ -219,7 +218,7 @@ func spawnExtension(path string, apiKey string) (*stdioExt, error) {
 		stdin:       json.NewEncoder(stdinPipe),
 		stdout:      bufio.NewReader(stdoutPipe),
 		tools:       make(map[string]toolDef),
-		subscriptns: make(map[string]bool),
+		subscribed:   make(map[string]bool),
 		pending:     make(map[int64]chan rpcResponse),
 	}
 
@@ -262,7 +261,7 @@ func spawnExtension(path string, apiKey string) (*stdioExt, error) {
 	}
 
 	for _, sub := range init.Subscriptions {
-		ext.subscriptns[sub] = true
+		ext.subscribed[sub] = true
 	}
 
 	ext.alive = true
@@ -413,17 +412,25 @@ func (e *stdioExt) notify(method string, params map[string]any) error {
 }
 
 // write sends a JSON-RPC message to the extension's stdin with a timeout.
+// On timeout the extension is killed: the closed pipe unblocks Encode and
+// the goroutine exits. This prevents a leaked goroutine holding the lock.
 func (e *stdioExt) write(req rpcRequest) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	done := make(chan error, 1)
 	go func() {
-		e.mu.Lock()
-		defer e.mu.Unlock()
 		done <- e.stdin.Encode(req)
 	}()
+
 	select {
 	case err := <-done:
 		return err
 	case <-time.After(writeTimeout):
+		// Kill the process so the pipe closes and Encode unblocks.
+		e.alive = false
+		e.cmd.Process.Kill()
+		<-done
 		return fmt.Errorf("write timeout after %s", writeTimeout)
 	}
 }
@@ -504,7 +511,7 @@ func (m *StdioManager) DispatchEvent(event Event) {
 	m.mu.Unlock()
 
 	for _, ext := range exts {
-		if !ext.alive || !ext.subscriptns[typeName] {
+		if !ext.alive || !ext.subscribed[typeName] {
 			continue
 		}
 		// Best-effort: a failed notification is logged and skipped.
@@ -585,6 +592,8 @@ func eventType(e Event) string {
 		return "turn_end"
 	case ToolResultEvent:
 		return "tool_result"
+	case AssistantMessageEvent:
+		return "assistant_message"
 	case AgentEnd:
 		return "agent_end"
 	default:
@@ -603,6 +612,8 @@ func eventData(e Event) any {
 	case TurnEnd:
 		return map[string]any{"turn": v.Turn, "tool_calls": v.ToolCalls}
 	case ToolResultEvent:
+		return map[string]any{"message": v.Message}
+	case AssistantMessageEvent:
 		return map[string]any{"message": v.Message}
 	case AgentEnd:
 		return map[string]any{"turns": v.Turns, "finish_reason": v.FinishReason}
