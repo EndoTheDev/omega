@@ -155,23 +155,25 @@ variables. When omega is installed globally (in PATH), it looks for
 directory (or `OMEGA_HOME`). The working directory is used only for
 AGENTS.md project context and tool file operations.
 
-| Key                         | Env var                           | Default                  | Description                                                                                     |
-| --------------------------- | --------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
-| -                           | `OMEGA_HOME`                      | Binary directory         | Omega home: config, db, skills, extensions live here                                            |
-| `provider.type`             | `OMEGA_PROVIDER`                  | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`                                                       |
-| `provider.model_name`       | `OMEGA_MODEL`                     | (required)               | Model name                                                                                      |
-| `provider.host`             | `OMEGA_HOST`                      | `http://localhost:11434` | Provider base URL                                                                               |
-| `provider.api_key`          | `OMEGA_API_KEY`                   |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
-| `server.port`               | `OMEGA_PORT`                      | `8099`                   | HTTP listen port                                                                                |
-| `store.db_path`             | `OMEGA_DB_PATH`                   | `<home>/omega.db`        | SQLite database path                                                                            |
-| `compaction.enabled`        |                                   | `true`                   | Enable context compaction                                                                       |
-| `compaction.threshold`      | `OMEGA_COMPACTION_THRESHOLD`      | `0.6`                    | Fraction of context window that triggers compaction                                             |
-| `compaction.context_window` | `OMEGA_COMPACTION_CONTEXT_WINDOW` | `32768`                  | Model context window in tokens                                                                  |
-| `compaction.keep_first`     |                                   | `2`                      | Messages preserved verbatim at start                                                            |
-| `compaction.keep_last`      |                                   | `10`                     | Messages preserved verbatim at end                                                              |
-| `extensions.enabled`        | `OMEGA_EXTENSIONS_ENABLED`        | `false`                  | Enable extension loading                                                                        |
-| `extensions.dir`            | `OMEGA_EXTENSIONS_DIR`            | `<home>/extensions`      | Directory to scan for extension executables                                                     |
-| `skills.dir`                | `OMEGA_SKILLS_DIR`                | `<home>/skills`          | Skills directory                                                                                |
+| Key                          | Env var                           | Default                  | Description                                                                                     |
+| ---------------------------- | --------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| -                            | `OMEGA_HOME`                      | Binary directory         | Omega home: config, db, skills, extensions live here                                            |
+| `provider.type`              | `OMEGA_PROVIDER`                  | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`                                                       |
+| `provider.model_name`        | `OMEGA_MODEL`                     | (required)               | Model name                                                                                      |
+| `provider.host`              | `OMEGA_HOST`                      | `http://localhost:11434` | Provider base URL                                                                               |
+| `provider.api_key`           | `OMEGA_API_KEY`                   |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
+| `server.port`                | `OMEGA_PORT`                      | `8099`                   | HTTP listen port                                                                                |
+| `store.db_path`              | `OMEGA_DB_PATH`                   | `<home>/omega.db`        | SQLite database path                                                                            |
+| `compaction.enabled`         |                                   | `true`                   | Enable context compaction                                                                       |
+| `compaction.threshold`       | `OMEGA_COMPACTION_THRESHOLD`      | `0.6`                    | Fraction of context window that triggers compaction                                             |
+| `compaction.context_window`  | `OMEGA_COMPACTION_CONTEXT_WINDOW` | `32768`                  | Model context window in tokens                                                                  |
+| `compaction.keep_first`      |                                   | `2`                      | Messages preserved verbatim at start                                                            |
+| `compaction.keep_last`       |                                   | `10`                     | Messages preserved verbatim at end                                                              |
+| `compaction.reserve_tokens`  |                                   | `16384`                  | Tokens reserved for the model response                                                          |
+| `compaction.max_tool_output` |                                   | `32768`                  | Maximum bytes of tool output before truncation                                                  |
+| `extensions.enabled`         | `OMEGA_EXTENSIONS_ENABLED`        | `false`                  | Enable extension loading                                                                        |
+| `extensions.dir`             | `OMEGA_EXTENSIONS_DIR`            | `<home>/extensions`      | Directory to scan for extension executables                                                     |
+| `skills.dir`                 | `OMEGA_SKILLS_DIR`                | `<home>/skills`          | Skills directory                                                                                |
 
 ## Providers
 
@@ -264,6 +266,7 @@ See `extensions/example/main.go` for a complete reference implementation.
 | `/provider <type>`                    | Switch the provider at runtime                                                                        |
 | `/compact [focus]`                    | Manually compact conversation history                                                                 |
 | `/copy`                               | Copy last message to clipboard                                                                        |
+| `/export [path]`                      | Export session messages to JSONL                                                                      |
 | `/thinking [level]`                   | Set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles) |
 | `/tools [on \| off \| auto]`          | Toggle tool result display mode                                                                       |
 | `/extensions`                         | List loaded extensions                                                                                |
@@ -303,19 +306,32 @@ provider that scripts stream events.
 - Three providers with streaming, retry, and backoff
 - Multi-turn agent loop with tool execution
 - Session tree with branching, labeling, and full persistence
-- Context compaction with overflow auto-retry
+- Context compaction with overflow auto-retry, reserve tokens, and branch summarization
 - Skills system with folder-per-skill, agent-driven `load_skill` tool, and slash-command invocation
 - Extension system with JSON-RPC over stdio, crash isolation, event dispatch
 - Complete TUI with streaming, markdown, autocomplete, and history
 - Global installation via PATH with binary-dir resolution
+- 10-level thinking control across all providers
+- Model discovery (`/models` command, `/model <#|name>` selection)
+- HTTP proxy support (`HTTP_PROXY`, `HTTPS_PROXY`)
+- AGENTS.md ancestor walk (CWD to root, concatenated)
+- Resource diagnostics (warnings for unreadable context files)
+- Prompt guidelines (deduplicated bullets in system prompt)
+- Tool result truncation (configurable max bytes)
+- Session export (`/export` writes JSONL)
 
 ### Planned
 
 - Desktop notifications
 - More tools (grep, glob, multi-file edit)
+- More providers (Gemini, Mistral)
 - Web UI (via the gateway HTTP API)
 - Project trust system for per-project skills and extensions
-- AGENTS.md ancestor walk (CWD to root)
+- `--append-system-prompt` and `--extension`/`--no-extensions` CLI flags
+- Extension hooks (pre/post on input, tool_call, tool_result)
+- Prompt templates with variable interpolation
+- HTTP timeout configuration
+- Session stats and entry types
 
 ### Known Limitations
 

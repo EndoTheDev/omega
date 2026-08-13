@@ -37,6 +37,12 @@ compaction:
   # Default: 2 first, 10 last.
   keep_first: 2
   keep_last: 10
+  # Tokens reserved for the model's response (subtracted from context_window).
+  # Default: 16384.
+  reserve_tokens: 16384
+  # Maximum bytes of tool output before truncation.
+  # Default: 32768.
+  max_tool_output: 32768
 
 system_prompt:
   # Optional custom prompt appended to the built-in system prompt

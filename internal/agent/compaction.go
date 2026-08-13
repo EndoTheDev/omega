@@ -19,6 +19,7 @@ const charsPerToken = 4
 // ponytail: fixed constant, not per-model. Upgrade path: query the
 // provider for its real context window.
 const defaultContextWindow = 8192
+const defaultReserveTokens = 16384
 
 // CompactionConfig controls when the agent summarizes old messages to
 // stay within the model's context window. It lives in the agent package
@@ -30,29 +31,41 @@ type CompactionConfig struct {
 	ContextWindow int     `yaml:"context_window"`
 	KeepFirst     int     `yaml:"keep_first"`
 	KeepLast      int     `yaml:"keep_last"`
+	ReserveTokens int     `yaml:"reserve_tokens"`
+	MaxToolOutput int     `yaml:"max_tool_output"`
 }
 
 // budget returns the token count at which compaction triggers.
+// ReserveTokens are subtracted from the context window so the model
+// has room for its response after the prompt.
 func (c CompactionConfig) budget() int {
 	window := c.ContextWindow
 	if window <= 0 {
 		window = defaultContextWindow
 	}
-	return int(float64(window) * c.Threshold)
+	reserve := c.ReserveTokens
+	if reserve <= 0 {
+		reserve = defaultReserveTokens
+	}
+	effective := window - reserve
+	if effective < window/2 {
+		effective = window / 2 // never let reserve eat more than half
+	}
+	return int(float64(effective) * c.Threshold)
 }
 
 // EstimateTokens returns a rough token count for the message history.
 func EstimateTokens(history []ai.Message) int {
 	total := 0
 	for _, m := range history {
-		total += len(messageText(m))
+		total += len(MessageText(m))
 	}
 	return total / charsPerToken
 }
 
-// messageText returns the user-visible text of a message, used for token
-// estimation and summary rendering.
-func messageText(m ai.Message) string {
+// MessageText returns the user-visible text of a message, used for token
+// estimation, summary rendering, and export.
+func MessageText(m ai.Message) string {
 	switch v := m.(type) {
 	case ai.System:
 		return v.Content
@@ -87,7 +100,7 @@ func CompactWithFocus(ctx context.Context, provider ai.Provider, history []ai.Me
 	b.WriteString(" Output only the summary.\n\n")
 	for _, m := range middle {
 		b.WriteString("- ")
-		b.WriteString(messageText(m))
+		b.WriteString(MessageText(m))
 		b.WriteString("\n")
 	}
 

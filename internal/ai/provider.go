@@ -4,8 +4,18 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 )
+
+// httpClient is the shared HTTP client used by all providers. It
+// respects HTTP_PROXY and HTTPS_PROXY environment variables via
+// http.ProxyFromEnvironment.
+var httpClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+	},
+}
 
 // NewProvider creates a Provider of the given type ("ollama", "openai",
 // or "anthropic"). apiKey may be empty; OpenAI and Anthropic fall back

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -273,6 +274,9 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			if err != nil {
 				msg = ai.NewToolResult(err.Error(), call.ID, true)
 			} else {
+				if a.compaction != nil && a.compaction.MaxToolOutput > 0 && len(result) > a.compaction.MaxToolOutput {
+					result = result[:a.compaction.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+				}
 				msg = ai.NewToolResult(result, call.ID, false)
 			}
 			messages = append(messages, msg)

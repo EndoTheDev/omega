@@ -23,6 +23,13 @@ func BuildSystemPrompt(opts PromptOptions) string {
 	var b strings.Builder
 	b.WriteString("You are an AI coding agent with access to tools.\n")
 
+	b.WriteString("\n## Guidelines\n")
+	b.WriteString("- Use tools to read files and run commands before making assumptions.\n")
+	b.WriteString("- Prefer the simplest solution that works. Avoid unnecessary abstraction.\n")
+	b.WriteString("- When editing files, match the existing style and conventions.\n")
+	b.WriteString("- Report what you did concisely. Do not repeat file contents back.\n")
+	b.WriteString("- If something fails, report the error honestly rather than guessing.\n")
+
 	if opts.ProjectContext != "" {
 		b.WriteString("\n## Project Context\n")
 		b.WriteString(opts.ProjectContext)
