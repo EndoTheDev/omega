@@ -51,6 +51,11 @@ system_prompt:
   #   |
   #     You are a helpful assistant.
   #     Be concise.
+  # Also settable via --append-system-prompt CLI flag (repeatable).
+
+# HTTP timeout for provider requests (seconds).
+# Default: 300. Override via OMEGA_HTTP_TIMEOUT env var.
+http_timeout: 300
 
 extensions:
   # Load extensions from a directory of executables.
@@ -73,9 +78,14 @@ skills:
 #   OMEGA_DB_PATH           -> store.db_path
 #   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold
 #   OMEGA_COMPACTION_CONTEXT_WINDOW -> compaction.context_window
+#   OMEGA_COMPACTION_KEEP_FIRST -> compaction.keep_first
+#   OMEGA_COMPACTION_KEEP_LAST -> compaction.keep_last
+#   OMEGA_COMPACTION_RESERVE_TOKENS -> compaction.reserve_tokens
+#   OMEGA_COMPACTION_MAX_TOOL_OUTPUT -> compaction.max_tool_output
 #   OMEGA_EXTENSIONS_ENABLED -> extensions.enabled (true/1 or false/0)
 #   OMEGA_EXTENSIONS_DIR     -> extensions.dir
 #   OMEGA_SKILLS_DIR        -> skills directory
+#   OMEGA_HTTP_TIMEOUT      -> http_timeout (seconds, default 300)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
 # omega.db, skills/, and extensions/ in OMEGA_HOME (default: the binary's

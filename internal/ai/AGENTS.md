@@ -11,7 +11,7 @@ a channel, and retries transient HTTP failures with exponential backoff.
 
 ## Ownership
 
-- `provider.go` - Provider interface, NewProvider factory, ToolSchema type, sseData SSE line reader
+- `provider.go` - Provider interface, NewProvider factory, ToolSchema type, sseData SSE line reader, shared httpClient with SetHTTPTimeout
 - `messages.go` - Message sealed interface; System, User, Assistant, ToolResult concrete types; timestamp helpers
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk, ToolCallEvent, StreamEnd concrete types; ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter, retryableStatus, maxRetries (OMEGA_MAX_RETRIES env)

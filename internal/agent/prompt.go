@@ -11,7 +11,8 @@ type PromptOptions struct {
 	ProjectContext string          // AGENTS.md contents, may be empty
 	Skills         []Skill         // loaded skills, may be empty
 	CWD            string
-	Custom         string // user-supplied prompt from config, may be empty
+	Custom         string   // user-supplied prompt from config, may be empty
+	Append         []string // extra prompts from --append-system-prompt, may be nil
 }
 
 // BuildSystemPrompt constructs the agent's system prompt from the
@@ -51,6 +52,11 @@ func BuildSystemPrompt(opts PromptOptions) string {
 	if opts.Custom != "" {
 		b.WriteString("\n")
 		b.WriteString(opts.Custom)
+		b.WriteString("\n")
+	}
+	for _, extra := range opts.Append {
+		b.WriteString("\n")
+		b.WriteString(extra)
 		b.WriteString("\n")
 	}
 	return b.String()

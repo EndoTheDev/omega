@@ -19,6 +19,7 @@ type Config struct {
 	Store        StoreConfig             `yaml:"store"`
 	Compaction   agent.CompactionConfig  `yaml:"compaction"`
 	SystemPrompt string                  `yaml:"system_prompt"`
+	HTTPTimeout  int                     `yaml:"http_timeout"`
 	Extensions   ExtensionsConfig        `yaml:"extensions"`
 	Skills       SkillsConfig            `yaml:"skills"`
 }
@@ -82,6 +83,7 @@ func DefaultConfig() Config {
 		Skills: SkillsConfig{
 			Dir: "skills",
 		},
+		HTTPTimeout: 300,
 	}
 }
 
@@ -141,6 +143,26 @@ func applyEnv(cfg *Config) {
 			cfg.Compaction.ContextWindow = window
 		}
 	}
+	if v := os.Getenv("OMEGA_COMPACTION_KEEP_FIRST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.Compaction.KeepFirst = n
+		}
+	}
+	if v := os.Getenv("OMEGA_COMPACTION_KEEP_LAST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.Compaction.KeepLast = n
+		}
+	}
+	if v := os.Getenv("OMEGA_COMPACTION_RESERVE_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Compaction.ReserveTokens = n
+		}
+	}
+	if v := os.Getenv("OMEGA_COMPACTION_MAX_TOOL_OUTPUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Compaction.MaxToolOutput = n
+		}
+	}
 	if v := os.Getenv("OMEGA_EXTENSIONS_ENABLED"); v != "" {
 		cfg.Extensions.Enabled = v == "1" || strings.EqualFold(v, "true")
 	}
@@ -149,6 +171,11 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("OMEGA_SKILLS_DIR"); v != "" {
 		cfg.Skills.Dir = v
+	}
+	if v := os.Getenv("OMEGA_HTTP_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.HTTPTimeout = n
+		}
 	}
 }
 

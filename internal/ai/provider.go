@@ -6,15 +6,26 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // httpClient is the shared HTTP client used by all providers. It
 // respects HTTP_PROXY and HTTPS_PROXY environment variables via
-// http.ProxyFromEnvironment.
+// http.ProxyFromEnvironment. The timeout defaults to 300s and is
+// set via SetHTTPTimeout from config loading.
 var httpClient = &http.Client{
+	Timeout: 300 * time.Second,
 	Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 	},
+}
+
+// SetHTTPTimeout updates the shared HTTP client's timeout. Called
+// during config loading from gateway.Config.HTTPTimeout.
+func SetHTTPTimeout(seconds int) {
+	if seconds > 0 {
+		httpClient.Timeout = time.Duration(seconds) * time.Second
+	}
 }
 
 // NewProvider creates a Provider of the given type ("ollama", "openai",

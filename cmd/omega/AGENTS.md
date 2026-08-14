@@ -31,8 +31,10 @@ markdown rendering.
 
 - **Subcommands are the only entry surface.** `run` dispatches `serve`,
   `run`, `health`, `chat`; unknown or missing subcommands are errors.
-  `--config` is the only global flag, parsed before or after the
-  subcommand.
+  `--config` and `--append-system-prompt` are global flags, parsed
+  before or after the subcommand. `--append-system-prompt` is
+  repeatable; each value is appended to the system prompt after the
+  config's `system_prompt`.
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,

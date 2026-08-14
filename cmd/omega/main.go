@@ -29,15 +29,16 @@ func main() {
 // selects the subcommand; --config is accepted before or after it.
 func run(args []string) error {
 	sub, rest := splitSubcommand(args)
+	appendPrompts := parseAppendPrompts(rest)
 	switch sub {
 	case "serve":
-		return cmdServe(parseConfigFlag(rest))
+		return cmdServe(parseConfigFlag(rest), appendPrompts)
 	case "run":
 		return cmdRun(parseConfigFlag(rest), rest)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
 	case "chat":
-		return cmdChat(parseConfigFlag(rest))
+		return cmdChat(parseConfigFlag(rest), appendPrompts)
 	case "":
 		return fmt.Errorf("no subcommand; expected serve, run, health, or chat")
 	default:
@@ -81,6 +82,41 @@ func stripConfigFlag(args []string) []string {
 			continue
 		}
 		if strings.HasPrefix(args[i], "--config=") {
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+// parseAppendPrompts extracts all --append-system-prompt values from
+// args. Supports both --append-system-prompt "text" and
+// --append-system-prompt="text" forms. Repeatable.
+func parseAppendPrompts(args []string) []string {
+	var prompts []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--append-system-prompt" && i+1 < len(args) {
+			prompts = append(prompts, args[i+1])
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "--append-system-prompt=") {
+			prompts = append(prompts, strings.TrimPrefix(args[i], "--append-system-prompt="))
+		}
+	}
+	return prompts
+}
+
+// stripAppendPrompts removes --append-system-prompt and its values from
+// args, so the remaining arguments are the run prompt.
+func stripAppendPrompts(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--append-system-prompt" {
+			i++ // skip the value
+			continue
+		}
+		if strings.HasPrefix(args[i], "--append-system-prompt=") {
 			continue
 		}
 		out = append(out, args[i])
@@ -146,14 +182,14 @@ func resolveHomePaths(cfg *gateway.Config) {
 // newAgent wires config into a provider, agent, store, and extensions.
 // The store is returned so the caller can close it. The extension manager
 // is returned so callers that run the TUI can close extensions on shutdown.
-func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
+func newAgent(cfg gateway.Config, appendPrompts []string) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
 	provider, err := ai.NewProvider(cfg.Provider.Type, cfg.Provider.ModelName, cfg.Provider.Host, cfg.Provider.APIKey)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(&cfg.Compaction)
-	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil))
+	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil, appendPrompts))
 
 	mgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
@@ -171,8 +207,9 @@ func newAgent(cfg gateway.Config) (*agent.Agent, *gateway.Store, agent.Extension
 
 // buildSystemPrompt assembles the agent's system prompt from the
 // project context (AGENTS.md in the working directory), the built-in
-// tools, loaded skills, the environment, and the config's custom prompt.
-func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill) string {
+// tools, loaded skills, the environment, the config's custom prompt,
+// and any --append-system-prompt values.
+func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, appendPrompts []string) string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
@@ -182,6 +219,7 @@ func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill) string {
 		Skills:         skills,
 		CWD:            cwd,
 		Custom:         cfg.SystemPrompt,
+		Append:         appendPrompts,
 	})
 }
 
@@ -192,13 +230,14 @@ func signalContext() (context.Context, context.CancelFunc) {
 
 // cmdServe loads config, wires the agent, and serves HTTP until a signal
 // triggers graceful shutdown.
-func cmdServe(configPath string) error {
+func cmdServe(configPath string, appendPrompts []string) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
 	resolveHomePaths(&cfg)
-	ag, store, mgr, err := newAgent(cfg)
+	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	ag, store, mgr, err := newAgent(cfg, appendPrompts)
 	if err != nil {
 		return err
 	}
@@ -217,7 +256,9 @@ func cmdServe(configPath string) error {
 // cmdRun loads config and runs the agent once with the given prompt,
 // printing the final response.
 func cmdRun(configPath string, args []string) error {
-	prompt := strings.Join(stripConfigFlag(args), " ")
+	appendPrompts := parseAppendPrompts(args)
+	args = stripAppendPrompts(stripConfigFlag(args))
+	prompt := strings.Join(args, " ")
 	if prompt == "" {
 		return fmt.Errorf("run requires a prompt argument")
 	}
@@ -227,7 +268,8 @@ func cmdRun(configPath string, args []string) error {
 		return err
 	}
 	resolveHomePaths(&cfg)
-	ag, store, mgr, err := newAgent(cfg)
+	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	ag, store, mgr, err := newAgent(cfg, appendPrompts)
 	if err != nil {
 		return err
 	}
@@ -259,12 +301,13 @@ func cmdRun(configPath string, args []string) error {
 }
 
 // cmdChat loads config and launches the interactive Bubble Tea TUI.
-func cmdChat(configPath string) error {
+func cmdChat(configPath string, appendPrompts []string) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
 	resolveHomePaths(&cfg)
+	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	// Open the session store so the TUI can persist conversations across
 	// runs. cmdChat owns the store and closes it on every exit path
 	// (/exit, Ctrl+C, or an error in p.Run).
@@ -284,7 +327,7 @@ func cmdChat(configPath string) error {
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills), store, skills, extMgr)
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, appendPrompts), store, skills, extMgr)
 }
 
 // loadExtensions returns an extension manager configured by the user. If
