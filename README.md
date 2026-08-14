@@ -31,9 +31,8 @@ provider abstraction, and the standard library for everything HTTP.
   auto-compacts + retries once.
 - **Tools** - `shell`, `read_file`, `write_file`, `edit`, `load_skill`. Structured
   error returns, no panics.
-- **Extensions** - Load external tools and slash commands via JSON-RPC
-  over stdio. Each extension is a separate process with crash
-  isolation.
+- **Extensions** - Load external tools via JSON-RPC over stdio. Each
+  extension is a separate process with crash isolation.
 - **Skills** - Self-contained skill directories (`<name>/<name>.md`)
   with frontmatter. The agent can load skill content on demand via the
   `load_skill` tool, or the user can invoke via `/skill-name` slash
@@ -204,10 +203,10 @@ Switch providers at runtime in the TUI:
 
 ## Extensions
 
-Extensions are external processes that provide tools, slash commands,
-and event subscriptions to omega. Each extension runs as a separate
-process and communicates via JSON-RPC over stdio. A crash in one
-extension does not affect others or the host.
+Extensions are external processes that provide tools and event
+subscriptions to omega. Each extension runs as a separate process and
+communicates via JSON-RPC over stdio. A crash in one extension does not
+affect others or the host.
 
 ### Enabling
 
@@ -228,8 +227,8 @@ go build -o extensions/example/example.exe ./extensions/example/
 
 # Enable extensions in config.yaml (see above), then:
 ./omega chat
-# The web extension provides web.search and web.fetch tools,
-# plus a /web slash command for quick searches.
+# The web extension provides web.search and web.fetch tools.
+# Ask the agent to search the web and it will call them as tool calls.
 ```
 
 The extension receives the provider API key via the `OLLAMA_API_KEY`
@@ -240,15 +239,15 @@ environment variable, passed by the host from `config.yaml`.
 An extension is any executable that speaks JSON-RPC over stdio:
 
 1. On startup, receive an `initialize` request. Respond with your
-   extension name, tools, commands, and event subscriptions.
+   extension name, tools, and event subscriptions.
 2. Receive `tool_call` requests when the agent invokes your tools.
-3. Receive `command` requests when the user types your slash command.
-4. Receive `event` notifications for subscribed lifecycle events
+3. Receive `event` notifications for subscribed lifecycle events
    (`agent_start`, `turn_start`, `turn_end`, `assistant_message`,
    `tool_result`, `agent_end`).
-5. Receive a `shutdown` notification on exit.
+4. Receive a `shutdown` notification on exit.
 
-See `extensions/example/main.go` for a complete reference implementation.
+See `extensions/README.md` for the full protocol reference and
+`extensions/example/main.go` for a complete implementation.
 
 ## TUI Commands
 

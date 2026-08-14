@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -118,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 // returns an error if a session with that id already exists or the parent
 // does not.
 func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) error {
-	now := nowISO()
+	now := ai.NowISO()
 	// An empty parentID is stored as NULL so the FK constraint does not
 	// try to match a session with id "".
 	var parent any
@@ -194,7 +193,7 @@ func (s *Store) BranchSession(ctx context.Context, parentID, id string) error {
 func (s *Store) SetLabel(ctx context.Context, id, label string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET label = ?, updated_at = ? WHERE id = ?`,
-		label, nowISO(), id)
+		label, ai.NowISO(), id)
 	return err
 }
 
@@ -266,7 +265,7 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Mess
 	}
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO messages (session_id, role, payload, created_at) VALUES (?, ?, ?, ?)`,
-		sessionID, role, string(payload), nowISO())
+		sessionID, role, string(payload), ai.NowISO())
 	return err
 }
 
@@ -299,11 +298,6 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM messages WHERE session_id = ?`, sessionID).Scan(&n)
 	return n, err
-}
-
-// nowISO returns a UTC timestamp in ISO 8601 format.
-func nowISO() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // encodeMessage serializes an ai.Message to its role discriminator and

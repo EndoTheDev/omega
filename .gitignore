@@ -7,6 +7,7 @@ skills/
 extensions/*
 !extensions/example/
 !extensions/example/**
+!extensions/README.md
 
 # Go
 *.exe

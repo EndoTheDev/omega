@@ -51,7 +51,6 @@ type rpcError struct {
 type initResult struct {
 	Name          string       `json:"name"`
 	Tools         []toolDef    `json:"tools"`
-	Commands      []commandDef `json:"commands"`
 	Subscriptions []string     `json:"subscriptions"`
 }
 
@@ -61,19 +60,13 @@ type toolDef struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
-type commandDef struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
+
 
 type toolCallResult struct {
 	Content string `json:"content"`
 	IsError bool   `json:"is_error"`
 }
 
-type commandResult struct {
-	Output string `json:"output"`
-}
 
 type searchRequest struct {
 	Query     string `json:"query"`
@@ -153,12 +146,6 @@ func main() {
 						},
 					},
 				},
-				Commands: []commandDef{
-					{
-						Name:        "web",
-						Description: "Search the web (usage: /web <query>)",
-					},
-				},
 				Subscriptions: []string{"turn_start", "turn_end"},
 			})
 
@@ -171,16 +158,6 @@ func main() {
 
 			content, isErr := handleToolCall(params.Tool, params.Args, apiKey)
 			resp.Result = mustMarshal(toolCallResult{Content: content, IsError: isErr})
-
-		case "command":
-			var params struct {
-				Name string `json:"name"`
-				Args string `json:"args"`
-			}
-			_ = json.Unmarshal(req.Params, &params)
-
-			output := handleCommand(params.Name, params.Args, apiKey)
-			resp.Result = mustMarshal(commandResult{Output: output})
 
 		case "event", "shutdown":
 			continue
@@ -223,17 +200,6 @@ func handleToolCall(tool string, args map[string]any, apiKey string) (string, bo
 	default:
 		return fmt.Sprintf("error: unknown tool %q", tool), true
 	}
-}
-
-func handleCommand(name, args, apiKey string) string {
-	if name == "/web" || name == "web" {
-		if strings.TrimSpace(args) == "" {
-			return "Usage: /web <query>"
-		}
-		content, _ := doSearch(args, 5, apiKey)
-		return content
-	}
-	return fmt.Sprintf("unknown command: %s", name)
 }
 
 func doSearch(query string, maxResults int, apiKey string) (string, bool) {

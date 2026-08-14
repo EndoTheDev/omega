@@ -4,8 +4,8 @@ import (
 	"time"
 )
 
-// nowISO returns a UTC timestamp in ISO 8601 format.
-func nowISO() string {
+// NowISO returns a UTC timestamp in ISO 8601 format.
+func NowISO() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
@@ -26,7 +26,7 @@ func (System) isMessage() {}
 
 // NewSystem creates a System message with timestamp set.
 func NewSystem(content string) System {
-	return System{Content: content, Timestamp: nowISO()}
+	return System{Content: content, Timestamp: NowISO()}
 }
 
 // User is a user chat message.
@@ -39,7 +39,7 @@ func (User) isMessage() {}
 
 // NewUser creates a User message with timestamp set.
 func NewUser(content string) User {
-	return User{Content: content, Timestamp: nowISO()}
+	return User{Content: content, Timestamp: NowISO()}
 }
 
 // Assistant is the model's response in a turn.
@@ -55,7 +55,7 @@ func (Assistant) isMessage() {}
 // NewAssistant creates an Assistant message with timestamp set.
 // Thinking and tool calls are set by the caller.
 func NewAssistant(content string) Assistant {
-	return Assistant{Content: content, Timestamp: nowISO()}
+	return Assistant{Content: content, Timestamp: NowISO()}
 }
 
 // ToolResult is the result of a tool execution, appended to the
@@ -75,6 +75,6 @@ func NewToolResult(content, toolCallID string, isError bool) ToolResult {
 		Content:    content,
 		ToolCallID: toolCallID,
 		IsError:    isError,
-		Timestamp:  nowISO(),
+		Timestamp:  NowISO(),
 	}
 }

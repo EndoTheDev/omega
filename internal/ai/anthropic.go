@@ -220,26 +220,15 @@ func (p *AnthropicProvider) stream(ctx context.Context, events chan<- StreamEven
 	finishReason := "stop"
 
 	for {
-		// Anthropic sends an `event:` line before each `data:` line.
-		// Read lines until we reach the data payload for this event.
-		payloadLine := ""
-		for {
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				if err == io.EOF {
-					goto done
-				}
-				emitError(events, err)
-				return
+		payloadLine, ok, err := sseData(reader)
+		if err != nil {
+			if err == io.EOF {
+				break
 			}
-			line = strings.TrimRight(line, "\r\n")
-			if !strings.HasPrefix(line, "data:") {
-				continue
-			}
-			payloadLine = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if payloadLine == "" || payloadLine == "[DONE]" {
-				continue
-			}
+			emitError(events, err)
+			return
+		}
+		if !ok {
 			break
 		}
 
@@ -308,7 +297,6 @@ func (p *AnthropicProvider) stream(ctx context.Context, events chan<- StreamEven
 		}
 	}
 
-done:
 	// Flush accumulated tool calls in block-index order.
 	if len(pending) > 0 {
 		indices := make([]int, 0, len(pending))
