@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -43,22 +44,59 @@ const (
 	toolResultAutoThreshold = 20
 )
 
-// Styles for the TUI.
-var (
-	styleUser     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	styleThinking = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleTool     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleStatus   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleMatch    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-)
+// Theme holds the styles used throughout the TUI. Built-in themes
+// are defined below; users select via config (theme key) or the
+// /theme command at runtime.
+type Theme struct {
+	Name     string
+	User     lipgloss.Style
+	Thinking lipgloss.Style
+	Tool     lipgloss.Style
+	Info     lipgloss.Style
+	Status   lipgloss.Style
+	Match    lipgloss.Style
+	Error    lipgloss.Style
+}
+
+// built-in themes.
+var themes = map[string]Theme{
+	"dark": {
+		Name:     "dark",
+		User:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")),
+		Thinking: lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		Tool:     lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		Info:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		Status:   lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		Match:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")),
+		Error:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+	},
+	"light": {
+		Name:     "light",
+		User:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("20")),
+		Thinking: lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		Tool:     lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
+		Info:     lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		Status:   lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		Match:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")),
+		Error:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("124")),
+	},
+}
+
+// themeNames returns sorted built-in theme names for /theme listing.
+func themeNames() []string {
+	names := make([]string, 0, len(themes))
+	for n := range themes {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
 
 // knownCommands are the built-in slash commands, ordered semantically:
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/thinking", "/tools", "/extensions", "/skills", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/thinking", "/tools", "/extensions", "/skills", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -68,6 +106,7 @@ var commandOptions = map[string][]string{
 	"/new":      {"--ephemeral"},
 	"/thinking": {"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"},
 	"/tools":    {"on", "off", "auto"},
+	"/theme":    {"dark", "light", "auto"},
 	"/sessions": {"delete"},
 }
 
@@ -121,6 +160,7 @@ type model struct {
 	sessionList         []gateway.Session // cached from last /sessions, for /resume by #
 	modelList           []string          // cached from last /models, for /model <#> selection
 	ephemeral           bool              // /new --ephemeral; nothing persisted
+	theme               Theme             // active color/style theme
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -134,8 +174,8 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, extensions)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName string) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, []agent.ExtensionManager{extensions}, themeName)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -143,7 +183,7 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, syst
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions ...agent.ExtensionManager) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName string) model {
 	extMgr := agent.ExtensionManager(agent.NoopManager{})
 	if len(extensions) > 0 {
 		extMgr = extensions[0]
@@ -166,6 +206,22 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 	for _, s := range skills {
 		commands = append(commands, "/"+s.Name)
 	}
+	// Resolve the theme; fall back to dark. "auto" detects the OS
+	// appearance and copies the resolved theme's styles.
+	t, ok := themes[themeName]
+	if !ok || themeName == "auto" {
+		resolved := themeName
+		if themeName == "auto" {
+			resolved = detectSystemTheme()
+		}
+		t, ok = themes[resolved]
+		if !ok {
+			t = themes["dark"]
+		}
+		if themeName == "auto" {
+			t.Name = "auto"
+		}
+	}
 	return model{
 		textarea:          ta,
 		viewport:          vp,
@@ -181,8 +237,11 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		commands:          commands,
 		autocompleteIndex: -1,
 		autocompleteSlashPos: -1,
-		showThinking:      false,
-		thinkingLevel:     "none",
+		showThinking:      true,
+		thinkingLevel:     "medium",
+		showToolResults:   true,
+		toolResultsAuto:   true,
+		theme:             t,
 	}
 }
 
@@ -388,7 +447,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.historyIndex = 0
 
 	// Echo the input as a user message in the transcript.
-	m.transcript += "\n" + styleUser.Render("> "+wordWrap(input, m.viewport.Width)) + "\n"
+	m.transcript += "\n" + m.theme.User.Render("> "+wordWrap(input, m.viewport.Width)) + "\n"
 
 	// Slash commands run locally and never hit the agent.
 	if strings.HasPrefix(input, "/") {
@@ -486,7 +545,7 @@ func (m *model) handleEvent(event agent.Event) {
 		case ai.ToolCallEvent:
 			var sb strings.Builder
 			sb.WriteString("\n")
-			sb.WriteString(styleTool.Render("[tool: " + chunk.ToolCall.Name + "]"))
+			sb.WriteString(m.theme.Tool.Render("[tool: " + chunk.ToolCall.Name + "]"))
 			sb.WriteString("\n")
 			if len(chunk.ToolCall.Arguments) > 0 {
 				for k, v := range chunk.ToolCall.Arguments {
@@ -498,7 +557,7 @@ func (m *model) handleEvent(event agent.Event) {
 			m.segments = append(m.segments, streamSegment{kind: "tool", content: sb.String()})
 		case ai.StreamEnd:
 			if chunk.Error != "" {
-				m.appendSegment("response", "\n"+styleError.Render("error: "+chunk.Error)+"\n")
+				m.appendSegment("response", "\n"+m.theme.Error.Render("error: "+chunk.Error)+"\n")
 			}
 		}
 	case agent.AgentEnd:
@@ -513,13 +572,13 @@ func (m *model) handleEvent(event agent.Event) {
 			switch seg.kind {
 			case "thinking":
 				if m.showThinking {
-					m.transcript += "\n" + styleThinking.Render("[thinking]") + "\n"
-					m.transcript += styleThinking.Render(wordWrap(seg.content, m.viewport.Width)) + "\n"
+					m.transcript += "\n" + m.theme.Thinking.Render("[thinking]") + "\n"
+					m.transcript += m.theme.Thinking.Render(wordWrap(seg.content, m.viewport.Width)) + "\n"
 				}
 			case "tool":
 				m.transcript += seg.content
 			case "tool_result":
-				m.transcript += "\n" + styleTool.Render(seg.content) + "\n"
+				m.transcript += "\n" + m.theme.Tool.Render(seg.content) + "\n"
 			case "response":
 				responseBuf.WriteString(seg.content)
 			}
@@ -655,7 +714,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			m.thinkingLevel = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
 		}
 		m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
-		m.transcript += "\n" + styleInfo.Render("[thinking "+m.thinkingLevel+"]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[thinking "+m.thinkingLevel+"]") + "\n"
 		m.refresh()
 		return m, nil
 	case "/tools":
@@ -684,15 +743,17 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		} else if !m.showToolResults {
 			state = "collapsed"
 		}
-		m.transcript += "\n" + styleInfo.Render("[tool results "+state+"]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[tool results "+state+"]") + "\n"
 		m.refresh()
 		return m, nil
 	case "/extensions":
 		return m.handleExtensions()
 	case "/skills":
 		return m.handleSkills()
+	case "/theme":
+		return m.handleTheme(fields[1:])
 	case "/help":
-		m.transcript += renderHelp()
+		m.transcript += m.renderHelp()
 		m.refresh()
 		return m, nil
 	case "/model":
@@ -709,7 +770,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.modelName = m.modelList[n-1]
-			m.transcript += "\n" + styleInfo.Render("[model set to "+m.modelName+"]") + "\n"
+			m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 			m.refresh()
 			return m, m.titleCmd()
 		}
@@ -729,7 +790,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.modelName = arg
-		m.transcript += "\n" + styleInfo.Render("[model set to "+m.modelName+"]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 		m.refresh()
 		return m, m.titleCmd()
 	case "/models":
@@ -740,7 +801,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			if provider == "" {
 				provider = "ollama"
 			}
-			m.transcript += "\n" + styleInfo.Render("current: " + provider) + "\n"
+			m.transcript += "\n" + m.theme.Info.Render("current: " + provider) + "\n"
 			m.refresh()
 			return m, nil
 		}
@@ -751,7 +812,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.providerType = name
-		m.transcript += "\n" + styleInfo.Render("[provider set to "+m.providerType+"]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[provider set to "+m.providerType+"]") + "\n"
 		m.refresh()
 		return m, nil
 	default:
@@ -767,7 +828,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		// Check if the command matches a loaded skill.
 		for _, s := range m.skills {
 			if "/"+s.Name == cmd {
-				m.transcript += "\n" + styleInfo.Render("[skill: "+s.Name+"]") + "\n"
+				m.transcript += "\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n"
 				m.history = append(m.history, ai.NewSystem(s.Content))
 				m.refresh()
 				return m, nil
@@ -795,7 +856,7 @@ func (m model) invokeInlineSkills(input string) model {
 		for _, s := range m.skills {
 			if s.Name == name {
 				m.history = append(m.history, ai.NewSystem(s.Content))
-				m.transcript += "\n" + styleInfo.Render("[skill: "+s.Name+"]") + "\n"
+				m.transcript += "\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n"
 				break
 			}
 		}
@@ -933,7 +994,7 @@ func (m model) handleSessions() (tea.Model, tea.Cmd) {
 	}
 	m.storeErr = ""
 	if len(sessions) == 0 {
-		m.transcript += "\n" + styleInfo.Render("[no sessions yet]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[no sessions yet]") + "\n"
 		m.refresh()
 		return m, nil
 	}
@@ -964,7 +1025,7 @@ func (m model) handleSessions() (tea.Model, tea.Cmd) {
 	sb.WriteString("\n")
 	// Header.
 	header := fmt.Sprintf("  %-3s  %-*s  %*s  %s", "#", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
-	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for i, r := range rows {
 		prefix := "  "
@@ -1019,7 +1080,7 @@ func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
 			m.resetSession()
 		}
 	}
-	m.transcript += "\n" + styleInfo.Render("[deleted: "+name+"]") + "\n"
+	m.transcript += "\n" + m.theme.Info.Render("[deleted: "+name+"]") + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -1039,7 +1100,7 @@ func (m *model) resetSession() {
 func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	infos := m.extensions.Infos()
 	if len(infos) == 0 {
-		m.transcript += "\n" + styleInfo.Render("[no extensions loaded]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[no extensions loaded]") + "\n"
 		m.refresh()
 		return m, nil
 	}
@@ -1054,7 +1115,7 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	header := fmt.Sprintf("%-*s  %5s  %8s  %s", nameWidth, "NAME", "TOOLS", "COMMANDS", "STATUS")
-	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for _, info := range infos {
 		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, info.Status)
@@ -1067,7 +1128,7 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 // handleSkills lists loaded skills with name and description.
 func (m model) handleSkills() (tea.Model, tea.Cmd) {
 	if len(m.skills) == 0 {
-		m.transcript += "\n" + styleInfo.Render("[no skills loaded]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[no skills loaded]") + "\n"
 		m.refresh()
 		return m, nil
 	}
@@ -1082,12 +1143,67 @@ func (m model) handleSkills() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	header := fmt.Sprintf("%-*s  %s", nameWidth, "NAME", "DESCRIPTION")
-	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for _, s := range m.skills {
 		fmt.Fprintf(&sb, "%-*s  %s\n", nameWidth, s.Name, s.Description)
 	}
 	m.transcript += sb.String()
+	m.refresh()
+	return m, nil
+}
+
+// handleTheme switches the active theme or lists available themes.
+func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		// List available themes with the current one marked.
+		// "auto" is a virtual option (not in the themes map) so
+		// it is appended manually.
+		var sb strings.Builder
+		sb.WriteString("\n")
+		all := append(themeNames(), "auto")
+		for _, name := range all {
+			marker := "  "
+			if name == m.theme.Name {
+				marker = "* "
+			}
+			fmt.Fprintf(&sb, "%s%s\n", marker, name)
+		}
+		m.transcript += sb.String()
+		m.refresh()
+		return m, nil
+	}
+	name := args[0]
+	if name == "auto" {
+		resolved := detectSystemTheme()
+		t, ok := themes[resolved]
+		if !ok {
+			t = themes["dark"]
+		}
+		t.Name = "auto"
+		m.theme = t
+		if len(m.history) > 0 {
+			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme)
+			// Re-add the user's echo line: slash commands are not in
+			// m.history, so renderTranscript omits them.
+			m.transcript += "\n" + m.theme.User.Render("> /theme "+strings.Join(args, " ")) + "\n"
+		}
+		m.transcript += "\n" + m.theme.Info.Render("[theme: auto ("+resolved+")]") + "\n"
+		m.refresh()
+		return m, nil
+	}
+	t, ok := themes[name]
+	if !ok {
+		m.err = "unknown theme: " + name
+		m.refresh()
+		return m, nil
+	}
+	m.theme = t
+	if len(m.history) > 0 {
+		m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme)
+		m.transcript += "\n" + m.theme.User.Render("> /theme "+strings.Join(args, " ")) + "\n"
+	}
+	m.transcript += "\n" + m.theme.Info.Render("[theme: "+name+"]") + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -1104,7 +1220,7 @@ func (m model) handleModels() (tea.Model, tea.Cmd) {
 	m.modelList = models
 
 	if len(models) == 0 {
-		m.transcript += "\n" + styleInfo.Render("[no models available]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[no models available]") + "\n"
 		m.refresh()
 		return m, nil
 	}
@@ -1119,7 +1235,7 @@ func (m model) handleModels() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	header := fmt.Sprintf("  %-3s  %-*s", "#", nameWidth, "NAME")
-	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for i, name := range models {
 		marker := "  "
@@ -1151,7 +1267,7 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.transcript += "\n" + styleInfo.Render("["+name+"]") + "\n" + wordWrap(output, m.viewport.Width) + "\n"
+	m.transcript += "\n" + m.theme.Info.Render("["+name+"]") + "\n" + wordWrap(output, m.viewport.Width) + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -1195,7 +1311,7 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	}
 	m.sessionID = id
 	m.history = messages
-	m.transcript = renderTranscript(messages, m.viewport.Width)
+	m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
 	m.segments = nil
 	m.err = ""
 	m.storeErr = ""
@@ -1295,7 +1411,7 @@ func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 	}
 	m.sessionID = id
 	m.history = messages
-	m.transcript = renderTranscript(messages, m.viewport.Width)
+	m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
 	m.segments = nil
 	m.err = ""
 	m.refresh()
@@ -1338,9 +1454,9 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 	m.storeErr = ""
 	m.sessionLabel = label // keep status bar in sync
 	if label == "" {
-		m.transcript += "\n" + styleInfo.Render("[label cleared]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[label cleared]") + "\n"
 	} else {
-		m.transcript += "\n" + styleInfo.Render("[label: "+label+"]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[label: "+label+"]") + "\n"
 	}
 	m.refresh()
 	return m, nil
@@ -1361,7 +1477,7 @@ func (m model) handleTree() (tea.Model, tea.Cmd) {
 	}
 	m.storeErr = ""
 	if len(roots) == 0 {
-		m.transcript += "\n" + styleInfo.Render("[no sessions yet]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("[no sessions yet]") + "\n"
 		m.refresh()
 		return m, nil
 	}
@@ -1409,7 +1525,7 @@ func (m model) handleTree() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	header := fmt.Sprintf("%s %-*s %*s  %s", "", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
-	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for _, r := range rows {
 		marker := ""
@@ -1483,7 +1599,7 @@ func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	m.transcript += "\n" + styleInfo.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
+	m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -1534,7 +1650,7 @@ func (m model) handleCompact(fields []string) (tea.Model, tea.Cmd) {
 	}
 	before := len(m.history)
 	m.history = compacted
-	m.transcript += "\n" + styleInfo.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", before, len(compacted))+"]") + "\n"
+	m.transcript += "\n" + m.theme.Info.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", before, len(compacted))+"]") + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -1573,24 +1689,24 @@ func (m *model) resizeTextarea() {
 // (matching the live AgentEnd path); tool results render full; compacted
 // summaries render dimmed. Other system messages (skills, injected
 // prompts) are not persisted and never appear here.
-func renderTranscript(messages []ai.Message, width int) string {
+func renderTranscript(messages []ai.Message, width int, t Theme) string {
 	var sb strings.Builder
 	for _, msg := range messages {
 		switch m := msg.(type) {
 		case ai.User:
 			sb.WriteString("\n")
-			sb.WriteString(styleUser.Render("> " + wordWrap(m.Content, width)))
+			sb.WriteString(t.User.Render("> " + wordWrap(m.Content, width)))
 			sb.WriteString("\n")
 		case ai.Assistant:
 			sb.WriteString("\n")
 			if m.Thinking != nil && *m.Thinking != "" {
-				sb.WriteString(styleThinking.Render("[thinking]"))
+				sb.WriteString(t.Thinking.Render("[thinking]"))
 				sb.WriteString("\n")
-				sb.WriteString(styleThinking.Render(wordWrap(*m.Thinking, width)))
+				sb.WriteString(t.Thinking.Render(wordWrap(*m.Thinking, width)))
 				sb.WriteString("\n")
 			}
 			for _, call := range m.ToolCalls {
-				sb.WriteString(styleTool.Render("[tool: " + call.Name + "]"))
+				sb.WriteString(t.Tool.Render("[tool: " + call.Name + "]"))
 				sb.WriteString("\n")
 				if len(call.Arguments) > 0 {
 					for k, v := range call.Arguments {
@@ -1607,19 +1723,19 @@ func renderTranscript(messages []ai.Message, width int) string {
 		case ai.ToolResult:
 			sb.WriteString("\n")
 			if m.IsError {
-				sb.WriteString(styleError.Render("[tool result: error]"))
+				sb.WriteString(t.Error.Render("[tool result: error]"))
 			} else {
-				sb.WriteString(styleTool.Render("[tool result]"))
+				sb.WriteString(t.Tool.Render("[tool result]"))
 			}
 			sb.WriteString("\n")
-			sb.WriteString(styleTool.Render(wordWrap(m.Content, width)))
+			sb.WriteString(t.Tool.Render(wordWrap(m.Content, width)))
 			sb.WriteString("\n")
 		case ai.System:
 			// Only compaction summaries are persisted; render them so
 			// the user sees the history was summarized.
 			if strings.HasPrefix(m.Content, "[compacted:") {
 				sb.WriteString("\n")
-				sb.WriteString(styleInfo.Render(m.Content))
+				sb.WriteString(t.Info.Render(m.Content))
 				sb.WriteString("\n")
 			}
 		}
@@ -1638,12 +1754,16 @@ func (m *model) refresh() {
 		switch seg.kind {
 		case "thinking":
 			sb.WriteString("\n")
-			sb.WriteString(styleThinking.Render("[thinking]"))
+			sb.WriteString(m.theme.Thinking.Render("[thinking]"))
 			sb.WriteString("\n")
-			sb.WriteString(styleThinking.Render(wordWrap(seg.content, m.viewport.Width)))
+			sb.WriteString(m.theme.Thinking.Render(wordWrap(seg.content, m.viewport.Width)))
 			sb.WriteString("\n")
 		case "tool":
 			sb.WriteString(seg.content)
+		case "tool_result":
+			sb.WriteString("\n")
+			sb.WriteString(m.theme.Tool.Render(seg.content))
+			sb.WriteString("\n")
 		case "response":
 			sb.WriteString(seg.content)
 		}
@@ -1696,7 +1816,7 @@ func (m model) View() string {
 		sb.WriteString(m.viewport.View())
 	}
 	sb.WriteString("\n")
-	sb.WriteString(styleStatus.Render(m.statusLine()))
+	sb.WriteString(m.theme.Status.Render(m.statusLine()))
 	sb.WriteString("\n")
 	if panel := m.autocompletePanel(); panel != "" {
 		sb.WriteString(panel)
@@ -1732,7 +1852,7 @@ func (m model) splashView() string {
 	var lines []string
 	lines = append(lines, "") // blank line at the top
 	for i := 0; i < len(logo); i++ {
-		lines = append(lines, styleInfo.Render(fmt.Sprintf("%-6s  %s", logo[i], info[i])))
+		lines = append(lines, m.theme.Info.Render(fmt.Sprintf("%-6s  %s", logo[i], info[i])))
 	}
 	// Pad with blank lines to fill the viewport height so the
 	// status bar and textarea stay at the bottom of the terminal.
@@ -1791,10 +1911,10 @@ func (m model) statusLine() string {
 	}
 	line += fmt.Sprintf(" | tokens: %d/%d | %s", tokens, window, sess)
 	if m.err != "" {
-		line += " | " + styleError.Render("error: "+m.err)
+		line += " | " + m.theme.Error.Render("error: "+m.err)
 	}
 	if m.storeErr != "" {
-		line += " | " + styleError.Render("store: "+m.storeErr)
+		line += " | " + m.theme.Error.Render("store: "+m.storeErr)
 	}
 	return line
 }
@@ -1917,7 +2037,7 @@ func (m model) autocompletePanel() string {
 	}
 	for i := m.autocompleteOffset; i < end; i++ {
 		if i == m.autocompleteIndex {
-			lines = append(lines, styleMatch.Render(m.autocompleteMatches[i]))
+			lines = append(lines, m.theme.Match.Render(m.autocompleteMatches[i]))
 		} else {
 			lines = append(lines, m.autocompleteMatches[i])
 		}
@@ -1970,7 +2090,7 @@ func wordWrap(s string, width int) string {
 // renderHelp returns the /help text. Commands are laid out as a
 // two-column table with widths computed from the data, matching the
 // /sessions and /tree tables.
-func renderHelp() string {
+func (m model) renderHelp() string {
 	rows := [][2]string{
 		{"/exit", "quit"},
 		{"/new [--ephemeral]", "start a new conversation (--ephemeral: nothing persisted)"},
@@ -1989,6 +2109,7 @@ func renderHelp() string {
 		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
 		{"/extensions", "list loaded extensions"},
 		{"/skills", "list loaded skills"},
+		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
 		{"/help", "show this help"},
 	}
 	maxCmd := len("COMMAND")
@@ -1999,13 +2120,13 @@ func renderHelp() string {
 	}
 	var sb strings.Builder
 	sb.WriteString("\n")
-	sb.WriteString(styleInfo.Render("[omega chat]"))
+	sb.WriteString(m.theme.Info.Render("[omega chat]"))
 	sb.WriteString("\n")
 	sb.WriteString("  type a message and press enter to send\n")
 	sb.WriteString("  ctrl+j inserts a newline (multi-line input)\n")
 	sb.WriteString("\n")
 	header := fmt.Sprintf("  %-*s  %s", maxCmd, "COMMAND", "DESCRIPTION")
-	sb.WriteString(styleInfo.Render(header))
+	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for _, r := range rows {
 		fmt.Fprintf(&sb, "  %-*s  %s\n", maxCmd, r[0], r[1])

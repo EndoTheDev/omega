@@ -22,7 +22,10 @@ markdown rendering.
   slash command dispatch (`handleCommand` and every `handle*` helper),
   session table and tree rendering, autocomplete, prompt history, inline
   skill invocation, extension command dispatch, auto-name, glamour
-  rendering, status line, splash screen
+  rendering, status line, splash screen, theme system (`Theme` struct,
+  `handleTheme`, `/theme` command)
+- `theme.go` - System theme detection: Windows registry, macOS defaults,
+  Linux gsettings / GTK_THEME / COLORFGBG fallback
 - `tui_test.go` - self-check tests for channel draining, event folding,
   slash commands, persistence, resume, branch, label, rendering, and
   session ID generation

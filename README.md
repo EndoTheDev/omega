@@ -174,6 +174,7 @@ AGENTS.md project context and tool file operations.
 | `extensions.dir`             | `OMEGA_EXTENSIONS_DIR`             | `<home>/extensions`      | Directory to scan for extension executables                                                     |
 | `skills.dir`                 | `OMEGA_SKILLS_DIR`                 | `<home>/skills`          | Skills directory                                                                                |
 | `http_timeout`               | `OMEGA_HTTP_TIMEOUT`               | `300`                    | HTTP timeout for provider requests (seconds)                                                    |
+| `theme`                      | `OMEGA_THEME`                      | `dark`                   | TUI color theme (dark, light, auto)                                                             |
 
 ## Providers
 
@@ -271,6 +272,7 @@ See `extensions/README.md` for the full protocol reference and
 | `/tools [on \| off \| auto]`          | Toggle tool result display mode                                                                       |
 | `/extensions`                         | List loaded extensions                                                                                |
 | `/skills`                             | List loaded skills                                                                                    |
+| `/theme [name]`                       | Switch theme (dark, light, auto; no arg lists all)                                                    |
 | `/help`                               | Show help                                                                                             |
 | `/exit`                               | Quit                                                                                                  |
 

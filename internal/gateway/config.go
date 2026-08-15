@@ -20,6 +20,7 @@ type Config struct {
 	Compaction   agent.CompactionConfig  `yaml:"compaction"`
 	SystemPrompt string                  `yaml:"system_prompt"`
 	HTTPTimeout  int                     `yaml:"http_timeout"`
+	Theme        string                  `yaml:"theme"`
 	Extensions   ExtensionsConfig        `yaml:"extensions"`
 	Skills       SkillsConfig            `yaml:"skills"`
 }
@@ -176,6 +177,9 @@ func applyEnv(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.HTTPTimeout = n
 		}
+	}
+	if v := os.Getenv("OMEGA_THEME"); v != "" {
+		cfg.Theme = v
 	}
 }
 

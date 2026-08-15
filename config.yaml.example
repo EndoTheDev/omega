@@ -57,6 +57,11 @@ system_prompt:
 # Default: 300. Override via OMEGA_HTTP_TIMEOUT env var.
 http_timeout: 300
 
+# TUI color theme: dark, light, or auto (detect OS setting).
+# Default: dark. Override via OMEGA_THEME env var.
+# Switch at runtime with /theme [name] in the TUI.
+theme: dark
+
 extensions:
   # Load extensions from a directory of executables.
   # Disabled by default. Set enabled: true to load everything in dir.
@@ -86,6 +91,7 @@ skills:
 #   OMEGA_EXTENSIONS_DIR     -> extensions.dir
 #   OMEGA_SKILLS_DIR        -> skills directory
 #   OMEGA_HTTP_TIMEOUT      -> http_timeout (seconds, default 300)
+#   OMEGA_THEME             -> theme (dark, light, auto)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
 # omega.db, skills/, and extensions/ in OMEGA_HOME (default: the binary's
