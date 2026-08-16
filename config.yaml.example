@@ -98,6 +98,11 @@ skills:
 #   OMEGA_THEME             -> theme (dark, light, auto)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
-# omega.db, skills/, and extensions/ in OMEGA_HOME (default: the binary's
-# directory, fallback ~/.omega/). The working directory is used only for
-# AGENTS.md project context and tool file operations.
+# omega.db, skills/, extensions/, and trust.yaml in OMEGA_HOME (default:
+# the binary's directory, fallback ~/.omega/). The working directory is
+# used only for AGENTS.md project context and tool file operations.
+#
+# Project trust: AGENTS.md context is gated by a trust check. Trust
+# decisions live in <home>/trust.yaml (trusted: [{path, level}], level
+# exact or parent). CLI-only flags: --approve (trust current project),
+# --no-approve (skip current project context).

@@ -161,6 +161,7 @@ type model struct {
 	modelList           []string          // cached from last /models, for /model <#> selection
 	ephemeral           bool              // /new --ephemeral; nothing persisted
 	theme               Theme             // active color/style theme
+	trustState          string            // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -174,8 +175,8 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName string) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, []agent.ExtensionManager{extensions}, themeName)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState string) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -183,7 +184,7 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, syst
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName string) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState string) model {
 	extMgr := agent.ExtensionManager(agent.NoopManager{})
 	if len(extensions) > 0 {
 		extMgr = extensions[0]
@@ -242,6 +243,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		showToolResults:   true,
 		toolResultsAuto:   true,
 		theme:             t,
+		trustState:        trustState,
 	}
 }
 
@@ -1910,6 +1912,12 @@ func (m model) statusLine() string {
 		line += " | thinking: " + m.thinkingLevel
 	}
 	line += fmt.Sprintf(" | tokens: %d/%d | %s", tokens, window, sess)
+	switch m.trustState {
+	case "trusted":
+		line += " | " + m.theme.Info.Render("trusted")
+	case "untrusted":
+		line += " | " + m.theme.Error.Render("untrusted")
+	}
 	if m.err != "" {
 		line += " | " + m.theme.Error.Render("error: "+m.err)
 	}

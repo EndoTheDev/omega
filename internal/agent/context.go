@@ -7,6 +7,33 @@ import (
 	"strings"
 )
 
+// ProjectRoot returns the nearest directory (walking up from dir) that
+// contains an AGENTS.md, or "" if none exists. This is the trust unit:
+// a project is trusted by its root directory, not by individual files.
+func ProjectRoot(dir string) string {
+	visited := map[string]bool{}
+	for {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return ""
+		}
+		if visited[abs] {
+			return ""
+		}
+		visited[abs] = true
+
+		if _, err := os.Stat(filepath.Join(abs, "AGENTS.md")); err == nil {
+			return abs
+		}
+
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return ""
+		}
+		dir = parent
+	}
+}
+
 // LoadProjectContext walks from dir up to the filesystem root,
 // collecting AGENTS.md files at each level. Results are concatenated
 // in root-to-leaf order (outermost project first, nearest last) so

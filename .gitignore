@@ -1,6 +1,7 @@
 .env
 *.db
 config.yaml
+trust.yaml
 bin/
 data/
 skills/

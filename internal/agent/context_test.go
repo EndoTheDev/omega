@@ -71,3 +71,30 @@ func TestLoadProjectContextResourceDiagnostics(t *testing.T) {
 		t.Fatalf("LoadProjectContext = %q, want warning about unreadable file", got)
 	}
 }
+
+func TestProjectRoot(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "sub", "deeper")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("root"), 0o600); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+
+	// Nearest AGENTS.md dir from a deep subdir is the root.
+	if got := ProjectRoot(child); got != root {
+		t.Fatalf("ProjectRoot(%q) = %q, want %q", child, got, root)
+	}
+	// From the root itself.
+	if got := ProjectRoot(root); got != root {
+		t.Fatalf("ProjectRoot(%q) = %q, want %q", root, got, root)
+	}
+}
+
+func TestProjectRootNone(t *testing.T) {
+	// A fresh temp dir with no AGENTS.md anywhere up the tree.
+	if got := ProjectRoot(t.TempDir()); got != "" {
+		t.Fatalf("ProjectRoot on empty dir = %q, want \"\"", got)
+	}
+}

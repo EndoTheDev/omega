@@ -19,6 +19,10 @@ markdown rendering.
   `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
+- `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
+  `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
+  `promptTrust`), trust flag parsing (`parseTrustArgs`,
+  `stripTrustArgs`)
 - `tui.go` - Bubble Tea TUI: the `model` state, `Update`/`View`/`Init`,
   streaming event handling (`handleEvent`, `appendSegment`, `drainEvents`),
   slash command dispatch (`handleCommand` and every `handle*` helper),
@@ -55,6 +59,13 @@ markdown rendering.
   `LoadConfig`: `--no-extensions` wins over everything; the other two
   each force `Enabled = true`. `--project-extensions` also loads
   `<cwd>/.omega/extensions/`.
+- **Project trust gates AGENTS.md context.** The trust unit is the
+  nearest directory (walking up from cwd) containing an AGENTS.md.
+  Trust decisions live in `<home>/trust.yaml` (`trusted: [{path,
+level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
+  CLI-only overrides. The TUI prompts interactively for untrusted
+  projects; `run`/`serve` skip untrusted context with a stderr warning.
+  `--no-approve` wins over `--approve`.
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,

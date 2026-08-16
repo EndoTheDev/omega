@@ -44,6 +44,8 @@ Flags:
   --extension <path>, -e <path>   load an extension (repeatable)
   --no-extensions       disable extension loading
   --project-extensions  also load <cwd>/.omega/extensions/
+  --approve             trust the current project's AGENTS.md
+  --no-approve          skip the current project's AGENTS.md
   --version, -v         print version
   --help, -h            show this help
 `
@@ -66,16 +68,17 @@ func run(args []string) error {
 	sub, rest := splitSubcommand(args)
 	appendPrompts := parseAppendPrompts(rest)
 	ext := parseExtensionArgs(rest)
+	trust := parseTrustArgs(rest)
 	switch sub {
 	case "serve":
-		return cmdServe(parseConfigFlag(rest), appendPrompts, ext)
+		return cmdServe(parseConfigFlag(rest), appendPrompts, ext, trust)
 	case "run":
-		return cmdRun(parseConfigFlag(rest), rest, ext)
+		return cmdRun(parseConfigFlag(rest), rest, ext, trust)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
 	case "chat", "":
 		// Explicit chat subcommand, or no subcommand: default to the TUI.
-		return cmdChat(parseConfigFlag(rest), appendPrompts, ext)
+		return cmdChat(parseConfigFlag(rest), appendPrompts, ext, trust)
 	default:
 		// Not a subcommand: treat as a project path. chdir there, then
 		// launch the TUI so project context and tool operations resolve
@@ -83,7 +86,7 @@ func run(args []string) error {
 		if err := os.Chdir(sub); err != nil {
 			return fmt.Errorf("chdir %s: %w", sub, err)
 		}
-		return cmdChat(parseConfigFlag(rest), appendPrompts, ext)
+		return cmdChat(parseConfigFlag(rest), appendPrompts, ext, trust)
 	}
 }
 
@@ -296,14 +299,14 @@ func resolveHomePaths(cfg *gateway.Config) {
 // newAgent wires config into a provider, agent, store, and extensions.
 // The store is returned so the caller can close it. The extension manager
 // is returned so callers that run the TUI can close extensions on shutdown.
-func newAgent(cfg gateway.Config, appendPrompts []string) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
+func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
 	provider, err := ai.NewProvider(cfg.Provider.Type, cfg.Provider.ModelName, cfg.Provider.Host, cfg.Provider.APIKey)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
 	ag.SetCompaction(&cfg.Compaction)
-	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil, appendPrompts))
+	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)))
 
 	mgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
@@ -320,16 +323,16 @@ func newAgent(cfg gateway.Config, appendPrompts []string) (*agent.Agent, *gatewa
 }
 
 // buildSystemPrompt assembles the agent's system prompt from the
-// project context (AGENTS.md in the working directory), the built-in
-// tools, loaded skills, the environment, the config's custom prompt,
-// and any --append-system-prompt values.
-func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, appendPrompts []string) string {
+// resolved project context, the built-in tools, loaded skills, the
+// environment, the config's custom prompt, and any
+// --append-system-prompt values.
+func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, appendPrompts []string, projectContext string) string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
 	}
 	return agent.BuildSystemPrompt(agent.PromptOptions{
-		ProjectContext: agent.LoadProjectContext(cwd),
+		ProjectContext: projectContext,
 		Skills:         skills,
 		CWD:            cwd,
 		Custom:         cfg.SystemPrompt,
@@ -344,7 +347,7 @@ func signalContext() (context.Context, context.CancelFunc) {
 
 // cmdServe loads config, wires the agent, and serves HTTP until a signal
 // triggers graceful shutdown.
-func cmdServe(configPath string, appendPrompts []string, ext extFlags) error {
+func cmdServe(configPath string, appendPrompts []string, ext extFlags, trust trustFlags) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
@@ -352,7 +355,7 @@ func cmdServe(configPath string, appendPrompts []string, ext extFlags) error {
 	applyExtFlags(&cfg, ext)
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, mgr, err := newAgent(cfg, appendPrompts)
+	ag, store, mgr, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -370,9 +373,9 @@ func cmdServe(configPath string, appendPrompts []string, ext extFlags) error {
 
 // cmdRun loads config and runs the agent once with the given prompt,
 // printing the final response.
-func cmdRun(configPath string, args []string, ext extFlags) error {
+func cmdRun(configPath string, args []string, ext extFlags, trust trustFlags) error {
 	appendPrompts := parseAppendPrompts(args)
-	args = stripAppendPrompts(stripExtensionArgs(stripConfigFlag(args)))
+	args = stripAppendPrompts(stripExtensionArgs(stripTrustArgs(stripConfigFlag(args))))
 	prompt := strings.Join(args, " ")
 	if prompt == "" {
 		return fmt.Errorf("run requires a prompt argument")
@@ -385,7 +388,7 @@ func cmdRun(configPath string, args []string, ext extFlags) error {
 	applyExtFlags(&cfg, ext)
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, mgr, err := newAgent(cfg, appendPrompts)
+	ag, store, mgr, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -417,7 +420,7 @@ func cmdRun(configPath string, args []string, ext extFlags) error {
 }
 
 // cmdChat loads config and launches the interactive Bubble Tea TUI.
-func cmdChat(configPath string, appendPrompts []string, ext extFlags) error {
+func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trustFlags) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
@@ -444,7 +447,7 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags) error {
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, appendPrompts), store, skills, extMgr, cfg.Theme)
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true)), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove))
 }
 
 // loadExtensions returns an extension manager configured by the user. If
