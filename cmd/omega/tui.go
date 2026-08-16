@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -1670,36 +1669,13 @@ func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, msg := range messages {
-		entry := map[string]any{
-			"role":    messageRole(msg),
-			"content": agent.MessageText(msg),
-		}
-		if err := enc.Encode(entry); err != nil {
-			m.err = "export: " + err.Error()
-			return m, nil
-		}
+	if err := exportMessages(messages, f); err != nil {
+		m.err = "export: " + err.Error()
+		return m, nil
 	}
 	m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
 	m.refresh()
 	return m, nil
-}
-
-// messageRole returns the role string for a message.
-func messageRole(m ai.Message) string {
-	switch m.(type) {
-	case ai.User:
-		return "user"
-	case ai.Assistant:
-		return "assistant"
-	case ai.System:
-		return "system"
-	case ai.ToolResult:
-		return "tool"
-	default:
-		return "unknown"
-	}
 }
 
 // handleCompact triggers manual compaction of the conversation history.

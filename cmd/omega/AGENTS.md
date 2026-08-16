@@ -19,6 +19,10 @@ markdown rendering.
   `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
+- `export.go` - session export (`cmdExport`, `exportMessages`,
+  `messageRole`, `resolveSessionCLI`)
+- `update.go` - self-update (`cmdUpdate`, `githubRelease`,
+  `findAsset`, `assetNameForOS`)
 - `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
   `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
   `promptTrust`), trust flag parsing (`parseTrustArgs`,
@@ -31,11 +35,16 @@ markdown rendering.
   rendering, status line, splash screen, theme system (`Theme` struct,
   `handleTheme`, `/theme` command), desktop notifications
   (`notifyTurnComplete`, `beeep`), model quick-cycle (Ctrl+P,
-  `fetchModelsCmd`, `modelsLoadedMsg`), bracketed paste (file drop)
+  `fetchModelsCmd`, `modelsLoadedMsg`), bracketed paste (file drop).
+  `handleExport` delegates to `exportMessages` in `export.go`.
 - `theme.go` - System theme detection: Windows registry, macOS defaults,
   Linux gsettings / GTK_THEME / COLORFGBG fallback
 - `main_test.go` - self-check tests for extension flag parsing,
   dispatch (chdir error), and help/version flags
+- `export_test.go` - self-check tests for `exportMessages`,
+  `messageRole`, and session resolution
+- `update_test.go` - self-check tests for `assetNameForOS` and
+  `findAsset` (asset matching across platforms)
 - `tui_test.go` - self-check tests for channel draining, event folding,
   slash commands, persistence, resume, branch, label, rendering, and
   session ID generation
@@ -77,6 +86,17 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   provider asynchronously; the result arrives as `modelsLoadedMsg`.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
+- **Export is shared.** `exportMessages` in `export.go` writes JSONL
+  from `[]ai.Message`. Both `handleExport` (TUI) and `cmdExport` (CLI)
+  delegate to it. `messageRole` lives in `export.go`.
+- **Export resolves by ID or label.** `resolveSessionCLI` tries exact
+  session ID, then case-insensitive label prefix. Multiple matches
+  error with the candidates listed.
+- **Self-update replaces the running binary.** `cmdUpdate` fetches the
+  latest GitHub release, matches the asset by `GOOS_GOARCH`, downloads
+  to a temp file, and replaces `os.Executable()`. On Windows the
+  running exe is renamed to `.old` first. No checksum verification
+  (no release signing yet).
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,

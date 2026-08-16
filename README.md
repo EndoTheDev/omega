@@ -128,6 +128,13 @@ provider:
 # HTTP server (SSE streaming, session store)
 ./omega serve
 
+# Export a session as JSONL (by ID or label)
+./omega export <session-id-or-label> [output-path]
+./omega export my-session -    # stdout
+
+# Self-update from GitHub releases
+./omega update
+
 # Health check
 ./omega health
 
@@ -394,6 +401,8 @@ provider that scripts stream events.
 - Desktop notifications (`notifications` config: bell, desktop, off)
 - Model quick-cycle (Ctrl+P)
 - File drop (bracketed paste support)
+- Export session subcommand (`omega export`)
+- Self-update (`omega update`)
 
 ### Planned
 

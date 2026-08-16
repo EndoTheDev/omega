@@ -36,6 +36,8 @@ Usage:
   omega chat            start the interactive TUI
   omega run <prompt>    run one prompt to stdout
   omega serve           start the HTTP server (SSE streaming)
+  omega export <id>     export session messages as JSONL
+  omega update          download and install the latest release
   omega health          check the server at the configured port
 
 Flags:
@@ -76,6 +78,10 @@ func run(args []string) error {
 		return cmdRun(parseConfigFlag(rest), rest, ext, trust)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
+	case "export":
+		return cmdExport(parseConfigFlag(rest), rest)
+	case "update":
+		return cmdUpdate()
 	case "chat", "":
 		// Explicit chat subcommand, or no subcommand: default to the TUI.
 		return cmdChat(parseConfigFlag(rest), appendPrompts, ext, trust)
