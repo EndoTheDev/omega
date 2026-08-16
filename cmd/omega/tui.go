@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
+	"github.com/gen2brain/beeep"
 
 	"github.com/EndoTheDev/omega/internal/agent"
 	"github.com/EndoTheDev/omega/internal/ai"
@@ -162,10 +163,31 @@ type model struct {
 	ephemeral           bool              // /new --ephemeral; nothing persisted
 	theme               Theme             // active color/style theme
 	trustState          string            // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
+	notifications       string            // "bell" / "desktop" / "off", fired on turn complete
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
+
+// modelsLoadedMsg carries models fetched in the background for Ctrl+P
+// when modelList is empty.
+type modelsLoadedMsg struct {
+	models []string
+	err    error
+}
+
+// fetchModelsCmd returns a tea.Cmd that fetches available models from
+// the provider. Used by Ctrl+P when modelList is empty.
+func (m model) fetchModelsCmd() tea.Cmd {
+	return func() tea.Msg {
+		provider, err := ai.NewProvider(m.providerType, m.modelName, m.host, m.apiKey)
+		if err != nil {
+			return modelsLoadedMsg{err: err}
+		}
+		models, err := provider.ListModels()
+		return modelsLoadedMsg{models: models, err: err}
+	}
+}
 
 // autoNameMsg carries the result of a background auto-name call.
 type autoNameMsg struct {
@@ -175,8 +197,8 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState string) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -184,7 +206,7 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, syst
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState string) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
 	extMgr := agent.ExtensionManager(agent.NoopManager{})
 	if len(extensions) > 0 {
 		extMgr = extensions[0]
@@ -244,6 +266,7 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		toolResultsAuto:   true,
 		theme:             t,
 		trustState:        trustState,
+		notifications:     notifications,
 	}
 }
 
@@ -296,6 +319,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\n'}})
 			m.updateAutocomplete()
+			m.resizeTextarea()
+			return m, cmd
+		}
+		if msg.String() == "ctrl+p" {
+			// Ctrl+P cycles to the next model in modelList. If the list
+			// is empty, fetch it from the provider first.
+			if len(m.modelList) == 0 {
+				m.transcript += "\n" + m.theme.Info.Render("[fetching models...]") + "\n"
+				m.refresh()
+				return m, m.fetchModelsCmd()
+			}
+			// Find current model index, advance to the next.
+			idx := -1
+			for i, name := range m.modelList {
+				if name == m.modelName {
+					idx = i
+					break
+				}
+			}
+			next := idx + 1
+			if next >= len(m.modelList) {
+				next = 0
+			}
+			m.modelName = m.modelList[next]
+			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
+			m.refresh()
+			return m, m.titleCmd()
+		}
+		if msg.Paste {
+			// Bracketed paste (file drop, large paste): insert the
+			// pasted text directly, bypassing autocomplete. The textarea
+			// may not handle Paste=true KeyMsgs correctly, so we insert
+			// the runes as a regular KeyRunes message.
+			var cmd tea.Cmd
+			m.textarea, cmd = m.textarea.Update(tea.KeyMsg{
+				Type:  tea.KeyRunes,
+				Runes: msg.Runes,
+			})
 			m.resizeTextarea()
 			return m, cmd
 		}
@@ -398,7 +459,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.drainEvents()
 
 	case streamDoneMsg:
-		fmt.Print("\x07") // terminal bell: signals turn complete
+		m.notifyTurnComplete()
 		m.busy = false
 		m.cancel = nil
 		m.textarea.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
@@ -429,6 +490,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil && msg.label != "" {
 			m.sessionLabel = msg.label
 		}
+		return m, nil
+
+	case modelsLoadedMsg:
+		// Ctrl+P triggered a background fetch; apply the result.
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.refresh()
+			return m, nil
+		}
+		m.modelList = msg.models
+		if len(msg.models) > 0 {
+			m.modelName = msg.models[0]
+			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
+			m.err = ""
+			m.refresh()
+			return m, m.titleCmd()
+		}
+		m.err = "no models available"
+		m.refresh()
 		return m, nil
 
 	default:
@@ -1881,6 +1961,23 @@ func (m model) titleCmd() tea.Cmd {
 		state = "running"
 	}
 	return tea.SetWindowTitle(windowTitle(state, m.modelName))
+}
+
+// notifyTurnComplete fires the configured notification when a turn ends.
+// "bell" prints the terminal bell (\x07), "desktop" sends an OS
+// notification via beeep, "off" does nothing. Desktop notifications
+// run in a goroutine so a slow notification API never blocks the TUI.
+func (m model) notifyTurnComplete() {
+	switch m.notifications {
+	case "desktop":
+		go func() {
+			_ = beeep.Notify("omega", "Turn complete", "")
+		}()
+	case "off":
+		// no notification
+	default: // "bell" or unset
+		fmt.Print("\x07")
+	}
 }
 
 // statusLine returns the bottom status bar text.

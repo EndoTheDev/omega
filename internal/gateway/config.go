@@ -21,6 +21,7 @@ type Config struct {
 	SystemPrompt string                  `yaml:"system_prompt"`
 	HTTPTimeout  int                     `yaml:"http_timeout"`
 	Theme        string                  `yaml:"theme"`
+	Notifications string                 `yaml:"notifications"`
 	Extensions   ExtensionsConfig        `yaml:"extensions"`
 	Skills       SkillsConfig            `yaml:"skills"`
 }
@@ -88,6 +89,7 @@ func DefaultConfig() Config {
 			Dir: "skills",
 		},
 		HTTPTimeout: 300,
+		Notifications: "bell",
 	}
 }
 
@@ -183,6 +185,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("OMEGA_THEME"); v != "" {
 		cfg.Theme = v
+	}
+	if v := os.Getenv("OMEGA_NOTIFICATIONS"); v != "" {
+		cfg.Notifications = v
 	}
 }
 

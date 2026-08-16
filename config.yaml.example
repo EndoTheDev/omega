@@ -96,6 +96,7 @@ skills:
 #   OMEGA_SKILLS_DIR        -> skills directory
 #   OMEGA_HTTP_TIMEOUT      -> http_timeout (seconds, default 300)
 #   OMEGA_THEME             -> theme (dark, light, auto)
+#   OMEGA_NOTIFICATIONS     -> notifications (bell, desktop, off)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
 # omega.db, skills/, extensions/, and trust.yaml in OMEGA_HOME (default:

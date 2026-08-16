@@ -189,6 +189,7 @@ AGENTS.md project context and tool file operations.
 | `skills.dir`                 | `OMEGA_SKILLS_DIR`                 | `<home>/skills`          | Skills directory                                                                                |
 | `http_timeout`               | `OMEGA_HTTP_TIMEOUT`               | `300`                    | HTTP timeout for provider requests (seconds)                                                    |
 | `theme`                      | `OMEGA_THEME`                      | `dark`                   | TUI color theme (dark, light, auto)                                                             |
+| `notifications`              | `OMEGA_NOTIFICATIONS`              | `bell`                   | Turn-complete notification (bell, desktop, off)                                                 |
 
 ## Project Trust
 
@@ -328,6 +329,22 @@ See `extensions/README.md` for the full protocol reference and
 | `/help`                               | Show help                                                                                             |
 | `/exit`                               | Quit                                                                                                  |
 
+### Keybindings
+
+| Key       | Action                                            |
+| --------- | ------------------------------------------------- |
+| Enter     | Send message (or accept autocomplete match)       |
+| Ctrl+J    | Insert newline (multi-line input)                 |
+| Ctrl+P    | Cycle to next model (fetches model list if empty) |
+| Tab       | Accept autocomplete match                         |
+| Up/Down   | Cycle autocomplete / recall prompt history        |
+| PgUp/PgDn | Scroll transcript                                 |
+| Esc       | Cancel running turn / close autocomplete          |
+| Ctrl+C    | Quit                                              |
+
+File paths pasted or dragged into the terminal are inserted into the
+prompt as text (bracketed paste support).
+
 ## Project Structure
 
 ```txt
@@ -374,6 +391,9 @@ provider that scripts stream events.
 - Tool result truncation (configurable max bytes)
 - Session export (`/export` writes JSONL)
 - Extension CLI flags (`--extension`/`-e`, `--no-extensions`, `--project-extensions`)
+- Desktop notifications (`notifications` config: bell, desktop, off)
+- Model quick-cycle (Ctrl+P)
+- File drop (bracketed paste support)
 
 ### Planned
 

@@ -29,7 +29,9 @@ markdown rendering.
   session table and tree rendering, autocomplete, prompt history, inline
   skill invocation, extension command dispatch, auto-name, glamour
   rendering, status line, splash screen, theme system (`Theme` struct,
-  `handleTheme`, `/theme` command)
+  `handleTheme`, `/theme` command), desktop notifications
+  (`notifyTurnComplete`, `beeep`), model quick-cycle (Ctrl+P,
+  `fetchModelsCmd`, `modelsLoadedMsg`), bracketed paste (file drop)
 - `theme.go` - System theme detection: Windows registry, macOS defaults,
   Linux gsettings / GTK_THEME / COLORFGBG fallback
 - `main_test.go` - self-check tests for extension flag parsing,
@@ -66,6 +68,15 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   CLI-only overrides. The TUI prompts interactively for untrusted
   projects; `run`/`serve` skip untrusted context with a stderr warning.
   `--no-approve` wins over `--approve`.
+- **Notifications fire on turn complete.** `notifications` config
+  (`bell` default, `desktop`, `off`) controls the mode. `bell` prints
+  `\x07`, `desktop` calls `beeep.Notify` in a goroutine (non-blocking),
+  `off` does nothing. `OMEGA_NOTIFICATIONS` env var overrides.
+- **Ctrl+P cycles models.** Cycles through `modelList` (populated by
+  `/models`). If empty, fires `fetchModelsCmd` to fetch from the
+  provider asynchronously; the result arrives as `modelsLoadedMsg`.
+- **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
+  inserted into the textarea as regular runes, bypassing autocomplete.
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,

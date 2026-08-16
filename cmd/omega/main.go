@@ -447,7 +447,7 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true)), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove))
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true)), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
 }
 
 // loadExtensions returns an extension manager configured by the user. If
