@@ -16,7 +16,9 @@ markdown rendering.
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
   agent wiring (`newAgent`, `buildSystemPrompt`), `cmdServe`, `cmdRun`,
-  `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`
+  `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
+  flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
+  `applyExtFlags`), global help (`helpText`)
 - `tui.go` - Bubble Tea TUI: the `model` state, `Update`/`View`/`Init`,
   streaming event handling (`handleEvent`, `appendSegment`, `drainEvents`),
   slash command dispatch (`handleCommand` and every `handle*` helper),
@@ -26,6 +28,8 @@ markdown rendering.
   `handleTheme`, `/theme` command)
 - `theme.go` - System theme detection: Windows registry, macOS defaults,
   Linux gsettings / GTK_THEME / COLORFGBG fallback
+- `main_test.go` - self-check tests for extension flag parsing,
+  dispatch (chdir error), and help/version flags
 - `tui_test.go` - self-check tests for channel draining, event folding,
   slash commands, persistence, resume, branch, label, rendering, and
   session ID generation
@@ -33,11 +37,24 @@ markdown rendering.
 ## Local Contracts
 
 - **Subcommands are the only entry surface.** `run` dispatches `serve`,
-  `run`, `health`, `chat`; unknown or missing subcommands are errors.
-  `--config` and `--append-system-prompt` are global flags, parsed
-  before or after the subcommand. `--append-system-prompt` is
-  repeatable; each value is appended to the system prompt after the
-  config's `system_prompt`.
+  `run`, `health`, `chat`. `--config` and `--append-system-prompt` are
+  global flags, parsed before or after the subcommand.
+  `--append-system-prompt` is repeatable; each value is appended to the
+  system prompt after the config's `system_prompt`.
+- **`--help`/`-h` and `--version`/`-v` are global and exit before
+  dispatch.** Any of these flags in the args prints to stdout and
+  returns nil, even alongside a subcommand. There is no per-subcommand
+  help. `--version` prints `omega <omegaVersion>`.
+- **No subcommand defaults to the TUI.** `omega` (no args) starts the
+  TUI. A non-subcommand argument is treated as a project path: omega
+  chdirs there (erroring cleanly if it is not a directory) and starts
+  the TUI. Subcommand names always win over a same-named directory.
+- **Extension CLI flags are CLI-only.** `--extension`/`-e` (repeatable),
+  `--no-extensions`, and `--project-extensions` have no YAML or env
+  equivalent. `applyExtFlags` folds them into `cfg.Extensions` after
+  `LoadConfig`: `--no-extensions` wins over everything; the other two
+  each force `Enabled = true`. `--project-extensions` also loads
+  `<cwd>/.omega/extensions/`.
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,

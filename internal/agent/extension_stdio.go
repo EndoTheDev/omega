@@ -132,8 +132,13 @@ var skipExts = map[string]bool{
 // On Windows, files without a known extension are checked for a shebang
 // line to route through the right interpreter. Files with .sh extension
 // are run via bash.
+//
+// Load may be called multiple times (e.g. once for the main dir, once
+// for the project dir); each call appends to the existing set.
 func (m *StdioManager) Load(dir string, apiKey string) error {
-	m.toolMap = make(map[string]Tool)
+	if m.toolMap == nil {
+		m.toolMap = make(map[string]Tool)
+	}
 
 	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -153,30 +158,45 @@ func (m *StdioManager) Load(dir string, apiKey string) error {
 			return nil
 		}
 
-		ext, err := spawnExtension(path, apiKey)
-		if err != nil {
+		if err := m.LoadFile(path, apiKey); err != nil {
 			// Non-fatal: log and skip. One bad extension does not kill the manager.
 			fmt.Fprintf(os.Stderr, "omega: extension %s: %v\n", path, err)
-			return nil
-		}
-
-		m.exts = append(m.exts, ext)
-
-		// Wrap extension tools as agent.Tool values.
-		for _, t := range ext.tools {
-			if _, exists := m.toolMap[t.Name]; exists {
-				continue // first registration wins
-			}
-			m.toolMap[t.Name] = Tool{
-				Description: t.Description,
-				Parameters:  t.Parameters,
-				Run: func(ctx context.Context, args map[string]any) (string, error) {
-					return ext.callTool(ctx, t.Name, args)
-				},
-			}
 		}
 		return nil
 	})
+}
+
+// LoadFile spawns and initializes a single extension at path, merging
+// its tools into the manager. First registration wins on tool-name
+// conflict. It is on the concrete type (not the ExtensionManager
+// interface) so callers that load explicit --extension paths can use it
+// before the manager is handed off as an interface.
+func (m *StdioManager) LoadFile(path string, apiKey string) error {
+	if m.toolMap == nil {
+		m.toolMap = make(map[string]Tool)
+	}
+
+	ext, err := spawnExtension(path, apiKey)
+	if err != nil {
+		return err
+	}
+
+	m.exts = append(m.exts, ext)
+
+	// Wrap extension tools as agent.Tool values.
+	for _, t := range ext.tools {
+		if _, exists := m.toolMap[t.Name]; exists {
+			continue // first registration wins
+		}
+		m.toolMap[t.Name] = Tool{
+			Description: t.Description,
+			Parameters:  t.Parameters,
+			Run: func(ctx context.Context, args map[string]any) (string, error) {
+				return ext.callTool(ctx, t.Name, args)
+			},
+		}
+	}
+	return nil
 }
 
 // spawnExtension spawns a single extension process and runs initialize.

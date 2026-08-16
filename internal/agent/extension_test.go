@@ -261,6 +261,59 @@ func TestStdioManagerConflictWinsFirst(t *testing.T) {
 	}
 }
 
+// TestStdioManagerLoadFile verifies loading a single extension by explicit
+// path (the --extension/-e code path).
+func TestStdioManagerLoadFile(t *testing.T) {
+	dir := mockExtensionDir(t)
+	extPath := filepath.Join(dir, "mock-ext")
+	if os.PathSeparator == '\\' {
+		extPath += ".exe"
+	}
+
+	m := &StdioManager{}
+	if err := m.LoadFile(extPath, ""); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	defer m.Close()
+
+	tools := m.Tools()
+	if _, ok := tools["echo_tool"]; !ok {
+		t.Fatal("missing echo_tool after LoadFile")
+	}
+	if infos := m.Infos(); len(infos) != 1 {
+		t.Fatalf("Infos = %d, want 1", len(infos))
+	}
+}
+
+// TestStdioManagerLoadFileMissing verifies LoadFile errors on a nonexistent
+// path (the caller logs and skips).
+func TestStdioManagerLoadFileMissing(t *testing.T) {
+	m := &StdioManager{}
+	if err := m.LoadFile("/nonexistent/extension", ""); err == nil {
+		t.Fatal("LoadFile should error on nonexistent path")
+	}
+}
+
+// TestStdioManagerLoadAppends verifies calling Load twice appends rather
+// than resetting (main dir + project dir).
+func TestStdioManagerLoadAppends(t *testing.T) {
+	dir := mockExtensionDir(t)
+	m := &StdioManager{}
+	if err := m.Load(dir, ""); err != nil {
+		t.Fatalf("first Load: %v", err)
+	}
+	defer m.Close()
+
+	// Second Load of the same dir spawns a second process but must not
+	// clobber the tool map (first registration wins).
+	if err := m.Load(dir, ""); err != nil {
+		t.Fatalf("second Load: %v", err)
+	}
+	if _, ok := m.Tools()["echo_tool"]; !ok {
+		t.Fatal("missing echo_tool after second Load")
+	}
+}
+
 // TestExtensionManagerSeam verifies the StdioManager satisfies the
 // ExtensionManager interface.
 func TestExtensionManagerSeam(t *testing.T) {

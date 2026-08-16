@@ -25,24 +25,65 @@ func main() {
 	}
 }
 
+// helpText is the global --help output. One help for all subcommands;
+// per-subcommand help is deferred until a subcommand has enough flags
+// to warrant it.
+const helpText = `omega - a Go event-stream agent (Pi/Tau port)
+
+Usage:
+  omega                 start the interactive TUI
+  omega <path>          start the TUI in <path> (chdir first)
+  omega chat            start the interactive TUI
+  omega run <prompt>    run one prompt to stdout
+  omega serve           start the HTTP server (SSE streaming)
+  omega health          check the server at the configured port
+
+Flags:
+  --config <path>       config file (default: <home>/config.yaml)
+  --append-system-prompt <text>   append to system prompt (repeatable)
+  --extension <path>, -e <path>   load an extension (repeatable)
+  --no-extensions       disable extension loading
+  --project-extensions  also load <cwd>/.omega/extensions/
+  --version, -v         print version
+  --help, -h            show this help
+`
+
 // run parses the subcommand and dispatches. The first non-flag argument
-// selects the subcommand; --config is accepted before or after it.
+// selects the subcommand; --config is accepted before or after it. With
+// no argument, the TUI starts. A non-subcommand argument is treated as a
+// project path: omega chdirs there and starts the TUI.
 func run(args []string) error {
+	for _, a := range args {
+		switch a {
+		case "--help", "-h":
+			fmt.Print(helpText)
+			return nil
+		case "--version", "-v":
+			fmt.Println("omega", omegaVersion)
+			return nil
+		}
+	}
 	sub, rest := splitSubcommand(args)
 	appendPrompts := parseAppendPrompts(rest)
+	ext := parseExtensionArgs(rest)
 	switch sub {
 	case "serve":
-		return cmdServe(parseConfigFlag(rest), appendPrompts)
+		return cmdServe(parseConfigFlag(rest), appendPrompts, ext)
 	case "run":
-		return cmdRun(parseConfigFlag(rest), rest)
+		return cmdRun(parseConfigFlag(rest), rest, ext)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
-	case "chat":
-		return cmdChat(parseConfigFlag(rest), appendPrompts)
-	case "":
-		return fmt.Errorf("no subcommand; expected serve, run, health, or chat")
+	case "chat", "":
+		// Explicit chat subcommand, or no subcommand: default to the TUI.
+		return cmdChat(parseConfigFlag(rest), appendPrompts, ext)
 	default:
-		return fmt.Errorf("unknown subcommand %q; expected serve, run, health, or chat", sub)
+		// Not a subcommand: treat as a project path. chdir there, then
+		// launch the TUI so project context and tool operations resolve
+		// relative to that directory.
+		if err := os.Chdir(sub); err != nil {
+			return fmt.Errorf("chdir %s: %w", sub, err)
+		}
+		return cmdChat(parseConfigFlag(rest), appendPrompts, ext)
 	}
 }
 
@@ -122,6 +163,79 @@ func stripAppendPrompts(args []string) []string {
 		out = append(out, args[i])
 	}
 	return out
+}
+
+// extFlags holds the extension-related CLI flags. These are CLI-only:
+// they have no YAML or env equivalent.
+type extFlags struct {
+	explicit []string // --extension/-e paths (repeatable)
+	noExt    bool     // --no-extensions
+	project  bool     // --project-extensions
+}
+
+// parseExtensionArgs extracts --extension/-e, --no-extensions, and
+// --project-extensions from args. Supports both "--flag value" and
+// "--flag=value" forms for the value-taking flags.
+func parseExtensionArgs(args []string) extFlags {
+	var f extFlags
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--no-extensions":
+			f.noExt = true
+		case a == "--project-extensions":
+			f.project = true
+		case a == "--extension" || a == "-e":
+			if i+1 < len(args) {
+				f.explicit = append(f.explicit, args[i+1])
+				i++
+			}
+		case strings.HasPrefix(a, "--extension="):
+			f.explicit = append(f.explicit, strings.TrimPrefix(a, "--extension="))
+		case strings.HasPrefix(a, "-e="):
+			f.explicit = append(f.explicit, strings.TrimPrefix(a, "-e="))
+		}
+	}
+	return f
+}
+
+// stripExtensionArgs removes --extension/-e, --no-extensions, and
+// --project-extensions (and their values) from args, so the remaining
+// arguments are the run prompt.
+func stripExtensionArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--no-extensions", a == "--project-extensions":
+			continue
+		case a == "--extension" || a == "-e":
+			i++ // skip the value
+			continue
+		case strings.HasPrefix(a, "--extension="), strings.HasPrefix(a, "-e="):
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+// applyExtFlags folds CLI extension flags into the config. --no-extensions
+// wins over everything; otherwise --extension/-e and --project-extensions
+// each force extensions on.
+func applyExtFlags(cfg *gateway.Config, f extFlags) {
+	if f.noExt {
+		cfg.Extensions.Enabled = false
+		return
+	}
+	if len(f.explicit) > 0 {
+		cfg.Extensions.Enabled = true
+		cfg.Extensions.Explicit = f.explicit
+	}
+	if f.project {
+		cfg.Extensions.Enabled = true
+		cfg.Extensions.Project = true
+	}
 }
 
 // omegaHome returns the omega home directory: OMEGA_HOME env var,
@@ -230,11 +344,12 @@ func signalContext() (context.Context, context.CancelFunc) {
 
 // cmdServe loads config, wires the agent, and serves HTTP until a signal
 // triggers graceful shutdown.
-func cmdServe(configPath string, appendPrompts []string) error {
+func cmdServe(configPath string, appendPrompts []string, ext extFlags) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
+	applyExtFlags(&cfg, ext)
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, mgr, err := newAgent(cfg, appendPrompts)
@@ -255,9 +370,9 @@ func cmdServe(configPath string, appendPrompts []string) error {
 
 // cmdRun loads config and runs the agent once with the given prompt,
 // printing the final response.
-func cmdRun(configPath string, args []string) error {
+func cmdRun(configPath string, args []string, ext extFlags) error {
 	appendPrompts := parseAppendPrompts(args)
-	args = stripAppendPrompts(stripConfigFlag(args))
+	args = stripAppendPrompts(stripExtensionArgs(stripConfigFlag(args)))
 	prompt := strings.Join(args, " ")
 	if prompt == "" {
 		return fmt.Errorf("run requires a prompt argument")
@@ -267,6 +382,7 @@ func cmdRun(configPath string, args []string) error {
 	if err != nil {
 		return err
 	}
+	applyExtFlags(&cfg, ext)
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, mgr, err := newAgent(cfg, appendPrompts)
@@ -301,11 +417,12 @@ func cmdRun(configPath string, args []string) error {
 }
 
 // cmdChat loads config and launches the interactive Bubble Tea TUI.
-func cmdChat(configPath string, appendPrompts []string) error {
+func cmdChat(configPath string, appendPrompts []string, ext extFlags) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
+	applyExtFlags(&cfg, ext)
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	// Open the session store so the TUI can persist conversations across
@@ -331,14 +448,34 @@ func cmdChat(configPath string, appendPrompts []string) error {
 }
 
 // loadExtensions returns an extension manager configured by the user. If
-// extensions are disabled it returns a no-op manager.
+// extensions are disabled it returns a no-op manager. When enabled, it
+// loads the main dir, the project dir (when --project-extensions was
+// passed), and any explicit --extension/-e paths.
 func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.ExtensionManager, error) {
 	if !cfg.Enabled {
 		return agent.NoopManager{}, nil
 	}
 	mgr := &agent.StdioManager{}
-	if err := mgr.Load(cfg.Dir, apiKey); err != nil {
-		return nil, err
+
+	dirs := []string{cfg.Dir}
+	if cfg.Project {
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = "."
+		}
+		dirs = append(dirs, filepath.Join(cwd, ".omega", "extensions"))
+	}
+	for _, d := range dirs {
+		if err := mgr.Load(d, apiKey); err != nil {
+			return nil, err
+		}
+	}
+	for _, p := range cfg.Explicit {
+		if err := mgr.LoadFile(p, apiKey); err != nil {
+			// Non-fatal: log and skip. One bad explicit path does not
+			// kill the manager.
+			fmt.Fprintf(os.Stderr, "omega: extension %s: %v\n", p, err)
+		}
 	}
 	return mgr, nil
 }

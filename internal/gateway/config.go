@@ -26,10 +26,13 @@ type Config struct {
 }
 
 // ExtensionsConfig controls whether extensions are loaded and from
-// where.
+// where. Explicit and Project are CLI-only (set by --extension/-e and
+// --project-extensions), never from YAML or env.
 type ExtensionsConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Dir     string `yaml:"dir"`
+	Enabled  bool     `yaml:"enabled"`
+	Dir      string   `yaml:"dir"`
+	Explicit []string `yaml:"-"`
+	Project  bool     `yaml:"-"`
 }
 
 // SkillsConfig controls where skills are loaded from.

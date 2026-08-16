@@ -116,8 +116,11 @@ provider:
 ### Run
 
 ```bash
-# Interactive TUI
-./omega chat
+# Interactive TUI (default - no subcommand needed)
+./omega
+
+# Interactive TUI in a specific project directory
+./omega /path/to/project
 
 # One-shot prompt
 ./omega run "explain channel-based event streams"
@@ -127,7 +130,18 @@ provider:
 
 # Health check
 ./omega health
+
+# Show help
+./omega --help
+
+# Show version
+./omega --version
 ```
+
+`omega` with no argument starts the TUI. `omega <path>` chdirs into that
+directory first, so AGENTS.md discovery, project context, and tool file
+operations resolve relative to it. Subcommand names (`serve`, `run`,
+`health`, `chat`) always win over a same-named directory.
 
 ## Architecture
 
@@ -217,6 +231,19 @@ extensions:
   enabled: true
   dir: extensions # relative to omega home, or absolute path
 ```
+
+Extensions can also be controlled from the command line:
+
+```bash
+./omega chat --extension ./my-ext            # load a specific extension (repeatable)
+./omega chat -e ./my-ext                     # short form
+./omega chat --no-extensions                 # disable extension loading entirely
+./omega chat --project-extensions            # also load <cwd>/.omega/extensions/
+```
+
+`--no-extensions` wins over everything. `--extension`/`-e` and
+`--project-extensions` each force extensions on even when
+`extensions.enabled` is `false`.
 
 ### Example: Web Extension
 
@@ -321,6 +348,7 @@ provider that scripts stream events.
 - Prompt guidelines (deduplicated bullets in system prompt)
 - Tool result truncation (configurable max bytes)
 - Session export (`/export` writes JSONL)
+- Extension CLI flags (`--extension`/`-e`, `--no-extensions`, `--project-extensions`)
 
 ### Planned
 
@@ -329,7 +357,6 @@ provider that scripts stream events.
 - More providers (Gemini, Mistral)
 - Web UI (via the gateway HTTP API)
 - Project trust system for per-project skills and extensions
-- `--extension`/`--no-extensions` CLI flags
 - Extension hooks (pre/post on input, tool_call, tool_result)
 - Prompt templates with variable interpolation
 - Session stats and entry types

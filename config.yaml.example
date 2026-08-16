@@ -68,6 +68,10 @@ extensions:
   enabled: false
   # Directory to scan for extension executables. Default: extensions
   dir: extensions
+  # CLI flags (no YAML equivalent):
+  #   --extension <path> / -e <path>  load a specific extension (repeatable)
+  #   --no-extensions                 disable extension loading entirely
+  #   --project-extensions            also load <cwd>/.omega/extensions/
 
 skills:
   # Directory to scan for skill folders. Default: skills
