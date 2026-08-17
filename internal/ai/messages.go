@@ -29,10 +29,20 @@ func NewSystem(content string) System {
 	return System{Content: content, Timestamp: NowISO()}
 }
 
-// User is a user chat message.
+// ImageContent carries a base64-encoded image with its MIME type.
+// When present on a User message, providers serialize it as image
+// content blocks alongside the text content.
+type ImageContent struct {
+	MediaType string `json:"media_type"` // "image/png", "image/jpeg", etc.
+	Base64    string `json:"base64"`     // base64-encoded image data (no data: prefix)
+}
+
+// User is a user chat message. Images is optional; when empty the
+// message is text-only and providers send content as a plain string.
 type User struct {
-	Content   string `json:"content"`
-	Timestamp string `json:"timestamp,omitempty"`
+	Content   string         `json:"content"`
+	Images    []ImageContent `json:"images,omitempty"`
+	Timestamp string         `json:"timestamp,omitempty"`
 }
 
 func (User) isMessage() {}
@@ -40,6 +50,11 @@ func (User) isMessage() {}
 // NewUser creates a User message with timestamp set.
 func NewUser(content string) User {
 	return User{Content: content, Timestamp: NowISO()}
+}
+
+// NewUserWithImages creates a User message with image content.
+func NewUserWithImages(content string, images []ImageContent) User {
+	return User{Content: content, Images: images, Timestamp: NowISO()}
 }
 
 // Assistant is the model's response in a turn.

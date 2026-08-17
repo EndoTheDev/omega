@@ -125,6 +125,9 @@ provider:
 # One-shot prompt
 ./omega run "explain channel-based event streams"
 
+# One-shot with image input (vision models)
+./omega run @screenshot.png "what's wrong with this code?"
+
 # HTTP server (SSE streaming, session store)
 ./omega serve
 
@@ -403,6 +406,7 @@ provider that scripts stream events.
 - File drop (bracketed paste support)
 - Export session subcommand (`omega export`)
 - Self-update (`omega update`)
+- Image input (`@file` args with vision models)
 
 ### Planned
 

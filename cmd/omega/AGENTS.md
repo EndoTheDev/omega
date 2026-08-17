@@ -19,6 +19,8 @@ markdown rendering.
   `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
+- `image.go` - image input support (`detectImage`, `parseFileArgs`,
+  `extractImages`, magic-byte detection for PNG/JPEG/GIF/WebP/BMP)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
   `messageRole`, `resolveSessionCLI`)
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
@@ -45,6 +47,8 @@ markdown rendering.
   `messageRole`, and session resolution
 - `update_test.go` - self-check tests for `assetNameForOS` and
   `findAsset` (asset matching across platforms)
+- `image_test.go` - self-check tests for `detectImage`, `parseFileArgs`,
+  `extractImages`, and `User` with images JSON round-trip
 - `tui_test.go` - self-check tests for channel draining, event folding,
   slash commands, persistence, resume, branch, label, rendering, and
   session ID generation
@@ -86,6 +90,16 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   provider asynchronously; the result arrives as `modelsLoadedMsg`.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
+- **Tool results get syntax highlighting.** `highlightCode` applies
+  chroma highlighting with Catppuccin chroma styles (`catppuccin-mocha`
+  for dark, `catppuccin-latte` for light) to tool result content.
+  Language is inferred from the preceding tool call: `read_file` path
+  extension (`.go` -> go, `.py` -> python, etc.), `shell` -> bash.
+  Error results and collapsed results are not highlighted. Highlighted
+  results use `tool_result_highlighted` segment kind to avoid the
+  `theme.Tool` color overlay. Both live streaming and `renderTranscript`
+  (resize/theme/resume) apply highlighting by matching `ToolCallID`
+  to the preceding assistant's tool calls.
 - **Export is shared.** `exportMessages` in `export.go` writes JSONL
   from `[]ai.Message`. Both `handleExport` (TUI) and `cmdExport` (CLI)
   delegate to it. `messageRole` lives in `export.go`.
@@ -97,6 +111,38 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   to a temp file, and replaces `os.Executable()`. On Windows the
   running exe is renamed to `.old` first. No checksum verification
   (no release signing yet).
+- **Image input via `@file` args.** `omega run @image.png what is this?`
+  detects image files by magic bytes (PNG/JPEG/GIF/WebP/BMP), encodes
+  them as base64, and sends them to the provider as image content
+  alongside the text prompt. `ai.User.Images` carries the image data;
+  each provider serializes it in its native format (Ollama `images`
+  array, OpenAI `image_url` blocks, Anthropic `image` source blocks).
+  Text files inlined via `@file` are appended to the prompt content.
+  In the TUI, `@path` tokens in chat input are processed the same way
+  via `extractImages` on submit. No auto-resize or EXIF correction
+  (defer).
+- **Catppuccin Mocha/Latte theme integration.** All `Theme` struct
+  colors use Catppuccin hex values. Chroma styles (`catppuccin-mocha`,
+  `catppuccin-latte`) registered at init for code highlighting. Glamour
+  `StyleConfig` overridden with Catppuccin colors for headings, code,
+  links, blockquotes, tables. `renderAssistant` uses
+  `glamour.WithStyles()` per theme.
+- **Bordered code blocks with language headers.** `renderMarkdown`
+  splits markdown on fenced code blocks; prose goes through glamour,
+  code goes through `renderCodeBlock` (chroma highlight + lipgloss
+  rounded border + bold language label). Fast path: no code blocks
+  -> plain glamour.
+- **Live glamour rendering during streaming.** `refresh()` renders
+  response segments through `renderMarkdown` with 80ms debounce.
+  `lastRenderedResponse` caches the last output to avoid flicker
+  between highlighted and raw frames. Final `AgentEnd` render is
+  always a clean full pass.
+- **ANSI-aware word wrap.** `wordWrap` strips ANSI escape codes from
+  width calculations but preserves them in output. Fixes broken
+  wrapping of syntax-highlighted code.
+- **Transcript re-wraps on resize.** `WindowSizeMsg` calls
+  `renderTranscript` when not busy, re-wrapping all history at the
+  new width. Slash command output is lost (same as theme switch).
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,

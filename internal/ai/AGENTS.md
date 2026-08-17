@@ -12,7 +12,7 @@ a channel, and retries transient HTTP failures with exponential backoff.
 ## Ownership
 
 - `provider.go` - Provider interface, NewProvider factory, ToolSchema type, sseData SSE line reader, shared httpClient with SetHTTPTimeout
-- `messages.go` - Message sealed interface; System, User, Assistant, ToolResult concrete types; timestamp helpers
+- `messages.go` - Message sealed interface; System, User (with optional Images), Assistant, ToolResult concrete types; ImageContent struct; timestamp helpers
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk, ToolCallEvent, StreamEnd concrete types; ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter, retryableStatus, maxRetries (OMEGA_MAX_RETRIES env)
 - `ollama.go` - OllamaProvider: message conversion, streaming chat, Bearer auth for Ollama Cloud
@@ -33,8 +33,9 @@ a channel, and retries transient HTTP failures with exponential backoff.
   marker method (`isMessage` / `isStreamEvent`).
 - **Each provider owns its message conversion.** `messagesToAPI` maps
   internal Message types to the provider-specific API shape. No shared
-  conversion layer; providers differ in role naming, tool format, and
-  system prompt handling.
+  conversion layer; providers differ in role naming, tool format,
+  system prompt handling, and image content serialization (Ollama
+  `images` array, OpenAI `image_url` blocks, Anthropic `image` source).
 - **Retry is transparent to providers.** All providers route HTTP
   requests through retryHTTP. 429 and 5xx are retried with backoff;
   other 4xx and context cancellation return immediately.

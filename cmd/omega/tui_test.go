@@ -212,7 +212,7 @@ func TestProviderCommand(t *testing.T) {
 // ANSI-styled output (contains escape sequences), code blocks are preserved,
 // and plain text still appears verbatim.
 func TestRenderAssistant(t *testing.T) {
-	out := renderAssistant("**bold** `code`", 80)
+	out := renderAssistant("**bold** `code`", 80, "dark")
 	if !strings.Contains(out, "\x1b[") {
 		t.Fatalf("expected ANSI escape codes in rendered markdown, got %q", out)
 	}
@@ -224,7 +224,7 @@ func TestRenderAssistant(t *testing.T) {
 	}
 
 	// Fallback: a zero width is normalized to 80, not a panic.
-	if out := renderAssistant("plain", 0); !strings.Contains(out, "plain") {
+	if out := renderAssistant("plain", 0, "dark"); !strings.Contains(out, "plain") {
 		t.Fatalf("plain text missing at zero width: %q", out)
 	}
 }

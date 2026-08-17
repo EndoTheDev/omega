@@ -382,8 +382,11 @@ func cmdServe(configPath string, appendPrompts []string, ext extFlags, trust tru
 func cmdRun(configPath string, args []string, ext extFlags, trust trustFlags) error {
 	appendPrompts := parseAppendPrompts(args)
 	args = stripAppendPrompts(stripExtensionArgs(stripTrustArgs(stripConfigFlag(args))))
-	prompt := strings.Join(args, " ")
-	if prompt == "" {
+	prompt, images, err := parseFileArgs(args)
+	if err != nil {
+		return err
+	}
+	if prompt == "" && len(images) == 0 {
 		return fmt.Errorf("run requires a prompt argument")
 	}
 
@@ -404,7 +407,13 @@ func cmdRun(configPath string, args []string, ext extFlags, trust trustFlags) er
 	ctx, stop := signalContext()
 	defer stop()
 
-	messages := []ai.Message{ai.NewUser(prompt)}
+	var userMsg ai.Message
+	if len(images) > 0 {
+		userMsg = ai.NewUserWithImages(prompt, images)
+	} else {
+		userMsg = ai.NewUser(prompt)
+	}
+	messages := []ai.Message{userMsg}
 	var response strings.Builder
 	for event := range ag.Run(ctx, messages, nil) {
 		switch e := event.(type) {

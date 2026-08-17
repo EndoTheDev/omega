@@ -1,17 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/quick"
+	chromastyles "github.com/alecthomas/chroma/v2/styles"
 	"github.com/atotto/clipboard"
 	"github.com/gen2brain/beeep"
 
@@ -22,6 +27,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	glamouransi "github.com/charmbracelet/glamour/ansi"
+	glamourstyles "github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -48,41 +55,155 @@ const (
 // are defined below; users select via config (theme key) or the
 // /theme command at runtime.
 type Theme struct {
-	Name     string
-	User     lipgloss.Style
-	Thinking lipgloss.Style
-	Tool     lipgloss.Style
-	Info     lipgloss.Style
-	Status   lipgloss.Style
-	Match    lipgloss.Style
-	Error    lipgloss.Style
+	Name       string
+	User       lipgloss.Style
+	Thinking   lipgloss.Style
+	Tool       lipgloss.Style
+	Info       lipgloss.Style
+	Status     lipgloss.Style
+	Match      lipgloss.Style
+	Error      lipgloss.Style
+	CodeBorder lipgloss.Style
 }
 
 // built-in themes.
 var themes = map[string]Theme{
 	"dark": {
-		Name:     "dark",
-		User:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")),
-		Thinking: lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-		Tool:     lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		Info:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-		Status:   lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-		Match:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")),
-		Error:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		Name:       "dark",
+		User:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")),
+		Thinking:   lipgloss.NewStyle().Foreground(lipgloss.Color("#6c7086")),
+		Tool:       lipgloss.NewStyle().Foreground(lipgloss.Color("#fab387")),
+		Info:       lipgloss.NewStyle().Foreground(lipgloss.Color("#9399b2")),
+		Status:     lipgloss.NewStyle().Foreground(lipgloss.Color("#6c7086")),
+		Match:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#cdd6f4")),
+		Error:      lipgloss.NewStyle().Foreground(lipgloss.Color("#f38ba8")),
+		CodeBorder: lipgloss.NewStyle().Foreground(lipgloss.Color("#45475a")),
 	},
 	"light": {
-		Name:     "light",
-		User:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("20")),
-		Thinking: lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-		Tool:     lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
-		Info:     lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-		Status:   lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-		Match:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")),
-		Error:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("124")),
+		Name:       "light",
+		User:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")),
+		Thinking:   lipgloss.NewStyle().Foreground(lipgloss.Color("#8c8fa1")),
+		Tool:       lipgloss.NewStyle().Foreground(lipgloss.Color("#fe640b")),
+		Info:       lipgloss.NewStyle().Foreground(lipgloss.Color("#7c7f93")),
+		Status:     lipgloss.NewStyle().Foreground(lipgloss.Color("#8c8fa1")),
+		Match:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#4c4f69")),
+		Error:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#d20f39")),
+		CodeBorder: lipgloss.NewStyle().Foreground(lipgloss.Color("#bcc0cc")),
 	},
 }
 
-// themeNames returns sorted built-in theme names for /theme listing.
+// init registers Catppuccin chroma styles for syntax highlighting.
+func init() {
+	registerCatppuccinChroma("catppuccin-mocha", chroma.StyleEntries{
+		chroma.Text:              "#a6adc8", // subtext0
+		chroma.Comment:           "#6c7086", // overlay0
+		chroma.CommentPreproc:    "#cba6f7", // mauve
+		chroma.Keyword:           "#cba6f7", // mauve
+		chroma.KeywordType:        "#eba0ac", // maroon
+		chroma.KeywordNamespace:   "#b4befe", // lavender
+		chroma.KeywordReserved:    "#cba6f7", // mauve
+		chroma.Name:               "#bac2de", // subtext1
+		chroma.NameBuiltin:        "#f38ba8", // red
+		chroma.NameFunction:       "#89b4fa", // blue
+		chroma.NameClass:          "#f9e2af", // yellow
+		chroma.NameDecorator:     "#fab387", // peach
+		chroma.NameTag:            "#f38ba8", // red
+		chroma.NameAttribute:      "#89b4fa", // blue
+		chroma.NameConstant:       "#fab387", // peach
+		chroma.LiteralString:     "#a6e3a1", // green
+		chroma.LiteralStringEscape: "#94e2d5", // teal
+		chroma.LiteralNumber:     "#fab387", // peach
+		chroma.Operator:           "#9399b2", // overlay2
+		chroma.Punctuation:       "#9399b2", // overlay2
+		chroma.GenericInserted:    "#a6e3a1", // green
+		chroma.GenericDeleted:     "#f38ba8", // red
+		chroma.GenericHeading:     "#89b4fa", // blue
+		chroma.GenericSubheading:  "#89b4fa", // blue
+		chroma.Error:              "#f38ba8",
+		chroma.Background:         "bg:#1e1e2e",
+	})
+	registerCatppuccinChroma("catppuccin-latte", chroma.StyleEntries{
+		chroma.Text:              "#6c6f85", // subtext0
+		chroma.Comment:           "#8c8fa1", // overlay1
+		chroma.CommentPreproc:    "#8839ef", // mauve
+		chroma.Keyword:           "#8839ef", // mauve
+		chroma.KeywordType:        "#e64553", // maroon
+		chroma.KeywordNamespace:   "#7287fd", // lavender
+		chroma.KeywordReserved:    "#8839ef", // mauve
+		chroma.Name:               "#5c5f77", // subtext1
+		chroma.NameBuiltin:        "#d20f39", // red
+		chroma.NameFunction:       "#1e66f5", // blue
+		chroma.NameClass:          "#df8e1d", // yellow
+		chroma.NameDecorator:     "#fe640b", // peach
+		chroma.NameTag:            "#d20f39", // red
+		chroma.NameAttribute:      "#1e66f5", // blue
+		chroma.NameConstant:       "#fe640b", // peach
+		chroma.LiteralString:     "#40a02b", // green
+		chroma.LiteralStringEscape: "#179299", // teal
+		chroma.LiteralNumber:     "#fe640b", // peach
+		chroma.Operator:           "#7c7f93", // overlay2
+		chroma.Punctuation:       "#7c7f93", // overlay2
+		chroma.GenericInserted:    "#40a02b", // green
+		chroma.GenericDeleted:     "#d20f39", // red
+		chroma.GenericHeading:     "#1e66f5", // blue
+		chroma.GenericSubheading:  "#1e66f5", // blue
+		chroma.Error:              "#d20f39",
+		chroma.Background:         "bg:#eff1f5",
+	})
+}
+
+// registerCatppuccinChroma registers a chroma style if not already
+// registered. Safe to call multiple times (init runs once).
+func registerCatppuccinChroma(name string, entries chroma.StyleEntries) {
+	if _, ok := chromastyles.Registry[name]; ok {
+		return
+	}
+	chromastyles.Register(chroma.MustNewStyle(name, entries))
+}
+
+// glamourStyleForTheme returns a glamour StyleConfig using Catppuccin
+// colors for the given theme name ("dark" -> Mocha, "light" -> Latte).
+func glamourStyleForTheme(themeName string) glamouransi.StyleConfig {
+	base := glamourstyles.DarkStyleConfig
+	if themeName == "light" {
+		base = glamourstyles.LightStyleConfig
+	}
+
+	// Override key colors with Catppuccin palette.
+	if themeName == "light" {
+		base.Document.Color = stringPtr("#4c4f69")     // text
+		base.Heading.Color = stringPtr("#1e66f5")      // blue
+		base.H1.Color = stringPtr("#4c4f69")           // text
+		base.H1.BackgroundColor = stringPtr("#ccd0da") // surface0
+		base.H2.Color = stringPtr("#1e66f5")           // blue
+		base.H3.Color = stringPtr("#8839ef")           // mauve
+		base.Code.Color = stringPtr("#ea76cb")         // pink
+		base.Code.BackgroundColor = stringPtr("#ccd0da") // surface0
+		base.Link.Color = stringPtr("#209fb5")         // sapphire
+		base.LinkText.Color = stringPtr("#1e66f5")     // blue
+		base.BlockQuote.Color = stringPtr("#8c8fa1")   // overlay1
+		base.Table.Color = stringPtr("#7c7f93")       // overlay2
+		base.HorizontalRule.Color = stringPtr("#bcc0cc") // surface1
+	} else {
+		base.Document.Color = stringPtr("#cdd6f4")     // text
+		base.Heading.Color = stringPtr("#89b4fa")      // blue
+		base.H1.Color = stringPtr("#cdd6f4")           // text
+		base.H1.BackgroundColor = stringPtr("#313244") // surface0
+		base.H2.Color = stringPtr("#89b4fa")           // blue
+		base.H3.Color = stringPtr("#cba6f7")           // mauve
+		base.Code.Color = stringPtr("#f5c2e7")         // pink
+		base.Code.BackgroundColor = stringPtr("#313244") // surface0
+		base.Link.Color = stringPtr("#74c7ec")         // sapphire
+		base.LinkText.Color = stringPtr("#89b4fa")     // blue
+		base.BlockQuote.Color = stringPtr("#6c7086")   // overlay0
+		base.Table.Color = stringPtr("#9399b2")       // overlay2
+		base.HorizontalRule.Color = stringPtr("#585b70") // surface2
+	}
+	return base
+}
+
+// stringPtr returns a pointer to s. Used for glamour StyleConfig fields.
+func stringPtr(s string) *string { return &s }
 func themeNames() []string {
 	names := make([]string, 0, len(themes))
 	for n := range themes {
@@ -163,6 +284,10 @@ type model struct {
 	theme               Theme             // active color/style theme
 	trustState          string            // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
 	notifications       string            // "bell" / "desktop" / "off", fired on turn complete
+	lastToolCall        string            // last tool call name, for syntax highlighting results
+	lastToolArgs        map[string]any    // last tool call args, for language detection
+	lastRender          time.Time         // debounce for live glamour rendering during streaming
+	lastRenderedResponse string           // cached glamour output for debounced frames
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -280,6 +405,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screenHeight = msg.Height
 		m.viewport.Width = msg.Width
 		m.resizeTextarea()
+		if len(m.history) > 0 && !m.busy {
+			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme)
+		}
 		m.refresh()
 		return m, m.textarea.Focus()
 
@@ -541,10 +669,21 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// the skill. Unknown tokens (URLs, paths) are ignored.
 	m = m.invokeInlineSkills(input)
 
-	m.history = append(m.history, ai.NewUser(input))
+	// Extract @file references: load images as base64, inline text files.
+	prompt, images, imgErr := extractImages(input)
+	if imgErr != nil {
+		m.transcript += "\n" + m.theme.Error.Render("[image error: " + imgErr.Error() + "]") + "\n"
+	}
+	if len(images) > 0 {
+		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[loaded %d image(s)]", len(images))) + "\n"
+		m.history = append(m.history, ai.NewUserWithImages(prompt, images))
+	} else {
+		m.history = append(m.history, ai.NewUser(prompt))
+	}
 	m.busy = true
 	m.segments = nil
 	m.err = ""
+	m.lastRenderedResponse = ""
 
 	// Persist the user message; auto-create a session on the first one.
 	// Ephemeral sessions skip the store entirely.
@@ -624,6 +763,8 @@ func (m *model) handleEvent(event agent.Event) {
 		case ai.ThinkingChunk:
 			m.appendSegment("thinking", chunk.Content)
 		case ai.ToolCallEvent:
+			m.lastToolCall = chunk.ToolCall.Name
+			m.lastToolArgs = chunk.ToolCall.Arguments
 			var sb strings.Builder
 			sb.WriteString("\n")
 			sb.WriteString(m.theme.Tool.Render("[tool: " + chunk.ToolCall.Name + "]"))
@@ -660,6 +801,8 @@ func (m *model) handleEvent(event agent.Event) {
 				m.transcript += seg.content
 			case "tool_result":
 				m.transcript += "\n" + m.theme.Tool.Render(seg.content) + "\n"
+			case "tool_result_highlighted":
+				m.transcript += "\n" + seg.content + "\n"
 			case "response":
 				responseBuf.WriteString(seg.content)
 			}
@@ -669,7 +812,7 @@ func (m *model) handleEvent(event agent.Event) {
 			if response.Content == "" {
 				response.Content = strings.TrimSuffix(responseBuf.String(), "\n")
 			}
-			m.transcript += "\n" + renderAssistant(response.Content, m.viewport.Width) + "\n"
+			m.transcript += "\n" + renderMarkdown(response.Content, m.viewport.Width, m.theme) + "\n"
 		}
 		m.segments = nil
 	case agent.ToolResultEvent:
@@ -684,11 +827,28 @@ func (m *model) handleEvent(event agent.Event) {
 		// Append as a segment so it renders in order with thinking
 		// and tool calls at AgentEnd, not out of sequence.
 		lines := strings.Count(e.Message.Content, "\n") + 1
+		// Determine language for syntax highlighting from the last tool call.
+		lang := ""
+		if !e.Message.IsError {
+			lang = langForTool(m.lastToolCall, m.lastToolArgs)
+		}
 		switch {
 		case m.showToolResults && !m.toolResultsAuto:
-			m.appendSegment("tool_result", wordWrap(e.Message.Content, m.viewport.Width))
+			content := e.Message.Content
+			if lang != "" {
+				content = highlightCode(content, lang, m.theme.Name)
+				m.appendSegment("tool_result_highlighted", wordWrap(content, m.viewport.Width))
+			} else {
+				m.appendSegment("tool_result", wordWrap(content, m.viewport.Width))
+			}
 		case m.toolResultsAuto && lines <= toolResultAutoThreshold:
-			m.appendSegment("tool_result", wordWrap(e.Message.Content, m.viewport.Width))
+			content := e.Message.Content
+			if lang != "" {
+				content = highlightCode(content, lang, m.theme.Name)
+				m.appendSegment("tool_result_highlighted", wordWrap(content, m.viewport.Width))
+			} else {
+				m.appendSegment("tool_result", wordWrap(content, m.viewport.Width))
+			}
 		default:
 			m.appendSegment("tool_result", fmt.Sprintf("[tool result: %d lines]", lines))
 		}
@@ -1749,6 +1909,9 @@ func (m *model) resizeTextarea() {
 // prompts) are not persisted and never appear here.
 func renderTranscript(messages []ai.Message, width int, t Theme) string {
 	var sb strings.Builder
+	// Track the last assistant's tool calls so we can infer the
+	// language for syntax highlighting tool results by ToolCallID.
+	toolCallsByID := make(map[string]ai.ToolCall)
 	for _, msg := range messages {
 		switch m := msg.(type) {
 		case ai.User:
@@ -1756,6 +1919,10 @@ func renderTranscript(messages []ai.Message, width int, t Theme) string {
 			sb.WriteString(t.User.Render("> " + wordWrap(m.Content, width)))
 			sb.WriteString("\n")
 		case ai.Assistant:
+			// Register tool calls for matching with subsequent results.
+			for _, call := range m.ToolCalls {
+				toolCallsByID[call.ID] = call
+			}
 			sb.WriteString("\n")
 			if m.Thinking != nil && *m.Thinking != "" {
 				sb.WriteString(t.Thinking.Render("[thinking]"))
@@ -1775,7 +1942,7 @@ func renderTranscript(messages []ai.Message, width int, t Theme) string {
 				}
 			}
 			if m.Content != "" {
-				sb.WriteString(renderAssistant(m.Content, width))
+				sb.WriteString(renderMarkdown(m.Content, width, t))
 				sb.WriteString("\n")
 			}
 		case ai.ToolResult:
@@ -1786,7 +1953,24 @@ func renderTranscript(messages []ai.Message, width int, t Theme) string {
 				sb.WriteString(t.Tool.Render("[tool result]"))
 			}
 			sb.WriteString("\n")
-			sb.WriteString(t.Tool.Render(wordWrap(m.Content, width)))
+			content := m.Content
+			hasHighlight := false
+			if !m.IsError {
+				if call, ok := toolCallsByID[m.ToolCallID]; ok {
+					lang := langForTool(call.Name, call.Arguments)
+					if lang != "" {
+						content = highlightCode(content, lang, t.Name)
+						hasHighlight = true
+					}
+				}
+			}
+			if hasHighlight {
+				// Don't wrap highlighted content in tool color;
+				// let chroma's colors stand on their own.
+				sb.WriteString(wordWrap(content, width))
+			} else {
+				sb.WriteString(t.Tool.Render(wordWrap(content, width)))
+			}
 			sb.WriteString("\n")
 		case ai.System:
 			// Only compaction summaries are persisted; render them so
@@ -1802,9 +1986,9 @@ func renderTranscript(messages []ai.Message, width int, t Theme) string {
 }
 
 // refresh re-renders the viewport content from the transcript and segments.
-// The buffer is not wrapped during streaming — wrapping is deferred to
-// AgentEnd so the UI thread stays responsive. The viewport handles long
-// lines natively via horizontal scrolling.
+// Response segments render through glamour (markdown + syntax highlighting)
+// during streaming, debounced to 80ms to prevent CPU thrashing. The final
+// AgentEnd render is always a clean full glamour pass.
 func (m *model) refresh() {
 	var sb strings.Builder
 	sb.WriteString(m.transcript)
@@ -1822,12 +2006,111 @@ func (m *model) refresh() {
 			sb.WriteString("\n")
 			sb.WriteString(m.theme.Tool.Render(seg.content))
 			sb.WriteString("\n")
-		case "response":
+		case "tool_result_highlighted":
+			sb.WriteString("\n")
 			sb.WriteString(seg.content)
+			sb.WriteString("\n")
+		case "response":
+			if m.busy && time.Since(m.lastRender) < 80*time.Millisecond {
+				// Debounce: show the last glamour-rendered output
+				// instead of raw text to avoid flicker.
+				if m.lastRenderedResponse != "" {
+					sb.WriteString(m.lastRenderedResponse)
+				} else {
+					sb.WriteString(seg.content)
+				}
+			} else {
+				m.lastRender = time.Now()
+				m.lastRenderedResponse = renderMarkdown(seg.content, m.viewport.Width, m.theme)
+				sb.WriteString(m.lastRenderedResponse)
+			}
 		}
 	}
 	m.viewport.SetContent(sb.String())
 	m.viewport.GotoBottom()
+}
+
+// extLexers maps file extensions to chroma lexer names for syntax
+// highlighting in tool results.
+var extLexers = map[string]string{
+	".go":   "go",
+	".py":   "python",
+	".js":   "javascript",
+	".jsx":  "javascript",
+	".ts":   "typescript",
+	".tsx":  "typescript",
+	".rs":   "rust",
+	".java": "java",
+	".c":    "c",
+	".cpp":  "cpp",
+	".cc":   "cpp",
+	".h":    "c",
+	".hpp":  "cpp",
+	".sh":   "bash",
+	".bash": "bash",
+	".zsh":  "bash",
+	".yaml": "yaml",
+	".yml":  "yaml",
+	".json": "json",
+	".xml":  "xml",
+	".html": "html",
+	".css":  "css",
+	".scss": "scss",
+	".sql":  "sql",
+	".md":   "markdown",
+	".toml": "toml",
+	".rb":   "ruby",
+	".php":  "php",
+	".swift": "swift",
+	".kt":   "kotlin",
+	".lua":  "lua",
+	".dart": "dart",
+	".dockerfile": "dockerfile",
+}
+
+// langForTool determines the chroma lexer name for a tool result based
+// on the tool name and its arguments. Returns "" if no language can be
+// determined (plain text fallback).
+func langForTool(toolName string, args map[string]any) string {
+	switch toolName {
+	case "read_file":
+		if path, ok := args["path"].(string); ok {
+			ext := strings.ToLower(filepath.Ext(path))
+			if lang, ok := extLexers[ext]; ok {
+				return lang
+			}
+			// Special-case filenames without extensions.
+			name := strings.ToLower(filepath.Base(path))
+			if name == "dockerfile" || name == "containerfile" {
+				return "dockerfile"
+			}
+			if name == "makefile" || name == "gnumakefile" {
+				return "makefile"
+			}
+		}
+	case "shell", "bash":
+		return "bash"
+	}
+	return ""
+}
+
+// highlightCode applies chroma syntax highlighting to content using
+// Catppuccin chroma styles (catppuccin-mocha for dark, catppuccin-latte
+// for light). Returns the original content unchanged if highlighting
+// fails or lang is empty.
+func highlightCode(content, lang, themeName string) string {
+	if lang == "" {
+		return content
+	}
+	style := "catppuccin-mocha"
+	if themeName == "light" {
+		style = "catppuccin-latte"
+	}
+	var buf bytes.Buffer
+	if err := quick.Highlight(&buf, content, lang, "terminal256", style); err != nil {
+		return content
+	}
+	return strings.TrimRight(buf.String(), "\n")
 }
 
 // ansiRegex strips ANSI SGR escape codes from lipgloss-styled text
@@ -1838,14 +2121,15 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // renderAssistant renders markdown content through glamour to styled
 // terminal output. ANSI escape codes from lipgloss are stripped first
 // so glamour doesn't render them as literal text. Falls back to raw
-// text if rendering fails.
-func renderAssistant(content string, width int) string {
+// text if rendering fails. The themeName selects glamour's color style
+// ("dark" or "light").
+func renderAssistant(content string, width int, themeName string) string {
 	content = ansiRegex.ReplaceAllString(content, "")
 	if width <= 0 {
 		width = 80
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStyles(glamourStyleForTheme(themeName)),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
@@ -1856,6 +2140,82 @@ func renderAssistant(content string, width int) string {
 		return content
 	}
 	return strings.TrimRight(out, "\n")
+}
+
+// codeBlockRegex matches fenced code blocks: ```lang\ncode\n```.
+// Captures the language (group 1) and code content (group 2).
+var codeBlockRegex = regexp.MustCompile("(?s)```([a-zA-Z0-9+]*)\n(.*?)```")
+
+// renderMarkdown renders markdown with bordered code blocks. Prose
+// sections go through glamour; fenced code blocks are syntax-highlighted
+// with chroma and wrapped in a lipgloss border with a language header.
+// Replaces renderAssistant for the TUI transcript rendering path.
+func renderMarkdown(content string, width int, t Theme) string {
+	content = ansiRegex.ReplaceAllString(content, "")
+	if width <= 0 {
+		width = 80
+	}
+
+	// If no fenced code blocks, use plain glamour (fast path).
+	if !codeBlockRegex.MatchString(content) {
+		return renderAssistant(content, width, t.Name)
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+	for _, match := range codeBlockRegex.FindAllStringSubmatchIndex(content, -1) {
+		// Render prose before this code block through glamour.
+		if match[0] > lastEnd {
+			prose := strings.TrimSpace(content[lastEnd:match[0]])
+			if prose != "" {
+				result.WriteString(renderAssistant(prose, width, t.Name))
+				result.WriteString("\n")
+			}
+		}
+		lang := content[match[2]:match[3]]
+		code := content[match[4]:match[5]]
+		result.WriteString(renderCodeBlock(code, lang, width, t))
+		result.WriteString("\n")
+		lastEnd = match[1]
+	}
+	// Render trailing prose.
+	if lastEnd < len(content) {
+		prose := strings.TrimSpace(content[lastEnd:])
+		if prose != "" {
+			result.WriteString(renderAssistant(prose, width, t.Name))
+		}
+	}
+	return strings.TrimRight(result.String(), "\n")
+}
+
+// renderCodeBlock highlights code with chroma and wraps it in a
+// lipgloss bordered box with a language header label.
+func renderCodeBlock(code, lang string, width int, t Theme) string {
+	// Highlight the code with Catppuccin chroma style.
+	highlighted := highlightCode(code, lang, t.Name)
+
+	// Build the border box.
+	boxWidth := width - 2 // account for border chars
+	if boxWidth < 10 {
+		boxWidth = 10
+	}
+
+	// Header: language label (or "text" if empty), styled with theme.Info.
+	header := lang
+	if header == "" {
+		header = "text"
+	}
+	headerStyled := t.Info.Bold(true).Render(header)
+
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.CodeBorder.GetForeground()).
+		Width(boxWidth).
+		Padding(0, 1)
+
+	// Combine header + code.
+	body := headerStyled + "\n" + strings.TrimRight(highlighted, "\n")
+	return style.Render(body)
 }
 
 // omegaVersion is the displayed version. ponytail: hardcoded; upgrade
@@ -2126,7 +2486,11 @@ func (m model) autocompletePanel() string {
 	if end < len(m.autocompleteMatches) {
 		lines = append(lines, "...")
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Width(m.viewport.Width - 2).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.theme.CodeBorder.GetForeground()).
+		Width(m.viewport.Width - 2).
+		Render(strings.Join(lines, "\n"))
 }
 
 // truncate shortens s to maxLen characters, appending "..." if truncated.
@@ -2138,9 +2502,8 @@ func truncate(s string, maxLen int) string {
 }
 
 // wordWrap wraps s at width columns by splitting on spaces. Long words
-// exceeding width are not broken. ponytail: simple space-based wrap,
-// no ANSI-awareness needed — wrapping is applied to raw text before
-// lipgloss styling.
+// exceeding width are not broken. ANSI-aware: escape sequences are
+// preserved in the output but excluded from width calculations.
 func wordWrap(s string, width int) string {
 	if width <= 0 {
 		return s
@@ -2150,7 +2513,8 @@ func wordWrap(s string, width int) string {
 		col := 0
 		first := true
 		for _, word := range strings.Fields(line) {
-			if !first && col+1+len(word) > width {
+			visible := len(ansiRegex.ReplaceAllString(word, ""))
+			if !first && col+1+visible > width {
 				b.WriteString("\n")
 				col = 0
 				first = true
@@ -2160,7 +2524,7 @@ func wordWrap(s string, width int) string {
 				col++
 			}
 			b.WriteString(word)
-			col += len(word)
+			col += visible
 			first = false
 		}
 		b.WriteString("\n")

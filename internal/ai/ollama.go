@@ -97,10 +97,18 @@ func (p *OllamaProvider) messagesToAPI(messages []Message) []map[string]any {
 				"content": m.Content,
 			})
 		case User:
-			result = append(result, map[string]any{
+			msg := map[string]any{
 				"role":    "user",
 				"content": m.Content,
-			})
+			}
+			if len(m.Images) > 0 {
+				images := make([]string, 0, len(m.Images))
+				for _, img := range m.Images {
+					images = append(images, img.Base64)
+				}
+				msg["images"] = images
+			}
+			result = append(result, msg)
 		case Assistant:
 			apiMessage := map[string]any{
 				"role":    "assistant",
@@ -198,7 +206,8 @@ func (p *OllamaProvider) stream(ctx context.Context, events chan<- StreamEvent, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		emitError(events, fmt.Errorf("HTTP %d", resp.StatusCode))
+		body, _ := io.ReadAll(resp.Body)
+		emitError(events, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body)))
 		return
 	}
 

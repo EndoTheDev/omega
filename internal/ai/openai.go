@@ -89,7 +89,27 @@ func (p *OpenAIProvider) messagesToAPI(messages []Message) []map[string]any {
 		case System:
 			result = append(result, map[string]any{"role": "system", "content": m.Content})
 		case User:
-			result = append(result, map[string]any{"role": "user", "content": m.Content})
+			if len(m.Images) > 0 {
+				// OpenAI vision: content becomes an array of text + image_url blocks.
+				blocks := make([]map[string]any, 0, len(m.Images)+1)
+				if m.Content != "" {
+					blocks = append(blocks, map[string]any{
+						"type": "text",
+						"text": m.Content,
+					})
+				}
+				for _, img := range m.Images {
+					blocks = append(blocks, map[string]any{
+						"type": "image_url",
+						"image_url": map[string]any{
+							"url": "data:" + img.MediaType + ";base64," + img.Base64,
+						},
+					})
+				}
+				result = append(result, map[string]any{"role": "user", "content": blocks})
+			} else {
+				result = append(result, map[string]any{"role": "user", "content": m.Content})
+			}
 		case Assistant:
 			apiMessage := map[string]any{"role": "assistant", "content": m.Content}
 			if len(m.ToolCalls) > 0 {

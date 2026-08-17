@@ -92,7 +92,26 @@ func (p *AnthropicProvider) messagesToAPI(messages []Message) (system string, re
 		case System:
 			system += m.Content + "\n"
 		case User:
-			result = append(result, map[string]any{"role": "user", "content": m.Content})
+			if len(m.Images) > 0 {
+				// Anthropic vision: content becomes an array of text + image blocks.
+				blocks := make([]map[string]any, 0, len(m.Images)+1)
+				if m.Content != "" {
+					blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+				}
+				for _, img := range m.Images {
+					blocks = append(blocks, map[string]any{
+						"type": "image",
+						"source": map[string]any{
+							"type":       "base64",
+							"media_type": img.MediaType,
+							"data":       img.Base64,
+						},
+					})
+				}
+				result = append(result, map[string]any{"role": "user", "content": blocks})
+			} else {
+				result = append(result, map[string]any{"role": "user", "content": m.Content})
+			}
 		case Assistant:
 			if len(m.ToolCalls) == 0 {
 				result = append(result, map[string]any{"role": "assistant", "content": m.Content})
