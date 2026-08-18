@@ -10,7 +10,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
 ## Ownership
 
 - `agent.go` - multi-turn loop, tool execution, event dispatch, capability
-  seam wiring (`SetPromptBuilder`, `SetCompactor`, `SetToolProvider`)
+  seam wiring (`SetPromptBuilder`, `SetCompactor`, `SetToolProvider`,
+  `SetMaxToolOutput`, `SetCWD`)
 - `compaction.go` - context compaction with optional focus,
   `BuildCompactedMessages` shared helper
 - `events.go` - event types emitted by the agent loop (`AgentStart`,
@@ -18,8 +19,9 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `AssistantMessageEvent`, `SessionEvent`)
 - `extension.go` - `ExtensionManager` interface (tools, commands, events,
   `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
-  `BuildPrompt`, `CompactMessages`), `NoopManager`, `ExtensionCommand`,
-  `ExtensionInfo`, `PromptBuildOptions`
+  `BuildPrompt`, `CompactMessages`, `SeamProviders`), `NoopManager`,
+  `ExtensionCommand`, `ExtensionInfo` (with `Seams` field),
+  `PromptBuildOptions`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
   `prompt/build`, `compaction/messages` JSON-RPC methods)

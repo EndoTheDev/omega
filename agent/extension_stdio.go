@@ -50,6 +50,7 @@ type stdioExt struct {
 	tools       map[string]toolDef
 	commands    []ExtensionCommand
 	subscribed  map[string]bool // event types this extension wants
+	seams       []string        // declared seam types
 	pending     map[int64]chan rpcResponse // pending request responses
 	pendingMu   sync.Mutex
 	nextID      int64
@@ -75,6 +76,7 @@ type initResult struct {
 	Tools         []toolDef     `json:"tools"`
 	Commands      []commandDef  `json:"commands"`
 	Subscriptions []string      `json:"subscriptions"`
+	Seams         []string      `json:"seams"`
 }
 
 // rpcRequest is a JSON-RPC 2.0 request or notification.
@@ -286,6 +288,7 @@ func spawnExtension(path string, apiKey string) (*stdioExt, error) {
 		ext.subscribed[sub] = true
 	}
 
+	ext.seams = init.Seams
 	ext.alive = true
 	return ext, nil
 }
@@ -510,10 +513,28 @@ func (m *StdioManager) Infos() []ExtensionInfo {
 			Name:     ext.name,
 			Tools:    len(ext.tools),
 			Commands: len(ext.commands),
+			Seams:    ext.seams,
 			Status:   status,
 		}
 	}
 	return infos
+}
+
+// SeamProviders returns a map of seam type to extension name for
+// extensions that declared the seam during initialize. First extension
+// to declare a seam wins.
+func (m *StdioManager) SeamProviders() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	providers := map[string]string{}
+	for _, ext := range m.exts {
+		for _, seam := range ext.seams {
+			if _, exists := providers[seam]; !exists {
+				providers[seam] = ext.name
+			}
+		}
+	}
+	return providers
 }
 
 // DispatchEvent sends an event to all extensions that subscribed to it.

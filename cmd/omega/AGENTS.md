@@ -112,13 +112,17 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   store aggregates sessions, messages, tool calls, and token estimates
   over the last N days. `formatInsights` renders the report as plain
   text. Both CLI (`omega insights [--days N]`) and TUI (`/insights
-  [days]`) share the same code path.
+[days]`) share the same code path.
 - **Session entry types are persisted and replayed.** `persistEntry`
   appends non-conversation entries (`ModelChange`,
   `ThinkingLevelChange`) to the store on `/model` and `/thinking`.
   On `/resume`, the TUI replays these entries to restore the model and
   thinking level. No-op for ephemeral sessions. `renderTranscript`
   skips these types (metadata, not conversation content).
+- **Seam wiring in newAgent.** `newAgent` wires `DefaultToolProvider`
+  via `SetToolProvider`, passes CWD via `SetCWD`, and validates
+  `PluginsConfig` against `SeamProviders()` — warns on mismatch. The
+  TUI's submit path mirrors this wiring for each run.
 - **Self-update replaces the running binary.** `cmdUpdate` fetches the
   latest GitHub release, matches the asset by `GOOS_GOARCH`, downloads
   to a temp file, and replaces `os.Executable()`. On Windows the

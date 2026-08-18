@@ -75,6 +75,11 @@ type ExtensionManager interface {
 	// the agent uses the default Compactor. An extension that returns
 	// ok=true fully replaces the default compaction.
 	CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool)
+
+	// SeamProviders returns a map of seam type to extension name for
+	// extensions that declared the seam during initialize. Used by the
+	// harness to wire PluginsConfig to the right extension.
+	SeamProviders() map[string]string
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -88,13 +93,14 @@ type ExtensionInfo struct {
 	Name     string
 	Tools    int
 	Commands int
-	Status   string // "running" or "error: ..."
+	Seams    []string // declared seam types ("prompt_builder", "compactor", etc.)
+	Status   string   // "running" or "error: ..."
 }
 
 // PromptBuildOptions carries context for extension-built system prompts.
 type PromptBuildOptions struct {
-	CWD       string
-	Messages  []ai.Message
+	CWD      string
+	Messages []ai.Message
 }
 
 // NoopManager is the default ExtensionManager when extensions are
@@ -123,4 +129,7 @@ func (NoopManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions) (st
 }
 func (NoopManager) CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool) {
 	return nil, false
+}
+func (NoopManager) SeamProviders() map[string]string {
+	return nil
 }

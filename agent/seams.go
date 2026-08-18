@@ -37,7 +37,7 @@ type ToolProvider interface {
 // remote) can replace it.
 type SessionStore interface {
 	// AppendMessage appends a message to the session's history.
-	AppendMessage(ctx context.Context, sessionID string, msg ai.Message) (int64, error)
+	AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error
 	// GetMessages loads all messages for a session.
 	GetMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
 	// Close releases resources.

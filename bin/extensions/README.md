@@ -76,7 +76,8 @@ Response:
         }
       }
     ],
-    "subscriptions": ["turn_start", "turn_end"]
+    "subscriptions": ["turn_start", "turn_end"],
+    "seams": ["prompt_builder"]
   }
 }
 ```
@@ -89,6 +90,10 @@ Fields:
   `parameters` (JSON Schema object).
 - `subscriptions` - filters which lifecycle events the extension
   receives. Omit or set to empty for none.
+- `seams` - declares which capability seams the extension provides.
+  Valid values: `"prompt_builder"` (implements `prompt/build`),
+  `"compactor"` (implements `compaction/messages`). The harness matches
+  these against `plugins` config to wire the right extension.
 
 ### tool_call
 

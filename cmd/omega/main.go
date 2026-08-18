@@ -314,7 +314,10 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
+	tools := agent.NewRegistry()
+	ag := agent.NewAgent(provider, tools, 0)
+	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
+	ag.SetCWD(cwd())
 	ag.SetPromptBuilder(agent.DefaultPromptBuilder{
 		Prompt: buildSystemPrompt(cfg, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)),
 	})
@@ -329,6 +332,27 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 		Extensions: mgr,
 	})
 	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
+
+	// Validate PluginsConfig against loaded extension seams.
+	seams := mgr.SeamProviders()
+	if cfg.Plugins.PromptBuilder != "" && cfg.Plugins.PromptBuilder != "default" {
+		if extName, ok := seams["prompt_builder"]; ok {
+			if extName != cfg.Plugins.PromptBuilder {
+				fmt.Fprintf(os.Stderr, "omega: warning: prompt_builder config %q does not match extension %q, using default\n", cfg.Plugins.PromptBuilder, extName)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "omega: warning: prompt_builder config %q but no extension provides that seam, using default\n", cfg.Plugins.PromptBuilder)
+		}
+	}
+	if cfg.Plugins.Compactor != "" && cfg.Plugins.Compactor != "default" {
+		if extName, ok := seams["compactor"]; ok {
+			if extName != cfg.Plugins.Compactor {
+				fmt.Fprintf(os.Stderr, "omega: warning: compactor config %q does not match extension %q, using default\n", cfg.Plugins.Compactor, extName)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "omega: warning: compactor config %q but no extension provides that seam, using default\n", cfg.Plugins.Compactor)
+		}
+	}
 
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {

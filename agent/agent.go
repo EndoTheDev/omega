@@ -38,6 +38,7 @@ type Agent struct {
 	promptBuilder PromptBuilder
 	compactor     Compactor
 	maxToolOutput int
+	cwd           string
 	mu            sync.Mutex
 	running       bool
 }
@@ -85,6 +86,12 @@ func (a *Agent) SetCompactor(c Compactor) {
 // Results exceeding this are truncated. A value <= 0 disables truncation.
 func (a *Agent) SetMaxToolOutput(n int) {
 	a.maxToolOutput = n
+}
+
+// SetCWD sets the working directory passed to extension-built prompts
+// via PromptBuildOptions.
+func (a *Agent) SetCWD(dir string) {
+	a.cwd = dir
 }
 
 // SetToolProvider installs a tool provider. When set, the agent merges
@@ -198,7 +205,10 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 	// BuildPrompt, otherwise use the configured PromptBuilder. Extension
 	// guidelines are appended to the default builder's output.
 	prompt := a.promptBuilder.Build()
-	if extPrompt, ok := a.extensions.BuildPrompt(ctx, PromptBuildOptions{}); ok {
+	if extPrompt, ok := a.extensions.BuildPrompt(ctx, PromptBuildOptions{
+		CWD:      a.cwd,
+		Messages: messages,
+	}); ok {
 		prompt = extPrompt
 	} else if prompt != "" {
 		if guidelines := a.extensions.PromptGuidelines(); len(guidelines) > 0 {

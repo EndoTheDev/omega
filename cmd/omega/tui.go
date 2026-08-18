@@ -725,7 +725,10 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	provider.SetThinkingLevel(m.thinkingLevel)
-	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
+	tools := agent.NewRegistry()
+	ag := agent.NewAgent(provider, tools, 0)
+	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
+	ag.SetCWD(cwd())
 	ag.SetPromptBuilder(agent.DefaultPromptBuilder{Prompt: m.systemPrompt})
 	ag.SetExtensions(m.extensions)
 	ag.SetCompactor(agent.DefaultCompactor{

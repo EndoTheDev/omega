@@ -17,7 +17,8 @@ and environment variables. It is the only layer external clients talk to.
   ancestor message walk, message encode/decode (including
   `model_change` and `thinking_level_change` entry types),
   `ComputeInsights` (cross-session analytics: `Insights`, `ToolStat`,
-  `DayStat`, `NotableStat`; skips non-conversation entries)
+  `DayStat`, `NotableStat`; skips non-conversation entries).
+  Compile-time assertion: `Store` implements `agent.SessionStore`.
 - `config.go` - `Config` and sub-configs (including `PluginsConfig`),
   `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`, `Validate`
 - `config_test.go` - config loading and env override tests
