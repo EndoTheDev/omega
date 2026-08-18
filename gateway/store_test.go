@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 func newTestStore(t *testing.T) *Store {

@@ -181,8 +181,8 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - **Auto-name is generation-guarded.** `autoNameGen` is bumped on
   `/new`; stale `autoNameMsg` results (gen or session mismatch) are
   dropped, not applied.
-- **No re-exports.** Types from `internal/ai`, `internal/agent`, and
-  `internal/gateway` are imported from there, not re-exported.
+- **No re-exports.** Types from `ai`, `agent`, and
+  `gateway` are imported from there, not re-exported.
 
 ## Work Guidance
 

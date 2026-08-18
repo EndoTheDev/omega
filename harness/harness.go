@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EndoTheDev/omega/internal/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // PromptOptions configures the system prompt builder.

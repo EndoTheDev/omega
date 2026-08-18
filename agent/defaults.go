@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // DefaultPromptBuilder wraps a pre-built prompt string. It is the

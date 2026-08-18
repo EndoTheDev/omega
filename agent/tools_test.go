@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // requireTool returns the named tool from the built-in registry, failing the

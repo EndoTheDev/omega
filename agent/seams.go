@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // PromptBuilder builds the system prompt for each agent run. The

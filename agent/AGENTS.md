@@ -1,4 +1,4 @@
-# internal/agent
+# agent
 
 ## Purpose
 
@@ -61,8 +61,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
   implementations in `defaults.go`. Extensions can fully replace the
   prompt builder via `BuildPrompt` or the compactor via `CompactMessages`.
   Harness code (prompt building, skill loading, project context) lives
-  in `internal/harness/`, not in this package.
-- **No re-exports.** Types defined in `internal/ai/` are imported from
+  in `harness/`, not in this package.
+- **No re-exports.** Types defined in `ai/` are imported from
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes
   it to extensions via the `OLLAMA_API_KEY` env var (stdio transport).
@@ -84,7 +84,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
 ## Verification
 
 ```bash
-go test ./internal/agent/     # unit + integration tests
+go test ./agent/     # unit + integration tests
 go build ./...                # everything compiles
 go vet ./...                  # no suspicious constructs
 ```

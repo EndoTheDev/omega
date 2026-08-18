@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/gateway"
+	"github.com/EndoTheDev/omega/gateway"
 )
 
 // TestParseExtensionArgs verifies all extension flag forms parse correctly.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 func TestBuildSystemPromptSections(t *testing.T) {

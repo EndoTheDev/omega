@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 //go:embed static/*

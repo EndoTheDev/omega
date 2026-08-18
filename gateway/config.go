@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/internal/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"gopkg.in/yaml.v3"
 )
 

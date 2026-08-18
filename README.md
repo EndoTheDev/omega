@@ -164,9 +164,9 @@ gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 
 | Layer    | Package            | Responsibility                                                                                  |
 | -------- | ------------------ | ----------------------------------------------------------------------------------------------- |
-| Gateway  | `internal/gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree                        |
-| Agent    | `internal/agent`   | Multi-turn loop, tool execution, compaction, project context, system prompt, skills, extensions |
-| Provider | `internal/ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry            |
+| Gateway  | `gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree                        |
+| Agent    | `agent`   | Multi-turn loop, tool execution, compaction, project context, system prompt, skills, extensions |
+| Provider | `ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry            |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -363,9 +363,9 @@ prompt as text (bracketed paste support).
 
 ```txt
 cmd/omega/        Single binary entry point (serve, run, health, chat)
-internal/ai/      Provider abstraction, stream events, message types, retry
-internal/agent/   Multi-turn loop, tool execution, compaction, skills, extensions
-internal/gateway/ HTTP server, SSE streaming, session store, config
+ai/      Provider abstraction, stream events, message types, retry
+agent/   Multi-turn loop, tool execution, compaction, skills, extensions
+gateway/ HTTP server, SSE streaming, session store, config
 agents/           Commit conventions (COMMIT.md)
 skills/           Skill directories (<name>/<name>.md), loaded at startup
 extensions/       Extension binaries (JSON-RPC over stdio)

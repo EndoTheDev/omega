@@ -1,4 +1,4 @@
-# internal/gateway
+# gateway
 
 ## Purpose
 
@@ -57,7 +57,7 @@ and environment variables. It is the only layer external clients talk to.
   starts from `DefaultConfig`, overlays YAML, applies `OMEGA_*` env
   overrides, then validates. `provider.model_name` and `server.port` are
   required after layering.
-- **No re-exports.** Types from `internal/agent` and `internal/ai` are
+- **No re-exports.** Types from `agent` and `ai` are
   imported directly, not re-exported from this package.
 
 ## Work Guidance
@@ -82,7 +82,7 @@ and environment variables. It is the only layer external clients talk to.
 ## Verification
 
 ```bash
-go test ./internal/gateway/   # unit + integration tests
+go test ./gateway/   # unit + integration tests
 go build ./...                 # everything compiles
 go vet ./...                   # no suspicious constructs
 ```

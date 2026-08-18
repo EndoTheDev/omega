@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // mockProvider is a scripted Provider for gateway tests. Each call

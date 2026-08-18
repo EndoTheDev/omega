@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/internal/gateway"
+	"github.com/EndoTheDev/omega/gateway"
 )
 
 // cmdInsights handles the `omega insights` subcommand.

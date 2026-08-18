@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // StdioManager is an ExtensionManager that runs each extension as a

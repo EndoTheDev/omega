@@ -1,4 +1,4 @@
-# internal/harness
+# harness
 
 Harness layer: system prompt building, skill loading, and project
 context loading. These are harness concerns, not agent core — they
@@ -15,7 +15,7 @@ produce data consumed by the agent's capability seams.
 ## Local Contracts
 
 - **PromptOptions references agent.Skill.** The `Skill` type lives in
-  `internal/agent/` (it's a data type used by `SetSkills` + `runLoadSkill`).
+  `agent/` (it's a data type used by `SetSkills` + `runLoadSkill`).
   The harness imports agent, not the other way around.
 - **BuildSystemPrompt is the default prompt builder.** `main.go` calls
   it, passes the result to `agent.DefaultPromptBuilder`, which implements

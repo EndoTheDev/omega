@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // ExtensionProtocolVersion is the JSON-RPC protocol version extensions

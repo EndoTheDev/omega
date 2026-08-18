@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/EndoTheDev/omega/internal/harness"
+	"github.com/EndoTheDev/omega/harness"
 	"gopkg.in/yaml.v3"
 )
 

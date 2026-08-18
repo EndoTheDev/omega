@@ -12,8 +12,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // ErrNotFound is returned when a session does not exist.

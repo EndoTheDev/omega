@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 func TestExportMessages(t *testing.T) {

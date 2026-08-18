@@ -1,4 +1,4 @@
-# internal/ai
+# ai
 
 ## Purpose
 
@@ -39,7 +39,7 @@ a channel, and retries transient HTTP failures with exponential backoff.
 - **Retry is transparent to providers.** All providers route HTTP
   requests through retryHTTP. 429 and 5xx are retried with backoff;
   other 4xx and context cancellation return immediately.
-- **No re-exports.** Types defined here are imported from `internal/ai`
+- **No re-exports.** Types defined here are imported from `ai`
   by the agent and gateway layers.
 
 ## Work Guidance
@@ -67,7 +67,7 @@ a channel, and retries transient HTTP failures with exponential backoff.
 ## Verification
 
 ```bash
-go test ./internal/ai/      # unit tests (Ollama live test skips without env)
+go test ./ai/      # unit tests (Ollama live test skips without env)
 go build ./...              # everything compiles
 go vet ./...                # no suspicious constructs
 ```

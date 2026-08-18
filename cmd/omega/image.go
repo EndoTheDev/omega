@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/EndoTheDev/omega/internal/ai"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // imageMagic holds magic-byte signatures for supported image formats.

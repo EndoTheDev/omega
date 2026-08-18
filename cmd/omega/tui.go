@@ -20,9 +20,9 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/gen2brain/beeep"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/ai"
-	"github.com/EndoTheDev/omega/internal/gateway"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/gateway"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"

@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/ai"
-	"github.com/EndoTheDev/omega/internal/gateway"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/gateway"
 )
 
 // messageRole returns the role string for a message.

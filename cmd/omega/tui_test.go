@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/ai"
-	"github.com/EndoTheDev/omega/internal/gateway"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/gateway"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

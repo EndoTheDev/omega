@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/EndoTheDev/omega/internal/agent"
-	"github.com/EndoTheDev/omega/internal/harness"
-	"github.com/EndoTheDev/omega/internal/ai"
-	"github.com/EndoTheDev/omega/internal/gateway"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness"
+	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/gateway"
 )
 
 func main() {
