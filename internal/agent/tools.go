@@ -9,10 +9,26 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // NewRegistry returns the built-in tools the model may call during a
 // conversation, keyed by tool name.
+
+// fileLocks serializes concurrent file mutations to the same path.
+// ponytail: unbounded growth ceiling = distinct paths per session.
+var fileLocks sync.Map // map[string]*sync.Mutex, keyed by abs path
+
+// fileMutex returns a per-path mutex. Paths are normalized to absolute
+// so that "foo.go" and "./foo.go" share the same lock.
+func fileMutex(path string) *sync.Mutex {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	v, _ := fileLocks.LoadOrStore(abs, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
 func NewRegistry() map[string]Tool {
 	return map[string]Tool{
 		"shell": {
@@ -141,6 +157,10 @@ func runReadFile(_ context.Context, args map[string]any) (string, error) {
 		return "", fmt.Errorf("path must not be empty")
 	}
 
+	mu := fileMutex(path)
+	mu.Lock()
+	defer mu.Unlock()
+
 	offset := 1
 	if v, ok := args["offset"]; ok {
 		f, ok := v.(float64)
@@ -204,6 +224,10 @@ func runWriteFile(_ context.Context, args map[string]any) (string, error) {
 		return "", fmt.Errorf("path must not be empty")
 	}
 
+	mu := fileMutex(path)
+	mu.Lock()
+	defer mu.Unlock()
+
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -239,6 +263,10 @@ func runEdit(_ context.Context, args map[string]any) (string, error) {
 	if oldString == "" {
 		return "", fmt.Errorf("old_string must not be empty")
 	}
+
+	mu := fileMutex(path)
+	mu.Lock()
+	defer mu.Unlock()
 
 	content, err := os.ReadFile(path)
 	if err != nil {

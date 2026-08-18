@@ -18,7 +18,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `testdata/mock_extension/` - mock extension binary for extension tests
 - `prompt.go` - system prompt construction
 - `skills.go` - skill directory loader
-- `tools.go` - built-in tool registry
+- `tools.go` - built-in tool registry (`shell`, `read_file`, `write_file`,
+  `edit`), per-path file locking (`fileLocks`, `fileMutex`)
 - `*_test.go` - self-check tests for each non-trivial package
 
 ## Local Contracts
@@ -34,6 +35,9 @@ events for anyone observing (the TUI, the gateway, or extensions).
   agent loop.
 - **Tool errors are structured returns.** Tools return `(string, error)`;
   the error becomes an `IsError` tool result message, never a panic.
+- **File tools are per-path locked.** `read_file`, `write_file`, and
+  `edit` acquire a `sync.Mutex` keyed by absolute path before touching
+  the file, serializing concurrent access to the same path.
 - **No re-exports.** Types defined in `internal/ai/` are imported from
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes

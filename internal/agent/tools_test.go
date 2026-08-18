@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/EndoTheDev/omega/internal/ai"
@@ -294,5 +295,50 @@ func TestRunLoadSkillNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "learn-skill") {
 		t.Errorf("error should list available skills: %v", err)
+	}
+}
+
+func TestConcurrentWritesSamePath(t *testing.T) {
+	dir := inTempDir(t)
+	path := filepath.Join(dir, "concurrent.txt")
+	// Seed the file so edit has something to replace.
+	if err := os.WriteFile(path, []byte("0\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	writeTool := requireTool(t, "write_file")
+	editTool := requireTool(t, "edit")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func(n int) {
+			defer wg.Done()
+			_, _ = writeTool.Run(context.Background(), map[string]any{
+				"path":    path,
+				"content": strings.Repeat("x", n+1) + "\n",
+			})
+		}(i)
+		go func(n int) {
+			defer wg.Done()
+			_, _ = editTool.Run(context.Background(), map[string]any{
+				"path":       path,
+				"old_string": "x",
+				"new_string": "y" + strings.Repeat("x", n),
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	// If the locks work, the file exists and has valid content (no corruption).
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	// The file should contain only x/y characters and a newline.
+	for _, c := range string(data) {
+		if c != 'x' && c != 'y' && c != '\n' {
+			t.Fatalf("unexpected character %q in concurrent write result: %q", c, string(data))
+		}
 	}
 }

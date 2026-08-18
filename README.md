@@ -412,6 +412,7 @@ provider that scripts stream events.
 - Self-update (`omega update`)
 - Image input (`@file` args with vision models)
 - Session insights (`omega insights [--days N]`, `/insights [days]`)
+- Per-path file locks (serialize concurrent writes to the same file)
 
 ### Planned
 
