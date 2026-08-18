@@ -23,6 +23,8 @@ markdown rendering.
   `extractImages`, magic-byte detection for PNG/JPEG/GIF/WebP/BMP)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
   `messageRole`, `resolveSessionCLI`)
+- `insights.go` - session analytics (`cmdInsights`, `formatInsights`,
+  `formatNumber`)
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
   `findAsset`, `assetNameForOS`)
 - `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
@@ -106,6 +108,11 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - **Export resolves by ID or label.** `resolveSessionCLI` tries exact
   session ID, then case-insensitive label prefix. Multiple matches
   error with the candidates listed.
+- **Insights are cross-session analytics.** `ComputeInsights` in the
+  store aggregates sessions, messages, tool calls, and token estimates
+  over the last N days. `formatInsights` renders the report as plain
+  text. Both CLI (`omega insights [--days N]`) and TUI (`/insights
+[days]`) share the same code path.
 - **Self-update replaces the running binary.** `cmdUpdate` fetches the
   latest GitHub release, matches the asset by `GOOS_GOARCH`, downloads
   to a temp file, and replaces `os.Executable()`. On Windows the

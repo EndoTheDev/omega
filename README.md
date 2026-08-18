@@ -135,6 +135,9 @@ provider:
 ./omega export <session-id-or-label> [output-path]
 ./omega export my-session -    # stdout
 
+# Session usage analytics (last N days, default: 30)
+./omega insights --days 7
+
 # Self-update from GitHub releases
 ./omega update
 
@@ -331,6 +334,7 @@ See `extensions/README.md` for the full protocol reference and
 | `/compact [focus]`                    | Manually compact conversation history                                                                 |
 | `/copy`                               | Copy last message to clipboard                                                                        |
 | `/export [path]`                      | Export session messages to JSONL                                                                      |
+| `/insights [days]`                    | Show cross-session usage analytics (default: 30 days)                                                 |
 | `/thinking [level]`                   | Set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles) |
 | `/tools [on \| off \| auto]`          | Toggle tool result display mode                                                                       |
 | `/extensions`                         | List loaded extensions                                                                                |
@@ -407,6 +411,7 @@ provider that scripts stream events.
 - Export session subcommand (`omega export`)
 - Self-update (`omega update`)
 - Image input (`@file` args with vision models)
+- Session insights (`omega insights [--days N]`, `/insights [days]`)
 
 ### Planned
 

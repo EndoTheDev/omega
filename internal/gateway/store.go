@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/EndoTheDev/omega/internal/agent"
 	"github.com/EndoTheDev/omega/internal/ai"
 )
 
@@ -353,4 +356,169 @@ func decodeMessage(role string, payload []byte) (ai.Message, error) {
 	default:
 		return nil, fmt.Errorf("unknown role %q", role)
 	}
+}
+
+// ToolStat is one row in the tool breakdown.
+type ToolStat struct {
+	Name  string
+	Count int
+}
+
+// DayStat is one row in the daily activity breakdown.
+type DayStat struct {
+	Day     string // "Mon", "Tue", etc.
+	Count   int
+	Bar     string // visual bar string
+}
+
+// NotableStat holds the most extreme session for a given metric.
+type NotableStat struct {
+	Value  int
+	Detail string // date or session label
+}
+
+// Insights is the aggregated cross-session analytics result.
+type Insights struct {
+	Period         string
+	PeriodStart    string
+	PeriodEnd      string
+	Days           int
+	Sessions       int
+	Messages       int
+	UserMessages   int
+	ToolCalls      int
+	TotalTokens    int
+	AvgSessionMsgs float64
+	Tools          []ToolStat
+	Daily          [7]DayStat
+	NotableMsgs    NotableStat
+	NotableTokens  NotableStat
+	NotableTools   NotableStat
+}
+
+// ComputeInsights aggregates session data over the last N days.
+// If days <= 0, all sessions are included.
+func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error) {
+	sessions, err := s.ListSessions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+
+	now := time.Now()
+	cutoff := time.Time{}
+	if days > 0 {
+		cutoff = now.AddDate(0, 0, -days)
+	}
+
+	weekdays := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	toolCounts := map[string]int{}
+	dayCounts := [7]int{}
+	in := &Insights{Days: days}
+	if days > 0 {
+		in.Period = fmt.Sprintf("Last %d days", days)
+	} else {
+		in.Period = "All time"
+	}
+	in.PeriodEnd = now.Format("2006-01-02")
+
+	maxMsgs, maxTokens, maxTools := 0, 0, 0
+
+	for _, sess := range sessions {
+		t, err := time.Parse(time.RFC3339, sess.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if !t.Before(cutoff) || days <= 0 {
+			in.Sessions++
+			msgs, err := s.GetMessages(ctx, sess.ID)
+			if err != nil {
+				continue
+			}
+			sessMsgs := len(msgs)
+			sessUserMsgs := 0
+			sessToolCalls := 0
+			for _, msg := range msgs {
+				in.Messages++
+				switch m := msg.(type) {
+				case ai.User:
+					sessUserMsgs++
+				case ai.Assistant:
+					sessToolCalls += len(m.ToolCalls)
+					for _, tc := range m.ToolCalls {
+						toolCounts[tc.Name]++
+					}
+				}
+			}
+			in.UserMessages += sessUserMsgs
+			in.ToolCalls += sessToolCalls
+			sessTokens := 0
+			for _, msg := range msgs {
+				sessTokens += len(agent.MessageText(msg))
+			}
+			sessTokens /= 4 // charsPerToken
+			in.TotalTokens += sessTokens
+
+			// Daily activity by weekday.
+			wd := int(t.Weekday())
+			if wd == 0 {
+				wd = 6 // Sunday -> 6, Mon -> 0
+			}
+			dayCounts[wd]++
+
+			// Notable sessions.
+			label := sess.Label
+			if label == "" {
+				label = sess.ID
+			}
+			detail := t.Format("Jan 2") + ", " + label
+			if sessMsgs > maxMsgs {
+				maxMsgs = sessMsgs
+				in.NotableMsgs = NotableStat{Value: sessMsgs, Detail: detail}
+			}
+			if sessTokens > maxTokens {
+				maxTokens = sessTokens
+				in.NotableTokens = NotableStat{Value: sessTokens, Detail: detail}
+			}
+			if sessToolCalls > maxTools {
+				maxTools = sessToolCalls
+				in.NotableTools = NotableStat{Value: sessToolCalls, Detail: detail}
+			}
+		}
+	}
+
+	if in.Sessions > 0 {
+		in.AvgSessionMsgs = float64(in.Messages) / float64(in.Sessions)
+	}
+
+	// Build tool breakdown sorted by count desc.
+	for name, count := range toolCounts {
+		in.Tools = append(in.Tools, ToolStat{Name: name, Count: count})
+	}
+	sort.Slice(in.Tools, func(i, j int) bool {
+		return in.Tools[i].Count > in.Tools[j].Count
+	})
+
+	// Build daily activity with bars.
+	maxDay := 0
+	for _, c := range dayCounts {
+		if c > maxDay {
+			maxDay = c
+		}
+	}
+	for i := 0; i < 7; i++ {
+		bar := ""
+		if maxDay > 0 {
+			bars := int(float64(dayCounts[i]) / float64(maxDay) * 14)
+			for j := 0; j < bars; j++ {
+				bar += "█"
+			}
+		}
+		in.Daily[i] = DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
+	}
+
+	if days > 0 {
+		in.PeriodStart = cutoff.Format("2006-01-02")
+	}
+
+	return in, nil
 }

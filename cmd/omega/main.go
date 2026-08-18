@@ -36,8 +36,9 @@ Usage:
   omega chat            start the interactive TUI
   omega run <prompt>    run one prompt to stdout
   omega serve           start the HTTP server (SSE streaming)
-  omega export <id>     export session messages as JSONL
-  omega update          download and install the latest release
+  omega export <id|label>  export a session as JSONL
+  omega insights [--days N]  show session usage analytics (default: 30 days)
+  omega update              check for and install the latest release
   omega health          check the server at the configured port
 
 Flags:
@@ -80,6 +81,8 @@ func run(args []string) error {
 		return cmdHealth(parseConfigFlag(rest))
 	case "export":
 		return cmdExport(parseConfigFlag(rest), rest)
+	case "insights":
+		return cmdInsights(parseConfigFlag(rest), rest)
 	case "update":
 		return cmdUpdate()
 	case "chat", "":

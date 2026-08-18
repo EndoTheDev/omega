@@ -14,7 +14,9 @@ and environment variables. It is the only layer external clients talk to.
   decoding, session-aware chat flow with message persistence
 - `store.go` - SQLite session store: `Session`, `SessionNode`, `Store`,
   schema migration, session CRUD, message append/read, session tree,
-  ancestor message walk, message encode/decode
+  ancestor message walk, message encode/decode, `ComputeInsights`
+  (cross-session analytics: `Insights`, `ToolStat`, `DayStat`,
+  `NotableStat`)
 - `config.go` - `Config` and sub-configs, `LoadConfig` (YAML + env +
   defaults), `DefaultConfig`, `applyEnv`, `Validate`
 - `config_test.go` - config loading and env override tests

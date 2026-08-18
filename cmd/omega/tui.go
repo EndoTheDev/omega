@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/thinking", "/tools", "/extensions", "/skills", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/insights", "/thinking", "/tools", "/extensions", "/skills", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -929,6 +929,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleCopy()
 	case "/export":
 		return m.handleExport(fields[1:])
+	case "/insights":
+		return m.handleInsights(fields[1:])
 	case "/thinking":
 		if len(fields) > 1 {
 			valid := false
@@ -1838,6 +1840,34 @@ func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleInsights renders cross-session usage analytics in the transcript.
+// Accepts an optional days argument (default: 30).
+func (m model) handleInsights(args []string) (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no session store available"
+		return m, nil
+	}
+	days := 30
+	if len(args) > 0 {
+		if d, err := strconv.Atoi(args[0]); err == nil && d >= 0 {
+			days = d
+		}
+	}
+	stats, err := m.store.ComputeInsights(context.Background(), days)
+	if err != nil {
+		m.err = "insights: " + err.Error()
+		return m, nil
+	}
+	if stats.Sessions == 0 {
+		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[no sessions in the last %d days]", days)) + "\n"
+		m.refresh()
+		return m, nil
+	}
+	m.transcript += "\n" + m.theme.Info.Render(formatInsights(stats)) + "\n"
+	m.refresh()
+	return m, nil
+}
+
 // handleCompact triggers manual compaction of the conversation history.
 // /compact uses the default summarizer; /compact <focus> passes a custom
 // focus instruction to the summarizer (e.g. "focus on the last implementation").
@@ -2550,6 +2580,7 @@ func (m model) renderHelp() string {
 		{"/compact [focus]", "summarize conversation history (optional focus)"},
 		{"/copy", "copy the last message to clipboard"},
 		{"/export [path]", "export session messages to JSONL (default: <session_id>.jsonl)"},
+		{"/insights [days]", "show cross-session usage analytics (default: 30 days)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
 		{"/extensions", "list loaded extensions"},
