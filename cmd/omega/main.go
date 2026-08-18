@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/internal/agent"
+	"github.com/EndoTheDev/omega/internal/harness"
 	"github.com/EndoTheDev/omega/internal/ai"
 	"github.com/EndoTheDev/omega/internal/gateway"
 )
@@ -314,14 +315,20 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 		return nil, nil, nil, err
 	}
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
-	ag.SetCompaction(&cfg.Compaction)
-	ag.SetSystemPrompt(buildSystemPrompt(cfg, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)))
-
+	ag.SetPromptBuilder(agent.DefaultPromptBuilder{
+		Prompt: buildSystemPrompt(cfg, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)),
+	})
 	mgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
 	}
 	ag.SetExtensions(mgr)
+	ag.SetCompactor(agent.DefaultCompactor{
+		Provider:   provider,
+		Config:     &cfg.Compaction,
+		Extensions: mgr,
+	})
+	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
 
 	store, err := gateway.Open(cfg.Store.DBPath)
 	if err != nil {
@@ -340,7 +347,7 @@ func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, appendPrompts [
 	if err != nil {
 		cwd = "."
 	}
-	return agent.BuildSystemPrompt(agent.PromptOptions{
+	return harness.BuildSystemPrompt(harness.PromptOptions{
 		ProjectContext: projectContext,
 		Skills:         skills,
 		CWD:            cwd,
@@ -503,7 +510,7 @@ func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.Extensio
 
 // loadSkills reads skills from the configured skills directory.
 func loadSkills(cfg gateway.Config) ([]agent.Skill, error) {
-	return agent.LoadSkills(cfg.Skills.Dir)
+	return harness.LoadSkills(cfg.Skills.Dir)
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.

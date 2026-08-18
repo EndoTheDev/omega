@@ -63,6 +63,18 @@ type ExtensionManager interface {
 	// CustomizeBranchSummary lets an extension provide a custom branch
 	// summary. Returns ok=false if no extension wants to customize.
 	CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool)
+
+	// BuildPrompt asks extensions to build the complete system prompt.
+	// Returns ok=false if no extension wants to build it; the agent uses
+	// the default PromptBuilder. An extension that returns ok=true
+	// fully replaces the default prompt.
+	BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool)
+
+	// CompactMessages asks extensions to compact the message history
+	// completely. Returns ok=false if no extension wants to handle it;
+	// the agent uses the default Compactor. An extension that returns
+	// ok=true fully replaces the default compaction.
+	CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool)
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -77,6 +89,12 @@ type ExtensionInfo struct {
 	Tools    int
 	Commands int
 	Status   string // "running" or "error: ..."
+}
+
+// PromptBuildOptions carries context for extension-built system prompts.
+type PromptBuildOptions struct {
+	CWD       string
+	Messages  []ai.Message
 }
 
 // NoopManager is the default ExtensionManager when extensions are
@@ -99,4 +117,10 @@ func (NoopManager) CustomizeCompaction(ctx context.Context, messages []ai.Messag
 }
 func (NoopManager) CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool) {
 	return "", false
+}
+func (NoopManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool) {
+	return "", false
+}
+func (NoopManager) CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool) {
+	return nil, false
 }

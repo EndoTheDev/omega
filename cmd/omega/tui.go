@@ -726,9 +726,16 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 	provider.SetThinkingLevel(m.thinkingLevel)
 	ag := agent.NewAgent(provider, agent.NewRegistry(), 0)
-	ag.SetCompaction(m.compaction)
-	ag.SetSystemPrompt(m.systemPrompt)
+	ag.SetPromptBuilder(agent.DefaultPromptBuilder{Prompt: m.systemPrompt})
 	ag.SetExtensions(m.extensions)
+	ag.SetCompactor(agent.DefaultCompactor{
+		Provider:   provider,
+		Config:     m.compaction,
+		Extensions: m.extensions,
+	})
+	if m.compaction != nil {
+		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)
+	}
 	ag.SetSkills(m.skills)
 	// The goroutine writes events to the channel; Update drains it via
 	// drainEvents. The channel is a reference type, so it survives the

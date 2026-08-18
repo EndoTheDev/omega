@@ -9,23 +9,28 @@ events for anyone observing (the TUI, the gateway, or extensions).
 
 ## Ownership
 
-- `agent.go` - multi-turn loop, tool execution, event dispatch
-- `compaction.go` - context compaction with optional focus
-- `context.go` - project context loading from AGENTS.md
+- `agent.go` - multi-turn loop, tool execution, event dispatch, capability
+  seam wiring (`SetPromptBuilder`, `SetCompactor`, `SetToolProvider`)
+- `compaction.go` - context compaction with optional focus,
+  `BuildCompactedMessages` shared helper
 - `events.go` - event types emitted by the agent loop (`AgentStart`,
   `TurnStart`, `TurnEnd`, `AgentEnd`, `StreamEvent`, `ToolResultEvent`,
   `AssistantMessageEvent`, `SessionEvent`)
 - `extension.go` - `ExtensionManager` interface (tools, commands, events,
-  `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`),
-  `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
+  `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
+  `BuildPrompt`, `CompactMessages`), `NoopManager`, `ExtensionCommand`,
+  `ExtensionInfo`, `PromptBuildOptions`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
-  (`prompt/guidelines`, `compaction/customize`, `branch/summary`
-  JSON-RPC methods)
+  (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
+  `prompt/build`, `compaction/messages` JSON-RPC methods)
+- `seams.go` - capability seam interfaces (`PromptBuilder`, `Compactor`,
+  `ToolProvider`, `SessionStore`)
+- `defaults.go` - default seam implementations (`DefaultPromptBuilder`,
+  `DefaultCompactor`, `DefaultToolProvider`)
+- `skill.go` - `Skill` type (data type used by `SetSkills` + `runLoadSkill`)
 - `testdata/mock_extension/` - mock extension binary for extension tests
-- `prompt.go` - system prompt construction
-- `skills.go` - skill directory loader
 - `tools.go` - built-in tool registry (`shell`, `read_file`, `write_file`,
-  `edit`), per-path file locking (`fileLocks`, `fileMutex`)
+  `edit`), per-path file locking (`fileLocks`, `fileMutex`), `runLoadSkill`
 - `*_test.go` - self-check tests for each non-trivial package
 
 ## Local Contracts
@@ -50,6 +55,13 @@ events for anyone observing (the TUI, the gateway, or extensions).
   Session lifecycle events (`SessionEvent`) are dispatched on new,
   resume, fork, and label. `BuildCompactedMessages` is the shared
   helper for assembling compacted history from a pre-computed summary.
+- **Capability seams.** Harness concerns are injected via interfaces:
+  `PromptBuilder` (system prompt), `Compactor` (context compaction),
+  `ToolProvider` (tool registry), `SessionStore` (persistence). Default
+  implementations in `defaults.go`. Extensions can fully replace the
+  prompt builder via `BuildPrompt` or the compactor via `CompactMessages`.
+  Harness code (prompt building, skill loading, project context) lives
+  in `internal/harness/`, not in this package.
 - **No re-exports.** Types defined in `internal/ai/` are imported from
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes

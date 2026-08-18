@@ -669,6 +669,71 @@ func (m *StdioManager) CustomizeBranchSummary(ctx context.Context, messages []ai
 	return "", false
 }
 
+// BuildPrompt asks extensions to build the complete system prompt.
+// The first extension that returns ok=true wins.
+func (m *StdioManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool) {
+	m.mu.Lock()
+	exts := make([]*stdioExt, len(m.exts))
+	copy(exts, m.exts)
+	m.mu.Unlock()
+
+	for _, ext := range exts {
+		if !ext.alive {
+			continue
+		}
+		result, err := ext.request(ctx, "prompt/build", map[string]any{
+			"cwd":      opts.CWD,
+			"messages": opts.Messages,
+		})
+		if err != nil {
+			continue
+		}
+		var cr struct {
+			Prompt string `json:"prompt"`
+			OK     bool   `json:"ok"`
+		}
+		if err := json.Unmarshal(result, &cr); err != nil {
+			continue
+		}
+		if cr.OK {
+			return cr.Prompt, true
+		}
+	}
+	return "", false
+}
+
+// CompactMessages asks extensions to compact the message history
+// completely. The first extension that returns ok=true wins.
+func (m *StdioManager) CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool) {
+	m.mu.Lock()
+	exts := make([]*stdioExt, len(m.exts))
+	copy(exts, m.exts)
+	m.mu.Unlock()
+
+	for _, ext := range exts {
+		if !ext.alive {
+			continue
+		}
+		result, err := ext.request(ctx, "compaction/messages", map[string]any{
+			"messages": messages,
+		})
+		if err != nil {
+			continue
+		}
+		var cr struct {
+			Messages []ai.Message `json:"messages"`
+			OK       bool         `json:"ok"`
+		}
+		if err := json.Unmarshal(result, &cr); err != nil {
+			continue
+		}
+		if cr.OK && len(cr.Messages) > 0 {
+			return cr.Messages, true
+		}
+	}
+	return nil, false
+}
+
 // Close shuts down all extension processes.
 func (m *StdioManager) Close() error {
 	m.mu.Lock()

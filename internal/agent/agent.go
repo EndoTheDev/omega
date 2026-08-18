@@ -27,25 +27,32 @@ type Tool struct {
 
 // Agent runs the multi-turn conversation loop between a provider and a
 // set of tools. It consumes provider stream events, executes tool calls,
-// and appends results back into the message history.
+// and appends results back into the message history. Harness concerns
+// (system prompt, compaction) are injected via interfaces.
 type Agent struct {
-	provider     ai.Provider
-	tools        map[string]Tool
-	extensions   ExtensionManager
-	maxTurns     int
-	compaction   *CompactionConfig
-	systemPrompt string
-	mu           sync.Mutex
-	running      bool
+	provider      ai.Provider
+	tools         map[string]Tool
+	toolProvider  ToolProvider
+	extensions    ExtensionManager
+	maxTurns      int
+	promptBuilder PromptBuilder
+	compactor     Compactor
+	maxToolOutput int
+	mu            sync.Mutex
+	running       bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
+// The agent starts with no prompt builder (empty prompt) and no
+// compactor (compaction disabled). Use SetPromptBuilder and
+// SetCompactor to install them.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
-		provider:   provider,
-		tools:      tools,
-		extensions: NoopManager{},
-		maxTurns:   maxTurns,
+		provider:      provider,
+		tools:         tools,
+		extensions:    NoopManager{},
+		maxTurns:      maxTurns,
+		promptBuilder: DefaultPromptBuilder{},
 	}
 }
 
@@ -59,10 +66,31 @@ func (a *Agent) SetExtensions(mgr ExtensionManager) {
 	a.extensions = mgr
 }
 
-// SetSystemPrompt sets the system prompt prepended to every run's
-// message history. An empty prompt is ignored.
-func (a *Agent) SetSystemPrompt(prompt string) {
-	a.systemPrompt = prompt
+// SetPromptBuilder installs the prompt builder. A nil value sets the
+// default empty-prompt builder.
+func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
+	if pb == nil {
+		a.promptBuilder = DefaultPromptBuilder{}
+		return
+	}
+	a.promptBuilder = pb
+}
+
+// SetCompactor installs the compactor. A nil value disables compaction.
+func (a *Agent) SetCompactor(c Compactor) {
+	a.compactor = c
+}
+
+// SetMaxToolOutput sets the maximum tool result length in characters.
+// Results exceeding this are truncated. A value <= 0 disables truncation.
+func (a *Agent) SetMaxToolOutput(n int) {
+	a.maxToolOutput = n
+}
+
+// SetToolProvider installs a tool provider. When set, the agent merges
+// the provider's tools with its own on each Run. A nil value is ignored.
+func (a *Agent) SetToolProvider(tp ToolProvider) {
+	a.toolProvider = tp
 }
 
 // SetSkills registers a load_skill tool that lets the agent pull in a
@@ -87,12 +115,6 @@ func (a *Agent) SetSkills(skills []Skill) {
 			return runLoadSkill(skills, args)
 		},
 	}
-}
-
-// SetCompaction enables context compaction for this agent. A nil config
-// disables it.
-func (a *Agent) SetCompaction(cfg *CompactionConfig) {
-	a.compaction = cfg
 }
 
 // ModelName returns the name of the model the agent's provider serves.
@@ -138,6 +160,20 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		tools = a.tools
 	}
 
+	// Merge tool provider tools. Built-in tools take precedence.
+	if a.toolProvider != nil {
+		if providerTools := a.toolProvider.Tools(); len(providerTools) > 0 {
+			merged := make(map[string]Tool, len(tools)+len(providerTools))
+			for name, t := range providerTools {
+				merged[name] = t
+			}
+			for name, t := range tools {
+				merged[name] = t
+			}
+			tools = merged
+		}
+	}
+
 	// Merge extension tools into the active tool set. Built-in tools
 	// take precedence on name conflict.
 	if extTools := a.extensions.Tools(); len(extTools) > 0 {
@@ -158,17 +194,21 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 		maxTurns = defaultMaxTurns
 	}
 
-	// Prepend the system prompt once, before the loop. It is not
-	// persisted to the store; it is injected per run. Extension
-	// guidelines are appended to the system prompt.
-	if a.systemPrompt != "" {
-		prompt := a.systemPrompt
+	// Build the system prompt: extensions can fully replace it via
+	// BuildPrompt, otherwise use the configured PromptBuilder. Extension
+	// guidelines are appended to the default builder's output.
+	prompt := a.promptBuilder.Build()
+	if extPrompt, ok := a.extensions.BuildPrompt(ctx, PromptBuildOptions{}); ok {
+		prompt = extPrompt
+	} else if prompt != "" {
 		if guidelines := a.extensions.PromptGuidelines(); len(guidelines) > 0 {
 			prompt += "\n## Extension Guidelines\n"
 			for _, g := range guidelines {
 				prompt += "- " + g + "\n"
 			}
 		}
+	}
+	if prompt != "" {
 		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
 	}
 
@@ -192,17 +232,15 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			return
 		}
 
-		if a.compaction != nil && a.compaction.Enabled {
-			if EstimateTokens(messages) > a.compaction.budget() {
-				compacted, err := a.compact(ctx, messages, "")
-				if err != nil {
-					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
-					events <- end
-					a.extensions.DispatchEvent(end)
-					return
-				}
-				messages = compacted
+		if a.compactor != nil {
+			compacted, err := a.compactor.Compact(ctx, messages)
+			if err != nil {
+				end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+				events <- end
+				a.extensions.DispatchEvent(end)
+				return
 			}
+			messages = compacted
 		}
 
 		turns++
@@ -237,9 +275,9 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			// retried turn reports its own TurnEnd. Skip the retry when
 			// response content was already streamed: the user saw it, and
 			// retrying would duplicate it.
-			if isOverflowError(streamErr) && a.compaction != nil && a.compaction.Enabled && overflowRetries < maxOverflowRetries && content.Len() == 0 {
+			if isOverflowError(streamErr) && a.compactor != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
-				compacted, err := a.compact(ctx, messages, "")
+				compacted, err := a.compactor.Compact(ctx, messages)
 				if err != nil {
 					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					events <- end
@@ -282,8 +320,8 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			if err != nil {
 				msg = ai.NewToolResult(err.Error(), call.ID, true)
 			} else {
-				if a.compaction != nil && a.compaction.MaxToolOutput > 0 && len(result) > a.compaction.MaxToolOutput {
-					result = result[:a.compaction.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+				if a.maxToolOutput > 0 && len(result) > a.maxToolOutput {
+					result = result[:a.maxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
 				}
 				msg = ai.NewToolResult(result, call.ID, false)
 			}
@@ -305,19 +343,6 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			return
 		}
 	}
-}
-
-// compact wraps CompactWithFocus with an extension customization hook.
-// If an extension provides a custom summary, it is used instead of the
-// provider-based summarization.
-func (a *Agent) compact(ctx context.Context, messages []ai.Message, focus string) ([]ai.Message, error) {
-	if a.compaction.KeepFirst+a.compaction.KeepLast >= len(messages) {
-		return messages, nil
-	}
-	if summary, ok := a.extensions.CustomizeCompaction(ctx, messages, focus); ok {
-		return BuildCompactedMessages(messages, summary, a.compaction.KeepFirst, a.compaction.KeepLast), nil
-	}
-	return CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, focus)
 }
 
 // isOverflowError reports whether a provider error indicates the context

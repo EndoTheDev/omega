@@ -24,6 +24,7 @@ type Config struct {
 	Notifications string                 `yaml:"notifications"`
 	Extensions   ExtensionsConfig        `yaml:"extensions"`
 	Skills       SkillsConfig            `yaml:"skills"`
+	Plugins      PluginsConfig           `yaml:"plugins"`
 }
 
 // ExtensionsConfig controls whether extensions are loaded and from
@@ -39,6 +40,17 @@ type ExtensionsConfig struct {
 // SkillsConfig controls where skills are loaded from.
 type SkillsConfig struct {
 	Dir string `yaml:"dir"`
+}
+
+// PluginsConfig specifies which plugin implementations to use for each
+// capability seam. Empty values default to "default" (built-in
+// implementations). Extension names reference loaded extensions that
+// registered as seam providers during initialize.
+type PluginsConfig struct {
+	PromptBuilder string `yaml:"prompt_builder"` // "default" or extension name
+	Compactor     string `yaml:"compactor"`       // "default" or extension name
+	ToolProvider  string `yaml:"tool_provider"`   // "default" or extension name
+	SessionStore  string `yaml:"session_store"`   // "sqlite" (only built-in)
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -88,7 +100,13 @@ func DefaultConfig() Config {
 		Skills: SkillsConfig{
 			Dir: "skills",
 		},
-		HTTPTimeout: 300,
+		Plugins: PluginsConfig{
+			PromptBuilder: "default",
+			Compactor:     "default",
+			ToolProvider:  "default",
+			SessionStore:  "sqlite",
+		},
+		HTTPTimeout:  300,
 		Notifications: "bell",
 	}
 }

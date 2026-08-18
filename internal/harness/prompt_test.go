@@ -1,14 +1,16 @@
-package agent
+package harness
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/EndoTheDev/omega/internal/agent"
 )
 
 func TestBuildSystemPromptSections(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{
 		ProjectContext: "# AGENTS\nrules",
-		Skills: []Skill{
+		Skills: []agent.Skill{
 			{Name: "learn-skill", Description: "Teaches the agent"},
 		},
 		CWD:    "/tmp/proj",
