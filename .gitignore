@@ -2,13 +2,13 @@
 *.db
 config.yaml
 trust.yaml
-bin/
+bin/*
+!bin/config.yaml.example
+!bin/extensions/
+!bin/extensions/**
+!bin/skills/
+!bin/skills/**
 data/
-skills/
-extensions/*
-!extensions/example/
-!extensions/example/**
-!extensions/README.md
 
 # Go
 *.exe

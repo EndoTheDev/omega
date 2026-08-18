@@ -168,6 +168,10 @@ Available event types:
 | `assistant_message` | Assistant message emitted               |
 | `tool_result`       | Tool execution completed                |
 | `agent_end`         | Agent run finishes                      |
+| `session_new`       | New session created (`/new`)            |
+| `session_resume`    | Session resumed (`/resume`)             |
+| `session_fork`      | Session branched (`/branch`)            |
+| `session_label`     | Session label changed (`/label`)        |
 
 ### shutdown
 
@@ -175,6 +179,130 @@ Sent before killing the process. No response expected.
 
 ```json
 { "jsonrpc": "2.0", "method": "shutdown" }
+```
+
+## Customization hooks
+
+Extensions can customize the agent's system prompt, compaction, and
+branch summarization. These are request/response methods (they carry an
+`id` and the host waits for the result).
+
+### prompt/guidelines
+
+Returns guideline lines appended to the system prompt under
+`## Extension Guidelines`. Called once per agent run.
+
+Request:
+
+```json
+{ "jsonrpc": "2.0", "id": 10, "method": "prompt/guidelines", "params": null }
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 10,
+  "result": {
+    "guidelines": [
+      "Always use conventional commits",
+      "Run tests before reporting done"
+    ]
+  }
+}
+```
+
+### prompt/build
+
+Fully replaces the system prompt. If no extension returns `ok: true`,
+the host uses the default `PromptBuilder`. Called once per agent run,
+before the conversation loop starts.
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "method": "prompt/build",
+  "params": { "cwd": "/home/user/project", "messages": [] }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "result": { "prompt": "You are a coding agent...", "ok": true }
+}
+```
+
+### compaction/customize
+
+Returns a custom compaction summary string. The host assembles the
+compacted message list from the summary. If no extension returns
+`ok: true`, the host uses the default provider-based summarization.
+
+Request:
+
+```json
+{ "jsonrpc": "2.0", "id": 12, "method": "compaction/customize", "params": { "messages": [...], "focus": "" } }
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 12,
+  "result": { "summary": "User worked on auth refactor...", "ok": true }
+}
+```
+
+### compaction/messages
+
+Fully replaces the compaction. The extension returns the complete
+compacted message list. If no extension returns `ok: true`, the host
+falls back to `compaction/customize`, then the default compaction.
+
+Request:
+
+```json
+{ "jsonrpc": "2.0", "id": 13, "method": "compaction/messages", "params": { "messages": [...] } }
+```
+
+Response:
+
+```json
+{ "jsonrpc": "2.0", "id": 13, "result": { "messages": [...], "ok": true } }
+```
+
+### branch/summary
+
+Returns a custom branch summary. Called when the user does `/branch` and
+the inherited history is long. If no extension returns `ok: true`, the
+host uses a heuristic trim.
+
+Request:
+
+```json
+{ "jsonrpc": "2.0", "id": 14, "method": "branch/summary", "params": { "messages": [...] } }
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 14,
+  "result": {
+    "summary": "Parent session implemented image input...",
+    "ok": true
+  }
+}
 ```
 
 ## API key passing
@@ -219,3 +347,6 @@ complete reference implementation - see `example/main.go`.
 # Build the example extension
 go build -o example/example.exe ./example/
 ```
+
+The example directory is at `bin/extensions/example/` relative to the
+repo root.

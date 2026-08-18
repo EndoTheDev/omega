@@ -69,11 +69,11 @@ provider abstraction, and the standard library for everything HTTP.
 ```bash
 git clone https://github.com/EndoTheDev/omega.git
 cd omega
-go build -o omega ./cmd/omega
+./build.sh        # Linux/macOS: vet + test + build to bin/omega.exe
+build.bat         # Windows: same, outputs bin\omega.exe
 ```
 
-On Windows the build produces `omega.exe` - use `.\omega.exe` instead of
-`./omega` in the commands below.
+The binary, config, database, extensions, and skills all live in `bin/`.
 
 ### Install
 
@@ -87,9 +87,13 @@ The binary is placed in `$GOPATH/bin` (typically already in your PATH).
 
 Or build from source:
 
-Add the build directory to your `PATH`. omega resolves config, skills,
+```bash
+./build.sh        # or build.bat on Windows
+```
+
+Add `bin/` to your `PATH`. omega resolves config, skills,
 extensions, and the session database from the directory containing the
-binary. Your working directory is used only for AGENTS.md project
+binary (`bin/`). Your working directory is used only for AGENTS.md project
 context and tool file operations.
 
 ```bash
@@ -100,7 +104,7 @@ export PATH="$PATH:/path/to/omega"
 ### Configure
 
 ```bash
-cp config.yaml.example config.yaml
+cp bin/config.yaml.example bin/config.yaml
 ```
 
 Edit `config.yaml` to set your provider, model, and API key:
@@ -117,38 +121,38 @@ provider:
 
 ```bash
 # Interactive TUI (default - no subcommand needed)
-./omega
+bin/omega
 
 # Interactive TUI in a specific project directory
-./omega /path/to/project
+bin/omega /path/to/project
 
 # One-shot prompt
-./omega run "explain channel-based event streams"
+bin/omega run "explain channel-based event streams"
 
 # One-shot with image input (vision models)
-./omega run @screenshot.png "what's wrong with this code?"
+bin/omega run @screenshot.png "what's wrong with this code?"
 
 # HTTP server (SSE streaming, session store)
-./omega serve
+bin/omega serve
 
 # Export a session as JSONL (by ID or label)
-./omega export <session-id-or-label> [output-path]
-./omega export my-session -    # stdout
+bin/omega export <session-id-or-label> [output-path]
+bin/omega export my-session -    # stdout
 
 # Session usage analytics (last N days, default: 30)
-./omega insights --days 7
+bin/omega insights --days 7
 
 # Self-update from GitHub releases
-./omega update
+bin/omega update
 
 # Health check
-./omega health
+bin/omega health
 
 # Show help
-./omega --help
+bin/omega --help
 
 # Show version
-./omega --version
+bin/omega --version
 ```
 
 `omega` with no argument starts the TUI. `omega <path>` chdirs into that
@@ -162,11 +166,12 @@ operations resolve relative to it. Subcommand names (`serve`, `run`,
 gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 ```
 
-| Layer    | Package            | Responsibility                                                                                  |
-| -------- | ------------------ | ----------------------------------------------------------------------------------------------- |
-| Gateway  | `gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree                        |
-| Agent    | `agent`   | Multi-turn loop, tool execution, compaction, project context, system prompt, skills, extensions |
-| Provider | `ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry            |
+| Layer    | Package   | Responsibility                                                                       |
+| -------- | --------- | ------------------------------------------------------------------------------------ |
+| Gateway  | `gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree             |
+| Agent    | `agent`   | Multi-turn loop, tool execution, compaction, capability seams, extensions            |
+| Harness  | `harness` | System prompt building, skill loading, project context loading                       |
+| Provider | `ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -274,10 +279,10 @@ extensions:
 Extensions can also be controlled from the command line:
 
 ```bash
-./omega chat --extension ./my-ext            # load a specific extension (repeatable)
-./omega chat -e ./my-ext                     # short form
-./omega chat --no-extensions                 # disable extension loading entirely
-./omega chat --project-extensions            # also load <cwd>/.omega/extensions/
+bin/omega chat --extension ./my-ext            # load a specific extension (repeatable)
+bin/omega chat -e ./my-ext                     # short form
+bin/omega chat --no-extensions                 # disable extension loading entirely
+bin/omega chat --project-extensions            # also load <cwd>/.omega/extensions/
 ```
 
 `--no-extensions` wins over everything. `--extension`/`-e` and
@@ -286,15 +291,15 @@ Extensions can also be controlled from the command line:
 
 ### Example: Web Extension
 
-omega ships an example extension in `extensions/example/` that provides
+omega ships an example extension in `bin/extensions/example/` that provides
 web search and fetch tools via the [Ollama Cloud API](https://ollama.com).
 
 ```bash
 # Build the example extension
-go build -o extensions/example/example.exe ./extensions/example/
+go build -o bin/extensions/example/example.exe ./bin/extensions/example/
 
 # Enable extensions in config.yaml (see above), then:
-./omega chat
+bin/omega chat
 # The web extension provides web.search and web.fetch tools.
 # Ask the agent to search the web and it will call them as tool calls.
 ```
@@ -314,8 +319,8 @@ An extension is any executable that speaks JSON-RPC over stdio:
    `tool_result`, `agent_end`).
 4. Receive a `shutdown` notification on exit.
 
-See `extensions/README.md` for the full protocol reference and
-`extensions/example/main.go` for a complete implementation.
+See `bin/extensions/README.md` for the full protocol reference and
+`bin/extensions/example/main.go` for a complete implementation.
 
 ## TUI Commands
 
@@ -363,21 +368,27 @@ prompt as text (bracketed paste support).
 
 ```txt
 cmd/omega/        Single binary entry point (serve, run, health, chat)
-ai/      Provider abstraction, stream events, message types, retry
-agent/   Multi-turn loop, tool execution, compaction, skills, extensions
-gateway/ HTTP server, SSE streaming, session store, config
-agents/           Commit conventions (COMMIT.md)
-skills/           Skill directories (<name>/<name>.md), loaded at startup
-extensions/       Extension binaries (JSON-RPC over stdio)
-config.yaml       Configuration (copy from config.yaml.example)
+ai/               Provider abstraction, stream events, message types, retry
+agent/            Multi-turn loop, tool execution, compaction, seams, extensions
+harness/          System prompt building, skill loading, project context loading
+gateway/          HTTP server, SSE streaming, session store, config
+.agents/          Commit conventions (COMMIT.md)
+build.sh          Build script (Linux/macOS): vet + test + build
+build.bat         Build script (Windows): vet + test + build
+bin/              Runtime directory (gitignored except templates)
+  omega.exe       Built binary
+  config.yaml     Personal configuration (gitignored)
+  config.yaml.example  Configuration template (tracked)
+  omega.db        Session database (gitignored)
+  trust.yaml      Trust state (gitignored)
+  extensions/     Extension authoring guide + example (tracked)
+  skills/         Skill templates (tracked)
 ```
 
 ## Development
 
 ```bash
-go build ./...    # compile all packages
-go test ./...     # run all tests
-go vet ./...      # static analysis
+./build.sh        # vet + test + build to bin/ (or build.bat on Windows)
 ```
 
 Each package includes test files with no external test framework -
@@ -419,7 +430,6 @@ provider that scripts stream events.
 
 ### Planned
 
-- Desktop notifications
 - More tools (grep, glob, multi-file edit)
 - More providers (Gemini, Mistral)
 - Web UI (via the gateway HTTP API)
