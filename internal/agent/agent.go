@@ -159,9 +159,17 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 	}
 
 	// Prepend the system prompt once, before the loop. It is not
-	// persisted to the store; it is injected per run.
+	// persisted to the store; it is injected per run. Extension
+	// guidelines are appended to the system prompt.
 	if a.systemPrompt != "" {
-		messages = append([]ai.Message{ai.NewSystem(a.systemPrompt)}, messages...)
+		prompt := a.systemPrompt
+		if guidelines := a.extensions.PromptGuidelines(); len(guidelines) > 0 {
+			prompt += "\n## Extension Guidelines\n"
+			for _, g := range guidelines {
+				prompt += "- " + g + "\n"
+			}
+		}
+		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
 	}
 
 	start := AgentStart{Type: "agent_start", ModelName: a.provider.ModelName()}
@@ -186,7 +194,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 
 		if a.compaction != nil && a.compaction.Enabled {
 			if EstimateTokens(messages) > a.compaction.budget() {
-				compacted, err := CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, "")
+				compacted, err := a.compact(ctx, messages, "")
 				if err != nil {
 					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					events <- end
@@ -231,7 +239,7 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			// retrying would duplicate it.
 			if isOverflowError(streamErr) && a.compaction != nil && a.compaction.Enabled && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
-				compacted, err := CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, "")
+				compacted, err := a.compact(ctx, messages, "")
 				if err != nil {
 					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					events <- end
@@ -297,6 +305,19 @@ func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Mess
 			return
 		}
 	}
+}
+
+// compact wraps CompactWithFocus with an extension customization hook.
+// If an extension provides a custom summary, it is used instead of the
+// provider-based summarization.
+func (a *Agent) compact(ctx context.Context, messages []ai.Message, focus string) ([]ai.Message, error) {
+	if a.compaction.KeepFirst+a.compaction.KeepLast >= len(messages) {
+		return messages, nil
+	}
+	if summary, ok := a.extensions.CustomizeCompaction(ctx, messages, focus); ok {
+		return BuildCompactedMessages(messages, summary, a.compaction.KeepFirst, a.compaction.KeepLast), nil
+	}
+	return CompactWithFocus(ctx, a.provider, messages, a.compaction.KeepFirst, a.compaction.KeepLast, focus)
 }
 
 // isOverflowError reports whether a provider error indicates the context

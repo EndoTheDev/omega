@@ -892,6 +892,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.sessionLabel = ""
 		m.autoNamed = false
+		m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_new"})
 		m.autoNameGen++ // invalidate any auto-name goroutine in flight
 		m.sessionID = ""
 		if len(fields) > 1 && fields[1] == "--ephemeral" {
@@ -1558,6 +1559,7 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	m.segments = nil
 	m.err = ""
 	m.storeErr = ""
+	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_resume", ID: id})
 	// Load the session label for the status bar.
 	if sess, err := m.store.GetSession(context.Background(), id); err == nil && sess.Label != "" {
 		m.sessionLabel = sess.Label
@@ -1647,16 +1649,24 @@ func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 	}
 	// Branch summarization: if the inherited history is long, trim to
 	// the first keepFirst messages, a synthetic summary, and the last
-	// keepLast messages. This keeps the branch manageable without a
-	// provider call.
+	// keepLast messages. If an extension provides a custom branch
+	// summary, use it instead of the heuristic.
 	if m.compaction != nil && len(messages) > m.compaction.KeepFirst+m.compaction.KeepLast+5 {
-		messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if summary, ok := m.extensions.CustomizeBranchSummary(ctx, messages); ok {
+			cancel()
+			messages = agent.BuildCompactedMessages(messages, summary, m.compaction.KeepFirst, m.compaction.KeepLast)
+		} else {
+			cancel()
+			messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
+		}
 	}
 	m.sessionID = id
 	m.history = messages
 	m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
 	m.segments = nil
 	m.err = ""
+	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_fork", ID: id})
 	m.refresh()
 	return m, nil
 }
@@ -1696,6 +1706,7 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 	}
 	m.storeErr = ""
 	m.sessionLabel = label // keep status bar in sync
+	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_label", ID: m.sessionID, Label: label})
 	if label == "" {
 		m.transcript += "\n" + m.theme.Info.Render("[label cleared]") + "\n"
 	} else {

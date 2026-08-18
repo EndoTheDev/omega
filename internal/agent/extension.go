@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+
+	"github.com/EndoTheDev/omega/internal/ai"
 )
 
 // ExtensionProtocolVersion is the JSON-RPC protocol version extensions
@@ -47,6 +49,20 @@ type ExtensionManager interface {
 	// Close shuts down all extensions and releases resources. Safe to
 	// call when no extensions were loaded.
 	Close() error
+
+	// PromptGuidelines returns extra guideline lines that extensions
+	// want injected into the system prompt. Called once before the
+	// agent loop starts.
+	PromptGuidelines() []string
+
+	// CustomizeCompaction lets an extension provide a custom compaction
+	// summary. Returns ok=false if no extension wants to customize;
+	// the agent uses the default provider-based compaction.
+	CustomizeCompaction(ctx context.Context, messages []ai.Message, focus string) (string, bool)
+
+	// CustomizeBranchSummary lets an extension provide a custom branch
+	// summary. Returns ok=false if no extension wants to customize.
+	CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool)
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -76,3 +92,11 @@ func (NoopManager) CallCommand(ctx context.Context, name, args string) (string, 
 	return "", fmt.Errorf("no extensions loaded")
 }
 func (NoopManager) Close() error { return nil }
+
+func (NoopManager) PromptGuidelines() []string                                        { return nil }
+func (NoopManager) CustomizeCompaction(ctx context.Context, messages []ai.Message, focus string) (string, bool) {
+	return "", false
+}
+func (NoopManager) CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool) {
+	return "", false
+}

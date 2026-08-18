@@ -413,6 +413,7 @@ provider that scripts stream events.
 - Image input (`@file` args with vision models)
 - Session insights (`omega insights [--days N]`, `/insights [days]`)
 - Per-path file locks (serialize concurrent writes to the same file)
+- Extension customization hooks (prompt guidelines, compaction, branch summary, session lifecycle)
 
 ### Planned
 

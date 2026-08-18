@@ -12,9 +12,15 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `agent.go` - multi-turn loop, tool execution, event dispatch
 - `compaction.go` - context compaction with optional focus
 - `context.go` - project context loading from AGENTS.md
-- `events.go` - event types emitted by the agent loop
-- `extension.go` - ExtensionManager interface and no-op manager
+- `events.go` - event types emitted by the agent loop (`AgentStart`,
+  `TurnStart`, `TurnEnd`, `AgentEnd`, `StreamEvent`, `ToolResultEvent`,
+  `AssistantMessageEvent`, `SessionEvent`)
+- `extension.go` - `ExtensionManager` interface (tools, commands, events,
+  `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`),
+  `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
+  (`prompt/guidelines`, `compaction/customize`, `branch/summary`
+  JSON-RPC methods)
 - `testdata/mock_extension/` - mock extension binary for extension tests
 - `prompt.go` - system prompt construction
 - `skills.go` - skill directory loader
@@ -38,6 +44,12 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - **File tools are per-path locked.** `read_file`, `write_file`, and
   `edit` acquire a `sync.Mutex` keyed by absolute path before touching
   the file, serializing concurrent access to the same path.
+- **Extension customization hooks.** Extensions can customize: system
+  prompt guidelines (`PromptGuidelines`), compaction summary
+  (`CustomizeCompaction`), branch summary (`CustomizeBranchSummary`).
+  Session lifecycle events (`SessionEvent`) are dispatched on new,
+  resume, fork, and label. `BuildCompactedMessages` is the shared
+  helper for assembling compacted history from a pre-computed summary.
 - **No re-exports.** Types defined in `internal/ai/` are imported from
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes

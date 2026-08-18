@@ -120,9 +120,16 @@ func CompactWithFocus(ctx context.Context, provider ai.Provider, history []ai.Me
 		return nil, fmt.Errorf("summarize: empty summary")
 	}
 
+	return BuildCompactedMessages(history, strings.TrimSpace(summary.String()), keepFirst, keepLast), nil
+}
+
+// BuildCompactedMessages assembles the compacted message list from a
+// pre-computed summary. Shared by CompactWithFocus and extension-provided
+// custom compaction.
+func BuildCompactedMessages(history []ai.Message, summary string, keepFirst, keepLast int) []ai.Message {
 	result := make([]ai.Message, 0, keepFirst+keepLast+1)
 	result = append(result, history[:keepFirst]...)
-	result = append(result, ai.NewSystem("[compacted: "+strings.TrimSpace(summary.String())+"]"))
+	result = append(result, ai.NewSystem("[compacted: "+summary+"]"))
 	result = append(result, history[len(history)-keepLast:]...)
-	return result, nil
+	return result
 }

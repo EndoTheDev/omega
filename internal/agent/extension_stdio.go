@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/EndoTheDev/omega/internal/ai"
 )
 
 // StdioManager is an ExtensionManager that runs each extension as a
@@ -572,6 +574,101 @@ func (m *StdioManager) CallCommand(ctx context.Context, name string, args string
 	return "", fmt.Errorf("extension command %q not found", name)
 }
 
+// PromptGuidelines collects guideline lines from all extensions
+// that implement the prompt/guidelines method.
+func (m *StdioManager) PromptGuidelines() []string {
+	m.mu.Lock()
+	exts := make([]*stdioExt, len(m.exts))
+	copy(exts, m.exts)
+	m.mu.Unlock()
+
+	var guidelines []string
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, ext := range exts {
+		if !ext.alive {
+			continue
+		}
+		result, err := ext.request(ctx, "prompt/guidelines", nil)
+		if err != nil {
+			continue
+		}
+		var gr struct {
+			Guidelines []string `json:"guidelines"`
+		}
+		if err := json.Unmarshal(result, &gr); err != nil {
+			continue
+		}
+		guidelines = append(guidelines, gr.Guidelines...)
+	}
+	return guidelines
+}
+
+// CustomizeCompaction asks extensions for a custom compaction summary.
+// The first extension that returns a non-empty summary wins.
+func (m *StdioManager) CustomizeCompaction(ctx context.Context, messages []ai.Message, focus string) (string, bool) {
+	m.mu.Lock()
+	exts := make([]*stdioExt, len(m.exts))
+	copy(exts, m.exts)
+	m.mu.Unlock()
+
+	for _, ext := range exts {
+		if !ext.alive {
+			continue
+		}
+		result, err := ext.request(ctx, "compaction/customize", map[string]any{
+			"messages": messages,
+			"focus":    focus,
+		})
+		if err != nil {
+			continue
+		}
+		var cr struct {
+			Summary string `json:"summary"`
+			OK      bool   `json:"ok"`
+		}
+		if err := json.Unmarshal(result, &cr); err != nil {
+			continue
+		}
+		if cr.OK && cr.Summary != "" {
+			return cr.Summary, true
+		}
+	}
+	return "", false
+}
+
+// CustomizeBranchSummary asks extensions for a custom branch summary.
+// The first extension that returns a non-empty summary wins.
+func (m *StdioManager) CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool) {
+	m.mu.Lock()
+	exts := make([]*stdioExt, len(m.exts))
+	copy(exts, m.exts)
+	m.mu.Unlock()
+
+	for _, ext := range exts {
+		if !ext.alive {
+			continue
+		}
+		result, err := ext.request(ctx, "branch/summary", map[string]any{
+			"messages": messages,
+		})
+		if err != nil {
+			continue
+		}
+		var cr struct {
+			Summary string `json:"summary"`
+			OK      bool   `json:"ok"`
+		}
+		if err := json.Unmarshal(result, &cr); err != nil {
+			continue
+		}
+		if cr.OK && cr.Summary != "" {
+			return cr.Summary, true
+		}
+	}
+	return "", false
+}
+
 // Close shuts down all extension processes.
 func (m *StdioManager) Close() error {
 	m.mu.Lock()
@@ -603,7 +700,7 @@ func (e *stdioExt) kill() {
 
 // eventType returns the event type string for an Event.
 func eventType(e Event) string {
-	switch e.(type) {
+	switch v := e.(type) {
 	case AgentStart:
 		return "agent_start"
 	case TurnStart:
@@ -616,6 +713,8 @@ func eventType(e Event) string {
 		return "assistant_message"
 	case AgentEnd:
 		return "agent_end"
+	case SessionEvent:
+		return v.Type
 	default:
 		return ""
 	}
@@ -637,6 +736,8 @@ func eventData(e Event) any {
 		return map[string]any{"message": v.Message}
 	case AgentEnd:
 		return map[string]any{"turns": v.Turns, "finish_reason": v.FinishReason}
+	case SessionEvent:
+		return map[string]any{"id": v.ID, "label": v.Label}
 	default:
 		return nil
 	}
