@@ -629,6 +629,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modelList = msg.models
 		if len(msg.models) > 0 {
 			m.modelName = msg.models[0]
+			m.persistEntry(ai.NewModelChange(m.modelName))
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.err = ""
 			m.refresh()
@@ -958,6 +959,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			m.thinkingLevel = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
 		}
 		m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
+		m.persistEntry(ai.NewThinkingLevelChange(m.thinkingLevel))
 		m.transcript += "\n" + m.theme.Info.Render("[thinking "+m.thinkingLevel+"]") + "\n"
 		m.refresh()
 		return m, nil
@@ -1014,12 +1016,13 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.modelName = m.modelList[n-1]
+			m.persistEntry(ai.NewModelChange(m.modelName))
 			m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 			m.refresh()
 			return m, m.titleCmd()
-		}
-		// Validate against cached model list if available.
-		if len(m.modelList) > 0 {
+			}
+			// Validate against cached model list if available.
+			if len(m.modelList) > 0 {
 			found := false
 			for _, name := range m.modelList {
 				if name == arg {
@@ -1032,8 +1035,9 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 				m.refresh()
 				return m, nil
 			}
-		}
-		m.modelName = arg
+			}
+			m.modelName = arg
+			m.persistEntry(ai.NewModelChange(m.modelName))
 		m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 		m.refresh()
 		return m, m.titleCmd()
@@ -1339,6 +1343,16 @@ func (m *model) resetSession() {
 	m.segments = nil
 }
 
+// persistEntry appends a non-conversation entry (model change, thinking
+// level change) to the session store. No-op for ephemeral sessions or
+// when no store is available.
+func (m *model) persistEntry(msg ai.Message) {
+	if m.store == nil || m.sessionID == "" || m.ephemeral {
+		return
+	}
+	_ = m.store.AppendMessage(context.Background(), m.sessionID, msg)
+}
+
 // handleExtensions lists loaded extensions with name, tool count,
 // command count, and status.
 func (m model) handleExtensions() (tea.Model, tea.Cmd) {
@@ -1560,6 +1574,16 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	m.err = ""
 	m.storeErr = ""
 	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_resume", ID: id})
+	// Replay model and thinking level changes from the session history.
+	for _, msg := range messages {
+		switch v := msg.(type) {
+		case ai.ModelChange:
+			m.modelName = v.Model
+		case ai.ThinkingLevelChange:
+			m.thinkingLevel = v.Level
+			m.showThinking = ai.ThinkingEnabled(v.Level)
+		}
+	}
 	// Load the session label for the status bar.
 	if sess, err := m.store.GetSession(context.Background(), id); err == nil && sess.Label != "" {
 		m.sessionLabel = sess.Label

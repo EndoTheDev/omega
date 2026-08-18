@@ -316,6 +316,10 @@ func encodeMessage(msg ai.Message) (string, []byte, error) {
 		role = "assistant"
 	case ai.ToolResult:
 		role = "tool"
+	case ai.ModelChange:
+		role = "model_change"
+	case ai.ThinkingLevelChange:
+		role = "thinking_level_change"
 	default:
 		return "", nil, fmt.Errorf("unknown message type %T", msg)
 	}
@@ -349,6 +353,18 @@ func decodeMessage(role string, payload []byte) (ai.Message, error) {
 		return m, nil
 	case "tool":
 		var m ai.ToolResult
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "model_change":
+		var m ai.ModelChange
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "thinking_level_change":
+		var m ai.ThinkingLevelChange
 		if err := json.Unmarshal(payload, &m); err != nil {
 			return nil, err
 		}
@@ -438,6 +454,11 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error
 			sessUserMsgs := 0
 			sessToolCalls := 0
 			for _, msg := range msgs {
+				// Skip non-conversation entries (metadata, not messages).
+				switch msg.(type) {
+				case ai.ModelChange, ai.ThinkingLevelChange:
+					continue
+				}
 				in.Messages++
 				switch m := msg.(type) {
 				case ai.User:

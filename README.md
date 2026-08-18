@@ -414,6 +414,7 @@ provider that scripts stream events.
 - Session insights (`omega insights [--days N]`, `/insights [days]`)
 - Per-path file locks (serialize concurrent writes to the same file)
 - Extension customization hooks (prompt guidelines, compaction, branch summary, session lifecycle)
+- Session entry types (model_change, thinking_level_change persisted and replayed on resume)
 
 ### Planned
 
@@ -422,9 +423,7 @@ provider that scripts stream events.
 - More providers (Gemini, Mistral)
 - Web UI (via the gateway HTTP API)
 - Project trust system for per-project skills and extensions
-- Extension hooks (pre/post on input, tool_call, tool_result)
 - Prompt templates with variable interpolation
-- Session stats and entry types
 
 ### Known Limitations
 

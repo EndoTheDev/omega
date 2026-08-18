@@ -12,7 +12,7 @@ a channel, and retries transient HTTP failures with exponential backoff.
 ## Ownership
 
 - `provider.go` - Provider interface, NewProvider factory, ToolSchema type, sseData SSE line reader, shared httpClient with SetHTTPTimeout
-- `messages.go` - Message sealed interface; System, User (with optional Images), Assistant, ToolResult concrete types; ImageContent struct; timestamp helpers
+- `messages.go` - Message sealed interface; System, User (with optional Images), Assistant, ToolResult, ModelChange, ThinkingLevelChange concrete types; ImageContent struct; timestamp helpers
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk, ToolCallEvent, StreamEnd concrete types; ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter, retryableStatus, maxRetries (OMEGA_MAX_RETRIES env)
 - `ollama.go` - OllamaProvider: message conversion, streaming chat, Bearer auth for Ollama Cloud

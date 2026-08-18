@@ -14,9 +14,10 @@ and environment variables. It is the only layer external clients talk to.
   decoding, session-aware chat flow with message persistence
 - `store.go` - SQLite session store: `Session`, `SessionNode`, `Store`,
   schema migration, session CRUD, message append/read, session tree,
-  ancestor message walk, message encode/decode, `ComputeInsights`
-  (cross-session analytics: `Insights`, `ToolStat`, `DayStat`,
-  `NotableStat`)
+  ancestor message walk, message encode/decode (including
+  `model_change` and `thinking_level_change` entry types),
+  `ComputeInsights` (cross-session analytics: `Insights`, `ToolStat`,
+  `DayStat`, `NotableStat`; skips non-conversation entries)
 - `config.go` - `Config` and sub-configs, `LoadConfig` (YAML + env +
   defaults), `DefaultConfig`, `applyEnv`, `Validate`
 - `config_test.go` - config loading and env override tests
@@ -48,8 +49,10 @@ and environment variables. It is the only layer external clients talk to.
   streaming completes. Intermediate tool-loop messages are not persisted.
 - **Message wire format uses role discrimination.** Both `decodeMessages`
   (wire) and `encodeMessage`/`decodeMessage` (store) switch on the
-  `role` field: `system`, `user`, `assistant`, `tool`. The store payload
-  mirrors the wire JSON.
+  `role` field: `system`, `user`, `assistant`, `tool`, `model_change`,
+  `thinking_level_change`. The store payload mirrors the wire JSON.
+  Non-conversation entries (`model_change`, `thinking_level_change`)
+  are skipped in `ComputeInsights` message/token counts.
 - **Config layering is YAML, then env, then defaults.** `LoadConfig`
   starts from `DefaultConfig`, overlays YAML, applies `OMEGA_*` env
   overrides, then validates. `provider.model_name` and `server.port` are

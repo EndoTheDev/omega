@@ -93,3 +93,31 @@ func NewToolResult(content, toolCallID string, isError bool) ToolResult {
 		Timestamp:  NowISO(),
 	}
 }
+
+// ModelChange is a session entry recording a model switch. It is
+// persisted to the store and replayed on resume to restore the model.
+type ModelChange struct {
+	Model     string `json:"model"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+func (ModelChange) isMessage() {}
+
+// NewModelChange creates a ModelChange with timestamp set.
+func NewModelChange(model string) ModelChange {
+	return ModelChange{Model: model, Timestamp: NowISO()}
+}
+
+// ThinkingLevelChange is a session entry recording a thinking level
+// change. It is persisted to the store and replayed on resume.
+type ThinkingLevelChange struct {
+	Level     string `json:"level"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+func (ThinkingLevelChange) isMessage() {}
+
+// NewThinkingLevelChange creates a ThinkingLevelChange with timestamp set.
+func NewThinkingLevelChange(level string) ThinkingLevelChange {
+	return ThinkingLevelChange{Level: level, Timestamp: NowISO()}
+}
