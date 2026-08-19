@@ -29,10 +29,10 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `ToolProvider`, `SessionStore`)
 - `defaults.go` - default seam implementations (`DefaultPromptBuilder`,
   `DefaultCompactor`, `DefaultToolProvider`)
-- `skill.go` - `Skill` type (data type used by `SetSkills` + `runLoadSkill`)
+- `skill.go` - `Skill` type (data type used by `SetSkills` for system prompt listing)
 - `testdata/mock_extension/` - mock extension binary for extension tests
-- `tools.go` - built-in tool registry (`shell.run`, `files.read`, `files.write`,
-  `files.edit`), per-path file locking (`fileLocks`, `fileMutex`), `runLoadSkill`.
+- `tools.go` - empty tool registry (`NewRegistry` returns empty map).
+  Built-in tools moved to `bin/extensions/core-tools/` extension.
   Tool naming convention: `namespace.action` (e.g. `files.read`, `shell.run`,
   `skills.read`). Extension tools use `<server>.<tool>` (e.g. `obsidian.vault_read`).
 - `*_test.go` - self-check tests for each non-trivial package

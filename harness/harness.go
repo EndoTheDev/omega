@@ -52,24 +52,18 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		}
 	}
 
-	// Tools section: list native tools and extension-provided tools
-	// so the agent knows where each tool comes from.
+	// Tools section: list all tools from extensions so the agent knows
+	// where each tool comes from. Native tools are now provided by the
+	// core-tools extension, so everything is dynamic.
 	b.WriteString("\n## Tools\n")
-	b.WriteString("### Native\n")
-	b.WriteString("- shell.run: Run a shell command\n")
-	b.WriteString("- files.read: Read a file\n")
-	b.WriteString("- files.write: Write a file\n")
-	b.WriteString("- files.edit: Apply a targeted find-and-replace patch\n")
-	b.WriteString("- skills.read: Load a skill's full content\n")
 	if len(opts.Extensions) > 0 {
-		b.WriteString("\n### Extensions\n")
 		for _, ext := range opts.Extensions {
 			if len(ext.ToolList) > 0 {
-				var tools []string
+				fmt.Fprintf(&b, "### %s\n", ext.Name)
 				for _, t := range ext.ToolList {
-					tools = append(tools, t.Name+" ("+t.Description+")")
+					fmt.Fprintf(&b, "- %s: %s\n", t.Name, firstLine(t.Description))
 				}
-				fmt.Fprintf(&b, "- %s: %s\n", ext.Name, strings.Join(tools, ", "))
+				b.WriteString("\n")
 			}
 		}
 	}
@@ -95,6 +89,19 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// firstLine returns the first non-empty line of s, or s itself if it
+// has no newlines. Used to keep tool descriptions short in the system
+// prompt and /tools display — full descriptions go to the LLM via
+// the provider's JSON tool schemas.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) != "" {
+			return strings.TrimSpace(line)
+		}
+	}
+	return s
 }
 
 // LoadSkills scans dir for subdirectories, each containing a skill file

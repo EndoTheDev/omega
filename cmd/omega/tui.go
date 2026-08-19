@@ -1366,64 +1366,42 @@ func (m *model) persistEntry(msg ai.Message) {
 
 // handleExtensions lists loaded extensions with name, tool count,
 // command count, and status.
-// handleToolsList renders a grouped listing of all available tools:
-// native built-ins first, then per-extension tools.
+// handleToolsList renders a grouped listing of all available tools
+// from loaded extensions. All tools are extension-provided (including
+// the core-tools extension which provides shell.run, files.*, skills.read).
 func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")
 
-	// Native tools.
-	sb.WriteString(m.theme.Info.Render("Native"))
-	sb.WriteString("\n")
-	native := []struct{ name, desc string }{
-		{"shell.run", "Run a shell command"},
-		{"files.read", "Read a file"},
-		{"files.write", "Write a file"},
-		{"files.edit", "Apply a targeted find-and-replace patch"},
-		{"skills.read", "Load a skill's full content"},
-	}
-	nameWidth := 0
-	for _, t := range native {
-		if len(t.name) > nameWidth {
-			nameWidth = len(t.name)
-		}
-	}
 	var infos []agent.ExtensionInfo
 	if m.extensions != nil {
 		infos = m.extensions.Infos()
-		for _, ext := range infos {
-			for _, t := range ext.ToolList {
-				if len(t.Name) > nameWidth {
-					nameWidth = len(t.Name)
-				}
-			}
-		}
-	}
-	for _, t := range native {
-		fmt.Fprintf(&sb, "  %-*s  %s\n", nameWidth, t.name, t.desc)
 	}
 
-	// Extension tools.
-	hasTools := false
+	nameWidth := 0
 	for _, ext := range infos {
-		if len(ext.ToolList) > 0 {
-			hasTools = true
-			break
+		for _, t := range ext.ToolList {
+			if len(t.Name) > nameWidth {
+				nameWidth = len(t.Name)
+			}
 		}
 	}
-	if hasTools {
-		sb.WriteString("\n")
-		sb.WriteString(m.theme.Info.Render("Extensions"))
-		sb.WriteString("\n")
-		for _, ext := range infos {
-			if len(ext.ToolList) == 0 {
-				continue
-			}
-			fmt.Fprintf(&sb, "  %s\n", ext.Name)
-			for _, t := range ext.ToolList {
-				fmt.Fprintf(&sb, "    %-*s  %s\n", nameWidth, t.Name, t.Description)
-			}
+
+	for _, ext := range infos {
+		if len(ext.ToolList) == 0 {
+			continue
 		}
+		sb.WriteString(m.theme.Info.Render(ext.Name))
+		sb.WriteString("\n")
+		for _, t := range ext.ToolList {
+			fmt.Fprintf(&sb, "  %-*s  %s\n", nameWidth, t.Name, firstLineOfDesc(t.Description))
+		}
+		sb.WriteString("\n")
+	}
+
+	if nameWidth == 0 {
+		sb.WriteString(m.theme.Info.Render("[no tools available]"))
+		sb.WriteString("\n")
 	}
 
 	m.transcript += sb.String()
@@ -2173,6 +2151,18 @@ func (m *model) refresh() {
 
 // extLexers maps file extensions to chroma lexer names for syntax
 // highlighting in tool results.
+// firstLineOfDesc returns the first non-empty line of a tool description,
+// keeping the /tools display compact. Full descriptions go to the LLM
+// via the provider's JSON tool schemas.
+func firstLineOfDesc(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) != "" {
+			return strings.TrimSpace(line)
+		}
+	}
+	return s
+}
+
 var extLexers = map[string]string{
 	".go":   "go",
 	".py":   "python",

@@ -60,7 +60,10 @@ Flags:
 // project path: omega chdirs there and starts the TUI.
 func run(args []string) error {
 	// Set OMEGA_HOME early so all child processes (extensions) inherit it.
-	os.Setenv("OMEGA_HOME", omegaHome())
+	home := omegaHome()
+	os.Setenv("OMEGA_HOME", home)
+	// Set OMEGA_SKILLS_DIR so the core-tools extension can read skills.
+	os.Setenv("OMEGA_SKILLS_DIR", home+"/skills")
 	for _, a := range args {
 		switch a {
 		case "--help", "-h":

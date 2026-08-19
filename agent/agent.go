@@ -34,6 +34,7 @@ type Agent struct {
 	tools         map[string]Tool
 	toolProvider  ToolProvider
 	extensions    ExtensionManager
+	skills        []Skill
 	maxTurns      int
 	promptBuilder PromptBuilder
 	compactor     Compactor
@@ -100,28 +101,13 @@ func (a *Agent) SetToolProvider(tp ToolProvider) {
 	a.toolProvider = tp
 }
 
-// SetSkills registers a skills.read tool that lets the agent pull in a
-// skill's full content on demand. The system prompt advertises skills
-// by name and description; this tool gives the agent a way to read the
-// actual skill body and its directory path when it needs to follow the
-// skill's instructions.
+// SetSkills stores loaded skills for the system prompt listing.
+// The skills.read tool is now provided by the core-tools extension,
+// which reads OMEGA_SKILLS_DIR to scan and parse skills on demand.
 func (a *Agent) SetSkills(skills []Skill) {
-	if len(skills) == 0 {
-		return
-	}
-	a.tools["skills.read"] = Tool{
-		Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name": map[string]any{"type": "string", "description": "The skill name (from the Available Skills list)"},
-			},
-			"required": []string{"name"},
-		},
-		Run: func(ctx context.Context, args map[string]any) (string, error) {
-			return runLoadSkill(skills, args)
-		},
-	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.skills = skills
 }
 
 // ModelName returns the name of the model the agent's provider serves.
