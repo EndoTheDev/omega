@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 
 // PromptOptions configures the system prompt builder.
 type PromptOptions struct {
-	ProjectContext string          // AGENTS.md contents, may be empty
-	Skills         []agent.Skill   // loaded skills, may be empty
+	ProjectContext string              // AGENTS.md contents, may be empty
+	Skills         []agent.Skill       // loaded skills, may be empty
+	Extensions     []agent.ExtensionInfo // loaded extensions, may be nil
 	CWD            string
 	Custom         string   // user-supplied prompt from config, may be empty
 	Append         []string // extra prompts from --append-system-prompt, may be nil
@@ -44,14 +46,38 @@ func BuildSystemPrompt(opts PromptOptions) string {
 
 	if len(opts.Skills) > 0 {
 		b.WriteString("\n## Available Skills\n")
-		b.WriteString("Call the load_skill tool with a skill name to read its full content.\n")
+		b.WriteString("Call the skills.read tool with a skill name to read its full content.\n")
 		for _, skill := range opts.Skills {
 			fmt.Fprintf(&b, "- %s: %s\n", skill.Name, skill.Description)
 		}
 	}
 
+	// Tools section: list native tools and extension-provided tools
+	// so the agent knows where each tool comes from.
+	b.WriteString("\n## Tools\n")
+	b.WriteString("### Native\n")
+	b.WriteString("- shell.run: Run a shell command\n")
+	b.WriteString("- files.read: Read a file\n")
+	b.WriteString("- files.write: Write a file\n")
+	b.WriteString("- files.edit: Apply a targeted find-and-replace patch\n")
+	b.WriteString("- skills.read: Load a skill's full content\n")
+	if len(opts.Extensions) > 0 {
+		b.WriteString("\n### Extensions\n")
+		for _, ext := range opts.Extensions {
+			if len(ext.ToolNames) > 0 {
+				fmt.Fprintf(&b, "- %s: %s\n", ext.Name, strings.Join(ext.ToolNames, ", "))
+			}
+		}
+	}
+
 	b.WriteString("\n## Environment\n")
 	fmt.Fprintf(&b, "CWD: %s\n", opts.CWD)
+	fmt.Fprintf(&b, "OS: %s\n", runtime.GOOS)
+	if runtime.GOOS == "windows" {
+		b.WriteString("Shell: cmd.exe\n")
+	} else {
+		b.WriteString("Shell: bash\n")
+	}
 	fmt.Fprintf(&b, "Date: %s\n", time.Now().Format("2006-01-02"))
 
 	if opts.Custom != "" {

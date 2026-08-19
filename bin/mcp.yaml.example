@@ -1,0 +1,17 @@
+# MCP bridge config. Copy to mcp.yaml and edit.
+# Place in OMEGA_HOME (binary directory, or ~/.omega/).
+#
+# servers:
+#   - name: obsidian
+#     url: http://127.0.0.1:27123/mcp/
+#     headers:
+#       Authorization: Bearer xxx
+#   - name: filesystem
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-filesystem"
+#       - /home/user
+#
+# If url is set: Streamable HTTP transport.
+# If command is set: stdio transport (spawns the process).

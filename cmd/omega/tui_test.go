@@ -77,7 +77,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
-	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell"}}})
+	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
 	m.handleEvent(agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hello world")})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
@@ -85,7 +85,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 	if !strings.Contains(plain, "hello world") {
 		t.Fatalf("transcript missing streamed content: %q", plain)
 	}
-	if !strings.Contains(plain, "[tool: shell]") {
+	if !strings.Contains(plain, "[tool: shell.run]") {
 		t.Fatalf("transcript missing tool label: %q", plain)
 	}
 	if len(m.history) != 1 {
@@ -910,13 +910,13 @@ func TestSegmentOrder(t *testing.T) {
 	m.showThinking = true
 
 	m.handleEvent(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "plan"}})
-	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell"}}})
+	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "done"}})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	plain := ansiStrip(m.transcript)
 	thinkIdx := strings.Index(plain, "[thinking]")
-	toolIdx := strings.Index(plain, "[tool: shell]")
+	toolIdx := strings.Index(plain, "[tool: shell.run]")
 	respIdx := strings.Index(plain, "done")
 
 	if thinkIdx < 0 || toolIdx < 0 || respIdx < 0 {
@@ -1067,8 +1067,8 @@ func TestAutocompleteArgLevel(t *testing.T) {
 	// /tools offers on/off/auto.
 	m.textarea.SetValue("/tools")
 	m.updateAutocomplete()
-	want = []string{"/tools on", "/tools off", "/tools auto"}
-	if len(m.autocompleteMatches) != 3 {
+	want = []string{"/tools on", "/tools off", "/tools auto", "/tools list"}
+	if len(m.autocompleteMatches) != 4 {
 		t.Fatalf("/tools matches = %v, want %v", m.autocompleteMatches, want)
 	}
 	for i, w := range want {
@@ -1261,7 +1261,7 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 	thinking := "let me check the time"
 	assistant := ai.NewAssistant("")
 	assistant.Thinking = &thinking
-	assistant.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "shell", Arguments: map[string]any{"command": "date"}}}
+	assistant.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "shell.run", Arguments: map[string]any{"command": "date"}}}
 	messages := []ai.Message{
 		ai.NewUser("whats the time rn?"),
 		assistant,
@@ -1276,7 +1276,7 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 	if !strings.Contains(out, "[thinking]") || !strings.Contains(out, "let me check the time") {
 		t.Fatalf("missing thinking block: %q", out)
 	}
-	if !strings.Contains(out, "[tool: shell]") || !strings.Contains(out, "command: date") {
+	if !strings.Contains(out, "[tool: shell.run]") || !strings.Contains(out, "command: date") {
 		t.Fatalf("missing tool call: %q", out)
 	}
 	if !strings.Contains(out, "[tool result]") || !strings.Contains(out, "11:12 AM") {
@@ -1287,7 +1287,7 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 	}
 	// Order check: thinking before tool before result before content.
 	idx := func(s string) int { return strings.Index(out, s) }
-	if !(idx("[thinking]") < idx("[tool: shell]") && idx("[tool: shell]") < idx("[tool result]") && idx("[tool result]") < idx("It's 11:12 AM.")) {
+	if !(idx("[thinking]") < idx("[tool: shell.run]") && idx("[tool: shell.run]") < idx("[tool result]") && idx("[tool result]") < idx("It's 11:12 AM.")) {
 		t.Fatalf("blocks out of order: %q", out)
 	}
 }

@@ -100,7 +100,7 @@ func (a *Agent) SetToolProvider(tp ToolProvider) {
 	a.toolProvider = tp
 }
 
-// SetSkills registers a load_skill tool that lets the agent pull in a
+// SetSkills registers a skills.read tool that lets the agent pull in a
 // skill's full content on demand. The system prompt advertises skills
 // by name and description; this tool gives the agent a way to read the
 // actual skill body and its directory path when it needs to follow the
@@ -109,7 +109,7 @@ func (a *Agent) SetSkills(skills []Skill) {
 	if len(skills) == 0 {
 		return
 	}
-	a.tools["load_skill"] = Tool{
+	a.tools["skills.read"] = Tool{
 		Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.",
 		Parameters: map[string]any{
 			"type": "object",

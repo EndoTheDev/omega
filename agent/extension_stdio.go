@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -509,12 +510,18 @@ func (m *StdioManager) Infos() []ExtensionInfo {
 		if !ext.alive {
 			status = "stopped"
 		}
+		var toolNames []string
+		for name := range ext.tools {
+			toolNames = append(toolNames, name)
+		}
+		sort.Strings(toolNames)
 		infos[i] = ExtensionInfo{
-			Name:     ext.name,
-			Tools:    len(ext.tools),
-			Commands: len(ext.commands),
-			Seams:    ext.seams,
-			Status:   status,
+			Name:      ext.name,
+			Tools:     len(ext.tools),
+			Commands:  len(ext.commands),
+			ToolNames: toolNames,
+			Seams:     ext.seams,
+			Status:    status,
 		}
 	}
 	return infos

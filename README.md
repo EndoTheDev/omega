@@ -291,12 +291,12 @@ bin/omega chat --project-extensions            # also load <cwd>/.omega/extensio
 
 ### Example: Web Extension
 
-omega ships an example extension in `bin/extensions/example/` that provides
+omega ships a web search extension in `bin/extensions/ollama-web/` that provides
 web search and fetch tools via the [Ollama Cloud API](https://ollama.com).
 
 ```bash
-# Build the example extension
-go build -o bin/extensions/example/example.exe ./bin/extensions/example/
+# Build the web search extension
+go build -o bin/extensions/ollama-web/ollama-web.exe ./bin/extensions/ollama-web/
 
 # Enable extensions in config.yaml (see above), then:
 bin/omega chat
@@ -320,7 +320,7 @@ An extension is any executable that speaks JSON-RPC over stdio:
 4. Receive a `shutdown` notification on exit.
 
 See `bin/extensions/README.md` for the full protocol reference and
-`bin/extensions/example/main.go` for a complete implementation.
+`bin/extensions/ollama-web/main.go` for a complete implementation.
 
 ## TUI Commands
 

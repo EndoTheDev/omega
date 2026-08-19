@@ -284,16 +284,16 @@ func TestLangForTool(t *testing.T) {
 		args     map[string]any
 		want     string
 	}{
-		{"read_file", map[string]any{"path": "main.go"}, "go"},
-		{"read_file", map[string]any{"path": "app.py"}, "python"},
-		{"read_file", map[string]any{"path": "index.ts"}, "typescript"},
-		{"read_file", map[string]any{"path": "main.rs"}, "rust"},
-		{"read_file", map[string]any{"path": "Dockerfile"}, "dockerfile"},
-		{"read_file", map[string]any{"path": "Makefile"}, "makefile"},
-		{"read_file", map[string]any{"path": "notes.txt"}, ""},
-		{"read_file", map[string]any{"path": "noext"}, ""},
-		{"shell", map[string]any{"command": "ls -la"}, "bash"},
-		{"write_file", map[string]any{"path": "x.go", "content": "..."}, ""},
+		{"files.read", map[string]any{"path": "main.go"}, "go"},
+		{"files.read", map[string]any{"path": "app.py"}, "python"},
+		{"files.read", map[string]any{"path": "index.ts"}, "typescript"},
+		{"files.read", map[string]any{"path": "main.rs"}, "rust"},
+		{"files.read", map[string]any{"path": "Dockerfile"}, "dockerfile"},
+		{"files.read", map[string]any{"path": "Makefile"}, "makefile"},
+		{"files.read", map[string]any{"path": "notes.txt"}, ""},
+		{"files.read", map[string]any{"path": "noext"}, ""},
+		{"shell.run", map[string]any{"command": "ls -la"}, "bash"},
+		{"files.write", map[string]any{"path": "x.go", "content": "..."}, ""},
 		{"unknown", nil, ""},
 	}
 	for _, tt := range tests {

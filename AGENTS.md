@@ -96,9 +96,12 @@ AGENTS.md (root — this file)
 │   ├── omega.exe              # built binary (gitignored)
 │   ├── config.yaml            # personal config (gitignored)
 │   ├── config.yaml.example    # config template (tracked)
+│   ├── mcp.yaml.example       # MCP bridge config template (tracked)
 │   ├── omega.db               # session database (gitignored)
 │   ├── trust.yaml             # trust state (gitignored)
-│   ├── extensions/            # extension authoring guide + example (tracked)
+│   ├── extensions/            # extension authoring guide + extensions (tracked)
+│   │   ├── mcp-bridge/        # MCP bridge extension (stdio + HTTP)
+│   │   └── ollama-web/        # web search/fetch extension (Ollama Cloud)
 │   └── skills/                # skill templates (tracked)
 └── cmd/
     └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /insights, /thinking, /tools, /extensions, /skills, /models, /model <#|name>
@@ -144,5 +147,5 @@ rules but cannot override core contracts.
 | `harness/`        | Implemented | Harness layer: system prompt building (`BuildSystemPrompt`), skill loading (`LoadSkills`), project context loading (`LoadProjectContext`, `ProjectRoot`)                                                                                                                                                                                                                                    |
 | `gateway/`        | Implemented | HTTP server, SSE streaming, session store, config, session tree, cross-session insights (`ComputeInsights`); SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end                                                                                                                                |
 | `cmd/omega/`      | Implemented | Single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name)           |
-| `bin/`            | Runtime     | Build output, config, database, extensions, skills. Gitignored except `config.yaml.example`, `extensions/` (authoring guide + example), `skills/` (templates). Build via `./build.sh` or `build.bat`                                                                                                                                                                                        |
-| `bin/extensions/` | Reference   | Extension authoring guide (README.md), example web extension, and skill templates                                                                                                                                                                                                                                                                                                           |     |
+| `bin/`            | Runtime     | Build output, config, database, extensions, skills. Gitignored except `config.yaml.example`, `extensions/` (authoring guide + extensions), `skills/` (templates). Build via `./build.sh` or `build.bat`                                                                                                                                                                                     |
+| `bin/extensions/` | Reference   | Extension authoring guide (README.md), web search extension + MCP bridge, and skill templates                                                                                                                                                                                                                                                                                               |     |

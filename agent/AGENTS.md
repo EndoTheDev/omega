@@ -20,7 +20,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `extension.go` - `ExtensionManager` interface (tools, commands, events,
   `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
   `BuildPrompt`, `CompactMessages`, `SeamProviders`), `NoopManager`,
-  `ExtensionCommand`, `ExtensionInfo` (with `Seams` field),
+  `ExtensionCommand`, `ExtensionInfo` (with `Seams`, `ToolNames` fields),
   `PromptBuildOptions`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
@@ -31,8 +31,10 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `DefaultCompactor`, `DefaultToolProvider`)
 - `skill.go` - `Skill` type (data type used by `SetSkills` + `runLoadSkill`)
 - `testdata/mock_extension/` - mock extension binary for extension tests
-- `tools.go` - built-in tool registry (`shell`, `read_file`, `write_file`,
-  `edit`), per-path file locking (`fileLocks`, `fileMutex`), `runLoadSkill`
+- `tools.go` - built-in tool registry (`shell.run`, `files.read`, `files.write`,
+  `files.edit`), per-path file locking (`fileLocks`, `fileMutex`), `runLoadSkill`.
+  Tool naming convention: `namespace.action` (e.g. `files.read`, `shell.run`,
+  `skills.read`). Extension tools use `<server>.<tool>` (e.g. `obsidian.vault_read`).
 - `*_test.go` - self-check tests for each non-trivial package
 
 ## Local Contracts

@@ -226,7 +226,7 @@ var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label"
 var commandOptions = map[string][]string{
 	"/new":      {"--ephemeral"},
 	"/thinking": {"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"},
-	"/tools":    {"on", "off", "auto"},
+	"/tools":    {"on", "off", "auto", "list"},
 	"/theme":    {"dark", "light", "auto"},
 	"/sessions": {"delete"},
 }
@@ -985,13 +985,14 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			case "auto":
 				m.showToolResults = true
 				m.toolResultsAuto = true
+			case "list":
+				return m.handleToolsList()
 			default:
-				m.err = "usage: /tools [on|off|auto]"
+				m.err = "usage: /tools [on|off|auto|list]"
 				return m, nil
 			}
 		} else {
-			m.showToolResults = !m.showToolResults
-			m.toolResultsAuto = false
+			return m.handleToolsList()
 		}
 		state := "expanded"
 		if m.toolResultsAuto {
@@ -1365,6 +1366,71 @@ func (m *model) persistEntry(msg ai.Message) {
 
 // handleExtensions lists loaded extensions with name, tool count,
 // command count, and status.
+// handleToolsList renders a grouped listing of all available tools:
+// native built-ins first, then per-extension tools.
+func (m model) handleToolsList() (tea.Model, tea.Cmd) {
+	var sb strings.Builder
+	sb.WriteString("\n")
+
+	// Native tools.
+	sb.WriteString(m.theme.Info.Render("Native"))
+	sb.WriteString("\n")
+	native := []struct{ name, desc string }{
+		{"shell.run", "Run a shell command"},
+		{"files.read", "Read a file"},
+		{"files.write", "Write a file"},
+		{"files.edit", "Apply a targeted find-and-replace patch"},
+		{"skills.read", "Load a skill's full content"},
+	}
+	nameWidth := 0
+	for _, t := range native {
+		if len(t.name) > nameWidth {
+			nameWidth = len(t.name)
+		}
+	}
+	var infos []agent.ExtensionInfo
+	if m.extensions != nil {
+		infos = m.extensions.Infos()
+		for _, ext := range infos {
+			for _, name := range ext.ToolNames {
+				if len(name) > nameWidth {
+					nameWidth = len(name)
+				}
+			}
+		}
+	}
+	for _, t := range native {
+		fmt.Fprintf(&sb, "  %-*s  %s\n", nameWidth, t.name, t.desc)
+	}
+
+	// Extension tools.
+	hasTools := false
+	for _, ext := range infos {
+		if len(ext.ToolNames) > 0 {
+			hasTools = true
+			break
+		}
+	}
+	if hasTools {
+		sb.WriteString("\n")
+		sb.WriteString(m.theme.Info.Render("Extensions"))
+		sb.WriteString("\n")
+		for _, ext := range infos {
+			if len(ext.ToolNames) == 0 {
+				continue
+			}
+			fmt.Fprintf(&sb, "  %s\n", ext.Name)
+			for _, name := range ext.ToolNames {
+				fmt.Fprintf(&sb, "    %-*s\n", nameWidth, name)
+			}
+		}
+	}
+
+	m.transcript += sb.String()
+	m.refresh()
+	return m, nil
+}
+
 func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	infos := m.extensions.Infos()
 	if len(infos) == 0 {
@@ -2148,7 +2214,7 @@ var extLexers = map[string]string{
 // determined (plain text fallback).
 func langForTool(toolName string, args map[string]any) string {
 	switch toolName {
-	case "read_file":
+	case "files.read":
 		if path, ok := args["path"].(string); ok {
 			ext := strings.ToLower(filepath.Ext(path))
 			if lang, ok := extLexers[ext]; ok {
@@ -2163,7 +2229,7 @@ func langForTool(toolName string, args map[string]any) string {
 				return "makefile"
 			}
 		}
-	case "shell", "bash":
+	case "shell.run", "shell", "bash":
 		return "bash"
 	}
 	return ""
@@ -2627,7 +2693,7 @@ func (m model) renderHelp() string {
 		{"/export [path]", "export session messages to JSONL (default: <session_id>.jsonl)"},
 		{"/insights [days]", "show cross-session usage analytics (default: 30 days)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
-		{"/tools [on|off|auto]", "tool results: expanded / collapsed / auto (no arg toggles)"},
+		{"/tools [on|off|auto|list]", "tool results: expanded / collapsed / auto, or list all tools"},
 		{"/extensions", "list loaded extensions"},
 		{"/skills", "list loaded skills"},
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},

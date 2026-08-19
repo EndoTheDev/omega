@@ -333,7 +333,7 @@ and binary. Files are skipped when:
 
 ## Windows notes
 
-- Name extension binaries with a `.exe` suffix (e.g. `example.exe`).
+- Name extension binaries with a `.exe` suffix (e.g. `ollama-web.exe`).
 - If a binary has no extension and a `.exe` variant exists in the same
   directory, omega uses the `.exe` variant automatically.
 - `filepath.WalkDir` returns relative paths with backslashes, which
@@ -344,14 +344,14 @@ and binary. Files are skipped when:
 
 ## Example
 
-The `example/` directory contains a web extension that provides
+The `ollama-web/` directory contains a web extension that provides
 `web.search` and `web.fetch` tools using the Ollama Cloud API. It is a
-complete reference implementation - see `example/main.go`.
+complete reference implementation - see `ollama-web/main.go`.
 
 ```bash
-# Build the example extension
-go build -o example/example.exe ./example/
+# Build the web search extension
+go build -o ollama-web/ollama-web.exe ./ollama-web/
 ```
 
-The example directory is at `bin/extensions/example/` relative to the
+The example directory is at `bin/extensions/ollama-web/` relative to the
 repo root.

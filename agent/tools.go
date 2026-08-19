@@ -31,7 +31,7 @@ func fileMutex(path string) *sync.Mutex {
 }
 func NewRegistry() map[string]Tool {
 	return map[string]Tool{
-		"shell": {
+		"shell.run": {
 			Description: "Run a shell command and return its stdout and stderr.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -42,7 +42,7 @@ func NewRegistry() map[string]Tool {
 			},
 			Run: runShell,
 		},
-		"read_file": {
+		"files.read": {
 			Description: "Read a file, returning its contents with line numbers.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -55,7 +55,7 @@ func NewRegistry() map[string]Tool {
 			},
 			Run: runReadFile,
 		},
-		"write_file": {
+		"files.write": {
 			Description: "Write content to a file, creating parent directories as needed.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -67,7 +67,7 @@ func NewRegistry() map[string]Tool {
 			},
 			Run: runWriteFile,
 		},
-		"edit": {
+		"files.edit": {
 			Description: "Apply a targeted find-and-replace patch to a file.",
 			Parameters: map[string]any{
 				"type": "object",

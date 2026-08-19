@@ -90,11 +90,12 @@ type ExtensionCommand struct {
 
 // ExtensionInfo is metadata about a loaded extension, for display.
 type ExtensionInfo struct {
-	Name     string
-	Tools    int
-	Commands int
-	Seams    []string // declared seam types ("prompt_builder", "compactor", etc.)
-	Status   string   // "running" or "error: ..."
+	Name      string
+	Tools     int
+	Commands  int
+	Seams     []string // declared seam types ("prompt_builder", "compactor", etc.)
+	ToolNames []string // names of tools provided by this extension
+	Status    string   // "running" or "error: ..."
 }
 
 // PromptBuildOptions carries context for extension-built system prompts.

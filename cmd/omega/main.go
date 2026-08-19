@@ -319,7 +319,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())
 	ag.SetPromptBuilder(agent.DefaultPromptBuilder{
-		Prompt: buildSystemPrompt(cfg, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)),
+		Prompt: buildSystemPrompt(cfg, nil, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)),
 	})
 	mgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
@@ -366,7 +366,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 // resolved project context, the built-in tools, loaded skills, the
 // environment, the config's custom prompt, and any
 // --append-system-prompt values.
-func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, appendPrompts []string, projectContext string) string {
+func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, extensions []agent.ExtensionInfo, appendPrompts []string, projectContext string) string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
@@ -374,6 +374,7 @@ func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, appendPrompts [
 	return harness.BuildSystemPrompt(harness.PromptOptions{
 		ProjectContext: projectContext,
 		Skills:         skills,
+		Extensions:     extensions,
 		CWD:            cwd,
 		Custom:         cfg.SystemPrompt,
 		Append:         appendPrompts,
@@ -496,7 +497,7 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true)), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
+	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, extMgr.Infos(), appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true)), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
 }
 
 // loadExtensions returns an extension manager configured by the user. If

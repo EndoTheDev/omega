@@ -36,7 +36,7 @@ func inTempDir(t *testing.T) string {
 
 func TestRegistryContainsAllTools(t *testing.T) {
 	registry := NewRegistry()
-	for _, name := range []string{"shell", "read_file", "write_file", "edit"} {
+	for _, name := range []string{"shell.run", "files.read", "files.write", "files.edit"} {
 		if _, ok := registry[name]; !ok {
 			t.Errorf("registry missing tool %q", name)
 		}
@@ -44,7 +44,7 @@ func TestRegistryContainsAllTools(t *testing.T) {
 }
 
 func TestShellRunsCommand(t *testing.T) {
-	tool := requireTool(t, "shell")
+	tool := requireTool(t, "shell.run")
 	out, err := tool.Run(context.Background(), map[string]any{"command": "echo hello"})
 	if err != nil {
 		t.Fatalf("shell failed: %v", err)
@@ -55,7 +55,7 @@ func TestShellRunsCommand(t *testing.T) {
 }
 
 func TestShellRejectsMissingCommand(t *testing.T) {
-	tool := requireTool(t, "shell")
+	tool := requireTool(t, "shell.run")
 	if _, err := tool.Run(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("expected error for missing command, got nil")
 	}
@@ -66,7 +66,7 @@ func TestWriteThenReadFile(t *testing.T) {
 	path := filepath.Join(dir, "nested", "file.txt")
 	want := "line one\nline two\nline three\n"
 
-	writeTool := requireTool(t, "write_file")
+	writeTool := requireTool(t, "files.write")
 	_, err := writeTool.Run(context.Background(), map[string]any{
 		"path":    path,
 		"content": want,
@@ -75,7 +75,7 @@ func TestWriteThenReadFile(t *testing.T) {
 		t.Fatalf("write_file failed: %v", err)
 	}
 
-	readTool := requireTool(t, "read_file")
+	readTool := requireTool(t, "files.read")
 	out, err := readTool.Run(context.Background(), map[string]any{"path": path})
 	if err != nil {
 		t.Fatalf("read_file failed: %v", err)
@@ -94,7 +94,7 @@ func TestReadFileOffsetAndLimit(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	tool := requireTool(t, "read_file")
+	tool := requireTool(t, "files.read")
 	out, err := tool.Run(context.Background(), map[string]any{
 		"path":   path,
 		"offset": float64(2),
@@ -110,14 +110,14 @@ func TestReadFileOffsetAndLimit(t *testing.T) {
 }
 
 func TestReadFileRejectsInvalidPath(t *testing.T) {
-	tool := requireTool(t, "read_file")
+	tool := requireTool(t, "files.read")
 	if _, err := tool.Run(context.Background(), map[string]any{"path": ""}); err == nil {
 		t.Fatal("expected error for empty path, got nil")
 	}
 }
 
 func TestWriteFileRejectsMissingContent(t *testing.T) {
-	tool := requireTool(t, "write_file")
+	tool := requireTool(t, "files.write")
 	if _, err := tool.Run(context.Background(), map[string]any{"path": "x.txt"}); err == nil {
 		t.Fatal("expected error for missing content, got nil")
 	}
@@ -131,7 +131,7 @@ func TestEditReplacesUniqueString(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	tool := requireTool(t, "edit")
+	tool := requireTool(t, "files.edit")
 	out, err := tool.Run(context.Background(), map[string]any{
 		"path":       path,
 		"old_string": "beta",
@@ -163,7 +163,7 @@ func TestEditRejectsMissingOldString(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	tool := requireTool(t, "edit")
+	tool := requireTool(t, "files.edit")
 	if _, err := tool.Run(context.Background(), map[string]any{
 		"path":       path,
 		"old_string": "nope",
@@ -180,7 +180,7 @@ func TestEditRejectsNonUniqueOldString(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	tool := requireTool(t, "edit")
+	tool := requireTool(t, "files.edit")
 	if _, err := tool.Run(context.Background(), map[string]any{
 		"path":       path,
 		"old_string": "dup",
@@ -191,7 +191,7 @@ func TestEditRejectsNonUniqueOldString(t *testing.T) {
 }
 
 func TestEditRejectsMissingArguments(t *testing.T) {
-	tool := requireTool(t, "edit")
+	tool := requireTool(t, "files.edit")
 	if _, err := tool.Run(context.Background(), map[string]any{
 		"path": "x.txt",
 	}); err == nil {
@@ -241,14 +241,14 @@ func TestUnknownToolResult(t *testing.T) {
 
 func TestSetSkillsRegistersLoadSkillTool(t *testing.T) {
 	ag := NewAgent(nil, NewRegistry(), 0)
-	if _, ok := ag.tools["load_skill"]; ok {
+	if _, ok := ag.tools["skills.read"]; ok {
 		t.Fatal("load_skill tool should not exist before SetSkills")
 	}
 	skills := []Skill{
 		{Name: "test-skill", Description: "A test", Content: "Do the thing.", Dir: "/tmp/skills/test-skill"},
 	}
 	ag.SetSkills(skills)
-	tool, ok := ag.tools["load_skill"]
+	tool, ok := ag.tools["skills.read"]
 	if !ok {
 		t.Fatal("load_skill tool not registered after SetSkills")
 	}
@@ -260,7 +260,7 @@ func TestSetSkillsRegistersLoadSkillTool(t *testing.T) {
 func TestSetSkillsNoopOnEmpty(t *testing.T) {
 	ag := NewAgent(nil, NewRegistry(), 0)
 	ag.SetSkills(nil)
-	if _, ok := ag.tools["load_skill"]; ok {
+	if _, ok := ag.tools["skills.read"]; ok {
 		t.Fatal("load_skill tool should not be registered for nil skills")
 	}
 }
@@ -306,8 +306,8 @@ func TestConcurrentWritesSamePath(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	writeTool := requireTool(t, "write_file")
-	editTool := requireTool(t, "edit")
+	writeTool := requireTool(t, "files.write")
+	editTool := requireTool(t, "files.edit")
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {

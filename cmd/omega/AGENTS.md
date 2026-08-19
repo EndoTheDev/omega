@@ -123,6 +123,11 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   via `SetToolProvider`, passes CWD via `SetCWD`, and validates
   `PluginsConfig` against `SeamProviders()` — warns on mismatch. The
   TUI's submit path mirrors this wiring for each run.
+- **`/tools` lists tools, `/tools on|off|auto` controls display.**
+  No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
+  renders native tools (hardcoded) and extension tools (from
+  `Infos().ToolNames`) in a grouped listing. `/tools on|off|auto`
+  toggles tool result display in the transcript.
 - **Self-update replaces the running binary.** `cmdUpdate` fetches the
   latest GitHub release, matches the asset by `GOOS_GOARCH`, downloads
   to a temp file, and replaces `os.Executable()`. On Windows the

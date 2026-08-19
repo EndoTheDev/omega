@@ -6,8 +6,11 @@ produce data consumed by the agent's capability seams.
 
 ## Ownership
 
-- `harness.go` - `BuildSystemPrompt`, `PromptOptions`, `LoadSkills`,
-  `loadSkill`, `readRemaining`, `ProjectRoot`, `LoadProjectContext`
+- `harness.go` - `BuildSystemPrompt`, `PromptOptions` (with `Extensions`
+  field), `LoadSkills`, `loadSkill`, `readRemaining`, `ProjectRoot`,
+  `LoadProjectContext`. System prompt sections: Guidelines, Project Context,
+  Available Skills, Tools (Native + Extensions), Environment (CWD, OS, Shell,
+  Date), Custom, Append.
 - `context_test.go` - project context loading tests
 - `prompt_test.go` - system prompt builder tests
 - `skills_test.go` - skill loading tests
@@ -23,7 +26,7 @@ produce data consumed by the agent's capability seams.
   `BuildPrompt`.
 - **LoadSkills returns []agent.Skill.** The harness loads skills from
   the filesystem and returns them. `main.go` passes them to
-  `agent.SetSkills` which registers the `load_skill` tool.
+  `agent.SetSkills` which registers the `skills.read` tool.
 - **LoadProjectContext walks up from CWD.** It collects AGENTS.md files
   at each directory level, root-to-leaf order. The trust system in
   `cmd/omega/trust.go` gates which projects are loaded.
