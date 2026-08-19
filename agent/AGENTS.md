@@ -10,8 +10,9 @@ events for anyone observing (the TUI, the gateway, or extensions).
 ## Ownership
 
 - `agent.go` - agent struct, configuration holders, capability seam wiring
-  (`SetPromptBuilder`, `SetCompactor`, `SetToolProvider`, `SetMaxToolOutput`,
-  `SetCWD`, `SetAgentLoop`). Delegates execution to `AgentLoop`.
+  (`SetCompactor`, `SetToolProvider`, `SetMaxToolOutput`, `SetCWD`,
+  `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`, `SetAgentLoop`).
+  Delegates execution to `AgentLoop`.
 - `loop.go` - `AgentLoop` interface (Go-level seam for the conversation loop),
   `LoopOptions` struct. Default implementation is `DefaultAgentLoop`.
 - `default_loop.go` - `DefaultAgentLoop` (standard turn loop: stream, execute
@@ -30,11 +31,12 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
   `prompt/build`, `compaction/messages` JSON-RPC methods)
-- `seams.go` - capability seam interfaces (`PromptBuilder`, `Compactor`,
-  `ToolProvider`, `SessionStore`)
-- `defaults.go` - default seam implementations (`DefaultPromptBuilder`,
-  `DefaultCompactor`, `DefaultToolProvider`)
-- `skill.go` - `Skill` type (data type used by `SetSkills` for system prompt listing)
+- `seams.go` - capability seam interfaces (`Compactor`, `ToolProvider`,
+  `SessionStore`)
+- `defaults.go` - default seam implementations (`DefaultCompactor`,
+  `DefaultToolProvider`)
+- `skill.go` - `Skill` type (data type for skill listing, used by
+  `harness.LoadSkills`)
 - `testdata/mock_extension/` - mock extension binary for extension tests
 - `tools.go` - empty tool registry (`NewRegistry` returns empty map).
   Built-in tools moved to `bin/extensions/core-tools/` extension.
@@ -68,14 +70,14 @@ events for anyone observing (the TUI, the gateway, or extensions).
   resume, fork, and label. `BuildCompactedMessages` is the shared
   helper for assembling compacted history from a pre-computed summary.
 - **Capability seams.** Harness concerns are injected via interfaces:
-  `PromptBuilder` (system prompt), `Compactor` (context compaction),
-  `ToolProvider` (tool registry), `SessionStore` (persistence), `AgentLoop`
-  (conversation loop). Default implementations in `defaults.go` and
-  `default_loop.go`. Extensions can fully replace the prompt builder via
-  `BuildPrompt` or the compactor via `CompactMessages`. A custom `AgentLoop`
-  replaces the entire turn logic via `SetAgentLoop`.
-  Harness code (prompt building, skill loading, project context) lives
-  in `harness/`, not in this package.
+  `Compactor` (context compaction), `ToolProvider` (tool registry),
+  `SessionStore` (persistence), `AgentLoop` (conversation loop). Default
+  implementations in `defaults.go` and `default_loop.go`. The system prompt
+  is built by the `core-prompt` extension via `BuildPrompt`; extensions
+  can also fully replace the compactor via `CompactMessages`. A custom
+  `AgentLoop` replaces the entire turn logic via `SetAgentLoop`.
+  Harness code (skill loading, project context) lives in `harness/`, not
+  in this package.
 - **No re-exports.** Types defined in `ai/` are imported from
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes

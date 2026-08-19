@@ -15,7 +15,7 @@ markdown rendering.
 
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
-  agent wiring (`newAgent`, `buildSystemPrompt`), `cmdServe`, `cmdRun`,
+  agent wiring (`newAgent`), `cmdServe`, `cmdRun`,
   `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
@@ -120,9 +120,11 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   thinking level. No-op for ephemeral sessions. `renderTranscript`
   skips these types (metadata, not conversation content).
 - **Seam wiring in newAgent.** `newAgent` wires `DefaultToolProvider`
-  via `SetToolProvider`, passes CWD via `SetCWD`, and validates
-  `PluginsConfig` against `SeamProviders()` — warns on mismatch. The
-  TUI's submit path mirrors this wiring for each run.
+  via `SetToolProvider`, passes CWD via `SetCWD`, stores custom/append
+  prompts via `SetPromptCustom`/`SetPromptAppend`, stores trust-gated
+  project context via `SetPromptContext`, and validates `PluginsConfig`
+  against `SeamProviders()` — warns on mismatch. The TUI's submit path
+  mirrors this wiring for each run.
 - **`/tools` lists tools, `/tools on|off|auto` controls display.**
   No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
   renders all tools from `Infos().ToolList` (first line of description)

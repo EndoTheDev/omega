@@ -6,18 +6,6 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// DefaultPromptBuilder wraps a pre-built prompt string. It is the
-// simplest PromptBuilder — the harness assembles the full prompt
-// (project context, skills, guidelines, custom prompts) and passes
-// the result. Extensions that want to modify the prompt implement
-// their own PromptBuilder.
-type DefaultPromptBuilder struct {
-	Prompt string
-}
-
-// Build returns the pre-built prompt string.
-func (d DefaultPromptBuilder) Build() string { return d.Prompt }
-
 // DefaultCompactor wraps the existing CompactWithFocus logic with
 // config and extension hooks. It is the default Compactor — the
 // harness wires it with the provider, compaction config, and

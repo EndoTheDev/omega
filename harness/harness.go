@@ -5,104 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 )
-
-// PromptOptions configures the system prompt builder.
-type PromptOptions struct {
-	ProjectContext string              // AGENTS.md contents, may be empty
-	Skills         []agent.Skill       // loaded skills, may be empty
-	Extensions     []agent.ExtensionInfo // loaded extensions, may be nil
-	CWD            string
-	Custom         string   // user-supplied prompt from config, may be empty
-	Append         []string // extra prompts from --append-system-prompt, may be nil
-}
-
-// BuildSystemPrompt constructs the agent's system prompt from the
-// project context, skills, environment, and any custom prompt. Tool
-// descriptions are not included here; the provider receives them as
-// structured JSON schemas alongside the system prompt. Empty sections
-// are omitted.
-func BuildSystemPrompt(opts PromptOptions) string {
-	var b strings.Builder
-	b.WriteString("You are an AI coding agent with access to tools.\n")
-
-	b.WriteString("\n## Guidelines\n")
-	b.WriteString("- Use tools to read files and run commands before making assumptions.\n")
-	b.WriteString("- Prefer the simplest solution that works. Avoid unnecessary abstraction.\n")
-	b.WriteString("- When editing files, match the existing style and conventions.\n")
-	b.WriteString("- Report what you did concisely. Do not repeat file contents back.\n")
-	b.WriteString("- If something fails, report the error honestly rather than guessing.\n")
-
-	if opts.ProjectContext != "" {
-		b.WriteString("\n## Project Context\n")
-		b.WriteString(opts.ProjectContext)
-		b.WriteString("\n")
-	}
-
-	if len(opts.Skills) > 0 {
-		b.WriteString("\n## Available Skills\n")
-		b.WriteString("Call the skills.read tool with a skill name to read its full content.\n")
-		for _, skill := range opts.Skills {
-			fmt.Fprintf(&b, "- %s: %s\n", skill.Name, skill.Description)
-		}
-	}
-
-	// Tools section: list all tools from extensions so the agent knows
-	// where each tool comes from. Native tools are now provided by the
-	// core-tools extension, so everything is dynamic.
-	b.WriteString("\n## Tools\n")
-	if len(opts.Extensions) > 0 {
-		for _, ext := range opts.Extensions {
-			if len(ext.ToolList) > 0 {
-				fmt.Fprintf(&b, "### %s\n", ext.Name)
-				for _, t := range ext.ToolList {
-					fmt.Fprintf(&b, "- %s: %s\n", t.Name, firstLine(t.Description))
-				}
-				b.WriteString("\n")
-			}
-		}
-	}
-
-	b.WriteString("\n## Environment\n")
-	fmt.Fprintf(&b, "CWD: %s\n", opts.CWD)
-	fmt.Fprintf(&b, "OS: %s\n", runtime.GOOS)
-	if runtime.GOOS == "windows" {
-		b.WriteString("Shell: cmd.exe\n")
-	} else {
-		b.WriteString("Shell: bash\n")
-	}
-	fmt.Fprintf(&b, "Date: %s\n", time.Now().Format("2006-01-02"))
-
-	if opts.Custom != "" {
-		b.WriteString("\n")
-		b.WriteString(opts.Custom)
-		b.WriteString("\n")
-	}
-	for _, extra := range opts.Append {
-		b.WriteString("\n")
-		b.WriteString(extra)
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-// firstLine returns the first non-empty line of s, or s itself if it
-// has no newlines. Used to keep tool descriptions short in the system
-// prompt and /tools display — full descriptions go to the LLM via
-// the provider's JSON tool schemas.
-func firstLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		if strings.TrimSpace(line) != "" {
-			return strings.TrimSpace(line)
-		}
-	}
-	return s
-}
 
 // LoadSkills scans dir for subdirectories, each containing a skill file
 // named <dirname>.md. It parses the YAML frontmatter and returns the

@@ -65,9 +65,9 @@ type ExtensionManager interface {
 	CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool)
 
 	// BuildPrompt asks extensions to build the complete system prompt.
-	// Returns ok=false if no extension wants to build it; the agent uses
-	// the default PromptBuilder. An extension that returns ok=true
-	// fully replaces the default prompt.
+	// Returns ok=false if no extension wants to build it; the agent
+	// gets no system prompt. An extension that returns ok=true
+	// fully owns the system prompt.
 	BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool)
 
 	// CompactMessages asks extensions to compact the message history
@@ -107,8 +107,12 @@ type ExtensionInfo struct {
 
 // PromptBuildOptions carries context for extension-built system prompts.
 type PromptBuildOptions struct {
-	CWD      string
-	Messages []ai.Message
+	CWD            string
+	Messages       []ai.Message
+	Extensions     []ExtensionInfo
+	ProjectContext string   // AGENTS.md contents, already trust-gated by Go
+	Custom         string   // user-supplied prompt from config, may be empty
+	Append         []string // extra prompts from --append-system-prompt, may be nil
 }
 
 // NoopManager is the default ExtensionManager when extensions are

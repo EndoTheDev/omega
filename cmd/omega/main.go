@@ -323,9 +323,9 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	ag := agent.NewAgent(provider, tools, 0)
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())
-	ag.SetPromptBuilder(agent.DefaultPromptBuilder{
-		Prompt: buildSystemPrompt(cfg, nil, nil, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, false)),
-	})
+	ag.SetPromptCustom(cfg.SystemPrompt)
+	ag.SetPromptAppend(appendPrompts)
+	ag.SetPromptContext(resolveProjectContext(cwd(), trust.approve, trust.noApprove, false))
 	mgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
@@ -365,25 +365,6 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 		return nil, nil, nil, fmt.Errorf("open store: %w", err)
 	}
 	return ag, store, mgr, nil
-}
-
-// buildSystemPrompt assembles the agent's system prompt from the
-// resolved project context, the built-in tools, loaded skills, the
-// environment, the config's custom prompt, and any
-// --append-system-prompt values.
-func buildSystemPrompt(cfg gateway.Config, skills []agent.Skill, extensions []agent.ExtensionInfo, appendPrompts []string, projectContext string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = "."
-	}
-	return harness.BuildSystemPrompt(harness.PromptOptions{
-		ProjectContext: projectContext,
-		Skills:         skills,
-		Extensions:     extensions,
-		CWD:            cwd,
-		Custom:         cfg.SystemPrompt,
-		Append:         appendPrompts,
-	})
 }
 
 // signalContext returns a context cancelled on SIGINT/SIGTERM.
@@ -502,7 +483,7 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
-	return runChat(cfg.Provider, &cfg.Compaction, buildSystemPrompt(cfg, skills, extMgr.Infos(), appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true)), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
+	return runChat(cfg.Provider, &cfg.Compaction, cfg.SystemPrompt, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
 }
 
 // loadExtensions returns an extension manager configured by the user. If

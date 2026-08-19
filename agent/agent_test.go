@@ -146,24 +146,21 @@ func TestRunContextCancellation(t *testing.T) {
 	}
 }
 
-func TestRunPrependsSystemPrompt(t *testing.T) {
+func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
 		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetPromptBuilder(DefaultPromptBuilder{Prompt: "you are a coding agent"})
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 
-	if len(provider.LastMessages) != 2 {
-		t.Fatalf("messages = %d, want 2 (system + user)", len(provider.LastMessages))
+	// With no extensions loaded, no system prompt is prepended.
+	// The agent sees only the user message.
+	if len(provider.LastMessages) != 1 {
+		t.Fatalf("messages = %d, want 1 (user only, no system prompt)", len(provider.LastMessages))
 	}
-	sys, ok := provider.LastMessages[0].(ai.System)
-	if !ok || sys.Content != "you are a coding agent" {
-		t.Fatalf("first message = %#v, want system prompt", provider.LastMessages[0])
-	}
-	if _, ok := provider.LastMessages[1].(ai.User); !ok {
-		t.Fatalf("second message = %#v, want user", provider.LastMessages[1])
+	if _, ok := provider.LastMessages[0].(ai.User); !ok {
+		t.Fatalf("first message = %#v, want user", provider.LastMessages[0])
 	}
 }
 

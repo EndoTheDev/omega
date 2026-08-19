@@ -58,16 +58,21 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 
 	messages := opts.Messages
 
-	// Build the system prompt: extensions can fully replace it via
-	// BuildPrompt, otherwise use the configured PromptBuilder. Extension
-	// guidelines are appended to the default builder's output.
-	prompt := opts.PromptBuilder.Build()
+	// Build the system prompt. Extensions can fully replace it via
+	// BuildPrompt. Extension guidelines are appended to any non-empty
+	// prompt.
+	prompt := ""
 	if extPrompt, ok := opts.Extensions.BuildPrompt(ctx, PromptBuildOptions{
-		CWD:      opts.CWD,
-		Messages: messages,
+		CWD:            opts.CWD,
+		Messages:       messages,
+		Extensions:     opts.Extensions.Infos(),
+		ProjectContext: opts.PromptContext,
+		Custom:         opts.PromptCustom,
+		Append:         opts.PromptAppend,
 	}); ok {
 		prompt = extPrompt
-	} else if prompt != "" {
+	}
+	if prompt != "" {
 		if guidelines := opts.Extensions.PromptGuidelines(); len(guidelines) > 0 {
 			prompt += "\n## Extension Guidelines\n"
 			for _, g := range guidelines {

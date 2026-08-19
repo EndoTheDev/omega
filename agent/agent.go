@@ -32,29 +32,29 @@ type Agent struct {
 	tools         map[string]Tool
 	toolProvider  ToolProvider
 	extensions    ExtensionManager
-	skills        []Skill
 	maxTurns      int
-	promptBuilder PromptBuilder
 	compactor     Compactor
 	maxToolOutput int
 	cwd           string
+	promptCustom  string
+	promptAppend  []string
+	promptContext string
 	loop          AgentLoop
 	mu            sync.Mutex
 	running       bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
-// The agent starts with the default agent loop, no prompt builder
-// (empty prompt), and no compactor (compaction disabled). Use
-// SetPromptBuilder, SetCompactor, and SetAgentLoop to customize.
+// The agent starts with the default agent loop and no compactor
+// (compaction disabled). Use SetCompactor and SetAgentLoop to
+// customize.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
-		provider:      provider,
-		tools:         tools,
-		extensions:    NoopManager{},
-		maxTurns:      maxTurns,
-		promptBuilder: DefaultPromptBuilder{},
-		loop:          DefaultAgentLoop{},
+		provider:   provider,
+		tools:      tools,
+		extensions: NoopManager{},
+		maxTurns:   maxTurns,
+		loop:       DefaultAgentLoop{},
 	}
 }
 
@@ -66,16 +66,6 @@ func (a *Agent) SetExtensions(mgr ExtensionManager) {
 		return
 	}
 	a.extensions = mgr
-}
-
-// SetPromptBuilder installs the prompt builder. A nil value sets the
-// default empty-prompt builder.
-func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
-	if pb == nil {
-		a.promptBuilder = DefaultPromptBuilder{}
-		return
-	}
-	a.promptBuilder = pb
 }
 
 // SetCompactor installs the compactor. A nil value disables compaction.
@@ -95,19 +85,28 @@ func (a *Agent) SetCWD(dir string) {
 	a.cwd = dir
 }
 
+// SetPromptCustom stores the user-supplied custom prompt from config.
+// Passed to extensions via PromptBuildOptions.Custom.
+func (a *Agent) SetPromptCustom(s string) {
+	a.promptCustom = s
+}
+
+// SetPromptAppend stores extra prompts from --append-system-prompt.
+// Passed to extensions via PromptBuildOptions.Append.
+func (a *Agent) SetPromptAppend(prompts []string) {
+	a.promptAppend = prompts
+}
+
+// SetPromptContext stores the trust-gated AGENTS.md project context.
+// Passed to extensions via PromptBuildOptions.ProjectContext.
+func (a *Agent) SetPromptContext(s string) {
+	a.promptContext = s
+}
+
 // SetToolProvider installs a tool provider. When set, the agent merges
 // the provider's tools with its own on each Run. A nil value is ignored.
 func (a *Agent) SetToolProvider(tp ToolProvider) {
 	a.toolProvider = tp
-}
-
-// SetSkills stores loaded skills for the system prompt listing.
-// The skills.read tool is now provided by the core-tools extension,
-// which reads OMEGA_SKILLS_DIR to scan and parse skills on demand.
-func (a *Agent) SetSkills(skills []Skill) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.skills = skills
 }
 
 // SetAgentLoop installs a custom agent loop. A nil value restores the
@@ -160,12 +159,14 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			Messages:      messages,
 			Tools:         runTools,
 			ToolProvider:  a.toolProvider,
-			PromptBuilder: a.promptBuilder,
 			Compactor:     a.compactor,
 			Extensions:    a.extensions,
 			MaxTurns:      a.maxTurns,
 			MaxToolOutput: a.maxToolOutput,
 			CWD:           a.cwd,
+			PromptCustom:  a.promptCustom,
+			PromptAppend:  a.promptAppend,
+			PromptContext: a.promptContext,
 			Events:        events,
 		})
 	}()

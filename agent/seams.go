@@ -6,16 +6,6 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// PromptBuilder builds the system prompt for each agent run. The
-// harness implements this to inject project context, skills,
-// guidelines, and custom prompts. Extensions can provide alternative
-// implementations to customize the prompt.
-type PromptBuilder interface {
-	// Build returns the system prompt string. Called once per Run
-	// before the conversation loop starts.
-	Build() string
-}
-
 // Compactor handles context compaction when the token budget is
 // exceeded. The harness implements this with the default provider-based
 // summarization; extensions can override with custom summaries.

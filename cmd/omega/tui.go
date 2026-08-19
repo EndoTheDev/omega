@@ -252,7 +252,9 @@ type model struct {
 	host                string
 	apiKey              string
 	compaction          *agent.CompactionConfig
-	systemPrompt        string
+	promptCustom        string
+	promptAppend        []string
+	promptContext       string
 	busy                bool               // a run is in flight; input is ignored
 	err                 string             // last run error, shown in the status line
 	cancel              context.CancelFunc // cancels the in-flight run; nil when idle
@@ -321,8 +323,8 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, systemPrompt, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
+	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, promptCustom, promptAppend, promptContext, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -330,7 +332,7 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, syst
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, systemPrompt string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
+func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
 	extMgr := agent.ExtensionManager(agent.NoopManager{})
 	if len(extensions) > 0 {
 		extMgr = extensions[0]
@@ -377,7 +379,9 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		host:              host,
 		apiKey:            apiKey,
 		compaction:        compaction,
-		systemPrompt:      systemPrompt,
+		promptCustom:      promptCustom,
+		promptAppend:      promptAppend,
+		promptContext:     promptContext,
 		store:             store,
 		skills:            skills,
 		extensions:        extMgr,
@@ -729,7 +733,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	ag := agent.NewAgent(provider, tools, 0)
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())
-	ag.SetPromptBuilder(agent.DefaultPromptBuilder{Prompt: m.systemPrompt})
+	ag.SetPromptCustom(m.promptCustom)
+	ag.SetPromptAppend(m.promptAppend)
+	ag.SetPromptContext(m.promptContext)
 	ag.SetExtensions(m.extensions)
 	ag.SetCompactor(agent.DefaultCompactor{
 		Provider:   provider,
@@ -739,7 +745,6 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.compaction != nil {
 		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)
 	}
-	ag.SetSkills(m.skills)
 	// The goroutine writes events to the channel; Update drains it via
 	// drainEvents. The channel is a reference type, so it survives the
 	// value copy Bubble Tea makes of the model. A fresh channel per run:

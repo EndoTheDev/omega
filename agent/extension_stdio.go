@@ -710,8 +710,12 @@ func (m *StdioManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions)
 			continue
 		}
 		result, err := ext.request(ctx, "prompt/build", map[string]any{
-			"cwd":      opts.CWD,
-			"messages": opts.Messages,
+			"cwd":             opts.CWD,
+			"messages":        opts.Messages,
+			"extensions":      opts.Extensions,
+			"project_context": opts.ProjectContext,
+			"custom":          opts.Custom,
+			"append":          opts.Append,
 		})
 		if err != nil {
 			continue

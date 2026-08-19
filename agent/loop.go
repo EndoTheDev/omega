@@ -20,15 +20,17 @@ type AgentLoop interface {
 // LoopOptions carries everything the loop needs to run one agent
 // session. The Agent struct builds this from its configured fields.
 type LoopOptions struct {
-	Provider      ai.Provider
-	Messages      []ai.Message
-	Tools         map[string]Tool
-	ToolProvider  ToolProvider
-	PromptBuilder PromptBuilder
-	Compactor     Compactor
-	Extensions    ExtensionManager
-	MaxTurns      int
-	MaxToolOutput int
-	CWD           string
-	Events        chan<- Event
+	Provider       ai.Provider
+	Messages       []ai.Message
+	Tools          map[string]Tool
+	ToolProvider   ToolProvider
+	Compactor      Compactor
+	Extensions     ExtensionManager
+	MaxTurns       int
+	MaxToolOutput  int
+	CWD            string
+	PromptCustom   string   // user-supplied prompt from config, for extension-built prompts
+	PromptAppend   []string // extra prompts from --append-system-prompt
+	PromptContext  string   // trust-gated AGENTS.md project context
+	Events         chan<- Event
 }
