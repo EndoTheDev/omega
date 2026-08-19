@@ -2,8 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/EndoTheDev/omega/ai"
@@ -26,9 +24,9 @@ type Tool struct {
 }
 
 // Agent runs the multi-turn conversation loop between a provider and a
-// set of tools. It consumes provider stream events, executes tool calls,
-// and appends results back into the message history. Harness concerns
-// (system prompt, compaction) are injected via interfaces.
+// set of tools. It holds configuration and delegates execution to an
+// AgentLoop. Harness concerns (system prompt, compaction) are injected
+// via interfaces. The loop itself is swappable via SetAgentLoop.
 type Agent struct {
 	provider      ai.Provider
 	tools         map[string]Tool
@@ -40,14 +38,15 @@ type Agent struct {
 	compactor     Compactor
 	maxToolOutput int
 	cwd           string
+	loop          AgentLoop
 	mu            sync.Mutex
 	running       bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
-// The agent starts with no prompt builder (empty prompt) and no
-// compactor (compaction disabled). Use SetPromptBuilder and
-// SetCompactor to install them.
+// The agent starts with the default agent loop, no prompt builder
+// (empty prompt), and no compactor (compaction disabled). Use
+// SetPromptBuilder, SetCompactor, and SetAgentLoop to customize.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
 		provider:      provider,
@@ -55,6 +54,7 @@ func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent 
 		extensions:    NoopManager{},
 		maxTurns:      maxTurns,
 		promptBuilder: DefaultPromptBuilder{},
+		loop:          DefaultAgentLoop{},
 	}
 }
 
@@ -110,6 +110,16 @@ func (a *Agent) SetSkills(skills []Skill) {
 	a.skills = skills
 }
 
+// SetAgentLoop installs a custom agent loop. A nil value restores the
+// default loop.
+func (a *Agent) SetAgentLoop(loop AgentLoop) {
+	if loop == nil {
+		a.loop = DefaultAgentLoop{}
+		return
+	}
+	a.loop = loop
+}
+
 // ModelName returns the name of the model the agent's provider serves.
 func (a *Agent) ModelName() string {
 	return a.provider.ModelName()
@@ -140,232 +150,24 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			a.running = false
 			a.mu.Unlock()
 		}()
-		a.run(ctx, events, messages, tools)
+		defer close(events)
+		runTools := tools
+		if runTools == nil {
+			runTools = a.tools
+		}
+		a.loop.Run(ctx, LoopOptions{
+			Provider:      a.provider,
+			Messages:      messages,
+			Tools:         runTools,
+			ToolProvider:  a.toolProvider,
+			PromptBuilder: a.promptBuilder,
+			Compactor:     a.compactor,
+			Extensions:    a.extensions,
+			MaxTurns:      a.maxTurns,
+			MaxToolOutput: a.maxToolOutput,
+			CWD:           a.cwd,
+			Events:        events,
+		})
 	}()
 	return events
-}
-
-func (a *Agent) run(ctx context.Context, events chan<- Event, messages []ai.Message, runTools map[string]Tool) {
-	defer close(events)
-
-	tools := runTools
-	if tools == nil {
-		tools = a.tools
-	}
-
-	// Merge tool provider tools. Built-in tools take precedence.
-	if a.toolProvider != nil {
-		if providerTools := a.toolProvider.Tools(); len(providerTools) > 0 {
-			merged := make(map[string]Tool, len(tools)+len(providerTools))
-			for name, t := range providerTools {
-				merged[name] = t
-			}
-			for name, t := range tools {
-				merged[name] = t
-			}
-			tools = merged
-		}
-	}
-
-	// Merge extension tools into the active tool set. Built-in tools
-	// take precedence on name conflict.
-	if extTools := a.extensions.Tools(); len(extTools) > 0 {
-		merged := make(map[string]Tool, len(tools)+len(extTools))
-		for name, t := range tools {
-			merged[name] = t
-		}
-		for name, t := range extTools {
-			if _, exists := merged[name]; !exists {
-				merged[name] = t
-			}
-		}
-		tools = merged
-	}
-
-	maxTurns := a.maxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultMaxTurns
-	}
-
-	// Build the system prompt: extensions can fully replace it via
-	// BuildPrompt, otherwise use the configured PromptBuilder. Extension
-	// guidelines are appended to the default builder's output.
-	prompt := a.promptBuilder.Build()
-	if extPrompt, ok := a.extensions.BuildPrompt(ctx, PromptBuildOptions{
-		CWD:      a.cwd,
-		Messages: messages,
-	}); ok {
-		prompt = extPrompt
-	} else if prompt != "" {
-		if guidelines := a.extensions.PromptGuidelines(); len(guidelines) > 0 {
-			prompt += "\n## Extension Guidelines\n"
-			for _, g := range guidelines {
-				prompt += "- " + g + "\n"
-			}
-		}
-	}
-	if prompt != "" {
-		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
-	}
-
-	start := AgentStart{Type: "agent_start", ModelName: a.provider.ModelName()}
-	events <- start
-	a.extensions.DispatchEvent(start)
-
-	turns := 0
-	overflowRetries := 0
-	for {
-		if ctx.Err() != nil {
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
-			events <- end
-			a.extensions.DispatchEvent(end)
-			return
-		}
-		if turns >= maxTurns {
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
-			events <- end
-			a.extensions.DispatchEvent(end)
-			return
-		}
-
-		if a.compactor != nil {
-			compacted, err := a.compactor.Compact(ctx, messages)
-			if err != nil {
-				end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
-				events <- end
-				a.extensions.DispatchEvent(end)
-				return
-			}
-			messages = compacted
-		}
-
-		turns++
-		turnStart := TurnStart{Type: "turn_start", Turn: turns}
-		events <- turnStart
-		a.extensions.DispatchEvent(turnStart)
-
-		var content, thinking strings.Builder
-		var toolCalls []ai.ToolCall
-		finishReason := "stop"
-		streamErr := ""
-
-		for event := range a.provider.Stream(ctx, messages, toolSchemas(tools)) {
-			switch e := event.(type) {
-			case ai.ResponseChunk:
-				content.WriteString(e.Content)
-			case ai.ThinkingChunk:
-				thinking.WriteString(e.Content)
-			case ai.ToolCallEvent:
-				toolCalls = append(toolCalls, e.ToolCall)
-			case ai.StreamEnd:
-				finishReason = e.FinishReason
-				streamErr = e.Error
-			}
-			events <- StreamEvent{Event: event}
-		}
-
-		if streamErr != "" {
-			// A context overflow error triggers one auto-compaction and
-			// retry of the turn. The failed attempt counts as a turn and
-			// emits TurnStart without TurnEnd - acceptable asymmetry, the
-			// retried turn reports its own TurnEnd. Skip the retry when
-			// response content was already streamed: the user saw it, and
-			// retrying would duplicate it.
-			if isOverflowError(streamErr) && a.compactor != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
-				overflowRetries++
-				compacted, err := a.compactor.Compact(ctx, messages)
-				if err != nil {
-					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
-					events <- end
-					a.extensions.DispatchEvent(end)
-					return
-				}
-				messages = compacted
-				continue
-			}
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
-			events <- end
-			a.extensions.DispatchEvent(end)
-			return
-		}
-
-		assistant := ai.NewAssistant(content.String())
-		if thinking.Len() > 0 {
-			text := thinking.String()
-			assistant.Thinking = &text
-		}
-		assistant.ToolCalls = toolCalls
-		messages = append(messages, assistant)
-		assistantEvent := AssistantMessageEvent{Type: "assistant_message", Message: assistant}
-		events <- assistantEvent
-		a.extensions.DispatchEvent(assistantEvent)
-
-		executed := 0
-		for _, call := range toolCalls {
-			tool, ok := tools[call.Name]
-			if !ok {
-				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
-				messages = append(messages, msg)
-				events <- ToolResultEvent{Type: "tool_result", Message: msg}
-				a.extensions.DispatchEvent(ToolResultEvent{Type: "tool_result", Message: msg})
-				executed++
-				continue
-			}
-			result, err := tool.Run(ctx, call.Arguments)
-			var msg ai.ToolResult
-			if err != nil {
-				msg = ai.NewToolResult(err.Error(), call.ID, true)
-			} else {
-				if a.maxToolOutput > 0 && len(result) > a.maxToolOutput {
-					result = result[:a.maxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
-				}
-				msg = ai.NewToolResult(result, call.ID, false)
-			}
-			messages = append(messages, msg)
-			toolResultEvent := ToolResultEvent{Type: "tool_result", Message: msg}
-			events <- toolResultEvent
-			a.extensions.DispatchEvent(toolResultEvent)
-			executed++
-		}
-
-		turnEnd := TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
-		events <- turnEnd
-		a.extensions.DispatchEvent(turnEnd)
-
-		if len(toolCalls) == 0 {
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
-			events <- end
-			a.extensions.DispatchEvent(end)
-			return
-		}
-	}
-}
-
-// isOverflowError reports whether a provider error indicates the context
-// window was exceeded. ponytail: substring match on common provider
-// wording. Upgrade path: structured error codes per provider.
-func isOverflowError(err string) bool {
-	lower := strings.ToLower(err)
-	for _, phrase := range []string{"context length", "context_length", "too long", "token limit", "maximum context"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
-}
-
-// toolSchemas converts a tools map to the provider schema list.
-func toolSchemas(tools map[string]Tool) []ai.ToolSchema {
-	if len(tools) == 0 {
-		return nil
-	}
-	result := make([]ai.ToolSchema, 0, len(tools))
-	for name, tool := range tools {
-		result = append(result, ai.ToolSchema{
-			Name:        name,
-			Description: tool.Description,
-			Parameters:  tool.Parameters,
-		})
-	}
-	return result
 }

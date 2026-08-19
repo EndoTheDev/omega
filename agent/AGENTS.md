@@ -9,9 +9,14 @@ events for anyone observing (the TUI, the gateway, or extensions).
 
 ## Ownership
 
-- `agent.go` - multi-turn loop, tool execution, event dispatch, capability
-  seam wiring (`SetPromptBuilder`, `SetCompactor`, `SetToolProvider`,
-  `SetMaxToolOutput`, `SetCWD`)
+- `agent.go` - agent struct, configuration holders, capability seam wiring
+  (`SetPromptBuilder`, `SetCompactor`, `SetToolProvider`, `SetMaxToolOutput`,
+  `SetCWD`, `SetAgentLoop`). Delegates execution to `AgentLoop`.
+- `loop.go` - `AgentLoop` interface (Go-level seam for the conversation loop),
+  `LoopOptions` struct. Default implementation is `DefaultAgentLoop`.
+- `default_loop.go` - `DefaultAgentLoop` (standard turn loop: stream, execute
+  tools, feed results back), `isOverflowError`, `toolSchemas`. Extracted from
+  the former `run()` method on `Agent`.
 - `compaction.go` - context compaction with optional focus,
   `BuildCompactedMessages` shared helper
 - `events.go` - event types emitted by the agent loop (`AgentStart`,
@@ -41,18 +46,21 @@ events for anyone observing (the TUI, the gateway, or extensions).
 
 - **The agent loop is the only place tools are executed.** The gateway
   and TUI route tool calls through the agent; they do not call tools
-  directly.
+  directly. The default loop (`DefaultAgentLoop`) handles this; a custom
+  `AgentLoop` owns its own tool dispatch.
 - **Extension tools are merged at run time.** Built-in tools take
-  precedence on name conflict. The merge happens inside `run()` so
-  extensions can be swapped between runs.
+  precedence on name conflict. The merge happens inside
+  `DefaultAgentLoop.Run()` so extensions can be swapped between runs.
 - **Events are dispatched synchronously to the event channel and
   best-effort to extensions.** A stalled extension cannot block the
   agent loop.
 - **Tool errors are structured returns.** Tools return `(string, error)`;
   the error becomes an `IsError` tool result message, never a panic.
-- **File tools are per-path locked.** `read_file`, `write_file`, and
-  `edit` acquire a `sync.Mutex` keyed by absolute path before touching
-  the file, serializing concurrent access to the same path.
+- **File tools are per-path locked.** The `files.read`, `files.write`,
+  and `files.edit` tools acquire a `sync.Mutex` keyed by absolute path
+  before touching the file, serializing concurrent access to the same
+  path. The locks now live in the `core-tools` extension, not in the
+  agent package.
 - **Extension customization hooks.** Extensions can customize: system
   prompt guidelines (`PromptGuidelines`), compaction summary
   (`CustomizeCompaction`), branch summary (`CustomizeBranchSummary`).
@@ -61,9 +69,11 @@ events for anyone observing (the TUI, the gateway, or extensions).
   helper for assembling compacted history from a pre-computed summary.
 - **Capability seams.** Harness concerns are injected via interfaces:
   `PromptBuilder` (system prompt), `Compactor` (context compaction),
-  `ToolProvider` (tool registry), `SessionStore` (persistence). Default
-  implementations in `defaults.go`. Extensions can fully replace the
-  prompt builder via `BuildPrompt` or the compactor via `CompactMessages`.
+  `ToolProvider` (tool registry), `SessionStore` (persistence), `AgentLoop`
+  (conversation loop). Default implementations in `defaults.go` and
+  `default_loop.go`. Extensions can fully replace the prompt builder via
+  `BuildPrompt` or the compactor via `CompactMessages`. A custom `AgentLoop`
+  replaces the entire turn logic via `SetAgentLoop`.
   Harness code (prompt building, skill loading, project context) lives
   in `harness/`, not in this package.
 - **No re-exports.** Types defined in `ai/` are imported from
@@ -73,8 +83,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
 
 ## Work Guidance
 
-- Add new lifecycle events in `events.go`, then emit them in `agent.go`
-  and dispatch them to `extensions.DispatchEvent`.
+- Add new lifecycle events in `events.go`, then emit them in
+  `default_loop.go` and dispatch them to `extensions.DispatchEvent`.
 - New transports (e.g. WASM) implement `ExtensionManager` and plug into
   `Agent.SetExtensions`. The agent and TUI stay unchanged.
 - Keep `NewAgent` defaulting to `NoopManager` so callers that do not
