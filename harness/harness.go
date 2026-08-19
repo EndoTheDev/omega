@@ -64,8 +64,12 @@ func BuildSystemPrompt(opts PromptOptions) string {
 	if len(opts.Extensions) > 0 {
 		b.WriteString("\n### Extensions\n")
 		for _, ext := range opts.Extensions {
-			if len(ext.ToolNames) > 0 {
-				fmt.Fprintf(&b, "- %s: %s\n", ext.Name, strings.Join(ext.ToolNames, ", "))
+			if len(ext.ToolList) > 0 {
+				var tools []string
+				for _, t := range ext.ToolList {
+					tools = append(tools, t.Name+" ("+t.Description+")")
+				}
+				fmt.Fprintf(&b, "- %s: %s\n", ext.Name, strings.Join(tools, ", "))
 			}
 		}
 	}

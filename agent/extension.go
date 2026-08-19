@@ -88,13 +88,20 @@ type ExtensionCommand struct {
 	Description string
 }
 
+// ToolInfo is a tool name and description pair, for display in the
+// system prompt and /tools listing.
+type ToolInfo struct {
+	Name        string
+	Description string
+}
+
 // ExtensionInfo is metadata about a loaded extension, for display.
 type ExtensionInfo struct {
 	Name      string
 	Tools     int
 	Commands  int
 	Seams     []string // declared seam types ("prompt_builder", "compactor", etc.)
-	ToolNames []string // names of tools provided by this extension
+	ToolList  []ToolInfo // tools provided by this extension (name + description)
 	Status    string   // "running" or "error: ..."
 }
 

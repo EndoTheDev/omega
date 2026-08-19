@@ -471,17 +471,7 @@ func loadConfig() (*mcpConfig, error) {
 	// Try config file: mcp.yaml first, then mcp.json
 	home := os.Getenv("OMEGA_HOME")
 	if home == "" {
-		// Fall back to the omega home directory (parent of the
-		// extension's directory, i.e. bin/ not bin/extensions/mcp-bridge/).
-		if exe, err := os.Executable(); err == nil {
-			// ponytail: triple-nested filepath.Dir assumes binary is 3
-		// levels deep under OMEGA_HOME (bin/extensions/mcp-bridge/).
-		// Upgrade: omega should set OMEGA_HOME in child process env
-		// so extensions can use it directly.
-		home = filepath.Dir(filepath.Dir(filepath.Dir(exe)))
-		} else {
-			home = filepath.Join(os.Getenv("HOME"), ".omega")
-		}
+		home = filepath.Join(os.Getenv("HOME"), ".omega")
 	}
 	for _, name := range []string{"mcp.yaml", "mcp.json"} {
 		path := filepath.Join(home, name)

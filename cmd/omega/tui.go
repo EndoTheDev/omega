@@ -1392,9 +1392,9 @@ func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 	if m.extensions != nil {
 		infos = m.extensions.Infos()
 		for _, ext := range infos {
-			for _, name := range ext.ToolNames {
-				if len(name) > nameWidth {
-					nameWidth = len(name)
+			for _, t := range ext.ToolList {
+				if len(t.Name) > nameWidth {
+					nameWidth = len(t.Name)
 				}
 			}
 		}
@@ -1406,7 +1406,7 @@ func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 	// Extension tools.
 	hasTools := false
 	for _, ext := range infos {
-		if len(ext.ToolNames) > 0 {
+		if len(ext.ToolList) > 0 {
 			hasTools = true
 			break
 		}
@@ -1416,12 +1416,12 @@ func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 		sb.WriteString(m.theme.Info.Render("Extensions"))
 		sb.WriteString("\n")
 		for _, ext := range infos {
-			if len(ext.ToolNames) == 0 {
+			if len(ext.ToolList) == 0 {
 				continue
 			}
 			fmt.Fprintf(&sb, "  %s\n", ext.Name)
-			for _, name := range ext.ToolNames {
-				fmt.Fprintf(&sb, "    %-*s\n", nameWidth, name)
+			for _, t := range ext.ToolList {
+				fmt.Fprintf(&sb, "    %-*s  %s\n", nameWidth, t.Name, t.Description)
 			}
 		}
 	}

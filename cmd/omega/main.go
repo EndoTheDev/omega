@@ -59,6 +59,8 @@ Flags:
 // no argument, the TUI starts. A non-subcommand argument is treated as a
 // project path: omega chdirs there and starts the TUI.
 func run(args []string) error {
+	// Set OMEGA_HOME early so all child processes (extensions) inherit it.
+	os.Setenv("OMEGA_HOME", omegaHome())
 	for _, a := range args {
 		switch a {
 		case "--help", "-h":

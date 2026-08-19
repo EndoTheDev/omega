@@ -9,8 +9,8 @@ produce data consumed by the agent's capability seams.
 - `harness.go` - `BuildSystemPrompt`, `PromptOptions` (with `Extensions`
   field), `LoadSkills`, `loadSkill`, `readRemaining`, `ProjectRoot`,
   `LoadProjectContext`. System prompt sections: Guidelines, Project Context,
-  Available Skills, Tools (Native + Extensions), Environment (CWD, OS, Shell,
-  Date), Custom, Append.
+  Available Skills, Tools (Native with descriptions + Extensions with tool
+  name+description pairs), Environment (CWD, OS, Shell, Date), Custom, Append.
 - `context_test.go` - project context loading tests
 - `prompt_test.go` - system prompt builder tests
 - `skills_test.go` - skill loading tests

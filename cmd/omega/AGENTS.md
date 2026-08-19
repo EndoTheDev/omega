@@ -126,7 +126,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - **`/tools` lists tools, `/tools on|off|auto` controls display.**
   No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
   renders native tools (hardcoded) and extension tools (from
-  `Infos().ToolNames`) in a grouped listing. `/tools on|off|auto`
+  `Infos().ToolList` with descriptions) in a grouped listing. `/tools on|off|auto`
   toggles tool result display in the transcript.
 - **Self-update replaces the running binary.** `cmdUpdate` fetches the
   latest GitHub release, matches the asset by `GOOS_GOARCH`, downloads

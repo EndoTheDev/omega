@@ -20,8 +20,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `extension.go` - `ExtensionManager` interface (tools, commands, events,
   `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
   `BuildPrompt`, `CompactMessages`, `SeamProviders`), `NoopManager`,
-  `ExtensionCommand`, `ExtensionInfo` (with `Seams`, `ToolNames` fields),
-  `PromptBuildOptions`
+  `ExtensionCommand`, `ExtensionInfo` (with `Seams`, `ToolList` fields),
+  `ToolInfo` (Name + Description), `PromptBuildOptions`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
   `prompt/build`, `compaction/messages` JSON-RPC methods)

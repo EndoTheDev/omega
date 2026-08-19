@@ -510,17 +510,17 @@ func (m *StdioManager) Infos() []ExtensionInfo {
 		if !ext.alive {
 			status = "stopped"
 		}
-		var toolNames []string
-		for name := range ext.tools {
-			toolNames = append(toolNames, name)
+		var toolList []ToolInfo
+		for name, t := range ext.tools {
+			toolList = append(toolList, ToolInfo{Name: name, Description: t.Description})
 		}
-		sort.Strings(toolNames)
+		sort.Slice(toolList, func(i, j int) bool { return toolList[i].Name < toolList[j].Name })
 		infos[i] = ExtensionInfo{
 			Name:      ext.name,
 			Tools:     len(ext.tools),
 			Commands:  len(ext.commands),
-			ToolNames: toolNames,
 			Seams:     ext.seams,
+			ToolList:  toolList,
 			Status:    status,
 		}
 	}
