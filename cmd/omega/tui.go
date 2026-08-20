@@ -721,7 +721,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.cancel = cancel
 	provider := ai.ExtensionProvider{Dispatcher: m.extensions}
 	provider.SetThinkingLevel(m.thinkingLevel)
-	tools := agent.NewRegistry()
+	tools := map[string]agent.Tool{}
 	ag := agent.NewAgent(provider, tools, 0)
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())
@@ -2368,7 +2368,7 @@ func (m model) splashView() string {
 	if provider == "" {
 		provider = "ollama"
 	}
-	toolCount := len(agent.NewRegistry())
+	toolCount := 0 // built-in tools are in core-tools extension
 	skillCount := len(m.skills)
 	logo := []string{
 		`   #"""#  `,

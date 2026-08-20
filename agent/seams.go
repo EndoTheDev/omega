@@ -21,15 +21,3 @@ type Compactor interface {
 type ToolProvider interface {
 	Tools() map[string]Tool
 }
-
-// SessionStore abstracts session persistence. The harness implements
-// this with the default SQLite store; alternative backends (JSONL,
-// remote) can replace it.
-type SessionStore interface {
-	// AppendMessage appends a message to the session's history.
-	AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error
-	// GetMessages loads all messages for a session.
-	GetMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
-	// Close releases resources.
-	Close() error
-}

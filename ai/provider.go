@@ -43,11 +43,6 @@ func RetryHTTP(req *http.Request) (*http.Response, error) {
 // skipping comments, event/blank lines, and the trailing `[DONE]`
 // sentinel. Extensions import this for parsing SSE responses.
 func SSEData(reader *bufio.Reader) (string, bool, error) {
-	return sseData(reader)
-}
-
-// sseData is the internal implementation shared by the extension.
-func sseData(reader *bufio.Reader) (string, bool, error) {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {

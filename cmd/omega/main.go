@@ -325,7 +325,7 @@ func setProviderEnvVars(cfg gateway.Config) {
 func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
 	setProviderEnvVars(cfg)
 
-	tools := agent.NewRegistry()
+	tools := map[string]agent.Tool{}
 	ag := agent.NewAgent(nil, tools, 0) // provider wired after extensions
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())

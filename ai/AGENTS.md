@@ -9,7 +9,7 @@ provider implementations (Ollama, OpenAI, Anthropic) live in the
 
 ## Ownership
 
-- `provider.go` - Provider interface, ToolSchema type, sseData SSE line
+- `provider.go` - Provider interface, ToolSchema type, SSEData SSE line
   reader, shared httpClient with SetHTTPTimeout, exported HTTPClient /
   RetryHTTP / SSEData for extension use, ThinkingLevels / ThinkingEnabled
 - `extension_provider.go` - ExtensionProvider implementing Provider by

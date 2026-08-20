@@ -19,8 +19,7 @@ import (
 // ErrNotFound is returned when a session does not exist.
 var ErrNotFound = errors.New("session not found")
 
-// Compile-time assertion that Store implements agent.SessionStore.
-var _ agent.SessionStore = (*Store)(nil)
+// Store is a SQLite-backed session store.
 
 // Session is a persisted conversation container. ParentID links a session
 // to its parent in the session tree (empty for roots); Label is a

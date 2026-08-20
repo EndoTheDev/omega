@@ -32,7 +32,7 @@ type Server struct {
 // session CRUD endpoints.
 func NewServer(a *agent.Agent, tools map[string]agent.Tool, store *Store) *Server {
 	if tools == nil {
-		tools = agent.NewRegistry()
+		tools = map[string]agent.Tool{}
 	}
 	s := &Server{agent: a, tools: tools, store: store}
 
