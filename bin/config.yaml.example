@@ -57,6 +57,10 @@ system_prompt:
 # Default: 300. Override via OMEGA_HTTP_TIMEOUT env var.
 http_timeout: 300
 
+# Maximum tool-call turns per run. Default: 100.
+# Override via OMEGA_MAX_TURNS env var.
+max_turns: 100
+
 # TUI color theme: dark, light, or auto (detect OS setting).
 # Default: dark. Override via OMEGA_THEME env var.
 # Switch at runtime with /theme [name] in the TUI.
@@ -85,6 +89,7 @@ skills:
 #   OMEGA_HOST              -> provider.host
 #   OMEGA_PORT              -> server.port
 #   OMEGA_DB_PATH           -> store.db_path
+#   OMEGA_COMPACTION_ENABLED -> compaction.enabled (true/1 or false/0)
 #   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold
 #   OMEGA_COMPACTION_CONTEXT_WINDOW -> compaction.context_window
 #   OMEGA_COMPACTION_KEEP_FIRST -> compaction.keep_first
@@ -95,6 +100,7 @@ skills:
 #   OMEGA_EXTENSIONS_DIR     -> extensions.dir
 #   OMEGA_SKILLS_DIR        -> skills directory
 #   OMEGA_HTTP_TIMEOUT      -> http_timeout (seconds, default 300)
+#   OMEGA_MAX_TURNS         -> max_turns (default 100)
 #   OMEGA_THEME             -> theme (dark, light, auto)
 #   OMEGA_NOTIFICATIONS     -> notifications (bell, desktop, off)
 #

@@ -8,7 +8,7 @@ import (
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
-const defaultMaxTurns = 10
+const defaultMaxTurns = 100
 
 // maxOverflowRetries caps how many times a turn is retried after a
 // context overflow error; a second overflow surfaces the error.

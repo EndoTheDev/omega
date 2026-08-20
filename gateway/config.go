@@ -20,6 +20,7 @@ type Config struct {
 	Compaction   agent.CompactionConfig  `yaml:"compaction"`
 	SystemPrompt string                  `yaml:"system_prompt"`
 	HTTPTimeout  int                     `yaml:"http_timeout"`
+	MaxTurns     int                     `yaml:"max_turns"`
 	Theme        string                  `yaml:"theme"`
 	Notifications string                 `yaml:"notifications"`
 	Extensions   ExtensionsConfig        `yaml:"extensions"`
@@ -103,6 +104,7 @@ func DefaultConfig() Config {
 			Compactor:     "default",
 		},
 		HTTPTimeout:  300,
+		MaxTurns:     100,
 		Notifications: "bell",
 	}
 }
@@ -153,6 +155,9 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("OMEGA_DB_PATH"); v != "" {
 		cfg.Store.DBPath = v
 	}
+	if v := os.Getenv("OMEGA_COMPACTION_ENABLED"); v != "" {
+		cfg.Compaction.Enabled = v == "1" || strings.EqualFold(v, "true")
+	}
 	if v := os.Getenv("OMEGA_COMPACTION_THRESHOLD"); v != "" {
 		if threshold, err := strconv.ParseFloat(v, 64); err == nil && threshold > 0 && threshold <= 1 {
 			cfg.Compaction.Threshold = threshold
@@ -195,6 +200,11 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("OMEGA_HTTP_TIMEOUT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.HTTPTimeout = n
+		}
+	}
+	if v := os.Getenv("OMEGA_MAX_TURNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.MaxTurns = n
 		}
 	}
 	if v := os.Getenv("OMEGA_THEME"); v != "" {

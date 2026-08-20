@@ -326,7 +326,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	setProviderEnvVars(cfg)
 
 	tools := map[string]agent.Tool{}
-	ag := agent.NewAgent(nil, tools, 0) // provider wired after extensions
+	ag := agent.NewAgent(nil, tools, cfg.MaxTurns) // provider wired after extensions
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())
 	ag.SetPromptCustom(cfg.SystemPrompt)

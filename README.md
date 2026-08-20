@@ -195,7 +195,7 @@ AGENTS.md project context and tool file operations.
 | `provider.api_key`           | `OMEGA_API_KEY`                    |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
 | `server.port`                | `OMEGA_PORT`                       | `8099`                   | HTTP listen port                                                                                |
 | `store.db_path`              | `OMEGA_DB_PATH`                    | `<home>/omega.db`        | SQLite database path                                                                            |
-| `compaction.enabled`         |                                    | `true`                   | Enable context compaction                                                                       |
+| `compaction.enabled`         | `OMEGA_COMPACTION_ENABLED`         | `true`                   | Enable context compaction                                                                       |
 | `compaction.threshold`       | `OMEGA_COMPACTION_THRESHOLD`       | `0.6`                    | Fraction of context window that triggers compaction                                             |
 | `compaction.context_window`  | `OMEGA_COMPACTION_CONTEXT_WINDOW`  | `32768`                  | Model context window in tokens                                                                  |
 | `compaction.keep_first`      | `OMEGA_COMPACTION_KEEP_FIRST`      | `2`                      | Messages preserved verbatim at start                                                            |
@@ -206,6 +206,7 @@ AGENTS.md project context and tool file operations.
 | `extensions.dir`             | `OMEGA_EXTENSIONS_DIR`             | `<home>/extensions`      | Directory to scan for extension executables                                                     |
 | `skills.dir`                 | `OMEGA_SKILLS_DIR`                 | `<home>/skills`          | Skills directory                                                                                |
 | `http_timeout`               | `OMEGA_HTTP_TIMEOUT`               | `300`                    | HTTP timeout for provider requests (seconds)                                                    |
+| `max_turns`                  | `OMEGA_MAX_TURNS`                  | `100`                    | Maximum tool-call turns per run                                                                 |
 | `theme`                      | `OMEGA_THEME`                      | `dark`                   | TUI color theme (dark, light, auto)                                                             |
 | `notifications`              | `OMEGA_NOTIFICATIONS`              | `bell`                   | Turn-complete notification (bell, desktop, off)                                                 |
 
