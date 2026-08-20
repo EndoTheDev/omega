@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/gateway"
 )
 
@@ -44,7 +45,7 @@ func cmdInsights(configPath string, args []string) error {
 
 // formatInsights renders the Insights struct as a plain-text report.
 // Shared by CLI (stdout) and TUI (transcript).
-func formatInsights(in *gateway.Insights) string {
+func formatInsights(in *agent.Insights) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("  omega insights — %s\n", in.Period))

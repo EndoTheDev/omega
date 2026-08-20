@@ -11,7 +11,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // imageMagic holds magic-byte signatures for supported image formats.
@@ -109,7 +108,7 @@ var atFilePattern = regexp.MustCompile(`@\S+`)
 //   @skill:<name>  — inject skill content
 // Tokens that don't resolve are left as-is in the text. Used
 // by the TUI submit path to support @file references in chat input.
-func extractImages(input string, store *gateway.Store, skills []agent.Skill) (prompt string, images []ai.ImageContent, err error) {
+func extractImages(input string, store agent.StoreProvider, skills []agent.Skill) (prompt string, images []ai.ImageContent, err error) {
 	prompt = input
 	var loadedImages []ai.ImageContent
 

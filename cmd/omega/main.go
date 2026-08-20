@@ -324,7 +324,7 @@ func setProviderEnvVars(cfg gateway.Config) {
 // newAgent wires config into a provider, agent, store, and extensions.
 // The store is returned so the caller can close it. The extension manager
 // is returned so callers that run the TUI can close extensions on shutdown.
-func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
+func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.ExtensionManager, error) {
 	setProviderEnvVars(cfg)
 
 	tools := map[string]agent.Tool{}
@@ -374,12 +374,32 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 		}
 	}
 
-	store, err := gateway.Open(cfg.Store.DBPath)
+	// Open the store. Prefer the store-seam extension; fall back to
+	// in-memory SQLite when no store extension is loaded.
+	store, err := openStore(mgr, cfg.Store.DBPath)
 	if err != nil {
 		mgr.Close()
-		return nil, nil, nil, fmt.Errorf("open store: %w", err)
+		return nil, nil, nil, err
 	}
 	return ag, store, mgr, nil
+}
+
+// openStore opens the session store. Prefers the store-seam extension;
+// falls back to in-memory SQLite (no persistence) when no store
+// extension is loaded.
+func openStore(mgr agent.ExtensionManager, dbPath string) (agent.StoreProvider, error) {
+	if sp := mgr.StoreProvider(); sp != nil {
+		if err := sp.Open(dbPath); err != nil {
+			return nil, fmt.Errorf("open store extension: %w", err)
+		}
+		return sp, nil
+	}
+	fmt.Fprintf(os.Stderr, "omega: no store extension loaded — using in-memory store (sessions will not persist)\n")
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		return nil, fmt.Errorf("open in-memory store: %w", err)
+	}
+	return s, nil
 }
 
 // signalContext returns a context cancelled on SIGINT/SIGTERM.
@@ -480,20 +500,20 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	setProviderEnvVars(cfg)
-	// Open the session store so the TUI can persist conversations across
-	// runs. cmdChat owns the store and closes it on every exit path
-	// (/exit, Ctrl+C, or an error in p.Run).
-	store, err := gateway.Open(cfg.Store.DBPath)
-	if err != nil {
-		return fmt.Errorf("open store: %w", err)
-	}
-	defer store.Close()
 
 	extMgr, err := loadExtensions(cfg.Extensions, cfg.Provider.APIKey)
 	if err != nil {
 		return fmt.Errorf("load extensions: %w", err)
 	}
 	defer extMgr.Close()
+
+	// Open the store. Prefer the store-seam extension; fall back to
+	// in-memory SQLite when no store extension is loaded.
+	store, err := openStore(extMgr, cfg.Store.DBPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
 
 	skills, err := loadSkills(cfg)
 	if err != nil {

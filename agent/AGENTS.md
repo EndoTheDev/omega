@@ -40,7 +40,14 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `ProviderModelName`, `ProviderListModels`, `ProviderSetThinking`,
   `ProviderSetModel`. Message serialization adds `role` field based on
   concrete `ai.Message` type.
-- `seams.go` - capability seam interfaces (`Compactor`, `ToolProvider`)
+- `seams.go` - capability seam interfaces (`Compactor`, `ToolProvider`,
+  `StoreProvider`)
+- `types.go` - shared data types (`Session`, `SessionNode`, `SearchResult`,
+  `Insights`, `ToolStat`, `DayStat`, `NotableStat`) used by the store
+  interface and callers
+- `proxy_store.go` - `ProxyStore` + `StoreDispatcher`: forwards all
+  `StoreProvider` methods to the store-seam extension via JSON-RPC.
+  `decodeMessages` helper for (role, payload) → `[]ai.Message`
 - `defaults.go` - default seam implementations (`DefaultCompactor`,
   `DefaultToolProvider`)
 - `skill.go` - `Skill` type (data type for skill listing, used by

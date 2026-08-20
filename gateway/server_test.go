@@ -210,7 +210,7 @@ func TestSessionsCRUD(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201", rec.Code)
 	}
-	var created Session
+	var created agent.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestSessionsCRUD(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want 200", rec.Code)
 	}
-	var list []Session
+	var list []agent.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("get status = %d, want 200", rec.Code)
 	}
 	var detail struct {
-		Session  Session      `json:"session"`
+		Session  agent.Session      `json:"session"`
 		Messages []ai.Message `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {

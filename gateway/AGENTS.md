@@ -12,13 +12,13 @@ and environment variables. It is the only layer external clients talk to.
 - `server.go` - HTTP server, route handlers (`/health`, `/models`, `/chat`,
   `/sessions`, `/sessions/{id}`, `/static/`), SSE event mapping, request
   decoding, session-aware chat flow with message persistence
-- `store.go` - SQLite session store: `Session`, `SessionNode`, `Store`,
-  schema migration (including FTS5 full-text index), session CRUD,
-  message append/read, session tree, ancestor message walk, message
-  encode/decode (including `model_change` and `thinking_level_change`
-  entry types), `SearchMessages` (FTS5 full-text search),
-  `ComputeInsights` (cross-session analytics: `Insights`, `ToolStat`,
-  `DayStat`, `NotableStat`; skips non-conversation entries).
+- `store.go` - SQLite session store implementing `agent.StoreProvider`:
+  `Store` struct, schema migration (including FTS5 full-text index),
+  session CRUD, message append/read, session tree, ancestor message walk,
+  `SearchMessages` (FTS5 search), `ComputeInsights` (cross-session
+  analytics). Data types (`Session`, `SessionNode`, `Insights`, etc.)
+  live in `agent/types.go`. Message encode/decode delegates to
+  `ai.EncodeMessage`/`ai.DecodeMessage`.
 - `config.go` - `Config` and sub-configs (including `PluginsConfig`),
   `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`,
   `Validate`, `WatchConfig` (fsnotify hot-reload)
@@ -42,7 +42,7 @@ and environment variables. It is the only layer external clients talk to.
 - **StreamEvent is unwrapped before serialization.** `agent.StreamEvent`
   carries an `ai.StreamEvent` with `json:"-"`; the gateway emits the inner
   event under its own SSE type, not a generic wrapper.
-- **Session persistence is optional.** A nil `Store` disables the
+- **Session persistence is optional.** A nil `StoreProvider` disables the
   `/sessions` endpoints (they return 501) and skips all message
   persistence in `/chat`.
 - **Message persistence is user + final assistant only.** During a
@@ -50,7 +50,7 @@ and environment variables. It is the only layer external clients talk to.
   the run and the accumulated final assistant response is appended after
   streaming completes. Intermediate tool-loop messages are not persisted.
 - **Message wire format uses role discrimination.** Both `decodeMessages`
-  (wire) and `encodeMessage`/`decodeMessage` (store) switch on the
+  (wire) and `ai.EncodeMessage`/`ai.DecodeMessage` (store) switch on the
   `role` field: `system`, `user`, `assistant`, `tool`, `model_change`,
   `thinking_level_change`. The store payload mirrors the wire JSON.
   Non-conversation entries (`model_change`, `thinking_level_change`)

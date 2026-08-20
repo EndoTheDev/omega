@@ -101,6 +101,11 @@ type ExtensionManager interface {
 	// extension at runtime (e.g. /model command). No-op if no
 	// provider extension is loaded.
 	ProviderSetModel(model string)
+
+	// StoreProvider returns the store-seam extension as a StoreProvider,
+	// or nil if no store extension is loaded. The host uses this to
+	// route all session/message operations through the extension.
+	StoreProvider() StoreProvider
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -177,3 +182,5 @@ func (NoopManager) ProviderListModels() ([]string, error) {
 }
 func (NoopManager) ProviderSetThinking(level string) {}
 func (NoopManager) ProviderSetModel(model string) {}
+
+func (NoopManager) StoreProvider() StoreProvider { return nil }

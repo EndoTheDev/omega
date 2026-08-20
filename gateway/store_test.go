@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -165,7 +166,7 @@ func TestGetSessionTree(t *testing.T) {
 		t.Fatalf("roots = %d, want 2", len(roots))
 	}
 	// Find the root with a child.
-	var root *SessionNode
+	var root *agent.SessionNode
 	for _, r := range roots {
 		if r.ID == "root" {
 			root = r

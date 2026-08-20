@@ -525,7 +525,7 @@ func TestTreeCommand(t *testing.T) {
 	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	if err := s.SetLabel(ctx, "root", "main"); err != nil {
+	if err := s.UpdateSession(ctx, "root", "main"); err != nil {
 		t.Fatalf("set label: %v", err)
 	}
 	if err := s.AppendMessage(ctx, "root", ai.NewUser("hi")); err != nil {

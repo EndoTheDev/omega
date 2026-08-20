@@ -16,7 +16,9 @@ provider implementations (Ollama, OpenAI, Anthropic) live in the
   delegating to a ProviderDispatcher interface (satisfied by agent.StdioManager)
 - `messages.go` - Message sealed interface; System, User (with optional
   Images), Assistant, ToolResult, ModelChange, ThinkingLevelChange concrete
-  types; ImageContent struct; timestamp helpers
+  types; ImageContent struct; timestamp helpers; `EncodeMessage`/
+  `DecodeMessage` (role discriminator + JSON payload serialization,
+  shared by gateway store, proxy store, and core-store extension)
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk,
   ToolCallEvent, StreamEnd concrete types; ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter,

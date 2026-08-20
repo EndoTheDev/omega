@@ -15,9 +15,11 @@ markdown rendering.
 
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
-  agent wiring (`newAgent`, `setProviderEnvVars`), `cmdServe`, `cmdRun`,
-  `cmdChat`, `cmdTest` (smoke test), `cmdHealth`, `loadExtensions`,
-  `loadSkills`, config hot-reload (`gateway.WatchConfig`), extension CLI
+  agent wiring (`newAgent`, `setProviderEnvVars`, `openStore`),
+  `cmdServe`, `cmdRun`, `cmdChat`, `cmdTest` (smoke test), `cmdHealth`,
+  `loadExtensions`, `loadSkills`, config hot-reload
+  (`gateway.WatchConfig`), store routing (prefers store-seam extension,
+  falls back to in-memory SQLite with stderr warning), extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
 - `image.go` - image input support (`detectImage`, `parseFileArgs`,

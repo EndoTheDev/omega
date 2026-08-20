@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -19,26 +18,10 @@ import (
 // ErrNotFound is returned when a session does not exist.
 var ErrNotFound = errors.New("session not found")
 
-// Store is a SQLite-backed session store.
+// Compile-time assertion that Store implements agent.StoreProvider.
+var _ agent.StoreProvider = (*Store)(nil)
 
-// Session is a persisted conversation container. ParentID links a session
-// to its parent in the session tree (empty for roots); Label is a
-// user-assigned name shown in listings.
-type Session struct {
-	ID        string `json:"id"`
-	ParentID  string `json:"parent_id,omitempty"`
-	Label     string `json:"label,omitempty"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-}
-
-// SessionNode is one node in the session tree returned by GetSessionTree.
-type SessionNode struct {
-	Session
-	Children []*SessionNode
-}
-
-// Store persists sessions and their message history in SQLite.
+// Store persists sessions and its message history in SQLite.
 // It is safe for concurrent use via *sql.DB.
 type Store struct {
 	db *sql.DB
@@ -47,6 +30,19 @@ type Store struct {
 // Open opens (creating if needed) the SQLite database at dsn and ensures
 // the schema exists. Use ":memory:" for tests.
 func Open(dsn string) (*Store, error) {
+	return openStore(dsn)
+}
+
+func (s *Store) Open(dsn string) error {
+	newStore, err := openStore(dsn)
+	if err != nil {
+		return err
+	}
+	*s = *newStore
+	return nil
+}
+
+func openStore(dsn string) (*Store, error) {
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -98,27 +94,32 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 
 -- FTS5 full-text index over message content for /search.
+-- Column name 'payload' matches the messages table column so FTS5
+-- external content mode can read it directly.
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 	session_id UNINDEXED,
-	content,
+	payload,
 	content='messages',
 	content_rowid='id'
 );
 -- Triggers keep the FTS index in sync with the messages table.
 CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-	INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.id, new.session_id, new.payload);
+	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
 END;
 CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-	INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.id, old.session_id, old.payload);
+	INSERT INTO messages_fts(messages_fts, rowid, session_id, payload) VALUES ('delete', old.id, old.session_id, old.payload);
 END;
 CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-	INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.id, old.session_id, old.payload);
-	INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.id, new.session_id, new.payload);
+	INSERT INTO messages_fts(messages_fts, rowid, session_id, payload) VALUES ('delete', old.id, old.session_id, old.payload);
+	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
 END;
 `)
 	if err != nil {
 		return err
 	}
+	// Rebuild FTS index to pick up any messages that existed before
+	// the FTS table was created (triggers only fire on new writes).
+	s.db.Exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
 	// Add columns that may be missing from older databases. SQLite
 	// does not support IF NOT EXISTS on ALTER TABLE, so we catch
 	// the "duplicate column" error and ignore it.
@@ -156,38 +157,38 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 
 // scanSession scans one session row into s, tolerating a NULL parent_id
 // (which is how roots are stored).
-func scanSession(scanner interface{ Scan(...any) error }) (Session, error) {
-	var sess Session
+func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error) {
+	var sess agent.Session
 	var parent sql.NullString
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
-		return Session{}, err
+		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
 	return sess, nil
 }
 
 // GetSession returns the session with the given id, or ErrNotFound.
-func (s *Store) GetSession(ctx context.Context, id string) (Session, error) {
+func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {
 	sess, err := scanSession(s.db.QueryRowContext(ctx,
 		`SELECT id, parent_id, label, created_at, updated_at FROM sessions WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, ErrNotFound
+		return agent.Session{}, ErrNotFound
 	}
 	if err != nil {
-		return Session{}, err
+		return agent.Session{}, err
 	}
 	return sess, nil
 }
 
 // ListSessions returns all sessions ordered by creation time.
-func (s *Store) ListSessions(ctx context.Context) ([]Session, error) {
+func (s *Store) ListSessions(ctx context.Context) ([]agent.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, parent_id, label, created_at, updated_at FROM sessions ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Session
+	var out []agent.Session
 	for rows.Next() {
 		sess, err := scanSession(rows)
 		if err != nil {
@@ -215,6 +216,10 @@ func (s *Store) BranchSession(ctx context.Context, parentID, id string) error {
 
 // SetLabel sets (or clears, with an empty label) a session's label.
 func (s *Store) SetLabel(ctx context.Context, id, label string) error {
+	return s.UpdateSession(ctx, id, label)
+}
+
+func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET label = ?, updated_at = ? WHERE id = ?`,
 		label, ai.NowISO(), id)
@@ -223,7 +228,7 @@ func (s *Store) SetLabel(ctx context.Context, id, label string) error {
 
 // GetSessionTree returns the session forest: every root session with its
 // descendants nested under Children. Sessions are ordered by creation time.
-func (s *Store) GetSessionTree(ctx context.Context) ([]*SessionNode, error) {
+func (s *Store) GetSessionTree(ctx context.Context) ([]*agent.SessionNode, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
 		return nil, err
@@ -231,11 +236,11 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*SessionNode, error) {
 	// ponytail: build the tree in memory from a flat list. Fine for a
 	// session store; if a session count ever grows into the thousands,
 	// switch to a recursive CTE.
-	byID := make(map[string]*SessionNode, len(sessions))
+	byID := make(map[string]*agent.SessionNode, len(sessions))
 	for i := range sessions {
-		byID[sessions[i].ID] = &SessionNode{Session: sessions[i]}
+		byID[sessions[i].ID] = &agent.SessionNode{Session: sessions[i]}
 	}
-	var roots []*SessionNode
+	var roots []*agent.SessionNode
 	for _, sess := range sessions {
 		node := byID[sess.ID]
 		if node.ParentID == "" {
@@ -283,7 +288,7 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]ai.Messag
 
 // AppendMessage appends a message to a session's history.
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error {
-	role, payload, err := encodeMessage(msg)
+	role, payload, err := ai.EncodeMessage(msg)
 	if err != nil {
 		return err
 	}
@@ -307,7 +312,7 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]ai.Message
 		if err := rows.Scan(&role, &payload); err != nil {
 			return nil, err
 		}
-		msg, err := decodeMessage(role, []byte(payload))
+		msg, err := ai.DecodeMessage(role, []byte(payload))
 		if err != nil {
 			return nil, err
 		}
@@ -324,15 +329,9 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 	return n, err
 }
 
-// SearchResult is a single search hit from SearchMessages.
-type SearchResult struct {
-	SessionID string
-	Snippet   string
-}
-
 // SearchMessages performs a full-text search across all session messages.
 // Returns matching sessions with a snippet of the matching content.
-func (s *Store) SearchMessages(ctx context.Context, query string) ([]SearchResult, error) {
+func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.SearchResult, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
 		 FROM messages_fts WHERE messages_fts MATCH ?
@@ -341,9 +340,9 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]SearchResul
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SearchResult
+	var out []agent.SearchResult
 	for rows.Next() {
-		var r SearchResult
+		var r agent.SearchResult
 		if err := rows.Scan(&r.SessionID, &r.Snippet); err != nil {
 			return nil, err
 		}
@@ -352,118 +351,9 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]SearchResul
 	return out, rows.Err()
 }
 
-// encodeMessage serializes an ai.Message to its role discriminator and
-// JSON payload, mirroring the /chat wire format.
-func encodeMessage(msg ai.Message) (string, []byte, error) {
-	var role string
-	switch msg.(type) {
-	case ai.System:
-		role = "system"
-	case ai.User:
-		role = "user"
-	case ai.Assistant:
-		role = "assistant"
-	case ai.ToolResult:
-		role = "tool"
-	case ai.ModelChange:
-		role = "model_change"
-	case ai.ThinkingLevelChange:
-		role = "thinking_level_change"
-	default:
-		return "", nil, fmt.Errorf("unknown message type %T", msg)
-	}
-	payload, err := json.Marshal(msg)
-	if err != nil {
-		return "", nil, err
-	}
-	return role, payload, nil
-}
-
-// decodeMessage reconstructs an ai.Message from a stored role and payload.
-func decodeMessage(role string, payload []byte) (ai.Message, error) {
-	switch role {
-	case "system":
-		var m ai.System
-		if err := json.Unmarshal(payload, &m); err != nil {
-			return nil, err
-		}
-		return m, nil
-	case "user":
-		var m ai.User
-		if err := json.Unmarshal(payload, &m); err != nil {
-			return nil, err
-		}
-		return m, nil
-	case "assistant":
-		var m ai.Assistant
-		if err := json.Unmarshal(payload, &m); err != nil {
-			return nil, err
-		}
-		return m, nil
-	case "tool":
-		var m ai.ToolResult
-		if err := json.Unmarshal(payload, &m); err != nil {
-			return nil, err
-		}
-		return m, nil
-	case "model_change":
-		var m ai.ModelChange
-		if err := json.Unmarshal(payload, &m); err != nil {
-			return nil, err
-		}
-		return m, nil
-	case "thinking_level_change":
-		var m ai.ThinkingLevelChange
-		if err := json.Unmarshal(payload, &m); err != nil {
-			return nil, err
-		}
-		return m, nil
-	default:
-		return nil, fmt.Errorf("unknown role %q", role)
-	}
-}
-
-// ToolStat is one row in the tool breakdown.
-type ToolStat struct {
-	Name  string
-	Count int
-}
-
-// DayStat is one row in the daily activity breakdown.
-type DayStat struct {
-	Day     string // "Mon", "Tue", etc.
-	Count   int
-	Bar     string // visual bar string
-}
-
-// NotableStat holds the most extreme session for a given metric.
-type NotableStat struct {
-	Value  int
-	Detail string // date or session label
-}
-
-// Insights is the aggregated cross-session analytics result.
-type Insights struct {
-	Period         string
-	PeriodStart    string
-	PeriodEnd      string
-	Days           int
-	Sessions       int
-	Messages       int
-	UserMessages   int
-	ToolCalls      int
-	TotalTokens    int
-	AvgSessionMsgs float64
-	Tools          []ToolStat
-	Daily          [7]DayStat
-	NotableMsgs    NotableStat
-	NotableTokens  NotableStat
-	NotableTools   NotableStat
-}
-
 // ComputeInsights aggregates session data over the last N days.
 // If days <= 0, all sessions are included.
-func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error) {
+func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -478,7 +368,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error
 	weekdays := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	toolCounts := map[string]int{}
 	dayCounts := [7]int{}
-	in := &Insights{Days: days}
+	in := &agent.Insights{Days: days}
 	if days > 0 {
 		in.Period = fmt.Sprintf("Last %d days", days)
 	} else {
@@ -543,15 +433,15 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error
 			detail := t.Format("Jan 2") + ", " + label
 			if sessMsgs > maxMsgs {
 				maxMsgs = sessMsgs
-				in.NotableMsgs = NotableStat{Value: sessMsgs, Detail: detail}
+				in.NotableMsgs = agent.NotableStat{Value: sessMsgs, Detail: detail}
 			}
 			if sessTokens > maxTokens {
 				maxTokens = sessTokens
-				in.NotableTokens = NotableStat{Value: sessTokens, Detail: detail}
+				in.NotableTokens = agent.NotableStat{Value: sessTokens, Detail: detail}
 			}
 			if sessToolCalls > maxTools {
 				maxTools = sessToolCalls
-				in.NotableTools = NotableStat{Value: sessToolCalls, Detail: detail}
+				in.NotableTools = agent.NotableStat{Value: sessToolCalls, Detail: detail}
 			}
 		}
 	}
@@ -562,7 +452,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error
 
 	// Build tool breakdown sorted by count desc.
 	for name, count := range toolCounts {
-		in.Tools = append(in.Tools, ToolStat{Name: name, Count: count})
+		in.Tools = append(in.Tools, agent.ToolStat{Name: name, Count: count})
 	}
 	sort.Slice(in.Tools, func(i, j int) bool {
 		return in.Tools[i].Count > in.Tools[j].Count
@@ -583,7 +473,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*Insights, error
 				bar += "█"
 			}
 		}
-		in.Daily[i] = DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
+		in.Daily[i] = agent.DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
 	}
 
 	if days > 0 {

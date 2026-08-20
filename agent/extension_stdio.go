@@ -904,6 +904,41 @@ func (m *StdioManager) providerExt() *stdioExt {
 	return nil
 }
 
+// storeExt returns the extension that declared the "store" seam,
+// or nil if none exists.
+func (m *StdioManager) storeExt() *stdioExt {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ext := range m.exts {
+		for _, seam := range ext.seams {
+			if seam == "store" {
+				return ext
+			}
+		}
+	}
+	return nil
+}
+
+// StoreRequest dispatches a store-seam JSON-RPC call to the store
+// extension. Returns the raw JSON result.
+func (m *StdioManager) StoreRequest(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+	ext := m.storeExt()
+	if ext == nil {
+		return nil, fmt.Errorf("no store extension loaded")
+	}
+	return ext.request(ctx, method, params)
+}
+
+// StoreProvider returns a ProxyStore that forwards to the store-seam
+// extension, or nil if no store extension is loaded.
+func (m *StdioManager) StoreProvider() StoreProvider {
+	ext := m.storeExt()
+	if ext == nil {
+		return nil
+	}
+	return &ProxyStore{Dispatcher: m}
+}
+
 // ProviderStream dispatches to the provider-seam extension to stream
 // a completion. Returns nil if no provider extension is loaded.
 func (m *StdioManager) ProviderStream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {

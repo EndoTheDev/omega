@@ -257,7 +257,7 @@ type model struct {
 	err                 string             // last run error, shown in the status line
 	cancel              context.CancelFunc // cancels the in-flight run; nil when idle
 	events              <-chan agent.Event // run goroutine writes here; Update drains via cmd
-	store               *gateway.Store
+	store               agent.StoreProvider
 	sessionID           string   // current session; "" until the first message creates one
 	storeErr            string   // store open/persistence error, shown in the status line
 	promptHistory       []string // previously submitted prompts, for Up/Down recall
@@ -278,7 +278,7 @@ type model struct {
 	autoNamed           bool              // true after the first auto-name attempt
 	sessionLabel        string            // model-generated title, shown in status bar
 	autoNameGen         int               // bumped on /new; stale auto-name results are dropped
-	sessionList         []gateway.Session // cached from last /sessions, for /resume by #
+	sessionList         []agent.Session // cached from last /sessions, for /resume by #
 	modelList           []string          // cached from last /models, for /model <#> selection
 	ephemeral           bool              // /new --ephemeral; nothing persisted
 	theme               Theme             // active color/style theme
@@ -317,7 +317,7 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store agent.StoreProvider, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
 	m := newChatModel(pc.Type, pc.ModelName, compaction, promptCustom, promptAppend, promptContext, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
@@ -326,7 +326,7 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, prom
 	return nil
 }
 
-func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
+func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store agent.StoreProvider, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
 	extMgr := agent.ExtensionManager(agent.NoopManager{})
 	if len(extensions) > 0 {
 		extMgr = extensions[0]
@@ -1694,7 +1694,7 @@ func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 		m.err = "branch: " + err.Error()
 		return m, nil
 	}
-	if err := m.store.BranchSession(context.Background(), parentID, id); err != nil {
+	if err := m.store.CreateSession(context.Background(), id, parentID, ""); err != nil {
 		m.storeErr = "branch: " + err.Error()
 		return m, nil
 	}
@@ -1757,7 +1757,7 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 	if len(fields) > 1 {
 		label = strings.Join(fields[1:], " ")
 	}
-	if err := m.store.SetLabel(context.Background(), m.sessionID, label); err != nil {
+	if err := m.store.UpdateSession(context.Background(), m.sessionID, label); err != nil {
 		m.storeErr = "label: " + err.Error()
 		return m, nil
 	}
@@ -1800,8 +1800,8 @@ func (m model) handleTree() (tea.Model, tea.Cmd) {
 		glyph string // tree prefix: "" for roots, "├─ " or "└─ " for children
 	}
 	var rows []row
-	var flatten func(node *gateway.SessionNode, depth int, last bool)
-	flatten = func(node *gateway.SessionNode, depth int, last bool) {
+	var flatten func(node *agent.SessionNode, depth int, last bool)
+	flatten = func(node *agent.SessionNode, depth int, last bool) {
 		count, _ := m.store.CountMessages(context.Background(), node.ID)
 		name := sessionDisplayName(node.Label, node.ID)
 		glyph := ""
@@ -2563,7 +2563,7 @@ func (m model) autoNameSession() tea.Cmd {
 		if len(label) > 80 {
 			label = label[:80]
 		}
-		if err := store.SetLabel(context.Background(), sessionID, label); err != nil {
+		if err := store.UpdateSession(context.Background(), sessionID, label); err != nil {
 			return autoNameMsg{sessionID: sessionID, gen: gen, err: err}
 		}
 		return autoNameMsg{sessionID: sessionID, gen: gen, label: label}

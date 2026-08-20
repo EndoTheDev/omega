@@ -1,12 +1,87 @@
 package ai
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
 // NowISO returns a UTC timestamp in ISO 8601 format.
 func NowISO() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
+}
+
+// EncodeMessage serializes an ai.Message to its role discriminator
+// and JSON payload. Used by the store, proxy store, and core-store
+// extension for persistence and wire transfer.
+func EncodeMessage(msg Message) (string, []byte, error) {
+	var role string
+	switch msg.(type) {
+	case System:
+		role = "system"
+	case User:
+		role = "user"
+	case Assistant:
+		role = "assistant"
+	case ToolResult:
+		role = "tool"
+	case ModelChange:
+		role = "model_change"
+	case ThinkingLevelChange:
+		role = "thinking_level_change"
+	default:
+		return "", nil, fmt.Errorf("unknown message type %T", msg)
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return "", nil, err
+	}
+	return role, payload, nil
+}
+
+// DecodeMessage reconstructs a Message from a role discriminator
+// and JSON payload. Inverse of EncodeMessage.
+func DecodeMessage(role string, payload []byte) (Message, error) {
+	switch role {
+	case "system":
+		var m System
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "user":
+		var m User
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "assistant":
+		var m Assistant
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "tool":
+		var m ToolResult
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "model_change":
+		var m ModelChange
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "thinking_level_change":
+		var m ThinkingLevelChange
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	default:
+		return nil, fmt.Errorf("unknown role %q", role)
+	}
 }
 
 // Message is the sealed interface for all message types.

@@ -22,7 +22,7 @@ var staticFS embed.FS
 type Server struct {
 	agent   *agent.Agent
 	tools   map[string]agent.Tool
-	store   *Store
+	store   agent.StoreProvider
 	httpSrv *http.Server
 }
 
@@ -30,7 +30,7 @@ type Server struct {
 // the agent may call; a nil map uses the built-in registry. store is the
 // optional session persistence; a nil store disables persistence and the
 // session CRUD endpoints.
-func NewServer(a *agent.Agent, tools map[string]agent.Tool, store *Store) *Server {
+func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StoreProvider) *Server {
 	if tools == nil {
 		tools = map[string]agent.Tool{}
 	}

@@ -278,6 +278,20 @@ subscriptions to omega. Each extension runs as a separate process and
 communicates via JSON-RPC over stdio. A crash in one extension does not
 affect others or the host.
 
+omega ships with these extensions:
+
+| Extension       | Seam     | What                                                        |
+| --------------- | -------- | ----------------------------------------------------------- |
+| `core-prompt`   | prompt   | System prompt builder                                       |
+| `core-provider` | provider | LLM provider (Ollama, OpenAI, Anthropic)                    |
+| `core-store`    | store    | Session store (SQLite, FTS5 search, `sessions.search` tool) |
+| `core-tools`    | tools    | File, shell, and skill tools                                |
+| `mcp-bridge`    | mcp      | MCP server bridge                                           |
+| `ollama-web`    | web      | Web search/fetch via Ollama Cloud                           |
+
+When no store extension is loaded, omega falls back to an in-memory
+store (sessions are lost on exit).
+
 ### Enabling
 
 ```yaml
