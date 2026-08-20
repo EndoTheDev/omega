@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/harness"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/gateway"
 )
@@ -515,7 +514,7 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	}
 	defer store.Close()
 
-	skills, err := loadSkills(cfg)
+	skills, err := loadSkills(extMgr, cfg)
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
@@ -563,9 +562,13 @@ func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.Extensio
 	return mgr, nil
 }
 
-// loadSkills reads skills from the configured skills directory.
-func loadSkills(cfg gateway.Config) ([]agent.Skill, error) {
-	return harness.LoadSkills(cfg.Skills.Dir)
+// loadSkills reads skills from the skills-seam extension. Returns empty
+// when no skills extension is loaded.
+func loadSkills(mgr agent.ExtensionManager, cfg gateway.Config) ([]agent.Skill, error) {
+	if sp := mgr.SkillsProvider(); sp != nil {
+		return sp.LoadSkills(cfg.Skills.Dir)
+	}
+	return nil, nil
 }
 
 // cmdTest runs a smoke test through the full agent pipeline using a

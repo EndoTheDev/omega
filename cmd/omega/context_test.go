@@ -1,4 +1,4 @@
-package harness
+package main
 
 import (
 	"os"
@@ -13,8 +13,6 @@ func TestLoadProjectContextReadsAGENTS(t *testing.T) {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
 	got := LoadProjectContext(dir)
-	// The exact result depends on ancestor directories, but the
-	// nearest AGENTS.md must be present in the output.
 	if !strings.Contains(got, "# project\nrules") {
 		t.Fatalf("LoadProjectContext = %q, want it to contain AGENTS.md contents", got)
 	}
@@ -22,8 +20,6 @@ func TestLoadProjectContextReadsAGENTS(t *testing.T) {
 
 func TestLoadProjectContextMissingReturnsEmpty(t *testing.T) {
 	if got := LoadProjectContext(t.TempDir()); got != "" {
-		// Ancestors may have AGENTS.md, but a fresh temp dir under
-		// the system temp should not.
 		t.Fatalf("LoadProjectContext on empty dir = %q, want \"\"", got)
 	}
 }
@@ -41,7 +37,6 @@ func TestLoadProjectContextAncestorWalk(t *testing.T) {
 		t.Fatalf("write child AGENTS.md: %v", err)
 	}
 	got := LoadProjectContext(child)
-	// Root should come first, child last.
 	rootIdx := strings.Index(got, "root rules")
 	childIdx := strings.Index(got, "child rules")
 	if rootIdx == -1 || childIdx == -1 {
@@ -54,15 +49,11 @@ func TestLoadProjectContextAncestorWalk(t *testing.T) {
 
 func TestLoadProjectContextResourceDiagnostics(t *testing.T) {
 	dir := t.TempDir()
-	// Create an unreadable AGENTS.md (permission denied).
-	// On Windows, 0o000 may not prevent reading by the owner.
-	// Skip if the file is still readable.
 	path := filepath.Join(dir, "AGENTS.md")
 	if err := os.WriteFile(path, []byte("secret"), 0o000); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
 	defer os.Chmod(path, 0o600)
-	// Try reading directly — if the OS allows it, we can't test this.
 	if _, err := os.ReadFile(path); err == nil {
 		t.Skip("current OS/user can read 0o000 files, cannot test resource diagnostics")
 	}
@@ -81,19 +72,15 @@ func TestProjectRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("root"), 0o600); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
-
-	// Nearest AGENTS.md dir from a deep subdir is the root.
 	if got := ProjectRoot(child); got != root {
 		t.Fatalf("ProjectRoot(%q) = %q, want %q", child, got, root)
 	}
-	// From the root itself.
 	if got := ProjectRoot(root); got != root {
 		t.Fatalf("ProjectRoot(%q) = %q, want %q", root, got, root)
 	}
 }
 
 func TestProjectRootNone(t *testing.T) {
-	// A fresh temp dir with no AGENTS.md anywhere up the tree.
 	if got := ProjectRoot(t.TempDir()); got != "" {
 		t.Fatalf("ProjectRoot on empty dir = %q, want \"\"", got)
 	}

@@ -2,8 +2,7 @@
 // shell, and skill tools. It replaces the hardcoded tool registry in
 // the agent core, making all tools pluggable.
 //
-// Tools: shell.run, files.read, files.write, files.edit, skills.read
-// Config: OMEGA_SKILLS_DIR env var (set by omega).
+// Tools: shell.run, files.read, files.write, files.edit
 package main
 
 import (
@@ -95,17 +94,6 @@ var toolDefs = []extTool{
 				"new_string": map[string]any{"type": "string", "description": "Replacement text."},
 			},
 			"required": []string{"path", "old_string", "new_string"},
-		},
-	},
-	{
-		Name:        "skills.read",
-		Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name": map[string]any{"type": "string", "description": "The skill name (from the Available Skills list)"},
-			},
-			"required": []string{"name"},
 		},
 	},
 }
@@ -311,88 +299,7 @@ func diffSummary(oldString, newString string) string {
 	return strings.TrimSuffix(out.String(), "\n")
 }
 
-// --- skills.read ---
 
-type skill struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Content     string `json:"content"`
-	Dir         string `json:"dir"`
-}
-
-func runReadSkill(args map[string]any) (string, error) {
-	name, err := argString(args, "name")
-	if err != nil {
-		return "", err
-	}
-	dir := os.Getenv("OMEGA_SKILLS_DIR")
-	if dir == "" {
-		return "", fmt.Errorf("OMEGA_SKILLS_DIR not set")
-	}
-
-	// Scan skills directory for the named skill.
-	skillFile := filepath.Join(dir, name, name+".md")
-	f, err := os.Open(skillFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// List available skills to help the agent.
-			entries, _ := os.ReadDir(dir)
-			var names []string
-			for _, e := range entries {
-				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-					names = append(names, e.Name())
-				}
-			}
-			return "", fmt.Errorf("skill %q not found. Available skills: %s", name, strings.Join(names, ", "))
-		}
-		return "", fmt.Errorf("open %s: %w", skillFile, err)
-	}
-	defer f.Close()
-
-	// Parse YAML frontmatter + body (same logic as harness.loadSkill).
-	var s skill
-	scanner := bufio.NewScanner(f)
-	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
-		// No frontmatter — whole file is content.
-		s.Content = scanner.Text() + "\n" + readRemaining(scanner)
-		s.Name = name
-		s.Dir = filepath.Join(dir, name)
-		return formatSkill(s), nil
-	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "---" {
-			break
-		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		switch key {
-		case "name":
-			s.Name = val
-		case "description":
-			s.Description = val
-		}
-	}
-	s.Content = readRemaining(scanner)
-	s.Dir = filepath.Join(dir, name)
-	if s.Name == "" {
-		s.Name = name
-	}
-	return formatSkill(s), nil
-}
-
-func formatSkill(s skill) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Skill: %s\n", s.Name)
-	fmt.Fprintf(&sb, "Directory: %s\n\n", s.Dir)
-	sb.WriteString(s.Content)
-	return sb.String()
-}
 
 func readRemaining(scanner *bufio.Scanner) string {
 	var sb strings.Builder
@@ -453,8 +360,6 @@ func main() {
 				output, callErr = runWriteFile(params.Args)
 			case "files.edit":
 				output, callErr = runEdit(params.Args)
-			case "skills.read":
-				output, callErr = runReadSkill(params.Args)
 			default:
 				callErr = fmt.Errorf("unknown tool %q", toolName)
 			}

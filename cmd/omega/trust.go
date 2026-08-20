@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/EndoTheDev/omega/harness"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,7 +100,7 @@ func isTrusted(entries []TrustEntry, dir string) bool {
 // (no AGENTS.md anywhere). It has no side effects and never prompts;
 // the actual load/persist happens in resolveProjectContext.
 func trustState(cwd string, approve, noApprove bool) string {
-	root := harness.ProjectRoot(cwd)
+	root := ProjectRoot(cwd)
 	if root == "" {
 		return ""
 	}
@@ -123,7 +122,7 @@ func trustState(cwd string, approve, noApprove bool) string {
 // callers skip untrusted context with a warning. --no-approve wins
 // over --approve.
 func resolveProjectContext(cwd string, approve, noApprove, interactive bool) string {
-	root := harness.ProjectRoot(cwd)
+	root := ProjectRoot(cwd)
 	if root == "" {
 		// No AGENTS.md anywhere up the tree: nothing to load or gate.
 		return ""
@@ -139,10 +138,10 @@ func resolveProjectContext(cwd string, approve, noApprove, interactive bool) str
 		if err := saveTrusted(entries); err != nil {
 			fmt.Fprintf(os.Stderr, "omega: save trust store: %v\n", err)
 		}
-		return harness.LoadProjectContext(cwd)
+		return LoadProjectContext(cwd)
 	}
 	if isTrusted(entries, root) {
-		return harness.LoadProjectContext(cwd)
+		return LoadProjectContext(cwd)
 	}
 
 	// Untrusted, no flag.
@@ -152,7 +151,7 @@ func resolveProjectContext(cwd string, approve, noApprove, interactive bool) str
 			if err := saveTrusted(entries); err != nil {
 				fmt.Fprintf(os.Stderr, "omega: save trust store: %v\n", err)
 			}
-			return harness.LoadProjectContext(cwd)
+			return LoadProjectContext(cwd)
 		}
 		return ""
 	}

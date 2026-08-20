@@ -939,6 +939,41 @@ func (m *StdioManager) StoreProvider() StoreProvider {
 	return &ProxyStore{Dispatcher: m}
 }
 
+// skillsExt returns the extension that declared the "skills" seam,
+// or nil if none exists.
+func (m *StdioManager) skillsExt() *stdioExt {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ext := range m.exts {
+		for _, seam := range ext.seams {
+			if seam == "skills" {
+				return ext
+			}
+		}
+	}
+	return nil
+}
+
+// SkillsRequest dispatches a skills-seam JSON-RPC call to the skills
+// extension. Returns the raw JSON result.
+func (m *StdioManager) SkillsRequest(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+	ext := m.skillsExt()
+	if ext == nil {
+		return nil, fmt.Errorf("no skills extension loaded")
+	}
+	return ext.request(ctx, method, params)
+}
+
+// SkillsProvider returns a ProxySkills that forwards to the skills-seam
+// extension, or nil if no skills extension is loaded.
+func (m *StdioManager) SkillsProvider() SkillsProvider {
+	ext := m.skillsExt()
+	if ext == nil {
+		return nil
+	}
+	return &ProxySkills{Dispatcher: m}
+}
+
 // ProviderStream dispatches to the provider-seam extension to stream
 // a completion. Returns nil if no provider extension is loaded.
 func (m *StdioManager) ProviderStream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {

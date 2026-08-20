@@ -13,12 +13,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/harness"
 )
 
 // --- omega extension protocol types ---
@@ -63,17 +63,50 @@ type extInfo struct {
 	} `json:"ToolList"`
 }
 
-// loadSkills reads skills from OMEGA_SKILLS_DIR. Returns nil if the
+// loadSkills reads skills from OMEGA_SKILLS_DIR. Return nil if the
 // env var is not set or the directory is missing.
 func loadSkills() []agent.Skill {
 	dir := os.Getenv("OMEGA_SKILLS_DIR")
 	if dir == "" {
 		return nil
 	}
-	skills, err := harness.LoadSkills(dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "core-prompt: load skills: %v\n", err)
 		return nil
+	}
+	var skills []agent.Skill
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		skillFile := filepath.Join(dir, entry.Name(), entry.Name()+".md")
+		data, err := os.ReadFile(skillFile)
+		if err != nil {
+			continue
+		}
+		s := agent.Skill{Name: entry.Name(), Dir: filepath.Join(dir, entry.Name())}
+		// Parse simple YAML frontmatter (name, description).
+		lines := strings.Split(string(data), "\n")
+		if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+			for _, line := range lines[1:] {
+				if strings.TrimSpace(line) == "---" {
+					break
+				}
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				switch key {
+				case "name":
+					s.Name = val
+				case "description":
+					s.Description = val
+				}
+			}
+		}
+		skills = append(skills, s)
 	}
 	return skills
 }

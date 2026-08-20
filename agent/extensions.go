@@ -78,7 +78,7 @@ type ExtensionManager interface {
 
 	// SeamProviders returns a map of seam type to extension name for
 	// extensions that declared the seam during initialize. Used by the
-	// harness to wire PluginsConfig to the right extension.
+	// host to wire PluginsConfig to the right extension.
 	SeamProviders() map[string]string
 
 	// ProviderStream dispatches to the provider-seam extension to stream
@@ -106,6 +106,10 @@ type ExtensionManager interface {
 	// or nil if no store extension is loaded. The host uses this to
 	// route all session/message operations through the extension.
 	StoreProvider() StoreProvider
+
+	// SkillsProvider returns the skills-seam extension as a
+	// SkillsProvider, or nil if no skills extension is loaded.
+	SkillsProvider() SkillsProvider
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -184,3 +188,5 @@ func (NoopManager) ProviderSetThinking(level string) {}
 func (NoopManager) ProviderSetModel(model string) {}
 
 func (NoopManager) StoreProvider() StoreProvider { return nil }
+
+func (NoopManager) SkillsProvider() SkillsProvider { return nil }

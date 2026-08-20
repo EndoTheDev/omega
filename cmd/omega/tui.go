@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/insights", "/search", "/thinking", "/tools", "/extensions", "/skills", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/insights", "/search", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -1000,8 +1000,6 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "/extensions":
 		return m.handleExtensions()
-	case "/skills":
-		return m.handleSkills()
 	case "/theme":
 		return m.handleTheme(fields[1:])
 	case "/help":
@@ -1414,34 +1412,6 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	sb.WriteString("\n")
 	for _, info := range infos {
 		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, info.Status)
-	}
-	m.transcript += sb.String()
-	m.refresh()
-	return m, nil
-}
-
-// handleSkills lists loaded skills with name and description.
-func (m model) handleSkills() (tea.Model, tea.Cmd) {
-	if len(m.skills) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no skills loaded]") + "\n"
-		m.refresh()
-		return m, nil
-	}
-
-	nameWidth := 12
-	for _, s := range m.skills {
-		if len(s.Name) > nameWidth {
-			nameWidth = len(s.Name)
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString("\n")
-	header := fmt.Sprintf("%-*s  %s", nameWidth, "NAME", "DESCRIPTION")
-	sb.WriteString(m.theme.Info.Render(header))
-	sb.WriteString("\n")
-	for _, s := range m.skills {
-		fmt.Fprintf(&sb, "%-*s  %s\n", nameWidth, s.Name, s.Description)
 	}
 	m.transcript += sb.String()
 	m.refresh()
@@ -2695,7 +2665,7 @@ func (m model) renderHelp() string {
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/tools [on|off|auto|list]", "tool results: expanded / collapsed / auto, or list all tools"},
 		{"/extensions", "list loaded extensions"},
-		{"/skills", "list loaded skills"},
+
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
 		{"/help", "show this help"},
 	}

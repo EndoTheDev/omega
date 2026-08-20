@@ -153,27 +153,21 @@ func TestSlashCommands(t *testing.T) {
 	}
 }
 
-// TestSkillsCommand verifies /skills lists loaded skills and handles
-// the empty case.
+// TestSkillsCommand verifies that /skills is no longer a built-in TUI
+// command — it's registered by the core-skills extension. With no
+// extension loaded, /skills falls through to the unknown-command path.
 func TestSkillsCommand(t *testing.T) {
-	// No skills loaded.
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
 	updated, _ := m.handleCommand("/skills")
 	m = updated.(model)
-	if !strings.Contains(m.transcript, "[no skills loaded]") {
-		t.Fatalf("expected [no skills loaded], got %q", m.transcript)
-	}
-
-	// With a skill loaded.
-	skill := agent.Skill{Name: "test-skill", Description: "A test skill", Content: "body"}
-	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, nil, "dark", "", "bell")
-	updated, _ = m.handleCommand("/skills")
-	m = updated.(model)
-	if !strings.Contains(m.transcript, "test-skill") {
-		t.Fatalf("expected test-skill in transcript, got %q", m.transcript)
-	}
-	if !strings.Contains(m.transcript, "A test skill") {
-		t.Fatalf("expected description in transcript, got %q", m.transcript)
+	// /skills is not a built-in command; with no extension manager,
+	// it produces an error message, not a skills listing.
+	if !strings.Contains(m.err, "unknown command") && !strings.Contains(m.err, "no extensions") {
+		// If the error is empty, the command may have been routed to
+		// the extension manager which returns "no extensions loaded".
+		if m.err == "" {
+			t.Fatalf("expected error for /skills with no extension, got empty error and transcript %q", m.transcript)
+		}
 	}
 }
 

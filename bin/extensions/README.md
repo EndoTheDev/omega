@@ -93,7 +93,7 @@ Fields:
 - `seams` - declares which capability seams the extension provides.
   Valid values: `"prompt_builder"` (implements `prompt/build`),
   `"compactor"` (implements `compaction/messages`), `"provider"`
-  (implements `provider/stream` and related methods). The harness
+  (implements `provider/stream` and related methods). The host
   matches these against `plugins` config to wire the right extension.
 
 ### tool_call

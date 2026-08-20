@@ -24,13 +24,14 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `events.go` - event types emitted by the agent loop (`AgentStart`,
   `TurnStart`, `TurnEnd`, `AgentEnd`, `StreamEvent`, `ToolResultEvent`,
   `AssistantMessageEvent`, `SessionEvent`)
-- `extension.go` - `ExtensionManager` interface (tools, commands, events,
+- `extensions.go` - `ExtensionManager` interface (tools, commands, events,
   `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
   `BuildPrompt`, `CompactMessages`, `SeamProviders`, provider dispatch:
   `ProviderStream`, `ProviderModelName`, `ProviderListModels`,
-  `ProviderSetThinking`, `ProviderSetModel`), `NoopManager`,
-  `ExtensionCommand`, `ExtensionInfo` (with `Seams`, `ToolList` fields),
-  `ToolInfo` (Name + Description), `PromptBuildOptions`
+  `ProviderSetThinking`, `ProviderSetModel`, `StoreProvider`,
+  `SkillsProvider`), `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
+  (with `Seams`, `ToolList` fields), `ToolInfo` (Name + Description),
+  `PromptBuildOptions`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
   `prompt/build`, `compaction/messages` JSON-RPC methods).
@@ -38,25 +39,30 @@ events for anyone observing (the TUI, the gateway, or extensions).
   routing, `readLoop` distinguishes notifications (no ID) from responses
   (with ID). Provider dispatch: `providerExt`, `ProviderStream`,
   `ProviderModelName`, `ProviderListModels`, `ProviderSetThinking`,
-  `ProviderSetModel`. Message serialization adds `role` field based on
+  `ProviderSetModel`. Store dispatch: `storeExt`, `StoreRequest`,
+  `StoreProvider`. Skills dispatch: `skillsExt`, `SkillsRequest`,
+  `SkillsProvider`. Message serialization adds `role` field based on
   concrete `ai.Message` type.
 - `seams.go` - capability seam interfaces (`Compactor`, `ToolProvider`,
-  `StoreProvider`)
+  `StoreProvider`, `SkillsProvider`)
 - `types.go` - shared data types (`Session`, `SessionNode`, `SearchResult`,
   `Insights`, `ToolStat`, `DayStat`, `NotableStat`) used by the store
   interface and callers
 - `proxy_store.go` - `ProxyStore` + `StoreDispatcher`: forwards all
   `StoreProvider` methods to the store-seam extension via JSON-RPC.
   `decodeMessages` helper for (role, payload) → `[]ai.Message`
+- `proxy_skills.go` - `ProxySkills` + `SkillsDispatcher`: forwards
+  `SkillsProvider.LoadSkills` to the skills-seam extension via JSON-RPC
 - `defaults.go` - default seam implementations (`DefaultCompactor`,
   `DefaultToolProvider`)
 - `skill.go` - `Skill` type (data type for skill listing, used by
-  `harness.LoadSkills`)
+  `SkillsProvider.LoadSkills` via the core-skills extension)
 - `testdata/mock_extension/` - mock extension binary for extension tests
-- `tools.go` - deleted. Built-in tools moved to `bin/extensions/core-tools/`
-  extension. Tool naming convention: `namespace.action` (e.g. `files.read`,
-  `shell.run`, `skills.read`). Extension tools use `<server>.<tool>`
-  (e.g. `obsidian.vault_read`).
+- `tools.go` - deleted. Built-in tools moved to extensions. Tool naming
+  convention: `namespace.action` (e.g. `files.read`, `shell.run`,
+  `skills.read`). Extension tools use `<server>.<tool>` (e.g.
+  `obsidian.vault_read`). `skills.read` is now in the core-skills
+  extension, not core-tools.
 - `*_test.go` - self-check tests for each non-trivial package
 
 ## Local Contracts
@@ -94,8 +100,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
   LLM provider is wired via `SetProvider` from the `core-provider`
   extension's `provider` seam (`ExtensionProvider` delegates to
   `ExtensionManager.ProviderStream` and related methods).
-  Harness code (skill loading, project context) lives in `harness/`, not
-  in this package.
+  Project context and trust live in `cmd/omega/context.go` and
+  `cmd/omega/trust.go`.
 - **No re-exports.** Types defined in `ai/` are imported from
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes

@@ -179,7 +179,6 @@ gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 | -------- | --------- | ------------------------------------------------------------------------------------ |
 | Gateway  | `gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree             |
 | Agent    | `agent`   | Multi-turn loop, tool execution, compaction, capability seams, extensions            |
-| Harness  | `harness` | System prompt building, skill loading, project context loading                       |
 | Provider | `ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry |
 
 No layer skips another. Events are typed structs, dispatched via type
@@ -280,14 +279,15 @@ affect others or the host.
 
 omega ships with these extensions:
 
-| Extension       | Seam     | What                                                        |
-| --------------- | -------- | ----------------------------------------------------------- |
-| `core-prompt`   | prompt   | System prompt builder                                       |
-| `core-provider` | provider | LLM provider (Ollama, OpenAI, Anthropic)                    |
-| `core-store`    | store    | Session store (SQLite, FTS5 search, `sessions.search` tool) |
-| `core-tools`    | tools    | File, shell, and skill tools                                |
-| `mcp-bridge`    | mcp      | MCP server bridge                                           |
-| `ollama-web`    | web      | Web search/fetch via Ollama Cloud                           |
+| Extension       | Seam     | What                                                                          |
+| --------------- | -------- | ----------------------------------------------------------------------------- |
+| `core-prompt`   | prompt   | System prompt builder                                                         |
+| `core-provider` | provider | LLM provider (Ollama, OpenAI, Anthropic)                                      |
+| `core-store`    | store    | Session store (SQLite, FTS5 search, `sessions.search` tool)                   |
+| `core-skills`   | skills   | Skill loading, `skills.read` tool, `/skills` command                          |
+| `core-tools`    | tools    | File and shell tools (`files.read`, `files.write`, `files.edit`, `shell.run`) |
+| `mcp-bridge`    | mcp      | MCP server bridge                                                             |
+| `ollama-web`    | web      | Web search/fetch via Ollama Cloud                                             |
 
 When no store extension is loaded, omega falls back to an in-memory
 store (sessions are lost on exit).
@@ -395,7 +395,6 @@ prompt as text (bracketed paste support).
 cmd/omega/        Single binary entry point (serve, run, health, chat)
 ai/               Provider abstraction, stream events, message types, retry
 agent/            Multi-turn loop, tool execution, compaction, seams, extensions
-harness/          System prompt building, skill loading, project context loading
 gateway/          HTTP server, SSE streaming, session store, config
 .agents/          Commit conventions (COMMIT.md)
 build.sh          Build script (Linux/macOS): vet + test + build

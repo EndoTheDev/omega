@@ -8,7 +8,7 @@ import (
 
 // DefaultCompactor wraps the existing CompactWithFocus logic with
 // config and extension hooks. It is the default Compactor — the
-// harness wires it with the provider, compaction config, and
+// host wires it with the provider, compaction config, and
 // extension manager. Extensions that want custom compaction implement
 // their own Compactor.
 type DefaultCompactor struct {

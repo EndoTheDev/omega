@@ -34,6 +34,8 @@ markdown rendering.
   `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
   `promptTrust`), trust flag parsing (`parseTrustArgs`,
   `stripTrustArgs`)
+- `context.go` - project context loading (`ProjectRoot`,
+  `LoadProjectContext`) moved from the deleted `harness/` package
 - `tui.go` - Bubble Tea TUI: the `model` state, `Update`/`View`/`Init`,
   streaming event handling (`handleEvent`, `appendSegment`, `drainEvents`),
   slash command dispatch (`handleCommand` and every `handle*` helper),

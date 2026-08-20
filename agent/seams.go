@@ -7,7 +7,7 @@ import (
 )
 
 // Compactor handles context compaction when the token budget is
-// exceeded. The harness implements this with the default provider-based
+// exceeded. The host implements this with the default provider-based
 // summarization; extensions can override with custom summaries.
 type Compactor interface {
 	// Compact compacts the message history. Returns the compacted
@@ -41,4 +41,12 @@ type StoreProvider interface {
 	SearchMessages(ctx context.Context, query string) ([]SearchResult, error)
 	ComputeInsights(ctx context.Context, days int) (*Insights, error)
 	CountMessages(ctx context.Context, sessionID string) (int, error)
+}
+
+// SkillsProvider is the skill loading seam. The default implementation
+// scans a directory for <name>/<name>.md files, provided via the
+// core-skills extension. The host uses this to populate the skill list
+// for autocomplete, inline invocation, and @skill: mentions.
+type SkillsProvider interface {
+	LoadSkills(dir string) ([]Skill, error)
 }
