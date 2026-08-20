@@ -92,8 +92,9 @@ Fields:
   receives. Omit or set to empty for none.
 - `seams` - declares which capability seams the extension provides.
   Valid values: `"prompt_builder"` (implements `prompt/build`),
-  `"compactor"` (implements `compaction/messages`). The harness matches
-  these against `plugins` config to wire the right extension.
+  `"compactor"` (implements `compaction/messages`), `"provider"`
+  (implements `provider/stream` and related methods). The harness
+  matches these against `plugins` config to wire the right extension.
 
 ### tool_call
 
@@ -309,6 +310,69 @@ Response:
   }
 }
 ```
+
+## Provider seam
+
+An extension declaring the `"provider"` seam implements the LLM provider
+contract. The core-provider extension (`core-provider/main.go`) contains
+the Ollama, OpenAI, and Anthropic provider implementations.
+
+### Provider configuration
+
+The host sets `OMEGA_PROVIDER_TYPE`, `OMEGA_PROVIDER_MODEL`, and
+`OMEGA_PROVIDER_HOST` environment variables before spawning the
+extension. The extension reads the appropriate API key from
+`OLLAMA_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` during
+`initialize`.
+
+### provider/stream (streaming RPC)
+
+Unlike other methods, `provider/stream` uses a streaming RPC pattern:
+the extension sends `stream_event` notifications (no ID) as chunks
+arrive, then sends a final response (with ID) when the stream completes.
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "provider/stream",
+  "params": {
+    "messages": [{ "role": "user", "content": "hello" }],
+    "tools": [{ "name": "shell.run", "description": "...", "parameters": {} }]
+  }
+}
+```
+
+Notifications (no ID, sent before the final response):
+
+```json
+{"jsonrpc": "2.0", "method": "stream_event", "params": {"type": "response_chunk", "content": "Hi"}}
+{"jsonrpc": "2.0", "method": "stream_event", "params": {"type": "thinking_chunk", "content": "..."}}
+{"jsonrpc": "2.0", "method": "stream_event", "params": {"type": "tool_call", "tool_call": {"id": "call_1", "name": "shell.run", "arguments": {}}}}
+```
+
+Final response (with ID):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "finish_reason": "stop",
+    "prompt_eval_count": 15,
+    "eval_count": 61
+  }
+}
+```
+
+### Other provider methods
+
+- `provider/model_name` - returns `{"model": "glm-5.2"}`
+- `provider/list_models` - returns `{"models": ["llama3", "glm-5.2"]}`
+- `provider/set_thinking` - sets thinking level: `{"level": "medium"}`
+- `provider/set_model` - changes model at runtime: `{"model": "llama3"}`
 
 ## API key passing
 

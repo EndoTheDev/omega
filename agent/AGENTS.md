@@ -11,8 +11,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
 
 - `agent.go` - agent struct, configuration holders, capability seam wiring
   (`SetCompactor`, `SetToolProvider`, `SetMaxToolOutput`, `SetCWD`,
-  `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`, `SetAgentLoop`).
-  Delegates execution to `AgentLoop`.
+  `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`, `SetAgentLoop`,
+  `SetProvider`). Delegates execution to `AgentLoop`.
 - `loop.go` - `AgentLoop` interface (Go-level seam for the conversation loop),
   `LoopOptions` struct. Default implementation is `DefaultAgentLoop`.
 - `default_loop.go` - `DefaultAgentLoop` (standard turn loop: stream, execute
@@ -25,12 +25,20 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `AssistantMessageEvent`, `SessionEvent`)
 - `extension.go` - `ExtensionManager` interface (tools, commands, events,
   `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
-  `BuildPrompt`, `CompactMessages`, `SeamProviders`), `NoopManager`,
+  `BuildPrompt`, `CompactMessages`, `SeamProviders`, provider dispatch:
+  `ProviderStream`, `ProviderModelName`, `ProviderListModels`,
+  `ProviderSetThinking`, `ProviderSetModel`), `NoopManager`,
   `ExtensionCommand`, `ExtensionInfo` (with `Seams`, `ToolList` fields),
   `ToolInfo` (Name + Description), `PromptBuildOptions`
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
-  `prompt/build`, `compaction/messages` JSON-RPC methods)
+  `prompt/build`, `compaction/messages` JSON-RPC methods).
+  Streaming RPC: `streamRequest` sets up `notifyCh` for notification
+  routing, `readLoop` distinguishes notifications (no ID) from responses
+  (with ID). Provider dispatch: `providerExt`, `ProviderStream`,
+  `ProviderModelName`, `ProviderListModels`, `ProviderSetThinking`,
+  `ProviderSetModel`. Message serialization adds `role` field based on
+  concrete `ai.Message` type.
 - `seams.go` - capability seam interfaces (`Compactor`, `ToolProvider`,
   `SessionStore`)
 - `defaults.go` - default seam implementations (`DefaultCompactor`,
@@ -75,7 +83,10 @@ events for anyone observing (the TUI, the gateway, or extensions).
   implementations in `defaults.go` and `default_loop.go`. The system prompt
   is built by the `core-prompt` extension via `BuildPrompt`; extensions
   can also fully replace the compactor via `CompactMessages`. A custom
-  `AgentLoop` replaces the entire turn logic via `SetAgentLoop`.
+  `AgentLoop` replaces the entire turn logic via `SetAgentLoop`. The
+  LLM provider is wired via `SetProvider` from the `core-provider`
+  extension's `provider` seam (`ExtensionProvider` delegates to
+  `ExtensionManager.ProviderStream` and related methods).
   Harness code (skill loading, project context) lives in `harness/`, not
   in this package.
 - **No re-exports.** Types defined in `ai/` are imported from

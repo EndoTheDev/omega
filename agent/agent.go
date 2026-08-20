@@ -46,8 +46,9 @@ type Agent struct {
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 // The agent starts with the default agent loop and no compactor
-// (compaction disabled). Use SetCompactor and SetAgentLoop to
-// customize.
+// (compaction disabled). Use SetProvider, SetCompactor, and
+// SetAgentLoop to customize. The provider may be nil if it will be
+// set later via SetProvider.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
 		provider:   provider,
@@ -71,6 +72,13 @@ func (a *Agent) SetExtensions(mgr ExtensionManager) {
 // SetCompactor installs the compactor. A nil value disables compaction.
 func (a *Agent) SetCompactor(c Compactor) {
 	a.compactor = c
+}
+
+// SetProvider installs the provider. Used when the provider is created
+// after the agent (e.g. from a provider-seam extension loaded after
+// the agent is constructed).
+func (a *Agent) SetProvider(p ai.Provider) {
+	a.provider = p
 }
 
 // SetMaxToolOutput sets the maximum tool result length in characters.

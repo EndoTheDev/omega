@@ -311,16 +311,22 @@ func resolveHomePaths(cfg *gateway.Config) {
 	_ = os.MkdirAll(home, 0755)
 }
 
+// setProviderEnvVars sets OMEGA_PROVIDER_* env vars so the core-provider
+// extension inherits them when spawned.
+func setProviderEnvVars(cfg gateway.Config) {
+	os.Setenv("OMEGA_PROVIDER_TYPE", cfg.Provider.Type)
+	os.Setenv("OMEGA_PROVIDER_MODEL", cfg.Provider.ModelName)
+	os.Setenv("OMEGA_PROVIDER_HOST", cfg.Provider.Host)
+}
+
 // newAgent wires config into a provider, agent, store, and extensions.
 // The store is returned so the caller can close it. The extension manager
 // is returned so callers that run the TUI can close extensions on shutdown.
 func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, *gateway.Store, agent.ExtensionManager, error) {
-	provider, err := ai.NewProvider(cfg.Provider.Type, cfg.Provider.ModelName, cfg.Provider.Host, cfg.Provider.APIKey)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	setProviderEnvVars(cfg)
+
 	tools := agent.NewRegistry()
-	ag := agent.NewAgent(provider, tools, 0)
+	ag := agent.NewAgent(nil, tools, 0) // provider wired after extensions
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
 	ag.SetCWD(cwd())
 	ag.SetPromptCustom(cfg.SystemPrompt)
@@ -331,6 +337,13 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 		return nil, nil, nil, fmt.Errorf("load extensions: %w", err)
 	}
 	ag.SetExtensions(mgr)
+
+	// Create the provider from the provider-seam extension.
+	if _, ok := mgr.SeamProviders()["provider"]; !ok {
+		return nil, nil, nil, fmt.Errorf("no provider extension loaded — install core-provider in extensions/")
+	}
+	provider := ai.ExtensionProvider{Dispatcher: mgr}
+	ag.SetProvider(provider)
 	ag.SetCompactor(agent.DefaultCompactor{
 		Provider:   provider,
 		Config:     &cfg.Compaction,
@@ -464,6 +477,7 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	applyExtFlags(&cfg, ext)
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	setProviderEnvVars(cfg)
 	// Open the session store so the TUI can persist conversations across
 	// runs. cmdChat owns the store and closes it on every exit path
 	// (/exit, Ctrl+C, or an error in p.Run).

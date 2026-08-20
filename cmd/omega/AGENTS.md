@@ -15,7 +15,7 @@ markdown rendering.
 
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
-  agent wiring (`newAgent`), `cmdServe`, `cmdRun`,
+  agent wiring (`newAgent`, `setProviderEnvVars`), `cmdServe`, `cmdRun`,
   `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
@@ -89,7 +89,8 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `off` does nothing. `OMEGA_NOTIFICATIONS` env var overrides.
 - **Ctrl+P cycles models.** Cycles through `modelList` (populated by
   `/models`). If empty, fires `fetchModelsCmd` to fetch from the
-  provider asynchronously; the result arrives as `modelsLoadedMsg`.
+  provider extension via `ProviderListModels` asynchronously; the
+  result arrives as `modelsLoadedMsg`.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
 - **Tool results get syntax highlighting.** `highlightCode` applies
@@ -119,12 +120,17 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   On `/resume`, the TUI replays these entries to restore the model and
   thinking level. No-op for ephemeral sessions. `renderTranscript`
   skips these types (metadata, not conversation content).
-- **Seam wiring in newAgent.** `newAgent` wires `DefaultToolProvider`
-  via `SetToolProvider`, passes CWD via `SetCWD`, stores custom/append
-  prompts via `SetPromptCustom`/`SetPromptAppend`, stores trust-gated
-  project context via `SetPromptContext`, and validates `PluginsConfig`
-  against `SeamProviders()` — warns on mismatch. The TUI's submit path
-  mirrors this wiring for each run.
+- **Seam wiring in newAgent.** `newAgent` calls `setProviderEnvVars`
+  to set `OMEGA_PROVIDER_*` env vars for the core-provider extension,
+  loads extensions, validates the provider seam exists, creates
+  `ai.ExtensionProvider{Dispatcher: mgr}`, and calls `ag.SetProvider`.
+  It wires `DefaultToolProvider` via `SetToolProvider`, passes CWD via
+  `SetCWD`, stores custom/append prompts via `SetPromptCustom`/
+  `SetPromptAppend`, stores trust-gated project context via
+  `SetPromptContext`, and validates `PluginsConfig` against
+  `SeamProviders()` — warns on mismatch. The TUI's submit path
+  mirrors this wiring for each run, using `ExtensionProvider` directly
+  and calling `ProviderSetModel` for `/model` changes.
 - **`/tools` lists tools, `/tools on|off|auto` controls display.**
   No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
   renders all tools from `Infos().ToolList` (first line of description)

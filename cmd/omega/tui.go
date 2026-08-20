@@ -306,11 +306,7 @@ type modelsLoadedMsg struct {
 // the provider. Used by Ctrl+P when modelList is empty.
 func (m model) fetchModelsCmd() tea.Cmd {
 	return func() tea.Msg {
-		provider, err := ai.NewProvider(m.providerType, m.modelName, m.host, m.apiKey)
-		if err != nil {
-			return modelsLoadedMsg{err: err}
-		}
-		models, err := provider.ListModels()
+		models, err := m.extensions.ProviderListModels()
 		return modelsLoadedMsg{models: models, err: err}
 	}
 }
@@ -718,16 +714,12 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	// Capture the current provider settings; /model and /provider apply next turn.
-	providerType, modelName, host, apiKey := m.providerType, m.modelName, m.host, m.apiKey
+	// The provider is the core-provider extension via ExtensionProvider.
+	// Update the extension's model name at runtime.
+	m.extensions.ProviderSetModel(m.modelName)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	provider, err := ai.NewProvider(providerType, modelName, host, apiKey)
-	if err != nil {
-		m.err = err.Error()
-		m.busy = false
-		m.refresh()
-		return m, nil
-	}
+	provider := ai.ExtensionProvider{Dispatcher: m.extensions}
 	provider.SetThinkingLevel(m.thinkingLevel)
 	tools := agent.NewRegistry()
 	ag := agent.NewAgent(provider, tools, 0)
@@ -1070,11 +1062,6 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		name := fields[1]
-		if _, err := ai.NewProvider(name, m.modelName, m.host, m.apiKey); err != nil {
-			m.err = err.Error()
-			m.refresh()
-			return m, nil
-		}
 		m.providerType = name
 		m.transcript += "\n" + m.theme.Info.Render("[provider set to "+m.providerType+"]") + "\n"
 		m.refresh()
@@ -1566,13 +1553,9 @@ func (m model) handleModels() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// fetchModels creates a provider and calls ListModels.
+// fetchModels calls ListModels via the provider extension.
 func (m model) fetchModels() ([]string, error) {
-	provider, err := ai.NewProvider(m.providerType, m.modelName, m.host, m.apiKey)
-	if err != nil {
-		return nil, err
-	}
-	return provider.ListModels()
+	return m.extensions.ProviderListModels()
 }
 
 // handleExtensionCommand runs an extension-provided slash command.
@@ -1970,11 +1953,7 @@ func (m model) handleCompact(fields []string) (tea.Model, tea.Cmd) {
 		m.err = "not enough history to compact"
 		return m, nil
 	}
-	provider, err := ai.NewProvider(m.providerType, m.modelName, m.host, m.apiKey)
-	if err != nil {
-		m.err = "compact: " + err.Error()
-		return m, nil
-	}
+	provider := ai.ExtensionProvider{Dispatcher: m.extensions}
 	keepFirst := 2
 	keepLast := 10
 	if m.compaction != nil {
@@ -2529,16 +2508,13 @@ func (m model) autoNameSession() tea.Cmd {
 	}
 	prompt := fmt.Sprintf("Generate a short title (3-5 words) for this conversation. Reply with only the title, no quotes or punctuation.\n\nUser: %s\nAssistant: %s", firstUser, firstAssistant)
 
-	providerType, modelName, host, apiKey := m.providerType, m.modelName, m.host, m.apiKey
 	sessionID := m.sessionID
 	gen := m.autoNameGen
 	store := m.store
+	extensions := m.extensions
 
 	return func() tea.Msg {
-		provider, err := ai.NewProvider(providerType, modelName, host, apiKey)
-		if err != nil {
-			return autoNameMsg{sessionID: sessionID, gen: gen, err: err}
-		}
+		provider := ai.ExtensionProvider{Dispatcher: extensions}
 		messages := []ai.Message{
 			ai.NewUser(prompt),
 		}

@@ -3,7 +3,6 @@ package ai
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -28,26 +27,26 @@ func SetHTTPTimeout(seconds int) {
 	}
 }
 
-// NewProvider creates a Provider of the given type ("ollama", "openai",
-// or "anthropic"). apiKey may be empty; OpenAI and Anthropic fall back
-// to their OPENAI_API_KEY / ANTHROPIC_API_KEY env vars, and Ollama uses
-// it for Ollama Cloud direct connections (empty for local). host may be empty to use the provider default base URL.
-func NewProvider(providerType, model, host, apiKey string) (Provider, error) {
-	switch providerType {
-	case "", "ollama":
-		return NewOllamaProvider(model, host, apiKey), nil
-	case "openai":
-		return NewOpenAIProvider(model, host, apiKey), nil
-	case "anthropic":
-		return NewAnthropicProvider(model, host, apiKey), nil
-	default:
-		return nil, fmt.Errorf("unknown provider type %q (want ollama, openai, or anthropic)", providerType)
-	}
+// HTTPClient returns the shared HTTP client. Extensions import this
+// to make HTTP calls with the same timeout and proxy settings.
+func HTTPClient() *http.Client {
+	return httpClient
 }
 
-// sseData returns the payload of each `data:` line in an SSE stream,
+// RetryHTTP runs req with exponential backoff on transient failures.
+// Extensions import this for provider HTTP calls.
+func RetryHTTP(req *http.Request) (*http.Response, error) {
+	return retryHTTP(req.Context(), req)
+}
+
+// SSEData returns the payload of each `data:` line in an SSE stream,
 // skipping comments, event/blank lines, and the trailing `[DONE]`
-// sentinel. It is shared by the OpenAI and Anthropic providers.
+// sentinel. Extensions import this for parsing SSE responses.
+func SSEData(reader *bufio.Reader) (string, bool, error) {
+	return sseData(reader)
+}
+
+// sseData is the internal implementation shared by the extension.
 func sseData(reader *bufio.Reader) (string, bool, error) {
 	for {
 		line, err := reader.ReadString('\n')
@@ -95,63 +94,4 @@ var ThinkingLevels = []string{"none", "off", "on", "minimal", "low", "medium", "
 // except "none" and "off").
 func ThinkingEnabled(level string) bool {
 	return level != "" && level != "none" && level != "off"
-}
-
-// openaiReasoningEffort maps a thinking level to OpenAI's
-// reasoning_effort parameter. OpenAI supports only low/medium/high.
-func openaiReasoningEffort(level string) string {
-	switch level {
-	case "minimal", "low":
-		return "low"
-	case "medium":
-		return "medium"
-	case "high", "extra high", "max", "ultra":
-		return "high"
-	default:
-		return ""
-	}
-}
-
-// anthropicBudgetTokens maps a thinking level to Anthropic's
-// budget_tokens parameter. Higher levels get more tokens.
-func anthropicBudgetTokens(level string) int {
-	switch level {
-	case "minimal":
-		return 1024
-	case "low":
-		return 2048
-	case "medium":
-		return 4096
-	case "high":
-		return 8192
-	case "extra high":
-		return 16384
-	case "max":
-		return 24576
-	case "ultra":
-		return 32768
-	default:
-		return 0
-	}
-}
-
-// ollamaThinkValue maps a thinking level to Ollama's think parameter.
-// Ollama accepts true/false or levels (low, medium, high, max).
-func ollamaThinkValue(level string) any {
-	switch level {
-	case "off":
-		return false
-	case "on":
-		return true
-	case "minimal", "low":
-		return "low"
-	case "medium":
-		return "medium"
-	case "high":
-		return "high"
-	case "extra high", "max", "ultra":
-		return "max"
-	default:
-		return nil
-	}
 }

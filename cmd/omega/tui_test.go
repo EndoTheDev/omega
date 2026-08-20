@@ -177,8 +177,9 @@ func TestSkillsCommand(t *testing.T) {
 	}
 }
 
-// TestProviderCommand verifies /provider switches the provider type and
-// rejects unknown names.
+// TestProviderCommand verifies /provider switches the provider type.
+// Provider type validation is deferred to the core-provider extension
+// (errors on stream, not at command time).
 func TestProviderCommand(t *testing.T) {
 	m := newChatModel("ollama", "llama3", "http://localhost:11434", "", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
 
@@ -198,13 +199,11 @@ func TestProviderCommand(t *testing.T) {
 		t.Fatalf("transcript should show current provider, got: %q", m.transcript)
 	}
 
+	// /provider with any name is accepted; validation is deferred to the extension.
 	updated, _ = m.handleCommand("/provider grok")
 	m = updated.(model)
-	if m.providerType != "openai" {
-		t.Fatalf("invalid provider changed type to %q, want openai", m.providerType)
-	}
-	if m.err == "" {
-		t.Fatal("expected error for unknown provider type")
+	if m.providerType != "grok" {
+		t.Fatalf("provider = %q, want grok", m.providerType)
 	}
 }
 

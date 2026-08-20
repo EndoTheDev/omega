@@ -55,6 +55,7 @@ type stdioExt struct {
 	pending     map[int64]chan rpcResponse // pending request responses
 	pendingMu   sync.Mutex
 	nextID      int64
+	notifyCh    chan map[string]any // notification channel for streaming (set during Stream)
 	alive       bool
 }
 
@@ -337,8 +338,10 @@ func buildCommand(path string) (*exec.Cmd, error) {
 	return exec.Command(path), nil
 }
 
-// readLoop reads JSON-RPC responses from the extension's stdout and
-// routes them to the waiting caller via the pending map.
+// readLoop reads JSON-RPC messages from the extension's stdout.
+// Lines with an ID are responses routed to the waiting caller via
+// the pending map. Lines without an ID are notifications routed to
+// notifyCh (if set).
 func (e *stdioExt) readLoop() {
 	for {
 		line, err := e.stdout.ReadBytes('\n')
@@ -352,12 +355,38 @@ func (e *stdioExt) readLoop() {
 			continue
 		}
 
-		var resp rpcResponse
-		if err := json.Unmarshal(line, &resp); err != nil {
+		// Parse with *int64 to distinguish notifications (no id)
+		// from responses with id=0.
+		var raw struct {
+			JSONRPC string          `json:"jsonrpc"`
+			ID      *int64          `json:"id,omitempty"`
+			Method  string          `json:"method,omitempty"`
+			Params  map[string]any  `json:"params,omitempty"`
+			Result  json.RawMessage `json:"result,omitempty"`
+			Error   *rpcError        `json:"error,omitempty"`
+		}
+		if err := json.Unmarshal(line, &raw); err != nil {
 			continue // skip malformed lines
 		}
 
-		// Route to waiting caller.
+		if raw.ID == nil {
+			// Notification — route to notifyCh if active.
+			e.mu.Lock()
+			ch := e.notifyCh
+			e.mu.Unlock()
+			if ch != nil {
+				ch <- raw.Params
+			}
+			continue
+		}
+
+		// Response — route to waiting caller.
+		resp := rpcResponse{
+			JSONRPC: raw.JSONRPC,
+			ID:      *raw.ID,
+			Result:  raw.Result,
+			Error:   raw.Error,
+		}
 		e.pendingMu.Lock()
 		ch, ok := e.pending[resp.ID]
 		if ok {
@@ -425,6 +454,81 @@ func (e *stdioExt) request(ctx context.Context, method string, params map[string
 		e.pendingMu.Unlock()
 		return nil, ctx.Err()
 	}
+}
+
+// streamRequest sends a JSON-RPC request that triggers a stream of
+// notifications back. It sets up notifyCh to receive notifications,
+// sends the request, and returns the notification channel plus a
+// result channel. The caller reads notifications from notifyCh until
+// it's closed, then reads the final response from resultCh.
+func (e *stdioExt) streamRequest(ctx context.Context, method string, params map[string]any) (<-chan map[string]any, <-chan streamResult, error) {
+	e.mu.Lock()
+	id := e.nextID
+	e.nextID++
+	e.mu.Unlock()
+
+	respCh := make(chan rpcResponse, 1)
+	e.pendingMu.Lock()
+	e.pending[id] = respCh
+	e.pendingMu.Unlock()
+
+	// Set up notification channel (protected by e.mu to avoid
+	// racing with readLoop's nil check).
+	notifyCh := make(chan map[string]any, 64)
+	e.mu.Lock()
+	e.notifyCh = notifyCh
+	e.mu.Unlock()
+
+	req := rpcRequest{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Method:  method,
+		Params:  params,
+	}
+
+	if err := e.write(req); err != nil {
+		e.pendingMu.Lock()
+		delete(e.pending, id)
+		e.pendingMu.Unlock()
+		e.mu.Lock()
+		e.notifyCh = nil
+		e.mu.Unlock()
+		return nil, nil, fmt.Errorf("write: %w", err)
+	}
+
+	// Read final response in a goroutine; close notifyCh when done.
+	resultCh := make(chan streamResult, 1)
+	go func() {
+		select {
+		case resp := <-respCh:
+			e.mu.Lock()
+			e.notifyCh = nil
+			e.mu.Unlock()
+			close(notifyCh)
+			if resp.Error != nil {
+				resultCh <- streamResult{err: fmt.Errorf("%s", resp.Error.Message)}
+			} else {
+				resultCh <- streamResult{result: resp.Result}
+			}
+		case <-ctx.Done():
+			e.pendingMu.Lock()
+			delete(e.pending, id)
+			e.pendingMu.Unlock()
+			e.mu.Lock()
+			e.notifyCh = nil
+			e.mu.Unlock()
+			close(notifyCh)
+			resultCh <- streamResult{err: ctx.Err()}
+		}
+	}()
+
+	return notifyCh, resultCh, nil
+}
+
+// streamResult carries the final response of a stream request.
+type streamResult struct {
+	result json.RawMessage
+	err    error
 }
 
 // notify sends a JSON-RPC notification (no ID, no response expected).
@@ -793,6 +897,201 @@ func (e *stdioExt) kill() {
 	_ = e.notify("shutdown", nil)
 	e.cmd.Process.Kill()
 	e.cmd.Wait()
+}
+
+// providerExt returns the extension that declared the "provider" seam,
+// or nil if none exists.
+func (m *StdioManager) providerExt() *stdioExt {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ext := range m.exts {
+		for _, seam := range ext.seams {
+			if seam == "provider" {
+				return ext
+			}
+		}
+	}
+	return nil
+}
+
+// ProviderStream dispatches to the provider-seam extension to stream
+// a completion. Returns nil if no provider extension is loaded.
+func (m *StdioManager) ProviderStream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
+	ext := m.providerExt()
+	if ext == nil {
+		return nil
+	}
+
+	// Serialize messages with role field (ai.Message types don't
+	// include role in their JSON tags — the old providers added it
+	// in messagesToAPI. The extension needs role to build API requests).
+	msgJSON := make([]map[string]any, len(messages))
+	for i, msg := range messages {
+		data, _ := json.Marshal(msg)
+		var m map[string]any
+		json.Unmarshal(data, &m)
+		// Add role based on the concrete message type.
+		switch msg.(type) {
+		case ai.System:
+			m["role"] = "system"
+		case ai.User:
+			m["role"] = "user"
+		case ai.Assistant:
+			m["role"] = "assistant"
+		case ai.ToolResult:
+			m["role"] = "tool"
+		}
+		// Drop timestamp (not needed by the API).
+		delete(m, "timestamp")
+		msgJSON[i] = m
+	}
+	toolJSON := make([]map[string]any, len(tools))
+	for i, t := range tools {
+		toolJSON[i] = map[string]any{
+			"name":        t.Name,
+			"description": t.Description,
+			"parameters":  t.Parameters,
+		}
+	}
+
+	notifyCh, resultCh, err := ext.streamRequest(ctx, "provider/stream", map[string]any{
+		"messages": msgJSON,
+		"tools":    toolJSON,
+	})
+	if err != nil {
+		ch := make(chan ai.StreamEvent, 1)
+		ch <- ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		close(ch)
+		return ch
+	}
+
+	events := make(chan ai.StreamEvent, 64)
+	go func() {
+		defer close(events)
+		// Drain notifications into events.
+		for params := range notifyCh {
+			events <- notificationToEvent(params)
+		}
+		// Read final response.
+		if res, ok := <-resultCh; ok {
+			if res.err != nil {
+				events <- ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: res.err.Error()}
+			} else {
+				events <- resultToStreamEnd(res.result)
+			}
+		}
+	}()
+
+	return events
+}
+
+// notificationToEvent converts a stream_event notification params map
+// to a StreamEvent.
+func notificationToEvent(params map[string]any) ai.StreamEvent {
+	if params == nil {
+		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "nil notification params"}
+	}
+	typeStr, _ := params["type"].(string)
+	switch typeStr {
+	case "response_chunk":
+		content, _ := params["content"].(string)
+		return ai.ResponseChunk{Type: "response_chunk", Content: content}
+	case "thinking_chunk":
+		content, _ := params["content"].(string)
+		return ai.ThinkingChunk{Type: "thinking_chunk", Content: content}
+	case "tool_call":
+		tc, _ := params["tool_call"].(map[string]any)
+		if tc == nil {
+			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "nil tool_call in notification"}
+		}
+		id, _ := tc["id"].(string)
+		name, _ := tc["name"].(string)
+		args, _ := tc["arguments"].(map[string]any)
+		return ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: id, Name: name, Arguments: args}}
+	default:
+		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "unknown notification type: " + typeStr}
+	}
+}
+
+// resultToStreamEnd converts the final provider/stream response to a
+// StreamEnd event.
+func resultToStreamEnd(result json.RawMessage) ai.StreamEnd {
+	var end struct {
+		FinishReason    string `json:"finish_reason"`
+		PromptEvalCount *int   `json:"prompt_eval_count,omitempty"`
+		EvalCount       *int   `json:"eval_count,omitempty"`
+		Error           string `json:"error,omitempty"`
+	}
+	json.Unmarshal(result, &end)
+	return ai.StreamEnd{
+		Type:            "stream_end",
+		FinishReason:    end.FinishReason,
+		PromptEvalCount: end.PromptEvalCount,
+		EvalCount:       end.EvalCount,
+		Error:           end.Error,
+	}
+}
+
+// ProviderModelName returns the model name from the provider-seam
+// extension. Returns "" if no provider extension is loaded.
+func (m *StdioManager) ProviderModelName() string {
+	ext := m.providerExt()
+	if ext == nil {
+		return ""
+	}
+	result, err := ext.request(context.Background(), "provider/model_name", nil)
+	if err != nil {
+		return ""
+	}
+	var name struct {
+		Model string `json:"model"`
+	}
+	json.Unmarshal(result, &name)
+	return name.Model
+}
+
+// ProviderListModels lists available models from the provider-seam
+// extension. Returns an error if no provider extension is loaded.
+func (m *StdioManager) ProviderListModels() ([]string, error) {
+	ext := m.providerExt()
+	if ext == nil {
+		return nil, fmt.Errorf("no provider extension loaded")
+	}
+	result, err := ext.request(context.Background(), "provider/list_models", nil)
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Models []string `json:"models"`
+	}
+	if err := json.Unmarshal(result, &res); err != nil {
+		return nil, err
+	}
+	return res.Models, nil
+}
+
+// ProviderSetThinking sets the thinking level on the provider-seam
+// extension. No-op if no provider extension is loaded.
+func (m *StdioManager) ProviderSetThinking(level string) {
+	ext := m.providerExt()
+	if ext == nil {
+		return
+	}
+	_, _ = ext.request(context.Background(), "provider/set_thinking", map[string]any{
+		"level": level,
+	})
+}
+
+// ProviderSetModel changes the model name on the provider-seam
+// extension at runtime.
+func (m *StdioManager) ProviderSetModel(model string) {
+	ext := m.providerExt()
+	if ext == nil {
+		return
+	}
+	_, _ = ext.request(context.Background(), "provider/set_model", map[string]any{
+		"model": model,
+	})
 }
 
 // eventType returns the event type string for an Event.

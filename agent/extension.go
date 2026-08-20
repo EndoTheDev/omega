@@ -80,6 +80,27 @@ type ExtensionManager interface {
 	// extensions that declared the seam during initialize. Used by the
 	// harness to wire PluginsConfig to the right extension.
 	SeamProviders() map[string]string
+
+	// ProviderStream dispatches to the provider-seam extension to stream
+	// a completion. Returns nil if no provider extension is loaded.
+	ProviderStream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent
+
+	// ProviderModelName returns the model name from the provider-seam
+	// extension. Returns "" if no provider extension is loaded.
+	ProviderModelName() string
+
+	// ProviderListModels lists available models from the provider-seam
+	// extension. Returns an error if no provider extension is loaded.
+	ProviderListModels() ([]string, error)
+
+	// ProviderSetThinking sets the thinking level on the provider-seam
+	// extension. No-op if no provider extension is loaded.
+	ProviderSetThinking(level string)
+
+	// ProviderSetModel changes the model name on the provider-seam
+	// extension at runtime (e.g. /model command). No-op if no
+	// provider extension is loaded.
+	ProviderSetModel(model string)
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -145,3 +166,14 @@ func (NoopManager) CompactMessages(ctx context.Context, messages []ai.Message) (
 func (NoopManager) SeamProviders() map[string]string {
 	return nil
 }
+func (NoopManager) ProviderStream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
+	return nil
+}
+func (NoopManager) ProviderModelName() string {
+	return ""
+}
+func (NoopManager) ProviderListModels() ([]string, error) {
+	return nil, fmt.Errorf("no provider extension loaded")
+}
+func (NoopManager) ProviderSetThinking(level string) {}
+func (NoopManager) ProviderSetModel(model string) {}
