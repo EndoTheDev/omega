@@ -49,8 +49,6 @@ type SkillsConfig struct {
 type PluginsConfig struct {
 	PromptBuilder string `yaml:"prompt_builder"` // "default" or extension name
 	Compactor     string `yaml:"compactor"`       // "default" or extension name
-	ToolProvider  string `yaml:"tool_provider"`   // "default" or extension name
-	SessionStore  string `yaml:"session_store"`   // "sqlite" (only built-in)
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -103,8 +101,6 @@ func DefaultConfig() Config {
 		Plugins: PluginsConfig{
 			PromptBuilder: "default",
 			Compactor:     "default",
-			ToolProvider:  "default",
-			SessionStore:  "sqlite",
 		},
 		HTTPTimeout:  300,
 		Notifications: "bell",

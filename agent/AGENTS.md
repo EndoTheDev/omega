@@ -101,7 +101,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `Agent.SetExtensions`. The agent and TUI stay unchanged.
 - Keep `NewAgent` defaulting to `NoopManager` so callers that do not
   care about extensions are unaffected.
-- Update the `eventType` and `eventData` helpers in
+- Update the `eventPayload` helper in
   `extension_stdio.go` when adding new event types, otherwise extensions
   over stdio will not receive them.
 - Prefer stdlib-only solutions for transports. JSON-RPC over stdio

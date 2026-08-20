@@ -104,7 +104,6 @@ type stdioServer struct {
 	pending   map[int64]chan mcpResponse
 	pendingMu sync.Mutex
 	nextID    int64
-	alive     bool
 }
 
 func newStdioServer(name, command string, args []string, env map[string]string) (*stdioServer, error) {
@@ -131,7 +130,6 @@ func newStdioServer(name, command string, args []string, env map[string]string) 
 		stdin:   json.NewEncoder(stdinPipe),
 		stdout:  bufio.NewReader(stdoutPipe),
 		pending: make(map[int64]chan mcpResponse),
-		alive:   true,
 	}
 	go s.readLoop()
 	if err := s.initialize(); err != nil {
@@ -145,7 +143,6 @@ func (s *stdioServer) readLoop() {
 	for {
 		line, err := s.stdout.ReadString('\n')
 		if err != nil {
-			s.alive = false
 			return
 		}
 		var resp mcpResponse
@@ -243,7 +240,6 @@ func (s *stdioServer) callTool(name string, args map[string]any) (string, bool, 
 }
 
 func (s *stdioServer) close() {
-	s.alive = false
 	// ponytail: no graceful shutdown notification; kill directly.
 	// MCP servers handle SIGTERM. Upgrade path: send proper shutdown.
 	s.cmd.Process.Kill()

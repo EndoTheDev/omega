@@ -37,7 +37,7 @@ func (d DefaultCompactor) Compact(ctx context.Context, messages []ai.Message) ([
 			return compacted, nil
 		}
 		// Check extensions for a custom summary.
-		if summary, ok := d.Extensions.CustomizeCompaction(ctx, messages, ""); ok {
+		if summary, ok := d.Extensions.CustomizeCompaction(ctx, messages); ok {
 			return BuildCompactedMessages(messages, summary, d.Config.KeepFirst, d.Config.KeepLast), nil
 		}
 	}

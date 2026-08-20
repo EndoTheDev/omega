@@ -249,8 +249,6 @@ type model struct {
 	segments            []streamSegment // ordered streaming segments for the current turn
 	providerType        string
 	modelName           string
-	host                string
-	apiKey              string
 	compaction          *agent.CompactionConfig
 	promptCustom        string
 	promptAppend        []string
@@ -320,7 +318,7 @@ type autoNameMsg struct {
 }
 
 func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
-	m := newChatModel(pc.Type, pc.ModelName, pc.Host, pc.APIKey, compaction, promptCustom, promptAppend, promptContext, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
+	m := newChatModel(pc.Type, pc.ModelName, compaction, promptCustom, promptAppend, promptContext, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -328,7 +326,7 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, prom
 	return nil
 }
 
-func newChatModel(providerType, modelName, host, apiKey string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
+func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store *gateway.Store, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
 	extMgr := agent.ExtensionManager(agent.NoopManager{})
 	if len(extensions) > 0 {
 		extMgr = extensions[0]
@@ -372,8 +370,6 @@ func newChatModel(providerType, modelName, host, apiKey string, compaction *agen
 		viewport:          vp,
 		providerType:      providerType,
 		modelName:         modelName,
-		host:              host,
-		apiKey:            apiKey,
 		compaction:        compaction,
 		promptCustom:      promptCustom,
 		promptAppend:      promptAppend,
@@ -1052,18 +1048,11 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/models":
 		return m.handleModels()
 	case "/provider":
-		if len(fields) < 2 {
-			provider := m.providerType
-			if provider == "" {
-				provider = "ollama"
-			}
-			m.transcript += "\n" + m.theme.Info.Render("current: " + provider) + "\n"
-			m.refresh()
-			return m, nil
+		provider := m.providerType
+		if provider == "" {
+			provider = "ollama"
 		}
-		name := fields[1]
-		m.providerType = name
-		m.transcript += "\n" + m.theme.Info.Render("[provider set to "+m.providerType+"]") + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("current: " + provider) + "\n"
 		m.refresh()
 		return m, nil
 	default:

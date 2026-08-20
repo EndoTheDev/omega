@@ -58,7 +58,7 @@ type ExtensionManager interface {
 	// CustomizeCompaction lets an extension provide a custom compaction
 	// summary. Returns ok=false if no extension wants to customize;
 	// the agent uses the default provider-based compaction.
-	CustomizeCompaction(ctx context.Context, messages []ai.Message, focus string) (string, bool)
+	CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool)
 
 	// CustomizeBranchSummary lets an extension provide a custom branch
 	// summary. Returns ok=false if no extension wants to customize.
@@ -105,8 +105,8 @@ type ExtensionManager interface {
 
 // ExtensionCommand is a slash command registered by an extension.
 type ExtensionCommand struct {
-	Name        string // includes leading slash, e.g. "/mycmd"
-	Description string
+	Name        string `json:"name"`        // includes leading slash, e.g. "/mycmd"
+	Description string `json:"description"`
 }
 
 // ToolInfo is a tool name and description pair, for display in the
@@ -151,7 +151,7 @@ func (NoopManager) CallCommand(ctx context.Context, name, args string) (string, 
 func (NoopManager) Close() error { return nil }
 
 func (NoopManager) PromptGuidelines() []string                                        { return nil }
-func (NoopManager) CustomizeCompaction(ctx context.Context, messages []ai.Message, focus string) (string, bool) {
+func (NoopManager) CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool) {
 	return "", false
 }
 func (NoopManager) CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool) {

@@ -57,7 +57,7 @@ func loadSkill(path string) (agent.Skill, error) {
 		// No frontmatter — treat the whole file as content.
 		// The first line was already consumed by Scan; prepend it.
 		first := scanner.Text()
-		skill.Content = first + "\n" + readRemaining(scanner, "")
+		skill.Content = first + "\n" + readRemaining(scanner)
 		return skill, nil
 	}
 
@@ -82,16 +82,14 @@ func loadSkill(path string) (agent.Skill, error) {
 	}
 
 	// Read the markdown body.
-	skill.Content = readRemaining(scanner, "")
+	skill.Content = readRemaining(scanner)
 	return skill, scanner.Err()
 }
 
-// readRemaining reads the rest of the scanner into a string, prepending
-// prefix to each line.
-func readRemaining(scanner *bufio.Scanner, prefix string) string {
+// readRemaining reads the rest of the scanner into a string.
+func readRemaining(scanner *bufio.Scanner) string {
 	var sb strings.Builder
 	for scanner.Scan() {
-		sb.WriteString(prefix)
 		sb.WriteString(scanner.Text())
 		sb.WriteString("\n")
 	}

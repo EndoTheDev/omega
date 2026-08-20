@@ -66,19 +66,13 @@ type toolDef struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
-// commandDef is a slash command declared by an extension.
-type commandDef struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
 // initResult is the result of the initialize JSON-RPC method.
 type initResult struct {
-	Name          string        `json:"name"`
-	Tools         []toolDef     `json:"tools"`
-	Commands      []commandDef  `json:"commands"`
-	Subscriptions []string      `json:"subscriptions"`
-	Seams         []string      `json:"seams"`
+	Name          string              `json:"name"`
+	Tools         []toolDef           `json:"tools"`
+	Commands      []ExtensionCommand  `json:"commands"`
+	Subscriptions []string            `json:"subscriptions"`
+	Seams         []string            `json:"seams"`
 }
 
 // rpcRequest is a JSON-RPC 2.0 request or notification.
@@ -275,16 +269,12 @@ func spawnExtension(path string, apiKey string) (*stdioExt, error) {
 		ext.tools[t.Name] = t
 	}
 
-	for _, c := range init.Commands {
-		name := c.Name
-		if !strings.HasPrefix(name, "/") {
-			name = "/" + name
+	for i, c := range init.Commands {
+		if !strings.HasPrefix(c.Name, "/") {
+			init.Commands[i].Name = "/" + c.Name
 		}
-		ext.commands = append(ext.commands, ExtensionCommand{
-			Name:        name,
-			Description: c.Description,
-		})
 	}
+	ext.commands = append(ext.commands, init.Commands...)
 
 	for _, sub := range init.Subscriptions {
 		ext.subscribed[sub] = true
@@ -652,12 +642,10 @@ func (m *StdioManager) SeamProviders() map[string]string {
 // Non-blocking and best-effort: a write timeout or a dead extension is
 // silently skipped.
 func (m *StdioManager) DispatchEvent(event Event) {
-	typeName := eventType(event)
+	typeName, data := eventPayload(event)
 	if typeName == "" {
 		return
 	}
-
-	data := eventData(event)
 
 	m.mu.Lock()
 	exts := make([]*stdioExt, len(m.exts))
@@ -738,7 +726,7 @@ func (m *StdioManager) PromptGuidelines() []string {
 
 // CustomizeCompaction asks extensions for a custom compaction summary.
 // The first extension that returns a non-empty summary wins.
-func (m *StdioManager) CustomizeCompaction(ctx context.Context, messages []ai.Message, focus string) (string, bool) {
+func (m *StdioManager) CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool) {
 	m.mu.Lock()
 	exts := make([]*stdioExt, len(m.exts))
 	copy(exts, m.exts)
@@ -750,7 +738,6 @@ func (m *StdioManager) CustomizeCompaction(ctx context.Context, messages []ai.Me
 		}
 		result, err := ext.request(ctx, "compaction/customize", map[string]any{
 			"messages": messages,
-			"focus":    focus,
 		})
 		if err != nil {
 			continue
@@ -925,26 +912,7 @@ func (m *StdioManager) ProviderStream(ctx context.Context, messages []ai.Message
 	// Serialize messages with role field (ai.Message types don't
 	// include role in their JSON tags — the old providers added it
 	// in messagesToAPI. The extension needs role to build API requests).
-	msgJSON := make([]map[string]any, len(messages))
-	for i, msg := range messages {
-		data, _ := json.Marshal(msg)
-		var m map[string]any
-		json.Unmarshal(data, &m)
-		// Add role based on the concrete message type.
-		switch msg.(type) {
-		case ai.System:
-			m["role"] = "system"
-		case ai.User:
-			m["role"] = "user"
-		case ai.Assistant:
-			m["role"] = "assistant"
-		case ai.ToolResult:
-			m["role"] = "tool"
-		}
-		// Drop timestamp (not needed by the API).
-		delete(m, "timestamp")
-		msgJSON[i] = m
-	}
+	msgJSON := messagesToJSON(messages)
 	toolJSON := make([]map[string]any, len(tools))
 	for i, t := range tools {
 		toolJSON[i] = map[string]any{
@@ -983,6 +951,31 @@ func (m *StdioManager) ProviderStream(ctx context.Context, messages []ai.Message
 	}()
 
 	return events
+}
+
+// messagesToJSON serializes ai.Message values to maps with a role
+// field added based on the concrete message type. The timestamp field
+// is dropped (not needed by the provider API).
+func messagesToJSON(messages []ai.Message) []map[string]any {
+	msgJSON := make([]map[string]any, len(messages))
+	for i, msg := range messages {
+		data, _ := json.Marshal(msg)
+		var m map[string]any
+		json.Unmarshal(data, &m)
+		switch msg.(type) {
+		case ai.System:
+			m["role"] = "system"
+		case ai.User:
+			m["role"] = "user"
+		case ai.Assistant:
+			m["role"] = "assistant"
+		case ai.ToolResult:
+			m["role"] = "tool"
+		}
+		delete(m, "timestamp")
+		msgJSON[i] = m
+	}
+	return msgJSON
 }
 
 // notificationToEvent converts a stream_event notification params map
@@ -1094,47 +1087,25 @@ func (m *StdioManager) ProviderSetModel(model string) {
 	})
 }
 
-// eventType returns the event type string for an Event.
-func eventType(e Event) string {
+// eventPayload returns the event type name and data payload for JSON
+// serialization. Returns ("", nil) for events with no useful payload.
+func eventPayload(e Event) (string, any) {
 	switch v := e.(type) {
 	case AgentStart:
-		return "agent_start"
+		return "agent_start", map[string]any{"model_name": v.ModelName}
 	case TurnStart:
-		return "turn_start"
+		return "turn_start", map[string]any{"turn": v.Turn}
 	case TurnEnd:
-		return "turn_end"
+		return "turn_end", map[string]any{"turn": v.Turn, "tool_calls": v.ToolCalls}
 	case ToolResultEvent:
-		return "tool_result"
+		return "tool_result", map[string]any{"message": v.Message}
 	case AssistantMessageEvent:
-		return "assistant_message"
+		return "assistant_message", map[string]any{"message": v.Message}
 	case AgentEnd:
-		return "agent_end"
+		return "agent_end", map[string]any{"turns": v.Turns, "finish_reason": v.FinishReason}
 	case SessionEvent:
-		return v.Type
+		return v.Type, map[string]any{"id": v.ID, "label": v.Label}
 	default:
-		return ""
-	}
-}
-
-// eventData returns event data for JSON serialization. Returns nil for
-// events with no useful payload beyond the type.
-func eventData(e Event) any {
-	switch v := e.(type) {
-	case AgentStart:
-		return map[string]any{"model_name": v.ModelName}
-	case TurnStart:
-		return map[string]any{"turn": v.Turn}
-	case TurnEnd:
-		return map[string]any{"turn": v.Turn, "tool_calls": v.ToolCalls}
-	case ToolResultEvent:
-		return map[string]any{"message": v.Message}
-	case AssistantMessageEvent:
-		return map[string]any{"message": v.Message}
-	case AgentEnd:
-		return map[string]any{"turns": v.Turns, "finish_reason": v.FinishReason}
-	case SessionEvent:
-		return map[string]any{"id": v.ID, "label": v.Label}
-	default:
-		return nil
+		return "", nil
 	}
 }

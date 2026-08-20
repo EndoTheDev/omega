@@ -17,7 +17,7 @@ import (
 // environment (passed by the host from config.yaml's provider.api_key).
 //
 // Build:
-//   go build -o extensions/example/example.exe extensions/example/main.go
+//   go build -o ollama-web/ollama-web.exe ollama-web/main.go
 //
 // Enable in config.yaml:
 //   extensions:
@@ -146,7 +146,7 @@ func main() {
 						},
 					},
 				},
-				Subscriptions: []string{"turn_start", "turn_end"},
+				Subscriptions: []string{},
 			})
 
 		case "tool_call":
