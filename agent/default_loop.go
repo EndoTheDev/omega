@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -176,29 +177,41 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 		opts.Events <- assistantEvent
 		opts.Extensions.DispatchEvent(assistantEvent)
 
-		executed := 0
-		for _, call := range toolCalls {
+		// Execute tool calls concurrently. Results are collected in
+		// order so the message history stays deterministic.
+		type toolResult struct {
+			msg ai.ToolResult
+		}
+		results := make([]toolResult, len(toolCalls))
+		var wg sync.WaitGroup
+		for i, call := range toolCalls {
 			tool, ok := tools[call.Name]
 			if !ok {
-				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
-				messages = append(messages, msg)
-				opts.Events <- ToolResultEvent{Type: "tool_result", Message: msg}
-				opts.Extensions.DispatchEvent(ToolResultEvent{Type: "tool_result", Message: msg})
-				executed++
+				results[i] = toolResult{msg: ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)}
 				continue
 			}
-			result, err := tool.Run(ctx, call.Arguments)
-			var msg ai.ToolResult
-			if err != nil {
-				msg = ai.NewToolResult(err.Error(), call.ID, true)
-			} else {
-				if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
-					result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+			wg.Add(1)
+			go func(idx int, c ai.ToolCall, t Tool) {
+				defer wg.Done()
+				result, err := t.Run(ctx, c.Arguments)
+				var msg ai.ToolResult
+				if err != nil {
+					msg = ai.NewToolResult(err.Error(), c.ID, true)
+				} else {
+					if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
+						result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+					}
+					msg = ai.NewToolResult(result, c.ID, false)
 				}
-				msg = ai.NewToolResult(result, call.ID, false)
-			}
-			messages = append(messages, msg)
-			toolResultEvent := ToolResultEvent{Type: "tool_result", Message: msg}
+				results[idx] = toolResult{msg: msg}
+			}(i, call, tool)
+		}
+		wg.Wait()
+
+		executed := 0
+		for _, r := range results {
+			messages = append(messages, r.msg)
+			toolResultEvent := ToolResultEvent{Type: "tool_result", Message: r.msg}
 			opts.Events <- toolResultEvent
 			opts.Extensions.DispatchEvent(toolResultEvent)
 			executed++

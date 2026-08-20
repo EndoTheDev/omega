@@ -159,7 +159,7 @@ func TestExtractImagesWithImage(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	input := "what is @" + path + " showing?"
-	prompt, images, err := extractImages(input)
+	prompt, images, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestExtractImagesWithImage(t *testing.T) {
 
 func TestExtractImagesNoFile(t *testing.T) {
 	input := "email me at user@gmail.com please"
-	prompt, images, err := extractImages(input)
+	prompt, images, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestExtractImagesWithTextFile(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	input := "summarize @" + path
-	prompt, images, err := extractImages(input)
+	prompt, images, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestExtractImagesMultipleImages(t *testing.T) {
 	os.WriteFile(path2, jpegHeader, 0o644)
 
 	input := "compare @" + path1 + " and @" + path2
-	prompt, images, err := extractImages(input)
+	prompt, images, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestExtractImagesMultipleImages(t *testing.T) {
 
 func TestExtractImagesNoTokens(t *testing.T) {
 	input := "just a regular message"
-	prompt, images, err := extractImages(input)
+	prompt, images, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}

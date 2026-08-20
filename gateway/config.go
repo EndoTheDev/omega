@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
 )
 
@@ -224,4 +225,38 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: server.port must be > 0, got %d", c.Server.Port)
 	}
 	return nil
+}
+
+// WatchConfig watches the config file at path and calls onChange when
+// it changes. The callback receives the freshly loaded config. If the
+// reload fails (e.g. file is temporarily empty during an atomic save),
+// the error is ignored and the old config stays in effect. Runs until
+// the watcher is closed by the caller.
+func WatchConfig(path string, onChange func(Config)) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return
+	}
+	go func() {
+		defer watcher.Close()
+		watcher.Add(path)
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+					cfg, err := LoadConfig(path)
+					if err == nil {
+						onChange(cfg)
+					}
+				}
+			case _, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+			}
+		}
+	}()
 }

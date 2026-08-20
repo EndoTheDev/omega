@@ -132,6 +132,12 @@ bin/omega run "explain channel-based event streams"
 # One-shot with image input (vision models)
 bin/omega run @screenshot.png "what's wrong with this code?"
 
+# Inline file references in the TUI prompt:
+#   @path/to/file.txt   — inline text file contents
+#   @*.go               — glob pattern, inline all matches
+#   @session:<id>       — inject session message history as context
+#   @skill:<name>       — inject skill content
+
 # HTTP server (SSE streaming, session store)
 bin/omega serve
 
@@ -144,6 +150,9 @@ bin/omega insights --days 7
 
 # Self-update from GitHub releases
 bin/omega update
+
+# Smoke test (fake provider through full pipeline)
+bin/omega test
 
 # Health check
 bin/omega health
@@ -341,6 +350,7 @@ See `bin/extensions/README.md` for the full protocol reference and
 | `/copy`                               | Copy last message to clipboard                                                                        |
 | `/export [path]`                      | Export session messages to JSONL                                                                      |
 | `/insights [days]`                    | Show cross-session usage analytics (default: 30 days)                                                 |
+| `/search <query>`                     | Full-text search across all session messages                                                          |
 | `/thinking [level]`                   | Set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles) |
 | `/tools [on \| off \| auto]`          | Toggle tool result display mode                                                                       |
 | `/extensions`                         | List loaded extensions                                                                                |

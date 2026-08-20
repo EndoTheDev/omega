@@ -16,7 +16,8 @@ markdown rendering.
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
   agent wiring (`newAgent`, `setProviderEnvVars`), `cmdServe`, `cmdRun`,
-  `cmdChat`, `cmdHealth`, `loadExtensions`, `loadSkills`, extension CLI
+  `cmdChat`, `cmdTest` (smoke test), `cmdHealth`, `loadExtensions`,
+  `loadSkills`, config hot-reload (`gateway.WatchConfig`), extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
   `applyExtFlags`), global help (`helpText`)
 - `image.go` - image input support (`detectImage`, `parseFileArgs`,

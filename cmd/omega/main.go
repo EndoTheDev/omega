@@ -91,6 +91,8 @@ func run(args []string) error {
 		return cmdInsights(parseConfigFlag(rest), rest)
 	case "update":
 		return cmdUpdate()
+	case "test":
+		return cmdTest()
 	case "chat", "":
 		// Explicit chat subcommand, or no subcommand: default to the TUI.
 		return cmdChat(parseConfigFlag(rest), appendPrompts, ext, trust)
@@ -497,6 +499,14 @@ func cmdChat(configPath string, appendPrompts []string, ext extFlags, trust trus
 	if err != nil {
 		return fmt.Errorf("load skills: %w", err)
 	}
+
+	// Hot-reload non-disruptive config changes (theme, compaction,
+	// notifications) when config.yaml changes on disk.
+	configFile := resolveConfigPath(configPath)
+	gateway.WatchConfig(configFile, func(newCfg gateway.Config) {
+		ai.SetHTTPTimeout(newCfg.HTTPTimeout)
+	})
+
 	return runChat(cfg.Provider, &cfg.Compaction, cfg.SystemPrompt, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true), store, skills, extMgr, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
 }
 
@@ -536,6 +546,83 @@ func loadExtensions(cfg gateway.ExtensionsConfig, apiKey string) (agent.Extensio
 // loadSkills reads skills from the configured skills directory.
 func loadSkills(cfg gateway.Config) ([]agent.Skill, error) {
 	return harness.LoadSkills(cfg.Skills.Dir)
+}
+
+// cmdTest runs a smoke test through the full agent pipeline using a
+// fake provider. Verifies event ordering and tool execution.
+func cmdTest() error {
+	provider := ai.NewFakeProviderScripts("test",
+		// Turn 1: response chunk + tool call.
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "Let me check"},
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "t1", Name: "echo", Arguments: map[string]any{"msg": "hello"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_calls"},
+		},
+		// Turn 2: final response.
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "Done: hello"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	tools := map[string]agent.Tool{
+		"echo": {
+			Description: "Echo back the message",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{"msg": map[string]any{"type": "string"}}},
+			Run: func(ctx context.Context, args map[string]any) (string, error) {
+				msg, _ := args["msg"].(string)
+				return msg, nil
+			},
+		},
+	}
+
+	ag := agent.NewAgent(provider, tools, 10)
+	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
+
+	ch := ag.Run(context.Background(), []ai.Message{ai.NewUser("test")}, tools)
+
+	var types []string
+	for e := range ch {
+		switch v := e.(type) {
+		case agent.AgentStart:
+			types = append(types, "agent_start")
+		case agent.TurnStart:
+			types = append(types, "turn_start")
+		case agent.TurnEnd:
+			types = append(types, "turn_end")
+		case agent.AgentEnd:
+			types = append(types, "agent_end")
+			if v.FinishReason != "stop" {
+				return fmt.Errorf("finish_reason = %s, want stop", v.FinishReason)
+			}
+		case agent.StreamEvent:
+			switch v.Event.(type) {
+			case ai.ResponseChunk:
+				types = append(types, "response_chunk")
+			case ai.ToolCallEvent:
+				types = append(types, "tool_call")
+			case ai.StreamEnd:
+				types = append(types, "stream_end")
+			}
+		case agent.ToolResultEvent:
+			types = append(types, "tool_result")
+		}
+	}
+
+	// Verify we got the key events.
+	want := []string{"agent_start", "turn_start", "response_chunk", "tool_call", "stream_end", "tool_result", "turn_end", "turn_start", "response_chunk", "stream_end", "turn_end", "agent_end"}
+	if len(types) != len(want) {
+		return fmt.Errorf("event count = %d, want %d (got %v)", len(types), len(want), types)
+	}
+	for i, w := range want {
+		if types[i] != w {
+			return fmt.Errorf("event %d = %s, want %s (full: %v)", i, types[i], w, types)
+		}
+	}
+
+	fmt.Println("OK: agent pipeline smoke test passed")
+	fmt.Printf("  events: %v\n", types)
+	return nil
 }
 
 // cmdHealth checks whether the server is reachable at the configured port.

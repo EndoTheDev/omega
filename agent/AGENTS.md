@@ -16,8 +16,9 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `loop.go` - `AgentLoop` interface (Go-level seam for the conversation loop),
   `LoopOptions` struct. Default implementation is `DefaultAgentLoop`.
 - `default_loop.go` - `DefaultAgentLoop` (standard turn loop: stream, execute
-  tools, feed results back), `isOverflowError`, `toolSchemas`. Extracted from
-  the former `run()` method on `Agent`.
+  tools concurrently via sync.WaitGroup, feed results back in order),
+  `isOverflowError`, `toolSchemas`. Extracted from the former `run()`
+  method on `Agent`.
 - `compaction.go` - context compaction with optional focus,
   `BuildCompactedMessages` shared helper
 - `events.go` - event types emitted by the agent loop (`AgentStart`,

@@ -13,13 +13,15 @@ and environment variables. It is the only layer external clients talk to.
   `/sessions`, `/sessions/{id}`, `/static/`), SSE event mapping, request
   decoding, session-aware chat flow with message persistence
 - `store.go` - SQLite session store: `Session`, `SessionNode`, `Store`,
-  schema migration, session CRUD, message append/read, session tree,
-  ancestor message walk, message encode/decode (including
-  `model_change` and `thinking_level_change` entry types),
+  schema migration (including FTS5 full-text index), session CRUD,
+  message append/read, session tree, ancestor message walk, message
+  encode/decode (including `model_change` and `thinking_level_change`
+  entry types), `SearchMessages` (FTS5 full-text search),
   `ComputeInsights` (cross-session analytics: `Insights`, `ToolStat`,
   `DayStat`, `NotableStat`; skips non-conversation entries).
 - `config.go` - `Config` and sub-configs (including `PluginsConfig`),
-  `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`, `Validate`
+  `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`,
+  `Validate`, `WatchConfig` (fsnotify hot-reload)
 - `config_test.go` - config loading and env override tests
 - `server_test.go` - server endpoint and SSE streaming tests with a
   scripted mock provider

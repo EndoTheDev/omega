@@ -266,6 +266,9 @@ func spawnExtension(path string, apiKey string) (*stdioExt, error) {
 	}
 
 	for _, t := range init.Tools {
+		if err := validateToolSchema(t); err != nil {
+			return nil, fmt.Errorf("extension %s: tool %s: %w", filepath.Base(path), t.Name, err)
+		}
 		ext.tools[t.Name] = t
 	}
 
@@ -976,6 +979,36 @@ func messagesToJSON(messages []ai.Message) []map[string]any {
 		msgJSON[i] = m
 	}
 	return msgJSON
+}
+
+// validateToolSchema checks that a tool's Parameters field is a valid
+// JSON Schema with a type field. If required is present, each entry
+// must match a property key.
+func validateToolSchema(t toolDef) error {
+	if t.Name == "" {
+		return fmt.Errorf("tool name is empty")
+	}
+	if t.Parameters == nil {
+		return fmt.Errorf("parameters schema is nil")
+	}
+	typeVal, ok := t.Parameters["type"].(string)
+	if !ok || typeVal == "" {
+		return fmt.Errorf("parameters schema missing 'type' field")
+	}
+	if req, ok := t.Parameters["required"].([]any); ok {
+		props, _ := t.Parameters["properties"].(map[string]any)
+		for _, r := range req {
+			if name, ok := r.(string); ok {
+				if props == nil {
+					return fmt.Errorf("required field %q but no properties", name)
+				}
+				if _, exists := props[name]; !exists {
+					return fmt.Errorf("required field %q not in properties", name)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // notificationToEvent converts a stream_event notification params map

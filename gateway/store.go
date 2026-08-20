@@ -96,6 +96,25 @@ CREATE TABLE IF NOT EXISTS messages (
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+
+-- FTS5 full-text index over message content for /search.
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+	session_id UNINDEXED,
+	content,
+	content='messages',
+	content_rowid='id'
+);
+-- Triggers keep the FTS index in sync with the messages table.
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+	INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.id, new.session_id, new.payload);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+	INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.id, old.session_id, old.payload);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+	INSERT INTO messages_fts(messages_fts, rowid, session_id, content) VALUES ('delete', old.id, old.session_id, old.payload);
+	INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.id, new.session_id, new.payload);
+END;
 `)
 	if err != nil {
 		return err
@@ -303,6 +322,34 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM messages WHERE session_id = ?`, sessionID).Scan(&n)
 	return n, err
+}
+
+// SearchResult is a single search hit from SearchMessages.
+type SearchResult struct {
+	SessionID string
+	Snippet   string
+}
+
+// SearchMessages performs a full-text search across all session messages.
+// Returns matching sessions with a snippet of the matching content.
+func (s *Store) SearchMessages(ctx context.Context, query string) ([]SearchResult, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
+		 FROM messages_fts WHERE messages_fts MATCH ?
+		 ORDER BY rank`, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.SessionID, &r.Snippet); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // encodeMessage serializes an ai.Message to its role discriminator and

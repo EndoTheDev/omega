@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/insights", "/thinking", "/tools", "/extensions", "/skills", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/insights", "/search", "/thinking", "/tools", "/extensions", "/skills", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -667,7 +667,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m = m.invokeInlineSkills(input)
 
 	// Extract @file references: load images as base64, inline text files.
-	prompt, images, imgErr := extractImages(input)
+	prompt, images, imgErr := extractImages(input, m.store, m.skills)
 	if imgErr != nil {
 		m.transcript += "\n" + m.theme.Error.Render("[image error: " + imgErr.Error() + "]") + "\n"
 	}
@@ -936,6 +936,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExport(fields[1:])
 	case "/insights":
 		return m.handleInsights(fields[1:])
+	case "/search":
+		return m.handleSearch(fields[1:])
 	case "/thinking":
 		if len(fields) > 1 {
 			valid := false
@@ -1902,6 +1904,44 @@ func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
+	m.refresh()
+	return m, nil
+}
+
+// handleSearch searches session messages and renders results in the transcript.
+func (m model) handleSearch(args []string) (tea.Model, tea.Cmd) {
+	if m.store == nil {
+		m.err = "no session store available"
+		return m, nil
+	}
+	if len(args) == 0 {
+		m.err = "usage: /search <query>"
+		return m, nil
+	}
+	query := strings.Join(args, " ")
+	results, err := m.store.SearchMessages(context.Background(), query)
+	if err != nil {
+		m.storeErr = "search: " + err.Error()
+		return m, nil
+	}
+	if len(results) == 0 {
+		m.transcript += "\n" + m.theme.Info.Render("[no results]") + "\n"
+		m.refresh()
+		return m, nil
+	}
+	var sb strings.Builder
+	sb.WriteString("\n")
+	for _, r := range results {
+		label := r.SessionID
+		if sess, err := m.store.GetSession(context.Background(), r.SessionID); err == nil && sess.Label != "" {
+			label = sess.Label
+		}
+		sb.WriteString(m.theme.Info.Render(label))
+		sb.WriteString(": ")
+		sb.WriteString(r.Snippet)
+		sb.WriteString("\n")
+	}
+	m.transcript += sb.String()
 	m.refresh()
 	return m, nil
 }
