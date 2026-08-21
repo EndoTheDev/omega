@@ -1,11 +1,16 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -13,9 +18,9 @@ import (
 // githubRelease represents the subset of the GitHub releases API
 // response that omega update needs.
 type githubRelease struct {
-	TagName string          `json:"tag_name"`
-	Assets  []githubAsset   `json:"assets"`
-	Message string          `json:"message"` // API error message (e.g. "Not Found")
+	TagName string        `json:"tag_name"`
+	Assets  []githubAsset `json:"assets"`
+	Message string        `json:"message"` // API error message (e.g. "Not Found")
 }
 
 type githubAsset struct {
@@ -23,19 +28,18 @@ type githubAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// assetNameForOS returns the expected release asset name for the
-// current GOOS/GOARCH (e.g. "windows_amd64", "darwin_arm64").
+// assetNameForOS returns the expected release asset name substring for
+// the current GOOS/GOARCH (e.g. "windows_amd64", "linux_amd64").
 func assetNameForOS(goos, goarch string) string {
 	return goos + "_" + goarch
 }
 
 // findAsset returns the download URL for the asset matching the current
-// OS/arch, or "" if none matches.
+// OS/arch, or "" if none matches. Matches by substring (e.g.
+// "omega_v0.1.0_windows_amd64.zip" matches "windows_amd64").
 func findAsset(assets []githubAsset, goos, goarch string) string {
 	target := assetNameForOS(goos, goarch)
 	for _, a := range assets {
-		// Match assets that contain the target string (e.g.
-		// "omega_windows_amd64.exe" matches "windows_amd64").
 		if strings.Contains(a.Name, target) {
 			return a.BrowserDownloadURL
 		}
@@ -43,9 +47,10 @@ func findAsset(assets []githubAsset, goos, goarch string) string {
 	return ""
 }
 
-// cmdUpdate downloads the latest GitHub release binary and replaces the
-// running executable. Handles platform-specific replacement: on Windows
-// the running exe must be renamed before the new one takes its place.
+// cmdUpdate downloads the latest GitHub release archive (zip on
+// Windows, tar.gz on Linux) and replaces the running executable + all
+// extension binaries. User config files (config.yaml, mcp.yaml) are
+// preserved — only .example files are extracted.
 func cmdUpdate() error {
 	fmt.Fprintln(os.Stderr, "omega: checking for latest release...")
 
@@ -60,7 +65,6 @@ func cmdUpdate() error {
 		return fmt.Errorf("decode release: %w", err)
 	}
 
-	// GitHub returns 404 with a message field when there are no releases.
 	if rel.Message != "" {
 		return fmt.Errorf("no releases found: %s; visit https://github.com/EndoTheDev/omega/releases", rel.Message)
 	}
@@ -89,46 +93,204 @@ func cmdUpdate() error {
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
+	installDir := filepath.Dir(exePath)
 
-	// Write to a temp file in the same directory as the executable.
-	tmpPath := exePath + ".new"
-	tmpFile, err := os.Create(tmpPath)
+	// Extract archive to a temp directory.
+	tmpDir, err := os.MkdirTemp("", "omega-update-")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return fmt.Errorf("create temp dir: %w", err)
 	}
-	if _, err := io.Copy(tmpFile, dlResp.Body); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("download: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close temp file: %w", err)
+	defer os.RemoveAll(tmpDir)
+
+	if runtime.GOOS == "windows" {
+		if err := extractZip(dlResp.Body, tmpDir); err != nil {
+			return fmt.Errorf("extract zip: %w", err)
+		}
+	} else {
+		if err := extractTarGz(dlResp.Body, tmpDir); err != nil {
+			return fmt.Errorf("extract tar.gz: %w", err)
+		}
 	}
 
-	// Replace the running binary. On Windows, the running exe cannot be
-	// overwritten directly; rename it out of the way first.
-	if runtime.GOOS == "windows" {
-		oldPath := exePath + ".old"
-		os.Remove(oldPath) // best-effort cleanup of a previous update
-		if err := os.Rename(exePath, oldPath); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("rename current exe: %w", err)
-		}
-		if err := os.Rename(tmpPath, exePath); err != nil {
-			// Try to restore the old binary.
-			os.Rename(oldPath, exePath)
-			os.Remove(tmpPath)
-			return fmt.Errorf("install new exe: %w", err)
-		}
-		os.Remove(oldPath) // best-effort; may fail if still locked
-	} else {
-		if err := os.Rename(tmpPath, exePath); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("install: %w", err)
+	// Find the omega binary in the extracted archive.
+	// It may be at the root or inside a versioned directory.
+	omegaBin := findInArchive(tmpDir, "omega")
+	if omegaBin == "" {
+		return fmt.Errorf("omega binary not found in release archive")
+	}
+
+	// Replace the running binary.
+	if err := replaceBinary(omegaBin, exePath); err != nil {
+		return fmt.Errorf("replace omega binary: %w", err)
+	}
+
+	// Copy extension binaries.
+	extSrcDir := filepath.Join(filepath.Dir(omegaBin), "extensions")
+	extDstDir := filepath.Join(installDir, "extensions")
+	if entries, err := os.ReadDir(extSrcDir); err == nil {
+		os.MkdirAll(extDstDir, 0o755)
+		for _, e := range entries {
+			if e.IsDir() || strings.HasSuffix(e.Name(), ".md") || strings.HasSuffix(e.Name(), ".txt") {
+				continue
+			}
+			src := filepath.Join(extSrcDir, e.Name())
+			dst := filepath.Join(extDstDir, e.Name())
+			copyFile(src, dst)
 		}
 	}
+
+	// Copy example files only if they don't already exist.
+	copyIfMissing(filepath.Join(filepath.Dir(omegaBin), "config.yaml.example"), filepath.Join(installDir, "config.yaml.example"))
+	copyIfMissing(filepath.Join(filepath.Dir(omegaBin), "mcp.yaml.example"), filepath.Join(installDir, "mcp.yaml.example"))
 
 	fmt.Printf("omega: updated to %s\n", rel.TagName)
 	return nil
+}
+
+// extractZip extracts a zip archive from r into dest.
+func extractZip(r io.Reader, dest string) error {
+	// Read all into memory — archives are small (~50MB max).
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+	for _, f := range zr.File {
+		path := filepath.Join(dest, f.Name)
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(path, 0o755)
+			continue
+		}
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		out, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			out.Close()
+			return err
+		}
+		if _, err := io.Copy(out, rc); err != nil {
+			out.Close()
+			rc.Close()
+			return err
+		}
+		out.Close()
+		rc.Close()
+	}
+	return nil
+}
+
+// extractTarGz extracts a .tar.gz archive from r into dest.
+func extractTarGz(r io.Reader, dest string) error {
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(dest, hdr.Name)
+		if hdr.FileInfo().IsDir() {
+			os.MkdirAll(path, 0o755)
+			continue
+		}
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		out, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return err
+		}
+		out.Close()
+	}
+	return nil
+}
+
+// findInArchive searches dir for a file named "omega" or "omega.exe",
+// checking the root first, then one level down.
+func findInArchive(dir, name string) string {
+	// Check root.
+	for _, ext := range []string{".exe", ""} {
+		p := filepath.Join(dir, name+ext)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	// Check one level down (versioned directory).
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		for _, ext := range []string{".exe", ""} {
+			p := filepath.Join(dir, e.Name(), name+ext)
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+// replaceBinary copies src to dst, handling Windows exe locking.
+func replaceBinary(src, dst string) error {
+	if runtime.GOOS == "windows" {
+		oldPath := dst + ".old"
+		os.Remove(oldPath)
+		if err := os.Rename(dst, oldPath); err != nil {
+			return fmt.Errorf("rename current exe: %w", err)
+		}
+		if err := copyFile(src, dst); err != nil {
+			os.Rename(oldPath, dst)
+			return err
+		}
+		os.Remove(oldPath)
+		return nil
+	}
+	return copyFile(src, dst)
+}
+
+// copyFile copies src to dst, setting permissions.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	info, _ := os.Stat(src)
+	mode := os.FileMode(0o755)
+	if info != nil {
+		mode = info.Mode()
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// copyIfMissing copies src to dst only if dst does not exist.
+func copyIfMissing(src, dst string) {
+	if _, err := os.Stat(dst); err == nil {
+		return // already exists, don't overwrite
+	}
+	copyFile(src, dst)
 }
