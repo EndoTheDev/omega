@@ -2,7 +2,7 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-WIP-orange)
+![Status](https://img.shields.io/badge/status-v0.1.0-blue)
 
 omega is a terminal-based AI assistant that can read your files, run
 commands, and edit code. It talks to LLM providers (Ollama, OpenAI,
@@ -178,8 +178,10 @@ gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 | Layer    | Package   | Responsibility                                                                       |
 | -------- | --------- | ------------------------------------------------------------------------------------ |
 | Gateway  | `gateway` | HTTP server, SSE streaming, session store (SQLite), config, session tree             |
-| Agent    | `agent`   | Multi-turn loop, tool execution, compaction, capability seams, extensions            |
+| Agent    | `agent`   | Multi-turn loop, parallel tool execution, compaction, capability seams, extensions   |
 | Provider | `ai`      | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry |
+| CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config wiring                       |
+| Extensions | `bin/extensions` | 8 extensions: core-prompt, core-provider, core-store, core-skills, core-tools, mcp-bridge, ollama-web |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -359,7 +361,7 @@ See `bin/extensions/README.md` for the full protocol reference and
 | `/tree`                               | Show the session tree                                                                                 |
 | `/model <# \| name>`                  | Switch the model (line # from /models, or name)                                                       |
 | `/models`                             | List available models from the current provider                                                       |
-| `/provider <type>`                    | Switch the provider at runtime                                                                        |
+| `/provider`                           | Show current provider type                                                                            |
 | `/compact [focus]`                    | Manually compact conversation history                                                                 |
 | `/copy`                               | Copy last message to clipboard                                                                        |
 | `/export [path]`                      | Export session messages to JSONL                                                                      |
@@ -424,11 +426,14 @@ provider that scripts stream events.
 ### Done
 
 - Three providers with streaming, retry, and backoff
-- Multi-turn agent loop with tool execution
+- Multi-turn agent loop with parallel tool execution
 - Session tree with branching, labeling, and full persistence
 - Context compaction with overflow auto-retry, reserve tokens, and branch summarization
-- Skills system with folder-per-skill, agent-driven `load_skill` tool, and slash-command invocation
+- Skills system (core-skills extension, agent-driven `skills.read` tool, `/skills` command)
 - Extension system with JSON-RPC over stdio, crash isolation, event dispatch
+- Pluggable architecture: 8 extensions, 7 seams (prompt, provider, store, skills, tools, mcp, web)
+- Session store extension (core-store, SQLite, FTS5 full-text search, `sessions.search` tool)
+- In-memory store fallback when no store extension loaded
 - Complete TUI with streaming, markdown, autocomplete, and history
 - Global installation via PATH with binary-dir resolution
 - 10-level thinking control across all providers
@@ -445,20 +450,25 @@ provider that scripts stream events.
 - File drop (bracketed paste support)
 - Export session subcommand (`omega export`)
 - Self-update (`omega update`)
-- Image input (`@file` args with vision models)
+- Image input (`@file` args, `@`-mentions for globs, sessions, skills)
 - Session insights (`omega insights [--days N]`, `/insights [days]`)
 - Per-path file locks (serialize concurrent writes to the same file)
 - Extension customization hooks (prompt guidelines, compaction, branch summary, session lifecycle)
 - Session entry types (model_change, thinking_level_change persisted and replayed on resume)
-- Plugin/seam architecture (capability seams for prompt builder, compactor, tool provider, session store; extension seam replacement; plugin config)
+- Config hot-reload (fsnotify, `OMEGA_HTTP_TIMEOUT` live-applied)
+- `max_turns` configurable (default 100, `OMEGA_MAX_TURNS` env var)
+- Tool schema validation at extension load
+- Agent self-test (`omega test`)
+- Version automation via git tags + ldflags
 
 ### Planned
 
 - More tools (grep, glob, multi-file edit)
 - More providers (Gemini, Mistral)
 - Web UI (via the gateway HTTP API)
-- Project trust system for per-project skills and extensions
 - Prompt templates with variable interpolation
+- Core-trust extension (pluggable trust gate)
+- Output/channel seam (Telegram, Discord, WhatsApp)
 
 ### Known Limitations
 
