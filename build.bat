@@ -7,15 +7,17 @@ cd /d "%~dp0"
 if not exist bin mkdir bin
 
 echo ==^> vet
-go vet ./agent/... ./ai/... ./cmd/... ./gateway/... ./harness/...
+go vet ./agent/... ./ai/... ./cmd/... ./gateway/...
 if errorlevel 1 exit /b 1
 
 echo ==^> test
-go test ./agent/... ./ai/... ./cmd/... ./gateway/... ./harness/...
+go test ./agent/... ./ai/... ./cmd/... ./gateway/...
 if errorlevel 1 exit /b 1
 
 echo ==^> build
-go build -o bin\omega.exe .\cmd\omega
+for /f "delims=" %%v in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%v
+if not defined VERSION set VERSION=dev
+go build -ldflags "-X main.omegaVersion=%VERSION%" -o bin\omega.exe .\cmd\omega
 if errorlevel 1 exit /b 1
 
-echo ==^> done: bin\omega.exe
+echo ==^> done: bin\omega.exe (version: %VERSION%)

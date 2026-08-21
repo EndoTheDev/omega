@@ -1414,7 +1414,7 @@ func TestAutoNameIgnoredAfterNew(t *testing.T) {
 func TestSplashView(t *testing.T) {
 	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
 	splash := ansiStrip(m.splashView())
-	for _, want := range []string{`#"""#`, "omega", "v0.1.0", "ollama/glm-5.2", "tools", "/help"} {
+	for _, want := range []string{`#"""#`, "omega", "dev", "ollama/glm-5.2", "tools", "/help"} {
 		if !strings.Contains(splash, want) {
 			t.Fatalf("splash missing %q: %q", want, splash)
 		}

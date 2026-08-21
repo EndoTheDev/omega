@@ -2332,9 +2332,10 @@ func renderCodeBlock(code, lang string, width int, t Theme) string {
 	return style.Render(body)
 }
 
-// omegaVersion is the displayed version. ponytail: hardcoded; upgrade
-// path: ldflags injection (-ldflags "-X main.omegaVersion=v0.2.0").
-const omegaVersion = "v0.1.0"
+// omegaVersion is set via ldflags at build time:
+//   go build -ldflags "-X main.omegaVersion=v0.1.0"
+// Defaults to "dev" when built without ldflags (local dev builds).
+var omegaVersion = "dev"
 
 // View renders the full screen: viewport on top, status bar, then the
 // autocomplete dropup panel (when open), textarea at the bottom. When
