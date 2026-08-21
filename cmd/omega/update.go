@@ -72,12 +72,17 @@ func cmdUpdate() error {
 		return fmt.Errorf("no releases found; visit https://github.com/EndoTheDev/omega/releases")
 	}
 
+	// Skip if already running the latest version.
+	if rel.TagName == omegaVersion {
+		fmt.Printf("omega: already up to date (%s)\n", omegaVersion)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "omega: updating from %s to %s...\n", omegaVersion, rel.TagName)
+
 	url := findAsset(rel.Assets, runtime.GOOS, runtime.GOARCH)
 	if url == "" {
 		return fmt.Errorf("no release asset for %s/%s in %s; visit https://github.com/EndoTheDev/omega/releases", runtime.GOOS, runtime.GOARCH, rel.TagName)
 	}
-
-	fmt.Fprintf(os.Stderr, "omega: downloading %s...\n", rel.TagName)
 
 	dlResp, err := http.Get(url)
 	if err != nil {
@@ -87,6 +92,12 @@ func cmdUpdate() error {
 
 	if dlResp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download: HTTP %d", dlResp.StatusCode)
+	}
+
+	// Wrap with progress reader if we know the size.
+	var body io.Reader = dlResp.Body
+	if total := dlResp.ContentLength; total > 0 {
+		body = &progressReader{r: dlResp.Body, total: total}
 	}
 
 	exePath, err := os.Executable()
@@ -103,11 +114,11 @@ func cmdUpdate() error {
 	defer os.RemoveAll(tmpDir)
 
 	if runtime.GOOS == "windows" {
-		if err := extractZip(dlResp.Body, tmpDir); err != nil {
+		if err := extractZip(body, tmpDir); err != nil {
 			return fmt.Errorf("extract zip: %w", err)
 		}
 	} else {
-		if err := extractTarGz(dlResp.Body, tmpDir); err != nil {
+		if err := extractTarGz(body, tmpDir); err != nil {
 			return fmt.Errorf("extract tar.gz: %w", err)
 		}
 	}
@@ -143,7 +154,20 @@ func cmdUpdate() error {
 	copyIfMissing(filepath.Join(filepath.Dir(omegaBin), "config.yaml.example"), filepath.Join(installDir, "config.yaml.example"))
 	copyIfMissing(filepath.Join(filepath.Dir(omegaBin), "mcp.yaml.example"), filepath.Join(installDir, "mcp.yaml.example"))
 
-	fmt.Printf("omega: updated to %s\n", rel.TagName)
+	// Print newline after progress bar.
+	if total := dlResp.ContentLength; total > 0 {
+		fmt.Fprintln(os.Stderr)
+	}
+
+	extCount := 0
+	if entries, err := os.ReadDir(extDstDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && !strings.HasSuffix(e.Name(), ".md") && !strings.HasSuffix(e.Name(), ".txt") {
+				extCount++
+			}
+		}
+	}
+	fmt.Printf("omega: updated to %s (omega + %d extensions)\n", rel.TagName, extCount)
 	return nil
 }
 
@@ -293,4 +317,46 @@ func copyIfMissing(src, dst string) {
 		return // already exists, don't overwrite
 	}
 	copyFile(src, dst)
+}
+
+// progressReader wraps an io.Reader and prints a progress bar to stderr
+// showing download progress against the total size.
+type progressReader struct {
+	r       io.Reader
+	total   int64
+	read    int64
+	lastPct int
+}
+
+func (p *progressReader) Read(buf []byte) (int, error) {
+	n, err := p.r.Read(buf)
+	p.read += int64(n)
+	if p.total > 0 {
+		pct := int(p.read * 100 / p.total)
+		if pct > p.lastPct+4 || err != nil {
+			p.lastPct = pct
+			bar := 30
+			filled := bar * pct / 100
+			fmt.Fprintf(os.Stderr, "\r[")
+			for i := 0; i < filled; i++ {
+				fmt.Fprint(os.Stderr, "█")
+			}
+			for i := filled; i < bar; i++ {
+				fmt.Fprint(os.Stderr, "░")
+			}
+			fmt.Fprintf(os.Stderr, "] %d%% %s/%s", pct, humanBytes(p.read), humanBytes(p.total))
+		}
+	}
+	return n, err
+}
+
+func humanBytes(b int64) string {
+	switch {
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1fMB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1fKB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
 }
