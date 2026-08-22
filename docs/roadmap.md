@@ -39,6 +39,9 @@
 - Version automation via git tags + ldflags
 - Subagent delegation (core-delegate extension, `delegate.task`, `delegate.status`)
 - SQLite WAL mode for concurrent parent/subagent access
+- Auto-discovered context window (Ollama /api/show, provider > config > default fallback)
+- Splash shows real tool count from loaded extensions
+- `/search` added to help table
 
 ## Planned
 
