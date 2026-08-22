@@ -77,6 +77,14 @@ type Provider interface {
 	ModelName() string
 	SetThinkingLevel(level string)
 	ListModels() ([]string, error)
+	ModelInfo() (ModelInfo, error)
+}
+
+// ModelInfo holds metadata about the current model, queried from the
+// provider when available. Zero values mean the provider does not
+// expose that field; callers fall back to config defaults.
+type ModelInfo struct {
+	ContextWindow int // max context in tokens, 0 if unknown
 }
 
 // ThinkingLevels is the ordered list of thinking levels the user can

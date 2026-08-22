@@ -31,6 +31,12 @@ provider:
   the path passed via `--config`. Check that the file exists.
 - `model_name` left empty in the example file — the example has
   `model_name:` with no value. You must fill it in.
+- **Empty value clobbers the default.** YAML parsers set a key with
+  no value to the zero value (empty string). `model_name:` (nothing
+  after the colon) produces `""`, which fails validation. Same applies
+  to inline comments: `model_name: # my model` also yields `""` because
+  the parser treats everything after `#` as a comment. Always put the
+  value before the comment: `model_name: llama3 # my model`.
 
 ## Extension not found
 

@@ -54,18 +54,18 @@ type stdioExt struct {
 	cmd     *exec.Cmd
 	stdin   *json.Encoder
 	stdout  *bufio.Reader
-	mu      sync.Mutex // serializes writes to the process stdin
+	mu      sync.Mutex    // serializes writes to the process stdin
 	manager *StdioManager // back-reference for delegate notifications
 
-	tools       map[string]toolDef
-	commands    []ExtensionCommand
-	subscribed  map[string]bool // event types this extension wants
-	seams       []string        // declared seam types
-	pending     map[int64]chan rpcResponse // pending request responses
-	pendingMu   sync.Mutex
-	nextID      int64
-	notifyCh    chan map[string]any // notification channel for streaming (set during Stream)
-	alive       bool
+	tools      map[string]toolDef
+	commands   []ExtensionCommand
+	subscribed map[string]bool            // event types this extension wants
+	seams      []string                   // declared seam types
+	pending    map[int64]chan rpcResponse // pending request responses
+	pendingMu  sync.Mutex
+	nextID     int64
+	notifyCh   chan map[string]any // notification channel for streaming (set during Stream)
+	alive      bool
 }
 
 // toolDef is a tool declared by an extension during initialize.
@@ -77,19 +77,19 @@ type toolDef struct {
 
 // initResult is the result of the initialize JSON-RPC method.
 type initResult struct {
-	Name          string              `json:"name"`
-	Tools         []toolDef           `json:"tools"`
-	Commands      []ExtensionCommand  `json:"commands"`
-	Subscriptions []string            `json:"subscriptions"`
-	Seams         []string            `json:"seams"`
+	Name          string             `json:"name"`
+	Tools         []toolDef          `json:"tools"`
+	Commands      []ExtensionCommand `json:"commands"`
+	Subscriptions []string           `json:"subscriptions"`
+	Seams         []string           `json:"seams"`
 }
 
 // rpcRequest is a JSON-RPC 2.0 request or notification.
 type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *int64          `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  map[string]any  `json:"params,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      *int64         `json:"id,omitempty"`
+	Method  string         `json:"method"`
+	Params  map[string]any `json:"params,omitempty"`
 }
 
 // rpcResponse is a JSON-RPC 2.0 response.
@@ -97,7 +97,7 @@ type rpcResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      int64           `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *rpcError        `json:"error,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
 }
 
 type rpcError struct {
@@ -241,15 +241,15 @@ func spawnExtension(path string, apiKey string, m *StdioManager) (*stdioExt, err
 	}
 
 	ext := &stdioExt{
-		name:        filepath.Base(path),
-		path:        path,
-		cmd:         cmd,
-		stdin:       json.NewEncoder(stdinPipe),
-		stdout:      bufio.NewReader(stdoutPipe),
-		manager:     m,
-		tools:       make(map[string]toolDef),
-		subscribed:   make(map[string]bool),
-		pending:     make(map[int64]chan rpcResponse),
+		name:       filepath.Base(path),
+		path:       path,
+		cmd:        cmd,
+		stdin:      json.NewEncoder(stdinPipe),
+		stdout:     bufio.NewReader(stdoutPipe),
+		manager:    m,
+		tools:      make(map[string]toolDef),
+		subscribed: make(map[string]bool),
+		pending:    make(map[int64]chan rpcResponse),
 	}
 
 	// Start the response reader goroutine.
@@ -366,7 +366,7 @@ func (e *stdioExt) readLoop() {
 			Method  string          `json:"method,omitempty"`
 			Params  map[string]any  `json:"params,omitempty"`
 			Result  json.RawMessage `json:"result,omitempty"`
-			Error   *rpcError        `json:"error,omitempty"`
+			Error   *rpcError       `json:"error,omitempty"`
 		}
 		if err := json.Unmarshal(line, &raw); err != nil {
 			continue // skip malformed lines
@@ -632,12 +632,12 @@ func (m *StdioManager) Infos() []ExtensionInfo {
 		}
 		sort.Slice(toolList, func(i, j int) bool { return toolList[i].Name < toolList[j].Name })
 		infos[i] = ExtensionInfo{
-			Name:      ext.name,
-			Tools:     len(ext.tools),
-			Commands:  len(ext.commands),
-			Seams:     ext.seams,
-			ToolList:  toolList,
-			Status:    status,
+			Name:     ext.name,
+			Tools:    len(ext.tools),
+			Commands: len(ext.commands),
+			Seams:    ext.seams,
+			ToolList: toolList,
+			Status:   status,
 		}
 	}
 	return infos
@@ -1183,6 +1183,27 @@ func (m *StdioManager) ProviderListModels() ([]string, error) {
 		return nil, err
 	}
 	return res.Models, nil
+}
+
+// ProviderModelInfo queries the provider-seam extension for metadata
+// about the current model (e.g. context window). Returns ModelInfo{}
+// with zero values if the provider does not expose the info.
+func (m *StdioManager) ProviderModelInfo() (ai.ModelInfo, error) {
+	ext := m.providerExt()
+	if ext == nil {
+		return ai.ModelInfo{}, nil
+	}
+	result, err := ext.request(context.Background(), "provider/model_info", nil)
+	if err != nil {
+		return ai.ModelInfo{}, err
+	}
+	var res struct {
+		ContextWindow int `json:"context_window"`
+	}
+	if err := json.Unmarshal(result, &res); err != nil {
+		return ai.ModelInfo{}, err
+	}
+	return ai.ModelInfo{ContextWindow: res.ContextWindow}, nil
 }
 
 // ProviderSetThinking sets the thinking level on the provider-seam

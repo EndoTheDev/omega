@@ -60,6 +60,11 @@ func (p *FakeProvider) ListModels() ([]string, error) {
 	return []string{p.modelName, "other-model"}, nil
 }
 
+// ModelInfo returns a fixed context window for testing.
+func (p *FakeProvider) ModelInfo() (ModelInfo, error) {
+	return ModelInfo{ContextWindow: 8192}, nil
+}
+
 // Stream replays the scripted events on a channel, respecting context
 // cancellation, and closes the channel when done. An empty script
 // closes the channel immediately.

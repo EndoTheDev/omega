@@ -30,7 +30,7 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
   `BuildPrompt`, `CompactMessages`, `SeamProviders`, provider dispatch:
   `ProviderStream`, `ProviderModelName`, `ProviderListModels`,
-  `ProviderSetThinking`, `ProviderSetModel`, `StoreProvider`,
+  `ProviderModelInfo`, `ProviderSetThinking`, `ProviderSetModel`, `StoreProvider`,
   `SkillsProvider`, `InjectedMessages`, `PendingDelegations`),
   `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
   (with `Seams`, `ToolList` fields), `ToolInfo` (Name + Description),
@@ -41,8 +41,8 @@ events for anyone observing (the TUI, the gateway, or extensions).
   Streaming RPC: `streamRequest` sets up `notifyCh` for notification
   routing, `readLoop` distinguishes notifications (no ID) from responses
   (with ID). Provider dispatch: `providerExt`, `ProviderStream`,
-  `ProviderModelName`, `ProviderListModels`, `ProviderSetThinking`,
-  `ProviderSetModel`. Store dispatch: `storeExt`, `StoreRequest`,
+  `ProviderModelName`, `ProviderListModels`, `ProviderModelInfo`,
+  `ProviderSetThinking`, `ProviderSetModel`. Store dispatch: `storeExt`, `StoreRequest`,
   `StoreProvider`. Skills dispatch: `skillsExt`, `SkillsRequest`,
   `SkillsProvider`. Delegate dispatch: `delegate_start`/`delegate_result`
   notification handling, `delegateCh` (buffer 64), `pendingDelegations`

@@ -9,11 +9,15 @@ provider implementations (Ollama, OpenAI, Anthropic) live in the
 
 ## Ownership
 
-- `provider.go` - Provider interface, ToolSchema type, SSEData SSE line
-  reader, shared httpClient with SetHTTPTimeout, exported HTTPClient /
-  RetryHTTP / SSEData for extension use, ThinkingLevels / ThinkingEnabled
+- `provider.go` - Provider interface (Stream, ModelName, SetThinkingLevel,
+  ListModels, ModelInfo), ModelInfo struct (ContextWindow), ToolSchema type,
+  SSEData SSE line reader, shared httpClient with SetHTTPTimeout, exported
+  HTTPClient / RetryHTTP / SSEData for extension use, ThinkingLevels /
+  ThinkingEnabled
 - `extension_provider.go` - ExtensionProvider implementing Provider by
-  delegating to a ProviderDispatcher interface (satisfied by agent.StdioManager)
+  delegating to a ProviderDispatcher interface (ProviderStream,
+  ProviderModelName, ProviderListModels, ProviderModelInfo,
+  ProviderSetThinking; satisfied by agent.StdioManager)
 - `messages.go` - Message sealed interface; System, User (with optional
   Images), Assistant, ToolResult, ModelChange, ThinkingLevelChange concrete
   types; ImageContent struct; timestamp helpers; `EncodeMessage`/

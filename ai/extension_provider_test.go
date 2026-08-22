@@ -46,4 +46,13 @@ func TestExtensionProviderNilDispatcher(t *testing.T) {
 	if models != nil {
 		t.Errorf("ListModels = %v, want nil", models)
 	}
+
+	// ModelInfo should return zero value, no error.
+	info, err := p.ModelInfo()
+	if err != nil {
+		t.Errorf("ModelInfo err = %v, want nil", err)
+	}
+	if info.ContextWindow != 0 {
+		t.Errorf("ModelInfo ContextWindow = %d, want 0", info.ContextWindow)
+	}
 }
