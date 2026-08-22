@@ -78,7 +78,7 @@ func detectLinuxTheme() string {
 			}
 		}
 	}
-	
+
 	// GNOME / Cinnamon: gsettings color-scheme
 	out, err := exec.Command("gsettings", "get",
 		"org.gnome.desktop.interface", "color-scheme",
