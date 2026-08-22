@@ -189,7 +189,7 @@ func extractZip(r io.Reader, dest string) error {
 			continue
 		}
 		os.MkdirAll(filepath.Dir(path), 0o755)
-		out, err := os.Create(path)
+		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.FileInfo().Mode())
 		if err != nil {
 			return err
 		}
@@ -231,7 +231,7 @@ func extractTarGz(r io.Reader, dest string) error {
 			continue
 		}
 		os.MkdirAll(filepath.Dir(path), 0o755)
-		out, err := os.Create(path)
+		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, hdr.FileInfo().Mode())
 		if err != nil {
 			return err
 		}

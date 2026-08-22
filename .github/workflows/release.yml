@@ -43,18 +43,46 @@ jobs:
           cp bin/mcp.yaml.example dist/omega-$VERSION-linux_amd64/
           cd dist && tar czf "omega-$VERSION-linux_amd64.tar.gz" "omega-$VERSION-linux_amd64/"
 
+      - name: Build macOS arm64
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p dist/omega-$VERSION-darwin_arm64/extensions
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-darwin_arm64/omega ./cmd/omega
+          for ext in core-prompt core-provider core-store core-skills core-tools mcp-bridge ollama-web; do
+            GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-darwin_arm64/extensions/$ext" ./bin/extensions/$ext/
+          done
+          cp bin/config.yaml.example dist/omega-$VERSION-darwin_arm64/
+          cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_arm64/
+          cd dist && tar czf "omega-$VERSION-darwin_arm64.tar.gz" "omega-$VERSION-darwin_arm64/"
+
+      - name: Build macOS amd64
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p dist/omega-$VERSION-darwin_amd64/extensions
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-darwin_amd64/omega ./cmd/omega
+          for ext in core-prompt core-provider core-store core-skills core-tools mcp-bridge ollama-web; do
+            GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-darwin_amd64/extensions/$ext" ./bin/extensions/$ext/
+          done
+          cp bin/config.yaml.example dist/omega-$VERSION-darwin_amd64/
+          cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_amd64/
+          cd dist && tar czf "omega-$VERSION-darwin_amd64.tar.gz" "omega-$VERSION-darwin_amd64/"
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip
             dist/omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz
+            dist/omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz
+            dist/omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz
           body: |
             ## omega ${{ steps.version.outputs.VERSION }}
 
             ### Downloads
             - **Windows**: `omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip`
             - **Linux**: `omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz`
+            - **macOS (Apple Silicon)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz`
+            - **macOS (Intel)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz`
 
             ### Install
             1. Download the archive for your OS
