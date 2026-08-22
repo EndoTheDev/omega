@@ -39,6 +39,7 @@ type Agent struct {
 	promptCustom  string
 	promptAppend  []string
 	promptContext string
+	userInput     chan string
 	loop          AgentLoop
 	mu            sync.Mutex
 	running       bool
@@ -127,6 +128,13 @@ func (a *Agent) SetAgentLoop(loop AgentLoop) {
 	a.loop = loop
 }
 
+// SetUserInput sets a channel for receiving user messages while the
+// agent loop is running. The TUI uses this so the user can chat while
+// subagents are running. One-shot mode (omega run) leaves it nil.
+func (a *Agent) SetUserInput(ch chan string) {
+	a.userInput = ch
+}
+
 // ModelName returns the name of the model the agent's provider serves.
 func (a *Agent) ModelName() string {
 	return a.provider.ModelName()
@@ -163,19 +171,21 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			runTools = a.tools
 		}
 		a.loop.Run(ctx, LoopOptions{
-			Provider:      a.provider,
-			Messages:      messages,
-			Tools:         runTools,
-			ToolProvider:  a.toolProvider,
-			Compactor:     a.compactor,
-			Extensions:    a.extensions,
-			MaxTurns:      a.maxTurns,
-			MaxToolOutput: a.maxToolOutput,
-			CWD:           a.cwd,
-			PromptCustom:  a.promptCustom,
-			PromptAppend:  a.promptAppend,
-			PromptContext: a.promptContext,
-			Events:        events,
+			Provider:        a.provider,
+			Messages:        messages,
+			Tools:           runTools,
+			ToolProvider:    a.toolProvider,
+			Compactor:       a.compactor,
+			Extensions:      a.extensions,
+			MaxTurns:        a.maxTurns,
+			MaxToolOutput:   a.maxToolOutput,
+			CWD:             a.cwd,
+			PromptCustom:    a.promptCustom,
+			PromptAppend:    a.promptAppend,
+			PromptContext:   a.promptContext,
+			Events:           events,
+			InjectedMessages: a.extensions.InjectedMessages(),
+			UserInput:        a.userInput,
 		})
 	}()
 	return events

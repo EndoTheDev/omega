@@ -21,7 +21,8 @@ markdown rendering.
   (`gateway.WatchConfig`), store routing (prefers store-seam extension,
   falls back to in-memory SQLite with stderr warning), extension CLI
   flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
-  `applyExtFlags`), global help (`helpText`)
+  `applyExtFlags`), env vars (`OMEGA_HOME`, `OMEGA_SKILLS_DIR`,
+  `OMEGA_BIN` for subagent delegation), global help (`helpText`)
 - `image.go` - image input support (`detectImage`, `parseFileArgs`,
   `extractImages`, magic-byte detection for PNG/JPEG/GIF/WebP/BMP)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
@@ -29,7 +30,10 @@ markdown rendering.
 - `insights.go` - session analytics (`cmdInsights`, `formatInsights`,
   `formatNumber`)
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
-  `findAsset`, `assetNameForOS`)
+  `findAsset`, `assetNameForOS`). Archive-based: downloads zip/tar.gz,
+  extracts omega + extensions (self-contained subdirectory layout) +
+  config/mcp examples. Progress bar during download. Skips when already
+  up to date. Preserves user config files.
 - `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
   `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
   `promptTrust`), trust flag parsing (`parseTrustArgs`,
@@ -46,6 +50,10 @@ markdown rendering.
   (`notifyTurnComplete`, `beeep`), model quick-cycle (Ctrl+P,
   `fetchModelsCmd`, `modelsLoadedMsg`), bracketed paste (file drop).
   `handleExport` delegates to `exportMessages` in `export.go`.
+  Subagent delegation: `startRun` (shared agent setup for submit +
+  tick injection), `tickMsg`/`tickCmd` (250ms tick for status bar
+  subagent count + InjectedMessages drain when idle), `userInput`
+  channel as mode flag for agent loop.
 - `theme.go` - System theme detection: Windows registry, macOS defaults,
   Linux gsettings / GTK_THEME / COLORFGBG fallback
 - `main_test.go` - self-check tests for extension flag parsing,
@@ -141,11 +149,14 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   renders all tools from `Infos().ToolList` (first line of description)
   grouped by extension. `/tools on|off|auto`
   toggles tool result display in the transcript.
-- **Self-update replaces the running binary.** `cmdUpdate` fetches the
-  latest GitHub release, matches the asset by `GOOS_GOARCH`, downloads
-  to a temp file, and replaces `os.Executable()`. On Windows the
-  running exe is renamed to `.old` first. No checksum verification
-  (no release signing yet).
+- **Self-update downloads and extracts an archive.** `cmdUpdate` fetches
+  the latest GitHub release, matches the asset by `GOOS_GOARCH`,
+  downloads a zip/tar.gz archive, extracts omega + extensions
+  (self-contained subdirectory layout) + config/mcp examples to a temp
+  dir, then replaces the running binary and extension binaries. Preserves
+  user config files. Progress bar during download. Skips when already
+  up to date. On Windows the running exe is renamed to `.old` first.
+  No checksum verification (no release signing yet).
 - **Image input via `@file` args.** `omega run @image.png what is this?`
   detects image files by magic bytes (PNG/JPEG/GIF/WebP/BMP), encodes
   them as base64, and sends them to the provider as image content

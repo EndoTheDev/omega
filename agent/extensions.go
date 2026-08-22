@@ -110,6 +110,25 @@ type ExtensionManager interface {
 	// SkillsProvider returns the skills-seam extension as a
 	// SkillsProvider, or nil if no skills extension is loaded.
 	SkillsProvider() SkillsProvider
+
+	// InjectedMessages returns a channel of messages injected by
+	// extensions (e.g. subagent results). Nil if no delegate extension
+	// is loaded. The agent loop reads from this channel after a turn
+	// ends, when PendingDelegations() > 0.
+	InjectedMessages() <-chan InjectedMessage
+
+	// PendingDelegations returns the number of background subagent
+	// tasks that are still running. The agent loop blocks on
+	// InjectedMessages in one-shot mode when this is > 0.
+	PendingDelegations() int
+}
+
+// InjectedMessage is a message injected by an extension (e.g. a
+// subagent result) that re-enters the conversation as a new user
+// message, triggering a new turn.
+type InjectedMessage struct {
+	Text   string // the message content
+	Source string // "delegate:<task_id>" — for display
 }
 
 // ExtensionCommand is a slash command registered by an extension.
@@ -190,3 +209,6 @@ func (NoopManager) ProviderSetModel(model string) {}
 func (NoopManager) StoreProvider() StoreProvider { return nil }
 
 func (NoopManager) SkillsProvider() SkillsProvider { return nil }
+
+func (NoopManager) InjectedMessages() <-chan InjectedMessage { return nil }
+func (NoopManager) PendingDelegations() int                  { return 0 }

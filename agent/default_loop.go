@@ -221,7 +221,50 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 		opts.Events <- turnEnd
 		opts.Extensions.DispatchEvent(turnEnd)
 
+		// Non-blocking: drain all buffered subagent results and
+		// batch them into one user message. Runs after every turn
+		// (not just when there are no tool calls) so that results
+		// are picked up even while the agent polls with delegate.status.
+		if opts.InjectedMessages != nil {
+			var combined string
+			draining := true
+			for draining {
+				select {
+				case msg, ok := <-opts.InjectedMessages:
+					if ok {
+						if combined != "" {
+							combined += "\n\n---\n\n"
+						}
+						combined += msg.Text
+					}
+				default:
+					draining = false
+				}
+			}
+			if combined != "" {
+				messages = append(messages, ai.NewUser(combined))
+				continue
+			}
+		}
+
 		if len(toolCalls) == 0 {
+			// One-shot mode (UserInput == nil): block if subagents are
+			// still running. TUI mode (UserInput != nil) never blocks —
+			// the TUI goroutine handles re-injection.
+			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.Extensions.PendingDelegations() > 0 {
+				select {
+				case msg, ok := <-opts.InjectedMessages:
+					if ok {
+						messages = append(messages, ai.NewUser(msg.Text))
+						continue
+					}
+				case <-ctx.Done():
+					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+					opts.Events <- end
+					opts.Extensions.DispatchEvent(end)
+					return nil
+				}
+			}
 			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			opts.Events <- end
 			opts.Extensions.DispatchEvent(end)

@@ -22,10 +22,10 @@ jobs:
       - name: Build Windows amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          mkdir -p dist/omega-$VERSION-windows_amd64/extensions
           GOOS=windows GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
-          for ext in core-prompt core-provider core-store core-skills core-tools mcp-bridge ollama-web; do
-            GOOS=windows GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-windows_amd64/extensions/$ext.exe" ./bin/extensions/$ext/
+          for ext in core-prompt core-provider core-store core-skills core-tools core-delegate mcp-bridge ollama-web; do
+            mkdir -p "dist/omega-$VERSION-windows_amd64/extensions/$ext"
+            GOOS=windows GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-windows_amd64/extensions/$ext/$ext.exe" ./bin/extensions/$ext/
           done
           cp bin/config.yaml.example dist/omega-$VERSION-windows_amd64/
           cp bin/mcp.yaml.example dist/omega-$VERSION-windows_amd64/
@@ -34,10 +34,10 @@ jobs:
       - name: Build Linux amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          mkdir -p dist/omega-$VERSION-linux_amd64/extensions
           GOOS=linux GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-linux_amd64/omega ./cmd/omega
-          for ext in core-prompt core-provider core-store core-skills core-tools mcp-bridge ollama-web; do
-            GOOS=linux GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-linux_amd64/extensions/$ext" ./bin/extensions/$ext/
+          for ext in core-prompt core-provider core-store core-skills core-tools core-delegate mcp-bridge ollama-web; do
+            mkdir -p "dist/omega-$VERSION-linux_amd64/extensions/$ext"
+            GOOS=linux GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-linux_amd64/extensions/$ext/$ext" ./bin/extensions/$ext/
           done
           cp bin/config.yaml.example dist/omega-$VERSION-linux_amd64/
           cp bin/mcp.yaml.example dist/omega-$VERSION-linux_amd64/
@@ -46,10 +46,10 @@ jobs:
       - name: Build macOS arm64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          mkdir -p dist/omega-$VERSION-darwin_arm64/extensions
           GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-darwin_arm64/omega ./cmd/omega
-          for ext in core-prompt core-provider core-store core-skills core-tools mcp-bridge ollama-web; do
-            GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-darwin_arm64/extensions/$ext" ./bin/extensions/$ext/
+          for ext in core-prompt core-provider core-store core-skills core-tools core-delegate mcp-bridge ollama-web; do
+            mkdir -p "dist/omega-$VERSION-darwin_arm64/extensions/$ext"
+            GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-darwin_arm64/extensions/$ext/$ext" ./bin/extensions/$ext/
           done
           cp bin/config.yaml.example dist/omega-$VERSION-darwin_arm64/
           cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_arm64/
@@ -58,10 +58,10 @@ jobs:
       - name: Build macOS amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          mkdir -p dist/omega-$VERSION-darwin_amd64/extensions
           GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-darwin_amd64/omega ./cmd/omega
-          for ext in core-prompt core-provider core-store core-skills core-tools mcp-bridge ollama-web; do
-            GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-darwin_amd64/extensions/$ext" ./bin/extensions/$ext/
+          for ext in core-prompt core-provider core-store core-skills core-tools core-delegate mcp-bridge ollama-web; do
+            mkdir -p "dist/omega-$VERSION-darwin_amd64/extensions/$ext"
+            GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o "dist/omega-$VERSION-darwin_amd64/extensions/$ext/$ext" ./bin/extensions/$ext/
           done
           cp bin/config.yaml.example dist/omega-$VERSION-darwin_amd64/
           cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_amd64/

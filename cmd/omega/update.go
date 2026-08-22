@@ -135,18 +135,27 @@ func cmdUpdate() error {
 		return fmt.Errorf("replace omega binary: %w", err)
 	}
 
-	// Copy extension binaries.
+	// Copy extension binaries from subdirectories (self-contained layout:
+	// extensions/core-prompt/core-prompt.exe, etc.).
 	extSrcDir := filepath.Join(filepath.Dir(omegaBin), "extensions")
 	extDstDir := filepath.Join(installDir, "extensions")
 	if entries, err := os.ReadDir(extSrcDir); err == nil {
 		os.MkdirAll(extDstDir, 0o755)
 		for _, e := range entries {
-			if e.IsDir() || strings.HasSuffix(e.Name(), ".md") || strings.HasSuffix(e.Name(), ".txt") {
-				continue
+			if !e.IsDir() {
+				continue // flat-file layout (legacy), skip non-dirs
 			}
-			src := filepath.Join(extSrcDir, e.Name())
-			dst := filepath.Join(extDstDir, e.Name())
-			copyFile(src, dst)
+			subDir := filepath.Join(extSrcDir, e.Name())
+			dstDir := filepath.Join(extDstDir, e.Name())
+			os.MkdirAll(dstDir, 0o755)
+			if subEntries, err := os.ReadDir(subDir); err == nil {
+				for _, f := range subEntries {
+					if f.IsDir() || strings.HasSuffix(f.Name(), ".md") || strings.HasSuffix(f.Name(), ".txt") {
+						continue
+					}
+					copyFile(filepath.Join(subDir, f.Name()), filepath.Join(dstDir, f.Name()))
+				}
+			}
 		}
 	}
 
@@ -162,8 +171,15 @@ func cmdUpdate() error {
 	extCount := 0
 	if entries, err := os.ReadDir(extDstDir); err == nil {
 		for _, e := range entries {
-			if !e.IsDir() && !strings.HasSuffix(e.Name(), ".md") && !strings.HasSuffix(e.Name(), ".txt") {
-				extCount++
+			if !e.IsDir() {
+				continue
+			}
+			if subEntries, err := os.ReadDir(filepath.Join(extDstDir, e.Name())); err == nil {
+				for _, f := range subEntries {
+					if !f.IsDir() && !strings.HasSuffix(f.Name(), ".md") && !strings.HasSuffix(f.Name(), ".txt") {
+						extCount++
+					}
+				}
 			}
 		}
 	}

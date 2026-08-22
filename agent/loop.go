@@ -33,4 +33,6 @@ type LoopOptions struct {
 	PromptAppend   []string // extra prompts from --append-system-prompt
 	PromptContext  string   // trust-gated AGENTS.md project context
 	Events         chan<- Event
+	InjectedMessages <-chan InjectedMessage // subagent results (nil if no delegate extension)
+	UserInput        <-chan string           // user messages while running (nil for one-shot mode)
 }

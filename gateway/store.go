@@ -43,20 +43,25 @@ func (s *Store) Open(dsn string) error {
 }
 
 func openStore(dsn string) (*Store, error) {
-	db, err := sql.Open("sqlite", dsn)
+	// WAL mode allows concurrent readers + one writer across multiple
+	// processes (e.g. parent + subagents). busy_timeout retries on lock
+	// instead of returning SQLITE_BUSY immediately.
+	dsnParams := dsn
+	if !strings.Contains(dsn, "?") {
+		dsnParams += "?_journal_mode=WAL&_busy_timeout=5000"
+	} else if !strings.Contains(dsn, "_journal_mode=") {
+		dsnParams += "&_journal_mode=WAL&_busy_timeout=5000"
+	}
+	db, err := sql.Open("sqlite", dsnParams)
 	if err != nil {
 		return nil, err
 	}
-	// SQLite allows one writer; a single connection serializes access and
-	// avoids SQLITE_BUSY. ponytail: fine for a session store; if write
-	// concurrency becomes a bottleneck, switch to WAL mode plus a pool.
-	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, err
 	}
 	// SQLite disables foreign keys by default; the messages->sessions
-	// cascade needs them on. Set per connection (single conn here).
+	// cascade needs them on.
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		db.Close()
 		return nil, err

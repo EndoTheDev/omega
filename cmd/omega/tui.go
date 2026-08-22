@@ -275,6 +275,7 @@ type model struct {
 	showToolResults     bool          // /tools toggle; default false (collapsed)
 	toolResultsAuto     bool          // /tools auto; short results full, long ones collapsed
 	queuedInput         string        // follow-up typed while agent runs; auto-submits on done
+	userInput           chan string   // mode flag for agent loop (nil = one-shot, non-nil = TUI)
 	autoNamed           bool              // true after the first auto-name attempt
 	sessionLabel        string            // model-generated title, shown in status bar
 	autoNameGen         int               // bumped on /new; stale auto-name results are dropped
@@ -420,17 +421,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.queuedInput = ""
 			}
 			// Enter queues the current input to auto-submit when the
-			// agent finishes. Typing is still allowed while busy.
-			if msg.String() == "enter" {
-				queue := strings.TrimSpace(m.textarea.Value())
-				if queue == "" {
+				// agent finishes. Typing is still allowed while busy.
+				if msg.String() == "enter" {
+					queue := strings.TrimSpace(m.textarea.Value())
+					if queue == "" {
+						return m, nil
+					}
+					m.queuedInput = queue
+					m.textarea.SetValue("")
+					m.textarea.Placeholder = "message (queued: " + truncate(m.queuedInput, 40) + ")"
 					return m, nil
 				}
-				m.queuedInput = queue
-				m.textarea.SetValue("")
-				m.textarea.Placeholder = "message (queued: " + truncate(m.queuedInput, 40) + ")"
-				return m, nil
-			}
 			// Allow typing while busy; just don't submit.
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(msg)
@@ -578,8 +579,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agent.Event:
 		m.handleEvent(msg)
 		m.refresh()
-		// Re-issue the drain command so the next event is delivered.
+		// Re-issue the drain command. Also issue a tick when
+		// subagents are running, to refresh the status bar.
+		if m.busy && m.extensions != nil && m.extensions.PendingDelegations() > 0 {
+			return m, tea.Batch(m.drainEvents(), m.tickCmd())
+		}
 		return m, m.drainEvents()
+
+	case tickMsg:
+		// Always try to drain InjectedMessages, even if
+		// PendingDelegations() is 0 — the result may have been
+		// pushed and the counter decremented between ticks.
+		if !m.busy && m.extensions != nil {
+			ch := m.extensions.InjectedMessages()
+			if ch != nil {
+				var combined string
+				draining := true
+				for draining {
+					select {
+					case msg, ok := <-ch:
+						if ok {
+							if combined != "" {
+								combined += "\n\n---\n\n"
+							}
+							combined += msg.Text
+						}
+					default:
+						draining = false
+					}
+				}
+				if combined != "" {
+					m.history = append(m.history, ai.NewUser(combined))
+					if m.store != nil && !m.ephemeral && m.sessionID != "" {
+						m.store.AppendMessage(context.Background(), m.sessionID, m.history[len(m.history)-1])
+					}
+					m.busy = true
+					m.segments = nil
+					m.err = ""
+					m.lastRenderedResponse = ""
+					m.extensions.ProviderSetModel(m.modelName)
+					m.startRun()
+					return m, tea.Batch(m.drainEvents(), m.titleCmd())
+				}
+			}
+		}
+		// Keep ticking while subagents are running (idle or busy).
+		if m.extensions != nil && m.extensions.PendingDelegations() > 0 {
+			return m, m.tickCmd()
+		}
+		return m, nil
 
 	case streamDoneMsg:
 		m.notifyTurnComplete()
@@ -593,14 +641,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.queuedInput = ""
 			return m.submit()
 		}
+		// Issue a tick to drain any buffered subagent results.
+		// The tick handler drains the channel regardless of
+		// PendingDelegations() — covers the race where results
+		// were pushed but the counter already hit 0.
 		// Auto-name the session after the first exchange if it has no
 		// label yet. Runs in background; result arrives as autoNameMsg.
 		// Ephemeral sessions have no session to name. The title must be
 		// reset on this path too (it is no longer running).
 		if !m.autoNamed && !m.ephemeral && m.store != nil && m.sessionID != "" && len(m.history) >= 2 {
-			return m, tea.Batch(m.autoNameSession(), m.titleCmd())
+			return m, tea.Batch(m.tickCmd(), m.autoNameSession(), m.titleCmd())
 		}
-		return m, tea.Batch(m.textarea.Focus(), m.titleCmd())
+		return m, tea.Batch(m.tickCmd(), m.textarea.Focus(), m.titleCmd())
 
 	case autoNameMsg:
 		// Drop stale results: a /new (gen mismatch) or a session switch
@@ -713,6 +765,14 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// The provider is the core-provider extension via ExtensionProvider.
 	// Update the extension's model name at runtime.
 	m.extensions.ProviderSetModel(m.modelName)
+	m.startRun()
+	return m, tea.Batch(m.drainEvents(), m.titleCmd())
+}
+
+// startRun creates a new Agent, configures it, and starts the event
+// channel. Shared by submit() and the tick handler for injected
+// subagent results.
+func (m *model) startRun() {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	provider := ai.ExtensionProvider{Dispatcher: m.extensions}
@@ -733,13 +793,11 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.compaction != nil {
 		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)
 	}
-	// The goroutine writes events to the channel; Update drains it via
-	// drainEvents. The channel is a reference type, so it survives the
-	// value copy Bubble Tea makes of the model. A fresh channel per run:
-	// it is closed when the run ends, so reusing one across runs would
-	// panic on the second write.
+	// Pass a non-nil channel as a mode flag so the agent loop
+	// knows this is TUI mode (don't block on subagent results).
+	m.userInput = make(chan string, 1)
+	ag.SetUserInput(m.userInput)
 	m.events = ag.Run(ctx, m.history, nil)
-	return m, tea.Batch(m.drainEvents(), m.titleCmd())
 }
 
 // drainEvents returns a command that reads one event from the channel and
@@ -753,6 +811,17 @@ func (m model) drainEvents() tea.Cmd {
 		}
 		return event
 	}
+}
+
+// tickMsg triggers a status bar refresh while the agent is busy.
+type tickMsg struct{}
+
+// tickCmd returns a command that fires after 250ms, triggering a
+// re-render of the status bar (subagent count, etc.).
+func (m model) tickCmd() tea.Cmd {
+	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
+		return tickMsg{}
+	})
 }
 
 // handleEvent folds one agent event into the streaming segments.
@@ -2460,6 +2529,12 @@ func (m model) statusLine() string {
 		line += " | thinking: " + m.thinkingLevel
 	}
 	line += fmt.Sprintf(" | tokens: %d/%d | %s", tokens, window, sess)
+	// Show subagent count if any are running.
+	if m.extensions != nil {
+		if pending := m.extensions.PendingDelegations(); pending > 0 {
+			line += fmt.Sprintf(" | %s", m.theme.Info.Render(fmt.Sprintf("%d subagent", pending)))
+		}
+	}
 	switch m.trustState {
 	case "trusted":
 		line += " | " + m.theme.Info.Render("trusted")

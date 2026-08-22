@@ -12,9 +12,11 @@ events for anyone observing (the TUI, the gateway, or extensions).
 - `agent.go` - agent struct, configuration holders, capability seam wiring
   (`SetCompactor`, `SetToolProvider`, `SetMaxToolOutput`, `SetCWD`,
   `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`, `SetAgentLoop`,
-  `SetProvider`). Delegates execution to `AgentLoop`.
+  `SetProvider`, `SetUserInput`). Delegates execution to `AgentLoop`.
 - `loop.go` - `AgentLoop` interface (Go-level seam for the conversation loop),
-  `LoopOptions` struct. Default implementation is `DefaultAgentLoop`.
+  `LoopOptions` struct (includes `InjectedMessages` channel for subagent
+  results, `UserInput` channel as mode flag: nil = one-shot, non-nil = TUI).
+  Default implementation is `DefaultAgentLoop`.
 - `default_loop.go` - `DefaultAgentLoop` (standard turn loop: stream, execute
   tools concurrently via sync.WaitGroup, feed results back in order),
   `isOverflowError`, `toolSchemas`. Extracted from the former `run()`
@@ -29,9 +31,10 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `BuildPrompt`, `CompactMessages`, `SeamProviders`, provider dispatch:
   `ProviderStream`, `ProviderModelName`, `ProviderListModels`,
   `ProviderSetThinking`, `ProviderSetModel`, `StoreProvider`,
-  `SkillsProvider`), `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
+  `SkillsProvider`, `InjectedMessages`, `PendingDelegations`),
+  `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
   (with `Seams`, `ToolList` fields), `ToolInfo` (Name + Description),
-  `PromptBuildOptions`
+  `PromptBuildOptions`, `InjectedMessage` (Text + Source)
 - `extension_stdio.go` - stdio JSON-RPC extension transport
   (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
   `prompt/build`, `compaction/messages` JSON-RPC methods).
@@ -41,8 +44,11 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `ProviderModelName`, `ProviderListModels`, `ProviderSetThinking`,
   `ProviderSetModel`. Store dispatch: `storeExt`, `StoreRequest`,
   `StoreProvider`. Skills dispatch: `skillsExt`, `SkillsRequest`,
-  `SkillsProvider`. Message serialization adds `role` field based on
-  concrete `ai.Message` type.
+  `SkillsProvider`. Delegate dispatch: `delegate_start`/`delegate_result`
+  notification handling, `delegateCh` (buffer 64), `pendingDelegations`
+  (atomic, CAS-clamped at 0), `handleDelegateResult`,
+  `incrementPendingDelegations`, `InjectedMessages`. Message serialization
+  adds `role` field based on concrete `ai.Message` type.
 - `seams.go` - capability seam interfaces (`Compactor`, `ToolProvider`,
   `StoreProvider`, `SkillsProvider`)
 - `types.go` - shared data types (`Session`, `SessionNode`, `SearchResult`,
@@ -106,6 +112,12 @@ events for anyone observing (the TUI, the gateway, or extensions).
   there, not re-exported from this package.
 - **API key passing.** `Load` receives the provider API key and passes
   it to extensions via the `OLLAMA_API_KEY` env var (stdio transport).
+- **Subagent delegation injection.** The agent loop drains
+  `InjectedMessages` after every turn (non-blocking, batches multiple
+  results). In one-shot mode (`UserInput == nil`), the loop blocks on
+  `InjectedMessages` when `PendingDelegations() > 0`. In TUI mode
+  (`UserInput != nil`), the loop never blocks — the TUI tick handler
+  drains and injects results as new runs.
 
 ## Work Guidance
 

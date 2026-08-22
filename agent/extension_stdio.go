@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/ai"
@@ -37,16 +38,24 @@ type StdioManager struct {
 	exts    []*stdioExt
 	closed  bool
 	toolMap map[string]Tool
+
+	// delegateCh receives InjectedMessage values from extensions
+	// (subagent results). Created lazily when a delegate extension
+	// sends a delegate_result notification.
+	delegateCh chan InjectedMessage
+	// pendingDelegations tracks the number of running subagent tasks.
+	pendingDelegations int32
 }
 
 // stdioExt is one loaded extension process.
 type stdioExt struct {
-	name   string
-	path   string
-	cmd    *exec.Cmd
-	stdin  *json.Encoder
-	stdout *bufio.Reader
-	mu     sync.Mutex // serializes writes to the process stdin
+	name    string
+	path    string
+	cmd     *exec.Cmd
+	stdin   *json.Encoder
+	stdout  *bufio.Reader
+	mu      sync.Mutex // serializes writes to the process stdin
+	manager *StdioManager // back-reference for delegate notifications
 
 	tools       map[string]toolDef
 	commands    []ExtensionCommand
@@ -176,7 +185,7 @@ func (m *StdioManager) LoadFile(path string, apiKey string) error {
 		m.toolMap = make(map[string]Tool)
 	}
 
-	ext, err := spawnExtension(path, apiKey)
+	ext, err := spawnExtension(path, apiKey, m)
 	if err != nil {
 		return err
 	}
@@ -201,7 +210,7 @@ func (m *StdioManager) LoadFile(path string, apiKey string) error {
 
 // spawnExtension spawns a single extension process and runs initialize.
 // apiKey is passed to the extension via the OLLAMA_API_KEY env var.
-func spawnExtension(path string, apiKey string) (*stdioExt, error) {
+func spawnExtension(path string, apiKey string, m *StdioManager) (*stdioExt, error) {
 	// WalkDir returns paths relative to the working directory. On Windows,
 	// exec.Command can't resolve relative paths with backslashes, so
 	// convert to absolute first.
@@ -237,6 +246,7 @@ func spawnExtension(path string, apiKey string) (*stdioExt, error) {
 		cmd:         cmd,
 		stdin:       json.NewEncoder(stdinPipe),
 		stdout:      bufio.NewReader(stdoutPipe),
+		manager:     m,
 		tools:       make(map[string]toolDef),
 		subscribed:   make(map[string]bool),
 		pending:     make(map[int64]chan rpcResponse),
@@ -363,7 +373,16 @@ func (e *stdioExt) readLoop() {
 		}
 
 		if raw.ID == nil {
-			// Notification — route to notifyCh if active.
+			// Notification — route to notifyCh if active, or
+			// handle delegate notifications specially.
+			switch raw.Method {
+			case "delegate_result":
+				e.manager.handleDelegateResult(raw.Params)
+				continue
+			case "delegate_start":
+				e.manager.incrementPendingDelegations()
+				continue
+			}
 			e.mu.Lock()
 			ch := e.notifyCh
 			e.mu.Unlock()
@@ -1211,4 +1230,53 @@ func eventPayload(e Event) (string, any) {
 	default:
 		return "", nil
 	}
+}
+
+// handleDelegateResult processes a delegate_result notification from
+// an extension. It decrements the pending count and pushes the result
+// to the delegate channel.
+func (m *StdioManager) handleDelegateResult(params map[string]any) {
+	taskID, _ := params["task_id"].(string)
+	output, _ := params["output"].(string)
+
+	m.mu.Lock()
+	if m.delegateCh == nil {
+		m.delegateCh = make(chan InjectedMessage, 64)
+	}
+	ch := m.delegateCh
+	m.mu.Unlock()
+
+	ch <- InjectedMessage{
+		Text:   output,
+		Source: "delegate:" + taskID,
+	}
+	// Clamp at 0 to prevent desync from lost delegate_start notifications.
+	for {
+		old := atomic.LoadInt32(&m.pendingDelegations)
+		if old <= 0 {
+			break
+		}
+		if atomic.CompareAndSwapInt32(&m.pendingDelegations, old, old-1) {
+			break
+		}
+	}
+}
+
+// InjectedMessages returns the channel of injected messages from
+// delegate extensions. Nil if no delegate extension has been loaded.
+func (m *StdioManager) InjectedMessages() <-chan InjectedMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.delegateCh
+}
+
+// PendingDelegations returns the number of running subagent tasks.
+func (m *StdioManager) PendingDelegations() int {
+	return int(atomic.LoadInt32(&m.pendingDelegations))
+}
+
+// incrementPendingDelegations is called by the delegate tool handler
+// when a new subagent task is started.
+func (m *StdioManager) incrementPendingDelegations() {
+	atomic.AddInt32(&m.pendingDelegations, 1)
 }

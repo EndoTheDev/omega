@@ -63,6 +63,10 @@ func run(args []string) error {
 	os.Setenv("OMEGA_HOME", home)
 	// Set OMEGA_SKILLS_DIR so the core-tools extension can read skills.
 	os.Setenv("OMEGA_SKILLS_DIR", home+"/skills")
+	// Set OMEGA_BIN so the core-delegate extension can spawn subagents.
+	if exe, err := os.Executable(); err == nil {
+		os.Setenv("OMEGA_BIN", exe)
+	}
 	for _, a := range args {
 		switch a {
 		case "--help", "-h":

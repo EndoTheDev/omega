@@ -69,9 +69,9 @@ and environment variables. It is the only layer external clients talk to.
 - When adding a new agent or stream event type, update the three SSE
   mapping functions in `server.go` (`sseEvent`, `sseStreamEvent`,
   `eventTypeOf`) or the event will serialize under a generic name.
-- The store uses a single SQLite connection (`SetMaxOpenConns(1)`) to
-  serialize writes and avoid `SQLITE_BUSY`. Switch to WAL plus a pool
-  only if write contention becomes measurable.
+- The store uses WAL mode + 5s busy_timeout for concurrent access
+  (parent + subagents). `SetMaxOpenConns(1)` was removed to allow
+  connection pooling across processes.
 - Schema migration in `migrate` uses `ALTER TABLE` with duplicate-column
   error tolerance for backward compatibility. Add new columns there.
 - Session IDs are 16-byte random hex (`newSessionID`) with a timestamp
