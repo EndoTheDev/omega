@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"runtime"
@@ -51,8 +52,33 @@ func detectMacOSTheme() string {
 	return "light"
 }
 
-// detectLinuxTheme checks gsettings, GTK_THEME, then COLORFGBG.
+// detectLinuxTheme checks XDG, gsettings, GTK_THEME, then COLORFGBG.
 func detectLinuxTheme() string {
+	// XDG Desktop Portal
+	xdgCmd := exec.Command("dbus-send",
+		"--session",
+		"--print-reply=literal",
+		"--dest=org.freedesktop.portal.Desktop",
+		"/org/freedesktop/portal/desktop",
+		"org.freedesktop.portal.Settings.ReadOne",
+		"string:org.freedesktop.appearance",
+		"string:color-scheme",
+	)
+
+	var outBuf bytes.Buffer
+	xdgCmd.Stdout = &outBuf
+	if err := xdgCmd.Run(); err == nil {
+		fields := strings.Fields(outBuf.String())
+		if len(fields) > 0 {
+			switch fields[len(fields)-1] {
+			case "1":
+				return "dark"
+			case "2":
+				return "light"
+			}
+		}
+	}
+	
 	// GNOME / Cinnamon: gsettings color-scheme
 	out, err := exec.Command("gsettings", "get",
 		"org.gnome.desktop.interface", "color-scheme",
