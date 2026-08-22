@@ -91,3 +91,12 @@ jobs:
 
             ### Update
             If you already have omega installed: `omega update`
+
+      - name: Post to Discord
+        if: success()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+            -d "{\"content\":\"🚀 **omega ${{ steps.version.outputs.VERSION }}** is out!\\n\\n[Download here](https://github.com/EndoTheDev/omega/releases/tag/${{ steps.version.outputs.VERSION }})\",\"username\":\"omega releases\"}" \
+            "$DISCORD_WEBHOOK_URL"
