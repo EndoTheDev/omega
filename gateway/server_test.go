@@ -31,6 +31,10 @@ func (m *mockProvider) ListModels() ([]string, error) {
 	return []string{"test-model", "other-model"}, nil
 }
 
+func (m *mockProvider) ModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{}, nil
+}
+
 func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
 	events := make(chan ai.StreamEvent)
 	go func() {
@@ -241,8 +245,8 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("get status = %d, want 200", rec.Code)
 	}
 	var detail struct {
-		Session  agent.Session      `json:"session"`
-		Messages []ai.Message `json:"messages"`
+		Session  agent.Session `json:"session"`
+		Messages []ai.Message  `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("decode get: %v", err)

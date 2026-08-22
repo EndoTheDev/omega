@@ -95,60 +95,60 @@ var themes = map[string]Theme{
 // init registers Catppuccin chroma styles for syntax highlighting.
 func init() {
 	registerCatppuccinChroma("catppuccin-mocha", chroma.StyleEntries{
-		chroma.Text:              "#a6adc8", // subtext0
-		chroma.Comment:           "#6c7086", // overlay0
-		chroma.CommentPreproc:    "#cba6f7", // mauve
-		chroma.Keyword:           "#cba6f7", // mauve
-		chroma.KeywordType:        "#eba0ac", // maroon
-		chroma.KeywordNamespace:   "#b4befe", // lavender
-		chroma.KeywordReserved:    "#cba6f7", // mauve
-		chroma.Name:               "#bac2de", // subtext1
-		chroma.NameBuiltin:        "#f38ba8", // red
-		chroma.NameFunction:       "#89b4fa", // blue
-		chroma.NameClass:          "#f9e2af", // yellow
-		chroma.NameDecorator:     "#fab387", // peach
-		chroma.NameTag:            "#f38ba8", // red
-		chroma.NameAttribute:      "#89b4fa", // blue
-		chroma.NameConstant:       "#fab387", // peach
-		chroma.LiteralString:     "#a6e3a1", // green
+		chroma.Text:                "#a6adc8", // subtext0
+		chroma.Comment:             "#6c7086", // overlay0
+		chroma.CommentPreproc:      "#cba6f7", // mauve
+		chroma.Keyword:             "#cba6f7", // mauve
+		chroma.KeywordType:         "#eba0ac", // maroon
+		chroma.KeywordNamespace:    "#b4befe", // lavender
+		chroma.KeywordReserved:     "#cba6f7", // mauve
+		chroma.Name:                "#bac2de", // subtext1
+		chroma.NameBuiltin:         "#f38ba8", // red
+		chroma.NameFunction:        "#89b4fa", // blue
+		chroma.NameClass:           "#f9e2af", // yellow
+		chroma.NameDecorator:       "#fab387", // peach
+		chroma.NameTag:             "#f38ba8", // red
+		chroma.NameAttribute:       "#89b4fa", // blue
+		chroma.NameConstant:        "#fab387", // peach
+		chroma.LiteralString:       "#a6e3a1", // green
 		chroma.LiteralStringEscape: "#94e2d5", // teal
-		chroma.LiteralNumber:     "#fab387", // peach
-		chroma.Operator:           "#9399b2", // overlay2
-		chroma.Punctuation:       "#9399b2", // overlay2
-		chroma.GenericInserted:    "#a6e3a1", // green
-		chroma.GenericDeleted:     "#f38ba8", // red
-		chroma.GenericHeading:     "#89b4fa", // blue
-		chroma.GenericSubheading:  "#89b4fa", // blue
-		chroma.Error:              "#f38ba8",
-		chroma.Background:         "bg:#1e1e2e",
+		chroma.LiteralNumber:       "#fab387", // peach
+		chroma.Operator:            "#9399b2", // overlay2
+		chroma.Punctuation:         "#9399b2", // overlay2
+		chroma.GenericInserted:     "#a6e3a1", // green
+		chroma.GenericDeleted:      "#f38ba8", // red
+		chroma.GenericHeading:      "#89b4fa", // blue
+		chroma.GenericSubheading:   "#89b4fa", // blue
+		chroma.Error:               "#f38ba8",
+		chroma.Background:          "bg:#1e1e2e",
 	})
 	registerCatppuccinChroma("catppuccin-latte", chroma.StyleEntries{
-		chroma.Text:              "#6c6f85", // subtext0
-		chroma.Comment:           "#8c8fa1", // overlay1
-		chroma.CommentPreproc:    "#8839ef", // mauve
-		chroma.Keyword:           "#8839ef", // mauve
-		chroma.KeywordType:        "#e64553", // maroon
-		chroma.KeywordNamespace:   "#7287fd", // lavender
-		chroma.KeywordReserved:    "#8839ef", // mauve
-		chroma.Name:               "#5c5f77", // subtext1
-		chroma.NameBuiltin:        "#d20f39", // red
-		chroma.NameFunction:       "#1e66f5", // blue
-		chroma.NameClass:          "#df8e1d", // yellow
-		chroma.NameDecorator:     "#fe640b", // peach
-		chroma.NameTag:            "#d20f39", // red
-		chroma.NameAttribute:      "#1e66f5", // blue
-		chroma.NameConstant:       "#fe640b", // peach
-		chroma.LiteralString:     "#40a02b", // green
+		chroma.Text:                "#6c6f85", // subtext0
+		chroma.Comment:             "#8c8fa1", // overlay1
+		chroma.CommentPreproc:      "#8839ef", // mauve
+		chroma.Keyword:             "#8839ef", // mauve
+		chroma.KeywordType:         "#e64553", // maroon
+		chroma.KeywordNamespace:    "#7287fd", // lavender
+		chroma.KeywordReserved:     "#8839ef", // mauve
+		chroma.Name:                "#5c5f77", // subtext1
+		chroma.NameBuiltin:         "#d20f39", // red
+		chroma.NameFunction:        "#1e66f5", // blue
+		chroma.NameClass:           "#df8e1d", // yellow
+		chroma.NameDecorator:       "#fe640b", // peach
+		chroma.NameTag:             "#d20f39", // red
+		chroma.NameAttribute:       "#1e66f5", // blue
+		chroma.NameConstant:        "#fe640b", // peach
+		chroma.LiteralString:       "#40a02b", // green
 		chroma.LiteralStringEscape: "#179299", // teal
-		chroma.LiteralNumber:     "#fe640b", // peach
-		chroma.Operator:           "#7c7f93", // overlay2
-		chroma.Punctuation:       "#7c7f93", // overlay2
-		chroma.GenericInserted:    "#40a02b", // green
-		chroma.GenericDeleted:     "#d20f39", // red
-		chroma.GenericHeading:     "#1e66f5", // blue
-		chroma.GenericSubheading:  "#1e66f5", // blue
-		chroma.Error:              "#d20f39",
-		chroma.Background:         "bg:#eff1f5",
+		chroma.LiteralNumber:       "#fe640b", // peach
+		chroma.Operator:            "#7c7f93", // overlay2
+		chroma.Punctuation:         "#7c7f93", // overlay2
+		chroma.GenericInserted:     "#40a02b", // green
+		chroma.GenericDeleted:      "#d20f39", // red
+		chroma.GenericHeading:      "#1e66f5", // blue
+		chroma.GenericSubheading:   "#1e66f5", // blue
+		chroma.Error:               "#d20f39",
+		chroma.Background:          "bg:#eff1f5",
 	})
 }
 
@@ -171,32 +171,32 @@ func glamourStyleForTheme(themeName string) glamouransi.StyleConfig {
 
 	// Override key colors with Catppuccin palette.
 	if themeName == "light" {
-		base.Document.Color = stringPtr("#4c4f69")     // text
-		base.Heading.Color = stringPtr("#1e66f5")      // blue
-		base.H1.Color = stringPtr("#4c4f69")           // text
-		base.H1.BackgroundColor = stringPtr("#ccd0da") // surface0
-		base.H2.Color = stringPtr("#1e66f5")           // blue
-		base.H3.Color = stringPtr("#8839ef")           // mauve
-		base.Code.Color = stringPtr("#ea76cb")         // pink
+		base.Document.Color = stringPtr("#4c4f69")       // text
+		base.Heading.Color = stringPtr("#1e66f5")        // blue
+		base.H1.Color = stringPtr("#4c4f69")             // text
+		base.H1.BackgroundColor = stringPtr("#ccd0da")   // surface0
+		base.H2.Color = stringPtr("#1e66f5")             // blue
+		base.H3.Color = stringPtr("#8839ef")             // mauve
+		base.Code.Color = stringPtr("#ea76cb")           // pink
 		base.Code.BackgroundColor = stringPtr("#ccd0da") // surface0
-		base.Link.Color = stringPtr("#209fb5")         // sapphire
-		base.LinkText.Color = stringPtr("#1e66f5")     // blue
-		base.BlockQuote.Color = stringPtr("#8c8fa1")   // overlay1
-		base.Table.Color = stringPtr("#7c7f93")       // overlay2
+		base.Link.Color = stringPtr("#209fb5")           // sapphire
+		base.LinkText.Color = stringPtr("#1e66f5")       // blue
+		base.BlockQuote.Color = stringPtr("#8c8fa1")     // overlay1
+		base.Table.Color = stringPtr("#7c7f93")          // overlay2
 		base.HorizontalRule.Color = stringPtr("#bcc0cc") // surface1
 	} else {
-		base.Document.Color = stringPtr("#cdd6f4")     // text
-		base.Heading.Color = stringPtr("#89b4fa")      // blue
-		base.H1.Color = stringPtr("#cdd6f4")           // text
-		base.H1.BackgroundColor = stringPtr("#313244") // surface0
-		base.H2.Color = stringPtr("#89b4fa")           // blue
-		base.H3.Color = stringPtr("#cba6f7")           // mauve
-		base.Code.Color = stringPtr("#f5c2e7")         // pink
+		base.Document.Color = stringPtr("#cdd6f4")       // text
+		base.Heading.Color = stringPtr("#89b4fa")        // blue
+		base.H1.Color = stringPtr("#cdd6f4")             // text
+		base.H1.BackgroundColor = stringPtr("#313244")   // surface0
+		base.H2.Color = stringPtr("#89b4fa")             // blue
+		base.H3.Color = stringPtr("#cba6f7")             // mauve
+		base.Code.Color = stringPtr("#f5c2e7")           // pink
 		base.Code.BackgroundColor = stringPtr("#313244") // surface0
-		base.Link.Color = stringPtr("#74c7ec")         // sapphire
-		base.LinkText.Color = stringPtr("#89b4fa")     // blue
-		base.BlockQuote.Color = stringPtr("#6c7086")   // overlay0
-		base.Table.Color = stringPtr("#9399b2")       // overlay2
+		base.Link.Color = stringPtr("#74c7ec")           // sapphire
+		base.LinkText.Color = stringPtr("#89b4fa")       // blue
+		base.BlockQuote.Color = stringPtr("#6c7086")     // overlay0
+		base.Table.Color = stringPtr("#9399b2")          // overlay2
 		base.HorizontalRule.Color = stringPtr("#585b70") // surface2
 	}
 	return base
@@ -242,53 +242,54 @@ type streamSegment struct {
 // model is the Bubble Tea state for the chat TUI. It owns the message
 // history, the streaming buffer, and the two widgets (viewport + textarea).
 type model struct {
-	textarea            textarea.Model
-	viewport            viewport.Model
-	history             []ai.Message // full conversation fed to the agent each turn
-	transcript          string       // rendered content of completed exchanges
-	segments            []streamSegment // ordered streaming segments for the current turn
-	providerType        string
-	modelName           string
-	compaction          *agent.CompactionConfig
-	promptCustom        string
-	promptAppend        []string
-	promptContext       string
-	busy                bool               // a run is in flight; input is ignored
-	err                 string             // last run error, shown in the status line
-	cancel              context.CancelFunc // cancels the in-flight run; nil when idle
-	events              <-chan agent.Event // run goroutine writes here; Update drains via cmd
-	store               agent.StoreProvider
-	sessionID           string   // current session; "" until the first message creates one
-	storeErr            string   // store open/persistence error, shown in the status line
-	promptHistory       []string // previously submitted prompts, for Up/Down recall
-	historyIndex        int      // position in promptHistory; 0 = empty/current input
-	autocompleteMatches []string // slash commands matching the current input
-	autocompleteIndex   int      // highlighted match; -1 = none selected
-	autocompleteOffset  int      // first visible row in the dropup window
-	autocompleteSlashPos int     // byte offset of the / triggering autocomplete, -1 = none
-	screenHeight        int      // terminal height from the last resize
-	skills              []agent.Skill      // loaded skills, for autocomplete and invocation
-	extensions          agent.ExtensionManager // loaded extensions, for tools/commands/events
-	commands            []string           // knownCommands + skill names, per-model copy
-	showThinking        bool          // /thinking display toggle; auto-set from thinkingLevel
-	thinkingLevel       string        // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
-	showToolResults     bool          // /tools toggle; default false (collapsed)
-	toolResultsAuto     bool          // /tools auto; short results full, long ones collapsed
-	queuedInput         string        // follow-up typed while agent runs; auto-submits on done
-	userInput           chan string   // mode flag for agent loop (nil = one-shot, non-nil = TUI)
-	autoNamed           bool              // true after the first auto-name attempt
-	sessionLabel        string            // model-generated title, shown in status bar
-	autoNameGen         int               // bumped on /new; stale auto-name results are dropped
-	sessionList         []agent.Session // cached from last /sessions, for /resume by #
-	modelList           []string          // cached from last /models, for /model <#> selection
-	ephemeral           bool              // /new --ephemeral; nothing persisted
-	theme               Theme             // active color/style theme
-	trustState          string            // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
-	notifications       string            // "bell" / "desktop" / "off", fired on turn complete
-	lastToolCall        string            // last tool call name, for syntax highlighting results
-	lastToolArgs        map[string]any    // last tool call args, for language detection
-	lastRender          time.Time         // debounce for live glamour rendering during streaming
-	lastRenderedResponse string           // cached glamour output for debounced frames
+	textarea             textarea.Model
+	viewport             viewport.Model
+	history              []ai.Message    // full conversation fed to the agent each turn
+	transcript           string          // rendered content of completed exchanges
+	segments             []streamSegment // ordered streaming segments for the current turn
+	providerType         string
+	modelName            string
+	compaction           *agent.CompactionConfig
+	promptCustom         string
+	promptAppend         []string
+	promptContext        string
+	busy                 bool               // a run is in flight; input is ignored
+	err                  string             // last run error, shown in the status line
+	cancel               context.CancelFunc // cancels the in-flight run; nil when idle
+	events               <-chan agent.Event // run goroutine writes here; Update drains via cmd
+	store                agent.StoreProvider
+	sessionID            string                 // current session; "" until the first message creates one
+	storeErr             string                 // store open/persistence error, shown in the status line
+	promptHistory        []string               // previously submitted prompts, for Up/Down recall
+	historyIndex         int                    // position in promptHistory; 0 = empty/current input
+	autocompleteMatches  []string               // slash commands matching the current input
+	autocompleteIndex    int                    // highlighted match; -1 = none selected
+	autocompleteOffset   int                    // first visible row in the dropup window
+	autocompleteSlashPos int                    // byte offset of the / triggering autocomplete, -1 = none
+	screenHeight         int                    // terminal height from the last resize
+	skills               []agent.Skill          // loaded skills, for autocomplete and invocation
+	extensions           agent.ExtensionManager // loaded extensions, for tools/commands/events
+	commands             []string               // knownCommands + skill names, per-model copy
+	showThinking         bool                   // /thinking display toggle; auto-set from thinkingLevel
+	thinkingLevel        string                 // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
+	showToolResults      bool                   // /tools toggle; default false (collapsed)
+	toolResultsAuto      bool                   // /tools auto; short results full, long ones collapsed
+	queuedInput          string                 // follow-up typed while agent runs; auto-submits on done
+	userInput            chan string            // mode flag for agent loop (nil = one-shot, non-nil = TUI)
+	autoNamed            bool                   // true after the first auto-name attempt
+	sessionLabel         string                 // model-generated title, shown in status bar
+	autoNameGen          int                    // bumped on /new; stale auto-name results are dropped
+	sessionList          []agent.Session        // cached from last /sessions, for /resume by #
+	modelList            []string               // cached from last /models, for /model <#> selection
+	ephemeral            bool                   // /new --ephemeral; nothing persisted
+	theme                Theme                  // active color/style theme
+	trustState           string                 // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
+	notifications        string                 // "bell" / "desktop" / "off", fired on turn complete
+	lastToolCall         string                 // last tool call name, for syntax highlighting results
+	lastToolArgs         map[string]any         // last tool call args, for language detection
+	lastRender           time.Time              // debounce for live glamour rendering during streaming
+	lastRenderedResponse string                 // cached glamour output for debounced frames
+	contextWindow        int                    // auto-discovered from provider; 0 = unknown, fall back to config
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -301,12 +302,30 @@ type modelsLoadedMsg struct {
 	err    error
 }
 
+// modelInfoLoadedMsg carries auto-discovered model metadata (e.g.
+// context window) fetched from the provider extension.
+type modelInfoLoadedMsg struct {
+	contextWindow int
+	err           error
+}
+
 // fetchModelsCmd returns a tea.Cmd that fetches available models from
 // the provider. Used by Ctrl+P when modelList is empty.
 func (m model) fetchModelsCmd() tea.Cmd {
 	return func() tea.Msg {
 		models, err := m.extensions.ProviderListModels()
 		return modelsLoadedMsg{models: models, err: err}
+	}
+}
+
+// fetchModelInfoCmd returns a tea.Cmd that queries the provider for
+// metadata about the current model (context window). Non-blocking;
+// on error or unknown, contextWindow stays 0 and the status bar
+// falls back to compaction config.
+func (m model) fetchModelInfoCmd() tea.Cmd {
+	return func() tea.Msg {
+		info, err := m.extensions.ProviderModelInfo()
+		return modelInfoLoadedMsg{contextWindow: info.ContextWindow, err: err}
 	}
 }
 
@@ -367,32 +386,32 @@ func newChatModel(providerType, modelName string, compaction *agent.CompactionCo
 		}
 	}
 	return model{
-		textarea:          ta,
-		viewport:          vp,
-		providerType:      providerType,
-		modelName:         modelName,
-		compaction:        compaction,
-		promptCustom:      promptCustom,
-		promptAppend:      promptAppend,
-		promptContext:     promptContext,
-		store:             store,
-		skills:            skills,
-		extensions:        extMgr,
-		commands:          commands,
-		autocompleteIndex: -1,
+		textarea:             ta,
+		viewport:             vp,
+		providerType:         providerType,
+		modelName:            modelName,
+		compaction:           compaction,
+		promptCustom:         promptCustom,
+		promptAppend:         promptAppend,
+		promptContext:        promptContext,
+		store:                store,
+		skills:               skills,
+		extensions:           extMgr,
+		commands:             commands,
+		autocompleteIndex:    -1,
 		autocompleteSlashPos: -1,
-		showThinking:      true,
-		thinkingLevel:     "medium",
-		showToolResults:   true,
-		toolResultsAuto:   true,
-		theme:             t,
-		trustState:        trustState,
-		notifications:     notifications,
+		showThinking:         true,
+		thinkingLevel:        "medium",
+		showToolResults:      true,
+		toolResultsAuto:      true,
+		theme:                t,
+		trustState:           trustState,
+		notifications:        notifications,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.textarea.Focus(), tea.EnterAltScreen, m.titleCmd())
+	return tea.Batch(m.textarea.Focus(), tea.EnterAltScreen, m.titleCmd(), m.fetchModelInfoCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -421,17 +440,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.queuedInput = ""
 			}
 			// Enter queues the current input to auto-submit when the
-				// agent finishes. Typing is still allowed while busy.
-				if msg.String() == "enter" {
-					queue := strings.TrimSpace(m.textarea.Value())
-					if queue == "" {
-						return m, nil
-					}
-					m.queuedInput = queue
-					m.textarea.SetValue("")
-					m.textarea.Placeholder = "message (queued: " + truncate(m.queuedInput, 40) + ")"
+			// agent finishes. Typing is still allowed while busy.
+			if msg.String() == "enter" {
+				queue := strings.TrimSpace(m.textarea.Value())
+				if queue == "" {
 					return m, nil
 				}
+				m.queuedInput = queue
+				m.textarea.SetValue("")
+				m.textarea.Placeholder = "message (queued: " + truncate(m.queuedInput, 40) + ")"
+				return m, nil
+			}
 			// Allow typing while busy; just don't submit.
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(msg)
@@ -469,7 +488,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modelName = m.modelList[next]
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.refresh()
-			return m, m.titleCmd()
+			m.extensions.ProviderSetModel(m.modelName)
+			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		if msg.Paste {
 			// Bracketed paste (file drop, large paste): insert the
@@ -681,10 +701,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.err = ""
 			m.refresh()
-			return m, m.titleCmd()
+			m.extensions.ProviderSetModel(m.modelName)
+			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		m.err = "no models available"
 		m.refresh()
+		return m, nil
+
+	case modelInfoLoadedMsg:
+		// Auto-discovered context window from the provider. On
+		// error or 0, leave the field at 0 — statusLine falls
+		// back to compaction config.
+		m.contextWindow = msg.contextWindow
 		return m, nil
 
 	default:
@@ -721,7 +749,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// Extract @file references: load images as base64, inline text files.
 	prompt, images, imgErr := extractImages(input, m.store, m.skills)
 	if imgErr != nil {
-		m.transcript += "\n" + m.theme.Error.Render("[image error: " + imgErr.Error() + "]") + "\n"
+		m.transcript += "\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n"
 	}
 	if len(images) > 0 {
 		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[loaded %d image(s)]", len(images))) + "\n"
@@ -1092,10 +1120,11 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			m.persistEntry(ai.NewModelChange(m.modelName))
 			m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 			m.refresh()
-			return m, m.titleCmd()
-			}
-			// Validate against cached model list if available.
-			if len(m.modelList) > 0 {
+			m.extensions.ProviderSetModel(m.modelName)
+			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
+		}
+		// Validate against cached model list if available.
+		if len(m.modelList) > 0 {
 			found := false
 			for _, name := range m.modelList {
 				if name == arg {
@@ -1108,12 +1137,13 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 				m.refresh()
 				return m, nil
 			}
-			}
-			m.modelName = arg
-			m.persistEntry(ai.NewModelChange(m.modelName))
+		}
+		m.modelName = arg
+		m.persistEntry(ai.NewModelChange(m.modelName))
 		m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 		m.refresh()
-		return m, m.titleCmd()
+		m.extensions.ProviderSetModel(m.modelName)
+		return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 	case "/models":
 		return m.handleModels()
 	case "/provider":
@@ -1121,7 +1151,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		if provider == "" {
 			provider = "ollama"
 		}
-		m.transcript += "\n" + m.theme.Info.Render("current: " + provider) + "\n"
+		m.transcript += "\n" + m.theme.Info.Render("current: "+provider) + "\n"
 		m.refresh()
 		return m, nil
 	default:
@@ -2216,38 +2246,38 @@ func firstLineOfDesc(s string) string {
 }
 
 var extLexers = map[string]string{
-	".go":   "go",
-	".py":   "python",
-	".js":   "javascript",
-	".jsx":  "javascript",
-	".ts":   "typescript",
-	".tsx":  "typescript",
-	".rs":   "rust",
-	".java": "java",
-	".c":    "c",
-	".cpp":  "cpp",
-	".cc":   "cpp",
-	".h":    "c",
-	".hpp":  "cpp",
-	".sh":   "bash",
-	".bash": "bash",
-	".zsh":  "bash",
-	".yaml": "yaml",
-	".yml":  "yaml",
-	".json": "json",
-	".xml":  "xml",
-	".html": "html",
-	".css":  "css",
-	".scss": "scss",
-	".sql":  "sql",
-	".md":   "markdown",
-	".toml": "toml",
-	".rb":   "ruby",
-	".php":  "php",
-	".swift": "swift",
-	".kt":   "kotlin",
-	".lua":  "lua",
-	".dart": "dart",
+	".go":         "go",
+	".py":         "python",
+	".js":         "javascript",
+	".jsx":        "javascript",
+	".ts":         "typescript",
+	".tsx":        "typescript",
+	".rs":         "rust",
+	".java":       "java",
+	".c":          "c",
+	".cpp":        "cpp",
+	".cc":         "cpp",
+	".h":          "c",
+	".hpp":        "cpp",
+	".sh":         "bash",
+	".bash":       "bash",
+	".zsh":        "bash",
+	".yaml":       "yaml",
+	".yml":        "yaml",
+	".json":       "json",
+	".xml":        "xml",
+	".html":       "html",
+	".css":        "css",
+	".scss":       "scss",
+	".sql":        "sql",
+	".md":         "markdown",
+	".toml":       "toml",
+	".rb":         "ruby",
+	".php":        "php",
+	".swift":      "swift",
+	".kt":         "kotlin",
+	".lua":        "lua",
+	".dart":       "dart",
 	".dockerfile": "dockerfile",
 }
 
@@ -2402,7 +2432,9 @@ func renderCodeBlock(code, lang string, width int, t Theme) string {
 }
 
 // omegaVersion is set via ldflags at build time:
-//   go build -ldflags "-X main.omegaVersion=v0.1.0"
+//
+//	go build -ldflags "-X main.omegaVersion=v0.1.0"
+//
 // Defaults to "dev" when built without ldflags (local dev builds).
 var omegaVersion = "dev"
 
@@ -2437,7 +2469,12 @@ func (m model) splashView() string {
 	if provider == "" {
 		provider = "ollama"
 	}
-	toolCount := 0 // built-in tools are in core-tools extension
+	toolCount := 0
+	if m.extensions != nil {
+		for _, ext := range m.extensions.Infos() {
+			toolCount += len(ext.ToolList)
+		}
+	}
 	skillCount := len(m.skills)
 	logo := []string{
 		`   #"""#  `,
@@ -2520,9 +2557,13 @@ func (m model) statusLine() string {
 		provider = "ollama"
 	}
 	tokens := agent.EstimateTokens(m.history)
-	window := 8192
+	// Context window priority: auto-discovered from provider > config > default.
+	window := agent.DefaultContextWindow
 	if m.compaction != nil && m.compaction.ContextWindow > 0 {
 		window = m.compaction.ContextWindow
+	}
+	if m.contextWindow > 0 {
+		window = m.contextWindow
 	}
 	line := fmt.Sprintf("Ω | %s | %s/%s", state, provider, m.modelName)
 	if m.thinkingLevel != "none" && m.thinkingLevel != "" {
@@ -2737,6 +2778,7 @@ func (m model) renderHelp() string {
 		{"/compact [focus]", "summarize conversation history (optional focus)"},
 		{"/copy", "copy the last message to clipboard"},
 		{"/export [path]", "export session messages to JSONL (default: <session_id>.jsonl)"},
+		{"/search <query>", "search session messages (full-text)"},
 		{"/insights [days]", "show cross-session usage analytics (default: 30 days)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/tools [on|off|auto|list]", "tool results: expanded / collapsed / auto, or list all tools"},

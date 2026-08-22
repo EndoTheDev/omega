@@ -7,7 +7,7 @@
 //
 // Seam: provider
 // Methods: provider/stream, provider/list_models, provider/model_name,
-// provider/set_thinking, provider/set_model
+// provider/model_info, provider/set_thinking, provider/set_model
 package main
 
 import (
@@ -37,7 +37,7 @@ type rpcResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      int64           `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *rpcError        `json:"error,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
 }
 
 type rpcError struct {
@@ -92,6 +92,9 @@ func main() {
 
 		case "provider/list_models":
 			handleListModels(req)
+
+		case "provider/model_info":
+			handleModelInfo(req)
 
 		case "provider/set_thinking":
 			var params struct {
@@ -154,8 +157,8 @@ func handleInitialize(req rpcRequest) {
 
 	if req.ID != nil {
 		sendResponse(*req.ID, map[string]any{
-			"name":         "core-provider",
-			"tools":        []any{},
+			"name":          "core-provider",
+			"tools":         []any{},
 			"subscriptions": []string{},
 			"seams":         []string{"provider"},
 		})
@@ -175,6 +178,69 @@ func handleListModels(req rpcRequest) {
 	}
 	if req.ID != nil {
 		sendResponse(*req.ID, map[string]any{"models": models})
+	}
+}
+
+func handleModelInfo(req rpcRequest) {
+	ctxWindow, err := modelInfo()
+	if err != nil {
+		if req.ID != nil {
+			writeJSON(rpcResponse{
+				JSONRPC: "2.0", ID: *req.ID,
+				Error: &rpcError{Code: -1, Message: err.Error()},
+			})
+		}
+		return
+	}
+	if req.ID != nil {
+		sendResponse(*req.ID, map[string]any{
+			"context_window": ctxWindow,
+		})
+	}
+}
+
+// modelInfo queries the provider for the current model's context window.
+// Ollama: POST /api/show, extract *.context_length from model_info.
+// OpenAI/Anthropic: return 0 (not exposed by their model listing APIs).
+func modelInfo() (int, error) {
+	switch providerType {
+	case "ollama":
+		body, _ := json.Marshal(map[string]any{"model": modelName})
+		req, err := http.NewRequest("POST", baseURL+"/api/show", bytes.NewReader(body))
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+		resp, err := ai.HTTPClient().Do(req)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		var result struct {
+			ModelInfo map[string]any `json:"model_info"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return 0, err
+		}
+		// model_info keys are "<arch>.context_length" e.g.
+		// "gemma4.context_length": 131072. Scan for any key ending
+		// in ".context_length". JSON decodes numbers as float64.
+		for k, v := range result.ModelInfo {
+			if strings.HasSuffix(k, ".context_length") {
+				if n, ok := v.(float64); ok {
+					return int(n), nil
+				}
+			}
+		}
+		return 0, nil
+	default:
+		return 0, nil
 	}
 }
 
@@ -929,4 +995,3 @@ func anthropicBudgetTokens(level string) int {
 		return 0
 	}
 }
-

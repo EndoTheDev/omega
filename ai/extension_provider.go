@@ -12,6 +12,7 @@ type ProviderDispatcher interface {
 	ProviderStream(ctx context.Context, messages []Message, tools []ToolSchema) <-chan StreamEvent
 	ProviderModelName() string
 	ProviderListModels() ([]string, error)
+	ProviderModelInfo() (ModelInfo, error)
 	ProviderSetThinking(level string)
 }
 
@@ -56,4 +57,12 @@ func (p ExtensionProvider) ListModels() ([]string, error) {
 		return nil, fmt.Errorf("no provider extension loaded")
 	}
 	return p.Dispatcher.ProviderListModels()
+}
+
+// ModelInfo delegates to the dispatcher's ProviderModelInfo.
+func (p ExtensionProvider) ModelInfo() (ModelInfo, error) {
+	if p.Dispatcher == nil {
+		return ModelInfo{}, nil
+	}
+	return p.Dispatcher.ProviderModelInfo()
 }

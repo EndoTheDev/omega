@@ -10,7 +10,7 @@ gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 | Agent      | `agent`          | Multi-turn loop, parallel tool execution, compaction, capability seams, extensions                                   |
 | Provider   | `ai`             | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                 |
 | CLI        | `cmd/omega`      | Entry point, TUI, project context, trust gate, config wiring                                                         |
-| Extensions | `bin/extensions` | 9 extensions: core-prompt, core-provider, core-store, core-skills, core-tools, core-delegate, mcp-bridge, ollama-web |
+| Extensions | `bin/extensions` | 8 extensions: core-prompt, core-provider, core-store, core-skills, core-tools, core-delegate, mcp-bridge, ollama-web |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer

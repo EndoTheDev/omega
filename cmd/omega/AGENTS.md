@@ -51,7 +51,10 @@ markdown rendering.
   rendering, status line, splash screen, theme system (`Theme` struct,
   `handleTheme`, `/theme` command), desktop notifications
   (`notifyTurnComplete`, `beeep`), model quick-cycle (Ctrl+P,
-  `fetchModelsCmd`, `modelsLoadedMsg`), bracketed paste (file drop).
+  `fetchModelsCmd`, `modelsLoadedMsg`), auto-discovered context window
+  (`fetchModelInfoCmd`, `modelInfoLoadedMsg`, `contextWindow` field,
+  `ProviderSetModel` before fetch on model switch), bracketed paste
+  (file drop).
   `handleExport` delegates to `exportMessages` in `export.go`.
   Subagent delegation: `startRun` (shared agent setup for submit +
   tick injection), `tickMsg`/`tickCmd` (250ms tick for status bar
@@ -107,6 +110,16 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `/models`). If empty, fires `fetchModelsCmd` to fetch from the
   provider extension via `ProviderListModels` asynchronously; the
   result arrives as `modelsLoadedMsg`.
+- **Auto-discovered context window.** `fetchModelInfoCmd` queries the
+  provider extension for the current model's context window
+  (`ProviderModelInfo` → `/api/show` for Ollama). Fires on `Init`,
+  `/model`, Ctrl+P, and `modelsLoadedMsg`. The result arrives as
+  `modelInfoLoadedMsg` and sets `m.contextWindow`. Status bar priority:
+  provider (`m.contextWindow`) > config (`CompactionConfig.ContextWindow`)
+  > `agent.DefaultContextWindow` (8192). OpenAI/Anthropic return 0
+  > (not exposed by their APIs), so config is the source of truth there.
+  > `ProviderSetModel` is called before `fetchModelInfoCmd` on every
+  > model switch so the extension queries the correct model.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
 - **Tool results get syntax highlighting.** `highlightCode` applies

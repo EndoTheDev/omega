@@ -14,11 +14,12 @@ import (
 // when one is exposed.
 const charsPerToken = 4
 
-// defaultContextWindow is the nominal model context in tokens used to
-// turn the compaction threshold fraction into an absolute budget.
-// ponytail: fixed constant, not per-model. Upgrade path: query the
-// provider for its real context window.
-const defaultContextWindow = 8192
+// DefaultContextWindow is the nominal model context in tokens used when
+// neither the provider nor config supplies a value. It is a rough
+// fallback; the status bar and compaction budget prefer the auto-
+// discovered value from the provider (ModelInfo.ContextWindow) or the
+// config value (CompactionConfig.ContextWindow) when available.
+const DefaultContextWindow = 8192
 const defaultReserveTokens = 16384
 
 // CompactionConfig controls when the agent summarizes old messages to
@@ -41,7 +42,7 @@ type CompactionConfig struct {
 func (c CompactionConfig) budget() int {
 	window := c.ContextWindow
 	if window <= 0 {
-		window = defaultContextWindow
+		window = DefaultContextWindow
 	}
 	reserve := c.ReserveTokens
 	if reserve <= 0 {

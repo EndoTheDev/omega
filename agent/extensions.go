@@ -93,6 +93,11 @@ type ExtensionManager interface {
 	// extension. Returns an error if no provider extension is loaded.
 	ProviderListModels() ([]string, error)
 
+	// ProviderModelInfo queries the provider-seam extension for
+	// metadata about the current model (e.g. context window).
+	// Returns ai.ModelInfo{} if no provider extension is loaded.
+	ProviderModelInfo() (ai.ModelInfo, error)
+
 	// ProviderSetThinking sets the thinking level on the provider-seam
 	// extension. No-op if no provider extension is loaded.
 	ProviderSetThinking(level string)
@@ -133,7 +138,7 @@ type InjectedMessage struct {
 
 // ExtensionCommand is a slash command registered by an extension.
 type ExtensionCommand struct {
-	Name        string `json:"name"`        // includes leading slash, e.g. "/mycmd"
+	Name        string `json:"name"` // includes leading slash, e.g. "/mycmd"
 	Description string `json:"description"`
 }
 
@@ -146,12 +151,12 @@ type ToolInfo struct {
 
 // ExtensionInfo is metadata about a loaded extension, for display.
 type ExtensionInfo struct {
-	Name      string
-	Tools     int
-	Commands  int
-	Seams     []string // declared seam types ("prompt_builder", "compactor", etc.)
-	ToolList  []ToolInfo // tools provided by this extension (name + description)
-	Status    string   // "running" or "error: ..."
+	Name     string
+	Tools    int
+	Commands int
+	Seams    []string   // declared seam types ("prompt_builder", "compactor", etc.)
+	ToolList []ToolInfo // tools provided by this extension (name + description)
+	Status   string     // "running" or "error: ..."
 }
 
 // PromptBuildOptions carries context for extension-built system prompts.
@@ -168,17 +173,17 @@ type PromptBuildOptions struct {
 // disabled or the directory is empty. Every method is a no-op.
 type NoopManager struct{}
 
-func (NoopManager) Load(dir string, apiKey string) error          { return nil }
-func (NoopManager) Tools() map[string]Tool                        { return nil }
-func (NoopManager) Commands() []ExtensionCommand                  { return nil }
-func (NoopManager) Infos() []ExtensionInfo                        { return nil }
-func (NoopManager) DispatchEvent(event Event)                     {}
+func (NoopManager) Load(dir string, apiKey string) error { return nil }
+func (NoopManager) Tools() map[string]Tool               { return nil }
+func (NoopManager) Commands() []ExtensionCommand         { return nil }
+func (NoopManager) Infos() []ExtensionInfo               { return nil }
+func (NoopManager) DispatchEvent(event Event)            {}
 func (NoopManager) CallCommand(ctx context.Context, name, args string) (string, error) {
 	return "", fmt.Errorf("no extensions loaded")
 }
 func (NoopManager) Close() error { return nil }
 
-func (NoopManager) PromptGuidelines() []string                                        { return nil }
+func (NoopManager) PromptGuidelines() []string { return nil }
 func (NoopManager) CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool) {
 	return "", false
 }
@@ -203,8 +208,11 @@ func (NoopManager) ProviderModelName() string {
 func (NoopManager) ProviderListModels() ([]string, error) {
 	return nil, fmt.Errorf("no provider extension loaded")
 }
+func (NoopManager) ProviderModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{}, nil
+}
 func (NoopManager) ProviderSetThinking(level string) {}
-func (NoopManager) ProviderSetModel(model string) {}
+func (NoopManager) ProviderSetModel(model string)    {}
 
 func (NoopManager) StoreProvider() StoreProvider { return nil }
 
