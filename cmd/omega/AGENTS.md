@@ -33,7 +33,10 @@ markdown rendering.
   `findAsset`, `assetNameForOS`). Archive-based: downloads zip/tar.gz,
   extracts omega + extensions (self-contained subdirectory layout) +
   config/mcp examples. Progress bar during download. Skips when already
-  up to date. Preserves user config files.
+  up to date. Preserves user config files. Security: `safeJoin` validates
+  archive entries stay within dest (CWE-22 path traversal prevention),
+  `io.LimitReader` caps zip reads at 200MB and API responses at 1MB,
+  atomic binary replacement via temp+rename on Linux/macOS.
 - `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
   `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
   `promptTrust`), trust flag parsing (`parseTrustArgs`,
@@ -156,7 +159,10 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   dir, then replaces the running binary and extension binaries. Preserves
   user config files. Progress bar during download. Skips when already
   up to date. On Windows the running exe is renamed to `.old` first.
-  No checksum verification (no release signing yet).
+  No checksum verification (no release signing yet). Security hardening:
+  `safeJoin` prevents path traversal from malicious archive entries
+  (CWE-22), `io.LimitReader` caps downloads and API responses to prevent
+  OOM, binary replacement is atomic via temp+rename on Linux/macOS.
 - **Image input via `@file` args.** `omega run @image.png what is this?`
   detects image files by magic bytes (PNG/JPEG/GIF/WebP/BMP), encodes
   them as base64, and sends them to the provider as image content

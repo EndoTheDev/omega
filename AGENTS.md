@@ -88,6 +88,7 @@ AGENTS.md (root — this file)
 ├── build.sh                   # build script (Linux/macOS): vet + test + build to bin/
 ├── build.bat                  # build script (Windows): vet + test + build to bin\
 ├── .agents/                   # conventions (COMMIT.md)
+├── docs/                      # user documentation (tracked)
 ├── ai/                        # provider contract (interface, messages, events), shared HTTP infra, ExtensionProvider; provider implementations in core-provider extension
 ├── agent/                     # multi-turn loop (AgentLoop interface + DefaultAgentLoop), tool execution, compaction, capability seams (Compactor, ToolProvider, AgentLoop, StoreProvider, SkillsProvider), extensions; events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent, SessionEvent
 ├── gateway/                   # HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end

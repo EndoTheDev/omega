@@ -61,7 +61,7 @@ func cmdUpdate() error {
 	defer resp.Body.Close()
 
 	var rel githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
 		return fmt.Errorf("decode release: %w", err)
 	}
 
@@ -187,10 +187,29 @@ func cmdUpdate() error {
 	return nil
 }
 
+// safeJoin joins dest + name and validates the result stays within dest.
+// Prevents path traversal (CWE-22) from malicious archive entries.
+func safeJoin(dest, name string) (string, error) {
+	path := filepath.Join(dest, name)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	absDest, err := filepath.Abs(dest)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(absPath, absDest+string(filepath.Separator)) && absPath != absDest {
+		return "", fmt.Errorf("path traversal: %s", name)
+	}
+	return path, nil
+}
+
 // extractZip extracts a zip archive from r into dest.
 func extractZip(r io.Reader, dest string) error {
 	// Read all into memory — archives are small (~50MB max).
-	data, err := io.ReadAll(r)
+	// Limit to 200MB to prevent OOM from malicious archives.
+	data, err := io.ReadAll(io.LimitReader(r, 200<<20))
 	if err != nil {
 		return err
 	}
@@ -199,7 +218,10 @@ func extractZip(r io.Reader, dest string) error {
 		return err
 	}
 	for _, f := range zr.File {
-		path := filepath.Join(dest, f.Name)
+		path, err := safeJoin(dest, f.Name)
+		if err != nil {
+			return err
+		}
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(path, 0o755)
 			continue
@@ -241,7 +263,10 @@ func extractTarGz(r io.Reader, dest string) error {
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(dest, hdr.Name)
+		path, err := safeJoin(dest, hdr.Name)
+		if err != nil {
+			return err
+		}
 		if hdr.FileInfo().IsDir() {
 			os.MkdirAll(path, 0o755)
 			continue
@@ -286,7 +311,10 @@ func findInArchive(dir, name string) string {
 	return ""
 }
 
-// replaceBinary copies src to dst, handling Windows exe locking.
+// replaceBinary copies src to dst atomically. On Windows the running
+// exe is renamed to .old first (Windows locks the running binary).
+// On Linux/macOS a temp file is written and renamed (atomic, the
+// running process keeps its inode).
 func replaceBinary(src, dst string) error {
 	if runtime.GOOS == "windows" {
 		oldPath := dst + ".old"
@@ -301,7 +329,12 @@ func replaceBinary(src, dst string) error {
 		os.Remove(oldPath)
 		return nil
 	}
-	return copyFile(src, dst)
+	tmp := dst + ".new"
+	if err := copyFile(src, tmp); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
 }
 
 // copyFile copies src to dst, setting permissions.
