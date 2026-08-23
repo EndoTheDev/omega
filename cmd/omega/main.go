@@ -349,11 +349,15 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	}
 	provider := ai.ExtensionProvider{Dispatcher: mgr}
 	ag.SetProvider(provider)
-	ag.SetCompactor(agent.DefaultCompactor{
-		Provider:   provider,
-		Config:     &cfg.Compaction,
-		Extensions: mgr,
-	})
+
+	// Wire the compactor. Prefer the compactor-seam extension; when
+	// none is loaded, compaction is disabled and the agent surfaces a
+	// friendly error on context overflow.
+	if cp := mgr.CompactorProvider(cfg.Compaction); cp != nil {
+		ag.SetCompactor(cp)
+	} else {
+		fmt.Fprintf(os.Stderr, "omega: no compactor extension loaded — context compaction disabled (install core-compactor in extensions/)\n")
+	}
 	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
 
 	// Validate PluginsConfig against loaded extension seams.
@@ -370,10 +374,10 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	if cfg.Plugins.Compactor != "" && cfg.Plugins.Compactor != "default" {
 		if extName, ok := seams["compactor"]; ok {
 			if extName != cfg.Plugins.Compactor {
-				fmt.Fprintf(os.Stderr, "omega: warning: compactor config %q does not match extension %q, using default\n", cfg.Plugins.Compactor, extName)
+				fmt.Fprintf(os.Stderr, "omega: warning: compactor config %q does not match extension %q\n", cfg.Plugins.Compactor, extName)
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "omega: warning: compactor config %q but no extension provides that seam, using default\n", cfg.Plugins.Compactor)
+			fmt.Fprintf(os.Stderr, "omega: warning: compactor config %q but no extension provides that seam — compaction disabled\n", cfg.Plugins.Compactor)
 		}
 	}
 

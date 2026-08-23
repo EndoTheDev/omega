@@ -1,10 +1,6 @@
 package agent
 
 import (
-	"context"
-	"fmt"
-	"strings"
-
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -25,15 +21,16 @@ const defaultReserveTokens = 16384
 // CompactionConfig controls when the agent summarizes old messages to
 // stay within the model's context window. It lives in the agent package
 // (not gateway) so the agent can consume it without importing a layer
-// above itself.
+// above itself. The config is passed to the compactor extension via
+// JSON-RPC; the extension owns the compaction logic.
 type CompactionConfig struct {
-	Enabled       bool    `yaml:"enabled"`
-	Threshold     float64 `yaml:"threshold"`
-	ContextWindow int     `yaml:"context_window"`
-	KeepFirst     int     `yaml:"keep_first"`
-	KeepLast      int     `yaml:"keep_last"`
-	ReserveTokens int     `yaml:"reserve_tokens"`
-	MaxToolOutput int     `yaml:"max_tool_output"`
+	Enabled       bool    `yaml:"enabled" json:"enabled"`
+	Threshold     float64 `yaml:"threshold" json:"threshold"`
+	ContextWindow int     `yaml:"context_window" json:"context_window"`
+	KeepFirst     int     `yaml:"keep_first" json:"keep_first"`
+	KeepLast      int     `yaml:"keep_last" json:"keep_last"`
+	ReserveTokens int     `yaml:"reserve_tokens" json:"reserve_tokens"`
+	MaxToolOutput int     `yaml:"max_tool_output" json:"max_tool_output"`
 }
 
 // budget returns the token count at which compaction triggers.
@@ -80,53 +77,9 @@ func MessageText(m ai.Message) string {
 	return ""
 }
 
-// CompactWithFocus summarizes the middle of history with an optional
-// focus instruction, replacing it with a single system message. The
-// first keepFirst and last keepLast messages are preserved verbatim.
-// If there is nothing to compact, history is returned unchanged.
-func CompactWithFocus(ctx context.Context, provider ai.Provider, history []ai.Message, keepFirst, keepLast int, focus string) ([]ai.Message, error) {
-	if keepFirst+keepLast >= len(history) {
-		return history, nil
-	}
-	middle := history[keepFirst : len(history)-keepLast]
-
-	// Build the summarization prompt.
-	var b strings.Builder
-	b.WriteString("Summarize the following conversation concisely, preserving key facts, decisions, and context.")
-	if focus != "" {
-		b.WriteString(" ")
-		b.WriteString(focus)
-		b.WriteString(".")
-	}
-	b.WriteString(" Output only the summary.\n\n")
-	for _, m := range middle {
-		b.WriteString("- ")
-		b.WriteString(MessageText(m))
-		b.WriteString("\n")
-	}
-
-	prompt := []ai.Message{ai.NewUser(b.String())}
-	var summary strings.Builder
-	for event := range provider.Stream(ctx, prompt, nil) {
-		switch e := event.(type) {
-		case ai.ResponseChunk:
-			summary.WriteString(e.Content)
-		case ai.StreamEnd:
-			if e.FinishReason == "error" {
-				return nil, fmt.Errorf("summarize: %s", e.Error)
-			}
-		}
-	}
-	if summary.Len() == 0 {
-		return nil, fmt.Errorf("summarize: empty summary")
-	}
-
-	return BuildCompactedMessages(history, strings.TrimSpace(summary.String()), keepFirst, keepLast), nil
-}
-
 // BuildCompactedMessages assembles the compacted message list from a
-// pre-computed summary. Shared by CompactWithFocus and extension-provided
-// custom compaction.
+// pre-computed summary. Shared by the branch summary feature and the
+// core-compactor extension.
 func BuildCompactedMessages(history []ai.Message, summary string, keepFirst, keepLast int) []ai.Message {
 	result := make([]ai.Message, 0, keepFirst+keepLast+1)
 	result = append(result, history[:keepFirst]...)

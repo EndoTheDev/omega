@@ -254,6 +254,7 @@ type model struct {
 	promptAppend         []string
 	promptContext        string
 	busy                 bool               // a run is in flight; input is ignored
+	compacting           bool               // /compact is in flight; non-blocking
 	err                  string             // last run error, shown in the status line
 	cancel               context.CancelFunc // cancels the in-flight run; nil when idle
 	events               <-chan agent.Event // run goroutine writes here; Update drains via cmd
@@ -294,6 +295,13 @@ type model struct {
 
 // streamDoneMsg signals that the run goroutine has finished.
 type streamDoneMsg struct{}
+
+// compactionResultMsg carries the result of an async /compact call.
+type compactionResultMsg struct {
+	messages []ai.Message
+	err      error
+	before   int
+}
 
 // modelsLoadedMsg carries models fetched in the background for Ctrl+P
 // when modelList is empty.
@@ -687,6 +695,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case compactionResultMsg:
+		m.compacting = false
+		if msg.err != nil {
+			m.err = "compact: " + msg.err.Error()
+			m.refresh()
+			return m, nil
+		}
+		if len(msg.messages) == msg.before {
+			m.err = "nothing to compact (under budget)"
+			m.refresh()
+			return m, nil
+		}
+		m.history = msg.messages
+		m.transcript += "\n" + m.theme.Info.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", msg.before, len(msg.messages))+"]") + "\n"
+		m.err = ""
+		m.refresh()
+		return m, nil
+
 	case modelsLoadedMsg:
 		// Ctrl+P triggered a background fetch; apply the result.
 		if msg.err != nil {
@@ -813,11 +839,11 @@ func (m *model) startRun() {
 	ag.SetPromptAppend(m.promptAppend)
 	ag.SetPromptContext(m.promptContext)
 	ag.SetExtensions(m.extensions)
-	ag.SetCompactor(agent.DefaultCompactor{
-		Provider:   provider,
-		Config:     m.compaction,
-		Extensions: m.extensions,
-	})
+	if m.compaction != nil {
+		if cp := m.extensions.CompactorProvider(*m.compaction); cp != nil {
+			ag.SetCompactor(cp)
+		}
+	}
 	if m.compaction != nil {
 		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)
 	}
@@ -1026,7 +1052,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil // unreachable; all cases return
 	case "/compact":
-		return m.handleCompact(fields)
+		return m.handleCompact()
 	case "/copy":
 		return m.handleCopy()
 	case "/export":
@@ -2043,35 +2069,35 @@ func (m model) handleInsights(args []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleCompact triggers manual compaction of the conversation history.
-// /compact uses the default summarizer; /compact <focus> passes a custom
-// focus instruction to the summarizer (e.g. "focus on the last implementation").
-func (m model) handleCompact(fields []string) (tea.Model, tea.Cmd) {
+// handleCompact triggers manual compaction of the conversation history
+// via the compactor extension. Runs asynchronously so the TUI stays
+// responsive while the LLM summarizes.
+func (m model) handleCompact() (tea.Model, tea.Cmd) {
+	if m.compacting {
+		m.err = "already compacting..."
+		return m, nil
+	}
 	if len(m.history) < 3 {
 		m.err = "not enough history to compact"
 		return m, nil
 	}
-	provider := ai.ExtensionProvider{Dispatcher: m.extensions}
-	keepFirst := 2
-	keepLast := 10
-	if m.compaction != nil {
-		keepFirst = m.compaction.KeepFirst
-		keepLast = m.compaction.KeepLast
-	}
-	focus := ""
-	if len(fields) > 1 {
-		focus = strings.Join(fields[1:], " ")
-	}
-	compacted, err := agent.CompactWithFocus(context.Background(), provider, m.history, keepFirst, keepLast, focus)
-	if err != nil {
-		m.err = "compact: " + err.Error()
+	if m.compaction == nil {
+		m.err = "compaction not configured"
 		return m, nil
 	}
-	before := len(m.history)
-	m.history = compacted
-	m.transcript += "\n" + m.theme.Info.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", before, len(compacted))+"]") + "\n"
-	m.refresh()
-	return m, nil
+	cp := m.extensions.CompactorProvider(*m.compaction)
+	if cp == nil {
+		m.err = "no compactor extension loaded"
+		return m, nil
+	}
+	m.compacting = true
+	m.err = ""
+	history := m.history
+	before := len(history)
+	return m, func() tea.Msg {
+		compacted, err := cp.Compact(context.Background(), history)
+		return compactionResultMsg{messages: compacted, err: err, before: before}
+	}
 }
 
 // newSessionID generates a random 8-character hex session identifier.
@@ -2516,6 +2542,8 @@ func (m model) titleCmd() tea.Cmd {
 	state := "idle"
 	if m.busy {
 		state = "running"
+	} else if m.compacting {
+		state = "compacting"
 	}
 	return tea.SetWindowTitle(windowTitle(state, m.modelName))
 }
@@ -2542,6 +2570,8 @@ func (m model) statusLine() string {
 	state := "idle"
 	if m.busy {
 		state = "running"
+	} else if m.compacting {
+		state = "compacting"
 	}
 	sess := m.sessionID
 	if m.ephemeral {

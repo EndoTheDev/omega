@@ -19,5 +19,12 @@ for /f "delims=" %%v in ('git describe --tags --abbrev=0 2^>nul') do set VERSION
 if not defined VERSION set VERSION=dev
 go build -ldflags "-X main.omegaVersion=%VERSION%" -o bin\omega.exe .\cmd\omega
 if errorlevel 1 exit /b 1
-
-echo ==^> done: bin\omega.exe (version: %VERSION%)
+echo    bin\omega.exe (version: %VERSION%)
+for /d %%e in (bin\extensions\*) do (
+  if exist "%%e\main.go" (
+    go build -o "bin\extensions\%%~ne\%%~ne.exe" ".\bin\extensions\%%~ne"
+    if errorlevel 1 exit /b 1
+    echo    bin\extensions\%%~ne\%%~ne.exe
+  )
+)
+echo ==^> done

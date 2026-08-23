@@ -14,6 +14,10 @@ pluggable extension system.
 > no sandboxing. Use Ollama for sensitive work — cloud providers
 > receive file contents and command output.
 
+## Community
+
+Join the [Discord](https://discord.gg/vQvHrHWkbx) for release announcements and discussion.
+
 ## Quick Start
 
 ```bash

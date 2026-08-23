@@ -21,30 +21,33 @@ events for anyone observing (the TUI, the gateway, or extensions).
   tools concurrently via sync.WaitGroup, feed results back in order),
   `isOverflowError`, `toolSchemas`. Extracted from the former `run()`
   method on `Agent`.
-- `compaction.go` - context compaction with optional focus,
-  `BuildCompactedMessages` shared helper
+- `compaction.go` - compaction config (`CompactionConfig`), token
+  estimation (`EstimateTokens`, `MessageText`), context window constants,
+  `BuildCompactedMessages` (shared helper for branch summary).
+  Compaction logic lives in the `core-compactor` extension.
 - `events.go` - event types emitted by the agent loop (`AgentStart`,
   `TurnStart`, `TurnEnd`, `AgentEnd`, `StreamEvent`, `ToolResultEvent`,
   `AssistantMessageEvent`, `SessionEvent`)
 - `extensions.go` - `ExtensionManager` interface (tools, commands, events,
-  `PromptGuidelines`, `CustomizeCompaction`, `CustomizeBranchSummary`,
-  `BuildPrompt`, `CompactMessages`, `SeamProviders`, provider dispatch:
+  `PromptGuidelines`, `CustomizeBranchSummary`, `BuildPrompt`,
+  `SeamProviders`, provider dispatch:
   `ProviderStream`, `ProviderModelName`, `ProviderListModels`,
   `ProviderModelInfo`, `ProviderSetThinking`, `ProviderSetModel`, `StoreProvider`,
-  `SkillsProvider`, `InjectedMessages`, `PendingDelegations`),
+  `SkillsProvider`, `CompactorProvider`, `InjectedMessages`, `PendingDelegations`),
   `NoopManager`, `ExtensionCommand`, `ExtensionInfo`
   (with `Seams`, `ToolList` fields), `ToolInfo` (Name + Description),
   `PromptBuildOptions`, `InjectedMessage` (Text + Source)
 - `extension_stdio.go` - stdio JSON-RPC extension transport
-  (`prompt/guidelines`, `compaction/customize`, `branch/summary`,
-  `prompt/build`, `compaction/messages` JSON-RPC methods).
+  (`prompt/guidelines`, `branch/summary`,
+  `prompt/build` JSON-RPC methods).
   Streaming RPC: `streamRequest` sets up `notifyCh` for notification
   routing, `readLoop` distinguishes notifications (no ID) from responses
   (with ID). Provider dispatch: `providerExt`, `ProviderStream`,
   `ProviderModelName`, `ProviderListModels`, `ProviderModelInfo`,
   `ProviderSetThinking`, `ProviderSetModel`. Store dispatch: `storeExt`, `StoreRequest`,
   `StoreProvider`. Skills dispatch: `skillsExt`, `SkillsRequest`,
-  `SkillsProvider`. Delegate dispatch: `delegate_start`/`delegate_result`
+  `SkillsProvider`. Compactor dispatch: `compactorExt`, `CompactorRequest`,
+  `CompactorProvider`. Delegate dispatch: `delegate_start`/`delegate_result`
   notification handling, `delegateCh` (buffer 64), `pendingDelegations`
   (atomic, CAS-clamped at 0), `handleDelegateResult`,
   `incrementPendingDelegations`, `InjectedMessages`. Message serialization
@@ -59,8 +62,10 @@ events for anyone observing (the TUI, the gateway, or extensions).
   `decodeMessages` helper for (role, payload) → `[]ai.Message`
 - `proxy_skills.go` - `ProxySkills` + `SkillsDispatcher`: forwards
   `SkillsProvider.LoadSkills` to the skills-seam extension via JSON-RPC
-- `defaults.go` - default seam implementations (`DefaultCompactor`,
-  `DefaultToolProvider`)
+- `proxy_compactor.go` - `ProxyCompactor` + `CompactorDispatcher`:
+  forwards `Compactor.Compact` to the compactor-seam extension via
+  JSON-RPC. Passes compaction config in each request.
+- `defaults.go` - default seam implementations (`DefaultToolProvider`)
 - `skill.go` - `Skill` type (data type for skill listing, used by
   `SkillsProvider.LoadSkills` via the core-skills extension)
 - `testdata/mock_extension/` - mock extension binary for extension tests
@@ -91,17 +96,18 @@ events for anyone observing (the TUI, the gateway, or extensions).
   path. The locks now live in the `core-tools` extension, not in the
   agent package.
 - **Extension customization hooks.** Extensions can customize: system
-  prompt guidelines (`PromptGuidelines`), compaction summary
-  (`CustomizeCompaction`), branch summary (`CustomizeBranchSummary`).
-  Session lifecycle events (`SessionEvent`) are dispatched on new,
-  resume, fork, and label. `BuildCompactedMessages` is the shared
-  helper for assembling compacted history from a pre-computed summary.
+  prompt guidelines (`PromptGuidelines`), branch summary
+  (`CustomizeBranchSummary`). Session lifecycle events (`SessionEvent`)
+  are dispatched on new, resume, fork, and label.
 - **Capability seams.** Harness concerns are injected via interfaces:
   `Compactor` (context compaction), `ToolProvider` (tool registry),
   `AgentLoop` (conversation loop). Default implementations in
-  `defaults.go` and `default_loop.go`. The system prompt
-  is built by the `core-prompt` extension via `BuildPrompt`; extensions
-  can also fully replace the compactor via `CompactMessages`. A custom
+  `default_loop.go`. The system prompt
+  is built by the `core-prompt` extension via `BuildPrompt`. The
+  compactor is wired from the `core-compactor` extension's `compactor`
+  seam via `CompactorProvider`; when no compactor extension is loaded,
+  compaction is disabled and the agent surfaces a friendly error on
+  context overflow. A custom
   `AgentLoop` replaces the entire turn logic via `SetAgentLoop`. The
   LLM provider is wired via `SetProvider` from the `core-provider`
   extension's `provider` seam (`ExtensionProvider` delegates to

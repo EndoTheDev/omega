@@ -160,7 +160,13 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 				messages = compacted
 				continue
 			}
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: streamErr}
+			// No compactor loaded: surface a friendly message instead
+			// of the raw provider error.
+			errMsg := streamErr
+			if isOverflowError(streamErr) && opts.Compactor == nil {
+				errMsg = "context full — start a new session (/new)"
+			}
+			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
 			opts.Events <- end
 			opts.Extensions.DispatchEvent(end)
 			return nil

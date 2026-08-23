@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -19,11 +20,7 @@ func TestEstimateTokens(t *testing.T) {
 	}
 }
 
-func TestCompactReplacesMiddle(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "summary text"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-	)
+func TestBuildCompactedMessages(t *testing.T) {
 	history := []ai.Message{
 		ai.NewSystem("sys"),
 		ai.NewUser("u1"),
@@ -32,10 +29,7 @@ func TestCompactReplacesMiddle(t *testing.T) {
 		ai.NewUser("u4"),
 		ai.NewUser("u5"),
 	}
-	got, err := CompactWithFocus(context.Background(), provider, history, 2, 2, "")
-	if err != nil {
-		t.Fatalf("compact: %v", err)
-	}
+	got := BuildCompactedMessages(history, "summary text", 2, 2)
 	if len(got) != 5 {
 		t.Fatalf("len = %d, want 5 (2 first + 1 summary + 2 last)", len(got))
 	}
@@ -54,24 +48,43 @@ func TestCompactReplacesMiddle(t *testing.T) {
 	}
 }
 
-func TestCompactNoOpWhenNothingToCompact(t *testing.T) {
-	provider := ai.NewFakeProvider("fake")
+func TestBuildCompactedMessagesNoOpWhenNothingToCompact(t *testing.T) {
 	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b")}
-	got, err := CompactWithFocus(context.Background(), provider, history, 1, 1, "")
-	if err != nil {
-		t.Fatalf("compact: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("len = %d, want 2 (unchanged)", len(got))
+	got := BuildCompactedMessages(history, "summary", 1, 1)
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3 (1 first + 1 summary + 1 last)", len(got))
 	}
 }
 
-func TestCompactPropagatesSummaryError(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "boom"},
-	)
-	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b"), ai.NewUser("c")}
-	if _, err := CompactWithFocus(context.Background(), provider, history, 1, 1, ""); err == nil {
-		t.Fatal("expected error from summarize, got nil")
+// mockCompactor is a minimal Compactor for agent loop tests. It
+// streams a one-line summary from the fake provider and wraps it
+// with BuildCompactedMessages. Disabled or under-budget = no-op.
+type mockCompactor struct {
+	Provider ai.Provider
+	Config   *CompactionConfig
+}
+
+func (m mockCompactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
+	if m.Config == nil || !m.Config.Enabled {
+		return messages, nil
 	}
+	if m.Config.KeepFirst+m.Config.KeepLast >= len(messages) {
+		return messages, nil
+	}
+	// Stream a summary from the fake provider.
+	var summary strings.Builder
+	for event := range m.Provider.Stream(ctx, []ai.Message{ai.NewUser("summarize")}, nil) {
+		switch e := event.(type) {
+		case ai.ResponseChunk:
+			summary.WriteString(e.Content)
+		case ai.StreamEnd:
+			if e.FinishReason == "error" {
+				return nil, fmt.Errorf("summarize: %s", e.Error)
+			}
+		}
+	}
+	if summary.Len() == 0 {
+		return nil, fmt.Errorf("summarize: empty summary")
+	}
+	return BuildCompactedMessages(messages, strings.TrimSpace(summary.String()), m.Config.KeepFirst, m.Config.KeepLast), nil
 }

@@ -746,38 +746,6 @@ func (m *StdioManager) PromptGuidelines() []string {
 	return guidelines
 }
 
-// CustomizeCompaction asks extensions for a custom compaction summary.
-// The first extension that returns a non-empty summary wins.
-func (m *StdioManager) CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool) {
-	m.mu.Lock()
-	exts := make([]*stdioExt, len(m.exts))
-	copy(exts, m.exts)
-	m.mu.Unlock()
-
-	for _, ext := range exts {
-		if !ext.alive {
-			continue
-		}
-		result, err := ext.request(ctx, "compaction/customize", map[string]any{
-			"messages": messages,
-		})
-		if err != nil {
-			continue
-		}
-		var cr struct {
-			Summary string `json:"summary"`
-			OK      bool   `json:"ok"`
-		}
-		if err := json.Unmarshal(result, &cr); err != nil {
-			continue
-		}
-		if cr.OK && cr.Summary != "" {
-			return cr.Summary, true
-		}
-	}
-	return "", false
-}
-
 // CustomizeBranchSummary asks extensions for a custom branch summary.
 // The first extension that returns a non-empty summary wins.
 func (m *StdioManager) CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool) {
@@ -845,38 +813,6 @@ func (m *StdioManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions)
 		}
 	}
 	return "", false
-}
-
-// CompactMessages asks extensions to compact the message history
-// completely. The first extension that returns ok=true wins.
-func (m *StdioManager) CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool) {
-	m.mu.Lock()
-	exts := make([]*stdioExt, len(m.exts))
-	copy(exts, m.exts)
-	m.mu.Unlock()
-
-	for _, ext := range exts {
-		if !ext.alive {
-			continue
-		}
-		result, err := ext.request(ctx, "compaction/messages", map[string]any{
-			"messages": messages,
-		})
-		if err != nil {
-			continue
-		}
-		var cr struct {
-			Messages []ai.Message `json:"messages"`
-			OK       bool         `json:"ok"`
-		}
-		if err := json.Unmarshal(result, &cr); err != nil {
-			continue
-		}
-		if cr.OK && len(cr.Messages) > 0 {
-			return cr.Messages, true
-		}
-	}
-	return nil, false
 }
 
 // Close shuts down all extension processes.
@@ -991,6 +927,41 @@ func (m *StdioManager) SkillsProvider() SkillsProvider {
 		return nil
 	}
 	return &ProxySkills{Dispatcher: m}
+}
+
+// compactorExt returns the extension that declared the "compactor" seam,
+// or nil if none exists.
+func (m *StdioManager) compactorExt() *stdioExt {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ext := range m.exts {
+		for _, seam := range ext.seams {
+			if seam == "compactor" {
+				return ext
+			}
+		}
+	}
+	return nil
+}
+
+// CompactorRequest dispatches a compactor-seam JSON-RPC call to the
+// compactor extension. Returns the raw JSON result.
+func (m *StdioManager) CompactorRequest(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+	ext := m.compactorExt()
+	if ext == nil {
+		return nil, fmt.Errorf("no compactor extension loaded")
+	}
+	return ext.request(ctx, method, params)
+}
+
+// CompactorProvider returns a ProxyCompactor that forwards to the
+// compactor-seam extension, or nil if no compactor extension is loaded.
+func (m *StdioManager) CompactorProvider(cfg CompactionConfig) Compactor {
+	ext := m.compactorExt()
+	if ext == nil {
+		return nil
+	}
+	return &ProxyCompactor{Dispatcher: m, Config: cfg}
 }
 
 // ProviderStream dispatches to the provider-seam extension to stream

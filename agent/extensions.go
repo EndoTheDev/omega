@@ -55,11 +55,6 @@ type ExtensionManager interface {
 	// agent loop starts.
 	PromptGuidelines() []string
 
-	// CustomizeCompaction lets an extension provide a custom compaction
-	// summary. Returns ok=false if no extension wants to customize;
-	// the agent uses the default provider-based compaction.
-	CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool)
-
 	// CustomizeBranchSummary lets an extension provide a custom branch
 	// summary. Returns ok=false if no extension wants to customize.
 	CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool)
@@ -69,12 +64,6 @@ type ExtensionManager interface {
 	// gets no system prompt. An extension that returns ok=true
 	// fully owns the system prompt.
 	BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool)
-
-	// CompactMessages asks extensions to compact the message history
-	// completely. Returns ok=false if no extension wants to handle it;
-	// the agent uses the default Compactor. An extension that returns
-	// ok=true fully replaces the default compaction.
-	CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool)
 
 	// SeamProviders returns a map of seam type to extension name for
 	// extensions that declared the seam during initialize. Used by the
@@ -115,6 +104,13 @@ type ExtensionManager interface {
 	// SkillsProvider returns the skills-seam extension as a
 	// SkillsProvider, or nil if no skills extension is loaded.
 	SkillsProvider() SkillsProvider
+
+	// CompactorProvider returns the compactor-seam extension as a
+	// Compactor, or nil if no compactor extension is loaded. The
+	// host passes the compaction config so the extension owns the
+	// full compaction logic. When nil, the agent runs without
+	// compaction and surfaces a friendly error on context overflow.
+	CompactorProvider(cfg CompactionConfig) Compactor
 
 	// InjectedMessages returns a channel of messages injected by
 	// extensions (e.g. subagent results). Nil if no delegate extension
@@ -184,17 +180,11 @@ func (NoopManager) CallCommand(ctx context.Context, name, args string) (string, 
 func (NoopManager) Close() error { return nil }
 
 func (NoopManager) PromptGuidelines() []string { return nil }
-func (NoopManager) CustomizeCompaction(ctx context.Context, messages []ai.Message) (string, bool) {
-	return "", false
-}
 func (NoopManager) CustomizeBranchSummary(ctx context.Context, messages []ai.Message) (string, bool) {
 	return "", false
 }
 func (NoopManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool) {
 	return "", false
-}
-func (NoopManager) CompactMessages(ctx context.Context, messages []ai.Message) ([]ai.Message, bool) {
-	return nil, false
 }
 func (NoopManager) SeamProviders() map[string]string {
 	return nil
@@ -217,6 +207,8 @@ func (NoopManager) ProviderSetModel(model string)    {}
 func (NoopManager) StoreProvider() StoreProvider { return nil }
 
 func (NoopManager) SkillsProvider() SkillsProvider { return nil }
+
+func (NoopManager) CompactorProvider(cfg CompactionConfig) Compactor { return nil }
 
 func (NoopManager) InjectedMessages() <-chan InjectedMessage { return nil }
 func (NoopManager) PendingDelegations() int                  { return 0 }
