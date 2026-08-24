@@ -446,7 +446,7 @@ func TestRunCompactionTriggersAtThreshold(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	collect(t, agent.Run(context.Background(), bigHistory(), nil))
 
 	if !hasCompactedSystem(provider.LastMessages) {
@@ -460,7 +460,7 @@ func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // ~10 tokens < 50
 	collect(t, agent.Run(context.Background(), history, nil))
 
@@ -477,7 +477,7 @@ func TestRunCompactionDisabled(t *testing.T) {
 	agent := NewAgent(provider, nil, 0)
 	cfg := compactionConfig()
 	cfg.Enabled = false
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: cfg})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: cfg})
 	collect(t, agent.Run(context.Background(), bigHistory(), nil))
 
 	if hasCompactedSystem(provider.LastMessages) {
@@ -498,7 +498,7 @@ func TestRunCompactionErrorPropagates(t *testing.T) {
 		},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	events := collect(t, agent.Run(context.Background(), bigHistory(), nil))
 
 	end := lastAgentEnd(events)
@@ -520,7 +520,7 @@ func TestRunOverflowTriggersRetry(t *testing.T) {
 		},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // below budget
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
@@ -558,7 +558,7 @@ func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
@@ -587,7 +587,7 @@ func TestRunOverflowRetryCap(t *testing.T) {
 		},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
@@ -616,7 +616,7 @@ func TestRunOverflowNoRetryAfterContent(t *testing.T) {
 		},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetCompactor(mockCompactor{Provider: provider, Config: compactionConfig()})
+	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 

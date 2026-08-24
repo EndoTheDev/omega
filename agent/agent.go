@@ -24,31 +24,31 @@ type Tool struct {
 }
 
 // Agent runs the multi-turn conversation loop between a provider and a
-// set of tools. It holds configuration and delegates execution to an
-// AgentLoop. Harness concerns (system prompt, compaction) are injected
-// via interfaces. The loop itself is swappable via SetAgentLoop.
+// set of tools. It holds configuration and delegates execution to a
+// LoopProvider. Harness concerns (system prompt, compaction) are injected
+// via interfaces. The loop itself is swappable via SetLoopProvider.
 type Agent struct {
 	provider      ai.Provider
 	tools         map[string]Tool
 	toolProvider  ToolProvider
 	extensions    ExtensionManager
 	maxTurns      int
-	compactor     Compactor
+	compactor     CompactionProvider
 	maxToolOutput int
 	cwd           string
 	promptCustom  string
 	promptAppend  []string
 	promptContext string
 	userInput     chan string
-	loop          AgentLoop
+	loop          LoopProvider
 	mu            sync.Mutex
 	running       bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 // The agent starts with the default agent loop and no compactor
-// (compaction disabled). Use SetProvider, SetCompactor, and
-// SetAgentLoop to customize. The provider may be nil if it will be
+// (compaction disabled). Use SetProvider, SetCompactionProvider, and
+// SetLoopProvider to customize. The provider may be nil if it will be
 // set later via SetProvider.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
@@ -56,7 +56,7 @@ func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent 
 		tools:      tools,
 		extensions: NoopManager{},
 		maxTurns:   maxTurns,
-		loop:       DefaultAgentLoop{},
+		loop:       DefaultLoopProvider{},
 	}
 }
 
@@ -70,8 +70,8 @@ func (a *Agent) SetExtensions(mgr ExtensionManager) {
 	a.extensions = mgr
 }
 
-// SetCompactor installs the compactor. A nil value disables compaction.
-func (a *Agent) SetCompactor(c Compactor) {
+// SetCompactionProvider installs the compactor. A nil value disables compaction.
+func (a *Agent) SetCompactionProvider(c CompactionProvider) {
 	a.compactor = c
 }
 
@@ -118,11 +118,11 @@ func (a *Agent) SetToolProvider(tp ToolProvider) {
 	a.toolProvider = tp
 }
 
-// SetAgentLoop installs a custom agent loop. A nil value restores the
-// default loop.
-func (a *Agent) SetAgentLoop(loop AgentLoop) {
+// SetLoopProvider installs a custom agent loop. A nil value restores
+// the default loop.
+func (a *Agent) SetLoopProvider(loop LoopProvider) {
 	if loop == nil {
-		a.loop = DefaultAgentLoop{}
+		a.loop = DefaultLoopProvider{}
 		return
 	}
 	a.loop = loop
@@ -175,7 +175,7 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			Messages:        messages,
 			Tools:           runTools,
 			ToolProvider:    a.toolProvider,
-			Compactor:       a.compactor,
+			CompactionProvider: a.compactor,
 			Extensions:      a.extensions,
 			MaxTurns:        a.maxTurns,
 			MaxToolOutput:   a.maxToolOutput,

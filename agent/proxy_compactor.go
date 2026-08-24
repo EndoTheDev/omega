@@ -7,18 +7,19 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// CompactorDispatcher routes compactor-seam JSON-RPC calls to the
-// extension that declared the "compactor" seam.
-type CompactorDispatcher interface {
+// CompactionProviderDispatcher routes compactor-seam JSON-RPC calls to
+// the extension that declared the "compactor" seam.
+type CompactionProviderDispatcher interface {
 	CompactorRequest(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
 }
 
-// ProxyCompactor forwards Compactor methods to a compactor-seam
-// extension via JSON-RPC. Messages are encoded as (role, payload)
-// pairs - the same wire format used by the store. The compaction
-// config is passed in each request so the extension owns the logic.
-type ProxyCompactor struct {
-	Dispatcher CompactorDispatcher
+// ProxyCompactionProvider forwards CompactionProvider methods to a
+// compactor-seam extension via JSON-RPC. Messages are encoded as
+// (role, payload) pairs - the same wire format used by the store. The
+// compaction config is passed in each request so the extension owns
+// the logic.
+type ProxyCompactionProvider struct {
+	Dispatcher CompactionProviderDispatcher
 	Config     CompactionConfig
 }
 
@@ -26,7 +27,7 @@ type ProxyCompactor struct {
 // compactor extension. The extension owns the full compaction logic:
 // threshold check, summarization, message assembly. Returns the
 // compacted message list, or the original if no compaction was needed.
-func (p *ProxyCompactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
+func (p *ProxyCompactionProvider) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
 	msgJSON := messagesToJSON(messages)
 	raw, err := p.Dispatcher.CompactorRequest(ctx, "compaction/compact", map[string]any{
 		"messages": msgJSON,

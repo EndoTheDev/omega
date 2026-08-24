@@ -22,6 +22,18 @@ type SearchResult struct {
 	Snippet   string `json:"snippet"`
 }
 
+// Skill is a loaded skill from a skill directory. The YAML frontmatter
+// in the skill file provides name and description; the markdown body is
+// the skill content injected into the system prompt when invoked. Dir
+// is the path to the skill's directory, so the skill can reference its
+// own files (scripts, references, templates) by relative path.
+type Skill struct {
+	Name        string
+	Description string
+	Content     string
+	Dir         string
+}
+
 // ToolStat is one row in the tool breakdown.
 type ToolStat struct {
 	Name  string

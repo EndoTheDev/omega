@@ -56,15 +56,16 @@ func TestBuildCompactedMessagesNoOpWhenNothingToCompact(t *testing.T) {
 	}
 }
 
-// mockCompactor is a minimal Compactor for agent loop tests. It
-// streams a one-line summary from the fake provider and wraps it
-// with BuildCompactedMessages. Disabled or under-budget = no-op.
-type mockCompactor struct {
+// mockCompactionProvider is a minimal CompactionProvider for agent
+// loop tests. It streams a one-line summary from the fake provider
+// and wraps it with BuildCompactedMessages. Disabled or under-budget
+// = no-op.
+type mockCompactionProvider struct {
 	Provider ai.Provider
 	Config   *CompactionConfig
 }
 
-func (m mockCompactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
+func (m mockCompactionProvider) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
 	if m.Config == nil || !m.Config.Enabled {
 		return messages, nil
 	}

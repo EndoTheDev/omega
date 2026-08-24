@@ -6,13 +6,42 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// Compactor handles context compaction when the token budget is
-// exceeded. The host implements this with the default provider-based
-// summarization; extensions can override with custom summaries.
-type Compactor interface {
+// LoopProvider drives the multi-turn conversation. The default
+// implementation (DefaultLoopProvider) runs the standard turn loop:
+// stream provider responses, execute tool calls, feed results back.
+// A custom implementation can replace the entire loop logic.
+type LoopProvider interface {
+	Run(ctx context.Context, opts LoopOptions) error
+}
+
+// LoopOptions carries everything the loop needs to run one agent
+// session. The Agent struct builds this from its configured fields.
+type LoopOptions struct {
+	Provider           ai.Provider
+	Messages           []ai.Message
+	Tools              map[string]Tool
+	ToolProvider       ToolProvider
+	CompactionProvider CompactionProvider
+	Extensions         ExtensionManager
+	MaxTurns           int
+	MaxToolOutput      int
+	CWD                string
+	PromptCustom       string   // user-supplied prompt from config, for extension-built prompts
+	PromptAppend       []string // extra prompts from --append-system-prompt
+	PromptContext      string   // trust-gated AGENTS.md project context
+	Events             chan<- Event
+	InjectedMessages   <-chan InjectedMessage // subagent results (nil if no delegate extension)
+	UserInput          <-chan string           // user messages while running (nil for one-shot mode)
+}
+
+// CompactionProvider handles context compaction when the token budget
+// is exceeded. The compactor-seam extension implements this; when no
+// compactor extension is loaded, compaction is disabled and the agent
+// surfaces a friendly error on context overflow.
+type CompactionProvider interface {
 	// Compact compacts the message history. Returns the compacted
 	// history, or the original if no compaction is needed. A nil
-	// Compactor means compaction is disabled.
+	// CompactionProvider means compaction is disabled.
 	Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error)
 }
 
@@ -21,6 +50,15 @@ type Compactor interface {
 type ToolProvider interface {
 	Tools() map[string]Tool
 }
+
+// DefaultToolProvider wraps a static tool map. Extension tools are
+// merged by the agent on top of these.
+type DefaultToolProvider struct {
+	ToolsMap map[string]Tool
+}
+
+// Tools returns the tool map.
+func (d DefaultToolProvider) Tools() map[string]Tool { return d.ToolsMap }
 
 // StoreProvider is the session persistence seam. The default
 // implementation is SQLite (gateway.Store), provided via the

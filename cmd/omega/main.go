@@ -354,7 +354,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	// none is loaded, compaction is disabled and the agent surfaces a
 	// friendly error on context overflow.
 	if cp := mgr.CompactorProvider(cfg.Compaction); cp != nil {
-		ag.SetCompactor(cp)
+		ag.SetCompactionProvider(cp)
 	} else {
 		fmt.Fprintf(os.Stderr, "omega: no compactor extension loaded — context compaction disabled (install core-compactor in extensions/)\n")
 	}

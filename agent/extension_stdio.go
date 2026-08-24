@@ -965,14 +965,15 @@ func (m *StdioManager) CompactorRequest(ctx context.Context, method string, para
 	return ext.request(ctx, method, params)
 }
 
-// CompactorProvider returns a ProxyCompactor that forwards to the
-// compactor-seam extension, or nil if no compactor extension is loaded.
-func (m *StdioManager) CompactorProvider(cfg CompactionConfig) Compactor {
+// CompactorProvider returns a ProxyCompactionProvider that forwards to
+// the compactor-seam extension, or nil if no compactor extension is
+// loaded.
+func (m *StdioManager) CompactorProvider(cfg CompactionConfig) CompactionProvider {
 	ext := m.compactorExt()
 	if ext == nil {
 		return nil
 	}
-	return &ProxyCompactor{Dispatcher: m, Config: cfg}
+	return &ProxyCompactionProvider{Dispatcher: m, Config: cfg}
 }
 
 // ProviderStream dispatches to the provider-seam extension to stream

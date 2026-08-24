@@ -9,16 +9,16 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// DefaultAgentLoop is the standard turn-based conversation loop.
+// DefaultLoopProvider is the standard turn-based conversation loop.
 // It streams provider responses, executes tool calls, and feeds
 // results back into the message history until the provider stops
 // calling tools or the turn cap is reached.
-type DefaultAgentLoop struct{}
+type DefaultLoopProvider struct{}
 
 // Run executes the conversation loop. It reads all inputs from opts
 // and writes events to opts.Events. The caller is responsible for
 // closing the events channel.
-func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
+func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
 		tools = map[string]Tool{}
@@ -105,8 +105,8 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 			return nil
 		}
 
-		if opts.Compactor != nil {
-			compacted, err := opts.Compactor.Compact(ctx, messages)
+		if opts.CompactionProvider != nil {
+			compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 			if err != nil {
 				end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 				opts.Events <- end
@@ -148,9 +148,9 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 			// retried turn reports its own TurnEnd. Skip the retry when
 			// response content was already streamed: the user saw it, and
 			// retrying would duplicate it.
-			if isOverflowError(streamErr) && opts.Compactor != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
+			if isOverflowError(streamErr) && opts.CompactionProvider != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
-				compacted, err := opts.Compactor.Compact(ctx, messages)
+				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 				if err != nil {
 					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					opts.Events <- end
@@ -163,7 +163,7 @@ func (DefaultAgentLoop) Run(ctx context.Context, opts LoopOptions) error {
 			// No compactor loaded: surface a friendly message instead
 			// of the raw provider error.
 			errMsg := streamErr
-			if isOverflowError(streamErr) && opts.Compactor == nil {
+			if isOverflowError(streamErr) && opts.CompactionProvider == nil {
 				errMsg = "context full — start a new session (/new)"
 			}
 			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}

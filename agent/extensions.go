@@ -110,7 +110,7 @@ type ExtensionManager interface {
 	// host passes the compaction config so the extension owns the
 	// full compaction logic. When nil, the agent runs without
 	// compaction and surfaces a friendly error on context overflow.
-	CompactorProvider(cfg CompactionConfig) Compactor
+	CompactorProvider(cfg CompactionConfig) CompactionProvider
 
 	// InjectedMessages returns a channel of messages injected by
 	// extensions (e.g. subagent results). Nil if no delegate extension
@@ -208,7 +208,7 @@ func (NoopManager) StoreProvider() StoreProvider { return nil }
 
 func (NoopManager) SkillsProvider() SkillsProvider { return nil }
 
-func (NoopManager) CompactorProvider(cfg CompactionConfig) Compactor { return nil }
+func (NoopManager) CompactorProvider(cfg CompactionConfig) CompactionProvider { return nil }
 
 func (NoopManager) InjectedMessages() <-chan InjectedMessage { return nil }
 func (NoopManager) PendingDelegations() int                  { return 0 }

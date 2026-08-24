@@ -841,7 +841,7 @@ func (m *model) startRun() {
 	ag.SetExtensions(m.extensions)
 	if m.compaction != nil {
 		if cp := m.extensions.CompactorProvider(*m.compaction); cp != nil {
-			ag.SetCompactor(cp)
+			ag.SetCompactionProvider(cp)
 		}
 	}
 	if m.compaction != nil {
