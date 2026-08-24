@@ -341,6 +341,17 @@ func buildCommand(path string) (*exec.Cmd, error) {
 	return exec.Command(path), nil
 }
 
+// hasSeam reports whether this extension declared the given seam
+// during initialize.
+func (e *stdioExt) hasSeam(seam string) bool {
+	for _, s := range e.seams {
+		if s == seam {
+			return true
+		}
+	}
+	return false
+}
+
 // readLoop reads JSON-RPC messages from the extension's stdout.
 // Lines with an ID are responses routed to the waiting caller via
 // the pending map. Lines without an ID are notifications routed to
@@ -728,7 +739,7 @@ func (m *StdioManager) PromptGuidelines() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, ext := range exts {
-		if !ext.alive {
+		if !ext.alive || !ext.hasSeam("prompt_builder") {
 			continue
 		}
 		result, err := ext.request(ctx, "prompt/guidelines", nil)
@@ -755,7 +766,7 @@ func (m *StdioManager) CustomizeBranchSummary(ctx context.Context, messages []ai
 	m.mu.Unlock()
 
 	for _, ext := range exts {
-		if !ext.alive {
+		if !ext.alive || !ext.hasSeam("prompt_builder") {
 			continue
 		}
 		result, err := ext.request(ctx, "branch/summary", map[string]any{
@@ -787,7 +798,7 @@ func (m *StdioManager) BuildPrompt(ctx context.Context, opts PromptBuildOptions)
 	m.mu.Unlock()
 
 	for _, ext := range exts {
-		if !ext.alive {
+		if !ext.alive || !ext.hasSeam("prompt_builder") {
 			continue
 		}
 		result, err := ext.request(ctx, "prompt/build", map[string]any{
