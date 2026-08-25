@@ -21,3 +21,6 @@ coverage.out
 .idea/
 .vscode/
 *.swp
+
+# Kanban worktrees
+.worktrees/
