@@ -10,6 +10,170 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
+// testLoop is a minimal LoopProvider for agent tests. It mirrors the
+// real loop's behavior for the cases the agent package tests exercise:
+// stream provider responses, execute tool calls, feed results back.
+// The real loop lives in extensions/agent_loop/ — this is a test-only
+// copy that avoids an import cycle.
+type testLoop struct{}
+
+func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
+	tools := opts.Tools
+	if tools == nil {
+		tools = map[string]Tool{}
+	}
+	if opts.ToolProvider != nil {
+		for name, t := range opts.ToolProvider.Tools() {
+			if _, exists := tools[name]; !exists {
+				tools[name] = t
+			}
+		}
+	}
+	for _, tp := range opts.ToolProviders {
+		if tp == nil {
+			continue
+		}
+		for name, t := range tp.Tools() {
+			if _, exists := tools[name]; !exists {
+				tools[name] = t
+			}
+		}
+	}
+
+	maxTurns := opts.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = 100
+	}
+
+	messages := opts.Messages
+	start := AgentStart{Type: "agent_start", ModelName: ""}
+	if opts.Provider != nil {
+		start.ModelName = opts.Provider.ModelName()
+	}
+	opts.Events <- start
+
+	turns := 0
+	overflowRetries := 0
+	for {
+		if ctx.Err() != nil {
+			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			return nil
+		}
+		if turns >= maxTurns {
+			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
+			return nil
+		}
+
+		if opts.CompactionProvider != nil {
+			compacted, err := opts.CompactionProvider.Compact(ctx, messages)
+			if err != nil {
+				opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+				return nil
+			}
+			messages = compacted
+		}
+
+		turns++
+		opts.Events <- TurnStart{Type: "turn_start", Turn: turns}
+
+		var content strings.Builder
+		var toolCalls []ai.ToolCall
+		finishReason := "stop"
+		streamErr := ""
+
+		if opts.Provider == nil {
+			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
+			return nil
+		}
+
+		for event := range opts.Provider.Stream(ctx, messages, nil) {
+			switch e := event.(type) {
+			case ai.ResponseChunk:
+				content.WriteString(e.Content)
+			case ai.ToolCallEvent:
+				toolCalls = append(toolCalls, e.ToolCall)
+			case ai.StreamEnd:
+				finishReason = e.FinishReason
+				streamErr = e.Error
+			}
+			opts.Events <- StreamEvent{Event: event}
+		}
+
+		if streamErr != "" {
+			// Overflow retry: one compaction + retry.
+			if isOverflowError(streamErr) && opts.CompactionProvider != nil && overflowRetries < 1 && content.Len() == 0 {
+				overflowRetries++
+				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
+				if err != nil {
+					opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					return nil
+				}
+				messages = compacted
+				continue
+			}
+			errMsg := streamErr
+			if isOverflowError(streamErr) && opts.CompactionProvider == nil {
+				errMsg = "context full — start a new session (/new)"
+			}
+			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
+			return nil
+		}
+
+		assistant := ai.NewAssistant(content.String())
+		assistant.ToolCalls = toolCalls
+		messages = append(messages, assistant)
+		opts.Events <- AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+
+		executed := 0
+		for _, call := range toolCalls {
+			tool, ok := tools[call.Name]
+			if !ok {
+				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
+				messages = append(messages, msg)
+				opts.Events <- ToolResultEvent{Type: "tool_result", Message: msg}
+				executed++
+				continue
+			}
+			result, err := tool.Run(ctx, call.Arguments)
+			var msg ai.ToolResult
+			if err != nil {
+				msg = ai.NewToolResult(err.Error(), call.ID, true)
+			} else {
+				msg = ai.NewToolResult(result, call.ID, false)
+			}
+			messages = append(messages, msg)
+			opts.Events <- ToolResultEvent{Type: "tool_result", Message: msg}
+			executed++
+		}
+
+		opts.Events <- TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+
+		if len(toolCalls) == 0 {
+			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			return nil
+		}
+	}
+}
+
+// newTestAgent creates an Agent with the test loop pre-wired.
+func newTestAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
+	a := NewAgent(provider, tools, maxTurns)
+	a.SetLoopProvider(testLoop{})
+	return a
+}
+
+// isOverflowError is duplicated from the real loop (extensions/agent_loop/)
+// because the agent test package can't import the extension.
+func isOverflowError(err string) bool {
+	lower := strings.ToLower(err)
+	for _, phrase := range []string{"context length", "context_length", "too long", "token limit", "maximum context"} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 func collect(t *testing.T, events <-chan Event) []Event {
 	t.Helper()
 	var out []Event
@@ -53,7 +217,7 @@ func TestRunSingleTurn(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 
 	types := eventTypes(events)
@@ -88,7 +252,7 @@ func TestRunMultiTurnToolLoop(t *testing.T) {
 			},
 		},
 	}
-	agent := NewAgent(provider, tools, 0)
+	agent := newTestAgent(provider, tools, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
 	types := eventTypes(events)
@@ -115,7 +279,7 @@ func TestRunMaxTurnsCap(t *testing.T) {
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
 		},
 	}
-	agent := NewAgent(provider, tools, 2)
+	agent := newTestAgent(provider, tools, 2)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
 	end := lastAgentEnd(events)
@@ -134,7 +298,7 @@ func TestRunContextCancellation(t *testing.T) {
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
 		},
 	}
-	agent := NewAgent(provider, tools, 0)
+	agent := newTestAgent(provider, tools, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancelled before the loop starts
 
@@ -151,7 +315,7 @@ func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 
 	// With no extensions loaded, no system prompt is prepended.
@@ -175,7 +339,7 @@ func TestRunUnknownTool(t *testing.T) {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
 	end := lastAgentEnd(events)
@@ -206,7 +370,7 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 		},
 	}}
 
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetToolProviders([]ToolProvider{extTools})
 
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
@@ -257,7 +421,7 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 		},
 	}}
 
-	agent := NewAgent(provider, builtIn, 0)
+	agent := newTestAgent(provider, builtIn, 0)
 	agent.SetToolProviders([]ToolProvider{extTools})
 
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
@@ -279,7 +443,7 @@ func TestRunEventStreamCompletes(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 }
@@ -289,7 +453,7 @@ func TestRunNoExtensionsCompletes(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 	if len(events) == 0 {
@@ -315,7 +479,7 @@ func TestRunToolExecutionLifecycle(t *testing.T) {
 			},
 		},
 	}
-	agent := NewAgent(provider, tools, 0)
+	agent := newTestAgent(provider, tools, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
 	// The tool result must be appended to the history fed to the second turn.
@@ -354,7 +518,7 @@ func TestRunToolErrorHandling(t *testing.T) {
 			},
 		},
 	}
-	agent := NewAgent(provider, tools, 0)
+	agent := newTestAgent(provider, tools, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
 	// The error result must be fed back to the model as a tool result.
@@ -379,7 +543,7 @@ func TestRunConcurrentPromptRejection(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "first"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 
 	first := agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil)
 	if first == nil {
@@ -398,7 +562,7 @@ func TestRunErrorBodyPassthrough(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
 		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 
 	end := lastAgentEnd(events)
@@ -443,7 +607,7 @@ func TestRunCompactionTriggersAtThreshold(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	collect(t, agent.Run(context.Background(), bigHistory(), nil))
 
@@ -457,7 +621,7 @@ func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // ~10 tokens < 50
 	collect(t, agent.Run(context.Background(), history, nil))
@@ -472,7 +636,7 @@ func TestRunCompactionDisabled(t *testing.T) {
 		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	cfg := compactionConfig()
 	cfg.Enabled = false
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: cfg})
@@ -495,7 +659,7 @@ func TestRunCompactionErrorPropagates(t *testing.T) {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "summarize boom"},
 		},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	events := collect(t, agent.Run(context.Background(), bigHistory(), nil))
 
@@ -517,7 +681,7 @@ func TestRunOverflowTriggersRetry(t *testing.T) {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // below budget
 	events := collect(t, agent.Run(context.Background(), history, nil))
@@ -535,7 +699,7 @@ func TestRunOverflowNoRetryWhenCompactionDisabled(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
 		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 	)
-	agent := NewAgent(provider, nil, 0) // no compaction set
+	agent := newTestAgent(provider, nil, 0) // no compaction set
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
@@ -555,7 +719,7 @@ func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
 		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
@@ -584,7 +748,7 @@ func TestRunOverflowRetryCap(t *testing.T) {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
@@ -613,7 +777,7 @@ func TestRunOverflowNoRetryAfterContent(t *testing.T) {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	agent := NewAgent(provider, nil, 0)
+	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
 	history := []ai.Message{ai.NewUser("hi")}
 	events := collect(t, agent.Run(context.Background(), history, nil))

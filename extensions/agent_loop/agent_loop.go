@@ -1,4 +1,4 @@
-package agent
+package agent_loop
 
 import (
 	"context"
@@ -6,28 +6,38 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// DefaultLoopProvider is the standard turn-based conversation loop.
-// It streams provider responses, executes tool calls, and feeds
-// results back into the message history until the provider stops
-// calling tools or the turn cap is reached.
-type DefaultLoopProvider struct{}
+// defaultMaxTurns caps the conversation loop when no explicit cap is set.
+const defaultMaxTurns = 100
+
+// maxOverflowRetries caps how many times a turn is retried after a
+// context overflow error; a second overflow surfaces the error.
+// ponytail: fixed cap like the compaction threshold; upgrade path:
+// expose as a config knob next to compaction settings.
+const maxOverflowRetries = 1
+
+// Loop is the standard turn-based conversation loop. It streams
+// provider responses, executes tool calls, and feeds results back
+// into the message history until the provider stops calling tools
+// or the turn cap is reached.
+type Loop struct{}
 
 // Run executes the conversation loop. It reads all inputs from opts
 // and writes events to opts.Events. The caller is responsible for
 // closing the events channel.
-func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
+func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
-		tools = map[string]Tool{}
+		tools = map[string]agent.Tool{}
 	}
 
 	// Merge tool provider tools. Existing tools take precedence.
 	if opts.ToolProvider != nil {
 		if providerTools := opts.ToolProvider.Tools(); len(providerTools) > 0 {
-			merged := make(map[string]Tool, len(tools)+len(providerTools))
+			merged := make(map[string]agent.Tool, len(tools)+len(providerTools))
 			for name, t := range providerTools {
 				merged[name] = t
 			}
@@ -44,7 +54,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 			continue
 		}
 		extTools := tp.Tools()
-		merged := make(map[string]Tool, len(tools)+len(extTools))
+		merged := make(map[string]agent.Tool, len(tools)+len(extTools))
 		for name, t := range tools {
 			merged[name] = t
 		}
@@ -67,7 +77,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 	// Guidelines are appended to any non-empty prompt.
 	prompt := ""
 	if opts.PromptBuilder != nil {
-		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, PromptBuildOptions{
+		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, agent.PromptBuildOptions{
 			CWD:            opts.CWD,
 			Messages:       messages,
 			Extensions:     opts.ExtensionInfos,
@@ -90,7 +100,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
 	}
 
-	start := AgentStart{Type: "agent_start", ModelName: ""}
+	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
 	if opts.Provider != nil {
 		start.ModelName = opts.Provider.ModelName()
 	}
@@ -100,12 +110,12 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 	overflowRetries := 0
 	for {
 		if ctx.Err() != nil {
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 			opts.Events <- end
 			return nil
 		}
 		if turns >= maxTurns {
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
+			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
 			opts.Events <- end
 			return nil
 		}
@@ -113,7 +123,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		if opts.CompactionProvider != nil {
 			compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 			if err != nil {
-				end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+				end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 				opts.Events <- end
 				return nil
 			}
@@ -121,7 +131,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		}
 
 		turns++
-		turnStart := TurnStart{Type: "turn_start", Turn: turns}
+		turnStart := agent.TurnStart{Type: "turn_start", Turn: turns}
 		opts.Events <- turnStart
 
 		var content, thinking strings.Builder
@@ -130,7 +140,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		streamErr := ""
 
 		if opts.Provider == nil {
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
+			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
 			opts.Events <- end
 			return nil
 		}
@@ -147,7 +157,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 				finishReason = e.FinishReason
 				streamErr = e.Error
 			}
-			opts.Events <- StreamEvent{Event: event}
+			opts.Events <- agent.StreamEvent{Event: event}
 		}
 
 		if streamErr != "" {
@@ -161,7 +171,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 				overflowRetries++
 				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 				if err != nil {
-					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					opts.Events <- end
 					return nil
 				}
@@ -174,7 +184,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 			if isOverflowError(streamErr) && opts.CompactionProvider == nil {
 				errMsg = "context full — start a new session (/new)"
 			}
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
+			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
 			opts.Events <- end
 			return nil
 		}
@@ -186,7 +196,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		}
 		assistant.ToolCalls = toolCalls
 		messages = append(messages, assistant)
-		assistantEvent := AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+		assistantEvent := agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
 
 		// Execute tool calls concurrently. Results are collected in
@@ -203,7 +213,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 				continue
 			}
 			wg.Add(1)
-			go func(idx int, c ai.ToolCall, t Tool) {
+			go func(idx int, c ai.ToolCall, t agent.Tool) {
 				defer wg.Done()
 				result, err := t.Run(ctx, c.Arguments)
 				var msg ai.ToolResult
@@ -223,12 +233,12 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		executed := 0
 		for _, r := range results {
 			messages = append(messages, r.msg)
-			toolResultEvent := ToolResultEvent{Type: "tool_result", Message: r.msg}
+			toolResultEvent := agent.ToolResultEvent{Type: "tool_result", Message: r.msg}
 			opts.Events <- toolResultEvent
 			executed++
 		}
 
-		turnEnd := TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+		turnEnd := agent.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
 		opts.Events <- turnEnd
 
 		// Non-blocking: drain all buffered subagent results and
@@ -259,8 +269,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 
 		if len(toolCalls) == 0 {
 			// One-shot mode (UserInput == nil): block if subagents are
-			// still running. TUI mode (UserInput != nil) never blocks —
-			// the TUI goroutine handles re-injection.
+			// still running. TUI mode (UserInput != nil) never blocks.
 			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.PendingDelegations != nil && opts.PendingDelegations() > 0 {
 				select {
 				case msg, ok := <-opts.InjectedMessages:
@@ -269,12 +278,12 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 						continue
 					}
 				case <-ctx.Done():
-					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+					end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 					opts.Events <- end
 					return nil
 				}
 			}
-			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			opts.Events <- end
 			return nil
 		}
@@ -295,7 +304,7 @@ func isOverflowError(err string) bool {
 }
 
 // toolSchemas converts a tools map to the provider schema list.
-func toolSchemas(tools map[string]Tool) []ai.ToolSchema {
+func toolSchemas(tools map[string]agent.Tool) []ai.ToolSchema {
 	if len(tools) == 0 {
 		return nil
 	}

@@ -25,15 +25,15 @@ type Plugin interface {
 
 ## Seams
 
-| Seam | Type | Description |
-|------|------|-------------|
-| `provider` | exclusive | LLM provider (Ollama, OpenAI, Anthropic) |
-| `compactor` | exclusive | Context compaction |
-| `store` | exclusive | Session persistence |
-| `skills` | exclusive | Skill loading |
-| `loop` | exclusive | Agent loop |
-| `prompt_builder` | exclusive | System prompt builder |
-| `tools` | additive | Tool provider (multiple plugins contribute) |
+| Seam             | Type      | Description                                 |
+| ---------------- | --------- | ------------------------------------------- |
+| `provider`       | exclusive | LLM provider (Ollama, OpenAI, Anthropic)    |
+| `compactor`      | exclusive | Context compaction                          |
+| `store`          | exclusive | Session persistence                         |
+| `skills`         | exclusive | Skill loading                               |
+| `loop`           | exclusive | Agent loop                                  |
+| `prompt_builder` | exclusive | System prompt builder                       |
+| `tools`          | additive  | Tool provider (multiple plugins contribute) |
 
 Exclusive seams conflict if two plugins provide the same one. The
 `tools` seam is additive: multiple plugins contribute to
@@ -41,17 +41,17 @@ Exclusive seams conflict if two plugins provide the same one. The
 
 ## Available extensions
 
-| Package | Seam(s) | Description |
-|---------|---------|-------------|
-| `provider/` | provider | Ollama, OpenAI, Anthropic streaming |
-| `store/` | store, tools | SQLite session store + sessions.search tool |
-| `skills/` | skills, tools | Skill loading + skills.read tool + /skills command |
-| `compactor/` | compactor | Context compaction (keep-first/last + LLM summarize) |
-| `prompt/` | prompt_builder | System prompt builder + guidelines |
-| `tools/` | tools | Shell command + file tools |
-| `mcp/` | tools | MCP bridge (stdio + HTTP MCP servers) |
-| `delegate/` | tools | Subagent delegation (delegate.task, delegate.status) |
-| `web/` | tools | Web search/fetch (Ollama Cloud API) |
+| Package      | Seam(s)        | Description                                          |
+| ------------ | -------------- | ---------------------------------------------------- |
+| `provider/`  | provider       | Ollama, OpenAI, Anthropic streaming                  |
+| `store/`     | store, tools   | SQLite session store + sessions.search tool          |
+| `skills/`    | skills, tools  | Skill loading + skills.read tool + /skills command   |
+| `compactor/` | compactor      | Context compaction (keep-first/last + LLM summarize) |
+| `prompt/`    | prompt_builder | System prompt builder + guidelines                   |
+| `tools/`     | tools          | Shell command + file tools                           |
+| `mcp/`       | tools          | MCP bridge (stdio + HTTP MCP servers)                |
+| `delegate/`  | tools          | Subagent delegation (delegate.task, delegate.status) |
+| `web/`       | tools          | Web search/fetch (Ollama Cloud API)                  |
 
 ## Writing an extension
 

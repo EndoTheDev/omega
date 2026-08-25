@@ -15,6 +15,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/extensions/agent_loop"
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/delegate"
 	"github.com/EndoTheDev/omega/extensions/mcp"
@@ -250,6 +251,7 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 		mcpPlugin = mcp.NewPlugin(nil)
 	}
 	return []agent.Plugin{
+		agent_loop.NewPlugin(),
 		&provider.Plugin{},
 		store.NewPlugin(),
 		skills.NewPlugin(),
@@ -487,6 +489,7 @@ func cmdTest() error {
 
 	ag := agent.NewAgent(provider, tools, 10)
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
+	ag.SetLoopProvider(agent_loop.Loop{})
 
 	ch := ag.Run(context.Background(), []ai.Message{ai.NewUser("test")}, tools)
 

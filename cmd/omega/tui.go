@@ -835,9 +835,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// Capture the current provider settings; /model and /provider apply next turn.
 	// Update the provider's model name at runtime.
 	if m.extensions != nil && m.extensions.Provider != nil {
-		if m.extensions != nil && m.extensions.Provider != nil {
 		m.extensions.Provider.SetModel(m.modelName)
-	}
 	}
 	m.startRun()
 	return m, tea.Batch(m.drainEvents(), m.titleCmd())
@@ -864,6 +862,9 @@ func (m *model) startRun() {
 	ag.SetPromptAppend(m.promptAppend)
 	ag.SetPromptContext(m.promptContext)
 	if m.extensions != nil {
+		if m.extensions.Loop != nil {
+			ag.SetLoopProvider(m.extensions.Loop)
+		}
 		ag.SetToolProviders(m.extensions.ToolProviders)
 		ag.SetPromptBuilder(m.extensions.PromptBuilder)
 		ag.SetExtensionInfos(m.extensions.Infos)

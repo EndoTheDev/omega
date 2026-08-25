@@ -10,12 +10,6 @@ import (
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
 const defaultMaxTurns = 100
 
-// maxOverflowRetries caps how many times a turn is retried after a
-// context overflow error; a second overflow surfaces the error.
-// ponytail: fixed cap like the compaction threshold; upgrade path:
-// expose as a config knob next to compaction settings.
-const maxOverflowRetries = 1
-
 // Tool is a callable the model may invoke. The map key is the tool name.
 type Tool struct {
 	Description string
@@ -27,6 +21,8 @@ type Tool struct {
 // set of tools. It holds configuration and delegates execution to a
 // LoopProvider. Harness concerns (system prompt, compaction) are injected
 // via interfaces. The loop itself is swappable via SetLoopProvider.
+// The loop is not set by default — the host must wire one (e.g. via
+// the agent-loop plugin in extensions/agent_loop/).
 type Agent struct {
 	provider       ai.Provider
 	tools          map[string]Tool
@@ -50,16 +46,14 @@ type Agent struct {
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
-// The agent starts with the default agent loop and no compactor
-// (compaction disabled). Use SetProvider, SetCompactionProvider, and
-// SetLoopProvider to customize. The provider may be nil if it will be
-// set later via SetProvider.
+// The agent starts with no loop — the host must wire one via
+// SetLoopProvider or by mounting the agent-loop plugin. The provider
+// may be nil if it will be set later via SetProvider.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
 		provider: provider,
 		tools:    tools,
 		maxTurns: maxTurns,
-		loop:     DefaultLoopProvider{},
 	}
 }
 
@@ -128,13 +122,9 @@ func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
 	a.extensionInfos = infos
 }
 
-// SetLoopProvider installs a custom agent loop. A nil value restores
-// the default loop.
+// SetLoopProvider installs a custom agent loop. A nil value clears
+// the loop; Run will return an error if called without a loop set.
 func (a *Agent) SetLoopProvider(loop LoopProvider) {
-	if loop == nil {
-		a.loop = DefaultLoopProvider{}
-		return
-	}
 	a.loop = loop
 }
 
@@ -187,6 +177,10 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			a.mu.Unlock()
 		}()
 		defer close(events)
+		if a.loop == nil {
+			events <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
+			return
+		}
 		runTools := tools
 		if runTools == nil {
 			runTools = a.tools

@@ -68,7 +68,36 @@ func newTestServer() *Server {
 		},
 	}
 	a := agent.NewAgent(provider, nil, 0)
+	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, nil)
+}
+
+// testLoop is a minimal loop for gateway tests. It mirrors the
+// real loop's event sequence for simple one-turn conversations.
+// The real loop lives in extensions/agent_loop/.
+type testLoop struct{}
+
+func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
+	if opts.Provider != nil {
+		start.ModelName = opts.Provider.ModelName()
+	}
+	opts.Events <- start
+	opts.Events <- agent.TurnStart{Type: "turn_start", Turn: 1}
+	if opts.Provider == nil {
+		opts.Events <- agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no provider configured"}
+		return nil
+	}
+	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
+		opts.Events <- agent.StreamEvent{Event: event}
+		if end, ok := event.(ai.StreamEnd); ok && end.FinishReason == "stop" {
+			assistant := ai.NewAssistant("")
+			opts.Events <- agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+			opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}
+			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}
+		}
+	}
+	return nil
 }
 
 // newTestServerWithStore returns a server with an in-memory store and a
