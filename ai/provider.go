@@ -76,6 +76,7 @@ type Provider interface {
 	Stream(ctx context.Context, messages []Message, tools []ToolSchema) <-chan StreamEvent
 	ModelName() string
 	SetThinkingLevel(level string)
+	SetModel(model string)
 	ListModels() ([]string, error)
 	ModelInfo() (ModelInfo, error)
 }

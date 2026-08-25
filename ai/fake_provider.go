@@ -55,6 +55,9 @@ func (p *FakeProvider) ModelName() string {
 // SetThinkingLevel is a no-op for the fake provider.
 func (p *FakeProvider) SetThinkingLevel(level string) {}
 
+// SetModel updates the model name for testing.
+func (p *FakeProvider) SetModel(model string) { p.modelName = model }
+
 // ListModels returns a hardcoded list for testing.
 func (p *FakeProvider) ListModels() ([]string, error) {
 	return []string{p.modelName, "other-model"}, nil

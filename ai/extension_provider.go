@@ -14,6 +14,7 @@ type ProviderDispatcher interface {
 	ProviderListModels() ([]string, error)
 	ProviderModelInfo() (ModelInfo, error)
 	ProviderSetThinking(level string)
+	ProviderSetModel(model string)
 }
 
 // ExtensionProvider implements Provider by delegating to a
@@ -49,6 +50,14 @@ func (p ExtensionProvider) SetThinkingLevel(level string) {
 		return
 	}
 	p.Dispatcher.ProviderSetThinking(level)
+}
+
+// SetModel delegates to the dispatcher's ProviderSetModel.
+func (p ExtensionProvider) SetModel(model string) {
+	if p.Dispatcher == nil {
+		return
+	}
+	p.Dispatcher.ProviderSetModel(model)
 }
 
 // ListModels delegates to the dispatcher's ProviderListModels.

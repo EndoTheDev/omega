@@ -88,3 +88,17 @@ type StoreProvider interface {
 type SkillsProvider interface {
 	LoadSkills(dir string) ([]Skill, error)
 }
+
+// PromptBuilder builds the system prompt and supplies guideline
+// lines appended to it. The default implementation is provided via
+// the prompt extension. When no prompt extension is loaded, both
+// methods return zero values.
+type PromptBuilder interface {
+	// BuildPrompt assembles the full system prompt. Returns ok=false
+	// if the builder does not want to provide a prompt; the agent gets
+	// no system prompt in that case.
+	BuildPrompt(ctx context.Context, opts PromptBuildOptions) (string, bool)
+	// Guidelines returns extra lines appended under
+	// "## Extension Guidelines" in the system prompt.
+	Guidelines() []string
+}
