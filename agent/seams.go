@@ -21,8 +21,10 @@ type LoopOptions struct {
 	Messages           []ai.Message
 	Tools              map[string]Tool
 	ToolProvider       ToolProvider
+	ToolProviders      []ToolProvider // additive tool sources (extensions)
 	CompactionProvider CompactionProvider
-	Extensions         ExtensionManager
+	PromptBuilder      PromptBuilder           // builds system prompt + guidelines
+	ExtensionInfos     []ExtensionInfo         // for prompt building context
 	MaxTurns           int
 	MaxToolOutput      int
 	CWD                string
@@ -32,6 +34,7 @@ type LoopOptions struct {
 	Events             chan<- Event
 	InjectedMessages   <-chan InjectedMessage // subagent results (nil if no delegate extension)
 	UserInput          <-chan string           // user messages while running (nil for one-shot mode)
+	PendingDelegations func() int             // returns count of running subagent tasks
 }
 
 // CompactionProvider handles context compaction when the token budget

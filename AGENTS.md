@@ -24,12 +24,16 @@ in Go.
 
 ```txt
 gateway (HTTP API) → agent (loop + tools) → ai (provider streaming)
+    │
+    └── extensions/ (in-process plugins mounted into Context)
 ```
 
 Each layer has a single responsibility. No layer skips over another.
 Events are typed structs, dispatched via type switch. The provider
 layer emits events on a channel. The agent layer consumes them and
 runs the tool loop. The gateway layer exposes everything over HTTP.
+Extensions are in-process Go packages that mount into a shared Context
+via the Plugin interface.
 
 ## Local Contracts
 
@@ -47,6 +51,9 @@ runs the tool loop. The gateway layer exposes everything over HTTP.
 - **No backwards compatibility.** Breaking changes are normal. They
   are not marked with `!` in commit messages (see `agents/COMMIT.md`).
 - **Secrets never committed.** `.env` is gitignored. See `.gitignore`.
+- **Extensions are in-process.** All extensions are Go packages under
+  `extensions/`. No stdio, no IPC, no separate processes. The host
+  calls `MountAll` at startup; the agent loop reads from `Context`.
 
 ## Read Before Editing
 
@@ -89,9 +96,20 @@ AGENTS.md (root — this file)
 ├── build.bat                  # build script (Windows): vet + test + build to bin\
 ├── .agents/                   # conventions (COMMIT.md)
 ├── docs/                      # user documentation (tracked)
-├── ai/                        # provider contract (interface, messages, events), shared HTTP infra, ExtensionProvider; provider implementations in core-provider extension
-├── agent/                     # multi-turn loop (LoopProvider interface + DefaultLoopProvider), tool execution, compaction (config + token estimation), capability seams (CompactionProvider, ToolProvider, LoopProvider, StoreProvider, SkillsProvider), extensions; events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent, SessionEvent
+├── ai/                        # provider contract (interface, messages, events), shared HTTP infra, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT)
+├── agent/                     # multi-turn loop (LoopProvider interface + DefaultLoopProvider), tool execution, compaction (config + token estimation), capability seams (CompactionProvider, ToolProvider, LoopProvider, StoreProvider, SkillsProvider, PromptBuilder), Plugin system (Context, Plugin, MountAll); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent, SessionEvent; shared data types (Session, SessionNode, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions)
 ├── gateway/                   # HTTP server, SSE streaming, session store, config, session tree; SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end
+├── extensions/                # in-process extension packages (importable Go packages)
+│   ├── README.md              # extension authoring guide
+│   ├── provider/              # LLM provider (Ollama, OpenAI, Anthropic streaming)
+│   ├── store/                 # session store (wraps gateway.Store, sessions.search tool)
+│   ├── skills/                # skill loading (skills.read tool, /skills command)
+│   ├── compactor/             # context compaction (keep-first/last + LLM summarize middle)
+│   ├── prompt/                # system prompt builder + guidelines
+│   ├── tools/                 # shell and file tools (shell.run, files.read, files.write, files.edit)
+│   ├── mcp/                   # MCP bridge (stdio + HTTP MCP servers)
+│   ├── delegate/              # subagent delegation (delegate.task, delegate.status, InjectedMessages)
+│   └── web/                   # web search/fetch (Ollama Cloud API)
 ├── bin/                       # runtime directory (gitignored except templates)
 │   ├── omega.exe              # built binary (gitignored)
 │   ├── config.yaml            # personal config (gitignored)
@@ -99,19 +117,9 @@ AGENTS.md (root — this file)
 │   ├── mcp.yaml.example       # MCP bridge config template (tracked)
 │   ├── omega.db               # session database (gitignored)
 │   ├── trust.yaml             # trust state (gitignored)
-│   ├── extensions/            # extension authoring guide + extensions (tracked)
-│   │   ├── core-prompt/      # system prompt builder extension
-│   │   ├── core-provider/    # LLM provider extension (Ollama, OpenAI, Anthropic streaming)
-│   │   ├── core-store/       # session store extension (SQLite, FTS5 search, sessions.search tool)
-│   │   ├── core-skills/      # skills extension (skills.read tool, /skills command, skill loading)
-│   │   ├── core-tools/        # core tools extension (shell, files)
-│   │   ├── core-delegate/     # subagent delegation extension (delegate.task, delegate.status)
-│   │   ├── core-compactor/   # context compactor extension (keep-first/last + LLM summarize middle)
-│   │   ├── mcp-bridge/        # MCP bridge extension (stdio + HTTP)
-│   │   └── ollama-web/        # web search/fetch extension (Ollama Cloud)
 │   └── skills/                # skill templates (tracked)
 └── cmd/
-    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /models, /model <#|name>
+    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name)
 ```
 
 ## Child Doc Shape
@@ -146,12 +154,12 @@ rules but cannot override core contracts.
 
 ## Child DOX Index
 
-| Path              | Status      | What it owns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `agents/`         | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `ai/`             | Implemented | Provider contract (interface, messages, events, tool schema), shared HTTP infra (httpClient, retryHTTP), exported HTTPClient / RetryHTTP / SSEData for extension use, ExtensionProvider + ProviderDispatcher, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT). Provider implementations in core-provider extension.                                                                                                                                                                                                                                                                                                                                                            |
-| `agent/`          | Implemented | Multi-turn loop (`LoopProvider` interface + `DefaultLoopProvider`), tool execution (per-path file locks), compaction (config + token estimation, overflow auto-retry, friendly error when no compactor extension), capability seams (`CompactionProvider`, `ToolProvider`, `LoopProvider`, `StoreProvider`, `SkillsProvider`), extensions (`StdioManager`, `ExtensionManager`, `ProxyStore`, `ProxySkills`, `ProxyCompactionProvider`, `InjectedMessage`, `PendingDelegations`); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, ToolResultEvent, SessionEvent; shared data types (Session, SessionNode, Skill, Insights, SearchResult) |
-| `gateway/`        | Implemented | HTTP server, SSE streaming, session store, config, session tree, cross-session insights (`ComputeInsights`); SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `cmd/omega/`      | Implemented | Single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name)                                                                                                                                                                                                                                                                                       |
-| `bin/`            | Runtime     | Build output, config, database, extensions, skills. Gitignored except `config.yaml.example`, `extensions/` (authoring guide + extensions), `skills/` (templates). Build via `./build.sh` or `build.bat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `bin/extensions/` | Reference   | Extension authoring guide (README.md), core-prompt extension (system prompt builder), core-provider extension (LLM provider streaming: Ollama, OpenAI, Anthropic), core-store extension (SQLite session store, FTS5 search, sessions.search tool), core-skills extension (skills.read tool, /skills command, skill loading), core-tools extension (shell, files), core-compactor extension (context compaction: keep-first/last + LLM summarize middle), core-delegate extension (subagent delegation: delegate.task, delegate.status), web search extension, MCP bridge, and skill templates                        |     |
+| Path          | Status      | What it owns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agents/`     | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `ai/`         | Implemented | Provider contract (interface, messages, events, tool schema), shared HTTP infra (httpClient, retryHTTP), exported HTTPClient / RetryHTTP / SSEData for extension use, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT)                                                                                                                                                                                                                                                                                                                                                                                      |
+| `agent/`      | Implemented | Multi-turn loop (`LoopProvider` interface + `DefaultLoopProvider`), tool execution, compaction (config + token estimation, overflow auto-retry, friendly error when no compactor), capability seams (`CompactionProvider`, `ToolProvider`, `LoopProvider`, `StoreProvider`, `SkillsProvider`, `PromptBuilder`), Plugin system (`Context`, `Plugin`, `MountAll`); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, ToolResultEvent, SessionEvent; shared data types (Session, SessionNode, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions) |
+| `gateway/`    | Implemented | HTTP server, SSE streaming, session store, config, session tree, cross-session insights (`ComputeInsights`); SSE events: agent_start, turn_start, response_chunk, thinking_chunk, tool_call, stream_end, assistant_message, tool_result, turn_end, agent_end                                                                                                                                                                                                                                                                                                                                                 |
+| `cmd/omega/`  | Implemented | Single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name)                                                                                                                                                                                                                   |
+| `bin/`        | Runtime     | Build output, config, database, skills. Gitignored except `config.yaml.example`, `mcp.yaml.example`, `skills/` (templates). Build via `./build.sh` or `build.bat`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `extensions/` | Implemented | In-process extension packages: provider (Ollama, OpenAI, Anthropic), store (SQLite + sessions.search), skills (skill loading + /skills command), compactor (context compaction), prompt (system prompt builder), tools (shell, files), mcp (MCP bridge), delegate (subagent delegation), web (web search/fetch). Each implements the `agent.Plugin` interface.                                                                                                                                                                                                                                               |

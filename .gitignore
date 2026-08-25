@@ -5,8 +5,6 @@ trust.yaml
 bin/*
 !bin/config.yaml.example
 !bin/mcp.yaml.example
-!bin/extensions/
-!bin/extensions/**
 !bin/skills/
 !bin/skills/**
 data/

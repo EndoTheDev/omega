@@ -269,7 +269,7 @@ type model struct {
 	autocompleteSlashPos int                    // byte offset of the / triggering autocomplete, -1 = none
 	screenHeight         int                    // terminal height from the last resize
 	skills               []agent.Skill          // loaded skills, for autocomplete and invocation
-	extensions           agent.ExtensionManager // loaded extensions, for tools/commands/events
+	extensions           *agent.Context       // plugin context (provider, compactor, commands, etc.)
 	commands             []string               // knownCommands + skill names, per-model copy
 	showThinking         bool                   // /thinking display toggle; auto-set from thinkingLevel
 	thinkingLevel        string                 // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
@@ -321,7 +321,10 @@ type modelInfoLoadedMsg struct {
 // the provider. Used by Ctrl+P when modelList is empty.
 func (m model) fetchModelsCmd() tea.Cmd {
 	return func() tea.Msg {
-		models, err := m.extensions.ProviderListModels()
+		if m.extensions == nil || m.extensions.Provider == nil {
+			return modelsLoadedMsg{err: fmt.Errorf("no provider configured")}
+		}
+		models, err := m.extensions.Provider.ListModels()
 		return modelsLoadedMsg{models: models, err: err}
 	}
 }
@@ -332,7 +335,10 @@ func (m model) fetchModelsCmd() tea.Cmd {
 // falls back to compaction config.
 func (m model) fetchModelInfoCmd() tea.Cmd {
 	return func() tea.Msg {
-		info, err := m.extensions.ProviderModelInfo()
+		if m.extensions == nil || m.extensions.Provider == nil {
+			return modelInfoLoadedMsg{err: fmt.Errorf("no provider configured")}
+		}
+		info, err := m.extensions.Provider.ModelInfo()
 		return modelInfoLoadedMsg{contextWindow: info.ContextWindow, err: err}
 	}
 }
@@ -345,8 +351,8 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store agent.StoreProvider, skills []agent.Skill, extensions agent.ExtensionManager, themeName, trustState, notifications string) error {
-	m := newChatModel(pc.Type, pc.ModelName, compaction, promptCustom, promptAppend, promptContext, store, skills, []agent.ExtensionManager{extensions}, themeName, trustState, notifications)
+func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *agent.Context, skills []agent.Skill, themeName, trustState, notifications string) error {
+	m := newChatModel(pc.Type, pc.ModelName, compaction, promptCustom, promptAppend, promptContext, pctx, skills, themeName, trustState, notifications)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("chat: %w", err)
@@ -354,11 +360,16 @@ func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, prom
 	return nil
 }
 
-func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, store agent.StoreProvider, skills []agent.Skill, extensions []agent.ExtensionManager, themeName, trustState, notifications string) model {
-	extMgr := agent.ExtensionManager(agent.NoopManager{})
-	if len(extensions) > 0 {
-		extMgr = extensions[0]
+// storeFromContext returns the StoreProvider from a Context, or nil
+// if the Context is nil.
+func storeFromContext(pctx *agent.Context) agent.StoreProvider {
+	if pctx == nil {
+		return nil
 	}
+	return pctx.Store
+}
+
+func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *agent.Context, skills []agent.Skill, themeName, trustState, notifications string) model {
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
@@ -369,8 +380,8 @@ func newChatModel(providerType, modelName string, compaction *agent.CompactionCo
 	// the package-level slice.
 	commands := make([]string, len(knownCommands))
 	copy(commands, knownCommands)
-	if extMgr != nil {
-		for _, c := range extMgr.Commands() {
+	if pctx != nil {
+		for _, c := range pctx.Commands {
 			commands = append(commands, c.Name)
 		}
 	}
@@ -402,9 +413,9 @@ func newChatModel(providerType, modelName string, compaction *agent.CompactionCo
 		promptCustom:         promptCustom,
 		promptAppend:         promptAppend,
 		promptContext:        promptContext,
-		store:                store,
+		store:                storeFromContext(pctx),
 		skills:               skills,
-		extensions:           extMgr,
+		extensions:           pctx,
 		commands:             commands,
 		autocompleteIndex:    -1,
 		autocompleteSlashPos: -1,
@@ -496,7 +507,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modelName = m.modelList[next]
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.refresh()
-			m.extensions.ProviderSetModel(m.modelName)
+			if m.extensions != nil && m.extensions.Provider != nil {
+		m.extensions.Provider.SetModel(m.modelName)
+	}
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		if msg.Paste {
@@ -619,7 +632,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// PendingDelegations() is 0 — the result may have been
 		// pushed and the counter decremented between ticks.
 		if !m.busy && m.extensions != nil {
-			ch := m.extensions.InjectedMessages()
+			ch := m.extensions.InjectedMessages
 			if ch != nil {
 				var combined string
 				draining := true
@@ -645,7 +658,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.segments = nil
 					m.err = ""
 					m.lastRenderedResponse = ""
-					m.extensions.ProviderSetModel(m.modelName)
+					if m.extensions != nil && m.extensions.Provider != nil {
+		m.extensions.Provider.SetModel(m.modelName)
+	}
 					m.startRun()
 					return m, tea.Batch(m.drainEvents(), m.titleCmd())
 				}
@@ -727,7 +742,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.err = ""
 			m.refresh()
-			m.extensions.ProviderSetModel(m.modelName)
+			if m.extensions != nil && m.extensions.Provider != nil {
+		m.extensions.Provider.SetModel(m.modelName)
+	}
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		m.err = "no models available"
@@ -816,9 +833,12 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	// Capture the current provider settings; /model and /provider apply next turn.
-	// The provider is the core-provider extension via ExtensionProvider.
-	// Update the extension's model name at runtime.
-	m.extensions.ProviderSetModel(m.modelName)
+	// Update the provider's model name at runtime.
+	if m.extensions != nil && m.extensions.Provider != nil {
+		if m.extensions != nil && m.extensions.Provider != nil {
+		m.extensions.Provider.SetModel(m.modelName)
+	}
+	}
 	m.startRun()
 	return m, tea.Batch(m.drainEvents(), m.titleCmd())
 }
@@ -829,8 +849,13 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 func (m *model) startRun() {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	provider := ai.ExtensionProvider{Dispatcher: m.extensions}
-	provider.SetThinkingLevel(m.thinkingLevel)
+	var provider ai.Provider
+	if m.extensions != nil {
+		provider = m.extensions.Provider
+	}
+	if provider != nil {
+		provider.SetThinkingLevel(m.thinkingLevel)
+	}
 	tools := map[string]agent.Tool{}
 	ag := agent.NewAgent(provider, tools, 0)
 	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
@@ -838,10 +863,18 @@ func (m *model) startRun() {
 	ag.SetPromptCustom(m.promptCustom)
 	ag.SetPromptAppend(m.promptAppend)
 	ag.SetPromptContext(m.promptContext)
-	ag.SetExtensions(m.extensions)
-	if m.compaction != nil {
-		if cp := m.extensions.CompactorProvider(*m.compaction); cp != nil {
-			ag.SetCompactionProvider(cp)
+	if m.extensions != nil {
+		ag.SetToolProviders(m.extensions.ToolProviders)
+		ag.SetPromptBuilder(m.extensions.PromptBuilder)
+		ag.SetExtensionInfos(m.extensions.Infos)
+		if m.extensions.Compactor != nil {
+			ag.SetCompactionProvider(m.extensions.Compactor)
+		}
+		if m.extensions.InjectedMessages != nil {
+			ag.SetInjectedMessages(m.extensions.InjectedMessages)
+		}
+		if m.extensions.PendingDelegations != nil {
+			ag.SetPendingDelegations(m.extensions.PendingDelegations)
 		}
 	}
 	if m.compaction != nil {
@@ -1019,8 +1052,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.sessionLabel = ""
 		m.autoNamed = false
-		m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_new"})
-		m.autoNameGen++ // invalidate any auto-name goroutine in flight
+			m.autoNameGen++ // invalidate any auto-name goroutine in flight
 		m.sessionID = ""
 		if len(fields) > 1 && fields[1] == "--ephemeral" {
 			m.ephemeral = true
@@ -1146,7 +1178,9 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			m.persistEntry(ai.NewModelChange(m.modelName))
 			m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 			m.refresh()
-			m.extensions.ProviderSetModel(m.modelName)
+			if m.extensions != nil && m.extensions.Provider != nil {
+		m.extensions.Provider.SetModel(m.modelName)
+	}
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		// Validate against cached model list if available.
@@ -1168,7 +1202,9 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.persistEntry(ai.NewModelChange(m.modelName))
 		m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
 		m.refresh()
-		m.extensions.ProviderSetModel(m.modelName)
+		if m.extensions != nil && m.extensions.Provider != nil {
+		m.extensions.Provider.SetModel(m.modelName)
+	}
 		return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 	case "/models":
 		return m.handleModels()
@@ -1184,7 +1220,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		// Check if the command matches a loaded extension command.
 		cmd := fields[0]
 		if m.extensions != nil {
-			for _, c := range m.extensions.Commands() {
+			for _, c := range m.extensions.Commands {
 				if c.Name == cmd {
 					return m.handleExtensionCommand(c.Name, strings.TrimSpace(strings.TrimPrefix(input, cmd)))
 				}
@@ -1481,7 +1517,7 @@ func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 
 	var infos []agent.ExtensionInfo
 	if m.extensions != nil {
-		infos = m.extensions.Infos()
+		infos = m.extensions.Infos
 	}
 
 	nameWidth := 0
@@ -1516,7 +1552,7 @@ func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleExtensions() (tea.Model, tea.Cmd) {
-	infos := m.extensions.Infos()
+	infos := m.extensions.Infos
 	if len(infos) == 0 {
 		m.transcript += "\n" + m.theme.Info.Render("[no extensions loaded]") + "\n"
 		m.refresh()
@@ -1639,16 +1675,22 @@ func (m model) handleModels() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// fetchModels calls ListModels via the provider extension.
+// fetchModels calls ListModels via the provider.
 func (m model) fetchModels() ([]string, error) {
-	return m.extensions.ProviderListModels()
+	if m.extensions == nil || m.extensions.Provider == nil {
+		return nil, fmt.Errorf("no provider configured")
+	}
+	if m.extensions == nil || m.extensions.Provider == nil {
+		return nil, fmt.Errorf("no provider configured")
+	}
+	return m.extensions.Provider.ListModels()
 }
 
 // handleExtensionCommand runs an extension-provided slash command.
 func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	output, err := m.extensions.CallCommand(ctx, name, args)
+	output, err := m.extensions.CommandHandler(ctx, name, args)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -1701,7 +1743,6 @@ func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
 	m.segments = nil
 	m.err = ""
 	m.storeErr = ""
-	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_resume", ID: id})
 	// Replay model and thinking level changes from the session history.
 	for _, msg := range messages {
 		switch v := msg.(type) {
@@ -1801,24 +1842,15 @@ func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
 	}
 	// Branch summarization: if the inherited history is long, trim to
 	// the first keepFirst messages, a synthetic summary, and the last
-	// keepLast messages. If an extension provides a custom branch
-	// summary, use it instead of the heuristic.
+	// keepLast messages.
 	if m.compaction != nil && len(messages) > m.compaction.KeepFirst+m.compaction.KeepLast+5 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if summary, ok := m.extensions.CustomizeBranchSummary(ctx, messages); ok {
-			cancel()
-			messages = agent.BuildCompactedMessages(messages, summary, m.compaction.KeepFirst, m.compaction.KeepLast)
-		} else {
-			cancel()
-			messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
-		}
+		messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
 	}
 	m.sessionID = id
 	m.history = messages
 	m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
 	m.segments = nil
 	m.err = ""
-	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_fork", ID: id})
 	m.refresh()
 	return m, nil
 }
@@ -1858,7 +1890,6 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 	}
 	m.storeErr = ""
 	m.sessionLabel = label // keep status bar in sync
-	m.extensions.DispatchEvent(agent.SessionEvent{Type: "session_label", ID: m.sessionID, Label: label})
 	if label == "" {
 		m.transcript += "\n" + m.theme.Info.Render("[label cleared]") + "\n"
 	} else {
@@ -2085,7 +2116,7 @@ func (m model) handleCompact() (tea.Model, tea.Cmd) {
 		m.err = "compaction not configured"
 		return m, nil
 	}
-	cp := m.extensions.CompactorProvider(*m.compaction)
+	cp := m.extensions.Compactor
 	if cp == nil {
 		m.err = "no compactor extension loaded"
 		return m, nil
@@ -2497,7 +2528,7 @@ func (m model) splashView() string {
 	}
 	toolCount := 0
 	if m.extensions != nil {
-		for _, ext := range m.extensions.Infos() {
+		for _, ext := range m.extensions.Infos {
 			toolCount += len(ext.ToolList)
 		}
 	}
@@ -2660,7 +2691,7 @@ func (m model) autoNameSession() tea.Cmd {
 	extensions := m.extensions
 
 	return func() tea.Msg {
-		provider := ai.ExtensionProvider{Dispatcher: extensions}
+		provider := extensions.Provider
 		messages := []ai.Message{
 			ai.NewUser(prompt),
 		}

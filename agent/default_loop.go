@@ -38,8 +38,12 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		}
 	}
 
-	// Merge extension tools. Existing tools take precedence on conflict.
-	if extTools := opts.Extensions.Tools(); len(extTools) > 0 {
+	// Merge extension tool providers. Existing tools take precedence.
+	for _, tp := range opts.ToolProviders {
+		if tp == nil {
+			continue
+		}
+		extTools := tp.Tools()
 		merged := make(map[string]Tool, len(tools)+len(extTools))
 		for name, t := range tools {
 			merged[name] = t
@@ -59,25 +63,26 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 
 	messages := opts.Messages
 
-	// Build the system prompt. Extensions can fully replace it via
-	// BuildPrompt. Extension guidelines are appended to any non-empty
-	// prompt.
+	// Build the system prompt. The prompt builder can fully replace it.
+	// Guidelines are appended to any non-empty prompt.
 	prompt := ""
-	if extPrompt, ok := opts.Extensions.BuildPrompt(ctx, PromptBuildOptions{
-		CWD:            opts.CWD,
-		Messages:       messages,
-		Extensions:     opts.Extensions.Infos(),
-		ProjectContext: opts.PromptContext,
-		Custom:         opts.PromptCustom,
-		Append:         opts.PromptAppend,
-	}); ok {
-		prompt = extPrompt
-	}
-	if prompt != "" {
-		if guidelines := opts.Extensions.PromptGuidelines(); len(guidelines) > 0 {
-			prompt += "\n## Extension Guidelines\n"
-			for _, g := range guidelines {
-				prompt += "- " + g + "\n"
+	if opts.PromptBuilder != nil {
+		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, PromptBuildOptions{
+			CWD:            opts.CWD,
+			Messages:       messages,
+			Extensions:     opts.ExtensionInfos,
+			ProjectContext: opts.PromptContext,
+			Custom:         opts.PromptCustom,
+			Append:         opts.PromptAppend,
+		}); ok {
+			prompt = extPrompt
+		}
+		if prompt != "" {
+			if guidelines := opts.PromptBuilder.Guidelines(); len(guidelines) > 0 {
+				prompt += "\n## Extension Guidelines\n"
+				for _, g := range guidelines {
+					prompt += "- " + g + "\n"
+				}
 			}
 		}
 	}
@@ -85,9 +90,11 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
 	}
 
-	start := AgentStart{Type: "agent_start", ModelName: opts.Provider.ModelName()}
+	start := AgentStart{Type: "agent_start", ModelName: ""}
+	if opts.Provider != nil {
+		start.ModelName = opts.Provider.ModelName()
+	}
 	opts.Events <- start
-	opts.Extensions.DispatchEvent(start)
 
 	turns := 0
 	overflowRetries := 0
@@ -95,13 +102,11 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		if ctx.Err() != nil {
 			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 			opts.Events <- end
-			opts.Extensions.DispatchEvent(end)
 			return nil
 		}
 		if turns >= maxTurns {
 			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
 			opts.Events <- end
-			opts.Extensions.DispatchEvent(end)
 			return nil
 		}
 
@@ -110,7 +115,6 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 			if err != nil {
 				end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 				opts.Events <- end
-				opts.Extensions.DispatchEvent(end)
 				return nil
 			}
 			messages = compacted
@@ -119,12 +123,17 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		turns++
 		turnStart := TurnStart{Type: "turn_start", Turn: turns}
 		opts.Events <- turnStart
-		opts.Extensions.DispatchEvent(turnStart)
 
 		var content, thinking strings.Builder
 		var toolCalls []ai.ToolCall
 		finishReason := "stop"
 		streamErr := ""
+
+		if opts.Provider == nil {
+			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
+			opts.Events <- end
+			return nil
+		}
 
 		for event := range opts.Provider.Stream(ctx, messages, toolSchemas(tools)) {
 			switch e := event.(type) {
@@ -154,7 +163,6 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 				if err != nil {
 					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					opts.Events <- end
-					opts.Extensions.DispatchEvent(end)
 					return nil
 				}
 				messages = compacted
@@ -168,7 +176,6 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 			}
 			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
 			opts.Events <- end
-			opts.Extensions.DispatchEvent(end)
 			return nil
 		}
 
@@ -181,7 +188,6 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 		messages = append(messages, assistant)
 		assistantEvent := AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
-		opts.Extensions.DispatchEvent(assistantEvent)
 
 		// Execute tool calls concurrently. Results are collected in
 		// order so the message history stays deterministic.
@@ -219,13 +225,11 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 			messages = append(messages, r.msg)
 			toolResultEvent := ToolResultEvent{Type: "tool_result", Message: r.msg}
 			opts.Events <- toolResultEvent
-			opts.Extensions.DispatchEvent(toolResultEvent)
 			executed++
 		}
 
 		turnEnd := TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
 		opts.Events <- turnEnd
-		opts.Extensions.DispatchEvent(turnEnd)
 
 		// Non-blocking: drain all buffered subagent results and
 		// batch them into one user message. Runs after every turn
@@ -257,7 +261,7 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 			// One-shot mode (UserInput == nil): block if subagents are
 			// still running. TUI mode (UserInput != nil) never blocks —
 			// the TUI goroutine handles re-injection.
-			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.Extensions.PendingDelegations() > 0 {
+			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.PendingDelegations != nil && opts.PendingDelegations() > 0 {
 				select {
 				case msg, ok := <-opts.InjectedMessages:
 					if ok {
@@ -267,13 +271,11 @@ func (DefaultLoopProvider) Run(ctx context.Context, opts LoopOptions) error {
 				case <-ctx.Done():
 					end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 					opts.Events <- end
-					opts.Extensions.DispatchEvent(end)
 					return nil
 				}
 			}
 			end := AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			opts.Events <- end
-			opts.Extensions.DispatchEvent(end)
 			return nil
 		}
 	}

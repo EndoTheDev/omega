@@ -66,20 +66,13 @@ max_turns: 100
 # Switch at runtime with /theme [name] in the TUI.
 theme: dark
 
-extensions:
-  # Load extensions from a directory of executables.
-  # Disabled by default. Set enabled: true to load everything in dir.
-  enabled: false
-  # Directory to scan for extension executables. Default: extensions
-  dir: extensions
+skills:
+  # Directory to scan for skill folders. Default: skills
+  dir: skills
   # CLI flags (no YAML equivalent):
   #   --extension <path> / -e <path>  load a specific extension (repeatable)
   #   --no-extensions                 disable extension loading entirely
   #   --project-extensions            also load <cwd>/.omega/extensions/
-
-skills:
-  # Directory to scan for skill folders. Default: skills
-  dir: skills
 
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_HOME              -> omega home directory (default: binary dir, fallback ~/.omega/)
@@ -96,8 +89,6 @@ skills:
 #   OMEGA_COMPACTION_KEEP_LAST -> compaction.keep_last
 #   OMEGA_COMPACTION_RESERVE_TOKENS -> compaction.reserve_tokens
 #   OMEGA_COMPACTION_MAX_TOOL_OUTPUT -> compaction.max_tool_output
-#   OMEGA_EXTENSIONS_ENABLED -> extensions.enabled (true/1 or false/0)
-#   OMEGA_EXTENSIONS_DIR     -> extensions.dir
 #   OMEGA_SKILLS_DIR        -> skills directory
 #   OMEGA_HTTP_TIMEOUT      -> http_timeout (seconds, default 300)
 #   OMEGA_MAX_TURNS         -> max_turns (default 100)
@@ -105,9 +96,12 @@ skills:
 #   OMEGA_NOTIFICATIONS     -> notifications (bell, desktop, off)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
-# omega.db, skills/, extensions/, and trust.yaml in OMEGA_HOME (default:
+# omega.db, skills/, and trust.yaml in OMEGA_HOME (default:
 # the binary's directory, fallback ~/.omega/). The working directory is
 # used only for AGENTS.md project context and tool file operations.
+#
+# Extensions are compiled into omega. No external extension binaries
+# or configuration are needed.
 #
 # Project trust: AGENTS.md context is gated by a trust check. Trust
 # decisions live in <home>/trust.yaml (trusted: [{path, level}], level

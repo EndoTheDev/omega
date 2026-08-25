@@ -196,14 +196,18 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 		},
 	)
 
-	mgr := &StdioManager{}
-	if err := mgr.Load(mockExtensionDir(t), ""); err != nil {
-		t.Fatalf("load extension: %v", err)
-	}
-	defer mgr.Close()
+	// Use a ToolProvider to supply the extension tool.
+	extTools := DefaultToolProvider{ToolsMap: map[string]Tool{
+		"echo_tool": {
+			Run: func(_ context.Context, args map[string]any) (string, error) {
+				text, _ := args["text"].(string)
+				return "echo: " + text, nil
+			},
+		},
+	}}
 
 	agent := NewAgent(provider, nil, 0)
-	agent.SetExtensions(mgr)
+	agent.SetToolProviders([]ToolProvider{extTools})
 
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
@@ -245,14 +249,16 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 		},
 	}
 
-	mgr := &StdioManager{}
-	if err := mgr.Load(mockExtensionDir(t), ""); err != nil {
-		t.Fatalf("load extension: %v", err)
-	}
-	defer mgr.Close()
+	extTools := DefaultToolProvider{ToolsMap: map[string]Tool{
+		"echo_tool": {
+			Run: func(_ context.Context, args map[string]any) (string, error) {
+				return "extension", nil
+			},
+		},
+	}}
 
 	agent := NewAgent(provider, builtIn, 0)
-	agent.SetExtensions(mgr)
+	agent.SetToolProviders([]ToolProvider{extTools})
 
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
@@ -267,35 +273,27 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 	}
 }
 
-func TestRunExtensionEventsDispatched(t *testing.T) {
+func TestRunEventStreamCompletes(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
 		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
-	mgr := &StdioManager{}
-	if err := mgr.Load(mockExtensionDir(t), ""); err != nil {
-		t.Fatalf("load extension: %v", err)
-	}
-	defer mgr.Close()
-
 	agent := NewAgent(provider, nil, 0)
-	agent.SetExtensions(mgr)
 
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 }
 
-func TestRunSetExtensionsNilFallsBackToNoop(t *testing.T) {
+func TestRunNoExtensionsCompletes(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
 		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := NewAgent(provider, nil, 0)
-	agent.SetExtensions(nil)
 
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
 	if len(events) == 0 {
-		t.Fatal("expected events with nil extension manager")
+		t.Fatal("expected events with no extensions")
 	}
 }
 

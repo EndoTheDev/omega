@@ -28,21 +28,25 @@ type Tool struct {
 // LoopProvider. Harness concerns (system prompt, compaction) are injected
 // via interfaces. The loop itself is swappable via SetLoopProvider.
 type Agent struct {
-	provider      ai.Provider
-	tools         map[string]Tool
-	toolProvider  ToolProvider
-	extensions    ExtensionManager
-	maxTurns      int
-	compactor     CompactionProvider
-	maxToolOutput int
-	cwd           string
-	promptCustom  string
-	promptAppend  []string
-	promptContext string
-	userInput     chan string
-	loop          LoopProvider
-	mu            sync.Mutex
-	running       bool
+	provider       ai.Provider
+	tools          map[string]Tool
+	toolProvider   ToolProvider
+	toolProviders  []ToolProvider
+	maxTurns       int
+	compactor      CompactionProvider
+	maxToolOutput  int
+	cwd            string
+	promptCustom   string
+	promptAppend   []string
+	promptContext  string
+	promptBuilder  PromptBuilder
+	extensionInfos []ExtensionInfo
+	userInput      chan string
+	injectedMsgs   <-chan InjectedMessage
+	pendingDeleg   func() int
+	loop           LoopProvider
+	mu             sync.Mutex
+	running        bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
@@ -52,22 +56,11 @@ type Agent struct {
 // set later via SetProvider.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
-		provider:   provider,
-		tools:      tools,
-		extensions: NoopManager{},
-		maxTurns:   maxTurns,
-		loop:       DefaultLoopProvider{},
+		provider: provider,
+		tools:    tools,
+		maxTurns: maxTurns,
+		loop:     DefaultLoopProvider{},
 	}
-}
-
-// SetExtensions installs the extension manager. A nil value sets the
-// default no-op manager.
-func (a *Agent) SetExtensions(mgr ExtensionManager) {
-	if mgr == nil {
-		a.extensions = NoopManager{}
-		return
-	}
-	a.extensions = mgr
 }
 
 // SetCompactionProvider installs the compactor. A nil value disables compaction.
@@ -118,6 +111,23 @@ func (a *Agent) SetToolProvider(tp ToolProvider) {
 	a.toolProvider = tp
 }
 
+// SetToolProviders installs additional tool providers (from extensions).
+// Their tools are merged on each Run.
+func (a *Agent) SetToolProviders(tps []ToolProvider) {
+	a.toolProviders = tps
+}
+
+// SetPromptBuilder installs the prompt builder for system prompt assembly.
+func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
+	a.promptBuilder = pb
+}
+
+// SetExtensionInfos sets the metadata about loaded extensions, used
+// for prompt building and the /extensions command.
+func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
+	a.extensionInfos = infos
+}
+
 // SetLoopProvider installs a custom agent loop. A nil value restores
 // the default loop.
 func (a *Agent) SetLoopProvider(loop LoopProvider) {
@@ -133,6 +143,17 @@ func (a *Agent) SetLoopProvider(loop LoopProvider) {
 // subagents are running. One-shot mode (omega run) leaves it nil.
 func (a *Agent) SetUserInput(ch chan string) {
 	a.userInput = ch
+}
+
+// SetInjectedMessages sets the channel for subagent result injection.
+func (a *Agent) SetInjectedMessages(ch <-chan InjectedMessage) {
+	a.injectedMsgs = ch
+}
+
+// SetPendingDelegations sets the function that returns the count of
+// running subagent tasks.
+func (a *Agent) SetPendingDelegations(f func() int) {
+	a.pendingDeleg = f
 }
 
 // ModelName returns the name of the model the agent's provider serves.
@@ -171,21 +192,24 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			runTools = a.tools
 		}
 		a.loop.Run(ctx, LoopOptions{
-			Provider:        a.provider,
-			Messages:        messages,
-			Tools:           runTools,
-			ToolProvider:    a.toolProvider,
+			Provider:           a.provider,
+			Messages:           messages,
+			Tools:              runTools,
+			ToolProvider:       a.toolProvider,
+			ToolProviders:      a.toolProviders,
 			CompactionProvider: a.compactor,
-			Extensions:      a.extensions,
-			MaxTurns:        a.maxTurns,
-			MaxToolOutput:   a.maxToolOutput,
-			CWD:             a.cwd,
-			PromptCustom:    a.promptCustom,
-			PromptAppend:    a.promptAppend,
-			PromptContext:   a.promptContext,
-			Events:           events,
-			InjectedMessages: a.extensions.InjectedMessages(),
-			UserInput:        a.userInput,
+			PromptBuilder:      a.promptBuilder,
+			ExtensionInfos:     a.extensionInfos,
+			MaxTurns:           a.maxTurns,
+			MaxToolOutput:      a.maxToolOutput,
+			CWD:                a.cwd,
+			PromptCustom:       a.promptCustom,
+			PromptAppend:       a.promptAppend,
+			PromptContext:      a.promptContext,
+			Events:             events,
+			InjectedMessages:   a.injectedMsgs,
+			UserInput:          a.userInput,
+			PendingDelegations: a.pendingDeleg,
 		})
 	}()
 	return events

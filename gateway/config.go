@@ -15,42 +15,21 @@ import (
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider     ProviderConfig          `yaml:"provider"`
-	Server       ServerConfig            `yaml:"server"`
-	Store        StoreConfig             `yaml:"store"`
-	Compaction   agent.CompactionConfig  `yaml:"compaction"`
-	SystemPrompt string                  `yaml:"system_prompt"`
-	HTTPTimeout  int                     `yaml:"http_timeout"`
-	MaxTurns     int                     `yaml:"max_turns"`
-	Theme        string                  `yaml:"theme"`
-	Notifications string                 `yaml:"notifications"`
-	Extensions   ExtensionsConfig        `yaml:"extensions"`
-	Skills       SkillsConfig            `yaml:"skills"`
-	Plugins      PluginsConfig           `yaml:"plugins"`
-}
-
-// ExtensionsConfig controls whether extensions are loaded and from
-// where. Explicit and Project are CLI-only (set by --extension/-e and
-// --project-extensions), never from YAML or env.
-type ExtensionsConfig struct {
-	Enabled  bool     `yaml:"enabled"`
-	Dir      string   `yaml:"dir"`
-	Explicit []string `yaml:"-"`
-	Project  bool     `yaml:"-"`
+	Provider      ProviderConfig          `yaml:"provider"`
+	Server        ServerConfig            `yaml:"server"`
+	Store         StoreConfig             `yaml:"store"`
+	Compaction    agent.CompactionConfig  `yaml:"compaction"`
+	SystemPrompt  string                  `yaml:"system_prompt"`
+	HTTPTimeout   int                     `yaml:"http_timeout"`
+	MaxTurns      int                     `yaml:"max_turns"`
+	Theme         string                  `yaml:"theme"`
+	Notifications string                  `yaml:"notifications"`
+	Skills        SkillsConfig            `yaml:"skills"`
 }
 
 // SkillsConfig controls where skills are loaded from.
 type SkillsConfig struct {
 	Dir string `yaml:"dir"`
-}
-
-// PluginsConfig specifies which plugin implementations to use for each
-// capability seam. Empty values default to "default" (built-in
-// implementations). Extension names reference loaded extensions that
-// registered as seam providers during initialize.
-type PluginsConfig struct {
-	PromptBuilder string `yaml:"prompt_builder"` // "default" or extension name
-	Compactor     string `yaml:"compactor"`       // "default" or extension name
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -93,16 +72,8 @@ func DefaultConfig() Config {
 			ReserveTokens: 16384,
 			MaxToolOutput: 32768,
 		},
-		Extensions: ExtensionsConfig{
-			Enabled: false,
-			Dir:     "extensions",
-		},
 		Skills: SkillsConfig{
 			Dir: "skills",
-		},
-		Plugins: PluginsConfig{
-			PromptBuilder: "default",
-			Compactor:     "default",
 		},
 		HTTPTimeout:  300,
 		MaxTurns:     100,
@@ -188,12 +159,6 @@ func applyEnv(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.Compaction.MaxToolOutput = n
 		}
-	}
-	if v := os.Getenv("OMEGA_EXTENSIONS_ENABLED"); v != "" {
-		cfg.Extensions.Enabled = v == "1" || strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("OMEGA_EXTENSIONS_DIR"); v != "" {
-		cfg.Extensions.Dir = v
 	}
 	if v := os.Getenv("OMEGA_SKILLS_DIR"); v != "" {
 		cfg.Skills.Dir = v

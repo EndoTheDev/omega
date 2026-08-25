@@ -1,5 +1,9 @@
 package agent
 
+import (
+	"github.com/EndoTheDev/omega/ai"
+)
+
 // Session is a persisted conversation with optional parent linking
 // for branching.
 type Session struct {
@@ -70,4 +74,45 @@ type Insights struct {
 	NotableMsgs    NotableStat
 	NotableTokens  NotableStat
 	NotableTools   NotableStat
+}
+
+// InjectedMessage is a message injected by an extension (e.g. a
+// subagent result) that re-enters the conversation as a new user
+// message, triggering a new turn.
+type InjectedMessage struct {
+	Text   string // the message content
+	Source string // "delegate:<task_id>" — for display
+}
+
+// ExtensionCommand is a slash command registered by an extension.
+type ExtensionCommand struct {
+	Name        string `json:"name"` // includes leading slash, e.g. "/mycmd"
+	Description string `json:"description"`
+}
+
+// ToolInfo is a tool name and description pair, for display in the
+// system prompt and /tools listing.
+type ToolInfo struct {
+	Name        string
+	Description string
+}
+
+// ExtensionInfo is metadata about a loaded extension, for display.
+type ExtensionInfo struct {
+	Name     string
+	Tools    int
+	Commands int
+	Seams    []string   // declared seam types ("prompt_builder", "compactor", etc.)
+	ToolList []ToolInfo // tools provided by this extension (name + description)
+	Status   string     // "running" or "error: ..."
+}
+
+// PromptBuildOptions carries context for extension-built system prompts.
+type PromptBuildOptions struct {
+	CWD            string
+	Messages       []ai.Message
+	Extensions     []ExtensionInfo
+	ProjectContext string   // AGENTS.md contents, already trust-gated by Go
+	Custom         string   // user-supplied prompt from config, may be empty
+	Append         []string // extra prompts from --append-system-prompt, may be nil
 }

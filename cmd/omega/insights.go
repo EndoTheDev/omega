@@ -15,7 +15,7 @@ import (
 func cmdInsights(configPath string, args []string) error {
 	fs := flag.NewFlagSet("insights", flag.ContinueOnError)
 	days := fs.Int("days", 30, "number of days to analyze")
-	if err := fs.Parse(stripConfigFlag(stripTrustArgs(stripExtensionArgs(args)))); err != nil {
+	if err := fs.Parse(stripConfigFlag(stripTrustArgs(args))); err != nil {
 		return err
 	}
 

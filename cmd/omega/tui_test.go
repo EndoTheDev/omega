@@ -23,7 +23,7 @@ func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
 // channel yields streamDoneMsg. This guards the regression where the
 // goroutine's Send never reached the program (m.program was always nil).
 func TestDrainEventsDeliversStream(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	ch := make(chan agent.Event, 64)
 	m.events = ch
 
@@ -49,7 +49,7 @@ func TestDrainEventsDeliversStream(t *testing.T) {
 // so a second submit wrote to a closed channel and panicked. submit() must
 // allocate a fresh channel per run.
 func TestSubmitCreatesFreshChannel(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("hello")
 	// Simulate a completed first run: the channel is closed.
 	ch := make(chan agent.Event, 64)
@@ -73,7 +73,7 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 // TestHandleEventFoldsStream verifies that response chunks, tool calls, and
 // the agent end fold into the transcript and history in the right order.
 func TestHandleEventFoldsStream(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
 	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
@@ -98,7 +98,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 
 // TestHandleEventError verifies a stream error is surfaced and folded.
 func TestHandleEventError(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.handleEvent(agent.StreamEvent{Event: ai.StreamEnd{FinishReason: "error", Error: "boom"}})
 	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
 
@@ -112,7 +112,7 @@ func TestHandleEventError(t *testing.T) {
 
 // TestSlashCommands verifies /new, /model, /help, and unknown handling.
 func TestSlashCommands(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// /model sets the model for the next run. handleCommand returns a new
 	// model copy (value receiver); the caller must use the return value.
@@ -157,7 +157,7 @@ func TestSlashCommands(t *testing.T) {
 // command — it's registered by the core-skills extension. With no
 // extension loaded, /skills falls through to the unknown-command path.
 func TestSkillsCommand(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	updated, _ := m.handleCommand("/skills")
 	m = updated.(model)
 	// /skills is not a built-in command; with no extension manager,
@@ -175,7 +175,7 @@ func TestSkillsCommand(t *testing.T) {
 // The provider type is set at startup via env var and cannot be changed
 // at runtime (requires extension restart with a different API endpoint).
 func TestProviderCommand(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// /provider with no args shows current provider.
 	updated, _ := m.handleCommand("/provider")
@@ -261,7 +261,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	m.textarea.SetValue("hello")
 
 	// Simulate a completed prior run so submit creates a fresh channel and
@@ -316,7 +316,7 @@ func TestClearStartsFreshSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	m.sessionID = "sess1"
 	m.history = append(m.history, ai.NewUser("hi"))
 	m.transcript = "old text"
@@ -355,7 +355,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 
 	updated, _ := m.handleCommand("/sessions")
 	m = updated.(model)
@@ -387,7 +387,7 @@ func TestResumeUnknownSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	updated, _ := m.handleCommand("/resume nope")
 	m = updated.(model)
 	if m.err == "" {
@@ -412,7 +412,7 @@ func TestBranchCommand(t *testing.T) {
 		t.Fatalf("append parent: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	m.sessionID = "parent"
 
 	updated, _ := m.handleCommand("/branch")
@@ -467,7 +467,7 @@ func TestLabelCommand(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	m.sessionID = "s1"
 
 	updated, _ := m.handleCommand("/label my branch")
@@ -495,7 +495,7 @@ func TestLabelCommand(t *testing.T) {
 	}
 
 	// No current session reports an error.
-	m2 := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m2 := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	updated, _ = m2.handleCommand("/label x")
 	m2 = updated.(model)
 	if m2.err == "" {
@@ -526,7 +526,7 @@ func TestTreeCommand(t *testing.T) {
 		t.Fatalf("append root: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	updated, _ := m.handleCommand("/tree")
 	m = updated.(model)
 	if m.storeErr != "" {
@@ -558,7 +558,7 @@ func TestTreeCommand(t *testing.T) {
 // updateAutocomplete (run after every keystroke), so the test drives that
 // path before pressing Tab.
 func TestTabComplete(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// Single match: "/exi" -> "/exit". CursorEnd() moves the cursor to the
 	// end; the cursor position is private on textarea.Model, so we verify
@@ -640,7 +640,7 @@ func TestTabComplete(t *testing.T) {
 // on every update, clear when the input stops starting with "/", and that a
 // single match is auto-selected for immediate Enter/Tab acceptance.
 func TestAutocompleteLiveFilter(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// "/" matches every known command, nothing selected.
 	m.textarea.SetValue("/")
@@ -687,7 +687,7 @@ func TestAutocompleteLiveFilter(t *testing.T) {
 // TestAutocompleteArrows verifies Up/Down cycle the selection across
 // matches, wrapping at both ends.
 func TestAutocompleteArrows(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	if m.autocompleteIndex != -1 {
@@ -722,7 +722,7 @@ func TestAutocompleteArrows(t *testing.T) {
 // TestAutocompleteAccept verifies Enter accepts the selected match and that
 // Enter on a fully-typed command falls through to submit.
 func TestAutocompleteAccept(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// "/mo" is a single match auto-selected; a Down is not needed. Use "/"
 	// (multiple matches) to test arrow-driven selection instead: select
@@ -777,7 +777,7 @@ func TestAutocompleteAccept(t *testing.T) {
 // triggers autocomplete mid-sentence, and accepting a match splices
 // the completion while preserving the text before the slash.
 func TestAutocompleteMidSentence(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// "go ahead and /exi" should trigger autocomplete on /exi.
 	m.textarea.SetValue("go ahead and /exi")
@@ -802,7 +802,7 @@ func TestAutocompleteMidSentence(t *testing.T) {
 // TestAutocompleteMidSentenceNoSpaceBeforeSlash verifies that / not
 // preceded by a space (e.g. in a URL) does not trigger autocomplete.
 func TestAutocompleteMidSentenceNoSpaceBeforeSlash(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	m.textarea.SetValue("check http://example.com")
 	m.updateAutocomplete()
@@ -816,7 +816,7 @@ func TestAutocompleteMidSentenceNoSpaceBeforeSlash(t *testing.T) {
 
 // TestEscapeCancelsRun verifies Escape during a busy run calls cancel.
 func TestEscapeCancelsRun(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.busy = true
 	called := false
 	m.cancel = func() { called = true }
@@ -830,7 +830,7 @@ func TestEscapeCancelsRun(t *testing.T) {
 
 // TestEnterSubmits verifies Enter on non-empty input triggers submit.
 func TestEnterSubmits(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("hello")
 
 	up, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -845,7 +845,7 @@ func TestEnterSubmits(t *testing.T) {
 
 // TestPgUpPgDnScrolls verifies PgUp/PgDn are forwarded to the viewport.
 func TestPgUpPgDnScrolls(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// PgUp should not panic and should return a model.
 	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
@@ -862,7 +862,7 @@ func TestPgUpPgDnScrolls(t *testing.T) {
 
 // TestUpDownHistory verifies Up/Down recall prompt history.
 func TestUpDownHistory(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.promptHistory = []string{"first", "second"}
 
 	// Up from empty input recalls the most recent prompt.
@@ -882,7 +882,7 @@ func TestUpDownHistory(t *testing.T) {
 
 // TestSegmentOrder verifies segments render in the order they were emitted.
 func TestSegmentOrder(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.thinkingLevel = "on"
 	m.showThinking = true
 
@@ -906,7 +906,7 @@ func TestSegmentOrder(t *testing.T) {
 
 // TestStatusLineFormat verifies the status line contains expected fields.
 func TestStatusLineFormat(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 
 	line := ansiStrip(m.statusLine())
@@ -929,7 +929,7 @@ func TestStatusLineFormat(t *testing.T) {
 
 // TestHelpText verifies help text contains all commands.
 func TestHelpText(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	help := m.renderHelp()
 	plain := ansiStrip(help)
 	for _, cmd := range []string{"/exit", "/new", "/sessions", "/resume", "/help", "/model", "/provider", "/compact"} {
@@ -940,7 +940,7 @@ func TestHelpText(t *testing.T) {
 }
 
 func TestEphemeralNewClearsSession(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	m.ephemeral = false
 
@@ -962,7 +962,7 @@ func TestEphemeralSkipsStoreOnSubmit(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	m.ephemeral = true
 	m.textarea.SetValue("hello ephemeral")
 	updated, _ := m.submit()
@@ -978,7 +978,7 @@ func TestEphemeralSkipsStoreOnSubmit(t *testing.T) {
 }
 
 func TestEphemeralBlocksStoreCommands(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.ephemeral = true
 
 	for _, cmd := range []string{"/sessions", "/resume abc", "/branch", "/label x", "/tree"} {
@@ -992,7 +992,7 @@ func TestEphemeralBlocksStoreCommands(t *testing.T) {
 }
 
 func TestEphemeralStatusLine(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.ephemeral = true
 	line := ansiStrip(m.statusLine())
 	if !strings.Contains(line, "ephemeral") {
@@ -1004,19 +1004,19 @@ func TestEphemeralStatusLine(t *testing.T) {
 // trust state is set, and uses the right label.
 func TestStatusLineTrust(t *testing.T) {
 	// No trust state: no indicator.
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	if line := ansiStrip(m.statusLine()); strings.Contains(line, "trusted") || strings.Contains(line, "untrusted") {
 		t.Fatalf("status line = %q, want no trust indicator", line)
 	}
 
 	// Trusted.
-	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "trusted", "bell")
+	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "trusted", "bell")
 	if line := ansiStrip(m.statusLine()); !strings.Contains(line, "trusted") {
 		t.Fatalf("status line = %q, want trusted", line)
 	}
 
 	// Untrusted.
-	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "untrusted", "bell")
+	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "untrusted", "bell")
 	if line := ansiStrip(m.statusLine()); !strings.Contains(line, "untrusted") {
 		t.Fatalf("status line = %q, want untrusted", line)
 	}
@@ -1026,7 +1026,7 @@ func TestStatusLineTrust(t *testing.T) {
 // the input equals (or starts) a command with enum options, the matches
 // are the full command+option strings, sorted.
 func TestAutocompleteArgLevel(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 
 	// Bare /thinking offers its options as full strings, in map order.
 	m.textarea.SetValue("/thinking")
@@ -1086,7 +1086,7 @@ func TestAutocompleteArgLevel(t *testing.T) {
 // TestAutocompleteSemanticOrder verifies matches follow the semantic
 // command order: /new first, /help last.
 func TestAutocompleteSemanticOrder(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	if len(m.autocompleteMatches) != len(knownCommands) {
@@ -1103,7 +1103,7 @@ func TestAutocompleteSemanticOrder(t *testing.T) {
 // TestAutocompletePanelVertical verifies the panel renders matches as
 // newline-separated rows (vertical, not horizontal).
 func TestAutocompletePanelVertical(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	panel := ansiStrip(m.autocompletePanel())
@@ -1123,7 +1123,7 @@ func TestAutocompletePanelVertical(t *testing.T) {
 // TestAutocompleteHeightMatchesPanel verifies height accounting: 0 when
 // empty, rows+2 when matches exist.
 func TestAutocompleteHeightMatchesPanel(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("hello")
 	m.updateAutocomplete()
 	if h := m.autocompleteHeight(); h != 0 {
@@ -1141,7 +1141,7 @@ func TestAutocompleteHeightMatchesPanel(t *testing.T) {
 // selection: pressing Down past the last visible row advances the offset
 // so the selected command stays on screen.
 func TestAutocompleteWindowScrolls(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 
@@ -1169,7 +1169,7 @@ func TestAutocompleteWindowScrolls(t *testing.T) {
 // run is in flight (the busy guard previously swallowed typing without
 // recomputing matches).
 func TestAutocompleteWhileBusy(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.busy = true
 	m.textarea.SetValue("/")
 	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -1185,7 +1185,7 @@ func TestAutocompleteWhileBusy(t *testing.T) {
 // leaving the user text unchanged.
 func TestInlineSkillInvocation(t *testing.T) {
 	skill := agent.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, "dark", "", "bell")
 	m.textarea.SetValue("go ahead and /learn-skill from my notes")
 	updated, _ := m.submit()
 	m = updated.(model)
@@ -1216,7 +1216,7 @@ func TestInlineSkillInvocation(t *testing.T) {
 // paths) pass through without injection.
 func TestInlineSkillUnknownTokenIgnored(t *testing.T) {
 	skill := agent.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, "dark", "", "bell")
 	m.textarea.SetValue("check /path/to/x please")
 	updated, _ := m.submit()
 	m = updated.(model)
@@ -1315,7 +1315,7 @@ func TestSessionsDeleteCommand(t *testing.T) {
 	}
 
 	// Delete by label (the /sessions list populates the resolve cache).
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	listed, _ := m.handleCommand("/sessions")
 	m = listed.(model)
@@ -1343,7 +1343,7 @@ func TestSessionsDeleteUsage(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer s.Close()
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", s, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
 
 	updated, _ := m.handleCommand("/sessions delete")
 	m = updated.(model)
@@ -1360,7 +1360,7 @@ func TestSessionsDeleteUsage(t *testing.T) {
 // TestAutoNameAppliedWhenSessionMatches verifies the auto-name result
 // updates the status bar label when the session still matches.
 func TestAutoNameAppliedWhenSessionMatches(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	up, _ := m.Update(autoNameMsg{sessionID: "abc123", gen: 0, label: "Checking the time"})
 	m = up.(model)
@@ -1375,7 +1375,7 @@ func TestAutoNameAppliedWhenSessionMatches(t *testing.T) {
 // TestAutoNameIgnoredOnSessionMismatch verifies a stale auto-name result
 // (session switched mid-flight) does not overwrite the current label.
 func TestAutoNameIgnoredOnSessionMismatch(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	m.sessionLabel = "Keep me"
 	up, _ := m.Update(autoNameMsg{sessionID: "other", gen: 0, label: "Stale title"})
@@ -1388,7 +1388,7 @@ func TestAutoNameIgnoredOnSessionMismatch(t *testing.T) {
 // TestAutoNameIgnoredAfterNew verifies a stale auto-name result from
 // before /new does not re-apply the old title or block re-naming.
 func TestAutoNameIgnoredAfterNew(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	m.sessionLabel = "Old title"
 	m.autoNamed = true
@@ -1412,7 +1412,7 @@ func TestAutoNameIgnoredAfterNew(t *testing.T) {
 // TestSplashView verifies the startup splash contains the logo,
 // version, model, tool count, and help hint.
 func TestSplashView(t *testing.T) {
-	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	splash := ansiStrip(m.splashView())
 	for _, want := range []string{`#"""#`, "omega", "dev", "ollama/glm-5.2", "tools", "/help"} {
 		if !strings.Contains(splash, want) {
@@ -1424,7 +1424,7 @@ func TestSplashView(t *testing.T) {
 // TestSplashDisappearsAfterSubmit verifies the splash is replaced by
 // the viewport once a message is submitted.
 func TestSplashDisappearsAfterSubmit(t *testing.T) {
-	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	// Fresh model shows splash.
 	view := ansiStrip(m.View())
 	if !strings.Contains(view, `#"""#`) {
@@ -1443,7 +1443,7 @@ func TestSplashDisappearsAfterSubmit(t *testing.T) {
 // TestSplashReappearsAfterNew verifies the splash returns after /new
 // clears the conversation.
 func TestSplashReappearsAfterNew(t *testing.T) {
-	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.transcript = "some content"
 	m.history = append(m.history, ai.NewUser("hi"))
 	// Not showing splash (has content).
@@ -1461,7 +1461,7 @@ func TestSplashReappearsAfterNew(t *testing.T) {
 }
 
 func TestThinkingLevelSet(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	if m.thinkingLevel != "medium" {
 		t.Fatalf("default thinkingLevel = %q, want medium", m.thinkingLevel)
 	}
@@ -1495,7 +1495,7 @@ func TestThinkingLevelSet(t *testing.T) {
 }
 
 func TestThinkingLevelCycle(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	if m.thinkingLevel != "medium" {
 		t.Fatalf("default thinkingLevel = %q, want medium", m.thinkingLevel)
 	}
@@ -1511,7 +1511,7 @@ func TestThinkingLevelCycle(t *testing.T) {
 }
 
 func TestThinkingLevelInvalid(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	up, _ := m.handleCommand("/thinking bogus")
 	m = up.(model)
 	if m.thinkingLevel != "medium" {
@@ -1523,7 +1523,7 @@ func TestThinkingLevelInvalid(t *testing.T) {
 }
 
 func TestModelsCommand(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	up, _ := m.handleCommand("/models")
 	m = up.(model)
 	// Should show a table with model names. The fake provider isn't used here
@@ -1540,7 +1540,7 @@ func TestModelsCommand(t *testing.T) {
 }
 
 func TestModelSelectByNumber(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.modelList = []string{"alpha", "beta", "gamma"}
 	up, _ := m.handleCommand("/model 2")
 	m = up.(model)
@@ -1553,7 +1553,7 @@ func TestModelSelectByNumber(t *testing.T) {
 }
 
 func TestModelSelectOutOfRange(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.modelList = []string{"alpha", "beta"}
 	up, _ := m.handleCommand("/model 99")
 	m = up.(model)
@@ -1566,7 +1566,7 @@ func TestModelSelectOutOfRange(t *testing.T) {
 }
 
 func TestModelValidationWithCache(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.modelList = []string{"alpha", "beta", "gamma"}
 
 	// Valid model accepted.
@@ -1588,7 +1588,7 @@ func TestModelValidationWithCache(t *testing.T) {
 }
 
 func TestModelValidationNoCache(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	// No cache — any model name accepted.
 	up, _ := m.handleCommand("/model anything-goes")
 	m = up.(model)
@@ -1601,7 +1601,7 @@ func TestModelValidationNoCache(t *testing.T) {
 }
 
 func TestCtrlPCyclesModels(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	m.modelList = []string{"alpha", "beta", "gamma"}
 	m.modelName = "alpha"
 
@@ -1628,7 +1628,7 @@ func TestCtrlPCyclesModels(t *testing.T) {
 }
 
 func TestCtrlPEmptyListFetches(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	// modelList is empty; Ctrl+P should trigger a fetch (returns a cmd).
 	up, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
 	m = up.(model)
@@ -1641,7 +1641,7 @@ func TestCtrlPEmptyListFetches(t *testing.T) {
 }
 
 func TestPasteInsertsText(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	// Focus the textarea so it accepts key input.
 	m.textarea.Focus()
 	// Simulate a bracketed paste: KeyMsg with Paste=true and some runes.

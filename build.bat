@@ -7,11 +7,11 @@ cd /d "%~dp0"
 if not exist bin mkdir bin
 
 echo ==^> vet
-go vet ./agent/... ./ai/... ./cmd/... ./gateway/...
+go vet ./agent/... ./ai/... ./cmd/... ./gateway/... ./extensions/...
 if errorlevel 1 exit /b 1
 
 echo ==^> test
-go test ./agent/... ./ai/... ./cmd/... ./gateway/...
+go test ./agent/... ./ai/... ./cmd/... ./gateway/... ./extensions/...
 if errorlevel 1 exit /b 1
 
 echo ==^> build
@@ -20,11 +20,4 @@ if not defined VERSION set VERSION=dev
 go build -ldflags "-X main.omegaVersion=%VERSION%" -o bin\omega.exe .\cmd\omega
 if errorlevel 1 exit /b 1
 echo    bin\omega.exe (version: %VERSION%)
-for /d %%e in (bin\extensions\*) do (
-  if exist "%%e\main.go" (
-    go build -o "bin\extensions\%%~ne\%%~ne.exe" ".\bin\extensions\%%~ne"
-    if errorlevel 1 exit /b 1
-    echo    bin\extensions\%%~ne\%%~ne.exe
-  )
-)
 echo ==^> done
