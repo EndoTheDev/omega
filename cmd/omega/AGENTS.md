@@ -15,13 +15,10 @@ markdown rendering.
 
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
-  agent wiring (`newAgent`, `setProviderEnvVars`, `openStore`),
-  `cmdServe`, `cmdRun`, `cmdChat`, `cmdTest` (smoke test), `cmdHealth`,
-  `loadExtensions`, `loadSkills`, config hot-reload
-  (`gateway.WatchConfig`), store routing (prefers store-seam extension,
-  falls back to in-memory SQLite with stderr warning), extension CLI
-  flag parsing (`parseExtensionArgs`, `stripExtensionArgs`,
-  `applyExtFlags`), env vars (`OMEGA_HOME`, `OMEGA_SKILLS_DIR`,
+  agent wiring (`newAgent`, `buildPlugins`), `cmdServe`, `cmdRun`,
+  `cmdChat`, `cmdTest` (smoke test), `cmdHealth`, config hot-reload
+  (`gateway.WatchConfig`), store wiring (from `ctx.Store` after
+  `MountAll`), env vars (`OMEGA_HOME`, `OMEGA_SKILLS_DIR`,
   `OMEGA_BIN` for subagent delegation), global help (`helpText`)
 - `image.go` - image input support (`detectImage`, `parseFileArgs`,
   `extractImages`, magic-byte detection for PNG/JPEG/GIF/WebP/BMP)
@@ -53,7 +50,7 @@ markdown rendering.
   (`notifyTurnComplete`, `beeep`), model quick-cycle (Ctrl+P,
   `fetchModelsCmd`, `modelsLoadedMsg`), auto-discovered context window
   (`fetchModelInfoCmd`, `modelInfoLoadedMsg`, `contextWindow` field,
-  `ProviderSetModel` before fetch on model switch), bracketed paste
+  `Provider.SetModel` before fetch on model switch), bracketed paste
   (file drop).
   `handleExport` delegates to `exportMessages` in `export.go`.
   Subagent delegation: `startRun` (shared agent setup for submit +
@@ -62,8 +59,8 @@ markdown rendering.
   channel as mode flag for agent loop.
 - `theme.go` - System theme detection: Windows registry, macOS defaults,
   Linux gsettings / GTK_THEME / COLORFGBG fallback
-- `main_test.go` - self-check tests for extension flag parsing,
-  dispatch (chdir error), and help/version flags
+- `main_test.go` - self-check tests for subcommand dispatch,
+  chdir error handling, and help/version flags
 - `export_test.go` - self-check tests for `exportMessages`,
   `messageRole`, and session resolution
 - `update_test.go` - self-check tests for `assetNameForOS` and
@@ -76,8 +73,9 @@ markdown rendering.
 
 ## Local Contracts
 
-- **Subcommands are the only entry surface.** `run` dispatches `serve`,
-  `run`, `health`, `chat`. `--config` and `--append-system-prompt` are
+- **Subcommands are the only entry surface.** `omega` dispatches:
+  `serve`, `run`, `health`, `chat`, `export`, `update`, `insights`.
+  `--config` and `--append-system-prompt` are
   global flags, parsed before or after the subcommand.
   `--append-system-prompt` is repeatable; each value is appended to the
   system prompt after the config's `system_prompt`.
@@ -89,12 +87,6 @@ markdown rendering.
   TUI. A non-subcommand argument is treated as a project path: omega
   chdirs there (erroring cleanly if it is not a directory) and starts
   the TUI. Subcommand names always win over a same-named directory.
-- **Extension CLI flags are CLI-only.** `--extension`/`-e` (repeatable),
-  `--no-extensions`, and `--project-extensions` have no YAML or env
-  equivalent. `applyExtFlags` folds them into `cfg.Extensions` after
-  `LoadConfig`: `--no-extensions` wins over everything; the other two
-  each force `Enabled = true`. `--project-extensions` also loads
-  `<cwd>/.omega/extensions/`.
 - **Project trust gates AGENTS.md context.** The trust unit is the
   nearest directory (walking up from cwd) containing an AGENTS.md.
   Trust decisions live in `<home>/trust.yaml` (`trusted: [{path,
@@ -108,18 +100,18 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `off` does nothing. `OMEGA_NOTIFICATIONS` env var overrides.
 - **Ctrl+P cycles models.** Cycles through `modelList` (populated by
   `/models`). If empty, fires `fetchModelsCmd` to fetch from the
-  provider extension via `ProviderListModels` asynchronously; the
+  provider via `Provider.ListModels` asynchronously; the
   result arrives as `modelsLoadedMsg`.
 - **Auto-discovered context window.** `fetchModelInfoCmd` queries the
-  provider extension for the current model's context window
-  (`ProviderModelInfo` → `/api/show` for Ollama). Fires on `Init`,
+  provider for the current model's context window
+  (`Provider.ModelInfo` → `/api/show` for Ollama). Fires on `Init`,
   `/model`, Ctrl+P, and `modelsLoadedMsg`. The result arrives as
   `modelInfoLoadedMsg` and sets `m.contextWindow`. Status bar priority:
   provider (`m.contextWindow`) > config (`CompactionConfig.ContextWindow`)
   > `agent.DefaultContextWindow` (8192). OpenAI/Anthropic return 0
   > (not exposed by their APIs), so config is the source of truth there.
-  > `ProviderSetModel` is called before `fetchModelInfoCmd` on every
-  > model switch so the extension queries the correct model.
+  > `Provider.SetModel` is called before `fetchModelInfoCmd` on every
+  > model switch so the provider queries the correct model.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
 - **Tool results get syntax highlighting.** `highlightCode` applies
@@ -159,11 +151,13 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `SetPromptContext`, `SetToolProviders` from `ctx.ToolProviders`,
   `SetPromptBuilder` from `ctx.PromptBuilder`, `SetExtensionInfos`
   from `ctx.Infos`, `SetCompactionProvider` from `ctx.Compactor`,
-  `SetLoopProvider` from `ctx.Loop`, `SetInjectedMessages` from
-  `ctx.InjectedMessages`, `SetPendingDelegations` from
-  `ctx.PendingDelegations`. The TUI's submit path mirrors this wiring
-  for each run, using `ctx.Provider` directly and calling
-  `SetModel` for `/model` changes.
+  `SetInjectedMessages` from `ctx.InjectedMessages`,
+  `SetPendingDelegations` from `ctx.PendingDelegations`. The loop is
+  mounted into `ctx.Loop` by `MountAll`; the TUI's `startRun` wires it
+  via `SetLoopProvider(m.extensions.Loop)`. `cmdTest` wires it directly
+  via `SetLoopProvider(agent_loop.Loop{})`. The TUI's submit path
+  mirrors `newAgent` wiring for each run, using `ctx.Provider` directly
+  and calling `SetModel` for `/model` changes.
 - **`/tools` lists tools, `/tools on|off|auto` controls display.**
   No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
   renders all tools from `Infos().ToolList` (first line of description)
@@ -227,7 +221,10 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - **Slash commands run locally and never hit the agent.** `handleCommand`
   intercepts any input starting with `/` before constructing a user
   message. Extension commands and skill invocations are also resolved
-  here.
+  here. `/model`, `/provider`, and `/compact` are extension commands
+  registered by the provider and compactor extensions, dispatched via
+  `handleExtensionCommand` with `CommandResult` + `CmdAction` actions.
+  Other slash commands are built-in to the TUI.
 - **Store-dependent commands are unavailable in ephemeral mode.**
   `/new --ephemeral` sets `m.ephemeral`; `/sessions`, `/resume`,
   `/branch`, `/label`, and `/tree` reject with an error in that state.

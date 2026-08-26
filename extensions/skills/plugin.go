@@ -42,14 +42,15 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	// provide commands; the last one wins — ponytail: acceptable for now
 	// since each command name is unique. Upgrade: dispatch table.
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (string, error) {
-		if out, err := sp.HandleCommand(c, name, args); err == nil {
-			return out, nil
+	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+		out, err := sp.HandleCommand(c, name, args)
+		if err == nil {
+			return agent.CommandResult{Text: out}, nil
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return sp.HandleCommand(c, name, args)
+		return agent.CommandResult{Text: out}, err
 	}
 
 	return nil

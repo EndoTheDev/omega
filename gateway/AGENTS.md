@@ -19,9 +19,9 @@ and environment variables. It is the only layer external clients talk to.
   analytics). Data types (`Session`, `SessionNode`, `Insights`, etc.)
   live in `agent/types.go`. Message encode/decode delegates to
   `ai.EncodeMessage`/`ai.DecodeMessage`.
-- `config.go` - `Config` and sub-configs (including `PluginsConfig`),
-  `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`,
-  `Validate`, `WatchConfig` (fsnotify hot-reload)
+- `config.go` - `Config` and sub-configs, `LoadConfig` (YAML + env +
+  defaults), `DefaultConfig`, `applyEnv`, `Validate`, `WatchConfig`
+  (fsnotify hot-reload)
 - `config_test.go` - config loading and env override tests
 - `server_test.go` - server endpoint and SSE streaming tests with a
   scripted mock provider
@@ -70,8 +70,7 @@ and environment variables. It is the only layer external clients talk to.
   mapping functions in `server.go` (`sseEvent`, `sseStreamEvent`,
   `eventTypeOf`) or the event will serialize under a generic name.
 - The store uses WAL mode + 5s busy_timeout for concurrent access
-  (parent + subagents). `SetMaxOpenConns(1)` was removed to allow
-  connection pooling across processes.
+  (parent + subagents).
 - Schema migration in `migrate` uses `ALTER TABLE` with duplicate-column
   error tolerance for backward compatibility. Add new columns there.
 - Session IDs are 16-byte random hex (`newSessionID`) with a timestamp

@@ -41,17 +41,18 @@ Exclusive seams conflict if two plugins provide the same one. The
 
 ## Available extensions
 
-| Package      | Seam(s)        | Description                                          |
-| ------------ | -------------- | ---------------------------------------------------- |
-| `provider/`  | provider       | Ollama, OpenAI, Anthropic streaming                  |
-| `store/`     | store, tools   | SQLite session store + sessions.search tool          |
-| `skills/`    | skills, tools  | Skill loading + skills.read tool + /skills command   |
-| `compactor/` | compactor      | Context compaction (keep-first/last + LLM summarize) |
-| `prompt/`    | prompt_builder | System prompt builder + guidelines                   |
-| `tools/`     | tools          | Shell command + file tools                           |
-| `mcp/`       | tools          | MCP bridge (stdio + HTTP MCP servers)                |
-| `delegate/`  | tools          | Subagent delegation (delegate.task, delegate.status) |
-| `web/`       | tools          | Web search/fetch (Ollama Cloud API)                  |
+| Package       | Seam(s)        | Description                                          |
+| ------------- | -------------- | ---------------------------------------------------- |
+| `agent_loop/` | loop           | Default conversation loop (LoopProvider impl)        |
+| `provider/`   | provider       | Ollama, OpenAI, Anthropic streaming                  |
+| `store/`      | store, tools   | SQLite session store + sessions.search tool          |
+| `skills/`     | skills, tools  | Skill loading + skills.read tool + /skills command   |
+| `compactor/`  | compactor      | Context compaction (keep-first/last + LLM summarize) |
+| `prompt/`     | prompt_builder | System prompt builder + guidelines                   |
+| `tools/`      | tools          | Shell command + file tools                           |
+| `mcp/`        | tools          | MCP bridge (stdio + HTTP MCP servers)                |
+| `delegate/`   | tools          | Subagent delegation (delegate.task, delegate.status) |
+| `web/`        | tools          | Web search/fetch (Ollama Cloud API)                  |
 
 ## Writing an extension
 

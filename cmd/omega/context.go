@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -70,8 +71,6 @@ func LoadProjectContext(dir string) string {
 	}
 
 	// Reverse so root is first, CWD is last.
-	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
-		parts[i], parts[j] = parts[j], parts[i]
-	}
+	slices.Reverse(parts)
 	return strings.Join(parts, "\n\n")
 }

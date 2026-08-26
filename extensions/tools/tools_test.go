@@ -19,8 +19,8 @@ func TestToolProviderImplementsAgentToolProvider(t *testing.T) {
 
 func TestPluginContract(t *testing.T) {
 	p := NewPlugin()
-	if p.Name() != "core-tools" {
-		t.Fatalf("Name = %q, want %q", p.Name(), "core-tools")
+	if p.Name() != "tools" {
+		t.Fatalf("Name = %q, want %q", p.Name(), "tools")
 	}
 	if len(p.Requires()) != 0 {
 		t.Fatalf("Requires = %v, want empty", p.Requires())

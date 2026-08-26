@@ -28,7 +28,7 @@ type Context struct {
 
 	// Cross-cutting (set by specific plugins).
 	Commands          []ExtensionCommand
-	CommandHandler    func(ctx context.Context, name, args string) (string, error)
+	CommandHandler    func(ctx context.Context, name, args string) (CommandResult, error)
 	InjectedMessages  <-chan InjectedMessage
 	PendingDelegations func() int
 
@@ -132,15 +132,34 @@ func MountAll(plugins []Plugin, ctx *Context) error {
 		}
 	}
 
-	// Mount in order.
+	// Mount in order. After each mount, record what the plugin
+	// contributed so /extensions can display accurate counts.
 	for _, p := range ordered {
+		beforeTools := len(ctx.ToolProviders)
+		beforeCmds := len(ctx.Commands)
 		if err := p.Mount(ctx); err != nil {
 			return fmt.Errorf("mount %q: %w", p.Name(), err)
 		}
-		ctx.Infos = append(ctx.Infos, ExtensionInfo{
+		info := ExtensionInfo{
 			Name:   p.Name(),
 			Seams:  p.Provides(),
-		})
+		}
+		// Count tools this plugin added.
+		for _, tp := range ctx.ToolProviders[beforeTools:] {
+			if tp == nil {
+				continue
+			}
+			for name, t := range tp.Tools() {
+				info.Tools++
+				info.ToolList = append(info.ToolList, ToolInfo{
+					Name:        name,
+					Description: t.Description,
+				})
+			}
+		}
+		// Count commands this plugin added.
+		info.Commands = len(ctx.Commands) - beforeCmds
+		ctx.Infos = append(ctx.Infos, info)
 	}
 
 	return nil

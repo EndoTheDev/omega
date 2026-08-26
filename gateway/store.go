@@ -212,18 +212,6 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	return err
 }
 
-// BranchSession creates a child session under parentID. The child starts
-// empty; its history is the parent's via GetAncestorMessages. It returns
-// an error if the parent does not exist.
-func (s *Store) BranchSession(ctx context.Context, parentID, id string) error {
-	return s.CreateSession(ctx, id, parentID, "")
-}
-
-// SetLabel sets (or clears, with an empty label) a session's label.
-func (s *Store) SetLabel(ctx context.Context, id, label string) error {
-	return s.UpdateSession(ctx, id, label)
-}
-
 func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET label = ?, updated_at = ? WHERE id = ?`,

@@ -534,13 +534,6 @@ func (b *Bridge) connect(cfg *mcpConfig) error {
 	return nil
 }
 
-// Close releases all server connections.
-func (b *Bridge) Close() {
-	for _, s := range b.servers {
-		s.close()
-	}
-}
-
 // Tools builds the agent.Tool map from discovered MCP tools. Each tool
 // wraps a call to the appropriate MCP server.
 func (b *Bridge) Tools() map[string]agentTool {

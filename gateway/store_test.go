@@ -97,7 +97,7 @@ func TestBranchSession(t *testing.T) {
 	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	if err := s.BranchSession(ctx, "root", "child"); err != nil {
+	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
 		t.Fatalf("branch: %v", err)
 	}
 	child, err := s.GetSession(ctx, "child")
@@ -108,7 +108,7 @@ func TestBranchSession(t *testing.T) {
 		t.Fatalf("child parent = %q, want root", child.ParentID)
 	}
 	// Branching from a missing parent must fail.
-	if err := s.BranchSession(ctx, "missing", "orphan"); err == nil {
+	if err := s.CreateSession(ctx, "orphan", "missing", ""); err == nil {
 		t.Fatal("branch from missing parent should error")
 	}
 }
@@ -119,7 +119,7 @@ func TestSetLabel(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.SetLabel(ctx, "s1", "my label"); err != nil {
+	if err := s.UpdateSession(ctx, "s1", "my label"); err != nil {
 		t.Fatalf("set label: %v", err)
 	}
 	sess, err := s.GetSession(ctx, "s1")
@@ -130,7 +130,7 @@ func TestSetLabel(t *testing.T) {
 		t.Fatalf("label = %q, want my label", sess.Label)
 	}
 	// Empty label clears it.
-	if err := s.SetLabel(ctx, "s1", ""); err != nil {
+	if err := s.UpdateSession(ctx, "s1", ""); err != nil {
 		t.Fatalf("clear label: %v", err)
 	}
 	sess, err = s.GetSession(ctx, "s1")

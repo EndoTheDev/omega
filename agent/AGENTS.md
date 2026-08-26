@@ -24,8 +24,8 @@ gateway, or extensions).
   container with typed seam slots), `Plugin` interface (`Name`,
   `Provides`, `Requires`, `Mount`), `MountAll` (topological sort by
   dependencies, conflict detection on exclusive seams).
-- `compaction.go` - compaction config (`CompactionConfig` + `Budget`),
-  token estimation (`EstimateTokens`, `MessageText`), context window
+- `compaction.go` - compaction config (`CompactionConfig` with
+  `Budget()` method), token estimation (`EstimateTokens`, `MessageText`), context window
   constants, `BuildCompactedMessages` (shared helper for branch summary
   and compactor extension). Compaction logic lives in
   `extensions/compactor/`.
@@ -50,10 +50,6 @@ gateway, or extensions).
   `Run()` so extensions can be swapped between runs.
 - **Tool errors are structured returns.** Tools return `(string, error)`;
   the error becomes an `IsError` tool result message, never a panic.
-- **File tools are per-path locked.** The `files.read`, `files.write`,
-  and `files.edit` tools acquire a `sync.Mutex` keyed by absolute path
-  before touching the file, serializing concurrent access to the same
-  path. The locks live in the `extensions/tools/` package.
 - **Capability seams.** Harness concerns are injected via interfaces:
   `CompactionProvider` (context compaction), `ToolProvider` (tool
   registry), `LoopProvider` (conversation loop), `StoreProvider`
@@ -71,12 +67,10 @@ gateway, or extensions).
   calls `MountAll` at startup; the agent loop reads from `Context`.
 - **No re-exports.** Types defined in `ai/` are imported from
   there, not re-exported from this package.
-- **Subagent delegation injection.** The agent loop drains
-  `InjectedMessages` after every turn (non-blocking, batches multiple
-  results). In one-shot mode (`UserInput == nil`), the loop blocks on
-  `InjectedMessages` when `PendingDelegations() > 0`. In TUI mode
-  (`UserInput != nil`), the loop never blocks; the TUI tick handler
-  drains and injects results as new runs.
+- **Subagent delegation injection.** The agent exposes
+  `SetInjectedMessages` and `SetPendingDelegations` for delegation
+  injection. Draining behavior is owned by the loop implementation
+  (`extensions/agent_loop/`).
 
 ## Work Guidance
 

@@ -90,6 +90,20 @@ type ExtensionCommand struct {
 	Description string `json:"description"`
 }
 
+// CommandResult is what an extension command returns. Text is printed
+// to the transcript. Actions are TUI directives the host interprets.
+type CommandResult struct {
+	Text    string      // what to display (may be empty)
+	Actions []CmdAction // optional TUI actions
+}
+
+// CmdAction tells the host to do something after a command runs.
+// Extensions declare intent; the host interprets.
+type CmdAction struct {
+	Type  string // "set_model", "refresh_title", "fetch_model_info", "run_compact"
+	Value string // the value (model name)
+}
+
 // ToolInfo is a tool name and description pair, for display in the
 // system prompt and /tools listing.
 type ToolInfo struct {
@@ -104,7 +118,6 @@ type ExtensionInfo struct {
 	Commands int
 	Seams    []string   // declared seam types ("prompt_builder", "compactor", etc.)
 	ToolList []ToolInfo // tools provided by this extension (name + description)
-	Status   string     // "running" or "error: ..."
 }
 
 // PromptBuildOptions carries context for extension-built system prompts.

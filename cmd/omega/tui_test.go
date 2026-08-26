@@ -8,9 +8,19 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/extensions/provider"
 	"github.com/EndoTheDev/omega/gateway"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// testContext creates a minimal agent.Context with a real provider plugin
+// and command handler, for testing extension-routed commands.
+func testContext() *agent.Context {
+	ctx := &agent.Context{}
+	p := &provider.Plugin{}
+	p.Mount(ctx)
+	return ctx
+}
 
 // ansiStrips ANSI escape sequences so tests can assert on plain content
 // regardless of glamour styling.
@@ -112,7 +122,7 @@ func TestHandleEventError(t *testing.T) {
 
 // TestSlashCommands verifies /new, /model, /help, and unknown handling.
 func TestSlashCommands(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
 
 	// /model sets the model for the next run. handleCommand returns a new
 	// model copy (value receiver); the caller must use the return value.
@@ -175,12 +185,12 @@ func TestSkillsCommand(t *testing.T) {
 // The provider type is set at startup via env var and cannot be changed
 // at runtime (requires extension restart with a different API endpoint).
 func TestProviderCommand(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
 
 	// /provider with no args shows current provider.
 	updated, _ := m.handleCommand("/provider")
 	m = updated.(model)
-	if !strings.Contains(m.transcript, "current: ollama") {
+	if !strings.Contains(m.transcript, "provider: ollama") {
 		t.Fatalf("transcript should show current provider, got: %q", m.transcript)
 	}
 }
@@ -1540,14 +1550,14 @@ func TestModelsCommand(t *testing.T) {
 }
 
 func TestModelSelectByNumber(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
 	m.modelList = []string{"alpha", "beta", "gamma"}
 	up, _ := m.handleCommand("/model 2")
 	m = up.(model)
 	if m.modelName != "beta" {
 		t.Fatalf("modelName = %q, want beta", m.modelName)
 	}
-	if !strings.Contains(m.transcript, "model set to beta") {
+	if !strings.Contains(m.transcript, "switched to beta") {
 		t.Errorf("transcript should confirm model switch: %q", m.transcript)
 	}
 }
@@ -1566,7 +1576,7 @@ func TestModelSelectOutOfRange(t *testing.T) {
 }
 
 func TestModelValidationWithCache(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
 	m.modelList = []string{"alpha", "beta", "gamma"}
 
 	// Valid model accepted.
@@ -1588,7 +1598,7 @@ func TestModelValidationWithCache(t *testing.T) {
 }
 
 func TestModelValidationNoCache(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
 	// No cache — any model name accepted.
 	up, _ := m.handleCommand("/model anything-goes")
 	m = up.(model)

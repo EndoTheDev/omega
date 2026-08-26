@@ -1084,8 +1084,6 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			return m.handleTree()
 		}
 		return m, nil // unreachable; all cases return
-	case "/compact":
-		return m.handleCompact()
 	case "/copy":
 		return m.handleCopy()
 	case "/export":
@@ -1175,14 +1173,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 				m.refresh()
 				return m, nil
 			}
-			m.modelName = m.modelList[n-1]
-			m.persistEntry(ai.NewModelChange(m.modelName))
-			m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
-			m.refresh()
-			if m.extensions != nil && m.extensions.Provider != nil {
-		m.extensions.Provider.SetModel(m.modelName)
-	}
-			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
+			arg = m.modelList[n-1]
 		}
 		// Validate against cached model list if available.
 		if len(m.modelList) > 0 {
@@ -1199,24 +1190,10 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		m.modelName = arg
-		m.persistEntry(ai.NewModelChange(m.modelName))
-		m.transcript += "\n" + m.theme.Info.Render("[model set to "+m.modelName+"]") + "\n"
-		m.refresh()
-		if m.extensions != nil && m.extensions.Provider != nil {
-		m.extensions.Provider.SetModel(m.modelName)
-	}
-		return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
+		// Route to the provider extension command.
+		return m.handleExtensionCommand("/model", arg)
 	case "/models":
 		return m.handleModels()
-	case "/provider":
-		provider := m.providerType
-		if provider == "" {
-			provider = "ollama"
-		}
-		m.transcript += "\n" + m.theme.Info.Render("current: "+provider) + "\n"
-		m.refresh()
-		return m, nil
 	default:
 		// Check if the command matches a loaded extension command.
 		cmd := fields[0]
@@ -1569,11 +1546,12 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 
 	var sb strings.Builder
 	sb.WriteString("\n")
-	header := fmt.Sprintf("%-*s  %5s  %8s  %s", nameWidth, "NAME", "TOOLS", "COMMANDS", "STATUS")
+	header := fmt.Sprintf("%-*s  %5s  %8s  %s", nameWidth, "NAME", "TOOLS", "COMMANDS", "SEAMS")
 	sb.WriteString(m.theme.Info.Render(header))
 	sb.WriteString("\n")
 	for _, info := range infos {
-		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, info.Status)
+		seams := strings.Join(info.Seams, ", ")
+		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, seams)
 	}
 	m.transcript += sb.String()
 	m.refresh()
@@ -1686,15 +1664,39 @@ func (m model) fetchModels() ([]string, error) {
 
 // handleExtensionCommand runs an extension-provided slash command.
 func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
+	if m.extensions == nil || m.extensions.CommandHandler == nil {
+		m.err = "no command handler configured"
+		return m, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	output, err := m.extensions.CommandHandler(ctx, name, args)
+	result, err := m.extensions.CommandHandler(ctx, name, args)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.transcript += "\n" + m.theme.Info.Render("["+name+"]") + "\n" + wordWrap(output, m.viewport.Width) + "\n"
+	if result.Text != "" {
+		m.transcript += "\n" + m.theme.Info.Render(result.Text) + "\n"
+	}
 	m.refresh()
+	// Process TUI actions declared by the extension.
+	var cmds []tea.Cmd
+	for _, action := range result.Actions {
+		switch action.Type {
+		case "set_model":
+			m.modelName = action.Value
+			m.persistEntry(ai.NewModelChange(m.modelName))
+		case "refresh_title":
+			cmds = append(cmds, m.titleCmd())
+		case "fetch_model_info":
+			cmds = append(cmds, m.fetchModelInfoCmd())
+		case "run_compact":
+			return m.handleCompact()
+		}
+	}
+	if len(cmds) > 0 {
+		return m, tea.Batch(cmds...)
+	}
 	return m, nil
 }
 
@@ -2833,8 +2835,8 @@ func (m model) renderHelp() string {
 		{"/tree", "show the session tree"},
 		{"/model <#|name>", "switch the model (line # from /models, or name)"},
 		{"/models", "list available models from the current provider"},
-		{"/provider <n>", "switch provider (ollama, openai, anthropic)"},
-		{"/compact [focus]", "summarize conversation history (optional focus)"},
+		{"/provider", "show current provider and model"},
+		{"/compact", "summarize conversation history"},
 		{"/copy", "copy the last message to clipboard"},
 		{"/export [path]", "export session messages to JSONL (default: <session_id>.jsonl)"},
 		{"/search <query>", "search session messages (full-text)"},

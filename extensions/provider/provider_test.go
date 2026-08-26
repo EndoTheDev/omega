@@ -193,8 +193,8 @@ func TestAnthropicConvertMessages(t *testing.T) {
 // metadata.
 func TestPluginInterface(t *testing.T) {
 	p := Plugin{}
-	if p.Name() != "core-provider" {
-		t.Fatalf("Name() = %q, want %q", p.Name(), "core-provider")
+	if p.Name() != "provider" {
+		t.Fatalf("Name() = %q, want %q", p.Name(), "provider")
 	}
 	provides := p.Provides()
 	if len(provides) != 1 || provides[0] != "provider" {
