@@ -9,6 +9,10 @@ bin/*
 !bin/skills/**
 data/
 
+# Improvement loop temp files
+tmp/
+scripts/improve-gates.sh
+
 # Go
 *.exe
 *.test
