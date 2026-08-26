@@ -7,10 +7,10 @@ gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
 | Layer      | Package          | Responsibility                                                                                                       |
 | ---------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Gateway    | `gateway`        | HTTP server, SSE streaming, session store (SQLite), config, session tree                                             |
-| Agent      | `agent`          | Multi-turn loop, parallel tool execution, compaction, capability seams, extensions                                   |
+| Agent      | `agent`          | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)   |
 | Provider   | `ai`             | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                 |
 | CLI        | `cmd/omega`      | Entry point, TUI, project context, trust gate, config wiring                                                         |
-| Extensions | `bin/extensions` | 8 extensions: core-prompt, core-provider, core-store, core-skills, core-tools, core-delegate, mcp-bridge, ollama-web |
+| Extensions | `extensions/`     | 10 in-process Go packages: agent_loop, provider, store, skills, compactor, prompt, tools, mcp, delegate, web        |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -22,10 +22,10 @@ everything over HTTP.
 ```txt
 cmd/omega/        Single binary entry point (serve, run, health, chat)
 ai/               Provider abstraction, stream events, message types, retry
-agent/            Multi-turn loop, tool execution, compaction, seams, extensions
+agent/            Multi-turn loop, tool execution, compaction, seams, Plugin system
 gateway/          HTTP server, SSE streaming, session store, config
+extensions/        In-process extension packages (10 extensions, compiled into omega)
 .agents/          Commit conventions (COMMIT.md)
-bin/extensions/   Extension source + authoring guide (tracked)
 bin/skills/       Skill templates (tracked)
 build.sh          Build script (Linux/macOS): vet + test + build
 build.bat         Build script (Windows): vet + test + build
@@ -36,7 +36,6 @@ bin/              Runtime directory (gitignored except templates)
   config.yaml.example  Configuration template (tracked)
   omega.db        Session database (gitignored)
   trust.yaml      Trust state (gitignored)
-  extensions/     Extension binaries (self-contained subdirectories)
   skills/         Skill files
 ```
 

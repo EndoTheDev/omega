@@ -36,7 +36,7 @@
 - Tool schema validation at extension load
 - Agent self-test (`omega test`)
 - Version automation via git tags + ldflags
-- Subagent delegation (core-delegate extension, `delegate.task`, `delegate.status`)
+- Subagent delegation (delegate extension, `delegate.task`, `delegate.status`)
 - SQLite WAL mode for concurrent parent/subagent access
 - Auto-discovered context window (Ollama /api/show, provider > config > default fallback)
 - Splash shows real tool count from loaded extensions
