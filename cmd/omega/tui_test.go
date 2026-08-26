@@ -8,6 +8,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/provider"
 	"github.com/EndoTheDev/omega/gateway"
 	tea "github.com/charmbracelet/bubbletea"
@@ -192,6 +193,105 @@ func TestProviderCommand(t *testing.T) {
 	m = updated.(model)
 	if !strings.Contains(m.transcript, "provider: ollama") {
 		t.Fatalf("transcript should show current provider, got: %q", m.transcript)
+	}
+}
+
+// TestModelViaExtension verifies /model <name> routes through the
+// extension CommandHandler, sets the model via Provider.SetModel,
+// and returns CmdAction actions that update TUI state.
+func TestModelViaExtension(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
+
+	updated, _ := m.handleCommand("/model qwen2.5")
+	m = updated.(model)
+	if m.modelName != "qwen2.5" {
+		t.Fatalf("expected model qwen2.5 via CmdAction, got %q", m.modelName)
+	}
+	if !strings.Contains(m.transcript, "switched to qwen2.5") {
+		t.Fatalf("expected confirmation text, got %q", m.transcript)
+	}
+}
+
+// TestCompactViaExtension verifies /compact routes through the
+// extension CommandHandler and returns a run_compact CmdAction.
+func TestCompactViaExtension(t *testing.T) {
+	ctx := testContext()
+	// Also mount the compactor plugin so /compact is registered.
+	comp := &compactor.Plugin{}
+	comp.Mount(ctx)
+
+	// Compaction config is needed for the TUI to run the compaction.
+	compCfg := &agent.CompactionConfig{
+		Threshold:     0.5,
+		KeepFirst:     2,
+		KeepLast:      10,
+		ReserveTokens: 16384,
+	}
+
+	m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell")
+
+	// Add enough history for compaction to work (needs >= 3 messages).
+	m.history = append(m.history, ai.NewUser("hello"))
+	m.history = append(m.history, ai.NewAssistant("hi there"))
+	m.history = append(m.history, ai.NewUser("how are you?"))
+
+	// /compact should route to extension command handler.
+	// It returns run_compact action — the TUI handles the actual
+	// compaction.
+	updated, _ := m.handleCommand("/compact")
+	m = updated.(model)
+	if m.err != "" {
+		t.Fatalf("expected no error from /compact, got %q", m.err)
+	}
+}
+
+// TestDynamicHelpWithExtensions verifies /help includes extension
+// commands when extensions are loaded.
+func TestDynamicHelpWithExtensions(t *testing.T) {
+	ctx := testContext()
+	// testContext mounts the provider plugin, which registers
+	// /model and /provider commands.
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell")
+	help := m.renderHelp()
+	plain := ansiStrip(help)
+
+	// Built-in commands should still be present.
+	for _, cmd := range []string{"/exit", "/new", "/sessions", "/help"} {
+		if !strings.Contains(plain, cmd) {
+			t.Fatalf("help text missing built-in %q", cmd)
+		}
+	}
+
+	// Extension commands should appear dynamically.
+	for _, cmd := range []string{"/model", "/provider"} {
+		if !strings.Contains(plain, cmd) {
+			t.Fatalf("help text missing extension command %q", cmd)
+		}
+	}
+}
+
+// TestHelpWithoutExtensions verifies /help works with no extensions
+// and only shows built-in commands.
+func TestHelpWithoutExtensions(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	help := m.renderHelp()
+	plain := ansiStrip(help)
+
+	// Built-in commands should be present.
+	if !strings.Contains(plain, "/exit") {
+		t.Fatal("help text missing /exit")
+	}
+
+	// Extension commands should NOT appear (no extensions loaded).
+	// Check for "/model " (with space) to avoid matching "/models".
+	if strings.Contains(plain, "/model ") {
+		t.Fatal("help text should not contain /model with no extensions")
+	}
+	if strings.Contains(plain, "/provider") {
+		t.Fatal("help text should not contain /provider with no extensions")
+	}
+	if strings.Contains(plain, "/compact") {
+		t.Fatal("help text should not contain /compact with no extensions")
 	}
 }
 
@@ -650,13 +750,14 @@ func TestTabComplete(t *testing.T) {
 // on every update, clear when the input stops starting with "/", and that a
 // single match is auto-selected for immediate Enter/Tab acceptance.
 func TestAutocompleteLiveFilter(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell")
 
-	// "/" matches every known command, nothing selected.
+	// "/" matches every known command + extension commands, nothing selected.
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
-	if len(m.autocompleteMatches) != len(knownCommands) {
-		t.Fatalf("/ matches = %d, want %d", len(m.autocompleteMatches), len(knownCommands))
+	// knownCommands (built-in) + extension commands (/model, /provider).
+	if len(m.autocompleteMatches) < len(knownCommands) {
+		t.Fatalf("/ matches = %d, want >= %d", len(m.autocompleteMatches), len(knownCommands))
 	}
 	if m.autocompleteIndex != -1 {
 		t.Fatalf("/ index = %d, want -1 (no single match)", m.autocompleteIndex)
@@ -675,7 +776,7 @@ func TestAutocompleteLiveFilter(t *testing.T) {
 	// "/model" narrows to /model and /models, auto-selects the first.
 	m.textarea.SetValue("/model")
 	m.updateAutocomplete()
-	want := []string{"/model", "/models"}
+	want := []string{"/models", "/model"}
 	if len(m.autocompleteMatches) != 2 || m.autocompleteMatches[0] != want[0] || m.autocompleteMatches[1] != want[1] {
 		t.Fatalf("/model matches = %v, want %v", m.autocompleteMatches, want)
 	}
@@ -741,15 +842,22 @@ func TestAutocompleteAccept(t *testing.T) {
 	m.updateAutocomplete()
 	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown}) // select first match
 	m = up.(model)
-	// Find /provider and advance to it.
-	for m.autocompleteMatches[m.autocompleteIndex] != "/provider" {
+	// Find /theme and advance to it. Bound the loop so a missing
+	// command fails fast instead of hanging forever.
+	for i := 0; i < len(m.autocompleteMatches); i++ {
+		if m.autocompleteMatches[m.autocompleteIndex] == "/theme" {
+			break
+		}
 		up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = up.(model)
 	}
+	if m.autocompleteMatches[m.autocompleteIndex] != "/theme" {
+		t.Fatalf("did not find /theme in matches: %v", m.autocompleteMatches)
+	}
 	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = up.(model)
-	if m.textarea.Value() != "/provider" {
-		t.Fatalf("enter accepted %q, want /provider", m.textarea.Value())
+	if m.textarea.Value() != "/theme" {
+		t.Fatalf("enter accepted %q, want /theme", m.textarea.Value())
 	}
 	if m.autocompleteMatches != nil || m.autocompleteIndex != -1 {
 		t.Fatalf("match state not cleared after accept: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
@@ -942,7 +1050,7 @@ func TestHelpText(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	help := m.renderHelp()
 	plain := ansiStrip(help)
-	for _, cmd := range []string{"/exit", "/new", "/sessions", "/resume", "/help", "/model", "/provider", "/compact"} {
+	for _, cmd := range []string{"/exit", "/new", "/sessions", "/resume", "/help"} {
 		if !strings.Contains(plain, cmd) {
 			t.Fatalf("help text missing %q", cmd)
 		}
@@ -1086,10 +1194,11 @@ func TestAutocompleteArgLevel(t *testing.T) {
 	}
 
 	// A command without options keeps first-level matching.
-	m.textarea.SetValue("/com")
+	// /copy is a built-in with no entry in commandOptions.
+	m.textarea.SetValue("/co")
 	m.updateAutocomplete()
-	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/compact" {
-		t.Fatalf("/com matches = %v, want [/compact]", m.autocompleteMatches)
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/copy" {
+		t.Fatalf("/co matches = %v, want [/copy]", m.autocompleteMatches)
 	}
 }
 

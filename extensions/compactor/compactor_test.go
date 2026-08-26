@@ -101,3 +101,36 @@ func TestPluginInterface(t *testing.T) {
 		t.Fatalf("unexpected requires: %v", p.Requires())
 	}
 }
+
+// TestCompactCommand verifies /compact is registered and returns
+// a run_compact CmdAction (the TUI interprets it).
+func TestCompactCommand(t *testing.T) {
+	p := NewPlugin()
+	ctx := &agent.Context{}
+	// Compactor requires provider seam — mount a fake provider.
+	ctx.Provider = ai.NewFakeProvider("test")
+	if err := p.Mount(ctx); err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+
+	// Verify /compact command was registered.
+	found := false
+	for _, c := range ctx.Commands {
+		if c.Name == "/compact" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("/compact command not registered")
+	}
+
+	// Verify handler returns run_compact action.
+	result, err := ctx.CommandHandler(context.Background(), "/compact", "")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if len(result.Actions) != 1 || result.Actions[0].Type != "run_compact" {
+		t.Fatalf("expected run_compact action, got %+v", result.Actions)
+	}
+}

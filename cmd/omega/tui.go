@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/model", "/models", "/provider", "/compact", "/copy", "/export", "/insights", "/search", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/models", "/copy", "/export", "/insights", "/search", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -2823,9 +2823,10 @@ func wordWrap(s string, width int) string {
 
 // renderHelp returns the /help text. Commands are laid out as a
 // two-column table with widths computed from the data, matching the
-// /sessions and /tree tables.
+// /sessions and /tree tables. Extension-provided commands are
+// appended after built-in commands.
 func (m model) renderHelp() string {
-	rows := [][2]string{
+	builtin := [][2]string{
 		{"/exit", "quit"},
 		{"/new [--ephemeral]", "start a new conversation (--ephemeral: nothing persisted)"},
 		{"/sessions", "list saved sessions"},
@@ -2833,10 +2834,7 @@ func (m model) renderHelp() string {
 		{"/branch [id]", "branch a new session from the current (or given) one"},
 		{"/label [text]", "set a label on the current session (no text clears it)"},
 		{"/tree", "show the session tree"},
-		{"/model <#|name>", "switch the model (line # from /models, or name)"},
 		{"/models", "list available models from the current provider"},
-		{"/provider", "show current provider and model"},
-		{"/compact", "summarize conversation history"},
 		{"/copy", "copy the last message to clipboard"},
 		{"/export [path]", "export session messages to JSONL (default: <session_id>.jsonl)"},
 		{"/search <query>", "search session messages (full-text)"},
@@ -2844,9 +2842,14 @@ func (m model) renderHelp() string {
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/tools [on|off|auto|list]", "tool results: expanded / collapsed / auto, or list all tools"},
 		{"/extensions", "list loaded extensions"},
-
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
 		{"/help", "show this help"},
+	}
+	rows := builtin
+	if m.extensions != nil {
+		for _, c := range m.extensions.Commands {
+			rows = append(rows, [2]string{c.Name, c.Description})
+		}
 	}
 	maxCmd := len("COMMAND")
 	for _, r := range rows {

@@ -2,8 +2,10 @@ package provider
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -202,5 +204,69 @@ func TestPluginInterface(t *testing.T) {
 	}
 	if len(p.Requires()) != 0 {
 		t.Fatalf("Requires() = %v, want []", p.Requires())
+	}
+}
+
+// TestProviderModelCommand verifies /model <name> sets the model
+// via Provider.SetModel and returns set_model + refresh_title +
+// fetch_model_info CmdActions.
+func TestProviderModelCommand(t *testing.T) {
+	p := &Plugin{}
+	ctx := &agent.Context{}
+	if err := p.Mount(ctx); err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+
+	result, err := ctx.CommandHandler(context.Background(), "/model", "qwen2.5")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if !strings.Contains(result.Text, "switched to qwen2.5") {
+		t.Fatalf("expected confirmation text, got %q", result.Text)
+	}
+	if len(result.Actions) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(result.Actions))
+	}
+	if result.Actions[0].Type != "set_model" || result.Actions[0].Value != "qwen2.5" {
+		t.Fatalf("expected set_model action, got %+v", result.Actions[0])
+	}
+	if result.Actions[1].Type != "refresh_title" {
+		t.Fatalf("expected refresh_title action, got %+v", result.Actions[1])
+	}
+	if result.Actions[2].Type != "fetch_model_info" {
+		t.Fatalf("expected fetch_model_info action, got %+v", result.Actions[2])
+	}
+}
+
+// TestProviderModelNoArgs verifies /model with no args returns usage.
+func TestProviderModelNoArgs(t *testing.T) {
+	p := &Plugin{}
+	ctx := &agent.Context{}
+	p.Mount(ctx)
+
+	result, err := ctx.CommandHandler(context.Background(), "/model", "")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if !strings.Contains(result.Text, "usage") {
+		t.Fatalf("expected usage text, got %q", result.Text)
+	}
+}
+
+// TestProviderInfoCommand verifies /provider returns provider + model info.
+func TestProviderInfoCommand(t *testing.T) {
+	p := &Plugin{}
+	ctx := &agent.Context{}
+	p.Mount(ctx)
+
+	result, err := ctx.CommandHandler(context.Background(), "/provider", "")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if !strings.Contains(result.Text, "provider:") {
+		t.Fatalf("expected provider info, got %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "model:") {
+		t.Fatalf("expected model info, got %q", result.Text)
 	}
 }

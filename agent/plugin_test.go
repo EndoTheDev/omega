@@ -190,3 +190,73 @@ func TestMountAllCircularDep(t *testing.T) {
 		t.Fatalf("expected circular dependency error, got %v", err)
 	}
 }
+
+// TestMountAllPopulatesInfos verifies that MountAll fills in
+// ExtensionInfo.Tools, Commands, and ToolList after each mount.
+// This is a regression test for the bug where /extensions showed
+// zero tools and zero commands for all extensions.
+func TestMountAllPopulatesInfos(t *testing.T) {
+	p1 := testPlugin{
+		name:     "tools-ext",
+		provides: []string{"tools"},
+		mount: func(ctx *Context) error {
+			ctx.ToolProviders = append(ctx.ToolProviders, stubToolProvider{
+				tools: map[string]Tool{
+					"alpha": {Description: "alpha tool"},
+					"beta":  {Description: "beta tool"},
+				},
+			})
+			return nil
+		},
+	}
+	p2 := testPlugin{
+		name:     "cmd-ext",
+		provides: []string{"cmd"},
+		mount: func(ctx *Context) error {
+			ctx.Commands = append(ctx.Commands,
+				ExtensionCommand{Name: "/foo", Description: "foo command"},
+				ExtensionCommand{Name: "/bar", Description: "bar command"},
+			)
+			return nil
+		},
+	}
+
+	ctx := &Context{}
+	if err := MountAll([]Plugin{p1, p2}, ctx); err != nil {
+		t.Fatalf("MountAll: %v", err)
+	}
+
+	if len(ctx.Infos) != 2 {
+		t.Fatalf("expected 2 infos, got %d", len(ctx.Infos))
+	}
+
+	// tools-ext contributed 2 tools, 0 commands.
+	ti := ctx.Infos[0]
+	if ti.Name != "tools-ext" {
+		t.Fatalf("expected tools-ext, got %q", ti.Name)
+	}
+	if ti.Tools != 2 {
+		t.Fatalf("expected 2 tools, got %d", ti.Tools)
+	}
+	if ti.Commands != 0 {
+		t.Fatalf("expected 0 commands, got %d", ti.Commands)
+	}
+	if len(ti.ToolList) != 2 {
+		t.Fatalf("expected 2 tool entries, got %d", len(ti.ToolList))
+	}
+	if ti.ToolList[0].Name != "alpha" || ti.ToolList[0].Description != "alpha tool" {
+		t.Fatalf("unexpected tool entry: %+v", ti.ToolList[0])
+	}
+
+	// cmd-ext contributed 0 tools, 2 commands.
+	ci := ctx.Infos[1]
+	if ci.Name != "cmd-ext" {
+		t.Fatalf("expected cmd-ext, got %q", ci.Name)
+	}
+	if ci.Tools != 0 {
+		t.Fatalf("expected 0 tools, got %d", ci.Tools)
+	}
+	if ci.Commands != 2 {
+		t.Fatalf("expected 2 commands, got %d", ci.Commands)
+	}
+}
