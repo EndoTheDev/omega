@@ -6,10 +6,9 @@
 - Multi-turn agent loop with parallel tool execution
 - Session tree with branching, labeling, and full persistence
 - Context compaction with overflow auto-retry, reserve tokens, and branch summarization
-- Skills system (core-skills extension, agent-driven `skills.read` tool, `/skills` command)
-- Extension system with JSON-RPC over stdio, crash isolation, event dispatch
-- Pluggable architecture: 8 extensions, 8 seams (prompt, provider, store, skills, tools, delegate, mcp, web)
-- Session store extension (core-store, SQLite, FTS5 full-text search, `sessions.search` tool)
+- Skills system (skills extension, agent-driven `skills.read` tool, `/skills` command)
+- Extension system: in-process Go plugins, 10 extensions, 6 seams (prompt, provider, store, skills, tools, compactor)
+- Session store (SQLite, FTS5 full-text search, `sessions.search` tool)
 - In-memory store fallback when no store extension loaded
 - Complete TUI with streaming, markdown, autocomplete, and history
 - Global installation via PATH with binary-dir resolution

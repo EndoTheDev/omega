@@ -40,17 +40,12 @@ provider:
 
 ## Extension not found
 
-omega scans `<home>/extensions/` for subdirectories containing
-executables. If an extension is missing:
+Extensions are compiled into the `omega` binary. If a tool or command
+is missing, rebuild omega:
 
 ```bash
-# Rebuild all extensions
-for ext in core-prompt core-provider core-store core-skills core-tools core-delegate mcp-bridge ollama-web; do
-  go build -o "bin/extensions/$ext/$ext.exe" "./bin/extensions/$ext/"
-done
+./build.sh
 ```
-
-Make sure `extensions.enabled: true` is set in `config.yaml`.
 
 ## SQLITE_BUSY errors
 

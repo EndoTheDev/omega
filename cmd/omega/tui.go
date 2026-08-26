@@ -1488,7 +1488,7 @@ func (m *model) persistEntry(msg ai.Message) {
 // command count, and status.
 // handleToolsList renders a grouped listing of all available tools
 // from loaded extensions. All tools are extension-provided (including
-// the core-tools extension which provides shell.run, files.*, skills.read).
+// the tools extension which provides shell.run, files.*, skills.read).
 func (m model) handleToolsList() (tea.Model, tea.Cmd) {
 	var sb strings.Builder
 	sb.WriteString("\n")

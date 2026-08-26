@@ -135,8 +135,8 @@ func cmdUpdate() error {
 		return fmt.Errorf("replace omega binary: %w", err)
 	}
 
-	// Copy extension binaries from subdirectories (self-contained layout:
-	// extensions/core-prompt/core-prompt.exe, etc.).
+	// Copy extension data files from subdirectories (config, mcp.yaml,
+	// etc.). Extensions themselves are compiled into omega.exe.
 	extSrcDir := filepath.Join(filepath.Dir(omegaBin), "extensions")
 	extDstDir := filepath.Join(installDir, "extensions")
 	if entries, err := os.ReadDir(extSrcDir); err == nil {

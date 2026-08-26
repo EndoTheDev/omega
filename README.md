@@ -52,18 +52,10 @@ See [docs/architecture.md](docs/architecture.md) for details.
 
 ## Extensions
 
-| Extension       | What                                     |
-| --------------- | ---------------------------------------- |
-| `core-prompt`   | System prompt builder                    |
-| `core-provider` | LLM provider (Ollama, OpenAI, Anthropic) |
-| `core-store`    | Session store (SQLite, FTS5 search)      |
-| `core-skills`   | Skill loading, `skills.read` tool        |
-| `core-tools`    | File and shell tools                     |
-| `core-delegate` | Subagent delegation (`delegate.task`)    |
-| `mcp-bridge`    | MCP server bridge                        |
-| `ollama-web`    | Web search/fetch via Ollama Cloud        |
+All extensions are in-process Go packages under `extensions/`. See
+[extensions/README.md](extensions/README.md) for the full list.
 
-See [docs/extensions.md](docs/extensions.md) for details.
+See [docs/architecture.md](docs/architecture.md) for details.
 
 ## Documentation
 

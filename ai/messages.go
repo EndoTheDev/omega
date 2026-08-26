@@ -12,8 +12,8 @@ func NowISO() string {
 }
 
 // EncodeMessage serializes an ai.Message to its role discriminator
-// and JSON payload. Used by the store, proxy store, and core-store
-// extension for persistence and wire transfer.
+// and JSON payload. Used by the store extension for persistence
+// and wire transfer.
 func EncodeMessage(msg Message) (string, []byte, error) {
 	var role string
 	switch msg.(type) {

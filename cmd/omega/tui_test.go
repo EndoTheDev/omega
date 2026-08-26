@@ -164,7 +164,7 @@ func TestSlashCommands(t *testing.T) {
 }
 
 // TestSkillsCommand verifies that /skills is no longer a built-in TUI
-// command — it's registered by the core-skills extension. With no
+// command — it's registered by the skills extension. With no
 // extension loaded, /skills falls through to the unknown-command path.
 func TestSkillsCommand(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
