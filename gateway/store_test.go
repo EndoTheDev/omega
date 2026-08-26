@@ -412,3 +412,54 @@ func TestDeleteSessionMissingIsNoOp(t *testing.T) {
 		t.Fatalf("delete missing session: %v", err)
 	}
 }
+
+func TestSearchMessages(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser("the quick brown fox jumps")); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewAssistant("the lazy dog sleeps")); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	// Second session with different content.
+	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
+		t.Fatalf("create session 2: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s2", ai.NewUser("completely unrelated content here")); err != nil {
+		t.Fatalf("append s2: %v", err)
+	}
+
+	// Search for a term only in s1.
+	results, err := s.SearchMessages(ctx, "fox")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results for 'fox', want at least 1")
+	}
+	var found bool
+	for _, r := range results {
+		if r.SessionID == "s1" && r.Snippet != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no result for s1 with non-empty snippet; got %+v", results)
+	}
+
+	// Query matching nothing returns empty, no error.
+	empty, err := s.SearchMessages(ctx, "nonexistentterm12345")
+	if err != nil {
+		t.Fatalf("search no-match: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected 0 results for no-match query, got %d", len(empty))
+	}
+}
