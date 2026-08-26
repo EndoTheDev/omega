@@ -1,7 +1,6 @@
 // Package provider implements the provider seam for omega.
 // It contains the Ollama, OpenAI, and Anthropic provider
-// implementations, moved from the stdio core-provider extension.
-// The Provider struct implements ai.Provider directly — no IPC.
+// implementations. The Provider struct implements ai.Provider directly.
 package provider
 
 import (
@@ -47,8 +46,7 @@ func NewProvider(typ, modelName, baseURL, apiKey string) *Provider {
 }
 
 // initDefaults resolves the API key from env vars and fills in the
-// default base URL for each provider type. Mirrors the initialize
-// handler in the old stdio extension.
+// default base URL for each provider type.
 func (p *Provider) initDefaults() {
 	switch p.typ {
 	case "ollama":

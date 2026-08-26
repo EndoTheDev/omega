@@ -109,7 +109,15 @@ func TestMountWithConfig(t *testing.T) {
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
-	if p.cfg.Provider.APIKey != "test-key" {
-		t.Errorf("expected API key %q, got %q", "test-key", p.cfg.Provider.APIKey)
+	if len(ctx.ToolProviders) != 1 {
+		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
+	}
+	tools := ctx.ToolProviders[0].Tools()
+	ws, ok := tools["web.search"]
+	if !ok {
+		t.Fatal("web.search tool not found")
+	}
+	if ws.Description == "" {
+		t.Error("web.search tool has empty description")
 	}
 }

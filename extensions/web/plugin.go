@@ -7,12 +7,9 @@ import (
 
 // Plugin implements agent.Plugin for the web extension.
 // It provides the additive "tools" seam: web.search and web.fetch.
-type Plugin struct {
-	cfg gateway.Config
-}
+type Plugin struct{}
 
-// NewPlugin returns a web Plugin. The host passes gateway.Config;
-// the API key is extracted from Provider.APIKey during Mount.
+// NewPlugin returns a web Plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string       { return "web" }
@@ -23,7 +20,6 @@ func (p *Plugin) Requires() []string { return nil }
 // additive ToolProviders slice.
 func (p *Plugin) Mount(ctx *agent.Context) error {
 	cfg, _ := ctx.Config.(gateway.Config)
-	p.cfg = cfg
 	ext := New(&cfg)
 	ctx.ToolProviders = append(ctx.ToolProviders, ext)
 	return nil

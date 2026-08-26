@@ -149,17 +149,21 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   On `/resume`, the TUI replays these entries to restore the model and
   thinking level. No-op for ephemeral sessions. `renderTranscript`
   skips these types (metadata, not conversation content).
-- **Seam wiring in newAgent.** `newAgent` calls `setProviderEnvVars`
-  to set `OMEGA_PROVIDER_*` env vars for the core-provider extension,
-  loads extensions, validates the provider seam exists, creates
-  `ai.ExtensionProvider{Dispatcher: mgr}`, and calls `ag.SetProvider`.
-  It wires `DefaultToolProvider` via `SetToolProvider`, passes CWD via
-  `SetCWD`, stores custom/append prompts via `SetPromptCustom`/
-  `SetPromptAppend`, stores trust-gated project context via
-  `SetPromptContext`, and validates `PluginsConfig` against
-  `SeamProviders()` — warns on mismatch. The TUI's submit path
-  mirrors this wiring for each run, using `ExtensionProvider` directly
-  and calling `ProviderSetModel` for `/model` changes.
+- **Seam wiring in newAgent.** `newAgent` builds a `plugin.Context`,
+  calls `MountAll` with all extension plugins (provider, store, skills,
+  compactor, prompt, tools, mcp, delegate, web, agent_loop), and wires
+  the agent from the populated Context: `SetProvider` from
+  `ctx.Provider`, `DefaultToolProvider` via `SetToolProvider`, CWD via
+  `SetCWD`, custom/append prompts via `SetPromptCustom`/
+  `SetPromptAppend`, trust-gated project context via
+  `SetPromptContext`, `SetToolProviders` from `ctx.ToolProviders`,
+  `SetPromptBuilder` from `ctx.PromptBuilder`, `SetExtensionInfos`
+  from `ctx.Infos`, `SetCompactionProvider` from `ctx.Compactor`,
+  `SetLoopProvider` from `ctx.Loop`, `SetInjectedMessages` from
+  `ctx.InjectedMessages`, `SetPendingDelegations` from
+  `ctx.PendingDelegations`. The TUI's submit path mirrors this wiring
+  for each run, using `ctx.Provider` directly and calling
+  `SetModel` for `/model` changes.
 - **`/tools` lists tools, `/tools on|off|auto` controls display.**
   No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
   renders all tools from `Infos().ToolList` (first line of description)

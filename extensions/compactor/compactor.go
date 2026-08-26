@@ -30,7 +30,7 @@ func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Me
 	}
 
 	estTokens := agent.EstimateTokens(messages)
-	budget := c.budget()
+	budget := c.config.Budget()
 
 	keepFirst := c.config.KeepFirst
 	keepLast := c.config.KeepLast
@@ -46,25 +46,6 @@ func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Me
 	}
 
 	return agent.BuildCompactedMessages(messages, summary, keepFirst, keepLast), nil
-}
-
-// budget replicates agent.CompactionConfig.budget() which is unexported.
-// ponytail: duplicates the unexported method instead of exporting it.
-// Upgrade path: export agent.CompactionConfig.Budget() and call it.
-func (c *Compactor) budget() int {
-	window := c.config.ContextWindow
-	if window <= 0 {
-		window = agent.DefaultContextWindow
-	}
-	reserve := c.config.ReserveTokens
-	if reserve <= 0 {
-		reserve = 16384 // agent.defaultReserveTokens
-	}
-	effective := window - reserve
-	if effective < window/2 {
-		effective = window / 2
-	}
-	return int(float64(effective) * c.config.Threshold)
 }
 
 // summarize calls the provider to summarize a slice of messages. It

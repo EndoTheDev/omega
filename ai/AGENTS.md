@@ -4,25 +4,21 @@
 
 The ai layer defines the LLM provider contract (interface, message types,
 stream event types, tool schema) and shared HTTP infrastructure. Concrete
-provider implementations (Ollama, OpenAI, Anthropic) live in the
-`bin/extensions/core-provider/` extension binary, not in this package.
+provider implementations (Ollama, OpenAI, Anthropic) live in
+`extensions/provider/`, not in this package.
 
 ## Ownership
 
 - `provider.go` - Provider interface (Stream, ModelName, SetThinkingLevel,
-  ListModels, ModelInfo), ModelInfo struct (ContextWindow), ToolSchema type,
-  SSEData SSE line reader, shared httpClient with SetHTTPTimeout, exported
-  HTTPClient / RetryHTTP / SSEData for extension use, ThinkingLevels /
-  ThinkingEnabled
-- `extension_provider.go` - ExtensionProvider implementing Provider by
-  delegating to a ProviderDispatcher interface (ProviderStream,
-  ProviderModelName, ProviderListModels, ProviderModelInfo,
-  ProviderSetThinking; satisfied by agent.StdioManager)
+  SetModel, ListModels, ModelInfo), ModelInfo struct (ContextWindow),
+  ToolSchema type, SSEData SSE line reader, shared httpClient with
+  SetHTTPTimeout, exported HTTPClient / RetryHTTP / SSEData for extension
+  use, ThinkingLevels / ThinkingEnabled
 - `messages.go` - Message sealed interface; System, User (with optional
   Images), Assistant, ToolResult, ModelChange, ThinkingLevelChange concrete
   types; ImageContent struct; timestamp helpers; `EncodeMessage`/
   `DecodeMessage` (role discriminator + JSON payload serialization,
-  shared by gateway store, proxy store, and core-store extension)
+  shared by gateway store and extensions/store)
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk,
   ToolCallEvent, StreamEnd concrete types; ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter,
@@ -40,10 +36,10 @@ provider implementations (Ollama, OpenAI, Anthropic) live in the
 - **Messages and events are sealed interfaces.** Consumers dispatch via
   type switch on concrete types. New message or event types implement the
   marker method (`isMessage` / `isStreamEvent`).
-- **Provider implementations are in the core-provider extension.**
-  Message conversion, streaming, and API-specific logic live in
-  `bin/extensions/core-provider/main.go`, not here. This package exports
-  HTTPClient, RetryHTTP, and SSEData for the extension to import.
+- **Provider implementations are in `extensions/provider/`.** Message
+  conversion, streaming, and API-specific logic live there, not here.
+  This package exports HTTPClient, RetryHTTP, and SSEData for the
+  extension to import.
 - **Retry is transparent to providers.** All HTTP requests route through
   retryHTTP (exported as RetryHTTP). 429 and 5xx are retried with backoff;
   other 4xx and context cancellation return immediately.
@@ -52,9 +48,9 @@ provider implementations (Ollama, OpenAI, Anthropic) live in the
 
 ## Work Guidance
 
-- The core-provider extension implements all three providers. To add a
-  new provider, add a `streamX` function in the extension binary and a
-  case in the `handleStream` switch.
+- The provider extension implements all three providers (Ollama, OpenAI,
+  Anthropic). To add a new provider, add a `streamX` function in
+  `extensions/provider/provider.go` and a case in the `Stream` switch.
 - OpenAI and Anthropic tool-call arguments arrive as fragmented deltas
   keyed by index. Accumulate into a pending map and flush in index order
   after the stream ends.

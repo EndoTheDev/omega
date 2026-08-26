@@ -68,9 +68,42 @@ type mcpCallResult struct {
 
 // MCPConn is the abstraction over stdio and HTTP MCP server connections.
 type MCPConn interface {
+	request(method string, params any) (json.RawMessage, error)
 	listTools() ([]mcpTool, error)
 	callTool(name string, args map[string]any) (string, bool, error)
 	close()
+}
+
+// mcpListTools calls tools/list on any MCP connection.
+func mcpListTools(c MCPConn) ([]mcpTool, error) {
+	result, err := c.request("tools/list", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var list mcpToolsListResult
+	if err := json.Unmarshal(result, &list); err != nil {
+		return nil, fmt.Errorf("parse tools: %w", err)
+	}
+	return list.Tools, nil
+}
+
+// mcpCallTool calls tools/call on any MCP connection and extracts text content.
+func mcpCallTool(c MCPConn, name string, args map[string]any) (string, bool, error) {
+	result, err := c.request("tools/call", map[string]any{"name": name, "arguments": args})
+	if err != nil {
+		return "", false, err
+	}
+	var call mcpCallResult
+	if err := json.Unmarshal(result, &call); err != nil {
+		return "", false, fmt.Errorf("parse call result: %w", err)
+	}
+	var text strings.Builder
+	for _, c := range call.Content {
+		if c.Type == "text" {
+			text.WriteString(c.Text)
+		}
+	}
+	return text.String(), call.IsError, nil
 }
 
 // --- stdio MCP server ---
@@ -190,33 +223,11 @@ func (s *stdioServer) initialize() error {
 }
 
 func (s *stdioServer) listTools() ([]mcpTool, error) {
-	result, err := s.request("tools/list", map[string]any{})
-	if err != nil {
-		return nil, err
-	}
-	var list mcpToolsListResult
-	if err := json.Unmarshal(result, &list); err != nil {
-		return nil, fmt.Errorf("parse tools: %w", err)
-	}
-	return list.Tools, nil
+	return mcpListTools(s)
 }
 
 func (s *stdioServer) callTool(name string, args map[string]any) (string, bool, error) {
-	result, err := s.request("tools/call", map[string]any{"name": name, "arguments": args})
-	if err != nil {
-		return "", false, err
-	}
-	var call mcpCallResult
-	if err := json.Unmarshal(result, &call); err != nil {
-		return "", false, fmt.Errorf("parse call result: %w", err)
-	}
-	var text strings.Builder
-	for _, c := range call.Content {
-		if c.Type == "text" {
-			text.WriteString(c.Text)
-		}
-	}
-	return text.String(), call.IsError, nil
+	return mcpCallTool(s, name, args)
 }
 
 func (s *stdioServer) close() {
@@ -391,33 +402,11 @@ func (s *httpServer) initialize() error {
 }
 
 func (s *httpServer) listTools() ([]mcpTool, error) {
-	result, err := s.request("tools/list", map[string]any{})
-	if err != nil {
-		return nil, err
-	}
-	var list mcpToolsListResult
-	if err := json.Unmarshal(result, &list); err != nil {
-		return nil, fmt.Errorf("parse tools: %w", err)
-	}
-	return list.Tools, nil
+	return mcpListTools(s)
 }
 
 func (s *httpServer) callTool(name string, args map[string]any) (string, bool, error) {
-	result, err := s.request("tools/call", map[string]any{"name": name, "arguments": args})
-	if err != nil {
-		return "", false, err
-	}
-	var call mcpCallResult
-	if err := json.Unmarshal(result, &call); err != nil {
-		return "", false, fmt.Errorf("parse call result: %w", err)
-	}
-	var text strings.Builder
-	for _, c := range call.Content {
-		if c.Type == "text" {
-			text.WriteString(c.Text)
-		}
-	}
-	return text.String(), call.IsError, nil
+	return mcpCallTool(s, name, args)
 }
 
 func (s *httpServer) close() {

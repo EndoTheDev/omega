@@ -70,14 +70,3 @@ type AssistantMessageEvent struct {
 }
 
 func (AssistantMessageEvent) isEvent() {}
-
-// SessionEvent is emitted for session lifecycle operations (new, fork,
-// resume, switch, label). Dispatched to extensions so they can react
-// to session changes.
-type SessionEvent struct {
-	Type  string `json:"type"`  // "session_new", "session_fork", "session_resume", "session_switch", "session_label"
-	ID    string `json:"id"`
-	Label string `json:"label"`
-}
-
-func (SessionEvent) isEvent() {}

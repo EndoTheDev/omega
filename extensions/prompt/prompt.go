@@ -17,8 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// PromptBuilder is the in-process system prompt builder. It replaces
-// the former core-prompt stdio extension.
+// PromptBuilder is the in-process system prompt builder.
 type PromptBuilder struct {
 	skillsDir string // OMEGA_SKILLS_DIR, empty = no skills
 }

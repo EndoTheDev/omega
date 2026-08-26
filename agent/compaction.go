@@ -21,22 +21,22 @@ const defaultReserveTokens = 16384
 // CompactionConfig controls when the agent summarizes old messages to
 // stay within the model's context window. It lives in the agent package
 // (not gateway) so the agent can consume it without importing a layer
-// above itself. The config is passed to the compactor extension via
-// JSON-RPC; the extension owns the compaction logic.
+// above itself. The config is passed to the compactor plugin via Context;
+// the plugin owns the compaction logic.
 type CompactionConfig struct {
-	Enabled       bool    `yaml:"enabled" json:"enabled"`
-	Threshold     float64 `yaml:"threshold" json:"threshold"`
-	ContextWindow int     `yaml:"context_window" json:"context_window"`
-	KeepFirst     int     `yaml:"keep_first" json:"keep_first"`
-	KeepLast      int     `yaml:"keep_last" json:"keep_last"`
-	ReserveTokens int     `yaml:"reserve_tokens" json:"reserve_tokens"`
-	MaxToolOutput int     `yaml:"max_tool_output" json:"max_tool_output"`
+	Enabled       bool    `yaml:"enabled"`
+	Threshold     float64 `yaml:"threshold"`
+	ContextWindow int     `yaml:"context_window"`
+	KeepFirst     int     `yaml:"keep_first"`
+	KeepLast      int     `yaml:"keep_last"`
+	ReserveTokens int     `yaml:"reserve_tokens"`
+	MaxToolOutput int     `yaml:"max_tool_output"`
 }
 
-// budget returns the token count at which compaction triggers.
+// Budget returns the token count at which compaction triggers.
 // ReserveTokens are subtracted from the context window so the model
 // has room for its response after the prompt.
-func (c CompactionConfig) budget() int {
+func (c CompactionConfig) Budget() int {
 	window := c.ContextWindow
 	if window <= 0 {
 		window = DefaultContextWindow
@@ -79,7 +79,7 @@ func MessageText(m ai.Message) string {
 
 // BuildCompactedMessages assembles the compacted message list from a
 // pre-computed summary. Shared by the branch summary feature and the
-// core-compactor extension.
+// compactor plugin.
 func BuildCompactedMessages(history []ai.Message, summary string, keepFirst, keepLast int) []ai.Message {
 	result := make([]ai.Message, 0, keepFirst+keepLast+1)
 	result = append(result, history[:keepFirst]...)

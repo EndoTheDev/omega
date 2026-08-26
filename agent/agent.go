@@ -7,9 +7,6 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// defaultMaxTurns caps the conversation loop when no explicit cap is set.
-const defaultMaxTurns = 100
-
 // Tool is a callable the model may invoke. The map key is the tool name.
 type Tool struct {
 	Description string

@@ -1,6 +1,6 @@
 // Package tools provides the built-in shell and file tools as an
 // in-process agent.ToolProvider. It implements shell.run, files.read,
-// files.write, and files.edit without any JSON-RPC or stdio protocol.
+// files.write, and files.edit.
 package tools
 
 import (

@@ -1053,7 +1053,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.sessionLabel = ""
 		m.autoNamed = false
-			m.autoNameGen++ // invalidate any auto-name goroutine in flight
+		m.autoNameGen++ // invalidate any auto-name goroutine in flight
 		m.sessionID = ""
 		if len(fields) > 1 && fields[1] == "--ephemeral" {
 			m.ephemeral = true
@@ -1678,9 +1678,6 @@ func (m model) handleModels() (tea.Model, tea.Cmd) {
 
 // fetchModels calls ListModels via the provider.
 func (m model) fetchModels() ([]string, error) {
-	if m.extensions == nil || m.extensions.Provider == nil {
-		return nil, fmt.Errorf("no provider configured")
-	}
 	if m.extensions == nil || m.extensions.Provider == nil {
 		return nil, fmt.Errorf("no provider configured")
 	}

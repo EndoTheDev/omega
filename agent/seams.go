@@ -7,9 +7,10 @@ import (
 )
 
 // LoopProvider drives the multi-turn conversation. The default
-// implementation (DefaultLoopProvider) runs the standard turn loop:
-// stream provider responses, execute tool calls, feed results back.
-// A custom implementation can replace the entire loop logic.
+// implementation (agent_loop.Loop in extensions/agent_loop/) runs the
+// standard turn loop: stream provider responses, execute tool calls,
+// feed results back. A custom implementation can replace the entire
+// loop logic.
 type LoopProvider interface {
 	Run(ctx context.Context, opts LoopOptions) error
 }
@@ -64,9 +65,8 @@ type DefaultToolProvider struct {
 func (d DefaultToolProvider) Tools() map[string]Tool { return d.ToolsMap }
 
 // StoreProvider is the session persistence seam. The default
-// implementation is SQLite (gateway.Store), provided via the
-// core-store extension. All session and message operations go
-// through this interface.
+// implementation is SQLite (gateway.Store), provided via the store
+// plugin. All session and message operations go through this interface.
 type StoreProvider interface {
 	Open(dsn string) error
 	Close() error
@@ -85,9 +85,9 @@ type StoreProvider interface {
 }
 
 // SkillsProvider is the skill loading seam. The default implementation
-// scans a directory for <name>/<name>.md files, provided via the
-// core-skills extension. The host uses this to populate the skill list
-// for autocomplete, inline invocation, and @skill: mentions.
+// scans a directory for <name>/<name>.md files, provided via the skills
+// plugin. The host uses this to populate the skill list for autocomplete,
+// inline invocation, and @skill: mentions.
 type SkillsProvider interface {
 	LoadSkills(dir string) ([]Skill, error)
 }

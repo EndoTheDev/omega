@@ -34,21 +34,11 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		tools = map[string]agent.Tool{}
 	}
 
-	// Merge tool provider tools. Existing tools take precedence.
+	// Merge tool providers. Existing tools take precedence over
+	// provider tools; provider tools take precedence over extension tools.
 	if opts.ToolProvider != nil {
-		if providerTools := opts.ToolProvider.Tools(); len(providerTools) > 0 {
-			merged := make(map[string]agent.Tool, len(tools)+len(providerTools))
-			for name, t := range providerTools {
-				merged[name] = t
-			}
-			for name, t := range tools {
-				merged[name] = t
-			}
-			tools = merged
-		}
+		opts.ToolProviders = append([]agent.ToolProvider{opts.ToolProvider}, opts.ToolProviders...)
 	}
-
-	// Merge extension tool providers. Existing tools take precedence.
 	for _, tp := range opts.ToolProviders {
 		if tp == nil {
 			continue
@@ -201,39 +191,34 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 		// Execute tool calls concurrently. Results are collected in
 		// order so the message history stays deterministic.
-		type toolResult struct {
-			msg ai.ToolResult
-		}
-		results := make([]toolResult, len(toolCalls))
+		results := make([]ai.ToolResult, len(toolCalls))
 		var wg sync.WaitGroup
 		for i, call := range toolCalls {
 			tool, ok := tools[call.Name]
 			if !ok {
-				results[i] = toolResult{msg: ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)}
+				results[i] = ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
 				continue
 			}
 			wg.Add(1)
 			go func(idx int, c ai.ToolCall, t agent.Tool) {
 				defer wg.Done()
 				result, err := t.Run(ctx, c.Arguments)
-				var msg ai.ToolResult
 				if err != nil {
-					msg = ai.NewToolResult(err.Error(), c.ID, true)
+					results[idx] = ai.NewToolResult(err.Error(), c.ID, true)
 				} else {
 					if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
 						result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
 					}
-					msg = ai.NewToolResult(result, c.ID, false)
+					results[idx] = ai.NewToolResult(result, c.ID, false)
 				}
-				results[idx] = toolResult{msg: msg}
 			}(i, call, tool)
 		}
 		wg.Wait()
 
 		executed := 0
-		for _, r := range results {
-			messages = append(messages, r.msg)
-			toolResultEvent := agent.ToolResultEvent{Type: "tool_result", Message: r.msg}
+		for _, msg := range results {
+			messages = append(messages, msg)
+			toolResultEvent := agent.ToolResultEvent{Type: "tool_result", Message: msg}
 			opts.Events <- toolResultEvent
 			executed++
 		}

@@ -1,8 +1,6 @@
 package delegate
 
 import (
-	"context"
-
 	"github.com/EndoTheDev/omega/agent"
 )
 
@@ -34,11 +32,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 
 	go func() {
 		for msg := range p.delegate.InjectedChannel() {
-			select {
-			case agentCh <- agent.InjectedMessage{Text: msg.text, Source: msg.source}:
-			case <-context.Background().Done():
-				return
-			}
+			agentCh <- agent.InjectedMessage{Text: msg.text, Source: msg.source}
 		}
 	}()
 
