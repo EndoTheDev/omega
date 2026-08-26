@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -461,5 +463,234 @@ func TestSearchMessages(t *testing.T) {
 	}
 	if len(empty) != 0 {
 		t.Fatalf("expected 0 results for no-match query, got %d", len(empty))
+	}
+}
+
+// helperAssistantWithTools builds an Assistant message with tool calls.
+func helperAssistantWithTools(content string, calls ...ai.ToolCall) ai.Assistant {
+	a := ai.NewAssistant(content)
+	a.ToolCalls = calls
+	return a
+}
+
+func TestComputeInsightsAllTime(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Session 1: 2 user messages + 1 assistant with 2 tool calls.
+	if err := s.CreateSession(ctx, "s1", "", "first session"); err != nil {
+		t.Fatalf("create s1: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello world one")); err != nil {
+		t.Fatalf("append s1 u1: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello world two")); err != nil {
+		t.Fatalf("append s1 u2: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", helperAssistantWithTools("response one",
+		ai.ToolCall{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"cmd": "ls"}},
+		ai.ToolCall{ID: "tc2", Name: "files.read", Arguments: map[string]any{"path": "x.go"}},
+	)); err != nil {
+		t.Fatalf("append s1 a1: %v", err)
+	}
+
+	// Session 2: 1 user message + 1 assistant with 1 tool call.
+	if err := s.CreateSession(ctx, "s2", "", "second session"); err != nil {
+		t.Fatalf("create s2: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s2", ai.NewUser("another message here")); err != nil {
+		t.Fatalf("append s2 u1: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s2", helperAssistantWithTools("response two",
+		ai.ToolCall{ID: "tc3", Name: "shell.run", Arguments: map[string]any{"cmd": "pwd"}},
+	)); err != nil {
+		t.Fatalf("append s2 a1: %v", err)
+	}
+
+	// Add a metadata entry to verify it's skipped from message counts.
+	if err := s.AppendMessage(ctx, "s1", ai.NewModelChange("gpt-4o")); err != nil {
+		t.Fatalf("append s1 model change: %v", err)
+	}
+
+	insights, err := s.ComputeInsights(ctx, 0) // days=0 → all time
+	if err != nil {
+		t.Fatalf("ComputeInsights(0): %v", err)
+	}
+
+	// Period label.
+	if insights.Period != "All time" {
+		t.Errorf("Period = %q, want %q", insights.Period, "All time")
+	}
+	if insights.Days != 0 {
+		t.Errorf("Days = %d, want 0", insights.Days)
+	}
+
+	// Sessions.
+	if insights.Sessions != 2 {
+		t.Errorf("Sessions = %d, want 2", insights.Sessions)
+	}
+
+	// Messages: s1 has 3 conversation + 1 model_change (skipped) = 3,
+	// s2 has 2, total = 5.
+	if insights.Messages != 5 {
+		t.Errorf("Messages = %d, want 5", insights.Messages)
+	}
+
+	// User messages: s1=2, s2=1, total=3.
+	if insights.UserMessages != 3 {
+		t.Errorf("UserMessages = %d, want 3", insights.UserMessages)
+	}
+
+	// Tool calls: s1=2, s2=1, total=3.
+	if insights.ToolCalls != 3 {
+		t.Errorf("ToolCalls = %d, want 3", insights.ToolCalls)
+	}
+
+	// Total tokens should be > 0 (content is non-empty).
+	if insights.TotalTokens <= 0 {
+		t.Errorf("TotalTokens = %d, want > 0", insights.TotalTokens)
+	}
+
+	// AvgSessionMsgs = 5 / 2 = 2.5.
+	if insights.AvgSessionMsgs != 2.5 {
+		t.Errorf("AvgSessionMsgs = %f, want 2.5", insights.AvgSessionMsgs)
+	}
+
+	// Tools list should have 2 distinct tools: shell.run (2), files.read (1).
+	// Sorted by count desc → shell.run first.
+	if len(insights.Tools) != 2 {
+		t.Fatalf("Tools len = %d, want 2", len(insights.Tools))
+	}
+	// Verify sorted by count desc.
+	if !sort.SliceIsSorted(insights.Tools, func(i, j int) bool {
+		return insights.Tools[i].Count > insights.Tools[j].Count
+	}) {
+		t.Errorf("Tools not sorted by count desc: %+v", insights.Tools)
+	}
+	// shell.run should have count 2 (first by desc sort).
+	if insights.Tools[0].Name != "shell.run" || insights.Tools[0].Count != 2 {
+		t.Errorf("Tools[0] = %+v, want shell.run/2", insights.Tools[0])
+	}
+
+	// Daily activity should have 7 entries.
+	for i, d := range insights.Daily {
+		if d.Day == "" {
+			t.Errorf("Daily[%d].Day empty", i)
+		}
+	}
+
+	// Notable stats should be populated (s1 has most msgs/tokens, s2 has fewest).
+	if insights.NotableMsgs.Value != 4 {
+		// s1 has 3 conversation msgs + 1 model_change = 4 msgs in GetMessages,
+		// but sessMsgs counts all msgs from GetMessages BEFORE the type switch
+		// filter — actually the code computes sessMsgs=len(msgs) which includes
+		// model_change. So s1 has 4, s2 has 2.
+		t.Errorf("NotableMsgs.Value = %d, want 4", insights.NotableMsgs.Value)
+	}
+	if insights.NotableMsgs.Detail == "" {
+		t.Error("NotableMsgs.Detail empty")
+	}
+	if insights.NotableTokens.Value <= 0 {
+		t.Errorf("NotableTokens.Value = %d, want > 0", insights.NotableTokens.Value)
+	}
+	if insights.NotableTools.Value != 2 {
+		// s1 has 2 tool calls (max).
+		t.Errorf("NotableTools.Value = %d, want 2", insights.NotableTools.Value)
+	}
+}
+
+func TestComputeInsightsFilteredByDays(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Create a session and record its creation timestamp in the past.
+	if err := s.CreateSession(ctx, "old", "", "old session"); err != nil {
+		t.Fatalf("create old: %v", err)
+	}
+	// Manually update the created_at to 10 days ago.
+	tenDaysAgo := time.Now().AddDate(0, 0, -10).Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET created_at = ? WHERE id = ?`, tenDaysAgo, "old"); err != nil {
+		t.Fatalf("update old session time: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "old", ai.NewUser("old message")); err != nil {
+		t.Fatalf("append old: %v", err)
+	}
+
+	// Recent session (created now).
+	if err := s.CreateSession(ctx, "recent", "", "recent session"); err != nil {
+		t.Fatalf("create recent: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "recent", ai.NewUser("recent message")); err != nil {
+		t.Fatalf("append recent: %v", err)
+	}
+
+	// days=1 should exclude the old session.
+	insights, err := s.ComputeInsights(ctx, 1)
+	if err != nil {
+		t.Fatalf("ComputeInsights(1): %v", err)
+	}
+
+	if insights.Period != "Last 1 days" {
+		t.Errorf("Period = %q, want %q", insights.Period, "Last 1 days")
+	}
+	if insights.Days != 1 {
+		t.Errorf("Days = %d, want 1", insights.Days)
+	}
+	if insights.Sessions != 1 {
+		t.Errorf("Sessions = %d, want 1 (old session should be excluded)", insights.Sessions)
+	}
+	if insights.Messages != 1 {
+		t.Errorf("Messages = %d, want 1", insights.Messages)
+	}
+	// PeriodStart should be set (cutoff date).
+	if insights.PeriodStart == "" {
+		t.Error("PeriodStart empty, should be set for days > 0")
+	}
+	if insights.PeriodEnd == "" {
+		t.Error("PeriodEnd empty")
+	}
+
+	// days=0 (all time) should include both.
+	allInsights, err := s.ComputeInsights(ctx, 0)
+	if err != nil {
+		t.Fatalf("ComputeInsights(0): %v", err)
+	}
+	if allInsights.Sessions != 2 {
+		t.Errorf("All-time Sessions = %d, want 2", allInsights.Sessions)
+	}
+	if allInsights.Messages != 2 {
+		t.Errorf("All-time Messages = %d, want 2", allInsights.Messages)
+	}
+}
+
+func TestComputeInsightsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	insights, err := s.ComputeInsights(ctx, 0)
+	if err != nil {
+		t.Fatalf("ComputeInsights(0) on empty store: %v", err)
+	}
+	if insights.Sessions != 0 {
+		t.Errorf("Sessions = %d, want 0", insights.Sessions)
+	}
+	if insights.Messages != 0 {
+		t.Errorf("Messages = %d, want 0", insights.Messages)
+	}
+	if insights.AvgSessionMsgs != 0 {
+		t.Errorf("AvgSessionMsgs = %f, want 0", insights.AvgSessionMsgs)
+	}
+	if len(insights.Tools) != 0 {
+		t.Errorf("Tools len = %d, want 0", len(insights.Tools))
+	}
+	// Daily should still have 7 entries (all zero counts).
+	for i, d := range insights.Daily {
+		if d.Count != 0 {
+			t.Errorf("Daily[%d].Count = %d, want 0", i, d.Count)
+		}
+		if d.Day == "" {
+			t.Errorf("Daily[%d].Day empty", i)
+		}
 	}
 }
