@@ -14,7 +14,8 @@ import (
 	"github.com/EndoTheDev/omega/gateway"
 )
 
-const (
+// ponytail: vars (not consts) so tests can point them at an httptest server.
+var (
 	searchURL = "https://ollama.com/api/web_search"
 	fetchURL  = "https://ollama.com/api/web_fetch"
 )

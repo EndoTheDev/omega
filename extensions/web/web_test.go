@@ -2,11 +2,221 @@ package web
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/gateway"
 )
+
+// setURLs points the package-level API URLs at test servers and
+// restores them on cleanup.
+func setURLs(t *testing.T, search, fetch string) {
+	t.Helper()
+	oldSearch, oldFetch := searchURL, fetchURL
+	searchURL, fetchURL = search, fetch
+	t.Cleanup(func() {
+		searchURL, fetchURL = oldSearch, oldFetch
+	})
+}
+
+// TestDoSearchSuccess verifies the happy path: auth header, request
+// body, and formatted output.
+func TestDoSearchSuccess(t *testing.T) {
+	var gotAuth, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		fmt.Fprint(w, `{"results":[{"title":"T","url":"U","content":"C"}]}`)
+	}))
+	defer srv.Close()
+	setURLs(t, srv.URL, fetchURL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doSearch(context.Background(), "golang", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer test-key")
+	}
+	if !strings.Contains(gotBody, `"query":"golang"`) {
+		t.Errorf("request body missing query: %s", gotBody)
+	}
+	for _, want := range []string{"## T", "C", "URL: U"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("output missing %q:\n%s", want, result)
+		}
+	}
+}
+
+// TestDoSearchZeroResults verifies the empty-results message.
+func TestDoSearchZeroResults(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"results":[]}`)
+	}))
+	defer srv.Close()
+	setURLs(t, srv.URL, fetchURL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doSearch(context.Background(), "nothing", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "No results found." {
+		t.Errorf("got %q, want %q", result, "No results found.")
+	}
+}
+
+// TestRunSearchMaxResults verifies max_results parsing for both
+// float64 (JSON-decoded) and int args via the request body.
+func TestRunSearchMaxResults(t *testing.T) {
+	cases := []struct {
+		name string
+		arg  any
+		want string
+	}{
+		{"float64", float64(8.0), `"max_results":8`},
+		{"int", 3, `"max_results":3`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotBody string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				fmt.Fprint(w, `{"results":[]}`)
+			}))
+			defer srv.Close()
+			setURLs(t, srv.URL, fetchURL)
+
+			ext := &Extension{apiKey: "test-key"}
+			if _, err := ext.runSearch(context.Background(), map[string]any{
+				"query":       "q",
+				"max_results": tc.arg,
+			}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(gotBody, tc.want) {
+				t.Errorf("body %s missing %s", gotBody, tc.want)
+			}
+		})
+	}
+}
+
+// TestDoFetchSuccess verifies the formatted page output with links.
+func TestDoFetchSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"title":"Page","content":"Body","links":["a","b"]}`)
+	}))
+	defer srv.Close()
+	setURLs(t, searchURL, srv.URL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doFetch(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"# Page", "Body", "## Links", "- a", "- b"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("output missing %q:\n%s", want, result)
+		}
+	}
+}
+
+// TestDoSearchInvalidJSON verifies parse failures come back as
+// (msg, nil), not as a Go error.
+func TestDoSearchInvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "not json")
+	}))
+	defer srv.Close()
+	setURLs(t, srv.URL, fetchURL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doSearch(context.Background(), "q", 5)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if !strings.Contains(result, "error: parsing search response") {
+		t.Errorf("got %q, want parse error message", result)
+	}
+}
+
+// TestDoFetchInvalidJSON verifies parse failures come back as
+// (msg, nil), not as a Go error.
+func TestDoFetchInvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "<html>garbage</html>")
+	}))
+	defer srv.Close()
+	setURLs(t, searchURL, srv.URL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doFetch(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if !strings.Contains(result, "error: parsing fetch response") {
+		t.Errorf("got %q, want parse error message", result)
+	}
+}
+
+// TestDoSearchHTTP500 verifies 5xx responses surface through the
+// ai.RetryHTTP path: RetryHTTP returns the last (500) response rather
+// than a Go error, so doSearch reads its (empty) body and reports a
+// parse failure. OMEGA_MAX_RETRIES=0 keeps the test fast.
+func TestDoSearchHTTP500(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "0")
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	setURLs(t, srv.URL, fetchURL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doSearch(context.Background(), "q", 5)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("expected 1 attempt with OMEGA_MAX_RETRIES=0, got %d", hits)
+	}
+	if !strings.Contains(result, "error: parsing search response") {
+		t.Errorf("got %q, want parse error on empty 500 body", result)
+	}
+}
+
+// TestDoFetchHTTP500 verifies 5xx responses surface through the
+// ai.RetryHTTP path: RetryHTTP returns the last (500) response rather
+// than a Go error, so doFetch reads its (empty) body and reports a
+// parse failure.
+func TestDoFetchHTTP500(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "0")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	setURLs(t, searchURL, srv.URL)
+
+	ext := &Extension{apiKey: "test-key"}
+	result, err := ext.doFetch(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if !strings.Contains(result, "error: parsing fetch response") {
+		t.Errorf("got %q, want parse error on empty 500 body", result)
+	}
+}
+
+// TestMountWithConfig verifies the API key flows from config to extension.
 
 // TestPluginInterface verifies the Plugin satisfies agent.Plugin.
 func TestPluginInterface(t *testing.T) {
