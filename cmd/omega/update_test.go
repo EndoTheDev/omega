@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +48,43 @@ func TestFindAsset(t *testing.T) {
 func TestFindAssetEmpty(t *testing.T) {
 	if got := findAsset(nil, "windows", "amd64"); got != "" {
 		t.Fatalf("findAsset(nil) = %q, want \"\"", got)
+	}
+}
+
+func TestSafeJoin(t *testing.T) {
+	tmp := t.TempDir()
+
+	tests := []struct {
+		name    string
+		dest    string
+		entry   string
+		wantErr bool
+	}{
+		{"normal file", tmp, "omega.exe", false},
+		{"nested path", tmp, "subdir/omega.exe", false},
+		{"traversal escape", tmp, "../../../etc/passwd", true},
+		{"empty entry", tmp, "", false},
+		{"dot entry", tmp, ".", false},
+		{"double dot", tmp, "..", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := safeJoin(tt.dest, tt.entry)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("safeJoin(%q, %q) = %q, want error", tt.dest, tt.entry, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("safeJoin(%q, %q) unexpected error: %v", tt.dest, tt.entry, err)
+			}
+			absDest, _ := filepath.Abs(tt.dest)
+			absGot, _ := filepath.Abs(got)
+			if !strings.HasPrefix(absGot, absDest+string(filepath.Separator)) && absGot != absDest {
+				t.Fatalf("safeJoin(%q, %q) = %q, result outside dest", tt.dest, tt.entry, got)
+			}
+		})
 	}
 }
