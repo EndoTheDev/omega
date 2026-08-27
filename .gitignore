@@ -12,6 +12,7 @@ data/
 # Improvement loop temp files
 tmp/
 scripts/improve-gates.sh
+scripts/improve-commit.sh
 
 # Go
 *.exe
