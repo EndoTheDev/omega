@@ -1,6 +1,8 @@
 package main
 
 import (
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -38,5 +40,135 @@ func TestRunVersion(t *testing.T) {
 		if err := run(args); err != nil {
 			t.Errorf("run(%v) = %v, want nil", args, err)
 		}
+	}
+}
+
+func TestParseConfigFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"space form", []string{"--config", "my.yaml"}, "my.yaml"},
+		{"equals form", []string{"--config=my.yaml"}, "my.yaml"},
+		{"absent", []string{"chat"}, ""},
+		{"at end without value", []string{"chat", "--config"}, ""},
+		{"among other args", []string{"chat", "--config", "x.yaml", "hello"}, "x.yaml"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseConfigFlag(tt.args); got != tt.want {
+				t.Errorf("parseConfigFlag(%v) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripConfigFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"space form removed", []string{"--config", "x.yaml", "chat"}, []string{"chat"}},
+		{"equals form removed", []string{"--config=x.yaml", "chat"}, []string{"chat"}},
+		{"no config unchanged", []string{"chat", "hello"}, []string{"chat", "hello"}},
+		{"config in middle", []string{"run", "--config", "x.yaml", "do", "stuff"}, []string{"run", "do", "stuff"}},
+		{"config equals in middle", []string{"run", "--config=x.yaml", "do"}, []string{"run", "do"}},
+		{"at end without value", []string{"chat", "--config"}, []string{"chat"}},
+		{"empty args", []string{}, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripConfigFlag(tt.args)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("stripConfigFlag(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseAppendPrompts(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"single space form", []string{"--append-system-prompt", "be brief"}, []string{"be brief"}},
+		{"single equals form", []string{"--append-system-prompt=be brief"}, []string{"be brief"}},
+		{"multiple flags", []string{
+			"--append-system-prompt", "one",
+			"--append-system-prompt=two",
+		}, []string{"one", "two"}},
+		{"mixed with other args", []string{
+			"run", "--append-system-prompt", "hi", "prompt",
+		}, []string{"hi"}},
+		{"no flags", []string{"chat", "hello"}, nil},
+		{"at end without value", []string{"chat", "--append-system-prompt"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseAppendPrompts(tt.args)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseAppendPrompts(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripAppendPrompts(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"space form removed", []string{"--append-system-prompt", "hi", "chat"}, []string{"chat"}},
+		{"equals form removed", []string{"--append-system-prompt=hi", "chat"}, []string{"chat"}},
+		{"multiple removed", []string{
+			"--append-system-prompt", "one",
+			"--append-system-prompt=two",
+			"chat",
+		}, []string{"chat"}},
+		{"mixed with regular args", []string{
+			"run", "--append-system-prompt", "x", "do", "--append-system-prompt=y", "stuff",
+		}, []string{"run", "do", "stuff"}},
+		{"no flags unchanged", []string{"chat", "hello"}, []string{"chat", "hello"}},
+		{"at end without value", []string{"chat", "--append-system-prompt"}, []string{"chat"}},
+		{"empty args", []string{}, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripAppendPrompts(tt.args)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("stripAppendPrompts(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestThemeNames(t *testing.T) {
+	names := themeNames()
+
+	if len(names) == 0 {
+		t.Fatal("themeNames() returned empty slice, expected at least one theme")
+	}
+
+	has := func(target string) bool {
+		for _, n := range names {
+			if n == target {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("dark") {
+		t.Errorf("themeNames() = %v, missing \"dark\"", names)
+	}
+	if !has("light") {
+		t.Errorf("themeNames() = %v, missing \"light\"", names)
+	}
+
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("themeNames() = %v, not sorted", names)
 	}
 }
