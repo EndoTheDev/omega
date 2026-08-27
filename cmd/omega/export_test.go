@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/gateway"
 )
 
 func TestExportMessages(t *testing.T) {
@@ -40,13 +42,89 @@ func TestExportMessagesEmpty(t *testing.T) {
 	}
 }
 
+// newTestExportStore creates an in-memory store for export CLI tests.
+func newTestExportStore(t *testing.T) *gateway.Store {
+	t.Helper()
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+func TestResolveSessionCLIExactID(t *testing.T) {
+	s := newTestExportStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	id, err := resolveSessionCLI(s, "s1")
+	if err != nil {
+		t.Fatalf("resolveSessionCLI: %v", err)
+	}
+	if id != "s1" {
+		t.Fatalf("id = %q, want s1", id)
+	}
+}
+
+func TestResolveSessionCLILabelPrefix(t *testing.T) {
+	s := newTestExportStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", "my-session"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	id, err := resolveSessionCLI(s, "my-sess")
+	if err != nil {
+		t.Fatalf("resolveSessionCLI: %v", err)
+	}
+	if id != "s1" {
+		t.Fatalf("id = %q, want s1", id)
+	}
+}
+
+func TestResolveSessionCLILabelCaseInsensitive(t *testing.T) {
+	s := newTestExportStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", "my-session"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	id, err := resolveSessionCLI(s, "MY-SESS")
+	if err != nil {
+		t.Fatalf("resolveSessionCLI: %v", err)
+	}
+	if id != "s1" {
+		t.Fatalf("id = %q, want s1", id)
+	}
+}
+
 func TestResolveSessionCLINotFound(t *testing.T) {
-	// Without a real store, resolveSessionCLI should error.
-	// We can't easily test the success path without a real SQLite store,
-	// but the error path is testable with nil.
-	// Skipped: requires a store instance. The logic is covered by
-	// the TUI resolveSession tests.
-	t.Skip("requires a store instance")
+	s := newTestExportStore(t)
+	_, err := resolveSessionCLI(s, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "session not found") {
+		t.Fatalf("err = %q, want error containing %q", err.Error(), "session not found")
+	}
+}
+
+func TestResolveSessionCLIMultipleMatches(t *testing.T) {
+	s := newTestExportStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "a", "", "test-one"); err != nil {
+		t.Fatalf("create session a: %v", err)
+	}
+	if err := s.CreateSession(ctx, "b", "", "test-two"); err != nil {
+		t.Fatalf("create session b: %v", err)
+	}
+	_, err := resolveSessionCLI(s, "test")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "multiple sessions match") {
+		t.Fatalf("err = %q, want error containing %q", err.Error(), "multiple sessions match")
+	}
 }
 
 func TestMessageRole(t *testing.T) {
