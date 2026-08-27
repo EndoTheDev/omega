@@ -546,7 +546,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 			Delta *struct {
 				Type         string `json:"type"`
 				Text         string `json:"text"`
-				InputJSON    string `json:"input_json_delta"`
+				InputJSON    string `json:"partial_json"`
 				StopReason   string `json:"stop_reason"`
 				StopSequence string `json:"stop_sequence"`
 			} `json:"delta"`

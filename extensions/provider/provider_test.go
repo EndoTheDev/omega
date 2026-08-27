@@ -513,3 +513,261 @@ func TestFlushToolCalls(t *testing.T) {
 		t.Fatalf("got %d extra events after draining", len(events))
 	}
 }
+
+// collectEvents reads all events from a stream channel and returns
+// them in order. Fails the test if no events arrive or the last
+// event is not a StreamEnd.
+func collectEvents(t *testing.T, events <-chan ai.StreamEvent) []ai.StreamEvent {
+	t.Helper()
+	var out []ai.StreamEvent
+	for e := range events {
+		out = append(out, e)
+	}
+	if len(out) == 0 {
+		t.Fatal("no events received")
+	}
+	if _, ok := out[len(out)-1].(ai.StreamEnd); !ok {
+		t.Fatalf("last event type %T, want ai.StreamEnd", out[len(out)-1])
+	}
+	return out
+}
+
+// TestStreamOllama verifies Stream against a fake Ollama NDJSON
+// endpoint: content chunks, done-line counters, request path, and
+// the thinking-level "think" field in the request body.
+func TestStreamOllama(t *testing.T) {
+	var gotPath string
+	bodies := make(chan []byte, 8) // ponytail: handler pushes each request body in request order; channel beats a mutex+racy shared var
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		bodies <- body
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"content":"Hello "}}`)
+		fmt.Fprintln(w, `{"message":{"content":"world"}}`)
+		fmt.Fprintln(w, `{"done":true,"prompt_eval_count":12,"eval_count":34}`)
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3"}
+	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	<-bodies // drain the default-level request body
+
+	if gotPath != "/api/chat" {
+		t.Errorf("request path = %q, want /api/chat", gotPath)
+	}
+
+	wantContents := []string{"Hello ", "world"}
+	chunks := 0
+	for _, e := range got {
+		rc, ok := e.(ai.ResponseChunk)
+		if !ok {
+			continue
+		}
+		if chunks >= len(wantContents) {
+			t.Fatalf("got more than %d ResponseChunk events", len(wantContents))
+		}
+		if rc.Content != wantContents[chunks] {
+			t.Errorf("chunk %d content = %q, want %q", chunks, rc.Content, wantContents[chunks])
+		}
+		chunks++
+	}
+	if chunks != len(wantContents) {
+		t.Fatalf("got %d ResponseChunk events, want %d", chunks, len(wantContents))
+	}
+
+	end := got[len(got)-1].(ai.StreamEnd)
+	if end.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "stop")
+	}
+	if end.PromptEvalCount == nil || *end.PromptEvalCount != 12 {
+		t.Errorf("PromptEvalCount = %v, want 12", end.PromptEvalCount)
+	}
+	if end.EvalCount == nil || *end.EvalCount != 34 {
+		t.Errorf("EvalCount = %v, want 34", end.EvalCount)
+	}
+
+	// thinking level "high" maps to "think":"high" in the request body.
+	p = &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3", thinkingLevel: "high"}
+	collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	var sent map[string]any
+	if err := json.Unmarshal(<-bodies, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	if sent["think"] != "high" {
+		t.Errorf("request body think = %v, want %q", sent["think"], "high")
+	}
+
+	// thinking level "none" omits the "think" key entirely.
+	p = &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3", thinkingLevel: "none"}
+	collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	sent = nil
+	if err := json.Unmarshal(<-bodies, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	if _, ok := sent["think"]; ok {
+		t.Errorf("request body should not contain a think key, got %v", sent["think"])
+	}
+}
+
+// TestStreamOpenAI verifies Stream against a fake OpenAI SSE endpoint:
+// content chunks, fragmented tool-call accumulation, finish_reason,
+// Authorization header, and the in-stream error event.
+func TestStreamOpenAI(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call1\",\"function\":{\"name\":\"shell\",\"arguments\":\"{\\\"cmd\\\":\"}},{\"index\":0,\"id\":\"\",\"function\":{\"name\":null,\"arguments\":\"\\\"ls\\\"}\"}}]}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "gpt-x", apiKey: "test-key"}
+	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+
+	if gotPath != "/chat/completions" {
+		t.Errorf("request path = %q, want /chat/completions", gotPath)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer test-key")
+	}
+
+	chunks := 0
+	var toolCalls []ai.ToolCallEvent
+	for _, e := range got {
+		switch ev := e.(type) {
+		case ai.ResponseChunk:
+			if ev.Content != "Hi" {
+				t.Errorf("chunk content = %q, want %q", ev.Content, "Hi")
+			}
+			chunks++
+		case ai.ToolCallEvent:
+			toolCalls = append(toolCalls, ev)
+		}
+	}
+	if chunks != 1 {
+		t.Errorf("got %d ResponseChunk events, want 1", chunks)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("got %d ToolCallEvents, want 1", len(toolCalls))
+	}
+	tc := toolCalls[0].ToolCall
+	if tc.ID != "call1" {
+		t.Errorf("tool call ID = %q, want %q", tc.ID, "call1")
+	}
+	if tc.Name != "shell" {
+		t.Errorf("tool call Name = %q, want %q", tc.Name, "shell")
+	}
+	if args, _ := tc.Arguments["cmd"].(string); args != "ls" {
+		t.Errorf("tool call args cmd = %v, want %q (fragments accumulated)", tc.Arguments["cmd"], "ls")
+	}
+
+	end := got[len(got)-1].(ai.StreamEnd)
+	if end.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_calls")
+	}
+
+	// error path: in-stream error JSON surfaces as an error StreamEnd.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "data: {\"error\":{\"message\":\"bad\"}}\n\n")
+	}))
+	defer errSrv.Close()
+
+	p = &Provider{typ: "openai", baseURL: errSrv.URL, apiKey: "test-key"}
+	end = drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	if end.FinishReason != "error" {
+		t.Errorf("error path FinishReason = %q, want %q", end.FinishReason, "error")
+	}
+	if !strings.Contains(end.Error, "bad") {
+		t.Errorf("error path Error = %q, want it to contain %q", end.Error, "bad")
+	}
+}
+
+// TestStreamAnthropic verifies Stream against a fake Anthropic SSE
+// endpoint: text deltas, fragmented input_json_delta accumulation,
+// stop_reason, auth headers, and the in-stream error event.
+func TestStreamAnthropic(t *testing.T) {
+	var gotPath string
+	var gotAPIKey, gotVersion string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotVersion = r.Header.Get("anthropic-version")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\"}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu1\",\"name\":\"files.read\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"x.go\\\"}\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"hey\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "claude-x", apiKey: "test-key"}
+	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+
+	if gotPath != "/messages" {
+		t.Errorf("request path = %q, want /messages", gotPath)
+	}
+	if gotAPIKey != "test-key" {
+		t.Errorf("x-api-key = %q, want %q", gotAPIKey, "test-key")
+	}
+	if gotVersion != "2023-06-01" {
+		t.Errorf("anthropic-version = %q, want %q", gotVersion, "2023-06-01")
+	}
+
+	chunks := 0
+	var toolCalls []ai.ToolCallEvent
+	for _, e := range got {
+		switch ev := e.(type) {
+		case ai.ResponseChunk:
+			if ev.Content != "hey" {
+				t.Errorf("chunk content = %q, want %q", ev.Content, "hey")
+			}
+			chunks++
+		case ai.ToolCallEvent:
+			toolCalls = append(toolCalls, ev)
+		}
+	}
+	if chunks != 1 {
+		t.Errorf("got %d ResponseChunk events, want 1", chunks)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("got %d ToolCallEvents, want 1", len(toolCalls))
+	}
+	tc := toolCalls[0].ToolCall
+	if tc.ID != "tu1" {
+		t.Errorf("tool call ID = %q, want %q", tc.ID, "tu1")
+	}
+	if tc.Name != "files.read" {
+		t.Errorf("tool call Name = %q, want %q", tc.Name, "files.read")
+	}
+	if args, _ := tc.Arguments["path"].(string); args != "x.go" {
+		t.Errorf("tool call args path = %v, want %q (fragments accumulated)", tc.Arguments["path"], "x.go")
+	}
+
+	end := got[len(got)-1].(ai.StreamEnd)
+	if end.FinishReason != "tool_use" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_use")
+	}
+
+	// error path: in-stream error event surfaces as an error StreamEnd.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "data: {\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}\n\n")
+	}))
+	defer errSrv.Close()
+
+	p = &Provider{typ: "anthropic", baseURL: errSrv.URL, apiKey: "test-key"}
+	end = drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	if end.FinishReason != "error" {
+		t.Errorf("error path FinishReason = %q, want %q", end.FinishReason, "error")
+	}
+	if !strings.Contains(end.Error, "overloaded") {
+		t.Errorf("error path Error = %q, want it to contain %q", end.Error, "overloaded")
+	}
+}
