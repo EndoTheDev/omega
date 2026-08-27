@@ -61,17 +61,7 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 	}
 
 	sb.WriteString("\n## Tools\n")
-	if len(opts.Extensions) > 0 {
-		for _, ext := range opts.Extensions {
-			if len(ext.ToolList) > 0 {
-				fmt.Fprintf(&sb, "### %s\n", ext.Name)
-				for _, t := range ext.ToolList {
-					fmt.Fprintf(&sb, "- %s: %s\n", t.Name, firstLine(t.Description))
-				}
-				sb.WriteString("\n")
-			}
-		}
-	}
+	writeTools(&sb, opts.Extensions)
 
 	sb.WriteString("\n## Environment\n")
 	fmt.Fprintf(&sb, "CWD: %s\n", opts.CWD)
@@ -95,6 +85,21 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 	}
 
 	return sb.String(), true
+}
+
+// writeTools renders the "## Tools" section body: one "### <extension>"
+// block per extension that has tools.
+func writeTools(sb *strings.Builder, extensions []agent.ExtensionInfo) {
+	for _, ext := range extensions {
+		if len(ext.ToolList) == 0 {
+			continue
+		}
+		fmt.Fprintf(sb, "### %s\n", ext.Name)
+		for _, t := range ext.ToolList {
+			fmt.Fprintf(sb, "- %s: %s\n", t.Name, firstLine(t.Description))
+		}
+		sb.WriteString("\n")
+	}
 }
 
 // Guidelines returns the default guideline lines appended under
@@ -129,31 +134,37 @@ func (b *PromptBuilder) loadSkills() []agent.Skill {
 		if err != nil {
 			continue
 		}
-		s := agent.Skill{Name: entry.Name(), Dir: filepath.Join(b.skillsDir, entry.Name())}
-		// Parse simple YAML frontmatter (name, description).
-		lines := strings.Split(string(data), "\n")
-		if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
-			for _, line := range lines[1:] {
-				if strings.TrimSpace(line) == "---" {
-					break
-				}
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) != 2 {
-					continue
-				}
-				key := strings.TrimSpace(parts[0])
-				val := strings.TrimSpace(parts[1])
-				switch key {
-				case "name":
-					s.Name = val
-				case "description":
-					s.Description = val
-				}
-			}
-		}
+		s := parseFrontmatter(agent.Skill{Name: entry.Name(), Dir: filepath.Join(b.skillsDir, entry.Name())}, string(data))
 		skills = append(skills, s)
 	}
 	return skills
+}
+
+// parseFrontmatter parses simple YAML frontmatter (name, description)
+// into s and returns it. Data without frontmatter is returned unchanged.
+func parseFrontmatter(s agent.Skill, data string) agent.Skill {
+	lines := strings.Split(data, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return s
+	}
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			break
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		switch key {
+		case "name":
+			s.Name = val
+		case "description":
+			s.Description = val
+		}
+	}
+	return s
 }
 
 // firstLine returns the first non-empty line of s, or s itself if it
