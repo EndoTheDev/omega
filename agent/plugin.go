@@ -78,13 +78,28 @@ var exclusiveSeams = map[string]bool{
 //   - a required seam is not provided by any plugin (missing dep)
 //   - a plugin's Mount returns an error
 func MountAll(plugins []Plugin, ctx *Context) error {
-	// Build provides map: seam -> plugin name.
+	provides, err := buildProvidesMap(plugins)
+	if err != nil {
+		return err
+	}
+
+	ordered, err := topoSort(plugins, provides)
+	if err != nil {
+		return err
+	}
+
+	return mountPlugins(ordered, ctx)
+}
+
+// buildProvidesMap builds the seam -> plugin name map and detects conflicts
+// where two plugins provide the same exclusive seam.
+func buildProvidesMap(plugins []Plugin) (map[string]string, error) {
 	provides := make(map[string]string)
 	for _, p := range plugins {
 		for _, seam := range p.Provides() {
 			if exclusiveSeams[seam] {
 				if existing, ok := provides[seam]; ok {
-					return fmt.Errorf("seam %q provided by both %q and %q", seam, existing, p.Name())
+					return nil, fmt.Errorf("seam %q provided by both %q and %q", seam, existing, p.Name())
 				}
 			}
 			provides[seam] = p.Name()
@@ -95,14 +110,20 @@ func MountAll(plugins []Plugin, ctx *Context) error {
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if _, ok := provides[req]; !ok {
-				return fmt.Errorf("plugin %q requires seam %q but no plugin provides it", p.Name(), req)
+				return nil, fmt.Errorf("plugin %q requires seam %q but no plugin provides it", p.Name(), req)
 			}
 		}
 	}
 
-	// Topological sort: mount plugins whose deps are satisfied first.
-	// ponytail: O(n^2) over a small list (10 plugins). Upgrade path:
-	// Kahn's algorithm if the list grows past ~50.
+	return provides, nil
+}
+
+// topoSort returns plugins in dependency order so that a plugin's required
+// seams are always provided by a plugin earlier in the list.
+//
+// ponytail: O(n^2) over a small list (10 plugins). Upgrade path:
+// Kahn's algorithm if the list grows past ~50.
+func topoSort(plugins []Plugin, provides map[string]string) ([]Plugin, error) {
 	mounted := make(map[string]bool)
 	var ordered []Plugin
 	for len(ordered) < len(plugins) {
@@ -133,12 +154,16 @@ func MountAll(plugins []Plugin, ctx *Context) error {
 					remaining = append(remaining, p.Name())
 				}
 			}
-			return fmt.Errorf("circular dependency among plugins: %v", remaining)
+			return nil, fmt.Errorf("circular dependency among plugins: %v", remaining)
 		}
 	}
 
-	// Mount in order. After each mount, record what the plugin
-	// contributed so /extensions can display accurate counts.
+	return ordered, nil
+}
+
+// mountPlugins mounts each plugin in order and records what it contributed
+// so /extensions can display accurate counts.
+func mountPlugins(ordered []Plugin, ctx *Context) error {
 	for _, p := range ordered {
 		beforeTools := len(ctx.ToolProviders)
 		beforeCmds := len(ctx.Commands)
