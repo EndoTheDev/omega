@@ -145,3 +145,185 @@ func TestShellEmptyCommand(t *testing.T) {
 		t.Fatal("expected error for empty command, got nil")
 	}
 }
+
+// writeFileLines is a small helper that creates a file at path with the
+// given newline-separated lines (a trailing newline is added).
+func writeFileLines(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+}
+
+func TestRunReadFileOffset(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\nthree\nfour\nfive\n")
+
+	out, err := tp.RunReadFile(ctx, map[string]any{
+		"path":   path,
+		"offset": float64(3),
+	})
+	if err != nil {
+		t.Fatalf("RunReadFile offset: %v", err)
+	}
+	if !strings.Contains(out, "3|three") || !strings.Contains(out, "4|four") || !strings.Contains(out, "5|five") {
+		t.Fatalf("expected lines 3-5, got %q", out)
+	}
+	if strings.Contains(out, "1|one") || strings.Contains(out, "2|two") {
+		t.Fatalf("offset should skip first 2 lines, got %q", out)
+	}
+}
+
+func TestRunReadFileLimit(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\nthree\nfour\nfive\n")
+
+	out, err := tp.RunReadFile(ctx, map[string]any{
+		"path":  path,
+		"limit": float64(2),
+	})
+	if err != nil {
+		t.Fatalf("RunReadFile limit: %v", err)
+	}
+	if !strings.Contains(out, "1|one") || !strings.Contains(out, "2|two") {
+		t.Fatalf("expected first 2 lines, got %q", out)
+	}
+	if strings.Contains(out, "3|three") || strings.Contains(out, "4|four") || strings.Contains(out, "5|five") {
+		t.Fatalf("limit should stop after 2 lines, got %q", out)
+	}
+}
+
+func TestRunReadFileOffsetAndLimit(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\nthree\nfour\nfive\n")
+
+	out, err := tp.RunReadFile(ctx, map[string]any{
+		"path":   path,
+		"offset": float64(2),
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("RunReadFile offset+limit: %v", err)
+	}
+	if !strings.Contains(out, "2|two") || !strings.Contains(out, "3|three") {
+		t.Fatalf("expected lines 2-3, got %q", out)
+	}
+	if strings.Contains(out, "1|one") || strings.Contains(out, "4|four") || strings.Contains(out, "5|five") {
+		t.Fatalf("offset+limit should only return lines 2-3, got %q", out)
+	}
+}
+
+func TestRunReadFileEmptyPath(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+
+	_, err := tp.RunReadFile(ctx, map[string]any{"path": ""})
+	if err == nil {
+		t.Fatal("expected error for empty path, got nil")
+	}
+}
+
+func TestRunReadFileMissingFile(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "does-not-exist.txt")
+
+	_, err := tp.RunReadFile(ctx, map[string]any{"path": path})
+	if err == nil {
+		t.Fatal("expected error for missing file, got nil")
+	}
+}
+
+func TestRunReadFileInvalidOffsetType(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\n")
+
+	_, err := tp.RunReadFile(ctx, map[string]any{
+		"path":   path,
+		"offset": "3", // string instead of float64
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid offset type, got nil")
+	}
+}
+
+func TestRunReadFileInvalidLimitType(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\n")
+
+	_, err := tp.RunReadFile(ctx, map[string]any{
+		"path":  path,
+		"limit": "2", // string instead of float64
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid limit type, got nil")
+	}
+}
+
+func TestRunReadFileOffsetBelowOne(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\n")
+
+	_, err := tp.RunReadFile(ctx, map[string]any{
+		"path":   path,
+		"offset": float64(0),
+	})
+	if err == nil {
+		t.Fatal("expected error for offset < 1, got nil")
+	}
+}
+
+func TestRunReadFileLimitBelowZero(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lines.txt")
+	writeFileLines(t, path, "one\ntwo\n")
+
+	_, err := tp.RunReadFile(ctx, map[string]any{
+		"path":  path,
+		"limit": float64(-1),
+	})
+	if err == nil {
+		t.Fatal("expected error for limit < 0, got nil")
+	}
+}
+
+func TestRunReadFileMissingPathArg(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+
+	_, err := tp.RunReadFile(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing path argument, got nil")
+	}
+}
+
+func TestRunReadFileNonStringPath(t *testing.T) {
+	tp := &ToolProvider{}
+	ctx := context.Background()
+
+	_, err := tp.RunReadFile(ctx, map[string]any{"path": float64(123)})
+	if err == nil {
+		t.Fatal("expected error for non-string path, got nil")
+	}
+}
