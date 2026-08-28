@@ -877,6 +877,7 @@ func (m *model) startRun() {
 		if m.extensions.PendingDelegations != nil {
 			ag.SetPendingDelegations(m.extensions.PendingDelegations)
 		}
+		ag.SetLogger(m.extensions.Logger)
 	}
 	if m.compaction != nil {
 		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)

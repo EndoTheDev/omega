@@ -36,6 +36,7 @@ type LoopOptions struct {
 	InjectedMessages   <-chan InjectedMessage // subagent results (nil if no delegate extension)
 	UserInput          <-chan string           // user messages while running (nil for one-shot mode)
 	PendingDelegations func() int             // returns count of running subagent tasks
+	Logger             LoggerProvider         // optional logger; nil = no logging
 }
 
 // CompactionProvider handles context compaction when the token budget
@@ -90,6 +91,18 @@ type StoreProvider interface {
 // inline invocation, and @skill: mentions.
 type SkillsProvider interface {
 	LoadSkills(dir string) ([]Skill, error)
+}
+
+// LoggerProvider is the logging seam. Extensions call it to write
+// log entries. The default implementation writes to a file in
+// OMEGA_HOME; a no-op implementation is used when logging is disabled.
+type LoggerProvider interface {
+	// Printf writes an info-level log entry.
+	Printf(format string, args ...any)
+	// Errorf writes an error-level log entry.
+	Errorf(format string, args ...any)
+	// Close flushes and closes the log output.
+	Close() error
 }
 
 // MemoryProvider manages persistent memory across sessions.

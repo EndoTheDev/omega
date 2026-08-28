@@ -19,6 +19,7 @@ into a shared `Context` via `MountAll` at startup.
 - `skills/` - skill loading (`skills.read` tool, `/skills` command)
 - `compactor/` - context compaction (keep-first/last + LLM
   summarize); registers `/compact` command
+- `logging/` - operational logging (file logger, LoggerProvider seam)
 - `prompt/` - system prompt builder + guidelines
 - `tools/` - shell and file tools (`shell.run`, `files.read`,
   `files.write`, `files.edit`); file tools are per-path locked via
@@ -35,7 +36,7 @@ into a shared `Context` via `MountAll` at startup.
 - Every extension implements `agent.Plugin` (`Name`, `Provides`,
   `Requires`, `Mount`).
 - Exclusive seams (one plugin per slot): `provider`, `compactor`,
-  `store`, `skills`, `loop`, `memory`, `prompt_builder`.
+  `store`, `skills`, `loop`, `logging`, `memory`, `prompt_builder`.
 - Additive seam: `tools` (multiple plugins contribute to
   `ctx.ToolProviders`).
 - Commands: extensions register slash commands via `ctx.Commands` +

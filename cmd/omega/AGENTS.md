@@ -143,7 +143,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   skips these types (metadata, not conversation content).
 - **Seam wiring in newAgent.** `newAgent` builds a `plugin.Context`,
   calls `MountAll` with all extension plugins (provider, store, skills,
-  compactor, memory, prompt, tools, mcp, delegate, web, agent_loop), and wires
+  compactor, logging, memory, prompt, tools, mcp, delegate, web, agent_loop), and wires
   the agent from the populated Context: `SetProvider` from
   `ctx.Provider`, `DefaultToolProvider` via `SetToolProvider`, CWD via
   `SetCWD`, custom/append prompts via `SetPromptCustom`/
@@ -151,6 +151,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `SetPromptContext`, `SetToolProviders` from `ctx.ToolProviders`,
   `SetPromptBuilder` from `ctx.PromptBuilder`, `SetExtensionInfos`
   from `ctx.Infos`, `SetCompactionProvider` from `ctx.Compactor`,
+  `SetLogger` from `ctx.Logger`,
   `SetInjectedMessages` from `ctx.InjectedMessages`,
   `SetPendingDelegations` from `ctx.PendingDelegations`. The loop is
   mounted into `ctx.Loop` by `MountAll`; the TUI's `startRun` wires it
@@ -209,7 +210,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,
-  `extensions`, `skills`, `memory.md`, `user.md`) to home-relative paths so omega works from
+  `extensions`, `skills`, `memory.md`, `user.md`, `omega.log`) to home-relative paths so omega works from
   any CWD.
 - **The TUI does not call tools directly.** It constructs an
   `agent.Agent` per run via `ag.Run`, drains events from the returned

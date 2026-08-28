@@ -31,6 +31,7 @@ type Delegate struct {
 	tasks       map[string]*delegateTask
 	taskCounter int64
 	injected    chan injectedMsg
+	logger      agent.LoggerProvider
 }
 
 // injectedMsg carries a subagent result to be injected as a new turn.
@@ -147,11 +148,15 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 		task.mu.Unlock()
 
 		// Inject result into host conversation. Non-blocking send;
-		// if buffer full, the result is logged to stderr and dropped.
+		// if buffer full, the result is logged and dropped.
 		select {
 		case d.injected <- injectedMsg{text: result, source: "delegate:" + taskID}:
 		default:
-			fmt.Fprintf(os.Stderr, "delegate: injected channel full, dropping result for %s\n", taskID)
+			if d.logger != nil {
+				d.logger.Errorf("delegate: injected channel full, dropping result for %s", taskID)
+			} else {
+				fmt.Fprintf(os.Stderr, "delegate: injected channel full, dropping result for %s\n", taskID)
+			}
 		}
 	}()
 

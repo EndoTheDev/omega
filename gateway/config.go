@@ -26,6 +26,7 @@ type Config struct {
 	Notifications string                  `yaml:"notifications"`
 	Skills        SkillsConfig            `yaml:"skills"`
 	Memory        MemoryConfig            `yaml:"memory"`
+	Logging       LoggingConfig           `yaml:"logging"`
 }
 
 // SkillsConfig controls where skills are loaded from.
@@ -41,6 +42,12 @@ type MemoryConfig struct {
 	UserProfileCharLimit int    `yaml:"user_char_limit"`
 	File                 string `yaml:"file"`
 	UserProfileFile      string `yaml:"user_file"`
+}
+
+// LoggingConfig controls the operational logging system.
+type LoggingConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	File    string `yaml:"file"`
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -93,6 +100,10 @@ func DefaultConfig() Config {
 			UserProfileCharLimit: 1375,
 			File:                 "memory.md",
 			UserProfileFile:      "user.md",
+		},
+		Logging: LoggingConfig{
+			Enabled: true,
+			File:    "omega.log",
 		},
 		HTTPTimeout:  300,
 		MaxTurns:     100,
@@ -213,6 +224,12 @@ func applyEnv(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.Memory.UserProfileCharLimit = n
 		}
+	}
+	if v := os.Getenv("OMEGA_LOGGING_ENABLED"); v != "" {
+		cfg.Logging.Enabled = v == "1" || strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("OMEGA_LOGGING_FILE"); v != "" {
+		cfg.Logging.File = v
 	}
 }
 

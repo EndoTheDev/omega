@@ -91,6 +91,15 @@ memory:
   file: memory.md
   user_file: user.md
 
+# Operational logging. Writes startup messages, warnings, and errors
+# to a log file in OMEGA_HOME.
+logging:
+  # Default: enabled.
+  enabled: true
+  # Log file path (relative to OMEGA_HOME, or absolute).
+  # Default: omega.log
+  file: omega.log
+
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_HOME              -> omega home directory (default: binary dir, fallback ~/.omega/)
 #   OMEGA_PROVIDER          -> provider.type
@@ -115,6 +124,8 @@ memory:
 #   OMEGA_USER_PROFILE_ENABLED -> memory.user_profile_enabled (true/1 or false/0)
 #   OMEGA_MEMORY_CHAR_LIMIT -> memory.char_limit (chars, default 2200)
 #   OMEGA_USER_CHAR_LIMIT   -> memory.user_char_limit (chars, default 1375)
+#   OMEGA_LOGGING_ENABLED   -> logging.enabled (true/1 or false/0)
+#   OMEGA_LOGGING_FILE      -> logging.file (default omega.log)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
 # omega.db, skills/, and trust.yaml in OMEGA_HOME (default:

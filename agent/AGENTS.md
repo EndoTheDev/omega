@@ -14,12 +14,12 @@ gateway, or extensions).
 - `agent.go` - Agent struct, configuration holders, capability seam
   wiring (`SetCompactionProvider`, `SetToolProvider`, `SetMaxToolOutput`,
   `SetCWD`, `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`,
-  `SetLoopProvider`, `SetProvider`, `SetUserInput`). Delegates execution
+  `SetLoopProvider`, `SetProvider`, `SetUserInput`, `SetLogger`). Delegates execution
   to `LoopProvider`. The loop is not set by default; the host wires one
   via `SetLoopProvider` or by mounting the agent-loop extension.
 - `seams.go` - capability seam interfaces (`LoopProvider` + `LoopOptions`,
   `CompactionProvider`, `ToolProvider` + `DefaultToolProvider`,
-  `StoreProvider`, `SkillsProvider`, `MemoryProvider`, `PromptBuilder`).
+  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`).
 - `plugin.go` - in-process extension system: `Context` (shared service
   container with typed seam slots), `Plugin` interface (`Name`,
   `Provides`, `Requires`, `Mount`), `MountAll` (topological sort by
@@ -54,7 +54,7 @@ gateway, or extensions).
   `CompactionProvider` (context compaction), `ToolProvider` (tool
   registry), `LoopProvider` (conversation loop), `StoreProvider`
   (session persistence), `SkillsProvider` (skill loading),
-  `MemoryProvider` (persistent memory), `PromptBuilder` (system prompt). Default implementations live in
+  `LoggerProvider` (operational logging), `MemoryProvider` (persistent memory), `PromptBuilder` (system prompt). Default implementations live in
   `extensions/`. The system prompt is built by the prompt extension
   via `BuildPrompt`. The compactor is wired from the compactor
   extension; when no compactor extension is loaded, compaction is

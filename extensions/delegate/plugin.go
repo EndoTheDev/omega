@@ -23,6 +23,7 @@ func (p *Plugin) Requires() []string { return nil }
 // Mount appends the delegate ToolProvider, sets InjectedMessages and
 // PendingDelegations on the Context.
 func (p *Plugin) Mount(ctx *agent.Context) error {
+	p.delegate.logger = ctx.Logger
 	ctx.ToolProviders = append(ctx.ToolProviders, p.delegate)
 
 	// Bridge internal injectedMsg channel to agent.InjectedMessage.

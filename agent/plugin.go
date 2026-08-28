@@ -22,6 +22,7 @@ type Context struct {
 	Store         StoreProvider
 	Skills        SkillsProvider
 	Loop          LoopProvider
+	Logger        LoggerProvider
 	Memory        MemoryProvider
 	PromptBuilder PromptBuilder
 
@@ -66,6 +67,7 @@ var exclusiveSeams = map[string]bool{
 	"store":          true,
 	"skills":         true,
 	"loop":           true,
+	"logging":        true,
 	"memory":         true,
 	"prompt_builder": true,
 }

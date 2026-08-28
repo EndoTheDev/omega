@@ -18,6 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/agent_loop"
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/delegate"
+	"github.com/EndoTheDev/omega/extensions/logging"
 	"github.com/EndoTheDev/omega/extensions/mcp"
 	"github.com/EndoTheDev/omega/extensions/memory"
 	"github.com/EndoTheDev/omega/extensions/prompt"
@@ -243,6 +244,9 @@ func resolveHomePaths(cfg *gateway.Config) {
 	if cfg.Memory.UserProfileFile == "user.md" {
 		cfg.Memory.UserProfileFile = home + "/user.md"
 	}
+	if cfg.Logging.File == "omega.log" {
+		cfg.Logging.File = home + "/omega.log"
+	}
 	// Ensure the home directory exists so SQLite can create its file.
 	_ = os.MkdirAll(home, 0755)
 }
@@ -258,6 +262,7 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 		mcpPlugin = mcp.NewPlugin(nil)
 	}
 	return []agent.Plugin{
+		logging.NewPlugin(),
 		agent_loop.NewPlugin(),
 		&provider.Plugin{},
 		store.NewPlugin(),
@@ -275,17 +280,17 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 // newAgent wires config into a provider, agent, store, and extensions
 // via the in-process plugin system. The store is returned so the caller
 // can close it.
-func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, error) {
+func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, error) {
 	ctx := &agent.Context{
 		CWD:    cwd(),
 		Config: cfg,
 	}
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build plugins: %w", err)
+		return nil, nil, nil, fmt.Errorf("build plugins: %w", err)
 	}
 	if err := agent.MountAll(plugins, ctx); err != nil {
-		return nil, nil, fmt.Errorf("mount extensions: %w", err)
+		return nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
 
 	tools := map[string]agent.Tool{}
@@ -299,6 +304,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	ag.SetPromptBuilder(ctx.PromptBuilder)
 	ag.SetExtensionInfos(ctx.Infos)
 	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
+	ag.SetLogger(ctx.Logger)
 
 	if ctx.Compactor != nil {
 		ag.SetCompactionProvider(ctx.Compactor)
@@ -313,18 +319,18 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	// Open the store.
 	if ctx.Store != nil {
 		if err := ctx.Store.Open(cfg.Store.DBPath); err != nil {
-			return nil, nil, fmt.Errorf("open store: %w", err)
+			return nil, nil, nil, fmt.Errorf("open store: %w", err)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "omega: no store extension loaded — using in-memory store (sessions will not persist)\n")
+		ctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
 		s, err := gateway.Open(":memory:")
 		if err != nil {
-			return nil, nil, fmt.Errorf("open in-memory store: %w", err)
+			return nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
 		}
 		ctx.Store = s
 	}
 
-	return ag, ctx.Store, nil
+	return ag, ctx.Store, ctx.Logger, nil
 }
 
 // signalContext returns a context cancelled on SIGINT/SIGTERM.
@@ -341,11 +347,14 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	}
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	if logger != nil {
+		defer logger.Close()
+	}
 
 	ctx, stop := signalContext()
 	defer stop()
@@ -375,11 +384,14 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	}
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	if logger != nil {
+		defer logger.Close()
+	}
 
 	ctx, stop := signalContext()
 	defer stop()
@@ -432,6 +444,9 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 	if err := agent.MountAll(plugins, pctx); err != nil {
 		return fmt.Errorf("mount extensions: %w", err)
 	}
+	if pctx.Logger != nil {
+		defer pctx.Logger.Close()
+	}
 
 	// Open the store.
 	if pctx.Store != nil {
@@ -439,7 +454,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 			return fmt.Errorf("open store: %w", err)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "omega: no store extension loaded — using in-memory store (sessions will not persist)\n")
+		pctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
 		s, err := gateway.Open(":memory:")
 		if err != nil {
 			return fmt.Errorf("open in-memory store: %w", err)

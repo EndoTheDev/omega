@@ -38,6 +38,7 @@ type Agent struct {
 	injectedMsgs   <-chan InjectedMessage
 	pendingDeleg   func() int
 	loop           LoopProvider
+	logger         LoggerProvider
 	mu             sync.Mutex
 	running        bool
 }
@@ -143,6 +144,12 @@ func (a *Agent) SetPendingDelegations(f func() int) {
 	a.pendingDeleg = f
 }
 
+// SetLogger installs a logger for the agent loop. A nil value disables
+// logging. The logger is passed to the loop via LoopOptions.
+func (a *Agent) SetLogger(l LoggerProvider) {
+	a.logger = l
+}
+
 // ModelName returns the name of the model the agent's provider serves.
 func (a *Agent) ModelName() string {
 	return a.provider.ModelName()
@@ -201,7 +208,8 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			InjectedMessages:   a.injectedMsgs,
 			UserInput:          a.userInput,
 			PendingDelegations: a.pendingDeleg,
-		})
+			Logger:             a.logger,
+			})
 	}()
 	return events
 }

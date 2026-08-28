@@ -20,7 +20,7 @@ and environment variables. It is the only layer external clients talk to.
   live in `agent/types.go`. Message encode/decode delegates to
   `ai.EncodeMessage`/`ai.DecodeMessage`.
 - `config.go` - `Config` and sub-configs (ProviderConfig, ServerConfig,
-  StoreConfig, SkillsConfig, MemoryConfig, CompactionConfig),
+  StoreConfig, SkillsConfig, MemoryConfig, LoggingConfig, CompactionConfig),
   `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`,
   `Validate`, `WatchConfig` (fsnotify hot-reload)
 - `config_test.go` - config loading and env override tests

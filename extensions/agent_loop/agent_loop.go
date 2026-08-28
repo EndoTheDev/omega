@@ -95,6 +95,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		start.ModelName = opts.Provider.ModelName()
 	}
 	opts.Events <- start
+	if opts.Logger != nil {
+		opts.Logger.Printf("agent loop starting, model=%s, turns=%d", start.ModelName, maxTurns)
+	}
 
 	turns := 0
 	overflowRetries := 0
@@ -105,6 +108,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			return nil
 		}
 		if turns >= maxTurns {
+			if opts.Logger != nil {
+				opts.Logger.Printf("max turns reached (%d)", maxTurns)
+			}
 			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
 			opts.Events <- end
 			return nil
@@ -116,6 +122,11 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 				opts.Events <- end
 				return nil
+			}
+			if len(compacted) < len(messages) {
+				if opts.Logger != nil {
+					opts.Logger.Printf("compaction triggered")
+				}
 			}
 			messages = compacted
 		}
@@ -151,6 +162,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 
 		if streamErr != "" {
+			if opts.Logger != nil {
+				opts.Logger.Errorf("stream error: %s", streamErr)
+			}
 			// A context overflow error triggers one auto-compaction and
 			// retry of the turn. The failed attempt counts as a turn and
 			// emits TurnStart without TurnEnd - acceptable asymmetry, the
@@ -159,6 +173,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			// retrying would duplicate it.
 			if isOverflowError(streamErr) && opts.CompactionProvider != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
+				if opts.Logger != nil {
+					opts.Logger.Printf("context overflow, retrying (attempt %d/%d)", overflowRetries, maxOverflowRetries)
+				}
 				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 				if err != nil {
 					end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
@@ -173,6 +190,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			errMsg := streamErr
 			if isOverflowError(streamErr) && opts.CompactionProvider == nil {
 				errMsg = "context full — start a new session (/new)"
+				if opts.Logger != nil {
+					opts.Logger.Errorf("context full, no compactor loaded")
+				}
 			}
 			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
 			opts.Events <- end
@@ -205,6 +225,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				result, err := t.Run(ctx, c.Arguments)
 				if err != nil {
 					results[idx] = ai.NewToolResult(err.Error(), c.ID, true)
+					if opts.Logger != nil {
+						opts.Logger.Errorf("tool %s error: %v", c.Name, err)
+					}
 				} else {
 					if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
 						result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
@@ -270,6 +293,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			}
 			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			opts.Events <- end
+			if opts.Logger != nil {
+				if finishReason == "error" || finishReason == "cancelled" {
+					opts.Logger.Errorf("agent ended: %s", finishReason)
+				} else {
+					opts.Logger.Printf("agent ended after %d turns", turns)
+				}
+			}
 			return nil
 		}
 	}
