@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -141,8 +142,8 @@ func MountAll(plugins []Plugin, ctx *Context) error {
 			return fmt.Errorf("mount %q: %w", p.Name(), err)
 		}
 		info := ExtensionInfo{
-			Name:   p.Name(),
-			Seams:  p.Provides(),
+			Name:  p.Name(),
+			Seams: p.Provides(),
 		}
 		// Count tools this plugin added.
 		for _, tp := range ctx.ToolProviders[beforeTools:] {
@@ -157,6 +158,8 @@ func MountAll(plugins []Plugin, ctx *Context) error {
 				})
 			}
 		}
+		// Ensure deterministic order: map iteration is non-deterministic in Go.
+		sort.SliceStable(info.ToolList, func(i, j int) bool { return info.ToolList[i].Name < info.ToolList[j].Name })
 		// Count commands this plugin added.
 		info.Commands = len(ctx.Commands) - beforeCmds
 		ctx.Infos = append(ctx.Infos, info)
