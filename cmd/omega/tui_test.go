@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -11,6 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/provider"
 	"github.com/EndoTheDev/omega/gateway"
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -1768,5 +1772,299 @@ func TestPasteInsertsText(t *testing.T) {
 	m = up.(model)
 	if m.textarea.Value() != "/some/file/path" {
 		t.Fatalf("textarea = %q, want /some/file/path", m.textarea.Value())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleSearch tests
+// ---------------------------------------------------------------------------
+
+// TestHandleSearchNoArgs verifies that /search with no query sets a usage error.
+func TestHandleSearchNoArgs(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	up, _ := m.handleSearch(nil)
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected usage error for /search with no args")
+	}
+	if !strings.Contains(m.err, "usage") {
+		t.Fatalf("err = %q, want it to contain 'usage'", m.err)
+	}
+}
+
+// TestHandleSearchNoStore verifies that /search with a nil store sets an error.
+func TestHandleSearchNoStore(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	up, _ := m.handleSearch([]string{"hello"})
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected error for /search with nil store")
+	}
+	if !strings.Contains(m.err, "no session store") {
+		t.Fatalf("err = %q, want it to contain 'no session store'", m.err)
+	}
+}
+
+// TestHandleSearchResults verifies that /search finds messages in the store
+// and renders results in the transcript.
+func TestHandleSearchResults(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "sess1", "", "Test Session"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("golang concurrency patterns")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	up, _ := m.handleSearch([]string{"golang"})
+	m = up.(model)
+	if m.storeErr != "" {
+		t.Fatalf("search store error: %s", m.storeErr)
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "golang") {
+		t.Fatalf("transcript missing search result: %q", plain)
+	}
+}
+
+// TestHandleSearchNoResults verifies that /search with no matches renders
+// "[no results]" in the transcript.
+func TestHandleSearchNoResults(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "sess1", "", "Test"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("hello world")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	up, _ := m.handleSearch([]string{"nonexistent_term_xyz"})
+	m = up.(model)
+	if m.storeErr != "" {
+		t.Fatalf("search store error: %s", m.storeErr)
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "[no results]") {
+		t.Fatalf("transcript missing [no results]: %q", plain)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleInsights tests
+// ---------------------------------------------------------------------------
+
+// TestHandleInsightsNoStore verifies that /insights with a nil store sets an error.
+func TestHandleInsightsNoStore(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	up, _ := m.handleInsights(nil)
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected error for /insights with nil store")
+	}
+	if !strings.Contains(m.err, "no session store") {
+		t.Fatalf("err = %q, want it to contain 'no session store'", m.err)
+	}
+}
+
+// TestHandleInsightsNoSessions verifies that /insights with an empty store
+// renders "[no sessions ...]" in the transcript.
+func TestHandleInsightsNoSessions(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	up, _ := m.handleInsights(nil)
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("unexpected error: %s", m.err)
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "[no sessions") {
+		t.Fatalf("transcript missing [no sessions]: %q", plain)
+	}
+}
+
+// TestHandleInsightsWithSessions verifies that /insights with sessions in the
+// store renders formatted insights (containing "omega insights") in the transcript.
+func TestHandleInsightsWithSessions(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "sess1", "", "My Session"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("hello there")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", ai.NewAssistant("hi back")); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	// Use days=0 to include all sessions regardless of creation time.
+	up, _ := m.handleInsights([]string{"0"})
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("unexpected error: %s", m.err)
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "omega insights") {
+		t.Fatalf("transcript missing insights report: %q", plain)
+	}
+	if !strings.Contains(plain, "Sessions:") {
+		t.Fatalf("transcript missing Sessions line: %q", plain)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleCopy tests
+// ---------------------------------------------------------------------------
+
+// TestHandleCopyNothing verifies that /copy with empty history sets an error.
+func TestHandleCopyNothing(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	up, _ := m.handleCopy()
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected 'nothing to copy' error for empty history")
+	}
+	if !strings.Contains(m.err, "nothing to copy") {
+		t.Fatalf("err = %q, want it to contain 'nothing to copy'", m.err)
+	}
+}
+
+// TestHandleCopyEmptyText verifies that /copy with a message whose text is
+// empty sets an error (the message type is recognized but content is blank).
+func TestHandleCopyEmptyText(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m.history = []ai.Message{ai.NewAssistant("")}
+	up, _ := m.handleCopy()
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected 'nothing to copy' error for empty assistant content")
+	}
+	if !strings.Contains(m.err, "nothing to copy") {
+		t.Fatalf("err = %q, want it to contain 'nothing to copy'", m.err)
+	}
+}
+
+// TestHandleCopyUserMessage verifies that /copy copies a user message's text
+// to the clipboard. Skips if the clipboard is unavailable in the test env.
+func TestHandleCopyUserMessage(t *testing.T) {
+	// Probe clipboard availability first.
+	if err := clipboard.WriteAll("probe"); err != nil {
+		t.Skipf("clipboard not available in test environment: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m.history = []ai.Message{ai.NewUser("copy me please")}
+	up, _ := m.handleCopy()
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("unexpected error: %s", m.err)
+	}
+	got, err := clipboard.ReadAll()
+	if err != nil {
+		t.Skipf("clipboard read failed: %v", err)
+	}
+	if got != "copy me please" {
+		t.Fatalf("clipboard = %q, want %q", got, "copy me please")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleExport tests
+// ---------------------------------------------------------------------------
+
+// TestHandleExportNoSession verifies that /export with no active session sets
+// an error.
+func TestHandleExportNoSession(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	// sessionID is empty → should error
+	up, _ := m.handleExport(nil)
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected error for /export with no active session")
+	}
+	if !strings.Contains(m.err, "no active session") {
+		t.Fatalf("err = %q, want it to contain 'no active session'", m.err)
+	}
+}
+
+// TestHandleExportWrites verifies that /export writes a valid JSONL file
+// containing the session's messages.
+func TestHandleExportWrites(t *testing.T) {
+	s, err := gateway.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "exp1", "", "Export Test"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "exp1", ai.NewUser("export this")); err != nil {
+		t.Fatalf("append user message: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "exp1", ai.NewAssistant("ok exported")); err != nil {
+		t.Fatalf("append assistant message: %v", err)
+	}
+	outPath := filepath.Join(t.TempDir(), "export.jsonl")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m.sessionID = "exp1"
+	up, _ := m.handleExport([]string{outPath})
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("export error: %s", m.err)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read exported file: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSONL lines, got %d", len(lines))
+	}
+	for i, line := range lines {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("line %d is not valid JSON: %v (line=%q)", i, err, line)
+		}
+		if _, ok := entry["role"]; !ok {
+			t.Fatalf("line %d missing 'role' field: %v", i, entry)
+		}
+		if _, ok := entry["content"]; !ok {
+			t.Fatalf("line %d missing 'content' field: %v", i, entry)
+		}
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "[exported") {
+		t.Fatalf("transcript missing export confirmation: %q", plain)
+	}
+	if !strings.Contains(plain, "2 messages") {
+		t.Fatalf("transcript missing message count: %q", plain)
 	}
 }
