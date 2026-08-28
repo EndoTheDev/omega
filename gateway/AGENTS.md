@@ -26,6 +26,8 @@ and environment variables. It is the only layer external clients talk to.
 - `config_test.go` - config loading and env override tests
 - `server_test.go` - server endpoint and SSE streaming tests with a
   scripted mock provider
+- `server_pure_test.go` - direct unit tests for selectTools,
+  decodeMessages, newSessionID
 - `store_test.go` - store CRUD, tree, ancestor, and message tests
   (`:memory:` SQLite)
 - `static/index.html` - embedded web frontend served at `/static/`
