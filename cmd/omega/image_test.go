@@ -1,14 +1,51 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 )
+
+// mockStore is a minimal StoreProvider for testing @session: injection.
+// Only GetMessages has configurable behavior; all other methods are no-ops.
+type mockStore struct {
+	messages []ai.Message
+	err      error
+}
+
+func (m *mockStore) Open(string) error                                        { return nil }
+func (m *mockStore) Close() error                                             { return nil }
+func (m *mockStore) CreateSession(context.Context, string, string, string) error { return nil }
+func (m *mockStore) GetSession(context.Context, string) (agent.Session, error) {
+	return agent.Session{}, nil
+}
+func (m *mockStore) ListSessions(context.Context) ([]agent.Session, error) { return nil, nil }
+func (m *mockStore) DeleteSession(context.Context, string) error            { return nil }
+func (m *mockStore) UpdateSession(context.Context, string, string) error    { return nil }
+func (m *mockStore) AppendMessage(context.Context, string, ai.Message) error { return nil }
+func (m *mockStore) GetMessages(_ context.Context, _ string) ([]ai.Message, error) {
+	return m.messages, m.err
+}
+func (m *mockStore) GetSessionTree(context.Context) ([]*agent.SessionNode, error) {
+	return nil, nil
+}
+func (m *mockStore) GetAncestorMessages(context.Context, string) ([]ai.Message, error) {
+	return nil, nil
+}
+func (m *mockStore) SearchMessages(context.Context, string) ([]agent.SearchResult, error) {
+	return nil, nil
+}
+func (m *mockStore) ComputeInsights(context.Context, int) (*agent.Insights, error) {
+	return nil, nil
+}
+func (m *mockStore) CountMessages(context.Context, string) (int, error) { return 0, nil }
 
 func TestDetectImagePNG(t *testing.T) {
 	dir := t.TempDir()
@@ -301,5 +338,166 @@ func TestLangForTool(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("langForTool(%q, %v) = %q, want %q", tt.toolName, tt.args, got, tt.want)
 		}
+	}
+}
+
+// --- extractImages branch coverage tests ---
+
+func TestExtractImagesSkillInjection(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		skills []agent.Skill
+		want   string
+	}{
+		{
+			name:   "skill found",
+			input:  "use @skill:foo here",
+			skills: []agent.Skill{{Name: "foo", Content: "skill body text"}},
+			want:   "use skill body text here",
+		},
+		{
+			name:   "skill not found leaves token",
+			input:  "use @skill:bar here",
+			skills: []agent.Skill{{Name: "foo", Content: "skill body text"}},
+			want:   "use @skill:bar here",
+		},
+		{
+			name:   "skill not found with empty skills",
+			input:  "use @skill:foo here",
+			skills: nil,
+			want:   "use @skill:foo here",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prompt, images, err := extractImages(tt.input, nil, tt.skills)
+			if err != nil {
+				t.Fatalf("extractImages: %v", err)
+			}
+			if len(images) != 0 {
+				t.Fatalf("images = %d, want 0", len(images))
+			}
+			if prompt != tt.want {
+				t.Fatalf("prompt = %q, want %q", prompt, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractImagesSessionInjection(t *testing.T) {
+	t.Run("messages returned", func(t *testing.T) {
+		store := &mockStore{
+			messages: []ai.Message{
+				ai.NewUser("hello there"),
+				ai.NewAssistant("hi back"),
+			},
+		}
+		input := "ctx @session:abc please"
+		prompt, images, err := extractImages(input, store, nil)
+		if err != nil {
+			t.Fatalf("extractImages: %v", err)
+		}
+		if len(images) != 0 {
+			t.Fatalf("images = %d, want 0", len(images))
+		}
+		if !strings.Contains(prompt, "[user] hello there") {
+			t.Fatalf("prompt %q missing [user] hello there", prompt)
+		}
+		if !strings.Contains(prompt, "[assistant] hi back") {
+			t.Fatalf("prompt %q missing [assistant] hi back", prompt)
+		}
+		if !strings.Contains(prompt, "ctx") || !strings.Contains(prompt, "please") {
+			t.Fatalf("prompt %q should preserve surrounding text", prompt)
+		}
+	})
+
+	t.Run("store error leaves token", func(t *testing.T) {
+		store := &mockStore{err: errors.New("db down")}
+		input := "ctx @session:abc please"
+		prompt, images, err := extractImages(input, store, nil)
+		if err != nil {
+			t.Fatalf("extractImages: %v", err)
+		}
+		if len(images) != 0 {
+			t.Fatalf("images = %d, want 0", len(images))
+		}
+		if !strings.Contains(prompt, "@session:abc") {
+			t.Fatalf("prompt %q should contain @session:abc token", prompt)
+		}
+	})
+
+	t.Run("nil store leaves token", func(t *testing.T) {
+		input := "ctx @session:abc please"
+		prompt, images, err := extractImages(input, nil, nil)
+		if err != nil {
+			t.Fatalf("extractImages: %v", err)
+		}
+		if len(images) != 0 {
+			t.Fatalf("images = %d, want 0", len(images))
+		}
+		if prompt != input {
+			t.Fatalf("prompt = %q, want %q (nil store)", prompt, input)
+		}
+	})
+}
+
+func TestExtractImagesGlobExpansion(t *testing.T) {
+	t.Run("glob matches inlined", func(t *testing.T) {
+		dir := t.TempDir()
+		a := filepath.Join(dir, "a.go")
+		b := filepath.Join(dir, "b.go")
+		if err := os.WriteFile(a, []byte("package main\n"), 0o644); err != nil {
+			t.Fatalf("write a: %v", err)
+		}
+		if err := os.WriteFile(b, []byte("package main\n"), 0o644); err != nil {
+			t.Fatalf("write b: %v", err)
+		}
+		pattern := filepath.Join(dir, "*.go")
+		input := "review @" + pattern + " now"
+		prompt, images, err := extractImages(input, nil, nil)
+		if err != nil {
+			t.Fatalf("extractImages: %v", err)
+		}
+		if len(images) != 0 {
+			t.Fatalf("images = %d, want 0", len(images))
+		}
+		if !strings.Contains(prompt, "--- ") || !strings.Contains(prompt, "a.go") || !strings.Contains(prompt, "b.go") {
+			t.Fatalf("prompt %q should inline glob matches", prompt)
+		}
+		if !strings.Contains(prompt, "review") || !strings.Contains(prompt, "now") {
+			t.Fatalf("prompt %q should preserve surrounding text", prompt)
+		}
+	})
+
+	t.Run("glob no matches leaves token", func(t *testing.T) {
+		dir := t.TempDir()
+		pattern := filepath.Join(dir, "*.nomatch")
+		input := "review @" + pattern + " now"
+		prompt, images, err := extractImages(input, nil, nil)
+		if err != nil {
+			t.Fatalf("extractImages: %v", err)
+		}
+		if len(images) != 0 {
+			t.Fatalf("images = %d, want 0", len(images))
+		}
+		if !strings.Contains(prompt, "@"+pattern) {
+			t.Fatalf("prompt %q should contain original token", prompt)
+		}
+	})
+}
+
+func TestExtractImagesDirectoryToken(t *testing.T) {
+	dir := t.TempDir()
+	input := "read @" + dir + " now"
+	prompt, images, err := extractImages(input, nil, nil)
+	if err != nil {
+		t.Fatalf("extractImages: %v", err)
+	}
+	if len(images) != 0 {
+		t.Fatalf("images = %d, want 0", len(images))
+	}
+	if !strings.Contains(prompt, "@"+dir) {
+		t.Fatalf("prompt %q should leave directory token as-is", prompt)
 	}
 }
