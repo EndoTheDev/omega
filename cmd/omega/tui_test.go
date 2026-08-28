@@ -2068,3 +2068,135 @@ func TestHandleExportWrites(t *testing.T) {
 		t.Fatalf("transcript missing message count: %q", plain)
 	}
 }
+
+// TestRenderCodeBlockBasic verifies renderCodeBlock produces a bordered
+// box with the language header and the code text preserved.
+func TestRenderCodeBlockBasic(t *testing.T) {
+	code := "package main\nfunc main() {}"
+	out := renderCodeBlock(code, "go", 60, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "go") {
+		t.Fatalf("expected language header 'go' in output, got %q", plain)
+	}
+	if !strings.Contains(plain, "package main") {
+		t.Fatalf("expected code text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "func main()") {
+		t.Fatalf("expected function text preserved, got %q", plain)
+	}
+	// Rounded border uses these box-drawing chars.
+	if !strings.Contains(out, "╭") && !strings.Contains(out, "╯") &&
+		!strings.Contains(out, "╰") && !strings.Contains(out, "╮") {
+		t.Fatalf("expected rounded border characters in output, got %q", out)
+	}
+}
+
+// TestRenderCodeBlockEmptyLang verifies an empty language string renders
+// the header as "text" and does not panic.
+func TestRenderCodeBlockEmptyLang(t *testing.T) {
+	out := renderCodeBlock("echo hello", "", 60, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "text") {
+		t.Fatalf("expected header 'text' for empty lang, got %q", plain)
+	}
+	if !strings.Contains(plain, "echo hello") {
+		t.Fatalf("expected code text preserved, got %q", plain)
+	}
+}
+
+// TestRenderCodeBlockSmallWidth verifies width < 12 clamps boxWidth to
+// 10 and still renders without panicking.
+func TestRenderCodeBlockSmallWidth(t *testing.T) {
+	out := renderCodeBlock("x := 1", "go", 5, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "go") {
+		t.Fatalf("expected header 'go' at small width, got %q", plain)
+	}
+	if !strings.Contains(plain, "x := 1") {
+		t.Fatalf("expected code text preserved at small width, got %q", plain)
+	}
+}
+
+// TestRenderCodeBlockHighlightFallback verifies an unknown language does
+// not panic; chroma falls back and the content is still present.
+func TestRenderCodeBlockHighlightFallback(t *testing.T) {
+	out := renderCodeBlock("looks weird", "totally-not-a-real-lang", 60, themes["light"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "totally-not-a-real-lang") {
+		t.Fatalf("expected header for unknown lang preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "looks weird") {
+		t.Fatalf("expected code text preserved for unknown lang, got %q", plain)
+	}
+}
+
+// TestRenderMarkdownNoCodeBlocks verifies markdown without fenced code
+// blocks takes the glamour fast path and preserves prose.
+func TestRenderMarkdownNoCodeBlocks(t *testing.T) {
+	out := renderMarkdown("**bold** here", 80, themes["dark"])
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("expected ANSI escape codes from glamour, got %q", out)
+	}
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "bold") {
+		t.Fatalf("expected bold text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "here") {
+		t.Fatalf("expected prose preserved, got %q", plain)
+	}
+}
+
+// TestRenderMarkdownWithCodeBlock verifies a fenced code block is split
+// out: prose goes through glamour and code goes through renderCodeBlock
+// (border present, code text preserved).
+func TestRenderMarkdownWithCodeBlock(t *testing.T) {
+	content := "Here is code:\n\n```go\npackage main\n```\n\nDone."
+	out := renderMarkdown(content, 80, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "Here is code:") {
+		t.Fatalf("expected prose before code block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "package main") {
+		t.Fatalf("expected code block text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "Done.") {
+		t.Fatalf("expected trailing prose preserved, got %q", plain)
+	}
+	if !strings.Contains(out, "╭") && !strings.Contains(out, "╯") &&
+		!strings.Contains(out, "╰") && !strings.Contains(out, "╮") {
+		t.Fatalf("expected rounded border around code block, got %q", out)
+	}
+}
+
+// TestRenderMarkdownMultipleCodeBlocks verifies two fenced code blocks
+// in one markdown string are both rendered with their code preserved.
+func TestRenderMarkdownMultipleCodeBlocks(t *testing.T) {
+	content := "First:\n\n```go\nfunc a() {}\n```\n\nSecond:\n\n```python\nprint('hi')\n```\n\nEnd."
+	out := renderMarkdown(content, 80, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "func a()") {
+		t.Fatalf("expected first code block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "print('hi')") {
+		t.Fatalf("expected second code block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "First:") {
+		t.Fatalf("expected prose before first block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "Second:") {
+		t.Fatalf("expected prose between blocks preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "End.") {
+		t.Fatalf("expected trailing prose preserved, got %q", plain)
+	}
+}
+
+// TestRenderMarkdownZeroWidth verifies width 0 normalizes to 80 without
+// panicking and still renders content.
+func TestRenderMarkdownZeroWidth(t *testing.T) {
+	out := renderMarkdown("hello world", 0, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "hello world") {
+		t.Fatalf("expected text preserved at zero width, got %q", plain)
+	}
+}
