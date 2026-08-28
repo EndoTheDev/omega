@@ -158,3 +158,64 @@ func TestNewSessionIDFormat(t *testing.T) {
 		t.Errorf("ID %q is not valid hexadecimal: %v", id, err)
 	}
 }
+
+// TestSSEStreamEventAllCases exercises every type-switch arm in
+// sseStreamEvent, including the default fallback for an unrecognized
+// ai.StreamEvent implementation.
+func TestSSEStreamEventAllCases(t *testing.T) {
+	cases := []struct {
+		name    string
+		event   ai.StreamEvent
+		want    string
+		wantErr bool
+	}{
+		{"ThinkingChunk", ai.ThinkingChunk{Type: "thinking", Content: "hmm"}, "thinking_chunk", false},
+		{"ResponseChunk", ai.ResponseChunk{Type: "response", Content: "hi"}, "response_chunk", false},
+		{"ToolCallEvent", ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "t1", Name: "shell"}}, "tool_call", false},
+		{"StreamEnd", ai.StreamEnd{Type: "stream_end", FinishReason: "stop"}, "stream_end", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, data, err := sseStreamEvent(tc.event)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("event type = %q, want %q", got, tc.want)
+			}
+			if len(data) == 0 {
+				t.Fatalf("expected non-empty data, got empty")
+			}
+		})
+	}
+}
+
+// TestEventTypeOfAllCases covers every type-switch arm in eventTypeOf.
+func TestEventTypeOfAllCases(t *testing.T) {
+	cases := []struct {
+		name  string
+		event agent.Event
+		want  string
+	}{
+		{"AgentStart", agent.AgentStart{Type: "agent_start", ModelName: "m"}, "agent_start"},
+		{"TurnStart", agent.TurnStart{Type: "turn_start", Turn: 1}, "turn_start"},
+		{"TurnEnd", agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}, "turn_end"},
+		{"AgentEnd", agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}, "agent_end"},
+		{"AssistantMessageEvent", agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hi")}, "assistant_message"},
+		{"ToolResultEvent", agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult("ok", "t1", false)}, "tool_result"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := eventTypeOf(tc.event)
+			if got != tc.want {
+				t.Fatalf("eventTypeOf(%T) = %q, want %q", tc.event, got, tc.want)
+			}
+		})
+	}
+}

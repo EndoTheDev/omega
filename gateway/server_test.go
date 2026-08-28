@@ -413,3 +413,73 @@ func parseSSE(t *testing.T, raw string) []sseFrame {
 	}
 	return out
 }
+
+func TestHealthMethodNotAllowed(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/health", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestModelsMethodNotAllowed(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/models", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestSessionsMethodNotAllowed(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	req := httptest.NewRequest(http.MethodPut, "/sessions", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestSessionsPostInvalidJSON(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader("not json"))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestSessionByIDNoStore(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/sessions/abc", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501", rec.Code)
+	}
+}
+
+func TestSessionByIDMethodNotAllowed(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	req := httptest.NewRequest(http.MethodPut, "/sessions/abc", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestSessionByIDNotFound(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	req := httptest.NewRequest(http.MethodGet, "/sessions/nonexistent", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
