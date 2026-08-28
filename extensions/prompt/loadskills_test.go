@@ -12,7 +12,7 @@ import (
 // skills directory is configured.
 func TestLoadSkillsEmptyDir(t *testing.T) {
 	t.Setenv("OMEGA_SKILLS_DIR", "")
-	b := NewPromptBuilder("")
+	b := NewPromptBuilder("", nil)
 	if skills := b.loadSkills(); skills != nil {
 		t.Errorf("loadSkills() with empty dir = %v, want nil", skills)
 	}
@@ -21,7 +21,7 @@ func TestLoadSkillsEmptyDir(t *testing.T) {
 // TestLoadSkillsMissingDir verifies loadSkills returns nil when the
 // skills directory does not exist or is unreadable.
 func TestLoadSkillsMissingDir(t *testing.T) {
-	b := NewPromptBuilder(filepath.Join(t.TempDir(), "does-not-exist"))
+	b := NewPromptBuilder(filepath.Join(t.TempDir(), "does-not-exist"), nil)
 	if skills := b.loadSkills(); skills != nil {
 		t.Errorf("loadSkills() with missing dir = %v, want nil", skills)
 	}
@@ -39,7 +39,7 @@ func TestLoadSkillsValid(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillDir, "my-skill.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	b := NewPromptBuilder(dir)
+	b := NewPromptBuilder(dir, nil)
 	got := b.loadSkills()
 	if len(got) != 1 {
 		t.Fatalf("loadSkills() returned %d skills, want 1: %v", len(got), got)
@@ -62,7 +62,7 @@ func TestLoadSkillsDefaults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillDir, "plain-skill.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	b := NewPromptBuilder(dir)
+	b := NewPromptBuilder(dir, nil)
 	got := b.loadSkills()
 	if len(got) != 1 {
 		t.Fatalf("loadSkills() returned %d skills, want 1: %v", len(got), got)
@@ -96,7 +96,7 @@ func TestLoadSkillsSkips(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := NewPromptBuilder(dir)
+	b := NewPromptBuilder(dir, nil)
 	if skills := b.loadSkills(); skills != nil {
 		t.Errorf("loadSkills() = %v, want nil (all entries skipped)", skills)
 	}

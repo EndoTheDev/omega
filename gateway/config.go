@@ -25,11 +25,22 @@ type Config struct {
 	Theme         string                  `yaml:"theme"`
 	Notifications string                  `yaml:"notifications"`
 	Skills        SkillsConfig            `yaml:"skills"`
+	Memory        MemoryConfig            `yaml:"memory"`
 }
 
 // SkillsConfig controls where skills are loaded from.
 type SkillsConfig struct {
 	Dir string `yaml:"dir"`
+}
+
+// MemoryConfig controls the persistent memory system.
+type MemoryConfig struct {
+	Enabled              bool   `yaml:"enabled"`
+	UserProfileEnabled   bool   `yaml:"user_profile_enabled"`
+	CharLimit            int    `yaml:"char_limit"`
+	UserProfileCharLimit int    `yaml:"user_char_limit"`
+	File                 string `yaml:"file"`
+	UserProfileFile      string `yaml:"user_file"`
 }
 
 // ProviderConfig configures the LLM provider connection.
@@ -74,6 +85,14 @@ func DefaultConfig() Config {
 		},
 		Skills: SkillsConfig{
 			Dir: "skills",
+		},
+		Memory: MemoryConfig{
+			Enabled:              true,
+			UserProfileEnabled:   true,
+			CharLimit:            2200,
+			UserProfileCharLimit: 1375,
+			File:                 "memory.md",
+			UserProfileFile:      "user.md",
 		},
 		HTTPTimeout:  300,
 		MaxTurns:     100,
@@ -178,6 +197,22 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("OMEGA_NOTIFICATIONS"); v != "" {
 		cfg.Notifications = v
+	}
+	if v := os.Getenv("OMEGA_MEMORY_ENABLED"); v != "" {
+		cfg.Memory.Enabled = v == "1" || strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("OMEGA_USER_PROFILE_ENABLED"); v != "" {
+		cfg.Memory.UserProfileEnabled = v == "1" || strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("OMEGA_MEMORY_CHAR_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Memory.CharLimit = n
+		}
+	}
+	if v := os.Getenv("OMEGA_USER_CHAR_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Memory.UserProfileCharLimit = n
+		}
 	}
 }
 

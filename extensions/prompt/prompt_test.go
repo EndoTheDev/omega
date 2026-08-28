@@ -30,8 +30,9 @@ func TestPluginMetadata(t *testing.T) {
 	if len(provides) != 1 || provides[0] != "prompt_builder" {
 		t.Errorf("Provides() = %v, want [prompt_builder]", provides)
 	}
-	if len(p.Requires()) != 0 {
-		t.Errorf("Requires() = %v, want empty", p.Requires())
+	req := p.Requires()
+	if len(req) != 1 || req[0] != "memory" {
+		t.Errorf("Requires() = %v, want [memory]", req)
 	}
 }
 
@@ -49,7 +50,7 @@ func TestMountSetsPromptBuilder(t *testing.T) {
 
 // TestBuildPrompt verifies the basic structure of the assembled prompt.
 func TestBuildPrompt(t *testing.T) {
-	b := NewPromptBuilder("") // no skills dir → no skills section
+	b := NewPromptBuilder("", nil) // no skills dir → no skills section
 	opts := agent.PromptBuildOptions{
 		CWD:            "/test/cwd",
 		ProjectContext: "This is a test project.",
@@ -103,7 +104,7 @@ func TestBuildPrompt(t *testing.T) {
 
 // TestGuidelines returns the expected guideline lines.
 func TestGuidelines(t *testing.T) {
-	b := NewPromptBuilder("")
+	b := NewPromptBuilder("", nil)
 	g := b.Guidelines()
 	if len(g) != 5 {
 		t.Fatalf("Guidelines() returned %d lines, want 5", len(g))

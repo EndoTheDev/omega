@@ -74,6 +74,23 @@ skills:
   #   --no-extensions                 disable extension loading entirely
   #   --project-extensions            also load <cwd>/.omega/extensions/
 
+# Persistent memory system. Two stores injected into the system prompt
+# each session. The agent manages entries via the memory tool (add, replace, remove).
+memory:
+  # Agent personal notes (env facts, conventions, lessons).
+  # Default: enabled.
+  enabled: true
+  # User profile (preferences, communication style).
+  # Default: enabled.
+  user_profile_enabled: true
+  # Max characters for agent notes. Default: 2200 (~800 tokens).
+  char_limit: 2200
+  # Max characters for user profile. Default: 1375 (~500 tokens).
+  user_char_limit: 1375
+  # File paths (relative to OMEGA_HOME, or absolute).
+  file: memory.md
+  user_file: user.md
+
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_HOME              -> omega home directory (default: binary dir, fallback ~/.omega/)
 #   OMEGA_PROVIDER          -> provider.type
@@ -94,6 +111,10 @@ skills:
 #   OMEGA_MAX_TURNS         -> max_turns (default 100)
 #   OMEGA_THEME             -> theme (dark, light, auto)
 #   OMEGA_NOTIFICATIONS     -> notifications (bell, desktop, off)
+#   OMEGA_MEMORY_ENABLED    -> memory.enabled (true/1 or false/0)
+#   OMEGA_USER_PROFILE_ENABLED -> memory.user_profile_enabled (true/1 or false/0)
+#   OMEGA_MEMORY_CHAR_LIMIT -> memory.char_limit (chars, default 2200)
+#   OMEGA_USER_CHAR_LIMIT   -> memory.user_char_limit (chars, default 1375)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
 # omega.db, skills/, and trust.yaml in OMEGA_HOME (default:

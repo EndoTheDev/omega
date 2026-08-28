@@ -27,13 +27,15 @@ into a shared `Context` via `MountAll` at startup.
 - `delegate/` - subagent delegation (`delegate.task`, `delegate.status`,
   `InjectedMessages` channel + `PendingDelegations` func)
 - `web/` - web search/fetch (Ollama Cloud API)
+- `memory/` - persistent memory (`memory` tool, two-file store with
+  `§`-delimited entries, snapshot read fresh and injected into system prompt)
 
 ## Local Contracts
 
 - Every extension implements `agent.Plugin` (`Name`, `Provides`,
   `Requires`, `Mount`).
 - Exclusive seams (one plugin per slot): `provider`, `compactor`,
-  `store`, `skills`, `loop`, `prompt_builder`.
+  `store`, `skills`, `loop`, `memory`, `prompt_builder`.
 - Additive seam: `tools` (multiple plugins contribute to
   `ctx.ToolProviders`).
 - Commands: extensions register slash commands via `ctx.Commands` +

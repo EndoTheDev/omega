@@ -23,12 +23,14 @@ func (p *Plugin) Name() string { return "prompt" }
 func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
 
 // Requires lists seams that must be mounted before this plugin.
-// The prompt builder has no dependencies.
-func (p *Plugin) Requires() []string { return nil }
+// The prompt builder needs memory so it can inject the snapshot.
+func (p *Plugin) Requires() []string { return []string{"memory"} }
 
-// Mount sets ctx.PromptBuilder to a new PromptBuilder.
+// Mount sets ctx.PromptBuilder to a new PromptBuilder. The memory
+// provider from ctx.Memory is passed to the builder for snapshot
+// injection.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	ctx.PromptBuilder = NewPromptBuilder(p.skillsDir)
+	ctx.PromptBuilder = NewPromptBuilder(p.skillsDir, ctx.Memory)
 	return nil
 }
 

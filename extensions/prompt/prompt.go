@@ -20,16 +20,18 @@ import (
 // PromptBuilder is the in-process system prompt builder.
 type PromptBuilder struct {
 	skillsDir string // OMEGA_SKILLS_DIR, empty = no skills
+	memory    agent.MemoryProvider
 }
 
 // NewPromptBuilder creates a PromptBuilder. skillsDir overrides the
 // OMEGA_SKILLS_DIR env var; pass "" to use the env var (the common
-// case when the host wires this via Mount).
-func NewPromptBuilder(skillsDir string) *PromptBuilder {
+// case when the host wires this via Mount). memory is the MemoryProvider
+// for snapshot injection; pass nil if no memory extension is loaded.
+func NewPromptBuilder(skillsDir string, memory agent.MemoryProvider) *PromptBuilder {
 	if skillsDir == "" {
 		skillsDir = os.Getenv("OMEGA_SKILLS_DIR")
 	}
-	return &PromptBuilder{skillsDir: skillsDir}
+	return &PromptBuilder{skillsDir: skillsDir, memory: memory}
 }
 
 // BuildPrompt assembles the full system prompt from the build options.
@@ -50,6 +52,15 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 		sb.WriteString("\n## Project Context\n")
 		sb.WriteString(opts.ProjectContext)
 		sb.WriteString("\n")
+	}
+
+	// Memory snapshot (read fresh from disk).
+	if b.memory != nil {
+		if snap := b.memory.Snapshot(); snap != "" {
+			sb.WriteString("\n")
+			sb.WriteString(snap)
+			sb.WriteString("\n")
+		}
 	}
 
 	if len(skills) > 0 {

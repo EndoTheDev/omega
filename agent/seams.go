@@ -92,6 +92,32 @@ type SkillsProvider interface {
 	LoadSkills(dir string) ([]Skill, error)
 }
 
+// MemoryProvider manages persistent memory across sessions.
+// The prompt builder calls Snapshot to inject current memory into
+// the system prompt. The memory tool calls Add/Replace/Remove to
+// mutate entries during a session.
+type MemoryProvider interface {
+	// Snapshot returns the formatted prompt block for system prompt
+	// injection. Reads files fresh on each call.
+	Snapshot() string
+
+	// Add appends a new entry to the target store ("memory" or "user").
+	// Returns the new usage string and an error if the entry would
+	// exceed the char limit or is an exact duplicate.
+	Add(target, content string) (usage string, err error)
+
+	// Replace finds the entry matching oldText (unique substring) and
+	// replaces it with content. Returns usage string and error.
+	Replace(target, oldText, content string) (usage string, err error)
+
+	// Remove finds the entry matching oldText (unique substring) and
+	// deletes it. Returns usage string and error.
+	Remove(target, oldText string) (usage string, err error)
+
+	// List returns all entries for the target.
+	List(target string) ([]string, error)
+}
+
 // PromptBuilder builds the system prompt and supplies guideline
 // lines appended to it. The default implementation is provided via
 // the prompt extension. When no prompt extension is loaded, both

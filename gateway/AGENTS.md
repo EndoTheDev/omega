@@ -19,9 +19,10 @@ and environment variables. It is the only layer external clients talk to.
   analytics). Data types (`Session`, `SessionNode`, `Insights`, etc.)
   live in `agent/types.go`. Message encode/decode delegates to
   `ai.EncodeMessage`/`ai.DecodeMessage`.
-- `config.go` - `Config` and sub-configs, `LoadConfig` (YAML + env +
-  defaults), `DefaultConfig`, `applyEnv`, `Validate`, `WatchConfig`
-  (fsnotify hot-reload)
+- `config.go` - `Config` and sub-configs (ProviderConfig, ServerConfig,
+  StoreConfig, SkillsConfig, MemoryConfig, CompactionConfig),
+  `LoadConfig` (YAML + env + defaults), `DefaultConfig`, `applyEnv`,
+  `Validate`, `WatchConfig` (fsnotify hot-reload)
 - `config_test.go` - config loading and env override tests
 - `server_test.go` - server endpoint and SSE streaming tests with a
   scripted mock provider

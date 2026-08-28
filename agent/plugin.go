@@ -22,6 +22,7 @@ type Context struct {
 	Store         StoreProvider
 	Skills        SkillsProvider
 	Loop          LoopProvider
+	Memory        MemoryProvider
 	PromptBuilder PromptBuilder
 
 	// Tool providers (additive — multiple plugins contribute).
@@ -65,6 +66,7 @@ var exclusiveSeams = map[string]bool{
 	"store":          true,
 	"skills":         true,
 	"loop":           true,
+	"memory":         true,
 	"prompt_builder": true,
 }
 

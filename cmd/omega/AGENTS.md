@@ -143,7 +143,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   skips these types (metadata, not conversation content).
 - **Seam wiring in newAgent.** `newAgent` builds a `plugin.Context`,
   calls `MountAll` with all extension plugins (provider, store, skills,
-  compactor, prompt, tools, mcp, delegate, web, agent_loop), and wires
+  compactor, memory, prompt, tools, mcp, delegate, web, agent_loop), and wires
   the agent from the populated Context: `SetProvider` from
   `ctx.Provider`, `DefaultToolProvider` via `SetToolProvider`, CWD via
   `SetCWD`, custom/append prompts via `SetPromptCustom`/
@@ -209,7 +209,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
   env var, directory of the executable, `~/.omega/` fallback.
   `resolveHomePaths` rewrites relative defaults (`omega.db`,
-  `extensions`, `skills`) to home-relative paths so omega works from
+  `extensions`, `skills`, `memory.md`, `user.md`) to home-relative paths so omega works from
   any CWD.
 - **The TUI does not call tools directly.** It constructs an
   `agent.Agent` per run via `ag.Run`, drains events from the returned

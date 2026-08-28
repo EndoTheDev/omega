@@ -19,6 +19,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/delegate"
 	"github.com/EndoTheDev/omega/extensions/mcp"
+	"github.com/EndoTheDev/omega/extensions/memory"
 	"github.com/EndoTheDev/omega/extensions/prompt"
 	"github.com/EndoTheDev/omega/extensions/provider"
 	"github.com/EndoTheDev/omega/extensions/skills"
@@ -236,6 +237,12 @@ func resolveHomePaths(cfg *gateway.Config) {
 	if cfg.Skills.Dir == "skills" {
 		cfg.Skills.Dir = home + "/skills"
 	}
+	if cfg.Memory.File == "memory.md" {
+		cfg.Memory.File = home + "/memory.md"
+	}
+	if cfg.Memory.UserProfileFile == "user.md" {
+		cfg.Memory.UserProfileFile = home + "/user.md"
+	}
 	// Ensure the home directory exists so SQLite can create its file.
 	_ = os.MkdirAll(home, 0755)
 }
@@ -256,6 +263,7 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 		store.NewPlugin(),
 		skills.NewPlugin(),
 		compactor.NewPlugin(),
+		memory.NewPlugin(),
 		prompt.NewPlugin(cfg.Skills.Dir),
 		tools.NewPlugin(),
 		mcpPlugin,

@@ -32,6 +32,7 @@ type Plugin interface {
 | `store`          | exclusive | Session persistence                         |
 | `skills`         | exclusive | Skill loading                               |
 | `loop`           | exclusive | Agent loop                                  |
+| `memory`         | exclusive | Persistent memory (two-file store)          |
 | `prompt_builder` | exclusive | System prompt builder                       |
 | `tools`          | additive  | Tool provider (multiple plugins contribute) |
 
@@ -48,6 +49,7 @@ Exclusive seams conflict if two plugins provide the same one. The
 | `store/`      | store, tools   | SQLite session store + sessions.search tool          |
 | `skills/`     | skills, tools  | Skill loading + skills.read tool + /skills command   |
 | `compactor/`  | compactor      | Context compaction (keep-first/last + LLM summarize) |
+| `memory/`     | memory, tools  | Persistent memory (memory tool, two-file store)     |
 | `prompt/`     | prompt_builder | System prompt builder + guidelines                   |
 | `tools/`      | tools          | Shell command + file tools                           |
 | `mcp/`        | tools          | MCP bridge (stdio + HTTP MCP servers)                |
