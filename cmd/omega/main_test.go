@@ -1,9 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/EndoTheDev/omega/gateway"
 )
 
 // TestRunChdirError verifies a non-subcommand argument that is not a
@@ -170,5 +174,66 @@ func TestThemeNames(t *testing.T) {
 
 	if !sort.StringsAreSorted(names) {
 		t.Errorf("themeNames() = %v, not sorted", names)
+	}
+}
+// TestResolveConfigPath verifies --config wins outright, the home
+// config.yaml is picked up when present, and empty means "no YAML".
+func TestResolveConfigPath(t *testing.T) {
+	t.Run("explicit flag path wins", func(t *testing.T) {
+		t.Setenv("OMEGA_HOME", t.TempDir())
+		if got := resolveConfigPath("my.yaml"); got != "my.yaml" {
+			t.Errorf("resolveConfigPath(\"my.yaml\") = %q, want %q", got, "my.yaml")
+		}
+	})
+
+	t.Run("home config.yaml exists", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("OMEGA_HOME", home)
+		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("x: 1"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want := home + "/config.yaml"
+		if got := resolveConfigPath(""); got != want {
+			t.Errorf("resolveConfigPath(\"\") = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("no home config.yaml", func(t *testing.T) {
+		t.Setenv("OMEGA_HOME", t.TempDir())
+		if got := resolveConfigPath(""); got != "" {
+			t.Errorf("resolveConfigPath(\"\") = %q, want \"\"", got)
+		}
+	})
+}
+
+// TestResolveHomePaths verifies only relative defaults are rewritten to
+// home-relative paths, custom values are left alone, and the home
+// directory is created.
+func TestResolveHomePaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+
+	cfg := gateway.DefaultConfig()
+	resolveHomePaths(&cfg)
+
+	if cfg.Store.DBPath != home+"/omega.db" {
+		t.Errorf("DBPath = %q, want %q", cfg.Store.DBPath, home+"/omega.db")
+	}
+	if cfg.Skills.Dir != home+"/skills" {
+		t.Errorf("Skills.Dir = %q, want %q", cfg.Skills.Dir, home+"/skills")
+	}
+	if fi, err := os.Stat(home); err != nil || !fi.IsDir() {
+		t.Errorf("home dir not created: err=%v", err)
+	}
+
+	custom := gateway.DefaultConfig()
+	custom.Store.DBPath = "custom.db"
+	custom.Skills.Dir = "custom-skills"
+	resolveHomePaths(&custom)
+	if custom.Store.DBPath != "custom.db" {
+		t.Errorf("custom DBPath = %q, want unchanged", custom.Store.DBPath)
+	}
+	if custom.Skills.Dir != "custom-skills" {
+		t.Errorf("custom Skills.Dir = %q, want unchanged", custom.Skills.Dir)
 	}
 }
