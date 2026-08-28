@@ -18,6 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/agent_loop"
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/delegate"
+	"github.com/EndoTheDev/omega/extensions/discord"
 	"github.com/EndoTheDev/omega/extensions/logging"
 	"github.com/EndoTheDev/omega/extensions/mcp"
 	"github.com/EndoTheDev/omega/extensions/memory"
@@ -52,6 +53,7 @@ Usage:
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega update              check for and install the latest release
   omega health          check the server at the configured port
+  omega discord         start the Discord bot (requires the gateway running)
 
 Flags:
   --config <path>       config file (default: <home>/config.yaml)
@@ -100,6 +102,8 @@ func run(args []string) error {
 		return cmdExport(parseConfigFlag(rest), rest)
 	case "insights":
 		return cmdInsights(parseConfigFlag(rest), rest)
+	case "discord":
+		return cmdDiscord(parseConfigFlag(rest))
 	case "update":
 		return cmdUpdate()
 	case "test":
@@ -303,6 +307,9 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	ag.SetPromptContext(resolveProjectContext(cwd(), trust.approve, trust.noApprove, false))
 	ag.SetPromptBuilder(ctx.PromptBuilder)
 	ag.SetExtensionInfos(ctx.Infos)
+	if ctx.Loop != nil {
+		ag.SetLoopProvider(ctx.Loop)
+	}
 	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
 	ag.SetLogger(ctx.Logger)
 
@@ -363,6 +370,25 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	fmt.Printf("omega: serving on %s (model %s)\n", addr, ag.ModelName())
 	return srv.Serve(ctx, addr)
+}
+
+// cmdDiscord runs the Discord channel seam: a bot that relays DMs to the
+// omega HTTP gateway. Start the gateway first (`omega serve`), then run
+// this in a second process.
+func cmdDiscord(configPath string) error {
+	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	if err != nil {
+		return err
+	}
+	if cfg.Discord.Token == "" {
+		return fmt.Errorf("omega discord: no token set — add discord.token to config.yaml")
+	}
+	gatewayAddr := fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
+	client := discord.New(cfg.Discord.Token, gatewayAddr)
+	ctx, stop := signalContext()
+	defer stop()
+	fmt.Printf("omega: discord bot starting (gateway %s)\n", gatewayAddr)
+	return client.Run(ctx)
 }
 
 // cmdRun loads config and runs the agent once with the given prompt,
