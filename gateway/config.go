@@ -15,18 +15,24 @@ import (
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider      ProviderConfig          `yaml:"provider"`
-	Server        ServerConfig            `yaml:"server"`
-	Store         StoreConfig             `yaml:"store"`
-	Compaction    agent.CompactionConfig  `yaml:"compaction"`
-	SystemPrompt  string                  `yaml:"system_prompt"`
-	HTTPTimeout   int                     `yaml:"http_timeout"`
-	MaxTurns      int                     `yaml:"max_turns"`
-	Theme         string                  `yaml:"theme"`
-	Notifications string                  `yaml:"notifications"`
-	Skills        SkillsConfig            `yaml:"skills"`
-	Memory        MemoryConfig            `yaml:"memory"`
-	Logging       LoggingConfig           `yaml:"logging"`
+	Provider      ProviderConfig         `yaml:"provider"`
+	Server        ServerConfig           `yaml:"server"`
+	Store         StoreConfig            `yaml:"store"`
+	Compaction    agent.CompactionConfig `yaml:"compaction"`
+	SystemPrompt  string                 `yaml:"system_prompt"`
+	HTTPTimeout   int                    `yaml:"http_timeout"`
+	MaxTurns      int                    `yaml:"max_turns"`
+	Theme         string                 `yaml:"theme"`
+	Notifications string                 `yaml:"notifications"`
+	Skills        SkillsConfig           `yaml:"skills"`
+	Memory        MemoryConfig           `yaml:"memory"`
+	Logging       LoggingConfig          `yaml:"logging"`
+	Discord       DiscordConfig          `yaml:"discord"`
+}
+
+// DiscordConfig configures the Discord channel seam.
+type DiscordConfig struct {
+	Token string `yaml:"token"`
 }
 
 // SkillsConfig controls where skills are loaded from.
@@ -105,8 +111,8 @@ func DefaultConfig() Config {
 			Enabled: true,
 			File:    "omega.log",
 		},
-		HTTPTimeout:  300,
-		MaxTurns:     100,
+		HTTPTimeout:   300,
+		MaxTurns:      100,
 		Notifications: "bell",
 	}
 }

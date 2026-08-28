@@ -79,6 +79,29 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			},
 			Run: p.RunEdit,
 		},
+		"files.edit_many": {
+			Description: "Apply a list of find-and-replace edits across multiple files in one call.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"edits": map[string]any{
+						"type":        "array",
+						"description": "List of edits, each with path, old_string, new_string.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"path":       map[string]any{"type": "string", "description": "Path of the file to edit."},
+								"old_string": map[string]any{"type": "string", "description": "Exact text to find; must occur exactly once."},
+								"new_string": map[string]any{"type": "string", "description": "Replacement text."},
+							},
+							"required": []string{"path", "old_string", "new_string"},
+						},
+					},
+				},
+				"required": []string{"edits"},
+			},
+			Run: p.RunEditMany,
+		},
 	}
 }
 
@@ -267,6 +290,74 @@ func (p *ToolProvider) RunEdit(_ context.Context, args map[string]any) (string, 
 
 	summary := diffSummary(oldString, newString)
 	return fmt.Sprintf("patched %s\n%s", path, summary), nil
+}
+
+// RunEditMany applies a list of find-and-replace edits across multiple
+// files in one call. Each edit is applied atomically per file; if any edit
+// fails (missing file, non-unique old_string), the whole call returns an
+// error and no further edits are applied.
+func (p *ToolProvider) RunEditMany(_ context.Context, args map[string]any) (string, error) {
+	raw, ok := args["edits"]
+	if !ok {
+		return "", fmt.Errorf("argument %q is required", "edits")
+	}
+	edits, ok := raw.([]any)
+	if !ok {
+		return "", fmt.Errorf("argument %q must be an array", "edits")
+	}
+	if len(edits) == 0 {
+		return "", fmt.Errorf("edits must not be empty")
+	}
+
+	var out strings.Builder
+	for i, item := range edits {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("edit %d must be an object", i)
+		}
+		path, err := argString(m, "path")
+		if err != nil {
+			return "", fmt.Errorf("edit %d: %w", i, err)
+		}
+		oldString, err := argString(m, "old_string")
+		if err != nil {
+			return "", fmt.Errorf("edit %d: %w", i, err)
+		}
+		newString, err := argString(m, "new_string")
+		if err != nil {
+			return "", fmt.Errorf("edit %d: %w", i, err)
+		}
+		if oldString == "" {
+			return "", fmt.Errorf("edit %d: old_string must not be empty", i)
+		}
+
+		mu := p.fileMutex(path)
+		mu.Lock()
+		content, err := os.ReadFile(path)
+		if err != nil {
+			mu.Unlock()
+			return "", fmt.Errorf("edit %d: read %s: %w", i, path, err)
+		}
+		text := string(content)
+		count := strings.Count(text, oldString)
+		if count == 0 {
+			mu.Unlock()
+			return "", fmt.Errorf("edit %d: old_string not found in %s", i, path)
+		}
+		if count > 1 {
+			mu.Unlock()
+			return "", fmt.Errorf("edit %d: old_string occurs %d times in %s; it must be unique", i, count, path)
+		}
+		patched := strings.Replace(text, oldString, newString, 1)
+		if err := os.WriteFile(path, []byte(patched), 0o644); err != nil {
+			mu.Unlock()
+			return "", fmt.Errorf("edit %d: write %s: %w", i, path, err)
+		}
+		mu.Unlock()
+
+		fmt.Fprintf(&out, "patched %s\n%s\n", path, diffSummary(oldString, newString))
+	}
+	return strings.TrimSuffix(out.String(), "\n"), nil
 }
 
 // diffSummary produces a simple +/- diff of old vs new string.

@@ -145,3 +145,54 @@ func TestShellEmptyCommand(t *testing.T) {
 		t.Fatal("expected error for empty command, got nil")
 	}
 }
+
+func TestEditMany(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	b := filepath.Join(dir, "b.txt")
+	if err := os.WriteFile(a, []byte("foo bar\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte("baz qux\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	edits := []any{
+		map[string]any{"path": a, "old_string": "foo", "new_string": "FOO"},
+		map[string]any{"path": b, "old_string": "qux", "new_string": "QUX"},
+	}
+	out, err := tp.RunEditMany(ctx, map[string]any{"edits": edits})
+	if err != nil {
+		t.Fatalf("RunEditMany: %v", err)
+	}
+	if !strings.Contains(out, "patched "+a) || !strings.Contains(out, "patched "+b) {
+		t.Fatalf("output = %q, want both files patched", out)
+	}
+	ca, _ := os.ReadFile(a)
+	cb, _ := os.ReadFile(b)
+	if string(ca) != "FOO bar\n" {
+		t.Fatalf("a.txt = %q, want 'FOO bar'", string(ca))
+	}
+	if string(cb) != "baz QUX\n" {
+		t.Fatalf("b.txt = %q, want 'baz QUX'", string(cb))
+	}
+}
+
+func TestEditManyFailsOnMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(a, []byte("foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tp := &ToolProvider{}
+	ctx := context.Background()
+	edits := []any{
+		map[string]any{"path": a, "old_string": "foo", "new_string": "FOO"},
+		map[string]any{"path": filepath.Join(dir, "missing.txt"), "old_string": "x", "new_string": "y"},
+	}
+	_, err := tp.RunEditMany(ctx, map[string]any{"edits": edits})
+	if err == nil {
+		t.Fatal("expected error for missing file, got nil")
+	}
+}
