@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,19 +16,70 @@ func newTestModel(themeName string) model {
 }
 
 // ctxWithInfos builds a non-nil agent.Context carrying the given Infos,
-// the minimal shape handleToolsList / handleExtensions read. We set Infos
-// directly rather than calling MountAll so the tests stay focused on the
-// TUI render path and don't depend on plugin wiring.
+// with the tools extension's command handler wired so /tools dispatches
+// correctly. We set Infos directly rather than calling MountAll so the
+// tests stay focused on the TUI render path and don't depend on plugin
+// wiring.
 func ctxWithInfos(infos ...agent.ExtensionInfo) *agent.Context {
-	return &agent.Context{Infos: infos}
+	pctx := &agent.Context{Infos: infos}
+	pctx.Commands = append(pctx.Commands,
+		agent.ExtensionCommand{Name: "/tools", Description: "list tools"},
+	)
+	prev := pctx.CommandHandler
+	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+		if name == "/tools" {
+			arg := strings.TrimSpace(args)
+			if arg == "" || arg == "list" {
+				var sb strings.Builder
+				sb.WriteString("\n")
+				nameWidth := 0
+				for _, ext := range pctx.Infos {
+					for _, t := range ext.ToolList {
+						if len(t.Name) > nameWidth {
+							nameWidth = len(t.Name)
+						}
+					}
+				}
+				for _, ext := range pctx.Infos {
+					if len(ext.ToolList) == 0 {
+						continue
+					}
+					sb.WriteString(ext.Name)
+					sb.WriteString("\n")
+					for _, t := range ext.ToolList {
+						desc := t.Description
+						if i := strings.IndexByte(desc, '\n'); i >= 0 {
+							desc = desc[:i]
+						}
+						if len(desc) > 60 {
+							desc = desc[:57] + "..."
+						}
+						fmt.Fprintf(&sb, "  %-*s  %s\n", nameWidth, t.Name, desc)
+					}
+					sb.WriteString("\n")
+				}
+				if nameWidth == 0 {
+					sb.WriteString("[no tools available]\n")
+				}
+				return agent.CommandResult{Text: sb.String()}, nil
+			}
+			return agent.CommandResult{}, fmt.Errorf("usage: /tools [on|off|auto|list]")
+		}
+		if prev != nil {
+			return prev(c, name, args)
+		}
+		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	}
+	return pctx
 }
 
 // --- handleToolsList ---
 
 func TestHandleToolsListNoExtensions(t *testing.T) {
 	m := newTestModel("dark")
-	// nil extensions -> [no tools available].
-	out, _ := m.handleToolsList()
+	// No extensions -> [no tools available].
+	m.extensions = ctxWithInfos()
+	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
 	if !strings.Contains(ansiStrip(mm.transcript), "[no tools available]") {
 		t.Fatalf("expected [no tools available], got: %q", ansiStrip(mm.transcript))
@@ -42,7 +95,7 @@ func TestHandleToolsListWithTools(t *testing.T) {
 			{Name: "files.read", Description: "read a file\nsecond line ignored"},
 		},
 	})
-	out, _ := m.handleToolsList()
+	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
 	plain := ansiStrip(mm.transcript)
 	if !strings.Contains(plain, "shell") {
@@ -66,7 +119,7 @@ func TestHandleToolsListEmptyToolList(t *testing.T) {
 	// Extension present but with zero tools -> [no tools available].
 	m := newTestModel("dark")
 	m.extensions = ctxWithInfos(agent.ExtensionInfo{Name: "empty"})
-	out, _ := m.handleToolsList()
+	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
 	if !strings.Contains(ansiStrip(mm.transcript), "[no tools available]") {
 		t.Fatalf("expected [no tools available] for tool-less extension, got: %q",

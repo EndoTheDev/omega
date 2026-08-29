@@ -23,7 +23,7 @@ into a shared `Context` via `MountAll` at startup.
 - `prompt/` - system prompt builder + guidelines
 - `tools/` - shell and file tools (`shell.run`, `files.read`,
   `files.write`, `files.edit`); file tools are per-path locked via
-  `sync.Mutex` keyed by absolute path
+  `sync.Mutex` keyed by absolute path; registers `/tools` command
 - `mcp/` - MCP bridge (stdio + HTTP MCP servers)
 - `delegate/` - subagent delegation (`delegate.task`, `delegate.status`,
   `InjectedMessages` channel + `PendingDelegations` func)

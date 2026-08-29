@@ -121,33 +121,3 @@ func TestTruncate(t *testing.T) {
 		}
 	})
 }
-
-func TestFirstLineOfDesc(t *testing.T) {
-	t.Run("normal returns first line", func(t *testing.T) {
-		s := "Reads a file\nMore details\nEven more"
-		if got := firstLineOfDesc(s); got != "Reads a file" {
-			t.Fatalf("firstLineOfDesc(%q) = %q, want \"Reads a file\"", s, got)
-		}
-	})
-
-	t.Run("leading blank lines skipped", func(t *testing.T) {
-		s := "\n\n  \nFirst real line\nSecond"
-		if got := firstLineOfDesc(s); got != "First real line" {
-			t.Fatalf("firstLineOfDesc(%q) = %q, want \"First real line\"", s, got)
-		}
-	})
-
-	t.Run("all blank returns original", func(t *testing.T) {
-		s := "\n\n  \n\t"
-		if got := firstLineOfDesc(s); got != s {
-			t.Fatalf("firstLineOfDesc(%q) = %q, want original", s, got)
-		}
-	})
-
-	t.Run("single line returns itself", func(t *testing.T) {
-		s := "only line"
-		if got := firstLineOfDesc(s); got != s {
-			t.Fatalf("firstLineOfDesc(%q) = %q, want %q", s, got, s)
-		}
-	})
-}

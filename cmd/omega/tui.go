@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/copy", "/export", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/copy", "/export", "/thinking", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -1123,35 +1123,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "/tools":
-		if len(fields) > 1 {
-			switch fields[1] {
-			case "on", "expanded":
-				m.showToolResults = true
-				m.toolResultsAuto = false
-			case "off", "collapsed":
-				m.showToolResults = false
-				m.toolResultsAuto = false
-			case "auto":
-				m.showToolResults = true
-				m.toolResultsAuto = true
-			case "list":
-				return m.handleToolsList()
-			default:
-				m.err = "usage: /tools [on|off|auto|list]"
-				return m, nil
-			}
-		} else {
-			return m.handleToolsList()
-		}
-		state := "expanded"
-		if m.toolResultsAuto {
-			state = "auto"
-		} else if !m.showToolResults {
-			state = "collapsed"
-		}
-		m.transcript += "\n" + m.theme.Info.Render("[tool results "+state+"]") + "\n"
-		m.refresh()
-		return m, nil
+		return m.handleExtensionCommand("/tools", strings.Join(fields[1:], " "))
 	case "/extensions":
 		return m.handleExtensions()
 	case "/theme":
@@ -1430,49 +1402,6 @@ func (m *model) persistEntry(msg ai.Message) {
 
 // handleExtensions lists loaded extensions with name, tool count,
 // command count, and status.
-// handleToolsList renders a grouped listing of all available tools
-// from loaded extensions. All tools are extension-provided (including
-// the tools extension which provides shell.run, files.*, skills.read).
-func (m model) handleToolsList() (tea.Model, tea.Cmd) {
-	var sb strings.Builder
-	sb.WriteString("\n")
-
-	var infos []agent.ExtensionInfo
-	if m.extensions != nil {
-		infos = m.extensions.Infos
-	}
-
-	nameWidth := 0
-	for _, ext := range infos {
-		for _, t := range ext.ToolList {
-			if len(t.Name) > nameWidth {
-				nameWidth = len(t.Name)
-			}
-		}
-	}
-
-	for _, ext := range infos {
-		if len(ext.ToolList) == 0 {
-			continue
-		}
-		sb.WriteString(m.theme.Info.Render(ext.Name))
-		sb.WriteString("\n")
-		for _, t := range ext.ToolList {
-			fmt.Fprintf(&sb, "  %-*s  %s\n", nameWidth, t.Name, firstLineOfDesc(t.Description))
-		}
-		sb.WriteString("\n")
-	}
-
-	if nameWidth == 0 {
-		sb.WriteString(m.theme.Info.Render("[no tools available]"))
-		sb.WriteString("\n")
-	}
-
-	m.transcript += sb.String()
-	m.refresh()
-	return m, nil
-}
-
 func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	infos := m.extensions.Infos
 	if len(infos) == 0 {
@@ -1583,6 +1512,18 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.persistEntry(ai.NewModelChange(m.modelName))
 		case "set_model_list":
 			m.modelList = action.List
+		case "set_tool_display":
+			switch action.Value {
+			case "expanded":
+				m.showToolResults = true
+				m.toolResultsAuto = false
+			case "collapsed":
+				m.showToolResults = false
+				m.toolResultsAuto = false
+			case "auto":
+				m.showToolResults = true
+				m.toolResultsAuto = true
+			}
 		case "refresh_title":
 			cmds = append(cmds, m.titleCmd())
 		case "fetch_model_info":
@@ -2044,18 +1985,6 @@ func (m *model) refresh() {
 
 // extLexers maps file extensions to chroma lexer names for syntax
 // highlighting in tool results.
-// firstLineOfDesc returns the first non-empty line of a tool description,
-// keeping the /tools display compact. Full descriptions go to the LLM
-// via the provider's JSON tool schemas.
-func firstLineOfDesc(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		if strings.TrimSpace(line) != "" {
-			return strings.TrimSpace(line)
-		}
-	}
-	return s
-}
-
 var extLexers = map[string]string{
 	".go":         "go",
 	".py":         "python",
