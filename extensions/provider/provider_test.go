@@ -110,43 +110,85 @@ func TestMessagesToJSON(t *testing.T) {
 	}
 }
 
-// TestThinkingMappers verifies the three thinking-level mappers.
+// TestThinkingMappers verifies the three thinking-level mappers across
+// every supported level using table-driven subtests.
 func TestThinkingMappers(t *testing.T) {
-	// ollamaThinkValue
-	if ollamaThinkValue("off") != false {
-		t.Fatal("ollama off should be false")
-	}
-	if ollamaThinkValue("on") != true {
-		t.Fatal("ollama on should be true")
-	}
-	if ollamaThinkValue("medium") != "medium" {
-		t.Fatal("ollama medium should be medium")
-	}
-	if ollamaThinkValue("unknown") != nil {
-		t.Fatal("ollama unknown should be nil")
-	}
+	t.Run("ollamaThinkValue", func(t *testing.T) {
+		cases := []struct {
+			level string
+			want  any
+		}{
+			{"off", false},
+			{"on", true},
+			{"minimal", "low"},
+			{"low", "low"},
+			{"medium", "medium"},
+			{"high", "high"},
+			{"extra high", "max"},
+			{"max", "max"},
+			{"ultra", "max"},
+			{"none", nil},
+			{"unknown", nil},
+		}
+		for _, c := range cases {
+			t.Run(c.level, func(t *testing.T) {
+				got := ollamaThinkValue(c.level)
+				if !reflect.DeepEqual(got, c.want) {
+					t.Fatalf("ollamaThinkValue(%q) = %v (%T), want %v (%T)", c.level, got, got, c.want, c.want)
+				}
+			})
+		}
+	})
 
-	// openaiReasoningEffort
-	if openaiReasoningEffort("low") != "low" {
-		t.Fatal("openai low should be low")
-	}
-	if openaiReasoningEffort("high") != "high" {
-		t.Fatal("openai high should be high")
-	}
-	if openaiReasoningEffort("none") != "" {
-		t.Fatal("openai none should be empty")
-	}
+	t.Run("openaiReasoningEffort", func(t *testing.T) {
+		cases := []struct {
+			level string
+			want  string
+		}{
+			{"minimal", "low"},
+			{"low", "low"},
+			{"medium", "medium"},
+			{"high", "high"},
+			{"extra high", "high"},
+			{"max", "high"},
+			{"ultra", "high"},
+			{"none", ""},
+			{"unknown", ""},
+		}
+		for _, c := range cases {
+			t.Run(c.level, func(t *testing.T) {
+				got := openaiReasoningEffort(c.level)
+				if got != c.want {
+					t.Fatalf("openaiReasoningEffort(%q) = %q, want %q", c.level, got, c.want)
+				}
+			})
+		}
+	})
 
-	// anthropicBudgetTokens
-	if anthropicBudgetTokens("low") != 2048 {
-		t.Fatal("anthropic low should be 2048")
-	}
-	if anthropicBudgetTokens("ultra") != 32768 {
-		t.Fatal("anthropic ultra should be 32768")
-	}
-	if anthropicBudgetTokens("none") != 0 {
-		t.Fatal("anthropic none should be 0")
-	}
+	t.Run("anthropicBudgetTokens", func(t *testing.T) {
+		cases := []struct {
+			level string
+			want  int
+		}{
+			{"minimal", 1024},
+			{"low", 2048},
+			{"medium", 4096},
+			{"high", 8192},
+			{"extra high", 16384},
+			{"max", 24576},
+			{"ultra", 32768},
+			{"none", 0},
+			{"unknown", 0},
+		}
+		for _, c := range cases {
+			t.Run(c.level, func(t *testing.T) {
+				got := anthropicBudgetTokens(c.level)
+				if got != c.want {
+					t.Fatalf("anthropicBudgetTokens(%q) = %d, want %d", c.level, got, c.want)
+				}
+			})
+		}
+	})
 }
 
 // TestAnthropicConvertMessages verifies system prompt is lifted,
@@ -303,6 +345,15 @@ func TestListModels(t *testing.T) {
 		t.Errorf("ollama names = %v, want [llama3 qwen] (sorted)", names)
 	}
 
+	// Exported ListModels() wrapper should return the same result.
+	expNames, err := p.ListModels()
+	if err != nil {
+		t.Fatalf("ListModels (ollama): %v", err)
+	}
+	if !reflect.DeepEqual(expNames, []string{"llama3", "qwen"}) {
+		t.Errorf("ListModels (ollama) = %v, want [llama3 qwen] (sorted)", expNames)
+	}
+
 	// openai: GET /models, "data" array with "id" fields.
 	var openaiPath string
 	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -394,6 +445,16 @@ func TestModelInfo(t *testing.T) {
 	}
 	if sent["model"] != "gemma4" {
 		t.Errorf("request body model = %v, want gemma4", sent["model"])
+	}
+
+	// Exported ModelInfo() wrapper should return an ai.ModelInfo with
+	// ContextWindow set to the value extracted by modelInfo().
+	expInfo, err := p.ModelInfo()
+	if err != nil {
+		t.Fatalf("ModelInfo (ollama): %v", err)
+	}
+	if expInfo.ContextWindow != 131072 {
+		t.Errorf("ModelInfo (ollama) ContextWindow = %d, want 131072", expInfo.ContextWindow)
 	}
 
 	// non-200 response is an error.
