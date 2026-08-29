@@ -2303,3 +2303,138 @@ func TestRenderMarkdownZeroWidth(t *testing.T) {
 		t.Fatalf("expected text preserved at zero width, got %q", plain)
 	}
 }
+
+// stubCompactor is a minimal CompactionProvider for testing handleCompact.
+// It returns a fixed compacted message set regardless of input.
+type stubCompactor struct{}
+
+func (stubCompactor) Compact(_ context.Context, _ []ai.Message) ([]ai.Message, error) {
+	return []ai.Message{ai.NewAssistant("compacted summary")}, nil
+}
+
+// makeHistory returns n messages suitable for compaction tests.
+func makeHistory(n int) []ai.Message {
+	var h []ai.Message
+	for i := 0; i < n; i++ {
+		h = append(h, ai.NewUser("msg"))
+	}
+	return h
+}
+
+// TestHandleCompact covers every guard-clause branch and the happy path
+// of model.handleCompact.
+func TestHandleCompact(t *testing.T) {
+	compCfg := &agent.CompactionConfig{
+		Threshold:     0.5,
+		KeepFirst:     2,
+		KeepLast:      10,
+		ReserveTokens: 16384,
+	}
+
+	t.Run("already_compacting", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell")
+		m.history = makeHistory(3)
+		m.compacting = true
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "already compacting..." {
+			t.Fatalf("expected 'already compacting...', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting != true {
+			t.Fatal("compacting flag should remain true")
+		}
+	})
+
+	t.Run("not_enough_history", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell")
+		m.history = makeHistory(2) // < 3
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "not enough history to compact" {
+			t.Fatalf("expected 'not enough history to compact', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting {
+			t.Fatal("compacting flag should be false")
+		}
+	})
+
+	t.Run("compaction_not_configured", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		// Pass nil compaction config.
+		m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell")
+		m.history = makeHistory(3)
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "compaction not configured" {
+			t.Fatalf("expected 'compaction not configured', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting {
+			t.Fatal("compacting flag should be false")
+		}
+	})
+
+	t.Run("no_compactor_extension", func(t *testing.T) {
+		// Context has no Compactor set.
+		ctx := &agent.Context{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell")
+		m.history = makeHistory(3)
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "no compactor extension loaded" {
+			t.Fatalf("expected 'no compactor extension loaded', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting {
+			t.Fatal("compacting flag should be false")
+		}
+	})
+
+	t.Run("happy_path", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell")
+		m.history = makeHistory(5)
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "" {
+			t.Fatalf("expected empty err, got %q", mm.err)
+		}
+		if !mm.compacting {
+			t.Fatal("expected compacting=true after happy path")
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil cmd from happy path")
+		}
+		// Execute the returned command and verify the message type.
+		msg := cmd()
+		result, ok := msg.(compactionResultMsg)
+		if !ok {
+			t.Fatalf("expected compactionResultMsg, got %T", msg)
+		}
+		if result.before != 5 {
+			t.Fatalf("expected before=5, got %d", result.before)
+		}
+		if result.err != nil {
+			t.Fatalf("expected nil err from Compact, got %v", result.err)
+		}
+		if len(result.messages) != 1 {
+			t.Fatalf("expected 1 compacted message, got %d", len(result.messages))
+		}
+	})
+}
