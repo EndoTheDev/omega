@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -137,99 +138,71 @@ func LoadConfig(path string) (Config, error) {
 
 // applyEnv overrides config fields from OMEGA_* environment variables.
 func applyEnv(cfg *Config) {
-	if v := os.Getenv("OMEGA_PROVIDER"); v != "" {
-		cfg.Provider.Type = v
-	}
-	if v := os.Getenv("OMEGA_API_KEY"); v != "" {
-		cfg.Provider.APIKey = v
-	}
-	if v := os.Getenv("OMEGA_MODEL"); v != "" {
-		cfg.Provider.ModelName = v
-	}
-	if v := os.Getenv("OMEGA_HOST"); v != "" {
-		cfg.Provider.Host = v
-	}
-	if v := os.Getenv("OMEGA_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.Server.Port = port
+	// String assignments: env var -> *string field.
+	for _, s := range []struct {
+		env    string
+		target *string
+	}{
+		{"OMEGA_PROVIDER", &cfg.Provider.Type},
+		{"OMEGA_API_KEY", &cfg.Provider.APIKey},
+		{"OMEGA_MODEL", &cfg.Provider.ModelName},
+		{"OMEGA_HOST", &cfg.Provider.Host},
+		{"OMEGA_DB_PATH", &cfg.Store.DBPath},
+		{"OMEGA_SKILLS_DIR", &cfg.Skills.Dir},
+		{"OMEGA_THEME", &cfg.Theme},
+		{"OMEGA_NOTIFICATIONS", &cfg.Notifications},
+		{"OMEGA_LOGGING_FILE", &cfg.Logging.File},
+	} {
+		if v := os.Getenv(s.env); v != "" {
+			*s.target = v
 		}
 	}
-	if v := os.Getenv("OMEGA_DB_PATH"); v != "" {
-		cfg.Store.DBPath = v
+
+	// Bool assignments: env var -> *bool field, true when "1" or "true" (case-insensitive).
+	for _, b := range []struct {
+		env    string
+		target *bool
+	}{
+		{"OMEGA_COMPACTION_ENABLED", &cfg.Compaction.Enabled},
+		{"OMEGA_MEMORY_ENABLED", &cfg.Memory.Enabled},
+		{"OMEGA_USER_PROFILE_ENABLED", &cfg.Memory.UserProfileEnabled},
+		{"OMEGA_LOGGING_ENABLED", &cfg.Logging.Enabled},
+	} {
+		if v := os.Getenv(b.env); v != "" {
+			*b.target = v == "1" || strings.EqualFold(v, "true")
+		}
 	}
-	if v := os.Getenv("OMEGA_COMPACTION_ENABLED"); v != "" {
-		cfg.Compaction.Enabled = v == "1" || strings.EqualFold(v, "true")
+
+	// Int assignments with min validation: env var -> *int field.
+	// min is the smallest accepted value (0 for keep_first/keep_last, 1 otherwise).
+	for _, n := range []struct {
+		env    string
+		target *int
+		min    int
+	}{
+		{"OMEGA_PORT", &cfg.Server.Port, math.MinInt32},
+		{"OMEGA_COMPACTION_CONTEXT_WINDOW", &cfg.Compaction.ContextWindow, 1},
+		{"OMEGA_COMPACTION_KEEP_FIRST", &cfg.Compaction.KeepFirst, 0},
+		{"OMEGA_COMPACTION_KEEP_LAST", &cfg.Compaction.KeepLast, 0},
+		{"OMEGA_COMPACTION_RESERVE_TOKENS", &cfg.Compaction.ReserveTokens, 1},
+		{"OMEGA_COMPACTION_MAX_TOOL_OUTPUT", &cfg.Compaction.MaxToolOutput, 1},
+		{"OMEGA_HTTP_TIMEOUT", &cfg.HTTPTimeout, 1},
+		{"OMEGA_MAX_TURNS", &cfg.MaxTurns, 1},
+		{"OMEGA_MEMORY_CHAR_LIMIT", &cfg.Memory.CharLimit, 1},
+		{"OMEGA_USER_CHAR_LIMIT", &cfg.Memory.UserProfileCharLimit, 1},
+	} {
+		if v := os.Getenv(n.env); v != "" {
+			if i, err := strconv.Atoi(v); err == nil && i >= n.min {
+				*n.target = i
+			}
+		}
 	}
+
+	// Float assignment with range validation (0, 1].
 	if v := os.Getenv("OMEGA_COMPACTION_THRESHOLD"); v != "" {
 		if threshold, err := strconv.ParseFloat(v, 64); err == nil && threshold > 0 && threshold <= 1 {
 			cfg.Compaction.Threshold = threshold
 		}
-	}
-	if v := os.Getenv("OMEGA_COMPACTION_CONTEXT_WINDOW"); v != "" {
-		if window, err := strconv.Atoi(v); err == nil && window > 0 {
-			cfg.Compaction.ContextWindow = window
-		}
-	}
-	if v := os.Getenv("OMEGA_COMPACTION_KEEP_FIRST"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			cfg.Compaction.KeepFirst = n
-		}
-	}
-	if v := os.Getenv("OMEGA_COMPACTION_KEEP_LAST"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			cfg.Compaction.KeepLast = n
-		}
-	}
-	if v := os.Getenv("OMEGA_COMPACTION_RESERVE_TOKENS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.Compaction.ReserveTokens = n
-		}
-	}
-	if v := os.Getenv("OMEGA_COMPACTION_MAX_TOOL_OUTPUT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.Compaction.MaxToolOutput = n
-		}
-	}
-	if v := os.Getenv("OMEGA_SKILLS_DIR"); v != "" {
-		cfg.Skills.Dir = v
-	}
-	if v := os.Getenv("OMEGA_HTTP_TIMEOUT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.HTTPTimeout = n
-		}
-	}
-	if v := os.Getenv("OMEGA_MAX_TURNS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.MaxTurns = n
-		}
-	}
-	if v := os.Getenv("OMEGA_THEME"); v != "" {
-		cfg.Theme = v
-	}
-	if v := os.Getenv("OMEGA_NOTIFICATIONS"); v != "" {
-		cfg.Notifications = v
-	}
-	if v := os.Getenv("OMEGA_MEMORY_ENABLED"); v != "" {
-		cfg.Memory.Enabled = v == "1" || strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("OMEGA_USER_PROFILE_ENABLED"); v != "" {
-		cfg.Memory.UserProfileEnabled = v == "1" || strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("OMEGA_MEMORY_CHAR_LIMIT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.Memory.CharLimit = n
-		}
-	}
-	if v := os.Getenv("OMEGA_USER_CHAR_LIMIT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.Memory.UserProfileCharLimit = n
-		}
-	}
-	if v := os.Getenv("OMEGA_LOGGING_ENABLED"); v != "" {
-		cfg.Logging.Enabled = v == "1" || strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("OMEGA_LOGGING_FILE"); v != "" {
-		cfg.Logging.File = v
 	}
 }
 
