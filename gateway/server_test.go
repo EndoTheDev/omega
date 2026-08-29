@@ -222,8 +222,8 @@ func TestStaticIndex(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "omega-dev") {
-		t.Fatalf("index body missing title")
+	if !strings.Contains(rec.Body.String(), "omega") || !strings.Contains(rec.Body.String(), "chat") {
+		t.Fatalf("index body missing omega content")
 	}
 }
 
