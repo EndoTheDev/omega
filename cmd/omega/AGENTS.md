@@ -152,6 +152,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `SetPromptBuilder` from `ctx.PromptBuilder`, `SetExtensionInfos`
   from `ctx.Infos`, `SetCompactionProvider` from `ctx.Compactor`,
   `SetLogger` from `ctx.Logger`,
+  `SetLoopProvider` from `ctx.Loop`,
   `SetInjectedMessages` from `ctx.InjectedMessages`,
   `SetPendingDelegations` from `ctx.PendingDelegations`. The loop is
   mounted into `ctx.Loop` by `MountAll`; the TUI's `startRun` wires it
