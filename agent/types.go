@@ -100,8 +100,9 @@ type CommandResult struct {
 // CmdAction tells the host to do something after a command runs.
 // Extensions declare intent; the host interprets.
 type CmdAction struct {
-	Type  string // "set_model", "refresh_title", "fetch_model_info", "run_compact"
+	Type  string // "set_model", "refresh_title", "fetch_model_info", "run_compact", "set_model_list"
 	Value string // the value (model name)
+	List  []string // list values (model names)
 }
 
 // ToolInfo is a tool name and description pair, for display in the

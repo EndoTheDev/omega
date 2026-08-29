@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/gateway"
@@ -36,9 +37,10 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	prov := NewProvider(typ, model, host, key)
 	ctx.Provider = prov
 
-	// Register /model and /provider commands.
+	// Register /model, /models, and /provider commands.
 	ctx.Commands = append(ctx.Commands,
 		agent.ExtensionCommand{Name: "/model", Description: "switch the model (line # from /models, or name)"},
+		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
 		agent.ExtensionCommand{Name: "/provider", Description: "show current provider and model"},
 	)
 
@@ -73,6 +75,34 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.Command
 				{Type: "refresh_title"},
 				{Type: "fetch_model_info"},
 			},
+		}, nil
+	case "/models":
+		models, err := prov.ListModels()
+		if err != nil {
+			return agent.CommandResult{}, fmt.Errorf("list models: %w", err)
+		}
+		if len(models) == 0 {
+			return agent.CommandResult{Text: "[no models available]"}, nil
+		}
+		nameWidth := 4
+		for _, n := range models {
+			if len(n) > nameWidth {
+				nameWidth = len(n)
+			}
+		}
+		var sb strings.Builder
+		sb.WriteString("\n")
+		fmt.Fprintf(&sb, "  %-3s  %-*s\n", "#", nameWidth, "NAME")
+		for i, n := range models {
+			marker := "  "
+			if n == prov.ModelName() {
+				marker = "> "
+			}
+			fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, n)
+		}
+		return agent.CommandResult{
+			Text:    sb.String(),
+			Actions: []agent.CmdAction{{Type: "set_model_list", List: models}},
 		}, nil
 	case "/provider":
 		return agent.CommandResult{

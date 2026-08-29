@@ -13,7 +13,7 @@ into a shared `Context` via `MountAll` at startup.
   implementation); streams provider responses, executes tool calls,
   feeds results back, handles compaction and overflow retry
 - `provider/` - LLM provider (Ollama, OpenAI, Anthropic streaming);
-  registers `/model` and `/provider` commands
+  registers `/model`, `/models`, and `/provider` commands
 - `store/` - session store (SQLite implementation + `sessions.search`
   tool; registers `/sessions`, `/tree`, `/search`, `/insights` commands)
 - `skills/` - skill loading (`skills.read` tool, `/skills` command)
@@ -30,8 +30,8 @@ into a shared `Context` via `MountAll` at startup.
 - `web/` - web search/fetch (Ollama Cloud API)
 - `memory/` - persistent memory (`memory` tool, two-file store with
   `§`-delimited entries, snapshot read fresh and injected into system prompt)
-- `http_channel/` - HTTP/SSE delivery channel (Channel seam, wraps
-  gateway.Server; the `omega serve` transport)
+- `http_channel/` - HTTP/SSE delivery channel (Channel seam,
+  HTTP server + SSE streaming implementation, `omega serve` transport)
 
 ## Local Contracts
 

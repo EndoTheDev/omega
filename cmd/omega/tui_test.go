@@ -14,7 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/provider"
-	"github.com/EndoTheDev/omega/gateway"
+	"github.com/EndoTheDev/omega/extensions/store"
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -395,7 +395,7 @@ func TestNewSessionIDCryptoRand(t *testing.T) {
 // auto-creates a session and persists the user message, and that an
 // AgentEnd persists the assistant response.
 func TestSubmitPersistsMessages(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 // TestClearStartsFreshSession verifies /new wipes in-memory history and
 // detaches from the current session so the next message starts a new one.
 func TestClearStartsFreshSession(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestClearStartsFreshSession(t *testing.T) {
 // TestSessionsListsAndResumeLoads verifies /sessions renders persisted
 // sessions with message counts and /resume loads history and continues.
 func TestSessionsListsAndResumeLoads(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 
 // TestResumeUnknownSession reports an error for a missing session.
 func TestResumeUnknownSession(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestResumeUnknownSession(t *testing.T) {
 // TestBranchCommand verifies /branch creates a child session, inherits the
 // parent's history, and switches the active session to the branch.
 func TestBranchCommand(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -596,7 +596,7 @@ func TestBranchCommand(t *testing.T) {
 
 // TestLabelCommand verifies /label sets and clears a session label.
 func TestLabelCommand(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -646,7 +646,7 @@ func TestLabelCommand(t *testing.T) {
 // TestTreeCommand verifies /tree renders the session tree with nesting,
 // labels, and message counts.
 func TestTreeCommand(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -806,7 +806,7 @@ func TestAutocompleteLiveFilter(t *testing.T) {
 	// "/model" narrows to /model and /models, auto-selects the first.
 	m.textarea.SetValue("/model")
 	m.updateAutocomplete()
-	want := []string{"/models", "/model"}
+	want := []string{"/model", "/models"}
 	if len(m.autocompleteMatches) != 2 || m.autocompleteMatches[0] != want[0] || m.autocompleteMatches[1] != want[1] {
 		t.Fatalf("/model matches = %v, want %v", m.autocompleteMatches, want)
 	}
@@ -1104,7 +1104,7 @@ func TestEphemeralNewClearsSession(t *testing.T) {
 
 func TestEphemeralSkipsStoreOnSubmit(t *testing.T) {
 	// A store is present, but ephemeral mode must not create or persist.
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -1449,7 +1449,7 @@ func TestWindowTitle(t *testing.T) {
 // by #, id, or label, and resets state when the active session is
 // deleted.
 func TestSessionsDeleteCommand(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -1487,7 +1487,7 @@ func TestSessionsDeleteCommand(t *testing.T) {
 
 // TestSessionsDeleteUsage verifies missing or unknown targets error.
 func TestSessionsDeleteUsage(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -1676,7 +1676,7 @@ func TestModelsCommand(t *testing.T) {
 	up, _ := m.handleCommand("/models")
 	m = up.(model)
 	// Should show a table with model names. The fake provider isn't used here
-	// (handleModels creates its own provider), so the result depends on
+	// (the provider extension handles the call), so the result depends on
 	// whether Ollama is running. Just check it doesn't crash and produces
 	// output or an error.
 	if m.err != "" && m.transcript == "" {
@@ -1722,10 +1722,59 @@ func (errorModelsProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelIn
 // TestHandleModelsWithFakeProvider covers the happy path: a FakeProvider
 // wired into agent.Context returns a model list, and handleModels renders
 // the numbered table with the current model marked.
+// newProviderTestCtx creates an agent.Context with the provider extension's
+// command handler wired for /models, /model, and /provider.
+func newProviderTestCtx(prov ai.Provider) *agent.Context {
+	pctx := &agent.Context{Provider: prov}
+	pctx.Commands = append(pctx.Commands,
+		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
+		agent.ExtensionCommand{Name: "/model", Description: "switch model"},
+		agent.ExtensionCommand{Name: "/provider", Description: "show provider"},
+	)
+	prev := pctx.CommandHandler
+	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+		switch name {
+		case "/models":
+			models, err := prov.ListModels()
+			if err != nil {
+				return agent.CommandResult{}, fmt.Errorf("list models: %w", err)
+			}
+			if len(models) == 0 {
+				return agent.CommandResult{Text: "[no models available]"}, nil
+			}
+			nameWidth := 4
+			for _, n := range models {
+				if len(n) > nameWidth {
+					nameWidth = len(n)
+				}
+			}
+			var sb strings.Builder
+			sb.WriteString("\n")
+			fmt.Fprintf(&sb, "  %-3s  %-*s\n", "#", nameWidth, "NAME")
+			for i, n := range models {
+				marker := "  "
+				if n == prov.ModelName() {
+					marker = "> "
+				}
+				fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, n)
+			}
+			return agent.CommandResult{
+				Text:    sb.String(),
+				Actions: []agent.CmdAction{{Type: "set_model_list", List: models}},
+			}, nil
+		}
+		if prev != nil {
+			return prev(c, name, args)
+		}
+		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	}
+	return pctx
+}
+
 func TestHandleModelsWithFakeProvider(t *testing.T) {
-	ctx := &agent.Context{Provider: ai.NewFakeProvider("beta")}
+	ctx := newProviderTestCtx(ai.NewFakeProvider("beta"))
 	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell")
-	up, _ := m.handleModels()
+	up, _ := m.handleCommand("/models")
 	m = up.(model)
 
 	if m.err != "" {
@@ -1753,9 +1802,9 @@ func TestHandleModelsWithFakeProvider(t *testing.T) {
 // TestHandleModelsEmptyList covers the empty-list branch: handleModels
 // prints "[no models available]" when the provider returns no models.
 func TestHandleModelsEmptyList(t *testing.T) {
-	ctx := &agent.Context{Provider: emptyModelsProvider{}}
+	ctx := newProviderTestCtx(emptyModelsProvider{})
 	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell")
-	up, _ := m.handleModels()
+	up, _ := m.handleCommand("/models")
 	m = up.(model)
 
 	if m.err != "" {
@@ -1773,9 +1822,9 @@ func TestHandleModelsEmptyList(t *testing.T) {
 // TestHandleModelsProviderError covers the error branch: handleModels
 // surfaces the provider error and does not render the table.
 func TestHandleModelsProviderError(t *testing.T) {
-	ctx := &agent.Context{Provider: errorModelsProvider{}}
+	ctx := newProviderTestCtx(errorModelsProvider{})
 	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell")
-	up, _ := m.handleModels()
+	up, _ := m.handleCommand("/models")
 	m = up.(model)
 
 	if m.err == "" {
@@ -1909,7 +1958,7 @@ func TestPasteInsertsText(t *testing.T) {
 
 // TestHandleSearchNoArgs verifies that /search with no query sets a usage error.
 func TestHandleSearchNoArgs(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -1941,7 +1990,7 @@ func TestHandleSearchNoStore(t *testing.T) {
 // TestHandleSearchResults verifies that /search finds messages in the store
 // and renders results in the transcript.
 func TestHandleSearchResults(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -1968,7 +2017,7 @@ func TestHandleSearchResults(t *testing.T) {
 // TestHandleSearchNoResults verifies that /search with no matches renders
 // "[no results]" in the transcript.
 func TestHandleSearchNoResults(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -2012,7 +2061,7 @@ func TestHandleInsightsNoStore(t *testing.T) {
 // TestHandleInsightsNoSessions verifies that /insights with an empty store
 // renders "[no sessions ...]" in the transcript.
 func TestHandleInsightsNoSessions(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -2032,7 +2081,7 @@ func TestHandleInsightsNoSessions(t *testing.T) {
 // TestHandleInsightsWithSessions verifies that /insights with sessions in the
 // store renders formatted insights (containing "omega insights") in the transcript.
 func TestHandleInsightsWithSessions(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -2125,7 +2174,7 @@ func TestHandleCopyUserMessage(t *testing.T) {
 // TestHandleExportNoSession verifies that /export with no active session sets
 // an error.
 func TestHandleExportNoSession(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -2145,7 +2194,7 @@ func TestHandleExportNoSession(t *testing.T) {
 // TestHandleExportWrites verifies that /export writes a valid JSONL file
 // containing the session's messages.
 func TestHandleExportWrites(t *testing.T) {
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -2328,7 +2377,6 @@ func TestRenderMarkdownZeroWidth(t *testing.T) {
 		t.Fatalf("expected text preserved at zero width, got %q", plain)
 	}
 }
-
 // stubCompactor is a minimal CompactionProvider for testing handleCompact.
 // It returns a fixed compacted message set regardless of input.
 type stubCompactor struct{}

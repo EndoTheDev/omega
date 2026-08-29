@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/models", "/copy", "/export", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/copy", "/export", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -1192,8 +1192,6 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		}
 		// Route to the provider extension command.
 		return m.handleExtensionCommand("/model", arg)
-	case "/models":
-		return m.handleModels()
 	default:
 		// Check if the command matches a loaded extension command.
 		cmd := fields[0]
@@ -1559,55 +1557,6 @@ func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleModels fetches available models from the current provider and
-// renders them as a numbered table. Caches the list for /model <#>.
-func (m model) handleModels() (tea.Model, tea.Cmd) {
-	models, err := m.fetchModels()
-	if err != nil {
-		m.err = err.Error()
-		m.refresh()
-		return m, nil
-	}
-	m.modelList = models
-
-	if len(models) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no models available]") + "\n"
-		m.refresh()
-		return m, nil
-	}
-
-	nameWidth := 4 // "NAME"
-	for _, name := range models {
-		if len(name) > nameWidth {
-			nameWidth = len(name)
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString("\n")
-	header := fmt.Sprintf("  %-3s  %-*s", "#", nameWidth, "NAME")
-	sb.WriteString(m.theme.Info.Render(header))
-	sb.WriteString("\n")
-	for i, name := range models {
-		marker := "  "
-		if name == m.modelName {
-			marker = "> "
-		}
-		fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, name)
-	}
-	m.transcript += sb.String()
-	m.refresh()
-	return m, nil
-}
-
-// fetchModels calls ListModels via the provider.
-func (m model) fetchModels() ([]string, error) {
-	if m.extensions == nil || m.extensions.Provider == nil {
-		return nil, fmt.Errorf("no provider configured")
-	}
-	return m.extensions.Provider.ListModels()
-}
-
 // handleExtensionCommand runs an extension-provided slash command.
 func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 	if m.extensions == nil || m.extensions.CommandHandler == nil {
@@ -1632,6 +1581,8 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 		case "set_model":
 			m.modelName = action.Value
 			m.persistEntry(ai.NewModelChange(m.modelName))
+		case "set_model_list":
+			m.modelList = action.List
 		case "refresh_title":
 			cmds = append(cmds, m.titleCmd())
 		case "fetch_model_info":
