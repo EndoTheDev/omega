@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // newTestModel mirrors the existing tui_test.go pattern. The helper
 // keeps the newChatModel signature stable so tests can swap themes cleanly.
 func newTestModel(themeName string) model {
-	return newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, themeName, "", "bell")
+	return newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, themeName, "", "bell", "dev", "")
 }
 
 // ctxWithInfos builds a non-nil agent.Context carrying the given Infos,

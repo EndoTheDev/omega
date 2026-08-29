@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"bytes"
@@ -21,7 +21,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/gateway"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -285,6 +284,8 @@ type model struct {
 	theme                Theme                  // active color/style theme
 	trustState           string                 // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
 	notifications        string                 // "bell" / "desktop" / "off", fired on turn complete
+	version              string                 // build version for splash display
+	cwd                  string                 // working directory passed from host
 	lastToolCall         string                 // last tool call name, for syntax highlighting results
 	lastToolArgs         map[string]any         // last tool call args, for language detection
 	lastRender           time.Time              // debounce for live glamour rendering during streaming
@@ -350,13 +351,10 @@ type autoNameMsg struct {
 	err       error
 }
 
-func runChat(pc gateway.ProviderConfig, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *agent.Context, skills []agent.Skill, themeName, trustState, notifications string) error {
-	m := newChatModel(pc.Type, pc.ModelName, compaction, promptCustom, promptAppend, promptContext, pctx, skills, themeName, trustState, notifications)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("chat: %w", err)
-	}
-	return nil
+// NewModel creates the TUI model from a mounted Context and frontend
+// options. Called by the Frontend.Run method.
+func NewModel(pctx *agent.Context, opts agent.FrontendOptions) model {
+	return newChatModel(opts.ProviderType, opts.ModelName, opts.Compaction, opts.PromptCustom, opts.PromptAppend, opts.PromptContext, pctx, opts.Skills, opts.ThemeName, opts.TrustState, opts.Notifications, opts.Version, opts.CWD)
 }
 
 // storeFromContext returns the StoreProvider from a Context, or nil
@@ -368,7 +366,7 @@ func storeFromContext(pctx *agent.Context) agent.StoreProvider {
 	return pctx.Store
 }
 
-func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *agent.Context, skills []agent.Skill, themeName, trustState, notifications string) model {
+func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *agent.Context, skills []agent.Skill, themeName, trustState, notifications, version, cwd string) model {
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
@@ -425,6 +423,8 @@ func newChatModel(providerType, modelName string, compaction *agent.CompactionCo
 		theme:                t,
 		trustState:           trustState,
 		notifications:        notifications,
+		version:              version,
+		cwd:                  cwd,
 	}
 }
 
@@ -859,11 +859,11 @@ func (m *model) startRun() {
 			PromptCustom:  m.promptCustom,
 			PromptAppend:  m.promptAppend,
 			PromptContext: m.promptContext,
-			CWD:           cwd(),
+			CWD:           m.cwd,
 		})
 	} else {
 		ag = agent.NewAgent(provider, nil, 0)
-		ag.SetCWD(cwd())
+		ag.SetCWD(m.cwd)
 		ag.SetPromptCustom(m.promptCustom)
 		ag.SetPromptAppend(m.promptAppend)
 		ag.SetPromptContext(m.promptContext)
@@ -2035,12 +2035,6 @@ func renderCodeBlock(code, lang string, width int, t Theme) string {
 	return style.Render(body)
 }
 
-// omegaVersion is set via ldflags at build time:
-//
-//	go build -ldflags "-X main.omegaVersion=v0.1.0"
-//
-// Defaults to "dev" when built without ldflags (local dev builds).
-var omegaVersion = "dev"
 
 // View renders the full screen: viewport on top, status bar, then the
 // autocomplete dropup panel (when open), textarea at the bottom. When
@@ -2087,7 +2081,7 @@ func (m model) splashView() string {
 		`  m#   #m `,
 	}
 	info := []string{
-		"omega " + omegaVersion,
+		"omega " + m.version,
 		provider + "/" + m.modelName,
 		fmt.Sprintf("%d tools | %d skills", toolCount, skillCount),
 		"/help for commands - enter to start",

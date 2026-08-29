@@ -35,6 +35,7 @@ type Plugin interface {
 | `logging`        | exclusive | Operational logging (file logger)           |
 | `memory`         | exclusive | Persistent memory (two-file store)          |
 | `prompt_builder` | exclusive | System prompt builder                       |
+| `frontend`       | exclusive | User-facing interface (TUI, web UI)         |
 | `tools`          | additive  | Tool provider (multiple plugins contribute) |
 | `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)    |
 
@@ -59,6 +60,7 @@ Exclusive seams conflict if two plugins provide the same one. The
 | `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
 | `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
+| `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
 
 ## Writing an extension
 

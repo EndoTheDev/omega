@@ -33,13 +33,17 @@ into a shared `Context` via `MountAll` at startup.
   `§`-delimited entries, snapshot read fresh and injected into system prompt)
 - `http_channel/` - HTTP/SSE delivery channel (Channel seam,
   HTTP server + SSE streaming implementation, `omega serve` transport)
+- `tui/` - terminal frontend (Frontend seam, Bubble Tea TUI:
+  streaming, slash commands, themes, autocomplete, @file input,
+  glamour rendering, desktop notifications)
 
 ## Local Contracts
 
 - Every extension implements `agent.Plugin` (`Name`, `Provides`,
   `Requires`, `Mount`).
 - Exclusive seams (one plugin per slot): `provider`, `compactor`,
-  `store`, `skills`, `loop`, `logging`, `memory`, `prompt_builder`.
+  `store`, `skills`, `loop`, `logging`, `memory`, `prompt_builder`,
+  `frontend`.
 - Additive seams: `tools` and `channel` (multiple plugins contribute
   to `ctx.ToolProviders` and `ctx.Channels`).
 - Commands: extensions register slash commands via `ctx.Commands` +

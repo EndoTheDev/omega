@@ -27,6 +27,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/skills"
 	"github.com/EndoTheDev/omega/extensions/store"
 	"github.com/EndoTheDev/omega/extensions/tools"
+	"github.com/EndoTheDev/omega/extensions/tui"
 	"github.com/EndoTheDev/omega/extensions/web"
 	"github.com/EndoTheDev/omega/gateway"
 )
@@ -276,6 +277,7 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 		delegate.NewPlugin(),
 		web.NewPlugin(),
 		httpchannel.NewPlugin(),
+		tui.NewPlugin(),
 	}, nil
 }
 
@@ -496,8 +498,33 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 		ai.SetHTTPTimeout(newCfg.HTTPTimeout)
 	})
 
-	return runChat(cfg.Provider, &cfg.Compaction, cfg.SystemPrompt, appendPrompts, resolveProjectContext(cwd(), trust.approve, trust.noApprove, true), pctx, skillsList, cfg.Theme, trustState(cwd(), trust.approve, trust.noApprove), cfg.Notifications)
+	return runChat(cfg, pctx, skillsList, appendPrompts, trust)
 }
+
+// runChat launches the frontend (TUI) via the Frontend seam.
+func runChat(cfg gateway.Config, pctx *agent.Context, skills []agent.Skill, appendPrompts []string, trust trustFlags) error {
+	if pctx.Frontend == nil {
+		return fmt.Errorf("no frontend extension loaded — mount a frontend plugin (e.g. tui)")
+	}
+	return pctx.Frontend.Run(context.Background(), pctx, agent.FrontendOptions{
+		ModelName:     cfg.Provider.ModelName,
+		ProviderType:  cfg.Provider.Type,
+		Compaction:    &cfg.Compaction,
+		PromptCustom:  cfg.SystemPrompt,
+		PromptAppend:  appendPrompts,
+		PromptContext: resolveProjectContext(cwd(), trust.approve, trust.noApprove, true),
+		Skills:        skills,
+		ThemeName:     cfg.Theme,
+		TrustState:    trustState(cwd(), trust.approve, trust.noApprove),
+		Notifications: cfg.Notifications,
+		CWD:           cwd(),
+		Version:       omegaVersion,
+	})
+}
+
+// omegaVersion is set via ldflags at build time:
+//	go build -ldflags "-X main.omegaVersion=v0.1.0"
+var omegaVersion = "dev"
 
 // cmdTest runs a smoke test through the full agent pipeline using a
 // fake provider. Verifies event ordering and tool execution.

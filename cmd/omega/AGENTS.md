@@ -6,10 +6,9 @@ The single binary entry point for omega. It parses the subcommand
 (`serve`, `run`, `health`, `chat`), resolves configuration and home
 paths, wires the provider, agent, store, and extensions together, and
 either starts all mounted channels - HTTP by default (`serve`), runs one prompt to stdout (`run`), probes
-the server (`health`), or launches the interactive Bubble Tea TUI
-(`chat`). The TUI owns the full interactive loop: streaming, slash
-commands, session persistence, autocomplete, skills, extensions, and
-markdown rendering.
+the server (`health`), or launches the frontend extension (`chat`).
+The TUI is now an extension at `extensions/tui/` implementing the
+`Frontend` seam.
 
 ## Ownership
 
@@ -20,8 +19,6 @@ markdown rendering.
   (`gateway.WatchConfig`), store wiring (from `ctx.Store` after
   `MountAll`), env vars (`OMEGA_HOME`, `OMEGA_SKILLS_DIR`,
   `OMEGA_BIN` for subagent delegation), global help (`helpText`)
-- `image.go` - image input support (`detectImage`, `parseFileArgs`,
-  `extractImages`, magic-byte detection for PNG/JPEG/GIF/WebP/BMP)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
   `messageRole`, `resolveSessionCLI`)
 - `insights.go` - session analytics (`cmdInsights`, `formatInsights`,
@@ -40,25 +37,7 @@ markdown rendering.
   `stripTrustArgs`)
 - `context.go` - project context loading (`ProjectRoot`,
   `LoadProjectContext`) moved from the deleted `harness/` package
-- `tui.go` - Bubble Tea TUI: the `model` state, `Update`/`View`/`Init`,
-  streaming event handling (`handleEvent`, `appendSegment`, `drainEvents`),
-  slash command dispatch (`handleCommand` and every `handle*` helper),
-  session table and tree rendering, autocomplete, prompt history, inline
-  skill invocation, extension command dispatch, auto-name, glamour
-  rendering, status line, splash screen, theme system (`Theme` struct,
-  `handleTheme`, `/theme` command), desktop notifications
-  (`notifyTurnComplete`, `beeep`), model quick-cycle (Ctrl+P,
-  `fetchModelsCmd`, `modelsLoadedMsg`), auto-discovered context window
-  (`fetchModelInfoCmd`, `modelInfoLoadedMsg`, `contextWindow` field,
-  `Provider.SetModel` before fetch on model switch), bracketed paste
-  (file drop).
-  `handleExport` delegates to `exportMessages` in `export.go`.
-  Subagent delegation: `startRun` (shared agent setup for submit +
-  tick injection), `tickMsg`/`tickCmd` (250ms tick for status bar
-  subagent count + InjectedMessages drain when idle), `userInput`
-  channel as mode flag for agent loop.
-- `theme.go` - System theme detection: Windows registry, macOS defaults,
-  Linux gsettings / GTK_THEME / COLORFGBG fallback
+- `image.go` - CLI `@file` input (`parseFileArgs` calling `ai.DetectImage`)
 - `main_test.go` - self-check tests for subcommand dispatch,
   chdir error handling, and help/version flags
 - `export_test.go` - self-check tests for `exportMessages`,
@@ -253,8 +232,9 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
 - `resolveHomePaths` must run after `LoadConfig` and before opening the
   store; it also `MkdirAll`s the home directory so SQLite can create
   its file.
-- `cmdChat` owns the store and extension manager and closes both on
-  every exit path (`/exit`, Ctrl+C, or a `p.Run` error).
+- `cmdChat` mounts plugins, opens the store, loads skills, and
+  delegates to `ctx.Frontend.Run()` (the TUI extension). It closes
+  the store and logger on every exit path.
 
 ## Verification
 

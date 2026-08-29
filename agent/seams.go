@@ -171,3 +171,28 @@ type ChannelDeps struct {
 	Store  StoreProvider
 	Config any
 }
+
+// Frontend is the user-facing interface seam. The default implementation
+// is the terminal TUI (extensions/tui/). A custom implementation could
+// serve a web UI or any other interactive frontend. The host calls Run
+// after mounting all extensions; Run blocks until the frontend exits.
+type Frontend interface {
+	Run(ctx context.Context, pctx *Context, opts FrontendOptions) error
+}
+
+// FrontendOptions carries host-level settings the frontend needs that
+// are not on the Context itself. All fields are optional zero-values.
+type FrontendOptions struct {
+	ModelName     string
+	ProviderType  string
+	Compaction    *CompactionConfig
+	PromptCustom  string
+	PromptAppend  []string
+	PromptContext string
+	Skills        []Skill
+	ThemeName     string
+	TrustState    string
+	Notifications string
+	CWD           string
+	Version       string
+}

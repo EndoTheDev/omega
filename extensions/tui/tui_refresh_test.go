@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 // newRefreshModel returns a model configured the same way the existing
 // tui_test.go helpers set one up, ready for refresh() assertions.
 func newRefreshModel() *model {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
 	return &m
 }
 

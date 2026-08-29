@@ -29,6 +29,10 @@ type Context struct {
 	// Tool providers (additive — multiple plugins contribute).
 	ToolProviders []ToolProvider
 
+	// Frontend (exclusive — one frontend at a time). The host calls
+	// Run after mounting all extensions.
+	Frontend Frontend
+
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAll.
 	Channels []Channel
@@ -74,6 +78,7 @@ var exclusiveSeams = map[string]bool{
 	"logging":        true,
 	"memory":         true,
 	"prompt_builder": true,
+	"frontend":       true,
 }
 
 // MountAll sorts plugins by dependencies and mounts each into ctx.

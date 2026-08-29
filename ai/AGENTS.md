@@ -25,6 +25,8 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
   retryableStatus, maxRetries (OMEGA_MAX_RETRIES env)
 - `fake_provider.go` - FakeProvider for deterministic agent loop tests;
   scripted or per-call scripts
+- `image.go` - `DetectImage` (image format detection by magic bytes,
+  base64 encoding), `imageMagic` signatures, `MaxImageBytes` limit
 
 ## Local Contracts
 
