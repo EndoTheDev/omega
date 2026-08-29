@@ -122,70 +122,112 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid messages: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	tools := s.selectTools(req.Tools)
-	ctx := r.Context()
 
-	// With a session, load persisted history, append the incoming user
-	// messages, and persist each appended message.
-	if s.store != nil && req.SessionID != "" {
-		if _, err := s.store.GetSession(ctx, req.SessionID); err != nil {
-			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
-			return
-		}
-		history, err := s.store.GetMessages(ctx, req.SessionID)
-		if err != nil {
-			http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		messages = append(history, messages...)
-		for _, m := range messages[len(history):] {
-			if err := s.store.AppendMessage(ctx, req.SessionID, m); err != nil {
-				http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
+	messages, ok := s.loadSessionMessages(r.Context(), w, req, messages)
+	if !ok {
+		return
 	}
 
+	flusher, ok := setupSSE(w)
+	if !ok {
+		return
+	}
+
+	tools := s.selectTools(req.Tools)
+	lastAssistant := s.streamAgentEvents(r.Context(), w, flusher, messages, tools, req)
+
+	s.persistAssistant(r.Context(), w, flusher, req, lastAssistant)
+}
+
+// loadSessionMessages loads persisted history for a session, appends the
+// incoming messages, and persists each appended message. When no session
+// is configured (nil store or empty ID), messages are returned unchanged.
+// On failure an HTTP error is written to w and ok is false.
+func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req chatRequest, messages []ai.Message) ([]ai.Message, bool) {
+	if s.store == nil || req.SessionID == "" {
+		return messages, true
+	}
+	if _, err := s.store.GetSession(ctx, req.SessionID); err != nil {
+		http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
+		return nil, false
+	}
+	history, err := s.store.GetMessages(ctx, req.SessionID)
+	if err != nil {
+		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	messages = append(history, messages...)
+	for _, m := range messages[len(history):] {
+		if err := s.store.AppendMessage(ctx, req.SessionID, m); err != nil {
+			http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
+			return nil, false
+		}
+	}
+	return messages, true
+}
+
+// setupSSE sets SSE response headers and returns the flusher. On failure
+// an HTTP error is written to w and ok is false.
+func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
+		return nil, false
 	}
+	return flusher, true
+}
 
+// streamAgentEvents runs the agent event loop, writing SSE events to w.
+// It returns the accumulated assistant text for session persistence.
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) string {
 	var lastAssistant string
 	for event := range s.agent.Run(ctx, messages, tools) {
-		if s.store != nil && req.SessionID != "" {
-			if se, ok := event.(agent.StreamEvent); ok {
-				if chunk, ok := se.Event.(ai.ResponseChunk); ok {
-					lastAssistant += chunk.Content
-				}
-			}
-		}
+		lastAssistant = s.accumulateAssistant(lastAssistant, event, req)
 		eventType, data, err := sseEvent(event)
 		if err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
 			flusher.Flush()
-			return
+			return lastAssistant
 		}
 		writeSSE(w, eventType, data)
 		flusher.Flush()
 	}
+	return lastAssistant
+}
 
-	// Persist the final assistant response once streaming completes.
-	// ponytail: intermediate tool-loop messages (assistant-with-toolcalls
-	// + tool results) are not flushed mid-run; only the user message and
-	// the final assistant response are persisted. Matches the spec. If a
-	// session needs full multi-turn fidelity, surface agent history via
-	// the event stream and persist it here.
-	if s.store != nil && req.SessionID != "" && lastAssistant != "" {
-		if err := s.store.AppendMessage(ctx, req.SessionID, ai.NewAssistant(lastAssistant)); err != nil {
-			writeSSE(w, "error", []byte("persist response: "+err.Error()))
-			flusher.Flush()
-			return
-		}
+// accumulateAssistant appends streamed response-chunk content to the
+// accumulator when a session is active.
+func (s *Server) accumulateAssistant(acc string, event agent.Event, req chatRequest) string {
+	if s.store == nil || req.SessionID == "" {
+		return acc
+	}
+	se, ok := event.(agent.StreamEvent)
+	if !ok {
+		return acc
+	}
+	chunk, ok := se.Event.(ai.ResponseChunk)
+	if !ok {
+		return acc
+	}
+	return acc + chunk.Content
+}
+
+// persistAssistant saves the final assistant response to the session.
+// ponytail: intermediate tool-loop messages (assistant-with-toolcalls
+// + tool results) are not flushed mid-run; only the user message and
+// the final assistant response are persisted. Matches the spec. If a
+// session needs full multi-turn fidelity, surface agent history via
+// the event stream and persist it here.
+func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, req chatRequest, lastAssistant string) {
+	if s.store == nil || req.SessionID == "" || lastAssistant == "" {
+		return
+	}
+	if err := s.store.AppendMessage(ctx, req.SessionID, ai.NewAssistant(lastAssistant)); err != nil {
+		writeSSE(w, "error", []byte("persist response: "+err.Error()))
+		flusher.Flush()
 	}
 }
 
