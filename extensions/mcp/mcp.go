@@ -336,6 +336,21 @@ func (s *httpServer) readSSE(body io.Reader) (json.RawMessage, error) {
 	return nil, fmt.Errorf("SSE stream ended without response")
 }
 
+// newMCPRequest builds an HTTP request to the MCP endpoint with the common
+// headers (Content-Type, Accept, and any configured custom headers) applied.
+func (s *httpServer) newMCPRequest(url, method string, body []byte) (*http.Request, error) {
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	for k, v := range s.headers {
+		req.Header.Set(k, v)
+	}
+	return req, nil
+}
+
 func (s *httpServer) initialize() error {
 	params := map[string]any{
 		"protocolVersion": "2025-11-25",
@@ -345,14 +360,9 @@ func (s *httpServer) initialize() error {
 	// Do the initialize request manually to capture the session ID header.
 	id := s.nextRequestID()
 	reqBody, _ := json.Marshal(mcpRequest{JSONRPC: "2.0", ID: id, Method: "initialize", Params: params})
-	httpReq, err := http.NewRequest("POST", s.url, bytes.NewReader(reqBody))
+	httpReq, err := s.newMCPRequest(s.url, "POST", reqBody)
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	for k, v := range s.headers {
-		httpReq.Header.Set(k, v)
 	}
 	resp, err := s.client.Do(httpReq)
 	if err != nil {
@@ -377,14 +387,9 @@ func (s *httpServer) initialize() error {
 	}
 	// Send initialized notification. For HTTP, this is a POST with no ID.
 	notifBody, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
-	httpReq2, err := http.NewRequest("POST", s.url, bytes.NewReader(notifBody))
+	httpReq2, err := s.newMCPRequest(s.url, "POST", notifBody)
 	if err != nil {
 		return nil
-	}
-	httpReq2.Header.Set("Content-Type", "application/json")
-	httpReq2.Header.Set("Accept", "application/json, text/event-stream")
-	for k, v := range s.headers {
-		httpReq2.Header.Set(k, v)
 	}
 	if s.sessionID != "" {
 		httpReq2.Header.Set("mcp-session-id", s.sessionID)
