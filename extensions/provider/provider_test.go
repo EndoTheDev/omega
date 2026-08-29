@@ -256,6 +256,124 @@ func TestPluginInterface(t *testing.T) {
 	}
 }
 
+// TestInitDefaults verifies initDefaults resolves API keys from env
+// vars and fills default base URLs for all three provider types.
+func TestInitDefaults(t *testing.T) {
+	cases := []struct {
+		name        string
+		typ         string
+		inBaseURL   string
+		inAPIKey    string
+		setEnv      map[string]string
+		wantBaseURL string
+		wantAPIKey  string
+	}{
+		// a. openai default baseURL
+		{
+			name:        "openai_default_baseURL",
+			typ:         "openai",
+			wantBaseURL: "https://api.openai.com/v1",
+			wantAPIKey:  "",
+		},
+		// b. anthropic default baseURL
+		{
+			name:        "anthropic_default_baseURL",
+			typ:         "anthropic",
+			wantBaseURL: "https://api.anthropic.com/v1",
+			wantAPIKey:  "",
+		},
+		// c. ollama with OLLAMA_API_KEY env var set
+		{
+			name:        "ollama_apiKey_from_env",
+			typ:         "ollama",
+			setEnv:      map[string]string{"OLLAMA_API_KEY": "ollama-key"},
+			wantBaseURL: "http://localhost:11434",
+			wantAPIKey:  "ollama-key",
+		},
+		// d. openai with OPENAI_API_KEY env var set
+		{
+			name:        "openai_apiKey_from_env",
+			typ:         "openai",
+			setEnv:      map[string]string{"OPENAI_API_KEY": "openai-key"},
+			wantBaseURL: "https://api.openai.com/v1",
+			wantAPIKey:  "openai-key",
+		},
+		// e. anthropic with ANTHROPIC_API_KEY env var set
+		{
+			name:        "anthropic_apiKey_from_env",
+			typ:         "anthropic",
+			setEnv:      map[string]string{"ANTHROPIC_API_KEY": "anthropic-key"},
+			wantBaseURL: "https://api.anthropic.com/v1",
+			wantAPIKey:  "anthropic-key",
+		},
+		// f. ollama with OLLAMA_HOST env var set
+		{
+			name:        "ollama_baseURL_from_env",
+			typ:         "ollama",
+			setEnv:      map[string]string{"OLLAMA_HOST": "http://myhost:11434"},
+			wantBaseURL: "http://myhost:11434",
+			wantAPIKey:  "",
+		},
+		// g. explicit baseURL and apiKey are NOT overridden by env vars
+		{
+			name:        "explicit_values_win_over_env",
+			typ:         "ollama",
+			inBaseURL:   "http://explicit:11434",
+			inAPIKey:    "explicit-key",
+			setEnv:      map[string]string{"OLLAMA_API_KEY": "env-key", "OLLAMA_HOST": "http://envhost:11434"},
+			wantBaseURL: "http://explicit:11434",
+			wantAPIKey:  "explicit-key",
+		},
+		// h. trailing slash trimming on baseURL for all three provider types
+		{
+			name:        "openai_trailing_slash_trimmed",
+			typ:         "openai",
+			inBaseURL:   "https://api.openai.com/v1/",
+			wantBaseURL: "https://api.openai.com/v1",
+			wantAPIKey:  "",
+		},
+		{
+			name:        "anthropic_trailing_slash_trimmed",
+			typ:         "anthropic",
+			inBaseURL:   "https://api.anthropic.com/v1/",
+			wantBaseURL: "https://api.anthropic.com/v1",
+			wantAPIKey:  "",
+		},
+		{
+			name:        "ollama_trailing_slash_trimmed",
+			typ:         "ollama",
+			setEnv:      map[string]string{"OLLAMA_HOST": "http://localhost:11434/"},
+			wantBaseURL: "http://localhost:11434",
+			wantAPIKey:  "",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Clear all relevant env vars before each subtest to ensure isolation.
+			t.Setenv("OLLAMA_API_KEY", "")
+			t.Setenv("OPENAI_API_KEY", "")
+			t.Setenv("ANTHROPIC_API_KEY", "")
+			t.Setenv("OLLAMA_HOST", "")
+
+			for k, v := range c.setEnv {
+				t.Setenv(k, v)
+			}
+
+			p := NewProvider(c.typ, "m", c.inBaseURL, c.inAPIKey)
+			if p.baseURL != c.wantBaseURL {
+				t.Errorf("baseURL = %q, want %q", p.baseURL, c.wantBaseURL)
+			}
+			if p.apiKey != c.wantAPIKey {
+				t.Errorf("apiKey = %q, want %q", p.apiKey, c.wantAPIKey)
+			}
+			if strings.HasSuffix(p.baseURL, "/") {
+				t.Errorf("baseURL should not have trailing slash, got %q", p.baseURL)
+			}
+		})
+	}
+}
+
 // TestProviderModelCommand verifies /model <name> sets the model
 // via Provider.SetModel and returns set_model + refresh_title +
 // fetch_model_info CmdActions.
