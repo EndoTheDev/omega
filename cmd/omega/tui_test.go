@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1659,6 +1660,108 @@ func TestModelsCommand(t *testing.T) {
 	}
 	if !strings.Contains(m.transcript, "NAME") {
 		t.Errorf("transcript should contain table header, got: %q", m.transcript)
+	}
+}
+
+// emptyModelsProvider is a minimal ai.Provider whose ListModels returns
+// an empty list, exercising the "[no models available]" branch of
+// handleModels.
+type emptyModelsProvider struct{}
+
+func (emptyModelsProvider) Stream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
+	ch := make(chan ai.StreamEvent)
+	go close(ch)
+	return ch
+}
+func (emptyModelsProvider) ModelName() string                { return "test" }
+func (emptyModelsProvider) SetModel(string)                 {}
+func (emptyModelsProvider) SetThinkingLevel(string)          {}
+func (emptyModelsProvider) ListModels() ([]string, error)   { return []string{}, nil }
+func (emptyModelsProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{ContextWindow: 8192}, nil }
+
+// errorModelsProvider is a minimal ai.Provider whose ListModels always
+// fails, exercising the error branch of handleModels.
+type errorModelsProvider struct{}
+
+func (errorModelsProvider) Stream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
+	ch := make(chan ai.StreamEvent)
+	go close(ch)
+	return ch
+}
+func (errorModelsProvider) ModelName() string                { return "test" }
+func (errorModelsProvider) SetModel(string)                 {}
+func (errorModelsProvider) SetThinkingLevel(string)          {}
+func (errorModelsProvider) ListModels() ([]string, error)   { return nil, fmt.Errorf("provider unavailable") }
+func (errorModelsProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{ContextWindow: 8192}, nil }
+
+// TestHandleModelsWithFakeProvider covers the happy path: a FakeProvider
+// wired into agent.Context returns a model list, and handleModels renders
+// the numbered table with the current model marked.
+func TestHandleModelsWithFakeProvider(t *testing.T) {
+	ctx := &agent.Context{Provider: ai.NewFakeProvider("beta")}
+	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell")
+	up, _ := m.handleModels()
+	m = up.(model)
+
+	if m.err != "" {
+		t.Fatalf("unexpected error: %q", m.err)
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "NAME") {
+		t.Errorf("transcript should contain table header NAME, got: %q", plain)
+	}
+	if !strings.Contains(plain, "beta") {
+		t.Errorf("transcript should contain beta, got: %q", plain)
+	}
+	if !strings.Contains(plain, "other-model") {
+		t.Errorf("transcript should contain other-model, got: %q", plain)
+	}
+	// The current model (beta) should be marked with "> " on its row.
+	if !strings.Contains(plain, "> 1") {
+		t.Errorf("current model row should be marked with '> 1', got: %q", plain)
+	}
+	if len(m.modelList) != 2 || m.modelList[0] != "beta" || m.modelList[1] != "other-model" {
+		t.Errorf("modelList = %v, want [beta other-model]", m.modelList)
+	}
+}
+
+// TestHandleModelsEmptyList covers the empty-list branch: handleModels
+// prints "[no models available]" when the provider returns no models.
+func TestHandleModelsEmptyList(t *testing.T) {
+	ctx := &agent.Context{Provider: emptyModelsProvider{}}
+	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell")
+	up, _ := m.handleModels()
+	m = up.(model)
+
+	if m.err != "" {
+		t.Fatalf("unexpected error: %q", m.err)
+	}
+	plain := ansiStrip(m.transcript)
+	if !strings.Contains(plain, "[no models available]") {
+		t.Errorf("transcript should report no models, got: %q", plain)
+	}
+	if strings.Contains(plain, "NAME") {
+		t.Errorf("transcript should not render table for empty list, got: %q", plain)
+	}
+}
+
+// TestHandleModelsProviderError covers the error branch: handleModels
+// surfaces the provider error and does not render the table.
+func TestHandleModelsProviderError(t *testing.T) {
+	ctx := &agent.Context{Provider: errorModelsProvider{}}
+	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell")
+	up, _ := m.handleModels()
+	m = up.(model)
+
+	if m.err == "" {
+		t.Fatal("expected error from provider, got none")
+	}
+	if !strings.Contains(m.err, "provider unavailable") {
+		t.Errorf("err = %q, want it to contain 'provider unavailable'", m.err)
+	}
+	plain := ansiStrip(m.transcript)
+	if strings.Contains(plain, "NAME") {
+		t.Errorf("transcript should not contain table header on error, got: %q", plain)
 	}
 }
 
