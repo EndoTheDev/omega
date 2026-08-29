@@ -3,11 +3,23 @@ package mcp
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// pythonBin finds the Python binary at test time. Modern Linux distros
+// ship python3 but not python, so try both.
+func pythonBin() string {
+	for _, name := range []string{"python3", "python"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path
+		}
+	}
+	return "python3"
+}
 
 // fakeServerScript is a minimal MCP server over stdio: it reads
 // newline-delimited JSON-RPC from stdin and answers initialize,
@@ -66,7 +78,7 @@ func writeFakeServer(t *testing.T) string {
 // callTool round-trip through the real request/readLoop path.
 func TestNewStdioServerHandshake(t *testing.T) {
 	script := writeFakeServer(t)
-	s, err := newStdioServer("fake", "python", []string{script}, nil)
+	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
 	if err != nil {
 		t.Fatalf("newStdioServer: %v", err)
 	}
@@ -113,7 +125,7 @@ func TestNewStdioServerBadCommand(t *testing.T) {
 // without hanging.
 func TestStdioServerClose(t *testing.T) {
 	script := writeFakeServer(t)
-	s, err := newStdioServer("fake", "python", []string{script}, nil)
+	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
 	if err != nil {
 		t.Fatalf("newStdioServer: %v", err)
 	}
@@ -158,7 +170,7 @@ for line in sys.stdin:
 	if err := os.WriteFile(script, []byte(scriptSrc), 0o644); err != nil {
 		t.Fatalf("write env script: %v", err)
 	}
-	s, err := newStdioServer("env", "python", []string{script}, map[string]string{"MCP_TEST_VAR": "passed"})
+	s, err := newStdioServer("env", pythonBin(), []string{script}, map[string]string{"MCP_TEST_VAR": "passed"})
 	if err != nil {
 		t.Fatalf("newStdioServer: %v", err)
 	}
@@ -177,7 +189,7 @@ for line in sys.stdin:
 // requests get distinct results).
 func TestStdioServerRequestRoundTrip(t *testing.T) {
 	script := writeFakeServer(t)
-	s, err := newStdioServer("fake", "python", []string{script}, nil)
+	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
 	if err != nil {
 		t.Fatalf("newStdioServer: %v", err)
 	}

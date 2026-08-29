@@ -334,6 +334,10 @@ func replaceBinary(src, dst string) error {
 		os.Remove(tmp)
 		return err
 	}
+	// Unlink the running executable before renaming. Linux allows
+	// unlinking a running binary — the inode stays alive until the
+	// process exits, but the path is freed for the rename.
+	os.Remove(dst)
 	return os.Rename(tmp, dst)
 }
 
