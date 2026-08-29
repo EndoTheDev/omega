@@ -14,12 +14,15 @@ gateway, or extensions).
 - `agent.go` - Agent struct, configuration holders, capability seam
   wiring (`SetCompactionProvider`, `SetToolProvider`, `SetMaxToolOutput`,
   `SetCWD`, `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`,
-  `SetLoopProvider`, `SetProvider`, `SetUserInput`, `SetLogger`). Delegates execution
+  `SetLoopProvider`, `SetProvider`, `SetUserInput`, `SetLogger`),
+  `NewFromContext` + `AgentOptions` (fully-wired Agent construction
+  from a mounted Context - used by channels, `newAgent`, and the TUI).
+  Delegates execution
   to `LoopProvider`. The loop is not set by default; the host wires one
   via `SetLoopProvider` or by mounting the agent-loop extension.
 - `seams.go` - capability seam interfaces (`LoopProvider` + `LoopOptions`,
   `CompactionProvider`, `ToolProvider` + `DefaultToolProvider`,
-  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`).
+  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel` + `ChannelDeps`).
 - `plugin.go` - in-process extension system: `Context` (shared service
   container with typed seam slots), `Plugin` interface (`Name`,
   `Provides`, `Requires`, `Mount`), `MountAll` (topological sort by

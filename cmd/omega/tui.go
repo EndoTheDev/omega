@@ -854,30 +854,20 @@ func (m *model) startRun() {
 	if provider != nil {
 		provider.SetThinkingLevel(m.thinkingLevel)
 	}
-	tools := map[string]agent.Tool{}
-	ag := agent.NewAgent(provider, tools, 0)
-	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
-	ag.SetCWD(cwd())
-	ag.SetPromptCustom(m.promptCustom)
-	ag.SetPromptAppend(m.promptAppend)
-	ag.SetPromptContext(m.promptContext)
+	var ag *agent.Agent
 	if m.extensions != nil {
-		if m.extensions.Loop != nil {
-			ag.SetLoopProvider(m.extensions.Loop)
-		}
-		ag.SetToolProviders(m.extensions.ToolProviders)
-		ag.SetPromptBuilder(m.extensions.PromptBuilder)
-		ag.SetExtensionInfos(m.extensions.Infos)
-		if m.extensions.Compactor != nil {
-			ag.SetCompactionProvider(m.extensions.Compactor)
-		}
-		if m.extensions.InjectedMessages != nil {
-			ag.SetInjectedMessages(m.extensions.InjectedMessages)
-		}
-		if m.extensions.PendingDelegations != nil {
-			ag.SetPendingDelegations(m.extensions.PendingDelegations)
-		}
-		ag.SetLogger(m.extensions.Logger)
+		ag = agent.NewFromContext(m.extensions, agent.AgentOptions{
+			PromptCustom:  m.promptCustom,
+			PromptAppend:  m.promptAppend,
+			PromptContext: m.promptContext,
+			CWD:           cwd(),
+		})
+	} else {
+		ag = agent.NewAgent(provider, nil, 0)
+		ag.SetCWD(cwd())
+		ag.SetPromptCustom(m.promptCustom)
+		ag.SetPromptAppend(m.promptAppend)
+		ag.SetPromptContext(m.promptContext)
 	}
 	if m.compaction != nil {
 		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)

@@ -30,6 +30,8 @@ into a shared `Context` via `MountAll` at startup.
 - `web/` - web search/fetch (Ollama Cloud API)
 - `memory/` - persistent memory (`memory` tool, two-file store with
   `§`-delimited entries, snapshot read fresh and injected into system prompt)
+- `http_channel/` - HTTP/SSE delivery channel (Channel seam, wraps
+  gateway.Server; the `omega serve` transport)
 
 ## Local Contracts
 
@@ -37,8 +39,8 @@ into a shared `Context` via `MountAll` at startup.
   `Requires`, `Mount`).
 - Exclusive seams (one plugin per slot): `provider`, `compactor`,
   `store`, `skills`, `loop`, `logging`, `memory`, `prompt_builder`.
-- Additive seam: `tools` (multiple plugins contribute to
-  `ctx.ToolProviders`).
+- Additive seams: `tools` and `channel` (multiple plugins contribute
+  to `ctx.ToolProviders` and `ctx.Channels`).
 - Commands: extensions register slash commands via `ctx.Commands` +
   `ctx.CommandHandler`. Command handlers return `CommandResult` with
   optional `CmdAction` TUI directives. The host interprets actions;

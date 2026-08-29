@@ -13,8 +13,8 @@ import (
 // runs MountAll to populate it, then passes it to the agent loop.
 //
 // Seam slots (Provider, Compactor, Store, Skills, Loop, PromptBuilder)
-// are exclusive: one plugin per slot. ToolProviders is additive: multiple
-// plugins contribute tools.
+// are exclusive: one plugin per slot. ToolProviders and Channels are
+// additive: multiple plugins contribute.
 type Context struct {
 	// Seam slots (exclusive — one plugin per slot).
 	Provider      ai.Provider
@@ -28,6 +28,10 @@ type Context struct {
 
 	// Tool providers (additive — multiple plugins contribute).
 	ToolProviders []ToolProvider
+
+	// Channels (additive — multiple plugins contribute delivery
+	// transports). The host starts all mounted channels after MountAll.
+	Channels []Channel
 
 	// Cross-cutting (set by specific plugins).
 	Commands          []ExtensionCommand

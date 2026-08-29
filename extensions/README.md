@@ -36,6 +36,7 @@ type Plugin interface {
 | `memory`         | exclusive | Persistent memory (two-file store)          |
 | `prompt_builder` | exclusive | System prompt builder                       |
 | `tools`          | additive  | Tool provider (multiple plugins contribute) |
+| `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)    |
 
 Exclusive seams conflict if two plugins provide the same one. The
 `tools` seam is additive: multiple plugins contribute to
@@ -43,20 +44,21 @@ Exclusive seams conflict if two plugins provide the same one. The
 
 ## Available extensions
 
-| Package       | Seam(s)        | Description                                          |
-| ------------- | -------------- | ---------------------------------------------------- |
-| `agent_loop/` | loop           | Default conversation loop (LoopProvider impl)        |
-| `provider/`   | provider       | Ollama, OpenAI, Anthropic streaming                  |
-| `store/`      | store, tools   | SQLite session store + sessions.search tool          |
-| `skills/`     | skills, tools  | Skill loading + skills.read tool + /skills command   |
-| `compactor/`  | compactor      | Context compaction (keep-first/last + LLM summarize) |
-| `logging/`    | logging        | Operational logging (file logger, LoggerProvider)    |
-| `memory/`     | memory, tools  | Persistent memory (memory tool, two-file store)      |
-| `prompt/`     | prompt_builder | System prompt builder + guidelines                   |
-| `tools/`      | tools          | Shell command + file tools                           |
-| `mcp/`        | tools          | MCP bridge (stdio + HTTP MCP servers)                |
-| `delegate/`   | tools          | Subagent delegation (delegate.task, delegate.status) |
-| `web/`        | tools          | Web search/fetch (Ollama Cloud API)                  |
+| Package         | Seam(s)        | Description                                          |
+| --------------- | -------------- | ---------------------------------------------------- |
+| `agent_loop/`   | loop           | Default conversation loop (LoopProvider impl)        |
+| `provider/`     | provider       | Ollama, OpenAI, Anthropic streaming                  |
+| `store/`        | store, tools   | SQLite session store + sessions.search tool          |
+| `skills/`       | skills, tools  | Skill loading + skills.read tool + /skills command   |
+| `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
+| `logging/`      | logging        | Operational logging (file logger, LoggerProvider)    |
+| `memory/`       | memory, tools  | Persistent memory (memory tool, two-file store)      |
+| `prompt/`       | prompt_builder | System prompt builder + guidelines                   |
+| `tools/`        | tools          | Shell command + file tools                           |
+| `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
+| `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
+| `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
+| `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
 
 ## Writing an extension
 

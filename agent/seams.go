@@ -144,3 +144,30 @@ type PromptBuilder interface {
 	// "## Extension Guidelines" in the system prompt.
 	Guidelines() []string
 }
+
+// Channel is a delivery transport that connects external clients to
+// the agent. Channels are additive: multiple can run simultaneously
+// (HTTP + Discord + Telegram). The host starts all mounted channels
+// after MountAll and stops them on shutdown.
+//
+// Start blocks until the channel stops or the context is cancelled.
+// Each channel creates agents from deps.Ctx as needed — HTTP reuses
+// one agent; a chat-platform channel may create one per conversation.
+type Channel interface {
+	// Start runs the channel until the context is cancelled or Stop
+	// is called. Blocks.
+	Start(ctx context.Context, deps ChannelDeps) error
+	// Stop shuts the channel down. Called by the host after the
+	// context is cancelled.
+	Stop() error
+}
+
+// ChannelDeps carries everything a channel needs to run. Ctx is the
+// fully-wired plugin Context — channels create agents from it. Store
+// persists messages. Config is the host config (gateway.Config) for
+// channels to type-assert their settings from.
+type ChannelDeps struct {
+	Ctx    *Context
+	Store  StoreProvider
+	Config any
+}

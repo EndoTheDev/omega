@@ -5,7 +5,7 @@
 The single binary entry point for omega. It parses the subcommand
 (`serve`, `run`, `health`, `chat`), resolves configuration and home
 paths, wires the provider, agent, store, and extensions together, and
-either serves HTTP (`serve`), runs one prompt to stdout (`run`), probes
+either starts all mounted channels - HTTP by default (`serve`), runs one prompt to stdout (`run`), probes
 the server (`health`), or launches the interactive Bubble Tea TUI
 (`chat`). The TUI owns the full interactive loop: streaming, slash
 commands, session persistence, autocomplete, skills, extensions, and
@@ -143,23 +143,15 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   skips these types (metadata, not conversation content).
 - **Seam wiring in newAgent.** `newAgent` builds a `plugin.Context`,
   calls `MountAll` with all extension plugins (provider, store, skills,
-  compactor, logging, memory, prompt, tools, mcp, delegate, web, agent_loop), and wires
-  the agent from the populated Context: `SetProvider` from
-  `ctx.Provider`, `DefaultToolProvider` via `SetToolProvider`, CWD via
-  `SetCWD`, custom/append prompts via `SetPromptCustom`/
-  `SetPromptAppend`, trust-gated project context via
-  `SetPromptContext`, `SetToolProviders` from `ctx.ToolProviders`,
-  `SetPromptBuilder` from `ctx.PromptBuilder`, `SetExtensionInfos`
-  from `ctx.Infos`, `SetCompactionProvider` from `ctx.Compactor`,
-  `SetLogger` from `ctx.Logger`,
-  `SetLoopProvider` from `ctx.Loop`,
-  `SetInjectedMessages` from `ctx.InjectedMessages`,
-  `SetPendingDelegations` from `ctx.PendingDelegations`. The loop is
-  mounted into `ctx.Loop` by `MountAll`; the TUI's `startRun` wires it
-  via `SetLoopProvider(m.extensions.Loop)`. `cmdTest` wires it directly
-  via `SetLoopProvider(agent_loop.Loop{})`. The TUI's submit path
-  mirrors `newAgent` wiring for each run, using `ctx.Provider` directly
-  and calling `SetModel` for `/model` changes.
+  compactor, logging, memory, http_channel, prompt, tools, mcp, delegate, web, agent_loop), then builds
+  the agent via `agent.NewFromContext(ctx, AgentOptions{...})` and
+  returns it alongside the store, logger, and the plugin Context
+  itself (callers start channels from it).
+- **cmdServe is channel-driven.** Channels mount via the additive
+  `channel` seam (`ctx.Channels`). `cmdServe` starts each in a
+  goroutine with `ChannelDeps{Ctx, Store, Config}`, waits for a signal
+  or the first channel error, and stops all channels on shutdown.
+  `omega health` probes the HTTP channel specifically.
 - **`/tools` lists tools, `/tools on|off|auto` controls display.**
   No-arg `/tools` (or `/tools list`) calls `handleToolsList` which
   renders all tools from `Infos().ToolList` (first line of description)

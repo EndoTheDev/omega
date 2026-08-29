@@ -18,6 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/agent_loop"
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/delegate"
+	httpchannel "github.com/EndoTheDev/omega/extensions/http_channel"
 	"github.com/EndoTheDev/omega/extensions/logging"
 	"github.com/EndoTheDev/omega/extensions/mcp"
 	"github.com/EndoTheDev/omega/extensions/memory"
@@ -274,64 +275,50 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 		mcpPlugin,
 		delegate.NewPlugin(),
 		web.NewPlugin(),
+		httpchannel.NewPlugin(),
 	}, nil
 }
 
 // newAgent wires config into a provider, agent, store, and extensions
-// via the in-process plugin system. The store is returned so the caller
-// can close it.
-func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, error) {
+// via the in-process plugin system. The store and plugin context are
+// returned so the caller can close the store and start channels.
+func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, error) {
 	ctx := &agent.Context{
 		CWD:    cwd(),
 		Config: cfg,
 	}
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("build plugins: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
 	}
 	if err := agent.MountAll(plugins, ctx); err != nil {
-		return nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
 
-	tools := map[string]agent.Tool{}
-	ag := agent.NewAgent(ctx.Provider, tools, cfg.MaxTurns)
-	ag.SetToolProvider(agent.DefaultToolProvider{ToolsMap: tools})
-	ag.SetToolProviders(ctx.ToolProviders)
-	ag.SetCWD(cwd())
-	ag.SetPromptCustom(cfg.SystemPrompt)
-	ag.SetPromptAppend(appendPrompts)
-	ag.SetPromptContext(resolveProjectContext(cwd(), trust.approve, trust.noApprove, false))
-	ag.SetPromptBuilder(ctx.PromptBuilder)
-	ag.SetExtensionInfos(ctx.Infos)
-	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
-	ag.SetLogger(ctx.Logger)
-	ag.SetLoopProvider(ctx.Loop)
-
-	if ctx.Compactor != nil {
-		ag.SetCompactionProvider(ctx.Compactor)
-	}
-	if ctx.InjectedMessages != nil {
-		ag.SetInjectedMessages(ctx.InjectedMessages)
-	}
-	if ctx.PendingDelegations != nil {
-		ag.SetPendingDelegations(ctx.PendingDelegations)
-	}
+	ag := agent.NewFromContext(ctx, agent.AgentOptions{
+		MaxTurns:      cfg.MaxTurns,
+		MaxToolOutput: cfg.Compaction.MaxToolOutput,
+		PromptCustom:  cfg.SystemPrompt,
+		PromptAppend:  appendPrompts,
+		PromptContext: resolveProjectContext(cwd(), trust.approve, trust.noApprove, false),
+		CWD:           cwd(),
+	})
 
 	// Open the store.
 	if ctx.Store != nil {
 		if err := ctx.Store.Open(cfg.Store.DBPath); err != nil {
-			return nil, nil, nil, fmt.Errorf("open store: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
 		}
 	} else {
 		ctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
 		s, err := gateway.Open(":memory:")
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
 		}
 		ctx.Store = s
 	}
 
-	return ag, ctx.Store, ctx.Logger, nil
+	return ag, ctx.Store, ctx.Logger, ctx, nil
 }
 
 // signalContext returns a context cancelled on SIGINT/SIGTERM.
@@ -339,8 +326,9 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
-// cmdServe loads config, wires the agent, and serves HTTP until a signal
-// triggers graceful shutdown.
+// cmdServe loads config, wires the agent, and starts all mounted
+// channels (HTTP, Discord, etc.) until a signal triggers graceful
+// shutdown.
 func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error {
 	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
@@ -348,7 +336,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	}
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -360,10 +348,38 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	ctx, stop := signalContext()
 	defer stop()
 
-	srv := gateway.NewServer(ag, nil, store)
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	fmt.Printf("omega: serving on %s (model %s)\n", addr, ag.ModelName())
-	return srv.Serve(ctx, addr)
+	// Start all mounted channels. Each channel creates its own agents
+	// from pctx as needed.
+	if len(pctx.Channels) == 0 {
+		return fmt.Errorf("no channels configured — mount a channel extension (e.g. http_channel)")
+	}
+	errCh := make(chan error, len(pctx.Channels))
+	for _, ch := range pctx.Channels {
+		deps := agent.ChannelDeps{Ctx: pctx, Store: store, Config: cfg}
+		go func(c agent.Channel) {
+			errCh <- c.Start(ctx, deps)
+		}(ch)
+	}
+	fmt.Printf("omega: serving %d channel(s) (model %s)\n", len(pctx.Channels), ag.ModelName())
+	if logger != nil {
+		logger.Printf("omega: serving %d channel(s), model %s", len(pctx.Channels), ag.ModelName())
+	}
+
+	// Wait for signal or first channel error.
+	select {
+	case <-ctx.Done():
+	case err := <-errCh:
+		if err != nil && ctx.Err() == nil {
+			stop()
+			return fmt.Errorf("channel error: %w", err)
+		}
+	}
+
+	// Stop all channels.
+	for _, ch := range pctx.Channels {
+		_ = ch.Stop()
+	}
+	return nil
 }
 
 // cmdRun loads config and runs the agent once with the given prompt,
@@ -385,7 +401,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	}
 	resolveHomePaths(&cfg)
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}

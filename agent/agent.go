@@ -150,6 +150,47 @@ func (a *Agent) SetLogger(l LoggerProvider) {
 	a.logger = l
 }
 
+// AgentOptions carries the host-level settings NewFromContext cannot
+// get from the Context itself. All fields are optional zero-values.
+type AgentOptions struct {
+	MaxTurns       int
+	MaxToolOutput  int
+	PromptCustom   string
+	PromptAppend   []string
+	PromptContext  string
+	CWD            string
+}
+
+// NewFromContext creates a fully-wired Agent from a mounted Context.
+// Channels, newAgent, and the TUI use this. The agent gets the loop,
+// tool providers, prompt builder, compactor, injected messages,
+// pending delegations, and logger from ctx. All AgentOptions fields
+// are optional zero-values — setters tolerate zero like the
+// constructor defaults do.
+func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
+	ag := NewAgent(ctx.Provider, nil, opts.MaxTurns)
+	ag.SetToolProviders(ctx.ToolProviders)
+	ag.SetLoopProvider(ctx.Loop)
+	ag.SetPromptBuilder(ctx.PromptBuilder)
+	ag.SetExtensionInfos(ctx.Infos)
+	ag.SetLogger(ctx.Logger)
+	ag.SetMaxToolOutput(opts.MaxToolOutput)
+	ag.SetPromptCustom(opts.PromptCustom)
+	ag.SetPromptAppend(opts.PromptAppend)
+	ag.SetPromptContext(opts.PromptContext)
+	ag.SetCWD(opts.CWD)
+	if ctx.Compactor != nil {
+		ag.SetCompactionProvider(ctx.Compactor)
+	}
+	if ctx.InjectedMessages != nil {
+		ag.SetInjectedMessages(ctx.InjectedMessages)
+	}
+	if ctx.PendingDelegations != nil {
+		ag.SetPendingDelegations(ctx.PendingDelegations)
+	}
+	return ag
+}
+
 // ModelName returns the name of the model the agent's provider serves.
 func (a *Agent) ModelName() string {
 	return a.provider.ModelName()
