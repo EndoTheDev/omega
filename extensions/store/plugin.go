@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/gateway"
@@ -41,6 +42,11 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		agent.ExtensionCommand{Name: "/tree", Description: "show session tree with nesting and message counts"},
 		agent.ExtensionCommand{Name: "/search", Description: "search past session messages by keyword"},
 		agent.ExtensionCommand{Name: "/insights", Description: "show cross-session usage analytics"},
+		agent.ExtensionCommand{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence)"},
+		agent.ExtensionCommand{Name: "/resume", Description: "resume a session by #, id, or label"},
+		agent.ExtensionCommand{Name: "/branch", Description: "branch a new session from the current (or given) one"},
+		agent.ExtensionCommand{Name: "/label", Description: "set a label on the current session (no text clears it)"},
+		agent.ExtensionCommand{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
 	)
 
 	// Wire command handler, chaining after any previous handler.
@@ -55,6 +61,37 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 			return HandleSearchCommand(c, s, args)
 		case "/insights":
 			return HandleInsightsCommand(c, s, args)
+		case "/new":
+			return HandleNewCommand(args)
+		case "/resume":
+			return HandleResumeCommand(c, s, args)
+		case "/branch":
+			// TUI passes "parentID rest" — extract the parent ID.
+			parts := strings.SplitN(args, " ", 2)
+			parentID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return HandleBranchCommand(c, s, parentID, rest)
+		case "/label":
+			// TUI passes "sessionID label" — extract the session ID.
+			parts := strings.SplitN(args, " ", 2)
+			sessionID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return HandleLabelCommand(c, s, sessionID, rest)
+		case "/export":
+			// TUI passes "sessionID path" — extract the session ID.
+			parts := strings.SplitN(args, " ", 2)
+			sessionID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return HandleExportCommand(c, s, sessionID, rest)
 		}
 		if prev != nil {
 			return prev(c, name, args)

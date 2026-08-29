@@ -15,6 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/provider"
 	"github.com/EndoTheDev/omega/extensions/store"
+	"github.com/EndoTheDev/omega/gateway"
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -22,9 +23,13 @@ import (
 // testContext creates a minimal agent.Context with a real provider plugin
 // and command handler, for testing extension-routed commands.
 func testContext() *agent.Context {
-	ctx := &agent.Context{}
+	cfg := gateway.DefaultConfig()
+	cfg.Store.DBPath = ":memory:"
+	ctx := &agent.Context{Config: cfg}
 	p := &provider.Plugin{}
 	p.Mount(ctx)
+	sp := store.NewPlugin()
+	sp.Mount(ctx)
 	return ctx
 }
 
@@ -43,6 +48,17 @@ func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
 // the store extension instead of requiring the TUI to handle them.
 func newTestCtx(s agent.StoreProvider) *agent.Context {
 	pctx := &agent.Context{Store: s}
+	pctx.Commands = append(pctx.Commands,
+		agent.ExtensionCommand{Name: "/sessions", Description: "list sessions"},
+		agent.ExtensionCommand{Name: "/tree", Description: "show tree"},
+		agent.ExtensionCommand{Name: "/search", Description: "search"},
+		agent.ExtensionCommand{Name: "/insights", Description: "insights"},
+		agent.ExtensionCommand{Name: "/new", Description: "new session"},
+		agent.ExtensionCommand{Name: "/resume", Description: "resume session"},
+		agent.ExtensionCommand{Name: "/branch", Description: "branch session"},
+		agent.ExtensionCommand{Name: "/label", Description: "set label"},
+		agent.ExtensionCommand{Name: "/export", Description: "export session"},
+	)
 	prev := pctx.CommandHandler
 	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
 		switch name {
@@ -54,6 +70,34 @@ func newTestCtx(s agent.StoreProvider) *agent.Context {
 			return store.HandleSearchCommand(c, s, args)
 		case "/insights":
 			return store.HandleInsightsCommand(c, s, args)
+		case "/new":
+			return store.HandleNewCommand(args)
+		case "/resume":
+			return store.HandleResumeCommand(c, s, args)
+		case "/branch":
+			parts := strings.SplitN(args, " ", 2)
+			parentID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return store.HandleBranchCommand(c, s, parentID, rest)
+		case "/label":
+			parts := strings.SplitN(args, " ", 2)
+			sessionID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return store.HandleLabelCommand(c, s, sessionID, rest)
+		case "/export":
+			parts := strings.SplitN(args, " ", 2)
+			sessionID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return store.HandleExportCommand(c, s, sessionID, rest)
 		}
 		if prev != nil {
 			return prev(c, name, args)
@@ -728,7 +772,7 @@ func TestTabComplete(t *testing.T) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
 	panel := ansiStrip(m.autocompletePanel())
-	if !strings.Contains(panel, "/new") || !strings.Contains(panel, "/export") {
+	if !strings.Contains(panel, "/copy") || !strings.Contains(panel, "/help") {
 		t.Fatalf("autocomplete panel missing options: %q", panel)
 	}
 	// Nothing selected initially.
@@ -1088,7 +1132,7 @@ func TestHelpText(t *testing.T) {
 }
 
 func TestEphemeralNewClearsSession(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	m.ephemeral = false
 
@@ -1242,8 +1286,8 @@ func TestAutocompleteSemanticOrder(t *testing.T) {
 	if len(m.autocompleteMatches) != len(knownCommands) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
-	if m.autocompleteMatches[0] != "/new" {
-		t.Fatalf("first match = %q, want /new", m.autocompleteMatches[0])
+	if m.autocompleteMatches[0] != "/copy" {
+		t.Fatalf("first match = %q, want /copy", m.autocompleteMatches[0])
 	}
 	if m.autocompleteMatches[len(m.autocompleteMatches)-1] != "/help" {
 		t.Fatalf("last match = %q, want /help", m.autocompleteMatches[len(m.autocompleteMatches)-1])
@@ -1253,7 +1297,7 @@ func TestAutocompleteSemanticOrder(t *testing.T) {
 // TestAutocompletePanelVertical verifies the panel renders matches as
 // newline-separated rows (vertical, not horizontal).
 func TestAutocompletePanelVertical(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell")
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	panel := ansiStrip(m.autocompletePanel())
@@ -1265,8 +1309,8 @@ func TestAutocompletePanelVertical(t *testing.T) {
 	if len(lines) < 4 {
 		t.Fatalf("panel has %d lines, want a bordered vertical list", len(lines))
 	}
-	if !strings.Contains(lines[1], "/new") {
-		t.Fatalf("first match row = %q, want /new", lines[1])
+	if !strings.Contains(lines[1], "/copy") {
+		t.Fatalf("first match row = %q, want /copy", lines[1])
 	}
 }
 
@@ -1282,8 +1326,12 @@ func TestAutocompleteHeightMatchesPanel(t *testing.T) {
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
 	h := m.autocompleteHeight()
-	if h != maxAutocompleteRows+3 {
-		t.Fatalf("height with matches = %d, want %d (capped + ... row)", h, maxAutocompleteRows+3)
+	want := len(m.autocompleteMatches) + 2
+	if len(m.autocompleteMatches) > maxAutocompleteRows {
+		want = maxAutocompleteRows + 3
+	}
+	if h != want {
+		t.Fatalf("height with matches = %d, want %d", h, want)
 	}
 }
 
@@ -1309,8 +1357,9 @@ func TestAutocompleteWindowScrolls(t *testing.T) {
 	if !strings.Contains(panel, "/help") {
 		t.Fatalf("panel does not show selected /help after scroll: %q", panel)
 	}
-	// And the window start moved past the first command.
-	if m.autocompleteOffset <= 0 {
+	// And the window start moved past the first command (only when
+	// matches exceed the visible window).
+	if len(knownCommands) > maxAutocompleteRows && m.autocompleteOffset <= 0 {
 		t.Fatalf("offset = %d, want > 0 after scrolling to the end", m.autocompleteOffset)
 	}
 }
@@ -1538,7 +1587,7 @@ func TestAutoNameIgnoredOnSessionMismatch(t *testing.T) {
 // TestAutoNameIgnoredAfterNew verifies a stale auto-name result from
 // before /new does not re-apply the old title or block re-naming.
 func TestAutoNameIgnoredAfterNew(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	m.sessionLabel = "Old title"
 	m.autoNamed = true
@@ -1593,7 +1642,12 @@ func TestSplashDisappearsAfterSubmit(t *testing.T) {
 // TestSplashReappearsAfterNew verifies the splash returns after /new
 // clears the conversation.
 func TestSplashReappearsAfterNew(t *testing.T) {
-	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.transcript = "some content"
 	m.history = append(m.history, ai.NewUser("hi"))
 	// Not showing splash (has content).
@@ -2215,7 +2269,8 @@ func TestHandleExportNoSession(t *testing.T) {
 	defer s.Close()
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	// sessionID is empty → should error
-	up, _ := m.handleExport(nil)
+	up, _ := m.handleCommand("/export")
+	m = up.(model)
 	m = up.(model)
 	if m.err == "" {
 		t.Fatal("expected error for /export with no active session")
@@ -2246,7 +2301,8 @@ func TestHandleExportWrites(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "export.jsonl")
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.sessionID = "exp1"
-	up, _ := m.handleExport([]string{outPath})
+	up, _ := m.handleCommand("/export " + outPath)
+	m = up.(model)
 	m = up.(model)
 	if m.err != "" {
 		t.Fatalf("export error: %s", m.err)

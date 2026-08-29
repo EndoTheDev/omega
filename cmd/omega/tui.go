@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -217,7 +216,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/copy", "/export", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/copy", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -1034,26 +1033,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/exit":
 		return m, tea.Quit
 	case "/new":
-		// Start a fresh conversation: clear in-memory history and detach
-		// from the current session. The old session stays persisted in
-		// the store (reachable via /sessions + /resume). --ephemeral
-		// additionally means nothing is persisted at all.
-		m.history = nil
-		m.transcript = ""
-		m.segments = nil
-		m.err = ""
-		m.sessionLabel = ""
-		m.autoNamed = false
-		m.autoNameGen++ // invalidate any auto-name goroutine in flight
-		m.sessionID = ""
-		if len(fields) > 1 && fields[1] == "--ephemeral" {
-			m.ephemeral = true
-		} else {
-			m.ephemeral = false
-		}
-		m.refresh()
-		return m, nil
-	// Store-dependent commands are unavailable in ephemeral mode.
+		return m.handleExtensionCommand("/new", strings.Join(fields[1:], " "))
 	case "/sessions", "/resume", "/branch", "/label", "/tree":
 		if m.ephemeral {
 			m.err = "no sessions in ephemeral mode"
@@ -1064,14 +1044,19 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			if len(fields) > 1 && fields[1] == "delete" {
 				return m.handleSessionDelete(fields[2:])
 			}
-			// List falls through to extension handler.
 			return m.handleExtensionCommand("/sessions", strings.TrimSpace(strings.TrimPrefix(input, "/sessions")))
 		case "/resume":
-			return m.handleResume(fields)
+			return m.handleExtensionCommand("/resume", strings.Join(fields[1:], " "))
 		case "/branch":
-			return m.handleBranch(fields)
+			// If the user passes an explicit parent ID, use it.
+			// Otherwise pass the current session ID.
+			rest := strings.Join(fields[1:], " ")
+			if rest != "" {
+				return m.handleExtensionCommand("/branch", rest)
+			}
+			return m.handleExtensionCommand("/branch", m.sessionID)
 		case "/label":
-			return m.handleLabel(fields)
+			return m.handleExtensionCommand("/label", m.sessionID+" "+strings.Join(fields[1:], " "))
 		case "/tree":
 			return m.handleExtensionCommand("/tree", "")
 		}
@@ -1079,7 +1064,11 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/copy":
 		return m.handleCopy()
 	case "/export":
-		return m.handleExport(fields[1:])
+		if m.ephemeral {
+			m.err = "no sessions in ephemeral mode"
+			return m, nil
+		}
+		return m.handleExtensionCommand("/export", m.sessionID+" "+strings.Join(fields[1:], " "))
 	case "/insights":
 		if m.ephemeral {
 			m.err = "no sessions in ephemeral mode"
@@ -1500,6 +1489,71 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.thinkingLevel = action.Value
 			m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
 			m.persistEntry(ai.NewThinkingLevelChange(m.thinkingLevel))
+		case "new_session":
+			m.history = nil
+			m.transcript = ""
+			m.segments = nil
+			m.err = ""
+			m.sessionLabel = ""
+			m.autoNamed = false
+			m.autoNameGen++
+			m.sessionID = ""
+			m.ephemeral = action.Value == "--ephemeral"
+			m.refresh()
+		case "load_session":
+			id := action.Value
+			if m.store == nil {
+				m.err = "no store available"
+				return m, nil
+			}
+			messages, err := m.store.GetMessages(context.Background(), id)
+			if err != nil {
+				m.err = "resume: " + err.Error()
+				return m, nil
+			}
+			m.sessionID = id
+			m.history = messages
+			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
+			m.segments = nil
+			m.err = ""
+			m.storeErr = ""
+			for _, msg := range messages {
+				switch v := msg.(type) {
+				case ai.ModelChange:
+					m.modelName = v.Model
+				case ai.ThinkingLevelChange:
+					m.thinkingLevel = v.Level
+					m.showThinking = ai.ThinkingEnabled(v.Level)
+				}
+			}
+			if sess, err := m.store.GetSession(context.Background(), id); err == nil && sess.Label != "" {
+				m.sessionLabel = sess.Label
+				m.autoNamed = true
+			}
+			m.refresh()
+		case "branch_session":
+			id := action.Value
+			if m.store == nil {
+				m.err = "no store available"
+				return m, nil
+			}
+			messages, err := m.store.GetAncestorMessages(context.Background(), id)
+			if err != nil {
+				m.err = "branch: " + err.Error()
+				return m, nil
+			}
+			if m.compaction != nil && len(messages) > m.compaction.KeepFirst+m.compaction.KeepLast+5 {
+				messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
+			}
+			m.sessionID = id
+			m.history = messages
+			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
+			m.segments = nil
+			m.err = ""
+			m.refresh()
+		case "set_label":
+			m.sessionLabel = action.Value
+			m.refresh()
 		case "refresh_title":
 			cmds = append(cmds, m.titleCmd())
 		case "fetch_model_info":
@@ -1522,58 +1576,6 @@ func (m model) labelOf(id string) string {
 		return ""
 	}
 	return sess.Label
-}
-
-// handleResume loads a session from the store and displays its transcript.
-// Accepts: a line number (#3 or 3) from the last /sessions, a session ID,
-// or a label (case-insensitive prefix match).
-func (m model) handleResume(fields []string) (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no store available"
-		return m, nil
-	}
-	if len(fields) < 2 {
-		m.err = "usage: /resume <# | id | label>"
-		return m, nil
-	}
-	arg := fields[1]
-	id := m.resolveSession(arg)
-	if id == "" {
-		m.err = "session not found: " + arg
-		return m, nil
-	}
-	if _, err := m.store.GetSession(context.Background(), id); err != nil {
-		m.storeErr = "resume: " + err.Error()
-		return m, nil
-	}
-	messages, err := m.store.GetMessages(context.Background(), id)
-	if err != nil {
-		m.storeErr = "resume: " + err.Error()
-		return m, nil
-	}
-	m.sessionID = id
-	m.history = messages
-	m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
-	m.segments = nil
-	m.err = ""
-	m.storeErr = ""
-	// Replay model and thinking level changes from the session history.
-	for _, msg := range messages {
-		switch v := msg.(type) {
-		case ai.ModelChange:
-			m.modelName = v.Model
-		case ai.ThinkingLevelChange:
-			m.thinkingLevel = v.Level
-			m.showThinking = ai.ThinkingEnabled(v.Level)
-		}
-	}
-	// Load the session label for the status bar.
-	if sess, err := m.store.GetSession(context.Background(), id); err == nil && sess.Label != "" {
-		m.sessionLabel = sess.Label
-		m.autoNamed = true
-	}
-	m.refresh()
-	return m, nil
 }
 
 // resolveSession resolves a /resume argument to a session ID.
@@ -1617,102 +1619,6 @@ func sessionDisplayName(label, id string) string {
 	return id
 }
 
-// handleBranch creates a new session under the current (or given) session
-// and switches to it. The branch inherits the parent's history via
-// GetAncestorMessages. If the inherited history is long, only the
-// compaction summary and recent messages are loaded to keep the
-// branch manageable.
-func (m model) handleBranch(fields []string) (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no store available"
-		return m, nil
-	}
-	parentID := m.sessionID
-	if len(fields) > 1 {
-		parentID = fields[1]
-	}
-	if parentID == "" {
-		m.err = "no current session to branch; /resume <id> first or pass one: /branch <id>"
-		return m, nil
-	}
-	if _, err := m.store.GetSession(context.Background(), parentID); err != nil {
-		m.err = "branch: " + err.Error()
-		return m, nil
-	}
-	id, err := newSessionID()
-	if err != nil {
-		m.err = "branch: " + err.Error()
-		return m, nil
-	}
-	if err := m.store.CreateSession(context.Background(), id, parentID, ""); err != nil {
-		m.storeErr = "branch: " + err.Error()
-		return m, nil
-	}
-	m.storeErr = ""
-	messages, err := m.store.GetAncestorMessages(context.Background(), id)
-	if err != nil {
-		m.storeErr = "branch: " + err.Error()
-		return m, nil
-	}
-	// Branch summarization: if the inherited history is long, trim to
-	// the first keepFirst messages, a synthetic summary, and the last
-	// keepLast messages.
-	if m.compaction != nil && len(messages) > m.compaction.KeepFirst+m.compaction.KeepLast+5 {
-		messages = summarizeForBranch(messages, m.compaction.KeepFirst, m.compaction.KeepLast)
-	}
-	m.sessionID = id
-	m.history = messages
-	m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
-	m.segments = nil
-	m.err = ""
-	m.refresh()
-	return m, nil
-}
-
-// summarizeForBranch trims a long message history for a branch by
-// keeping the first keepFirst messages, a synthetic summary placeholder,
-// and the last keepLast messages. This is a heuristic trim, not an
-// LLM-generated summary — the agent will auto-compact on its first
-// turn if needed.
-func summarizeForBranch(messages []ai.Message, keepFirst, keepLast int) []ai.Message {
-	if keepFirst+keepLast >= len(messages) {
-		return messages
-	}
-	head := messages[:keepFirst]
-	tail := messages[len(messages)-keepLast:]
-	summary := ai.NewSystem(fmt.Sprintf("[branch summary: %d messages omitted from parent session]", len(messages)-keepFirst-keepLast))
-	return append(append(head, summary), tail...)
-}
-
-// handleLabel sets (or clears, with no text) a label on the current session.
-func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no store available"
-		return m, nil
-	}
-	if m.sessionID == "" {
-		m.err = "no current session to label"
-		return m, nil
-	}
-	label := ""
-	if len(fields) > 1 {
-		label = strings.Join(fields[1:], " ")
-	}
-	if err := m.store.UpdateSession(context.Background(), m.sessionID, label); err != nil {
-		m.storeErr = "label: " + err.Error()
-		return m, nil
-	}
-	m.storeErr = ""
-	m.sessionLabel = label // keep status bar in sync
-	if label == "" {
-		m.transcript += "\n" + m.theme.Info.Render("[label cleared]") + "\n"
-	} else {
-		m.transcript += "\n" + m.theme.Info.Render("[label: "+label+"]") + "\n"
-	}
-	m.refresh()
-	return m, nil
-}
-
 // handleCopy copies the last message in the transcript to the system
 // clipboard. Works on user, assistant, and tool result messages.
 func (m model) handleCopy() (tea.Model, tea.Cmd) {
@@ -1740,40 +1646,22 @@ func (m model) handleCopy() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleExport writes the current session's messages to a JSONL file.
-// With no path, writes to <session_id>.jsonl in the CWD.
-func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
-	if m.store == nil || m.sessionID == "" {
-		m.err = "no active session to export"
-		return m, nil
-	}
-	messages, err := m.store.GetMessages(context.Background(), m.sessionID)
-	if err != nil {
-		m.err = "export: " + err.Error()
-		return m, nil
-	}
-	path := m.sessionID + ".jsonl"
-	if len(args) > 0 {
-		path = args[0]
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		m.err = "export: " + err.Error()
-		return m, nil
-	}
-	defer f.Close()
-	if err := exportMessages(messages, f); err != nil {
-		m.err = "export: " + err.Error()
-		return m, nil
-	}
-	m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
-	m.refresh()
-	return m, nil
-}
-
 // handleCompact triggers manual compaction of the conversation history
 // via the compactor extension. Runs asynchronously so the TUI stays
 // responsive while the LLM summarizes.
+// summarizeForBranch trims a long message history for a branch by
+// keeping the first keepFirst messages, a synthetic summary placeholder,
+// and the last keepLast messages.
+func summarizeForBranch(messages []ai.Message, keepFirst, keepLast int) []ai.Message {
+	if keepFirst+keepLast >= len(messages) {
+		return messages
+	}
+	head := messages[:keepFirst]
+	tail := messages[len(messages)-keepLast:]
+	summary := ai.NewSystem(fmt.Sprintf("[branch summary: %d messages omitted from parent session]", len(messages)-keepFirst-keepLast))
+	return append(append(head, summary), tail...)
+}
+
 func (m model) handleCompact() (tea.Model, tea.Cmd) {
 	if m.compacting {
 		m.err = "already compacting..."
@@ -2291,7 +2179,7 @@ func (m model) statusLine() string {
 	}
 	line += fmt.Sprintf(" | tokens: %d/%d | %s", tokens, window, sess)
 	// Show subagent count if any are running.
-	if m.extensions != nil {
+	if m.extensions != nil && m.extensions.PendingDelegations != nil {
 		if pending := m.extensions.PendingDelegations(); pending > 0 {
 			line += fmt.Sprintf(" | %s", m.theme.Info.Render(fmt.Sprintf("%d subagent", pending)))
 		}

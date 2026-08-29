@@ -15,7 +15,8 @@ into a shared `Context` via `MountAll` at startup.
 - `provider/` - LLM provider (Ollama, OpenAI, Anthropic streaming);
   registers `/model`, `/models`, `/thinking`, and `/provider` commands
 - `store/` - session store (SQLite implementation + `sessions.search`
-  tool; registers `/sessions`, `/tree`, `/search`, `/insights` commands)
+  tool; registers `/sessions`, `/tree`, `/search`, `/insights`, `/new`,
+  `/resume`, `/branch`, `/label`, `/export` commands)
 - `skills/` - skill loading (`skills.read` tool, `/skills` command)
 - `compactor/` - context compaction (keep-first/last + LLM
   summarize); registers `/compact` command

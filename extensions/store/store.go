@@ -21,6 +21,12 @@ func NewStore(dsn string) (agent.StoreProvider, error) {
 	return gateway.Open(dsn)
 }
 
+// Open opens the SQLite database at dsn and returns the concrete Store.
+// Used by tests and CLI utilities that need the concrete type.
+func Open(dsn string) (*gateway.Store, error) {
+	return gateway.Open(dsn)
+}
+
 // searchToolProvider provides the sessions.search tool.
 type searchToolProvider struct {
 	store agent.StoreProvider

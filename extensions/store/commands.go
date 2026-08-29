@@ -2,11 +2,16 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // HandleSessionsCommand lists all sessions with message counts.
@@ -247,4 +252,184 @@ func formatNumber(n int) string {
 		sb.WriteRune(c)
 	}
 	return sb.String()
+}
+
+// HandleNewCommand returns a new_session action. The TUI resets state.
+func HandleNewCommand(args string) (agent.CommandResult, error) {
+	ephemeral := ""
+	if strings.TrimSpace(args) == "--ephemeral" {
+		ephemeral = "--ephemeral"
+	}
+	return agent.CommandResult{
+		Actions: []agent.CmdAction{{Type: "new_session", Value: ephemeral}},
+	}, nil
+}
+
+// HandleResumeCommand resolves the argument to a session ID using the
+// store, then returns a load_session action for the TUI to load.
+func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (agent.CommandResult, error) {
+	if store == nil {
+		return agent.CommandResult{}, fmt.Errorf("no store available")
+	}
+	arg := strings.TrimSpace(args)
+	if arg == "" {
+		return agent.CommandResult{}, fmt.Errorf("usage: /resume <# | id | label>")
+	}
+	// Build a session list for number-based resolution.
+	sessions, err := store.ListSessions(ctx)
+	if err != nil {
+		return agent.CommandResult{}, fmt.Errorf("list sessions: %w", err)
+	}
+	// Strip leading # for line numbers.
+	numStr := strings.TrimPrefix(arg, "#")
+	if n, err := strconv.Atoi(numStr); err == nil && n >= 1 && n <= len(sessions) {
+		return agent.CommandResult{
+			Actions: []agent.CmdAction{{Type: "load_session", Value: sessions[n-1].ID}},
+		}, nil
+	}
+	// Try exact ID match.
+	for _, s := range sessions {
+		if s.ID == arg {
+			return agent.CommandResult{
+				Actions: []agent.CmdAction{{Type: "load_session", Value: s.ID}},
+			}, nil
+		}
+	}
+	// Try case-insensitive label prefix match.
+	lower := strings.ToLower(arg)
+	for _, s := range sessions {
+		if s.Label != "" && strings.HasPrefix(strings.ToLower(s.Label), lower) {
+			return agent.CommandResult{
+				Actions: []agent.CmdAction{{Type: "load_session", Value: s.ID}},
+			}, nil
+		}
+	}
+	// Fallback: try the store directly.
+	if _, err := store.GetSession(ctx, arg); err == nil {
+		return agent.CommandResult{
+			Actions: []agent.CmdAction{{Type: "load_session", Value: arg}},
+		}, nil
+	}
+	return agent.CommandResult{}, fmt.Errorf("session not found: %s", arg)
+}
+
+// HandleBranchCommand creates a child session and returns a branch_session
+// action with the child ID. The TUI loads the ancestor messages.
+func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (agent.CommandResult, error) {
+	if store == nil {
+		return agent.CommandResult{}, fmt.Errorf("no store available")
+	}
+	if parentID == "" {
+		return agent.CommandResult{}, fmt.Errorf("no current session to branch; /resume <id> first or pass one: /branch <id>")
+	}
+	if _, err := store.GetSession(ctx, parentID); err != nil {
+		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
+	}
+	// Generate a new session ID.
+	id, err := newSessionID()
+	if err != nil {
+		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
+	}
+	if err := store.CreateSession(ctx, id, parentID, ""); err != nil {
+		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
+	}
+	return agent.CommandResult{
+		Actions: []agent.CmdAction{{Type: "branch_session", Value: id}},
+	}, nil
+}
+
+// HandleLabelCommand updates the session label in the store and returns
+// a set_label action for the TUI to update its display.
+func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (agent.CommandResult, error) {
+	if store == nil {
+		return agent.CommandResult{}, fmt.Errorf("no store available")
+	}
+	if sessionID == "" {
+		return agent.CommandResult{}, fmt.Errorf("no current session to label")
+	}
+	label := strings.TrimSpace(args)
+	if err := store.UpdateSession(ctx, sessionID, label); err != nil {
+		return agent.CommandResult{}, fmt.Errorf("label: %w", err)
+	}
+	if label == "" {
+		return agent.CommandResult{
+			Text:    "[label cleared]",
+			Actions: []agent.CmdAction{{Type: "set_label", Value: ""}},
+		}, nil
+	}
+	return agent.CommandResult{
+		Text:    "[label: " + label + "]",
+		Actions: []agent.CmdAction{{Type: "set_label", Value: label}},
+	}, nil
+}
+
+// HandleExportCommand reads messages from the store and writes them as
+// JSONL to the given path. No TUI state needed.
+func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (agent.CommandResult, error) {
+	if store == nil || sessionID == "" {
+		return agent.CommandResult{}, fmt.Errorf("no active session to export")
+	}
+	messages, err := store.GetMessages(ctx, sessionID)
+	if err != nil {
+		return agent.CommandResult{}, fmt.Errorf("export: %w", err)
+	}
+	path := sessionID + ".jsonl"
+	if p := strings.TrimSpace(args); p != "" {
+		path = p
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return agent.CommandResult{}, fmt.Errorf("export: %w", err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, msg := range messages {
+		role := messageRole(msg)
+		content := messageContent(msg)
+		if err := enc.Encode(map[string]string{"role": role, "content": content}); err != nil {
+			return agent.CommandResult{}, fmt.Errorf("export: %w", err)
+		}
+	}
+	return agent.CommandResult{Text: fmt.Sprintf("[exported %d messages to %s]", len(messages), path)}, nil
+}
+
+// newSessionID generates a 16-byte random hex session ID.
+func newSessionID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// messageRole returns the role string for a message.
+func messageRole(m ai.Message) string {
+	switch m.(type) {
+	case ai.User:
+		return "user"
+	case ai.Assistant:
+		return "assistant"
+	case ai.System:
+		return "system"
+	case ai.ToolResult:
+		return "tool"
+	default:
+		return "unknown"
+	}
+}
+
+// messageContent extracts the text content from a message.
+func messageContent(m ai.Message) string {
+	switch v := m.(type) {
+	case ai.User:
+		return v.Content
+	case ai.Assistant:
+		return v.Content
+	case ai.System:
+		return v.Content
+	case ai.ToolResult:
+		return v.Content
+	default:
+		return ""
+	}
 }
