@@ -462,6 +462,126 @@ func TestPluginMetadata(t *testing.T) {
 	}
 }
 
+func TestErrResultAddEmptyContent(t *testing.T) {
+	// errResult is exercised when Add/Replace/Remove returns an error.
+	// Add with empty content triggers "content is required".
+	fm := newTestMemory(t)
+	fm.Add(targetMemory, "Existing fact") // seed so CurrentEntries is populated
+	tp := &memoryToolProvider{mem: fm}
+
+	result := tp.runSingle("add", targetMemory, "", "")
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Error("expected Success=false for empty content add")
+	}
+	if res.Error == "" {
+		t.Error("expected non-empty Error")
+	}
+	if len(res.CurrentEntries) == 0 {
+		t.Error("expected CurrentEntries populated on error")
+	}
+}
+
+func TestErrResultReplaceNotFound(t *testing.T) {
+	// Replace with a non-existent old_text triggers "no entry matching".
+	fm := newTestMemory(t)
+	fm.Add(targetMemory, "Keep this")
+	tp := &memoryToolProvider{mem: fm}
+
+	result := tp.runSingle("replace", targetMemory, "does not exist", "new content")
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Error("expected Success=false for replace with non-existent old_text")
+	}
+	if res.Error == "" {
+		t.Error("expected non-empty Error")
+	}
+	if len(res.CurrentEntries) == 0 {
+		t.Error("expected CurrentEntries populated on error")
+	}
+}
+
+func TestErrResultRemoveEmptyOldText(t *testing.T) {
+	// Remove with empty old_text triggers "old_text is required".
+	fm := newTestMemory(t)
+	fm.Add(targetMemory, "Keep this")
+	tp := &memoryToolProvider{mem: fm}
+
+	result := tp.runSingle("remove", targetMemory, "", "")
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Error("expected Success=false for remove with empty old_text")
+	}
+	if res.Error == "" {
+		t.Error("expected non-empty Error")
+	}
+	if len(res.CurrentEntries) == 0 {
+		t.Error("expected CurrentEntries populated on error")
+	}
+}
+
+func TestExecOpUnknownAction(t *testing.T) {
+	fm := newTestMemory(t)
+	tp := &memoryToolProvider{mem: fm}
+
+	_, err := tp.execOp(memoryOp{Action: "frobnicate", Target: targetMemory})
+	if err == nil {
+		t.Fatal("expected error for unknown action")
+	}
+	if !strings.Contains(err.Error(), "unknown action") {
+		t.Errorf("expected error containing 'unknown action', got: %v", err)
+	}
+}
+
+func TestRunSingleUnknownAction(t *testing.T) {
+	fm := newTestMemory(t)
+	tp := &memoryToolProvider{mem: fm}
+
+	result := tp.runSingle("frobnicate", targetMemory, "content", "")
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Error("expected Success=false for unknown action")
+	}
+	if !strings.Contains(res.Error, "unknown action") {
+		t.Errorf("expected Error containing 'unknown action', got: %q", res.Error)
+	}
+}
+
+func TestRunBatchError(t *testing.T) {
+	// Batch where one operation fails (replace with non-existent old_text).
+	fm := newTestMemory(t)
+	fm.Add(targetMemory, "Existing entry")
+	tp := &memoryToolProvider{mem: fm}
+
+	result := tp.runBatch([]memoryOp{
+		{Action: "add", Target: targetMemory, Content: "Batch entry"},
+		{Action: "replace", Target: targetMemory, OldText: "nonexistent", Content: "fail"},
+	})
+
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Error("expected Success=false for batch with failing operation")
+	}
+	if res.Error == "" {
+		t.Error("expected non-empty Error for failed batch")
+	}
+}
+
 func TestPluginMount(t *testing.T) {
 	dir := t.TempDir()
 	cfg := gateway.DefaultConfig()
