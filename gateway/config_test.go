@@ -191,3 +191,255 @@ provider:
 		t.Errorf("compaction.threshold = %v, want 0.5 (env override)", cfg.Compaction.Threshold)
 	}
 }
+
+func TestApplyEnvCompaction(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	t.Setenv("OMEGA_COMPACTION_ENABLED", "false")
+	t.Setenv("OMEGA_COMPACTION_CONTEXT_WINDOW", "65536")
+	t.Setenv("OMEGA_COMPACTION_KEEP_FIRST", "5")
+	t.Setenv("OMEGA_COMPACTION_KEEP_LAST", "20")
+	t.Setenv("OMEGA_COMPACTION_RESERVE_TOKENS", "8192")
+	t.Setenv("OMEGA_COMPACTION_MAX_TOOL_OUTPUT", "16384")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Compaction.Enabled {
+		t.Errorf("compaction.enabled = true, want false (env override)")
+	}
+	if cfg.Compaction.ContextWindow != 65536 {
+		t.Errorf("compaction.context_window = %d, want 65536", cfg.Compaction.ContextWindow)
+	}
+	if cfg.Compaction.KeepFirst != 5 {
+		t.Errorf("compaction.keep_first = %d, want 5", cfg.Compaction.KeepFirst)
+	}
+	if cfg.Compaction.KeepLast != 20 {
+		t.Errorf("compaction.keep_last = %d, want 20", cfg.Compaction.KeepLast)
+	}
+	if cfg.Compaction.ReserveTokens != 8192 {
+		t.Errorf("compaction.reserve_tokens = %d, want 8192", cfg.Compaction.ReserveTokens)
+	}
+	if cfg.Compaction.MaxToolOutput != 16384 {
+		t.Errorf("compaction.max_tool_output = %d, want 16384", cfg.Compaction.MaxToolOutput)
+	}
+}
+
+func TestApplyEnvCompactionEnabledTrue(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+compaction:
+  enabled: false
+`)
+	t.Setenv("OMEGA_COMPACTION_ENABLED", "1")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Compaction.Enabled {
+		t.Errorf("compaction.enabled = false, want true (env override with '1')")
+	}
+}
+
+func TestApplyEnvMisc(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	t.Setenv("OMEGA_SKILLS_DIR", "/custom/skills")
+	t.Setenv("OMEGA_HTTP_TIMEOUT", "600")
+	t.Setenv("OMEGA_MAX_TURNS", "200")
+	t.Setenv("OMEGA_THEME", "dark")
+	t.Setenv("OMEGA_NOTIFICATIONS", "none")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Skills.Dir != "/custom/skills" {
+		t.Errorf("skills.dir = %q, want /custom/skills", cfg.Skills.Dir)
+	}
+	if cfg.HTTPTimeout != 600 {
+		t.Errorf("http_timeout = %d, want 600", cfg.HTTPTimeout)
+	}
+	if cfg.MaxTurns != 200 {
+		t.Errorf("max_turns = %d, want 200", cfg.MaxTurns)
+	}
+	if cfg.Theme != "dark" {
+		t.Errorf("theme = %q, want dark", cfg.Theme)
+	}
+	if cfg.Notifications != "none" {
+		t.Errorf("notifications = %q, want none", cfg.Notifications)
+	}
+}
+
+func TestApplyEnvMemory(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	t.Setenv("OMEGA_MEMORY_ENABLED", "false")
+	t.Setenv("OMEGA_USER_PROFILE_ENABLED", "0")
+	t.Setenv("OMEGA_MEMORY_CHAR_LIMIT", "5000")
+	t.Setenv("OMEGA_USER_CHAR_LIMIT", "3000")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Memory.Enabled {
+		t.Errorf("memory.enabled = true, want false (env override)")
+	}
+	if cfg.Memory.UserProfileEnabled {
+		t.Errorf("memory.user_profile_enabled = true, want false (env override)")
+	}
+	if cfg.Memory.CharLimit != 5000 {
+		t.Errorf("memory.char_limit = %d, want 5000", cfg.Memory.CharLimit)
+	}
+	if cfg.Memory.UserProfileCharLimit != 3000 {
+		t.Errorf("memory.user_char_limit = %d, want 3000", cfg.Memory.UserProfileCharLimit)
+	}
+}
+
+func TestApplyEnvMemoryEnabledTrue(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+memory:
+  enabled: false
+  user_profile_enabled: false
+`)
+	t.Setenv("OMEGA_MEMORY_ENABLED", "true")
+	t.Setenv("OMEGA_USER_PROFILE_ENABLED", "true")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Memory.Enabled {
+		t.Errorf("memory.enabled = false, want true (env override)")
+	}
+	if !cfg.Memory.UserProfileEnabled {
+		t.Errorf("memory.user_profile_enabled = false, want true (env override)")
+	}
+}
+
+func TestApplyEnvLogging(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	t.Setenv("OMEGA_LOGGING_ENABLED", "false")
+	t.Setenv("OMEGA_LOGGING_FILE", "/var/log/omega.log")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Logging.Enabled {
+		t.Errorf("logging.enabled = true, want false (env override)")
+	}
+	if cfg.Logging.File != "/var/log/omega.log" {
+		t.Errorf("logging.file = %q, want /var/log/omega.log", cfg.Logging.File)
+	}
+}
+
+func TestApplyEnvLoggingEnabledTrue(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+logging:
+  enabled: false
+`)
+	t.Setenv("OMEGA_LOGGING_ENABLED", "1")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Logging.Enabled {
+		t.Errorf("logging.enabled = false, want true (env override with '1')")
+	}
+}
+
+func TestApplyEnvInvalidValues(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	// Invalid port: non-numeric — should be skipped, default preserved.
+	t.Setenv("OMEGA_PORT", "not-a-number")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Server.Port != 8099 {
+		t.Errorf("port = %d, want default 8099 (invalid env skipped)", cfg.Server.Port)
+	}
+}
+
+func TestApplyEnvInvalidCompactionThreshold(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	// Out-of-range threshold (negative) — should be skipped, default preserved.
+	t.Setenv("OMEGA_COMPACTION_THRESHOLD", "-0.5")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Compaction.Threshold != 0.6 {
+		t.Errorf("threshold = %v, want default 0.6 (invalid env skipped)", cfg.Compaction.Threshold)
+	}
+}
+
+func TestApplyEnvInvalidCompactionThresholdOverOne(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	// Out-of-range threshold (>1) — should be skipped, default preserved.
+	t.Setenv("OMEGA_COMPACTION_THRESHOLD", "1.5")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Compaction.Threshold != 0.6 {
+		t.Errorf("threshold = %v, want default 0.6 (invalid env skipped)", cfg.Compaction.Threshold)
+	}
+}
+
+func TestApplyEnvInvalidCompactionContextWindow(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	// Zero context window — should be skipped, default preserved.
+	t.Setenv("OMEGA_COMPACTION_CONTEXT_WINDOW", "0")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Compaction.ContextWindow != 32768 {
+		t.Errorf("context_window = %d, want default 32768 (invalid env skipped)", cfg.Compaction.ContextWindow)
+	}
+}
+
+func TestApplyEnvNegativeCompactionContextWindow(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: llama3
+`)
+	// Negative context window — should be skipped, default preserved.
+	t.Setenv("OMEGA_COMPACTION_CONTEXT_WINDOW", "-100")
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Compaction.ContextWindow != 32768 {
+		t.Errorf("context_window = %d, want default 32768 (invalid env skipped)", cfg.Compaction.ContextWindow)
+	}
+}
