@@ -344,6 +344,130 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.Searc
 	return out, rows.Err()
 }
 
+// sessionStats accumulates per-session counters that feed into Insights.
+type sessionStats struct {
+	msgs       int
+	userMsgs   int
+	toolCalls  int
+	tokens     int
+	toolCounts map[string]int
+}
+
+// notableTracker tracks the running maximum for each notable stat.
+type notableTracker struct {
+	maxMsgs   int
+	maxTokens int
+	maxTools  int
+}
+
+// countMessages iterates over a session's messages, incrementing the
+// global message counter and accumulating per-session user/tool stats.
+// Non-conversation entries (ModelChange, ThinkingLevelChange) are skipped.
+func countMessages(msgs []ai.Message, in *agent.Insights, st *sessionStats) {
+	for _, msg := range msgs {
+		switch msg.(type) {
+		case ai.ModelChange, ai.ThinkingLevelChange:
+			continue
+		}
+		in.Messages++
+		switch m := msg.(type) {
+		case ai.User:
+			st.userMsgs++
+		case ai.Assistant:
+			st.toolCalls += len(m.ToolCalls)
+			for _, tc := range m.ToolCalls {
+				st.toolCounts[tc.Name]++
+			}
+		}
+	}
+}
+
+// countTokens sums the estimated token count for all messages in a
+// session (chars / 4).
+func countTokens(msgs []ai.Message) int {
+	tokens := 0
+	for _, msg := range msgs {
+		tokens += len(agent.MessageText(msg))
+	}
+	return tokens / 4 // charsPerToken
+}
+
+// updateNotables updates the notable stats if the current session
+// exceeds the running maxima for messages, tokens, or tool calls.
+func updateNotables(in *agent.Insights, st *sessionStats, nt *notableTracker, detail string) {
+	if st.msgs > nt.maxMsgs {
+		nt.maxMsgs = st.msgs
+		in.NotableMsgs = agent.NotableStat{Value: st.msgs, Detail: detail}
+	}
+	if st.tokens > nt.maxTokens {
+		nt.maxTokens = st.tokens
+		in.NotableTokens = agent.NotableStat{Value: st.tokens, Detail: detail}
+	}
+	if st.toolCalls > nt.maxTools {
+		nt.maxTools = st.toolCalls
+		in.NotableTools = agent.NotableStat{Value: st.toolCalls, Detail: detail}
+	}
+}
+
+// processSession fetches messages for one session and accumulates its
+// stats into the provided Insights and sessionStats. It returns true if
+// the session was processed, false if skipped due to parse or fetch error.
+func (s *Store) processSession(ctx context.Context, sess agent.Session, in *agent.Insights, st *sessionStats, nt *notableTracker, dayCounts *[7]int) bool {
+	t, err := time.Parse(time.RFC3339, sess.CreatedAt)
+	if err != nil {
+		return false
+	}
+	msgs, err := s.GetMessages(ctx, sess.ID)
+	if err != nil {
+		return false
+	}
+	st.msgs = len(msgs)
+	st.userMsgs = 0
+	st.toolCalls = 0
+	countMessages(msgs, in, st)
+	in.UserMessages += st.userMsgs
+	in.ToolCalls += st.toolCalls
+	st.tokens = countTokens(msgs)
+	in.TotalTokens += st.tokens
+
+	// Daily activity by weekday.
+	wd := int(t.Weekday())
+	if wd == 0 {
+		wd = 6 // Sunday -> 6, Mon -> 0
+	}
+	dayCounts[wd]++
+
+	// Notable sessions.
+	label := sess.Label
+	if label == "" {
+		label = sess.ID
+	}
+	detail := t.Format("Jan 2") + ", " + label
+	updateNotables(in, st, nt, detail)
+	return true
+}
+
+// buildDailyActivity fills the Daily [7]DayStat array from dayCounts,
+// computing visual bar widths proportional to the maximum day count.
+func buildDailyActivity(daily *[7]agent.DayStat, dayCounts [7]int, weekdays []string) {
+	maxDay := 0
+	for _, c := range dayCounts {
+		if c > maxDay {
+			maxDay = c
+		}
+	}
+	for i := 0; i < 7; i++ {
+		bar := ""
+		if maxDay > 0 {
+			bars := int(float64(dayCounts[i]) / float64(maxDay) * 14)
+			for j := 0; j < bars; j++ {
+				bar += "█"
+			}
+		}
+		daily[i] = agent.DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
+	}
+}
+
 // ComputeInsights aggregates session data over the last N days.
 // If days <= 0, all sessions are included.
 func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights, error) {
@@ -369,7 +493,8 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights,
 	}
 	in.PeriodEnd = now.Format("2006-01-02")
 
-	maxMsgs, maxTokens, maxTools := 0, 0, 0
+	nt := &notableTracker{}
+	st := &sessionStats{toolCounts: toolCounts}
 
 	for _, sess := range sessions {
 		t, err := time.Parse(time.RFC3339, sess.CreatedAt)
@@ -378,64 +503,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights,
 		}
 		if !t.Before(cutoff) || days <= 0 {
 			in.Sessions++
-			msgs, err := s.GetMessages(ctx, sess.ID)
-			if err != nil {
-				continue
-			}
-			sessMsgs := len(msgs)
-			sessUserMsgs := 0
-			sessToolCalls := 0
-			for _, msg := range msgs {
-				// Skip non-conversation entries (metadata, not messages).
-				switch msg.(type) {
-				case ai.ModelChange, ai.ThinkingLevelChange:
-					continue
-				}
-				in.Messages++
-				switch m := msg.(type) {
-				case ai.User:
-					sessUserMsgs++
-				case ai.Assistant:
-					sessToolCalls += len(m.ToolCalls)
-					for _, tc := range m.ToolCalls {
-						toolCounts[tc.Name]++
-					}
-				}
-			}
-			in.UserMessages += sessUserMsgs
-			in.ToolCalls += sessToolCalls
-			sessTokens := 0
-			for _, msg := range msgs {
-				sessTokens += len(agent.MessageText(msg))
-			}
-			sessTokens /= 4 // charsPerToken
-			in.TotalTokens += sessTokens
-
-			// Daily activity by weekday.
-			wd := int(t.Weekday())
-			if wd == 0 {
-				wd = 6 // Sunday -> 6, Mon -> 0
-			}
-			dayCounts[wd]++
-
-			// Notable sessions.
-			label := sess.Label
-			if label == "" {
-				label = sess.ID
-			}
-			detail := t.Format("Jan 2") + ", " + label
-			if sessMsgs > maxMsgs {
-				maxMsgs = sessMsgs
-				in.NotableMsgs = agent.NotableStat{Value: sessMsgs, Detail: detail}
-			}
-			if sessTokens > maxTokens {
-				maxTokens = sessTokens
-				in.NotableTokens = agent.NotableStat{Value: sessTokens, Detail: detail}
-			}
-			if sessToolCalls > maxTools {
-				maxTools = sessToolCalls
-				in.NotableTools = agent.NotableStat{Value: sessToolCalls, Detail: detail}
-			}
+			s.processSession(ctx, sess, in, st, nt, &dayCounts)
 		}
 	}
 
@@ -451,23 +519,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights,
 		return in.Tools[i].Count > in.Tools[j].Count
 	})
 
-	// Build daily activity with bars.
-	maxDay := 0
-	for _, c := range dayCounts {
-		if c > maxDay {
-			maxDay = c
-		}
-	}
-	for i := 0; i < 7; i++ {
-		bar := ""
-		if maxDay > 0 {
-			bars := int(float64(dayCounts[i]) / float64(maxDay) * 14)
-			for j := 0; j < bars; j++ {
-				bar += "█"
-			}
-		}
-		in.Daily[i] = agent.DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
-	}
+	buildDailyActivity(&in.Daily, dayCounts, weekdays)
 
 	if days > 0 {
 		in.PeriodStart = cutoff.Format("2006-01-02")
