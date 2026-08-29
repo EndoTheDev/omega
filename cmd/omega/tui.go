@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/sessions", "/resume", "/branch", "/label", "/tree", "/models", "/copy", "/export", "/insights", "/search", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/models", "/copy", "/export", "/thinking", "/tools", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -1064,7 +1064,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			if len(fields) > 1 && fields[1] == "delete" {
 				return m.handleSessionDelete(fields[2:])
 			}
-			return m.handleSessions()
+			// List falls through to extension handler.
+			return m.handleExtensionCommand("/sessions", strings.TrimSpace(strings.TrimPrefix(input, "/sessions")))
 		case "/resume":
 			return m.handleResume(fields)
 		case "/branch":
@@ -1072,7 +1073,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		case "/label":
 			return m.handleLabel(fields)
 		case "/tree":
-			return m.handleTree()
+			return m.handleExtensionCommand("/tree", "")
 		}
 		return m, nil // unreachable; all cases return
 	case "/copy":
@@ -1080,9 +1081,17 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/export":
 		return m.handleExport(fields[1:])
 	case "/insights":
-		return m.handleInsights(fields[1:])
+		if m.ephemeral {
+			m.err = "no sessions in ephemeral mode"
+			return m, nil
+		}
+		return m.handleExtensionCommand("/insights", strings.Join(fields[1:], " "))
 	case "/search":
-		return m.handleSearch(fields[1:])
+		if m.ephemeral {
+			m.err = "no sessions in ephemeral mode"
+			return m, nil
+		}
+		return m.handleExtensionCommand("/search", strings.Join(fields[1:], " "))
 	case "/thinking":
 		if len(fields) > 1 {
 			valid := false
@@ -1350,65 +1359,6 @@ func (m *model) acceptMatch() tea.Cmd {
 	return func() tea.Msg { return m.textarea.Focus() }
 }
 
-// handleSessions lists all sessions from the store in a table with
-// name, message count, and session ID columns.
-func (m model) handleSessions() (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no store available"
-		return m, nil
-	}
-	sessions, err := m.store.ListSessions(context.Background())
-	if err != nil {
-		m.storeErr = "list sessions: " + err.Error()
-		return m, nil
-	}
-	m.storeErr = ""
-	if len(sessions) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no sessions yet]") + "\n"
-		m.refresh()
-		return m, nil
-	}
-	// Cache the list for /resume by #.
-	m.sessionList = sessions
-	// Compute column widths from the data.
-	type row struct {
-		name  string
-		count int
-		id    string
-	}
-	rows := make([]row, len(sessions))
-	maxName := 4  // "NAME"
-	maxCount := 4 // "MSGS"
-	for i, s := range sessions {
-		count, _ := m.store.CountMessages(context.Background(), s.ID)
-		name := sessionDisplayName(s.Label, s.ID)
-		rows[i] = row{name: name, count: count, id: s.ID}
-		if len(name) > maxName {
-			maxName = len(name)
-		}
-		countStr := fmt.Sprintf("%d", count)
-		if len(countStr) > maxCount {
-			maxCount = len(countStr)
-		}
-	}
-	var sb strings.Builder
-	sb.WriteString("\n")
-	// Header.
-	header := fmt.Sprintf("  %-3s  %-*s  %*s  %s", "#", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
-	sb.WriteString(m.theme.Info.Render(header))
-	sb.WriteString("\n")
-	for i, r := range rows {
-		prefix := "  "
-		if sessions[i].ID == m.sessionID {
-			prefix = "* "
-		}
-		fmt.Fprintf(&sb, "%s%-3d  %-*s  %*d  %s\n", prefix, i+1, maxName, r.name, maxCount, r.count, r.id)
-	}
-	m.transcript += sb.String()
-	m.refresh()
-	return m, nil
-}
-
 // handleSessionDelete deletes a session (by #, id, or label) from the
 // store. Messages and child branches cascade. Deleting the current
 // session resets the in-memory state like /new.
@@ -1420,6 +1370,11 @@ func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.err = "usage: /sessions delete <#|id|label>"
 		return m, nil
+	}
+	// Populate the resolve cache if empty (extension handler doesn't
+	// populate TUI state).
+	if len(m.sessionList) == 0 {
+		m.sessionList, _ = m.store.ListSessions(context.Background())
 	}
 	id := m.resolveSession(args[0])
 	if id == "" {
@@ -1890,83 +1845,6 @@ func (m model) handleLabel(fields []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleTree renders the session tree with labels and message counts.
-// Uses the same NAME/MSGS/SESSION ID columns as /sessions, with tree
-// glyphs (├─/└─) marking children and * marking the current session.
-func (m model) handleTree() (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no store available"
-		return m, nil
-	}
-	roots, err := m.store.GetSessionTree(context.Background())
-	if err != nil {
-		m.storeErr = "tree: " + err.Error()
-		return m, nil
-	}
-	m.storeErr = ""
-	if len(roots) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no sessions yet]") + "\n"
-		m.refresh()
-		return m, nil
-	}
-	// Flatten the tree into rows so column widths can be computed.
-	type row struct {
-		name  string
-		count int
-		id    string
-		glyph string // tree prefix: "" for roots, "├─ " or "└─ " for children
-	}
-	var rows []row
-	var flatten func(node *agent.SessionNode, depth int, last bool)
-	flatten = func(node *agent.SessionNode, depth int, last bool) {
-		count, _ := m.store.CountMessages(context.Background(), node.ID)
-		name := sessionDisplayName(node.Label, node.ID)
-		glyph := ""
-		if depth > 0 {
-			if last {
-				glyph = "└─ "
-			} else {
-				glyph = "├─ "
-			}
-			glyph = strings.Repeat("  ", depth-1) + glyph
-		}
-		rows = append(rows, row{name: name, count: count, id: node.ID, glyph: glyph})
-		for i, child := range node.Children {
-			flatten(child, depth+1, i == len(node.Children)-1)
-		}
-	}
-	for _, root := range roots {
-		flatten(root, 0, false)
-	}
-	// Column widths from the data.
-	maxName := 4 // "NAME"
-	maxCount := 4
-	for _, r := range rows {
-		if len(r.glyph)+len(r.name) > maxName {
-			maxName = len(r.glyph) + len(r.name)
-		}
-		count := fmt.Sprint(r.count)
-		if len(count) > maxCount {
-			maxCount = len(count)
-		}
-	}
-	var sb strings.Builder
-	sb.WriteString("\n")
-	header := fmt.Sprintf("%s %-*s %*s  %s", "", maxName, "NAME", maxCount, "MSGS", "SESSION ID")
-	sb.WriteString(m.theme.Info.Render(header))
-	sb.WriteString("\n")
-	for _, r := range rows {
-		marker := ""
-		if r.id == m.sessionID {
-			marker = "*"
-		}
-		fmt.Fprintf(&sb, "%s %-*s %*d  %s\n", marker, maxName, r.glyph+r.name, maxCount, r.count, r.id)
-	}
-	m.transcript += sb.String()
-	m.refresh()
-	return m, nil
-}
-
 // handleCopy copies the last message in the transcript to the system
 // clipboard. Works on user, assistant, and tool result messages.
 func (m model) handleCopy() (tea.Model, tea.Cmd) {
@@ -2021,72 +1899,6 @@ func (m model) handleExport(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[exported %d messages to %s]", len(messages), path)) + "\n"
-	m.refresh()
-	return m, nil
-}
-
-// handleSearch searches session messages and renders results in the transcript.
-func (m model) handleSearch(args []string) (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no session store available"
-		return m, nil
-	}
-	if len(args) == 0 {
-		m.err = "usage: /search <query>"
-		return m, nil
-	}
-	query := strings.Join(args, " ")
-	results, err := m.store.SearchMessages(context.Background(), query)
-	if err != nil {
-		m.storeErr = "search: " + err.Error()
-		return m, nil
-	}
-	if len(results) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no results]") + "\n"
-		m.refresh()
-		return m, nil
-	}
-	var sb strings.Builder
-	sb.WriteString("\n")
-	for _, r := range results {
-		label := r.SessionID
-		if sess, err := m.store.GetSession(context.Background(), r.SessionID); err == nil && sess.Label != "" {
-			label = sess.Label
-		}
-		sb.WriteString(m.theme.Info.Render(label))
-		sb.WriteString(": ")
-		sb.WriteString(r.Snippet)
-		sb.WriteString("\n")
-	}
-	m.transcript += sb.String()
-	m.refresh()
-	return m, nil
-}
-
-// handleInsights renders cross-session usage analytics in the transcript.
-// Accepts an optional days argument (default: 30).
-func (m model) handleInsights(args []string) (tea.Model, tea.Cmd) {
-	if m.store == nil {
-		m.err = "no session store available"
-		return m, nil
-	}
-	days := 30
-	if len(args) > 0 {
-		if d, err := strconv.Atoi(args[0]); err == nil && d >= 0 {
-			days = d
-		}
-	}
-	stats, err := m.store.ComputeInsights(context.Background(), days)
-	if err != nil {
-		m.err = "insights: " + err.Error()
-		return m, nil
-	}
-	if stats.Sessions == 0 {
-		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[no sessions in the last %d days]", days)) + "\n"
-		m.refresh()
-		return m, nil
-	}
-	m.transcript += "\n" + m.theme.Info.Render(formatInsights(stats)) + "\n"
 	m.refresh()
 	return m, nil
 }

@@ -38,6 +38,31 @@ func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
 // written by the run goroutine are delivered to Update, and the closed
 // channel yields streamDoneMsg. This guards the regression where the
 // goroutine's Send never reached the program (m.program was always nil).
+// newTestCtx creates an agent.Context with the store extension's command
+// handler wired, so /sessions, /tree, /search, /insights dispatch to
+// the store extension instead of requiring the TUI to handle them.
+func newTestCtx(s agent.StoreProvider) *agent.Context {
+	pctx := &agent.Context{Store: s}
+	prev := pctx.CommandHandler
+	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+		switch name {
+		case "/sessions":
+			return store.HandleSessionsCommand(c, s, args)
+		case "/tree":
+			return store.HandleTreeCommand(c, s)
+		case "/search":
+			return store.HandleSearchCommand(c, s, args)
+		case "/insights":
+			return store.HandleInsightsCommand(c, s, args)
+		}
+		if prev != nil {
+			return prev(c, name, args)
+		}
+		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	}
+	return pctx
+}
+
 func TestDrainEventsDeliversStream(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
 	ch := make(chan agent.Event, 64)
@@ -376,7 +401,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.textarea.SetValue("hello")
 
 	// Simulate a completed prior run so submit creates a fresh channel and
@@ -431,7 +456,7 @@ func TestClearStartsFreshSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.sessionID = "sess1"
 	m.history = append(m.history, ai.NewUser("hi"))
 	m.transcript = "old text"
@@ -470,7 +495,7 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 
 	updated, _ := m.handleCommand("/sessions")
 	m = updated.(model)
@@ -502,7 +527,7 @@ func TestResumeUnknownSession(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	updated, _ := m.handleCommand("/resume nope")
 	m = updated.(model)
 	if m.err == "" {
@@ -527,7 +552,7 @@ func TestBranchCommand(t *testing.T) {
 		t.Fatalf("append parent: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.sessionID = "parent"
 
 	updated, _ := m.handleCommand("/branch")
@@ -582,7 +607,7 @@ func TestLabelCommand(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.sessionID = "s1"
 
 	updated, _ := m.handleCommand("/label my branch")
@@ -610,7 +635,7 @@ func TestLabelCommand(t *testing.T) {
 	}
 
 	// No current session reports an error.
-	m2 := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m2 := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	updated, _ = m2.handleCommand("/label x")
 	m2 = updated.(model)
 	if m2.err == "" {
@@ -641,7 +666,7 @@ func TestTreeCommand(t *testing.T) {
 		t.Fatalf("append root: %v", err)
 	}
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	updated, _ := m.handleCommand("/tree")
 	m = updated.(model)
 	if m.storeErr != "" {
@@ -703,7 +728,7 @@ func TestTabComplete(t *testing.T) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
 	panel := ansiStrip(m.autocompletePanel())
-	if !strings.Contains(panel, "/new") || !strings.Contains(panel, "/sessions") {
+	if !strings.Contains(panel, "/new") || !strings.Contains(panel, "/thinking") {
 		t.Fatalf("autocomplete panel missing options: %q", panel)
 	}
 	// Nothing selected initially.
@@ -1085,7 +1110,7 @@ func TestEphemeralSkipsStoreOnSubmit(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.ephemeral = true
 	m.textarea.SetValue("hello ephemeral")
 	updated, _ := m.submit()
@@ -1439,7 +1464,7 @@ func TestSessionsDeleteCommand(t *testing.T) {
 	}
 
 	// Delete by label (the /sessions list populates the resolve cache).
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.sessionID = "abc123"
 	listed, _ := m.handleCommand("/sessions")
 	m = listed.(model)
@@ -1467,7 +1492,7 @@ func TestSessionsDeleteUsage(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer s.Close()
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 
 	updated, _ := m.handleCommand("/sessions delete")
 	m = updated.(model)
@@ -1889,8 +1914,8 @@ func TestHandleSearchNoArgs(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer s.Close()
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
-	up, _ := m.handleSearch(nil)
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
+	up, _ := m.handleCommand("/search")
 	m = up.(model)
 	if m.err == "" {
 		t.Fatal("expected usage error for /search with no args")
@@ -1902,8 +1927,8 @@ func TestHandleSearchNoArgs(t *testing.T) {
 
 // TestHandleSearchNoStore verifies that /search with a nil store sets an error.
 func TestHandleSearchNoStore(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
-	up, _ := m.handleSearch([]string{"hello"})
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell")
+	up, _ := m.handleCommand("/search hello")
 	m = up.(model)
 	if m.err == "" {
 		t.Fatal("expected error for /search with nil store")
@@ -1928,8 +1953,8 @@ func TestHandleSearchResults(t *testing.T) {
 	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("golang concurrency patterns")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
-	up, _ := m.handleSearch([]string{"golang"})
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
+	up, _ := m.handleCommand("/search golang")
 	m = up.(model)
 	if m.storeErr != "" {
 		t.Fatalf("search store error: %s", m.storeErr)
@@ -1955,8 +1980,8 @@ func TestHandleSearchNoResults(t *testing.T) {
 	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("hello world")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
-	up, _ := m.handleSearch([]string{"nonexistent_term_xyz"})
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
+	up, _ := m.handleCommand("/search nonexistent_term_xyz")
 	m = up.(model)
 	if m.storeErr != "" {
 		t.Fatalf("search store error: %s", m.storeErr)
@@ -1973,8 +1998,8 @@ func TestHandleSearchNoResults(t *testing.T) {
 
 // TestHandleInsightsNoStore verifies that /insights with a nil store sets an error.
 func TestHandleInsightsNoStore(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
-	up, _ := m.handleInsights(nil)
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell")
+	up, _ := m.handleCommand("/insights")
 	m = up.(model)
 	if m.err == "" {
 		t.Fatal("expected error for /insights with nil store")
@@ -1992,8 +2017,8 @@ func TestHandleInsightsNoSessions(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer s.Close()
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
-	up, _ := m.handleInsights(nil)
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
+	up, _ := m.handleCommand("/insights")
 	m = up.(model)
 	if m.err != "" {
 		t.Fatalf("unexpected error: %s", m.err)
@@ -2022,9 +2047,9 @@ func TestHandleInsightsWithSessions(t *testing.T) {
 	if err := s.AppendMessage(ctx, "sess1", ai.NewAssistant("hi back")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	// Use days=0 to include all sessions regardless of creation time.
-	up, _ := m.handleInsights([]string{"0"})
+	up, _ := m.handleCommand("/insights 0")
 	m = up.(model)
 	if m.err != "" {
 		t.Fatalf("unexpected error: %s", m.err)
@@ -2105,7 +2130,7 @@ func TestHandleExportNoSession(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer s.Close()
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	// sessionID is empty → should error
 	up, _ := m.handleExport(nil)
 	m = up.(model)
@@ -2136,7 +2161,7 @@ func TestHandleExportWrites(t *testing.T) {
 		t.Fatalf("append assistant message: %v", err)
 	}
 	outPath := filepath.Join(t.TempDir(), "export.jsonl")
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", &agent.Context{Store: s}, nil, "dark", "", "bell")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell")
 	m.sessionID = "exp1"
 	up, _ := m.handleExport([]string{outPath})
 	m = up.(model)
