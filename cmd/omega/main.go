@@ -305,6 +305,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 	ag.SetExtensionInfos(ctx.Infos)
 	ag.SetMaxToolOutput(cfg.Compaction.MaxToolOutput)
 	ag.SetLogger(ctx.Logger)
+	ag.SetLoopProvider(ctx.Loop)
 
 	if ctx.Compactor != nil {
 		ag.SetCompactionProvider(ctx.Compactor)
