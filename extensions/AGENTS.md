@@ -13,7 +13,7 @@ into a shared `Context` via `MountAll` at startup.
   implementation); streams provider responses, executes tool calls,
   feeds results back, handles compaction and overflow retry
 - `provider/` - LLM provider (Ollama, OpenAI, Anthropic streaming);
-  registers `/model`, `/models`, and `/provider` commands
+  registers `/model`, `/models`, `/thinking`, and `/provider` commands
 - `store/` - session store (SQLite implementation + `sessions.search`
   tool; registers `/sessions`, `/tree`, `/search`, `/insights` commands)
 - `skills/` - skill loading (`skills.read` tool, `/skills` command)

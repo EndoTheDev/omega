@@ -217,7 +217,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/copy", "/export", "/thinking", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/new", "/resume", "/branch", "/label", "/copy", "/export", "/extensions", "/theme", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -1093,35 +1093,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		}
 		return m.handleExtensionCommand("/search", strings.Join(fields[1:], " "))
 	case "/thinking":
-		if len(fields) > 1 {
-			valid := false
-			for _, lvl := range ai.ThinkingLevels {
-				if fields[1] == lvl {
-					m.thinkingLevel = lvl
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				m.err = "usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]"
-				return m, nil
-			}
-		} else {
-			// Cycle to next level.
-			idx := 0
-			for i, lvl := range ai.ThinkingLevels {
-				if lvl == m.thinkingLevel {
-					idx = i
-					break
-				}
-			}
-			m.thinkingLevel = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
-		}
-		m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
-		m.persistEntry(ai.NewThinkingLevelChange(m.thinkingLevel))
-		m.transcript += "\n" + m.theme.Info.Render("[thinking "+m.thinkingLevel+"]") + "\n"
-		m.refresh()
-		return m, nil
+		return m.handleExtensionCommand("/thinking", strings.Join(fields[1:], " "))
 	case "/tools":
 		return m.handleExtensionCommand("/tools", strings.Join(fields[1:], " "))
 	case "/extensions":
@@ -1524,6 +1496,10 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 				m.showToolResults = true
 				m.toolResultsAuto = true
 			}
+		case "set_thinking":
+			m.thinkingLevel = action.Value
+			m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
+			m.persistEntry(ai.NewThinkingLevelChange(m.thinkingLevel))
 		case "refresh_title":
 			cmds = append(cmds, m.titleCmd())
 		case "fetch_model_info":

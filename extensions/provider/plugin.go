@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/gateway"
 )
 
@@ -37,10 +38,11 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	prov := NewProvider(typ, model, host, key)
 	ctx.Provider = prov
 
-	// Register /model, /models, and /provider commands.
+	// Register /model, /models, /thinking, and /provider commands.
 	ctx.Commands = append(ctx.Commands,
 		agent.ExtensionCommand{Name: "/model", Description: "switch the model (line # from /models, or name)"},
 		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
+		agent.ExtensionCommand{Name: "/thinking", Description: "set or cycle thinking level [none|off|on|minimal|low|medium|high|extra high|max|ultra]"},
 		agent.ExtensionCommand{Name: "/provider", Description: "show current provider and model"},
 	)
 
@@ -103,6 +105,39 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.Command
 		return agent.CommandResult{
 			Text:    sb.String(),
 			Actions: []agent.CmdAction{{Type: "set_model_list", List: models}},
+		}, nil
+	case "/thinking":
+		level := strings.TrimSpace(args)
+		if level == "" {
+			// Cycle to next level.
+			current := prov.thinkingLevel
+			if current == "" {
+				current = "medium"
+			}
+			idx := 0
+			for i, l := range ai.ThinkingLevels {
+				if l == current {
+					idx = i
+					break
+				}
+			}
+			level = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
+		} else {
+			valid := false
+			for _, l := range ai.ThinkingLevels {
+				if l == level {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return agent.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
+			}
+		}
+		prov.SetThinkingLevel(level)
+		return agent.CommandResult{
+			Text:    "[thinking " + level + "]",
+			Actions: []agent.CmdAction{{Type: "set_thinking", Value: level}},
 		}, nil
 	case "/provider":
 		return agent.CommandResult{

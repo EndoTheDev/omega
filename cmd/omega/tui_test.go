@@ -728,7 +728,7 @@ func TestTabComplete(t *testing.T) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
 	panel := ansiStrip(m.autocompletePanel())
-	if !strings.Contains(panel, "/new") || !strings.Contains(panel, "/thinking") {
+	if !strings.Contains(panel, "/new") || !strings.Contains(panel, "/export") {
 		t.Fatalf("autocomplete panel missing options: %q", panel)
 	}
 	// Nothing selected initially.
@@ -1174,7 +1174,8 @@ func TestStatusLineTrust(t *testing.T) {
 // the input equals (or starts) a command with enum options, the matches
 // are the full command+option strings, sorted.
 func TestAutocompleteArgLevel(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	ctx := newProviderTestCtx(ai.NewFakeProvider("llama3"))
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell")
 
 	// Bare /thinking offers its options as full strings, in map order.
 	m.textarea.SetValue("/thinking")
@@ -1610,7 +1611,8 @@ func TestSplashReappearsAfterNew(t *testing.T) {
 }
 
 func TestThinkingLevelSet(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	ctx := newProviderTestCtx(ai.NewFakeProvider("llama3"))
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell")
 	if m.thinkingLevel != "medium" {
 		t.Fatalf("default thinkingLevel = %q, want medium", m.thinkingLevel)
 	}
@@ -1644,7 +1646,8 @@ func TestThinkingLevelSet(t *testing.T) {
 }
 
 func TestThinkingLevelCycle(t *testing.T) {
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell")
+	ctx := newProviderTestCtx(ai.NewFakeProvider("llama3"))
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell")
 	if m.thinkingLevel != "medium" {
 		t.Fatalf("default thinkingLevel = %q, want medium", m.thinkingLevel)
 	}
@@ -1729,11 +1732,42 @@ func newProviderTestCtx(prov ai.Provider) *agent.Context {
 	pctx.Commands = append(pctx.Commands,
 		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
 		agent.ExtensionCommand{Name: "/model", Description: "switch model"},
+		agent.ExtensionCommand{Name: "/thinking", Description: "set thinking level"},
+		agent.ExtensionCommand{Name: "/tools", Description: "list tools"},
 		agent.ExtensionCommand{Name: "/provider", Description: "show provider"},
 	)
+	thinkingLevel := "medium" // tracked in closure for cycle support
 	prev := pctx.CommandHandler
 	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
 		switch name {
+		case "/thinking":
+			level := strings.TrimSpace(args)
+			if level == "" {
+				idx := 0
+				for i, l := range ai.ThinkingLevels {
+					if l == thinkingLevel {
+						idx = i
+						break
+					}
+				}
+				level = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
+			} else {
+				valid := false
+				for _, l := range ai.ThinkingLevels {
+					if l == level {
+						valid = true
+						break
+					}
+				}
+				if !valid {
+					return agent.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
+				}
+			}
+			thinkingLevel = level
+			return agent.CommandResult{
+				Text:    "[thinking " + level + "]",
+				Actions: []agent.CmdAction{{Type: "set_thinking", Value: level}},
+			}, nil
 		case "/models":
 			models, err := prov.ListModels()
 			if err != nil {
