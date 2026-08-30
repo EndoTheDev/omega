@@ -74,4 +74,4 @@ go vet ./...               # no suspicious constructs
 
 ## Child DOX Index
 
-No sub-packages. Each extension is a leaf package.
+- `extensions/tui/` — terminal frontend (Frontend seam, Bubble Tea TUI)
