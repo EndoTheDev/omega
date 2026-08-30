@@ -10,6 +10,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/extensions/store"
 	"github.com/EndoTheDev/omega/gateway"
 )
 
@@ -49,16 +50,16 @@ func exportMessages(messages []ai.Message, w io.Writer) error {
 // resolveSessionCLI resolves a session argument to a session ID for the
 // CLI export command. Tries exact ID match, then case-insensitive label
 // prefix match. Returns an error if multiple labels match.
-func resolveSessionCLI(store *gateway.Store, arg string) (string, error) {
+func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) {
 	ctx := context.Background()
 
 	// Try exact ID match first.
-	if _, err := store.GetSession(ctx, arg); err == nil {
+	if _, err := storeDB.GetSession(ctx, arg); err == nil {
 		return arg, nil
 	}
 
 	// Try case-insensitive label prefix match.
-	sessions, err := store.ListSessions(ctx)
+	sessions, err := storeDB.ListSessions(ctx)
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
@@ -98,18 +99,18 @@ func cmdExport(configPath string, rest []string) error {
 	}
 	resolveHomePaths(&cfg)
 
-	store, err := gateway.Open(cfg.Store.DBPath)
+	storeDB, err := store.Open(cfg.Store.DBPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
-	defer store.Close()
+	defer storeDB.Close()
 
-	sessionID, err := resolveSessionCLI(store, sessionArg)
+	sessionID, err := resolveSessionCLI(storeDB, sessionArg)
 	if err != nil {
 		return err
 	}
 
-	messages, err := store.GetMessages(context.Background(), sessionID)
+	messages, err := storeDB.GetMessages(context.Background(), sessionID)
 	if err != nil {
 		return fmt.Errorf("get messages: %w", err)
 	}

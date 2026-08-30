@@ -1,4 +1,4 @@
-package gateway
+package http_channel
 
 import (
 	"context"

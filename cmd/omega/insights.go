@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/extensions/store"
 	"github.com/EndoTheDev/omega/gateway"
 )
 
@@ -23,13 +24,13 @@ func cmdInsights(configPath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := gateway.Open(cfg.Store.DBPath)
+	storeDB, err := store.Open(cfg.Store.DBPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
-	defer store.Close()
+	defer storeDB.Close()
 
-	stats, err := store.ComputeInsights(context.Background(), *days)
+	stats, err := storeDB.ComputeInsights(context.Background(), *days)
 	if err != nil {
 		return fmt.Errorf("compute insights: %w", err)
 	}

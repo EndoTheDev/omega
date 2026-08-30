@@ -1,6 +1,6 @@
 // Package store provides the session persistence seam (agent.StoreProvider)
-// by wrapping gateway.Store (SQLite), plus the sessions.search tool that
-// lets the agent search past conversations via FTS5.
+// via the SQLite implementation in store_impl.go, plus the sessions.search
+// tool that lets the agent search past conversations via FTS5.
 //
 // Seam: store (exclusive), tools (additive).
 package store
@@ -10,21 +10,13 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // NewStore opens the SQLite database at dsn and returns it as a
-// StoreProvider. gateway.Store already implements agent.StoreProvider
-// fully; this is a thin constructor so callers don't import gateway
-// directly.
+// StoreProvider. The concrete Store (in store_impl.go) implements
+// agent.StoreProvider fully.
 func NewStore(dsn string) (agent.StoreProvider, error) {
-	return gateway.Open(dsn)
-}
-
-// Open opens the SQLite database at dsn and returns the concrete Store.
-// Used by tests and CLI utilities that need the concrete type.
-func Open(dsn string) (*gateway.Store, error) {
-	return gateway.Open(dsn)
+	return Open(dsn)
 }
 
 // searchToolProvider provides the sessions.search tool.

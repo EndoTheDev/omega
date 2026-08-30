@@ -1,4 +1,4 @@
-package gateway
+package http_channel
 
 import (
 	"bufio"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/extensions/store"
 )
 
 // mockProvider is a scripted Provider for gateway tests. Each call
@@ -101,13 +102,17 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 }
 
 // newTestServerWithStore returns a server with an in-memory store and a
-// store that is cleaned up with the test.
-func newTestServerWithStore(t *testing.T) (*Server, *Store) {
+// handle to the store for assertions.
+func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	s := newTestServer()
-	store := newTestStore(t)
-	s.store = store
-	return s, store
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s.store = st
+	return s, st
 }
 
 func TestHealth(t *testing.T) {

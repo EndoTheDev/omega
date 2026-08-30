@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/gateway"
+	"github.com/EndoTheDev/omega/extensions/store"
 )
 
 func TestExportMessages(t *testing.T) {
@@ -46,9 +46,9 @@ func TestExportMessagesEmpty(t *testing.T) {
 }
 
 // newTestExportStore creates an in-memory store for export CLI tests.
-func newTestExportStore(t *testing.T) *gateway.Store {
+func newTestExportStore(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := gateway.Open(":memory:")
+	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -163,7 +163,7 @@ func setupExportEnv(t *testing.T) (home, sessionID string) {
 	}
 
 	// resolveHomePaths rewrites the default "omega.db" to home/omega.db.
-	s, err := gateway.Open(filepath.Join(home, "omega.db"))
+	s, err := store.Open(filepath.Join(home, "omega.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

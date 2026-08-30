@@ -313,7 +313,7 @@ func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*ag
 		}
 	} else {
 		ctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
-		s, err := gateway.Open(":memory:")
+		s, err := store.Open(":memory:")
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
 		}
@@ -474,7 +474,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 		}
 	} else {
 		pctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
-		s, err := gateway.Open(":memory:")
+		s, err := store.Open(":memory:")
 		if err != nil {
 			return fmt.Errorf("open in-memory store: %w", err)
 		}

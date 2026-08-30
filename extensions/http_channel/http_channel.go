@@ -1,6 +1,6 @@
 // Package http_channel provides the HTTP/SSE delivery transport as a
-// Channel extension. It wraps gateway.Server — the HTTP logic stays in
-// the gateway package; this extension adapts it to the Channel seam.
+// Channel extension. The HTTP server implementation (server.go) lives
+// in this package; the adapter wires it to the Channel seam.
 //
 // Seam: channel (additive — multiple channels can run simultaneously).
 package http_channel
@@ -10,15 +10,13 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
-// HTTPChannel adapts the gateway HTTP server to the agent.Channel
-// interface. It creates one agent from the Context and reuses it for
-// all requests (current gateway behavior).
+// HTTPChannel adapts the HTTP server to the agent.Channel interface.
+// It creates one agent from the Context and reuses it for all requests.
 type HTTPChannel struct {
 	addr string
-	srv  *gateway.Server
+	srv  *Server
 }
 
 // Start creates an agent from deps.Ctx and serves HTTP/SSE until the
@@ -28,7 +26,7 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 		return fmt.Errorf("http_channel: no provider configured")
 	}
 	ag := agent.NewFromContext(deps.Ctx, agent.AgentOptions{})
-	c.srv = gateway.NewServer(ag, nil, deps.Store)
+	c.srv = NewServer(ag, nil, deps.Store)
 	return c.srv.Serve(ctx, c.addr)
 }
 
