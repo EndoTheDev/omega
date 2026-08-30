@@ -6,6 +6,15 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/extensions/http_channel"
+	"github.com/EndoTheDev/omega/extensions/logging"
+	"github.com/EndoTheDev/omega/extensions/memory"
+	"github.com/EndoTheDev/omega/extensions/provider"
+	"github.com/EndoTheDev/omega/extensions/skills"
+	"github.com/EndoTheDev/omega/extensions/store"
+	"github.com/EndoTheDev/omega/extensions/trust"
+	"github.com/EndoTheDev/omega/extensions/web"
 )
 
 // TestRunChdirError verifies a non-subcommand argument that is not a
@@ -207,5 +216,159 @@ func TestResolveHomePaths(t *testing.T) {
 	}
 	if custom.Skills.Dir != "custom-skills" {
 		t.Errorf("custom Skills.Dir = %q, want unchanged", custom.Skills.Dir)
+	}
+}
+
+
+// TestBuildConfigs verifies buildConfigs routes every Config sub-section
+// into the correct per-extension typed config struct, that all 9 keys are
+// present, and that the trust Home matches omegaHome().
+func TestBuildConfigs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+
+	cfg := DefaultConfig()
+	// Customize the fields buildConfigs is expected to propagate so a wrong
+	// mapping (e.g. store<->provider swap) fails the test.
+	cfg.Store.DBPath = "/tmp/store-test.db"
+	cfg.Provider.Type = "ollama"
+	cfg.Provider.ModelName = "unit-model"
+	cfg.Provider.Host = "http://unit-host:1234"
+	cfg.Provider.APIKey = "secret-key"
+	cfg.Server.Port = 7000
+	cfg.Skills.Dir = "/tmp/skills-test"
+	cfg.Memory.Enabled = false
+	cfg.Memory.CharLimit = 999
+	cfg.Memory.File = "mem-test.md"
+	cfg.Memory.UserProfileFile = "user-test.md"
+	cfg.Logging.Enabled = false
+	cfg.Logging.File = "log-test.log"
+	cfg.Compaction = agent.CompactionConfig{
+		Enabled:       true,
+		Threshold:      0.42,
+		ContextWindow: 4096,
+		KeepFirst:     3,
+		KeepLast:      8,
+		ReserveTokens: 2048,
+		MaxToolOutput: 8192,
+	}
+
+	configs := buildConfigs(cfg)
+
+	// All 9 expected keys must be present.
+	wantKeys := []string{
+		"store", "provider", "http_channel", "skills",
+		"memory", "logging", "compactor", "web", "trust",
+	}
+	for _, k := range wantKeys {
+		if _, ok := configs[k]; !ok {
+			t.Fatalf("buildConfigs: missing key %q", k)
+		}
+	}
+	if len(configs) != len(wantKeys) {
+		t.Errorf("buildConfigs returned %d keys, want %d", len(configs), len(wantKeys))
+	}
+
+	// store: store.Config{DBPath}
+	sc, ok := configs["store"].(store.Config)
+	if !ok {
+		t.Fatalf("store config is %T, want store.Config", configs["store"])
+	}
+	if sc.DBPath != cfg.Store.DBPath {
+		t.Errorf("store.DBPath = %q, want %q", sc.DBPath, cfg.Store.DBPath)
+	}
+
+	// provider: provider.Config{Type, ModelName, Host, APIKey}
+	pc, ok := configs["provider"].(provider.Config)
+	if !ok {
+		t.Fatalf("provider config is %T, want provider.Config", configs["provider"])
+	}
+	if pc.Type != cfg.Provider.Type {
+		t.Errorf("provider.Type = %q, want %q", pc.Type, cfg.Provider.Type)
+	}
+	if pc.ModelName != cfg.Provider.ModelName {
+		t.Errorf("provider.ModelName = %q, want %q", pc.ModelName, cfg.Provider.ModelName)
+	}
+	if pc.Host != cfg.Provider.Host {
+		t.Errorf("provider.Host = %q, want %q", pc.Host, cfg.Provider.Host)
+	}
+	if pc.APIKey != cfg.Provider.APIKey {
+		t.Errorf("provider.APIKey = %q, want %q", pc.APIKey, cfg.Provider.APIKey)
+	}
+
+	// http_channel: http_channel.Config{Port}
+	hc, ok := configs["http_channel"].(http_channel.Config)
+	if !ok {
+		t.Fatalf("http_channel config is %T, want http_channel.Config", configs["http_channel"])
+	}
+	if hc.Port != cfg.Server.Port {
+		t.Errorf("http_channel.Port = %d, want %d", hc.Port, cfg.Server.Port)
+	}
+
+	// skills: skills.Config{Dir}
+	sk, ok := configs["skills"].(skills.Config)
+	if !ok {
+		t.Fatalf("skills config is %T, want skills.Config", configs["skills"])
+	}
+	if sk.Dir != cfg.Skills.Dir {
+		t.Errorf("skills.Dir = %q, want %q", sk.Dir, cfg.Skills.Dir)
+	}
+
+	// memory: memory.Config{Enabled, UserProfileEnabled, CharLimit,
+	// UserProfileCharLimit, File, UserProfileFile}
+	mc, ok := configs["memory"].(memory.Config)
+	if !ok {
+		t.Fatalf("memory config is %T, want memory.Config", configs["memory"])
+	}
+	if mc.Enabled != cfg.Memory.Enabled {
+		t.Errorf("memory.Enabled = %v, want %v", mc.Enabled, cfg.Memory.Enabled)
+	}
+	if mc.CharLimit != cfg.Memory.CharLimit {
+		t.Errorf("memory.CharLimit = %d, want %d", mc.CharLimit, cfg.Memory.CharLimit)
+	}
+	if mc.File != cfg.Memory.File {
+		t.Errorf("memory.File = %q, want %q", mc.File, cfg.Memory.File)
+	}
+	if mc.UserProfileFile != cfg.Memory.UserProfileFile {
+		t.Errorf("memory.UserProfileFile = %q, want %q", mc.UserProfileFile, cfg.Memory.UserProfileFile)
+	}
+
+	// logging: logging.Config{Enabled, File}
+	lc, ok := configs["logging"].(logging.Config)
+	if !ok {
+		t.Fatalf("logging config is %T, want logging.Config", configs["logging"])
+	}
+	if lc.Enabled != cfg.Logging.Enabled {
+		t.Errorf("logging.Enabled = %v, want %v", lc.Enabled, cfg.Logging.Enabled)
+	}
+	if lc.File != cfg.Logging.File {
+		t.Errorf("logging.File = %q, want %q", lc.File, cfg.Logging.File)
+	}
+
+	// compactor: agent.CompactionConfig (value equality via reflect.DeepEqual)
+	cc, ok := configs["compactor"].(agent.CompactionConfig)
+	if !ok {
+		t.Fatalf("compactor config is %T, want agent.CompactionConfig", configs["compactor"])
+	}
+	if !reflect.DeepEqual(cc, cfg.Compaction) {
+		t.Errorf("compactor = %+v, want %+v", cc, cfg.Compaction)
+	}
+
+	// web: web.Config{APIKey}
+	wc, ok := configs["web"].(web.Config)
+	if !ok {
+		t.Fatalf("web config is %T, want web.Config", configs["web"])
+	}
+	if wc.APIKey != cfg.Provider.APIKey {
+		t.Errorf("web.APIKey = %q, want %q", wc.APIKey, cfg.Provider.APIKey)
+	}
+
+	// trust: trust.Config{Home} must equal omegaHome() (i.e. OMEGA_HOME).
+	tc, ok := configs["trust"].(trust.Config)
+	if !ok {
+		t.Fatalf("trust config is %T, want trust.Config", configs["trust"])
+	}
+	if tc.Home != home {
+		t.Errorf("trust.Home = %q, want %q (omegaHome)", tc.Home, home)
 	}
 }
