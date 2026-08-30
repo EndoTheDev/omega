@@ -27,6 +27,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/skills"
 	"github.com/EndoTheDev/omega/extensions/store"
 	"github.com/EndoTheDev/omega/extensions/tools"
+	"github.com/EndoTheDev/omega/extensions/trust"
 	"github.com/EndoTheDev/omega/extensions/tui"
 	"github.com/EndoTheDev/omega/extensions/web"
 )
@@ -280,6 +281,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		web.NewPlugin(),
 		httpchannel.NewPlugin(),
 		tui.NewPlugin(),
+		trust.NewPlugin(),
 	}, nil
 }
 
@@ -296,6 +298,7 @@ func buildConfigs(cfg Config) map[string]any {
 		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},
 		"compactor":    cfg.Compaction,
 		"web":          web.Config{APIKey: cfg.Provider.APIKey},
+		"trust":        trust.Config{Home: omegaHome()},
 	}
 }
 
@@ -320,7 +323,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		MaxToolOutput: cfg.Compaction.MaxToolOutput,
 		PromptCustom:  cfg.SystemPrompt,
 		PromptAppend:  appendPrompts,
-		PromptContext: resolveProjectContext(cwd(), trust.approve, trust.noApprove, false),
+		PromptContext: ctx.Trust.ResolveContext(cwd(), trust.approve, trust.noApprove, false),
 		CWD:           cwd(),
 	})
 
@@ -538,10 +541,10 @@ func runChat(cfg Config, pctx *agent.Context, skills []agent.Skill, appendPrompt
 		Compaction:    &cfg.Compaction,
 		PromptCustom:  cfg.SystemPrompt,
 		PromptAppend:  appendPrompts,
-		PromptContext: resolveProjectContext(cwd(), trust.approve, trust.noApprove, true),
+		PromptContext: pctx.Trust.ResolveContext(cwd(), trust.approve, trust.noApprove, true),
 		Skills:        skills,
 		ThemeName:     cfg.Theme,
-		TrustState:    trustState(cwd(), trust.approve, trust.noApprove),
+		TrustState:    pctx.Trust.State(cwd(), trust.approve, trust.noApprove),
 		Notifications: cfg.Notifications,
 		CWD:           cwd(),
 		Version:       omegaVersion,

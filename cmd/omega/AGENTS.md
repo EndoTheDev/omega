@@ -33,12 +33,9 @@ The TUI is now an extension at `extensions/tui/` implementing the
   `io.LimitReader` caps zip reads at 200MB and API responses at 1MB,
   checksum verification before extraction, `verifyChecksum` fetch with
   30s timeout, atomic binary replacement via temp+rename on Linux/macOS.
-- `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
-  `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
-  `promptTrust`), trust flag parsing (`parseTrustArgs`,
-  `stripTrustArgs`)
-- `context.go` - project context loading (`ProjectRoot`,
-  `LoadProjectContext`) moved from the deleted `harness/` package
+- `trust.go` - trust flag parsing (`trustFlags`, `parseTrustArgs`,
+  `stripTrustArgs`), `cwd()` helper. Trust logic lives in
+  `extensions/trust/` (TrustProvider seam).
 - `image.go` - CLI `@file` input (`parseFileArgs` calling `ai.DetectImage`)
 - `config.go` - runtime config: `Config` struct with sub-configs
   (ProviderConfig, ServerConfig, StoreConfig, SkillsConfig, MemoryConfig,

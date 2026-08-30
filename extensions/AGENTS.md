@@ -36,6 +36,8 @@ into a shared `Context` via `MountAll` at startup.
 - `tui/` - terminal frontend (Frontend seam, Bubble Tea TUI:
   streaming, slash commands, themes, autocomplete, @file input,
   glamour rendering, desktop notifications)
+- `trust/` - project trust gate (TrustProvider seam: trust.yaml
+  store, AGENTS.md context loading, interactive trust prompt)
 
 ## Local Contracts
 
@@ -43,7 +45,7 @@ into a shared `Context` via `MountAll` at startup.
   `Requires`, `Mount`).
 - Exclusive seams (one plugin per slot): `provider`, `compactor`,
   `store`, `skills`, `loop`, `logging`, `memory`, `prompt_builder`,
-  `frontend`.
+  `frontend`, `trust`.
 - Additive seams: `tools` and `channel` (multiple plugins contribute
   to `ctx.ToolProviders` and `ctx.Channels`).
 - Commands: extensions register slash commands via `ctx.Commands` +
@@ -75,3 +77,4 @@ go vet ./...               # no suspicious constructs
 ## Child DOX Index
 
 - `extensions/tui/` — terminal frontend (Frontend seam, Bubble Tea TUI)
+- `extensions/trust/` — project trust gate (TrustProvider seam, trust.yaml, AGENTS.md context loading)

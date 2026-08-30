@@ -32,6 +32,7 @@ type Context struct {
 	// Frontend (exclusive — one frontend at a time). The host calls
 	// Run after mounting all extensions.
 	Frontend Frontend
+	Trust    TrustProvider
 
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAll.
@@ -79,6 +80,7 @@ var exclusiveSeams = map[string]bool{
 	"memory":         true,
 	"prompt_builder": true,
 	"frontend":       true,
+	"trust":          true,
 }
 
 // MountAll sorts plugins by dependencies and mounts each into ctx.

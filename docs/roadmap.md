@@ -7,7 +7,7 @@
 - Session tree with branching, labeling, and full persistence
 - Context compaction with overflow auto-retry, reserve tokens, and branch summarization
 - Skills system (skills extension, agent-driven `skills.read` tool, `/skills` command)
-- Extension system: in-process Go plugins, 14 extensions, 10 exclusive + 2 additive seams (provider, compactor, store, skills, loop, logging, memory, prompt_builder, frontend, tools, channel)
+- Extension system: in-process Go plugins, 15 extensions, 11 exclusive + 2 additive seams (provider, compactor, store, skills, loop, logging, memory, prompt_builder, frontend, trust, tools, channel)
 - Session store (SQLite, FTS5 full-text search, `sessions.search` tool)
 - In-memory store fallback when no store extension loaded
 - Complete TUI with streaming, markdown, autocomplete, and history

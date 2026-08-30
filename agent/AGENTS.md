@@ -22,7 +22,7 @@ HTTP channel, or extensions).
   via `SetLoopProvider` or by mounting the agent-loop extension.
 - `seams.go` - capability seam interfaces (`LoopProvider` + `LoopOptions`,
   `CompactionProvider`, `ToolProvider` + `DefaultToolProvider`,
-  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel` + `ChannelDeps`, `Frontend` + `FrontendOptions`).
+  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel` + `ChannelDeps`, `Frontend` + `FrontendOptions`, `TrustProvider`).
 - `plugin.go` - in-process extension system: `Context` (shared service
   container with typed seam slots), `Plugin` interface (`Name`,
   `Provides`, `Requires`, `Mount`), `MountAll` (topological sort by
@@ -57,14 +57,14 @@ HTTP channel, or extensions).
   `CompactionProvider` (context compaction), `ToolProvider` (tool
   registry), `LoopProvider` (conversation loop), `StoreProvider`
   (session persistence), `SkillsProvider` (skill loading),
-  `LoggerProvider` (operational logging), `MemoryProvider` (persistent memory), `PromptBuilder` (system prompt), `Frontend` (user-facing interface). Default implementations live in
+  `LoggerProvider` (operational logging), `MemoryProvider` (persistent memory), `PromptBuilder` (system prompt), `Frontend` (user-facing interface), `TrustProvider` (project trust gate). Default implementations live in
   `extensions/`. The system prompt is built by the prompt extension
   via `BuildPrompt`. The compactor is wired from the compactor
   extension; when no compactor extension is loaded, compaction is
   disabled and the agent surfaces a friendly error on context overflow.
   The LLM provider is wired via `SetProvider` from the provider
   extension's mount into `Context.Provider`. Project context and trust
-  live in `cmd/omega/context.go` and `cmd/omega/trust.go`.
+  live in `extensions/trust/` (TrustProvider seam).
 - **Extensions are in-process.** All extensions are Go packages under
   `extensions/`. No stdio, no IPC, no separate processes. The host
   calls `MountAll` at startup; the agent loop reads from `Context`.

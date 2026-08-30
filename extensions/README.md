@@ -25,19 +25,20 @@ type Plugin interface {
 
 ## Seams
 
-| Seam             | Type      | Description                                 |
-| ---------------- | --------- | ------------------------------------------- |
-| `provider`       | exclusive | LLM provider (Ollama, OpenAI, Anthropic)    |
-| `compactor`      | exclusive | Context compaction                          |
-| `store`          | exclusive | Session persistence                         |
-| `skills`         | exclusive | Skill loading                               |
-| `loop`           | exclusive | Agent loop                                  |
-| `logging`        | exclusive | Operational logging (file logger)           |
-| `memory`         | exclusive | Persistent memory (two-file store)          |
-| `prompt_builder` | exclusive | System prompt builder                       |
-| `frontend`       | exclusive | User-facing interface (TUI, web UI)         |
-| `tools`          | additive  | Tool provider (multiple plugins contribute) |
-| `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)    |
+| Seam             | Type      | Description                                    |
+| ---------------- | --------- | ---------------------------------------------- |
+| `provider`       | exclusive | LLM provider (Ollama, OpenAI, Anthropic)       |
+| `compactor`      | exclusive | Context compaction                             |
+| `store`          | exclusive | Session persistence                            |
+| `skills`         | exclusive | Skill loading                                  |
+| `loop`           | exclusive | Agent loop                                     |
+| `logging`        | exclusive | Operational logging (file logger)              |
+| `memory`         | exclusive | Persistent memory (two-file store)             |
+| `prompt_builder` | exclusive | System prompt builder                          |
+| `frontend`       | exclusive | User-facing interface (TUI, web UI)            |
+| `trust`          | exclusive | Project trust gate (AGENTS.md context loading) |
+| `tools`          | additive  | Tool provider (multiple plugins contribute)    |
+| `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)       |
 
 Exclusive seams conflict if two plugins provide the same one. The
 `tools` seam is additive: multiple plugins contribute to
@@ -61,6 +62,7 @@ Exclusive seams conflict if two plugins provide the same one. The
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
 | `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
 | `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
+| `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading)   |
 
 ## Writing an extension
 

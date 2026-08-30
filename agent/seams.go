@@ -178,6 +178,15 @@ type Frontend interface {
 	Run(ctx context.Context, pctx *Context, opts FrontendOptions) error
 }
 
+// TrustProvider gates project context (AGENTS.md) behind a trust
+// check. The default implementation reads trust.yaml from omega home.
+// The host calls ResolveContext before building the agent; State is
+// used for the TUI status bar.
+type TrustProvider interface {
+	ResolveContext(cwd string, approve, noApprove, interactive bool) string
+	State(cwd string, approve, noApprove bool) string
+}
+
 // FrontendOptions carries host-level settings the frontend needs that
 // are not on the Context itself. All fields are optional zero-values.
 type FrontendOptions struct {
