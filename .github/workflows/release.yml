@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
 
 jobs:
   release:
@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: "1.26"
 
       - name: Determine version
         id: version
@@ -51,6 +51,9 @@ jobs:
           cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_amd64/
           cd dist && tar czf "omega-$VERSION-darwin_amd64.tar.gz" "omega-$VERSION-darwin_amd64/"
 
+      - name: Generate checksums
+        run: cd dist && sha256sum omega-* | sed 's|dist/||' > checksums.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -59,6 +62,7 @@ jobs:
             dist/omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz
             dist/omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz
             dist/omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz
+            dist/checksums.txt
           body: |
             ## omega ${{ steps.version.outputs.VERSION }}
 

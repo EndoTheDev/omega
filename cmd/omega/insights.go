@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/extensions/store"
@@ -29,7 +30,9 @@ func cmdInsights(configPath string, args []string) error {
 	}
 	defer storeDB.Close()
 
-	stats, err := storeDB.ComputeInsights(context.Background(), *days)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stats, err := storeDB.ComputeInsights(ctx, *days)
 	if err != nil {
 		return fmt.Errorf("compute insights: %w", err)
 	}

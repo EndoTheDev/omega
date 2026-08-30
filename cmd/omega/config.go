@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -213,6 +214,30 @@ func (c Config) Validate() error {
 	}
 	if c.Server.Port <= 0 {
 		return fmt.Errorf("config: server.port must be > 0, got %d", c.Server.Port)
+	}
+	if c.Provider.Type != "" {
+		switch strings.ToLower(c.Provider.Type) {
+		case "ollama", "openai", "anthropic":
+		default:
+			return fmt.Errorf("config: provider.type %q is not recognized (want ollama, openai, or anthropic)", c.Provider.Type)
+		}
+	}
+	if c.Provider.Host != "" {
+		if _, err := url.Parse(c.Provider.Host); err != nil {
+			return fmt.Errorf("config: provider.host is not a valid URL: %w", err)
+		}
+	}
+	if c.Memory.Enabled && c.Memory.CharLimit <= 0 {
+		return fmt.Errorf("config: memory.char_limit must be > 0 when memory is enabled")
+	}
+	if c.Memory.UserProfileEnabled && c.Memory.UserProfileCharLimit <= 0 {
+		return fmt.Errorf("config: memory.user_char_limit must be > 0 when user profile is enabled")
+	}
+	if c.MaxTurns < 0 {
+		return fmt.Errorf("config: max_turns must be >= 0, got %d", c.MaxTurns)
+	}
+	if c.HTTPTimeout < 0 {
+		return fmt.Errorf("config: http_timeout must be >= 0, got %d", c.HTTPTimeout)
 	}
 	return nil
 }

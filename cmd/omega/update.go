@@ -5,6 +5,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // githubRelease represents the subset of the GitHub releases API
@@ -45,6 +48,63 @@ func findAsset(assets []githubAsset, goos, goarch string) string {
 		}
 	}
 	return ""
+}
+
+// findChecksumURL returns the download URL for checksums.txt, or "" if
+// the release doesn't include one (older releases predating checksums).
+func findChecksumURL(assets []githubAsset) string {
+	for _, a := range assets {
+		if a.Name == "checksums.txt" {
+			return a.BrowserDownloadURL
+		}
+	}
+	return ""
+}
+
+// verifyChecksum downloads checksums.txt from the release, finds the
+// SHA256 hash for the given asset name, and verifies that archivePath
+// matches. Returns nil if verification succeeds, or an error if the
+// hash doesn't match.
+func verifyChecksum(archivePath, checksumsURL, assetName string) error {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(checksumsURL)
+	if err != nil {
+		return fmt.Errorf("fetch checksums: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetch checksums: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("read checksums: %w", err)
+	}
+	// Parse "sha256  filename" lines (sha256sum output format).
+	wantHash := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.HasSuffix(fields[1], assetName) {
+			wantHash = fields[0]
+			break
+		}
+	}
+	if wantHash == "" {
+		return fmt.Errorf("checksums.txt has no entry for %s", assetName)
+	}
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("open archive for hashing: %w", err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("hash archive: %w", err)
+	}
+	gotHash := hex.EncodeToString(h.Sum(nil))
+	if gotHash != wantHash {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", wantHash, gotHash)
+	}
+	return nil
 }
 
 // cmdUpdate downloads the latest GitHub release archive (zip on
@@ -84,6 +144,9 @@ func cmdUpdate() error {
 		return fmt.Errorf("no release asset for %s/%s in %s; visit https://github.com/EndoTheDev/omega/releases", runtime.GOOS, runtime.GOARCH, rel.TagName)
 	}
 
+	// Determine the asset name for checksum lookup.
+	assetName := assetNameForOS(runtime.GOOS, runtime.GOARCH)
+
 	dlResp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
@@ -94,38 +157,78 @@ func cmdUpdate() error {
 		return fmt.Errorf("download: HTTP %d", dlResp.StatusCode)
 	}
 
-	// Wrap with progress reader if we know the size.
-	var body io.Reader = dlResp.Body
-	if total := dlResp.ContentLength; total > 0 {
-		body = &progressReader{r: dlResp.Body, total: total}
-	}
-
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 	installDir := filepath.Dir(exePath)
 
-	// Extract archive to a temp directory.
+	// Download archive to a temp file so we can verify its checksum
+	// before extracting untrusted code.
 	tmpDir, err := os.MkdirTemp("", "omega-update-")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
+	archiveExt := ".tar.gz"
 	if runtime.GOOS == "windows" {
-		if err := extractZip(body, tmpDir); err != nil {
+		archiveExt = ".zip"
+	}
+	archivePath := filepath.Join(tmpDir, "archive"+archiveExt)
+
+	// Wrap with progress reader if we know the size.
+	var body io.Reader = dlResp.Body
+	if total := dlResp.ContentLength; total > 0 {
+		body = &progressReader{r: dlResp.Body, total: total}
+	}
+
+	out, err := os.Create(archivePath)
+	if err != nil {
+		return fmt.Errorf("create archive file: %w", err)
+	}
+	if _, err := io.Copy(out, body); err != nil {
+		out.Close()
+		return fmt.Errorf("download archive: %w", err)
+	}
+	out.Close()
+
+	// Verify checksum if the release includes checksums.txt.
+	if checksumsURL := findChecksumURL(rel.Assets); checksumsURL != "" {
+		if err := verifyChecksum(archivePath, checksumsURL, assetName); err != nil {
+			return fmt.Errorf("checksum verification failed: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "omega: checksum verified")
+	} else {
+		fmt.Fprintln(os.Stderr, "omega: warning — no checksums.txt in release, skipping verification")
+	}
+
+	// Extract archive from the verified temp file.
+	archiveFile, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("open archive: %w", err)
+	}
+	defer archiveFile.Close()
+
+	extractDir, err := os.MkdirTemp("", "omega-extract-")
+	if err != nil {
+		return fmt.Errorf("create extract dir: %w", err)
+	}
+	defer os.RemoveAll(extractDir)
+
+	if runtime.GOOS == "windows" {
+		if err := extractZip(archiveFile, extractDir); err != nil {
 			return fmt.Errorf("extract zip: %w", err)
 		}
 	} else {
-		if err := extractTarGz(body, tmpDir); err != nil {
+		if err := extractTarGz(archiveFile, extractDir); err != nil {
 			return fmt.Errorf("extract tar.gz: %w", err)
 		}
 	}
 
 	// Find the omega binary in the extracted archive.
 	// It may be at the root or inside a versioned directory.
-	omegaBin := findInArchive(tmpDir, "omega")
+	omegaBin := findInArchive(extractDir, "omega")
 	if omegaBin == "" {
 		return fmt.Errorf("omega binary not found in release archive")
 	}

@@ -24,13 +24,15 @@ The TUI is now an extension at `extensions/tui/` implementing the
 - `insights.go` - session analytics (`cmdInsights`, `formatInsights`,
   `formatNumber`)
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
-  `findAsset`, `assetNameForOS`). Archive-based: downloads zip/tar.gz,
+  `findAsset`, `assetNameForOS`, `findChecksumURL`, `verifyChecksum`).
+  Archive-based: downloads zip/tar.gz, verifies SHA256 checksum,
   extracts omega + extensions (self-contained subdirectory layout) +
   config/mcp examples. Progress bar during download. Skips when already
   up to date. Preserves user config files. Security: `safeJoin` validates
   archive entries stay within dest (CWE-22 path traversal prevention),
   `io.LimitReader` caps zip reads at 200MB and API responses at 1MB,
-  atomic binary replacement via temp+rename on Linux/macOS.
+  checksum verification before extraction, `verifyChecksum` fetch with
+  30s timeout, atomic binary replacement via temp+rename on Linux/macOS.
 - `trust.go` - project trust store (`TrustEntry`, `loadTrusted`,
   `saveTrusted`, `isTrusted`), trust gate (`resolveProjectContext`,
   `promptTrust`), trust flag parsing (`parseTrustArgs`,
@@ -75,6 +77,10 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   CLI-only overrides. The TUI prompts interactively for untrusted
   projects; `run`/`serve` skip untrusted context with a stderr warning.
   `--no-approve` wins over `--approve`.
+- **Config validation is deep.** `Validate` checks provider type
+  (ollama/openai/anthropic), host URL parseability, memory char limits
+  (when enabled), max_turns >= 0, http_timeout >= 0 — in addition to
+  the required model_name and port > 0.
 - **Export is shared.** `exportMessages` in `export.go` writes JSONL
   from `[]ai.Message`. Both `cmdExport` (CLI) and the store extension's
   `/export` command produce JSONL output.

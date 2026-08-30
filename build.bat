@@ -7,11 +7,11 @@ cd /d "%~dp0"
 if not exist bin mkdir bin
 
 echo ==^> vet
-go vet ./agent/... ./ai/... ./cmd/... ./gateway/... ./extensions/...
+go vet ./agent/... ./ai/... ./cmd/... ./extensions/...
 if errorlevel 1 exit /b 1
 
 echo ==^> test
-go test ./agent/... ./ai/... ./cmd/... ./gateway/... ./extensions/...
+go test ./agent/... ./ai/... ./cmd/... ./extensions/...
 if errorlevel 1 exit /b 1
 
 echo ==^> build

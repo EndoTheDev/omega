@@ -47,6 +47,7 @@
 - Slash commands moved to owning extensions (12 commands: store, provider, tools)
 - Extension-owned config (per-extension Config structs, no gateway import)
 - Self-update fix: Python3 detection, unlink-before-rename on Linux
+- Checksum verification for self-update (SHA256, checksums.txt in releases)
 - Improver: autonomous test/coverage loop with safe auto-landing
 
 ## Planned
@@ -58,7 +59,6 @@
 - Core-trust extension (pluggable trust gate)
 - Discord/Telegram channels (via the Channel seam)
 - Serve-mode delegation support (SSE polling)
-- Checksum verification for self-update
 
 ## Known Limitations
 

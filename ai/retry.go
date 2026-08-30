@@ -31,6 +31,9 @@ func retryableStatus(code int) bool {
 // small random jitter so concurrent callers don't stampede in lockstep.
 func backoff(attempt int) time.Duration {
 	base := time.Duration(1<<attempt) * time.Second
+	if base > 30*time.Second {
+		base = 30 * time.Second
+	}
 	jitter := time.Duration(rand.Int64N(int64(base / 4)))
 	return base + jitter
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -50,7 +51,8 @@ func exportMessages(messages []ai.Message, w io.Writer) error {
 // CLI export command. Tries exact ID match, then case-insensitive label
 // prefix match. Returns an error if multiple labels match.
 func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	// Try exact ID match first.
 	if _, err := storeDB.GetSession(ctx, arg); err == nil {
@@ -96,7 +98,9 @@ func cmdExport(configPath string, rest []string) error {
 	if err != nil {
 		return err
 	}
-	resolveHomePaths(&cfg)
+	if err := resolveHomePaths(&cfg); err != nil {
+		return err
+	}
 
 	storeDB, err := store.Open(cfg.Store.DBPath)
 	if err != nil {
@@ -109,7 +113,9 @@ func cmdExport(configPath string, rest []string) error {
 		return err
 	}
 
-	messages, err := storeDB.GetMessages(context.Background(), sessionID)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	messages, err := storeDB.GetMessages(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("get messages: %w", err)
 	}

@@ -230,8 +230,9 @@ func resolveConfigPath(flagPath string) string {
 
 // resolveHomePaths fills in home-relative defaults for DBPath and
 // Skills.Dir when the config left them at their relative defaults.
-// This lets omega find its db and skills from any CWD.
-func resolveHomePaths(cfg *Config) {
+// This lets omega find its db and skills from any CWD. Returns an
+// error if the home directory cannot be created.
+func resolveHomePaths(cfg *Config) error {
 	home := omegaHome()
 	if cfg.Store.DBPath == "omega.db" {
 		cfg.Store.DBPath = home + "/omega.db"
@@ -248,8 +249,10 @@ func resolveHomePaths(cfg *Config) {
 	if cfg.Logging.File == "omega.log" {
 		cfg.Logging.File = home + "/omega.log"
 	}
-	// Ensure the home directory exists so SQLite can create its file.
-	_ = os.MkdirAll(home, 0755)
+	if err := os.MkdirAll(home, 0755); err != nil {
+		return fmt.Errorf("create omega home %s: %w", home, err)
+	}
+	return nil
 }
 
 // buildPlugins creates the list of in-process extensions from config.
@@ -351,7 +354,9 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	if err != nil {
 		return err
 	}
-	resolveHomePaths(&cfg)
+	if err := resolveHomePaths(&cfg); err != nil {
+		return err
+	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, pctx, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
@@ -394,7 +399,9 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 
 	// Stop all channels.
 	for _, ch := range pctx.Channels {
-		_ = ch.Stop()
+		if err := ch.Stop(); err != nil {
+			fmt.Fprintf(os.Stderr, "omega: channel stop error: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -416,7 +423,9 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	if err != nil {
 		return err
 	}
-	resolveHomePaths(&cfg)
+	if err := resolveHomePaths(&cfg); err != nil {
+		return err
+	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
@@ -463,7 +472,9 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 	if err != nil {
 		return err
 	}
-	resolveHomePaths(&cfg)
+	if err := resolveHomePaths(&cfg); err != nil {
+		return err
+	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 
 	// Build the plugin context to get the store and skills.
@@ -625,7 +636,11 @@ func cmdHealth(configPath string) error {
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("http://localhost:%d/health", cfg.Server.Port)
+	host := os.Getenv("OMEGA_HEALTH_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	url := fmt.Sprintf("http://%s:%d/health", host, cfg.Server.Port)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
