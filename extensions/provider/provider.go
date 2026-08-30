@@ -720,35 +720,45 @@ func flushToolCalls[T any](ctx context.Context, events chan<- ai.StreamEvent, pe
 	}
 }
 
-// listModels fetches available models from the provider API.
-func (p *Provider) listModels() ([]string, error) {
-	var req *http.Request
-	var err error
-
+// buildListModelsRequest constructs the HTTP request for listing
+// models based on the provider type. It returns the configured
+// request or an error for unknown provider types.
+func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 	switch p.typ {
 	case "ollama":
-		req, err = http.NewRequest("GET", p.baseURL+"/api/tags", nil)
+		req, err := http.NewRequest("GET", p.baseURL+"/api/tags", nil)
 		if err != nil {
 			return nil, err
 		}
 		if p.apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+p.apiKey)
 		}
+		return req, nil
 	case "openai":
-		req, err = http.NewRequest("GET", p.baseURL+"/models", nil)
+		req, err := http.NewRequest("GET", p.baseURL+"/models", nil)
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		return req, nil
 	case "anthropic":
-		req, err = http.NewRequest("GET", p.baseURL+"/models", nil)
+		req, err := http.NewRequest("GET", p.baseURL+"/models", nil)
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("x-api-key", p.apiKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
+		return req, nil
 	default:
 		return nil, fmt.Errorf("unknown provider type: %s", p.typ)
+	}
+}
+
+// listModels fetches available models from the provider API.
+func (p *Provider) listModels() ([]string, error) {
+	req, err := p.buildListModelsRequest()
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := ai.HTTPClient().Do(req)
