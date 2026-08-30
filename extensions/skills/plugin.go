@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // NewSkillsProvider creates a SkillsProvider configured to scan dir.
@@ -23,14 +22,15 @@ func (p *Plugin) Provides() []string { return []string{"skills", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount populates ctx.Skills, appends the tool provider, and sets
-// commands + handler. The skills directory is read from ctx.Config
-// (type-asserted to gateway.Config).
+// commands + handler. The skills directory is read from ctx.Configs.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	dir := "skills" // default
-	if cfg, ok := ctx.Config.(gateway.Config); ok {
-		if cfg.Skills.Dir != "" {
-			dir = cfg.Skills.Dir
-		}
+	cfg := Default()
+	if c, ok := ctx.Configs["skills"].(Config); ok {
+		cfg = c
+	}
+	dir := cfg.Dir
+	if dir == "" {
+		dir = "skills"
 	}
 
 	sp := NewSkillsProvider(dir)

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 func TestFileLoggerWrite(t *testing.T) {
@@ -98,7 +97,7 @@ func TestNopLogger(t *testing.T) {
 func TestNewLoggerEnabled(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "enabled.log")
-	cfg := gateway.LoggingConfig{Enabled: true, File: path}
+	cfg := Config{Enabled: true, File: path}
 
 	l, err := NewLogger(cfg)
 	if err != nil {
@@ -118,7 +117,7 @@ func TestNewLoggerEnabled(t *testing.T) {
 }
 
 func TestNewLoggerDisabled(t *testing.T) {
-	cfg := gateway.LoggingConfig{Enabled: false, File: "ignored.log"}
+	cfg := Config{Enabled: false, File: "ignored.log"}
 
 	l, err := NewLogger(cfg)
 	if err != nil {
@@ -157,11 +156,11 @@ func TestPluginMetadata(t *testing.T) {
 
 func TestPluginMount(t *testing.T) {
 	dir := t.TempDir()
-	cfg := gateway.DefaultConfig()
-	cfg.Logging.File = filepath.Join(dir, "mount.log")
+	cfg := Default()
+	cfg.File = filepath.Join(dir, "mount.log")
 
 	p := NewPlugin()
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{Configs: map[string]any{"logging": cfg}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -172,11 +171,11 @@ func TestPluginMount(t *testing.T) {
 }
 
 func TestPluginMountDisabled(t *testing.T) {
-	cfg := gateway.DefaultConfig()
-	cfg.Logging.Enabled = false
+	cfg := Default()
+	cfg.Enabled = false
 
 	p := NewPlugin()
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{Configs: map[string]any{"logging": cfg}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}

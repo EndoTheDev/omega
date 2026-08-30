@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // setURLs points the package-level API URLs at test servers and
@@ -231,7 +230,7 @@ func TestExtensionImplementsToolProvider(t *testing.T) {
 
 // TestToolsShape checks both tools are registered with correct names.
 func TestToolsShape(t *testing.T) {
-	ext := New(nil) // nil config = no API key, tools still registered
+	ext := New(Default()) // no API key, tools still registered
 	tools := ext.Tools()
 	if _, ok := tools["web.search"]; !ok {
 		t.Error("missing web.search tool")
@@ -246,7 +245,7 @@ func TestToolsShape(t *testing.T) {
 
 // TestSearchRequiresQuery verifies validation without making HTTP calls.
 func TestSearchRequiresQuery(t *testing.T) {
-	ext := New(nil)
+	ext := New(Default())
 	result, err := ext.runSearch(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -258,7 +257,7 @@ func TestSearchRequiresQuery(t *testing.T) {
 
 // TestFetchRequiresURL verifies validation without making HTTP calls.
 func TestFetchRequiresURL(t *testing.T) {
-	ext := New(nil)
+	ext := New(Default())
 	result, err := ext.runFetch(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -270,7 +269,7 @@ func TestFetchRequiresURL(t *testing.T) {
 
 // TestSearchNoAPIKey verifies the no-key guard fires before HTTP.
 func TestSearchNoAPIKey(t *testing.T) {
-	ext := New(nil) // no key
+	ext := New(Default()) // no key
 	result, err := ext.doSearch(context.Background(), "test", 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -282,7 +281,7 @@ func TestSearchNoAPIKey(t *testing.T) {
 
 // TestFetchNoAPIKey verifies the no-key guard fires before HTTP.
 func TestFetchNoAPIKey(t *testing.T) {
-	ext := New(nil)
+	ext := New(Default())
 	result, err := ext.doFetch(context.Background(), "https://example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -312,8 +311,8 @@ func TestMount(t *testing.T) {
 func TestMountWithConfig(t *testing.T) {
 	p := NewPlugin()
 	ctx := &agent.Context{
-		Config: gateway.Config{
-			Provider: gateway.ProviderConfig{APIKey: "test-key"},
+		Configs: map[string]any{
+			"web": Config{APIKey: "test-key"},
 		},
 	}
 	if err := p.Mount(ctx); err != nil {

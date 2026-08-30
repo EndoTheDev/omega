@@ -11,7 +11,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/extensions/store"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // messageRole returns the role string for a message.
@@ -93,7 +92,7 @@ func cmdExport(configPath string, rest []string) error {
 		outputPath = args[1]
 	}
 
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	cfg, err := LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}

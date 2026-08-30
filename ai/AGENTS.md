@@ -18,7 +18,7 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
   Images), Assistant, ToolResult, ModelChange, ThinkingLevelChange concrete
   types; ImageContent struct; timestamp helpers; `EncodeMessage`/
   `DecodeMessage` (role discriminator + JSON payload serialization,
-  shared by gateway store and extensions/store)
+  shared by the store extension)
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk,
   ToolCallEvent, StreamEnd concrete types; ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter,
@@ -46,7 +46,7 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
   retryHTTP (exported as RetryHTTP). 429 and 5xx are retried with backoff;
   other 4xx and context cancellation return immediately.
 - **No re-exports.** Types defined here are imported from `ai`
-  by the agent and gateway layers.
+  by the agent and host.
 
 ## Work Guidance
 

@@ -15,7 +15,6 @@ import (
 	"github.com/EndoTheDev/omega/extensions/compactor"
 	"github.com/EndoTheDev/omega/extensions/provider"
 	"github.com/EndoTheDev/omega/extensions/store"
-	"github.com/EndoTheDev/omega/gateway"
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,9 +22,12 @@ import (
 // testContext creates a minimal agent.Context with a real provider plugin
 // and command handler, for testing extension-routed commands.
 func testContext() *agent.Context {
-	cfg := gateway.DefaultConfig()
-	cfg.Store.DBPath = ":memory:"
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{
+		Configs: map[string]any{
+			"store":    store.Config{DBPath: ":memory:"},
+			"provider": provider.Default(),
+		},
+	}
 	p := &provider.Plugin{}
 	p.Mount(ctx)
 	sp := store.NewPlugin()

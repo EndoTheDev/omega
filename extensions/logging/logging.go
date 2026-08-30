@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // FileLogger implements agent.LoggerProvider with a file backend.
@@ -72,7 +71,7 @@ func (NopLogger) Close() error { return nil }
 
 // NewLogger creates a LoggerProvider from config. Returns a NopLogger
 // when disabled, or a FileLogger writing to the configured file.
-func NewLogger(cfg gateway.LoggingConfig) (agent.LoggerProvider, error) {
+func NewLogger(cfg Config) (agent.LoggerProvider, error) {
 	if !cfg.Enabled {
 		return NopLogger{}, nil
 	}

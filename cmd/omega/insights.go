@@ -8,7 +8,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/extensions/store"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // cmdInsights handles the `omega insights` subcommand.
@@ -20,7 +19,7 @@ func cmdInsights(configPath string, args []string) error {
 		return err
 	}
 
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	cfg, err := LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}

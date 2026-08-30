@@ -20,7 +20,7 @@ var httpClient = &http.Client{
 }
 
 // SetHTTPTimeout updates the shared HTTP client's timeout. Called
-// during config loading from gateway.Config.HTTPTimeout.
+// during config loading from the host config's HTTPTimeout field.
 func SetHTTPTimeout(seconds int) {
 	if seconds > 0 {
 		httpClient.Timeout = time.Duration(seconds) * time.Second

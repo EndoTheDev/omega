@@ -15,7 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/extensions/store"
 )
 
-// mockProvider is a scripted Provider for gateway tests. Each call
+// mockProvider is a scripted Provider for http_channel tests. Each call
 // returns the next scripted stream; the final script repeats so loops
 // that must keep going stay alive.
 type mockProvider struct {
@@ -73,7 +73,7 @@ func newTestServer() *Server {
 	return NewServer(a, nil, nil)
 }
 
-// testLoop is a minimal loop for gateway tests. It mirrors the
+// testLoop is a minimal loop for http_channel tests. It mirrors the
 // real loop's event sequence for simple one-turn conversations.
 // The real loop lives in extensions/agent_loop/.
 type testLoop struct{}

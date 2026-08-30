@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // Compile-time interface checks.
@@ -114,7 +113,7 @@ func TestHandleCommandUnknown(t *testing.T) {
 func TestPluginMount(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
-	ctx := &agent.Context{CWD: dir, Config: nil}
+	ctx := &agent.Context{CWD: dir}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -133,10 +132,9 @@ func TestPluginMount(t *testing.T) {
 }
 
 func TestPluginMountWithConfig(t *testing.T) {
-	// gateway.Config is a value type; we can't easily construct one here
-	// without importing gateway (which would create a test-only dep cycle
-	// concern). The nil-Config path is covered above; the config path is
-	// exercised in integration. This test just verifies Mount doesn't
+	// The Configs map routes per-extension config. The nil-Configs path
+	// is covered above; the config path is exercised in integration.
+	// This test just verifies Mount doesn't
 	// panic with a nil Config.
 	p := NewPlugin()
 	ctx := &agent.Context{}
@@ -339,17 +337,18 @@ func TestHandleCommandEmptySkills(t *testing.T) {
 	}
 }
 
-// TestPluginMountWithGatewayConfig covers the Mount path where
-// ctx.Config is a gateway.Config with Skills.Dir set.
-func TestPluginMountWithGatewayConfig(t *testing.T) {
+// TestPluginMountWithDirConfig covers the Mount path where
+// ctx.Configs has a skills config with Dir set.
+func TestPluginMountWithDirConfig(t *testing.T) {
 	dir := makeSkillDir(t)
-	cfg := gateway.Config{
-		Skills: gateway.SkillsConfig{Dir: dir},
-	}
 	p := NewPlugin()
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{
+		Configs: map[string]any{
+			"skills": Config{Dir: dir},
+		},
+	}
 	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount with gateway.Config: %v", err)
+		t.Fatalf("Mount with config: %v", err)
 	}
 	if ctx.Skills == nil {
 		t.Fatal("Skills slot not populated")

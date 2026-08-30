@@ -7,7 +7,7 @@ capability seam interfaces, shared data types, and the in-process
 extension system (Context, Plugin, MountAll). It consumes provider
 stream events, executes tool calls, appends results back into message
 history, and emits lifecycle events for anyone observing (the TUI, the
-gateway, or extensions).
+HTTP channel, or extensions).
 
 ## Ownership
 
@@ -44,7 +44,7 @@ gateway, or extensions).
 
 ## Local Contracts
 
-- **The agent loop is the only place tools are executed.** The gateway
+- **The agent loop is the only place tools are executed.** The HTTP channel
   and TUI route tool calls through the agent; they do not call tools
   directly. The loop implementation (in `extensions/agent_loop/`)
   handles this; a custom `LoopProvider` owns its own tool dispatch.

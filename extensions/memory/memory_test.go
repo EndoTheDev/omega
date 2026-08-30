@@ -10,14 +10,13 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // newTestMemory creates a FileMemory with temp files and small limits.
 func newTestMemory(t *testing.T) *FileMemory {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := gateway.MemoryConfig{
+	cfg := Config{
 		Enabled:              true,
 		UserProfileEnabled:   true,
 		CharLimit:            200,
@@ -235,7 +234,7 @@ func TestFileMemorySnapshot(t *testing.T) {
 
 func TestFileMemorySnapshotEmpty(t *testing.T) {
 	dir := t.TempDir()
-	cfg := gateway.MemoryConfig{
+	cfg := Config{
 		Enabled:              true,
 		UserProfileEnabled:   true,
 		CharLimit:            200,
@@ -253,7 +252,7 @@ func TestFileMemorySnapshotEmpty(t *testing.T) {
 
 func TestFileMemorySnapshotDisabledStore(t *testing.T) {
 	dir := t.TempDir()
-	cfg := gateway.MemoryConfig{
+	cfg := Config{
 		Enabled:              true,
 		UserProfileEnabled:   false,
 		CharLimit:            200,
@@ -281,7 +280,7 @@ func TestFileMemorySnapshotDisabledStore(t *testing.T) {
 
 func TestFileMemoryAddDisabled(t *testing.T) {
 	dir := t.TempDir()
-	cfg := gateway.MemoryConfig{
+	cfg := Config{
 		Enabled:              false,
 		UserProfileEnabled:   true,
 		CharLimit:            200,
@@ -584,12 +583,12 @@ func TestRunBatchError(t *testing.T) {
 
 func TestPluginMount(t *testing.T) {
 	dir := t.TempDir()
-	cfg := gateway.DefaultConfig()
-	cfg.Memory.File = filepath.Join(dir, "memory.md")
-	cfg.Memory.UserProfileFile = filepath.Join(dir, "user.md")
+	cfg := Default()
+	cfg.File = filepath.Join(dir, "memory.md")
+	cfg.UserProfileFile = filepath.Join(dir, "user.md")
 
 	p := NewPlugin()
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{Configs: map[string]any{"memory": cfg}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // Plugin implements agent.Plugin for the logging seam. It creates
@@ -20,11 +19,11 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the logger from config and sets ctx.Logger.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	cfg, ok := ctx.Config.(gateway.Config)
-	if !ok {
-		cfg = gateway.DefaultConfig()
+	cfg := Default()
+	if c, ok := ctx.Configs["logging"].(Config); ok {
+		cfg = c
 	}
-	logger, err := NewLogger(cfg.Logging)
+	logger, err := NewLogger(cfg)
 	if err != nil {
 		return fmt.Errorf("logging: %w", err)
 	}
@@ -32,5 +31,5 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	return nil
 }
 
-// NewPlugin returns a logging Plugin instance.
+// NewPlugin creates a logging plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }

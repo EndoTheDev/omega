@@ -1,20 +1,19 @@
 # Architecture
 
 ```txt
-gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
+HTTP channel -> agent (loop + tools) -> ai (provider streaming)
 ```
 
-| Layer      | Package          | Responsibility                                                                                                       |
-| ---------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Gateway    | `gateway`        | HTTP server, SSE streaming, session store (SQLite), config, session tree                                             |
-| Agent      | `agent`          | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)   |
-| Provider   | `ai`             | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                 |
-| CLI        | `cmd/omega`      | Entry point, TUI, project context, trust gate, config wiring                                                         |
-| Extensions | `extensions/`     | 10 in-process Go packages: agent_loop, provider, store, skills, compactor, prompt, tools, mcp, delegate, web        |
+| Layer      | Package       | Responsibility                                                                                                                                   |
+| ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Agent      | `agent`       | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)                                |
+| Provider   | `ai`          | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                                             |
+| CLI        | `cmd/omega`   | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                |
+| Extensions | `extensions/` | 14 in-process Go packages: agent_loop, provider, store, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
-consumes them and runs the tool loop. The gateway layer exposes
+consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP.
 
 ## Project Structure
@@ -23,8 +22,7 @@ everything over HTTP.
 cmd/omega/        Single binary entry point (serve, run, health, chat)
 ai/               Provider abstraction, stream events, message types, retry
 agent/            Multi-turn loop, tool execution, compaction, seams, Plugin system
-gateway/          HTTP server, SSE streaming, session store, config
-extensions/        In-process extension packages (10 extensions, compiled into omega)
+extensions/        In-process extension packages (14 extensions, compiled into omega)
 .agents/          Commit conventions (COMMIT.md)
 bin/skills/       Skill templates (tracked)
 build.sh          Build script (Linux/macOS): vet + test + build

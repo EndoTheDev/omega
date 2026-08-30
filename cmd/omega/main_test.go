@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // TestRunChdirError verifies a non-subcommand argument that is not a
@@ -186,7 +185,7 @@ func TestResolveHomePaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 
-	cfg := gateway.DefaultConfig()
+	cfg := DefaultConfig()
 	resolveHomePaths(&cfg)
 
 	if cfg.Store.DBPath != home+"/omega.db" {
@@ -199,7 +198,7 @@ func TestResolveHomePaths(t *testing.T) {
 		t.Errorf("home dir not created: err=%v", err)
 	}
 
-	custom := gateway.DefaultConfig()
+	custom := DefaultConfig()
 	custom.Store.DBPath = "custom.db"
 	custom.Skills.Dir = "custom-skills"
 	resolveHomePaths(&custom)

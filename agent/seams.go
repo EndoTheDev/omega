@@ -66,7 +66,7 @@ type DefaultToolProvider struct {
 func (d DefaultToolProvider) Tools() map[string]Tool { return d.ToolsMap }
 
 // StoreProvider is the session persistence seam. The default
-// implementation is SQLite (gateway.Store), provided via the store
+// implementation is SQLite (store.Store in extensions/store/), provided via the store
 // plugin. All session and message operations go through this interface.
 type StoreProvider interface {
 	Open(dsn string) error
@@ -164,12 +164,10 @@ type Channel interface {
 
 // ChannelDeps carries everything a channel needs to run. Ctx is the
 // fully-wired plugin Context — channels create agents from it. Store
-// persists messages. Config is the host config (gateway.Config) for
-// channels to type-assert their settings from.
+// persists messages.
 type ChannelDeps struct {
-	Ctx    *Context
-	Store  StoreProvider
-	Config any
+	Ctx   *Context
+	Store StoreProvider
 }
 
 // Frontend is the user-facing interface seam. The default implementation

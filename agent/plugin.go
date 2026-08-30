@@ -44,8 +44,8 @@ type Context struct {
 	PendingDelegations func() int
 
 	// Shared state.
-	CWD    string
-	Config any // host passes gateway.Config, plugins type-assert
+	CWD     string
+	Configs map[string]any // per-plugin typed config, keyed by plugin Name()
 
 	// Metadata (built during MountAll).
 	Infos []ExtensionInfo

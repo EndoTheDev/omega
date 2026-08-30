@@ -7,7 +7,7 @@
 - Session tree with branching, labeling, and full persistence
 - Context compaction with overflow auto-retry, reserve tokens, and branch summarization
 - Skills system (skills extension, agent-driven `skills.read` tool, `/skills` command)
-- Extension system: in-process Go plugins, 10 extensions, 6 seams (prompt, provider, store, skills, tools, compactor)
+- Extension system: in-process Go plugins, 14 extensions, 10 exclusive + 2 additive seams (provider, compactor, store, skills, loop, logging, memory, prompt_builder, frontend, tools, channel)
 - Session store (SQLite, FTS5 full-text search, `sessions.search` tool)
 - In-memory store fallback when no store extension loaded
 - Complete TUI with streaming, markdown, autocomplete, and history
@@ -41,16 +41,23 @@
 - Auto-discovered context window (Ollama /api/show, provider > config > default fallback)
 - Splash shows real tool count from loaded extensions
 - `/search` added to help table
+- Channel seam + HTTP channel extension (v0.3.0)
+- Store and HTTP server implementations moved from gateway/ into extensions
+- TUI extracted as Frontend extension (extensions/tui/, Frontend seam)
+- Slash commands moved to owning extensions (12 commands: store, provider, tools)
+- Extension-owned config (per-extension Config structs, no gateway import)
+- Self-update fix: Python3 detection, unlink-before-rename on Linux
+- Improver: autonomous test/coverage loop with safe auto-landing
 
 ## Planned
 
 - More tools (grep, glob, multi-file edit)
 - More providers (Gemini, Mistral)
-- Web UI (via the gateway HTTP API)
+- Web UI (via the Frontend seam)
 - Prompt templates with variable interpolation
 - Core-trust extension (pluggable trust gate)
-- Output/channel seam (Telegram, Discord, WhatsApp)
-- Gateway-mode delegation support (SSE polling)
+- Discord/Telegram channels (via the Channel seam)
+- Serve-mode delegation support (SSE polling)
 - Checksum verification for self-update
 
 ## Known Limitations

@@ -7,7 +7,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // TestPluginImplementsInterface verifies the Plugin type satisfies
@@ -101,12 +100,12 @@ func TestSearchToolNoResults(t *testing.T) {
 }
 
 // TestPluginMount verifies Mount populates ctx.Store and adds a
-// sessions.search tool provider, reading DSN from gateway.Config.
+// sessions.search tool provider, reading DSN from Config.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
 	ctx := &agent.Context{
-		Config: gateway.Config{
-			Store: gateway.StoreConfig{DBPath: ":memory:"},
+		Configs: map[string]any{
+			"store": Config{DBPath: ":memory:"},
 		},
 	}
 	if err := p.Mount(ctx); err != nil {

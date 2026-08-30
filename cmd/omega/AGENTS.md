@@ -16,7 +16,7 @@ The TUI is now an extension at `extensions/tui/` implementing the
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
   agent wiring (`newAgent`, `buildPlugins`), `cmdServe`, `cmdRun`,
   `cmdChat`, `cmdTest` (smoke test), `cmdHealth`, config hot-reload
-  (`gateway.WatchConfig`), store wiring (from `ctx.Store` after
+  (`WatchConfig`), store wiring (from `ctx.Store` after
   `MountAll`), env vars (`OMEGA_HOME`, `OMEGA_SKILLS_DIR`,
   `OMEGA_BIN` for subagent delegation), global help (`helpText`)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
@@ -38,6 +38,11 @@ The TUI is now an extension at `extensions/tui/` implementing the
 - `context.go` - project context loading (`ProjectRoot`,
   `LoadProjectContext`) moved from the deleted `harness/` package
 - `image.go` - CLI `@file` input (`parseFileArgs` calling `ai.DetectImage`)
+- `config.go` - runtime config: `Config` struct with sub-configs
+  (ProviderConfig, ServerConfig, StoreConfig, SkillsConfig, MemoryConfig,
+  LoggingConfig, CompactionConfig), `LoadConfig` (YAML + env + defaults),
+  `DefaultConfig`, `applyEnv`, `Validate`, `WatchConfig` (hot-reload)
+- `config_test.go` - config loading, env overrides, validation tests
 - `main_test.go` - self-check tests for subcommand dispatch,
   chdir error handling, and help/version flags
 - `export_test.go` - self-check tests for `exportMessages`,
@@ -88,7 +93,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   itself (callers start channels from it).
 - **cmdServe is channel-driven.** Channels mount via the additive
   `channel` seam (`ctx.Channels`). `cmdServe` starts each in a
-  goroutine with `ChannelDeps{Ctx, Store, Config}`, waits for a signal
+  goroutine with `ChannelDeps{Ctx, Store}`, waits for a signal
   or the first channel error, and stops all channels on shutdown.
   `omega health` probes the HTTP channel specifically.
 - **Self-update downloads and extracts an archive.** `cmdUpdate` fetches
@@ -113,8 +118,8 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   `resolveHomePaths` rewrites relative defaults (`omega.db`,
   `extensions`, `skills`, `memory.md`, `user.md`, `omega.log`) to home-relative paths so omega works from
   any CWD.
-- **No re-exports.** Types from `ai`, `agent`, and
-  `gateway` are imported from there, not re-exported.
+- **No re-exports.** Types from `ai`, `agent`
+  are imported from there, not re-exported.
 
 ## Work Guidance
 

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // Plugin implements agent.Plugin for the store seam. It opens the
@@ -21,13 +20,16 @@ func (p *Plugin) Name() string       { return "store" }
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount opens the store from config (gateway.Config.Store.DBPath,
-// defaulting to "omega.db") and populates ctx.Store + a sessions.search
-// tool provider + session slash commands.
+// Mount opens the store from config and populates ctx.Store + a
+// sessions.search tool provider + session slash commands.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	dsn := "omega.db"
-	if cfg, ok := ctx.Config.(gateway.Config); ok && cfg.Store.DBPath != "" {
-		dsn = cfg.Store.DBPath
+	cfg := Default()
+	if c, ok := ctx.Configs["store"].(Config); ok {
+		cfg = c
+	}
+	dsn := cfg.DBPath
+	if dsn == "" {
+		dsn = "omega.db"
 	}
 	s, err := NewStore(dsn)
 	if err != nil {

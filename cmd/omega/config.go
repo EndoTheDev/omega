@@ -1,4 +1,4 @@
-package gateway
+package main
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the gateway's runtime configuration. It is loaded from
+// Config holds the runtime configuration. It is loaded from
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {

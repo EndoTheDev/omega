@@ -11,7 +11,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // ponytail: vars (not consts) so tests can point them at an httptest server.
@@ -26,14 +25,9 @@ type Extension struct {
 	apiKey string
 }
 
-// New creates a web Extension from a gateway config. The API key
-// is read from Provider.APIKey.
-func New(cfg *gateway.Config) *Extension {
-	var key string
-	if cfg != nil {
-		key = cfg.Provider.APIKey
-	}
-	return &Extension{apiKey: key}
+// New creates a web Extension from config.
+func New(cfg Config) *Extension {
+	return &Extension{apiKey: cfg.APIKey}
 }
 
 // Tools returns the web.search and web.fetch tools.

@@ -2,7 +2,6 @@ package memory
 
 import (
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // Plugin implements agent.Plugin for the memory seam. It opens the
@@ -20,16 +19,15 @@ func (p *Plugin) Requires() []string { return nil }
 // Mount creates the FileMemory from config and populates ctx.Memory +
 // a memory tool provider.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	cfg, ok := ctx.Config.(gateway.Config)
-	if !ok {
-		// No config — use defaults.
-		cfg = gateway.DefaultConfig()
+	cfg := Default()
+	if c, ok := ctx.Configs["memory"].(Config); ok {
+		cfg = c
 	}
-	fm := NewFileMemory(cfg.Memory)
+	fm := NewFileMemory(cfg)
 	ctx.Memory = fm
 	ctx.ToolProviders = append(ctx.ToolProviders, &memoryToolProvider{mem: fm})
 	return nil
 }
 
-// NewPlugin returns a memory Plugin instance.
+// NewPlugin creates a memory plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }

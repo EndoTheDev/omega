@@ -2,7 +2,7 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-v0.1.4-blue)
+![Status](https://img.shields.io/badge/status-v0.4.0-blue)
 
 omega is a terminal-based AI assistant that reads files, runs
 commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
@@ -38,15 +38,14 @@ go install github.com/EndoTheDev/omega/cmd/omega@latest
 ## Architecture
 
 ```txt
-gateway (HTTP API) -> agent (loop + tools) -> ai (provider streaming)
+HTTP channel -> agent (loop + tools) -> ai (provider streaming)
 ```
 
-| Layer    | Responsibility                                 |
-| -------- | ---------------------------------------------- |
-| Gateway  | HTTP server, SSE streaming, session store      |
-| Agent    | Multi-turn loop, tools, compaction, extensions |
-| Provider | Ollama + OpenAI + Anthropic streaming          |
-| CLI      | Entry point, TUI, trust gate, config           |
+| Layer    | Responsibility                                             |
+| -------- | ---------------------------------------------------------- |
+| Agent    | Multi-turn loop, tools, compaction, extensions             |
+| Provider | Ollama + OpenAI + Anthropic streaming                      |
+| CLI      | Entry point, config loading, trust gate, Frontend dispatch |
 
 See [docs/architecture.md](docs/architecture.md) for details.
 
@@ -54,8 +53,6 @@ See [docs/architecture.md](docs/architecture.md) for details.
 
 All extensions are in-process Go packages under `extensions/`. See
 [extensions/README.md](extensions/README.md) for the full list.
-
-See [docs/architecture.md](docs/architecture.md) for details.
 
 ## Documentation
 

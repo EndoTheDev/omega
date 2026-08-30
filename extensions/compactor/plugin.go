@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // Plugin adapts the compactor to the agent.Plugin interface.
@@ -15,16 +14,15 @@ func (p *Plugin) Name() string       { return "compactor" }
 func (p *Plugin) Provides() []string { return []string{"compactor"} }
 func (p *Plugin) Requires() []string { return []string{"provider"} }
 
-// Mount reads CompactionConfig from ctx.Config (type-asserted to
-// gateway.Config), wires the provider from the already-mounted
-// provider slot, sets ctx.Compactor, and registers the /compact
-// command.
+// Mount reads CompactionConfig from ctx.Configs, wires the provider
+// from the already-mounted provider slot, sets ctx.Compactor, and
+// registers the /compact command.
 func (p *Plugin) Mount(ctx *agent.Context) error {
 	var compactor *Compactor
-	if cfg, ok := ctx.Config.(gateway.Config); ok {
+	if cfg, ok := ctx.Configs["compactor"].(agent.CompactionConfig); ok {
 		compactor = &Compactor{
 			provider: ctx.Provider,
-			config:   cfg.Compaction,
+			config:   cfg,
 		}
 	} else {
 		compactor = &Compactor{

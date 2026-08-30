@@ -16,7 +16,7 @@ import (
 
 // Compactor implements agent.CompactionProvider. It holds a reference
 // to the provider (set at Mount time) and the compaction config (read
-// from gateway.Config at Mount time).
+// from ctx.Configs at Mount time).
 type Compactor struct {
 	provider ai.Provider
 	config   agent.CompactionConfig

@@ -5,37 +5,15 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
-func TestHTTPChannelImplementsChannel(t *testing.T) {
-	var _ agent.Channel = (*HTTPChannel)(nil)
-}
-
-func TestPluginImplementsInterface(t *testing.T) {
-	var _ agent.Plugin = (*Plugin)(nil)
-}
-
-func TestPluginMetadata(t *testing.T) {
-	p := NewPlugin()
-	if p.Name() != "http_channel" {
-		t.Errorf("Name() = %q, want %q", p.Name(), "http_channel")
-	}
-	provides := p.Provides()
-	if len(provides) != 1 || provides[0] != "channel" {
-		t.Errorf("Provides() = %v, want [channel]", provides)
-	}
-	if len(p.Requires()) != 0 {
-		t.Errorf("Requires() = %v, want empty", p.Requires())
-	}
-}
-
 func TestPluginMount(t *testing.T) {
-	cfg := gateway.DefaultConfig()
-	cfg.Server.Port = 9999
-
 	p := NewPlugin()
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{
+		Configs: map[string]any{
+			"http_channel": Config{Port: 9999},
+		},
+	}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -73,8 +51,11 @@ func TestPluginMountDefaultConfig(t *testing.T) {
 
 func TestPluginMountMultiple(t *testing.T) {
 	// Channels are additive: two mounts produce two channels.
-	cfg := gateway.DefaultConfig()
-	ctx := &agent.Context{Config: cfg}
+	ctx := &agent.Context{
+		Configs: map[string]any{
+			"http_channel": Default(),
+		},
+	}
 
 	p := NewPlugin()
 	if err := p.Mount(ctx); err != nil {

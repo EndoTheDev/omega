@@ -1,5 +1,7 @@
 .env
 *.db
+*.db-shm
+*.db-wal
 config.yaml
 trust.yaml
 bin/*

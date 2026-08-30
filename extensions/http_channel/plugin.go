@@ -4,12 +4,10 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // Plugin implements agent.Plugin for the HTTP channel. It reads the
-// port from config (server.port, unchanged — no breaking config moves)
-// and appends an HTTPChannel to ctx.Channels.
+// port from config and appends an HTTPChannel to ctx.Channels.
 type Plugin struct{}
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -23,11 +21,11 @@ func (p *Plugin) Requires() []string { return nil }
 // ctx.Channels. The host starts it (and any other mounted channels)
 // after MountAll completes.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	cfg, ok := ctx.Config.(gateway.Config)
-	if !ok {
-		cfg = gateway.DefaultConfig()
+	cfg := Default()
+	if c, ok := ctx.Configs["http_channel"].(Config); ok {
+		cfg = c
 	}
-	port := cfg.Server.Port
+	port := cfg.Port
 	if port <= 0 {
 		port = 8099
 	}

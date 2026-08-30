@@ -29,7 +29,6 @@ import (
 	"github.com/EndoTheDev/omega/extensions/tools"
 	"github.com/EndoTheDev/omega/extensions/tui"
 	"github.com/EndoTheDev/omega/extensions/web"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 func main() {
@@ -232,7 +231,7 @@ func resolveConfigPath(flagPath string) string {
 // resolveHomePaths fills in home-relative defaults for DBPath and
 // Skills.Dir when the config left them at their relative defaults.
 // This lets omega find its db and skills from any CWD.
-func resolveHomePaths(cfg *gateway.Config) {
+func resolveHomePaths(cfg *Config) {
 	home := omegaHome()
 	if cfg.Store.DBPath == "omega.db" {
 		cfg.Store.DBPath = home + "/omega.db"
@@ -256,8 +255,8 @@ func resolveHomePaths(cfg *gateway.Config) {
 // buildPlugins creates the list of in-process extensions from config.
 // Extensions are compiled into omega — config controls their settings,
 // not whether they're loaded. Each plugin reads its config from
-// ctx.Config during Mount.
-func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
+// ctx.Configs during Mount.
+func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 	mcpPlugin, err := mcp.NewPluginFromEnv()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "omega: mcp bridge: %v\n", err)
@@ -281,13 +280,29 @@ func buildPlugins(cfg gateway.Config) ([]agent.Plugin, error) {
 	}, nil
 }
 
+// buildConfigs routes Config sub-sections into per-extension
+// typed Config structs. Each extension reads its own config via
+// ctx.Configs["<name>"].(<ext>.Config) — no external import needed.
+func buildConfigs(cfg Config) map[string]any {
+	return map[string]any{
+		"store":        store.Config{DBPath: cfg.Store.DBPath},
+		"provider":     provider.Config{Type: cfg.Provider.Type, ModelName: cfg.Provider.ModelName, Host: cfg.Provider.Host, APIKey: cfg.Provider.APIKey},
+		"http_channel": httpchannel.Config{Port: cfg.Server.Port},
+		"skills":       skills.Config{Dir: cfg.Skills.Dir},
+		"memory":       memory.Config{Enabled: cfg.Memory.Enabled, UserProfileEnabled: cfg.Memory.UserProfileEnabled, CharLimit: cfg.Memory.CharLimit, UserProfileCharLimit: cfg.Memory.UserProfileCharLimit, File: cfg.Memory.File, UserProfileFile: cfg.Memory.UserProfileFile},
+		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},
+		"compactor":    cfg.Compaction,
+		"web":          web.Config{APIKey: cfg.Provider.APIKey},
+	}
+}
+
 // newAgent wires config into a provider, agent, store, and extensions
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels.
-func newAgent(cfg gateway.Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, error) {
 	ctx := &agent.Context{
-		CWD:    cwd(),
-		Config: cfg,
+		CWD:     cwd(),
+		Configs: buildConfigs(cfg),
 	}
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
@@ -332,7 +347,7 @@ func signalContext() (context.Context, context.CancelFunc) {
 // channels (HTTP, Discord, etc.) until a signal triggers graceful
 // shutdown.
 func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error {
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	cfg, err := LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
@@ -357,7 +372,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	}
 	errCh := make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
-		deps := agent.ChannelDeps{Ctx: pctx, Store: store, Config: cfg}
+		deps := agent.ChannelDeps{Ctx: pctx, Store: store}
 		go func(c agent.Channel) {
 			errCh <- c.Start(ctx, deps)
 		}(ch)
@@ -397,7 +412,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		return fmt.Errorf("run requires a prompt argument")
 	}
 
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	cfg, err := LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
@@ -444,7 +459,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 
 // cmdChat loads config and launches the interactive Bubble Tea TUI.
 func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error {
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	cfg, err := LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}
@@ -453,8 +468,8 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 
 	// Build the plugin context to get the store and skills.
 	pctx := &agent.Context{
-		CWD:    cwd(),
-		Config: cfg,
+		CWD:     cwd(),
+		Configs: buildConfigs(cfg),
 	}
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
@@ -494,7 +509,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 	// Hot-reload non-disruptive config changes (theme, compaction,
 	// notifications) when config.yaml changes on disk.
 	configFile := resolveConfigPath(configPath)
-	gateway.WatchConfig(configFile, func(newCfg gateway.Config) {
+	WatchConfig(configFile, func(newCfg Config) {
 		ai.SetHTTPTimeout(newCfg.HTTPTimeout)
 	})
 
@@ -502,7 +517,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 }
 
 // runChat launches the frontend (TUI) via the Frontend seam.
-func runChat(cfg gateway.Config, pctx *agent.Context, skills []agent.Skill, appendPrompts []string, trust trustFlags) error {
+func runChat(cfg Config, pctx *agent.Context, skills []agent.Skill, appendPrompts []string, trust trustFlags) error {
 	if pctx.Frontend == nil {
 		return fmt.Errorf("no frontend extension loaded — mount a frontend plugin (e.g. tui)")
 	}
@@ -606,7 +621,7 @@ func cmdTest() error {
 
 // cmdHealth checks whether the server is reachable at the configured port.
 func cmdHealth(configPath string) error {
-	cfg, err := gateway.LoadConfig(resolveConfigPath(configPath))
+	cfg, err := LoadConfig(resolveConfigPath(configPath))
 	if err != nil {
 		return err
 	}

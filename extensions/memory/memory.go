@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/gateway"
 )
 
 // entrySep is the delimiter between entries in the memory files.
@@ -45,7 +44,7 @@ type FileMemory struct {
 }
 
 // NewFileMemory creates a FileMemory from config.
-func NewFileMemory(cfg gateway.MemoryConfig) *FileMemory {
+func NewFileMemory(cfg Config) *FileMemory {
 	return &FileMemory{
 		memoryFile:     cfg.File,
 		userFile:       cfg.UserProfileFile,
@@ -98,7 +97,7 @@ func (fm *FileMemory) Add(target, content string) (string, error) {
 	entries = append(entries, content)
 	total := fm.entriesChars(entries)
 	if total > limit {
-		usage := fm.usageStr(target, fm.entriesChars(entries[:len(entries)-1]), limit)
+		usage := fm.usageStr(fm.entriesChars(entries[:len(entries)-1]), limit)
 		return "", fmt.Errorf("%s at %s. Adding this entry (%d chars) would exceed the limit. Consolidate now: use 'replace' to merge overlapping entries into shorter ones or 'remove' stale or less important entries (see current_entries below), then retry this add.", fm.targetName(target), usage, len(content))
 	}
 
@@ -138,7 +137,7 @@ func (fm *FileMemory) Replace(target, oldText, content string) (string, error) {
 	total := fm.entriesChars(entries)
 	if total > limit {
 		entries[idx] = oldEntry // revert
-		usage := fm.usageStr(target, total-len(content)+len(oldEntry), limit)
+		usage := fm.usageStr(total-len(content)+len(oldEntry), limit)
 		return "", fmt.Errorf("%s at %s. Replacing with this entry (%d chars) would exceed the limit. Shorten the new content or remove another entry first.", fm.targetName(target), usage, len(content))
 	}
 
@@ -299,11 +298,11 @@ func (fm *FileMemory) targetName(target string) string {
 
 // usage returns the usage string for the current entries.
 func (fm *FileMemory) usage(target string, entries []string) string {
-	return fm.usageStr(target, fm.entriesChars(entries), fm.targetLimit(target))
+	return fm.usageStr(fm.entriesChars(entries), fm.targetLimit(target))
 }
 
 // usageStr formats a usage string like "1,474/2,200 chars".
-func (fm *FileMemory) usageStr(target string, used, limit int) string {
+func (fm *FileMemory) usageStr(used, limit int) string {
 	return fmt.Sprintf("%s/%s chars", commaInt(used), commaInt(limit))
 }
 
