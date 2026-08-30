@@ -265,6 +265,8 @@ func WatchConfig(path string, onChange func(Config)) {
 					cfg, err := LoadConfig(path)
 					if err == nil {
 						onChange(cfg)
+					} else {
+						fmt.Fprintf(os.Stderr, "omega: config reload failed (keeping old config): %v\n", err)
 					}
 				}
 			case _, ok := <-watcher.Errors:
