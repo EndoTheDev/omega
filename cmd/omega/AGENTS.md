@@ -21,8 +21,8 @@ The TUI is now an extension at `extensions/tui/` implementing the
   `OMEGA_BIN` for subagent delegation), global help (`helpText`)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
   `messageRole`, `resolveSessionCLI`)
-- `insights.go` - session analytics (`cmdInsights`, `formatInsights`,
-  `formatNumber`)
+- `insights.go` - session analytics (`cmdInsights`); formatting
+  via `agent.FormatInsights` / `agent.FormatNumber`
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
   `findAsset`, `assetNameForOS`, `findChecksumURL`, `verifyChecksum`).
   Archive-based: downloads zip/tar.gz, verifies SHA256 checksum,
@@ -33,6 +33,8 @@ The TUI is now an extension at `extensions/tui/` implementing the
   `io.LimitReader` caps zip reads at 200MB and API responses at 1MB,
   checksum verification before extraction, `verifyChecksum` fetch with
   30s timeout, atomic binary replacement via temp+rename on Linux/macOS.
+- `checksum.go` - release checksum verification (`findChecksumURL`,
+  `verifyChecksum` with SHA256 + 30s timeout)
 - `trust.go` - trust flag parsing (`trustFlags`, `parseTrustArgs`,
   `stripTrustArgs`), `cwd()` helper. Trust logic lives in
   `extensions/trust/` (TrustProvider seam).
@@ -86,7 +88,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   error with the candidates listed.
 - **Insights are cross-session analytics.** `ComputeInsights` in the
   store aggregates sessions, messages, tool calls, and token estimates
-  over the last N days. `formatInsights` renders the report as plain
+  over the last N days. `agent.FormatInsights` renders the report as plain
   text. CLI (`omega insights [--days N]`) uses this directly.
 - **Seam wiring in newAgent.** `newAgent` builds a `plugin.Context`,
   calls `MountAll` with all extension plugins (provider, store, skills,

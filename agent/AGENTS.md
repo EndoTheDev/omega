@@ -40,6 +40,8 @@ HTTP channel, or extensions).
   `NotableStat`, `InjectedMessage`, `ExtensionCommand`, `ToolInfo`,
   `ExtensionInfo`, `PromptBuildOptions`) used by the store interface,
   skills interface, and callers.
+- `insights.go` - insights formatting (`FormatInsights`,
+  `FormatNumber`) shared by CLI and TUI.
 - `*_test.go` - self-check tests for each non-trivial package
 
 ## Local Contracts

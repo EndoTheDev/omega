@@ -25,8 +25,8 @@ func TestFormatNumber(t *testing.T) {
 		{-1234, "-1,234"},
 	}
 	for _, tt := range tests {
-		if got := formatNumber(tt.n); got != tt.want {
-			t.Errorf("formatNumber(%d) = %q, want %q", tt.n, got, tt.want)
+		if got := agent.FormatNumber(tt.n); got != tt.want {
+			t.Errorf("agent.FormatNumber(%d) = %q, want %q", tt.n, got, tt.want)
 		}
 	}
 }
@@ -55,7 +55,7 @@ func TestFormatInsights(t *testing.T) {
 		NotableTools:  agent.NotableStat{Value: 30, Detail: "2026-08-10"},
 	}
 
-	out := formatInsights(in)
+	out := agent.FormatInsights(in)
 
 	// Period header with range.
 	if !strings.Contains(out, "omega insights — 30 days") {
@@ -118,7 +118,7 @@ func TestFormatInsightsThroughMode(t *testing.T) {
 		Daily:       [7]agent.DayStat{{Day: "Wed", Bar: "█", Count: 1}},
 	}
 
-	out := formatInsights(in)
+	out := agent.FormatInsights(in)
 
 	if !strings.Contains(out, "Through: 2026-08-31") {
 		t.Errorf("missing Through line:\n%s", out)
@@ -136,7 +136,7 @@ func TestFormatInsightsNoNotable(t *testing.T) {
 		Messages:  10,
 	}
 
-	out := formatInsights(in)
+	out := agent.FormatInsights(in)
 
 	if strings.Contains(out, "Notable Sessions") {
 		t.Errorf("Notable Sessions should be omitted when all zero:\n%s", out)
@@ -151,7 +151,7 @@ func TestFormatInsightsNoTools(t *testing.T) {
 		Messages:  10,
 	}
 
-	out := formatInsights(in)
+	out := agent.FormatInsights(in)
 
 	if strings.Contains(out, "Top Tools") {
 		t.Errorf("Top Tools should be omitted when empty:\n%s", out)

@@ -36,7 +36,7 @@ func TestSessionDisplayName(t *testing.T) {
 	}
 }
 
-// --- formatNumber ---
+// --- agent.FormatNumber ---
 
 func TestFormatNumber(t *testing.T) {
 	cases := []struct {
@@ -57,9 +57,9 @@ func TestFormatNumber(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.want, func(t *testing.T) {
-			got := formatNumber(c.n)
+			got := agent.FormatNumber(c.n)
 			if got != c.want {
-				t.Fatalf("formatNumber(%d) = %q, want %q", c.n, got, c.want)
+				t.Fatalf("agent.FormatNumber(%d) = %q, want %q", c.n, got, c.want)
 			}
 		})
 	}
@@ -212,7 +212,7 @@ func TestHandleNewCommand(t *testing.T) {
 	})
 }
 
-// --- formatInsights ---
+// --- agent.FormatInsights ---
 
 func TestFormatInsightsPopulated(t *testing.T) {
 	in := &agent.Insights{
@@ -239,7 +239,7 @@ func TestFormatInsightsPopulated(t *testing.T) {
 		NotableTools:  agent.NotableStat{Value: 30, Detail: "2026-08-20"},
 	}
 
-	got := formatInsights(in)
+	got := agent.FormatInsights(in)
 
 	// Verify key elements are present.
 	checks := []string{
@@ -264,7 +264,7 @@ func TestFormatInsightsPopulated(t *testing.T) {
 	}
 	for _, want := range checks {
 		if !strings.Contains(got, want) {
-			t.Errorf("formatInsights output missing %q\ngot:\n%s", want, got)
+			t.Errorf("agent.FormatInsights output missing %q\ngot:\n%s", want, got)
 		}
 	}
 }
@@ -273,7 +273,7 @@ func TestFormatInsightsEmpty(t *testing.T) {
 	// Zero-value Insights: no tools, no notable sessions, no period start.
 	in := &agent.Insights{}
 
-	got := formatInsights(in)
+	got := agent.FormatInsights(in)
 
 	// Empty PeriodStart path uses the "Through:" line.
 	if !strings.Contains(got, "Through: ") {
@@ -304,7 +304,7 @@ func TestFormatInsightsPeriodStartEmptyUsesThrough(t *testing.T) {
 		Sessions:    1,
 		Messages:    1,
 	}
-	got := formatInsights(in)
+	got := agent.FormatInsights(in)
 	if !strings.Contains(got, "Through: 2026-08-30") {
 		t.Errorf("missing 'Through: 2026-08-30' when PeriodStart empty\ngot:\n%s", got)
 	}
@@ -323,7 +323,7 @@ func TestFormatInsightsToolPercentage(t *testing.T) {
 			{Name: "shell.run", Count: 40},
 		},
 	}
-	got := formatInsights(in)
+	got := agent.FormatInsights(in)
 	if !strings.Contains(got, "50.0%") {
 		t.Errorf("missing 50.0%% tool percentage\ngot:\n%s", got)
 	}
@@ -339,7 +339,7 @@ func TestFormatInsightsToolPercentageZeroToolCalls(t *testing.T) {
 			{Name: "shell.run", Count: 5},
 		},
 	}
-	got := formatInsights(in)
+	got := agent.FormatInsights(in)
 	if !strings.Contains(got, "0.0%") {
 		t.Errorf("missing 0.0%% when ToolCalls=0\ngot:\n%s", got)
 	}
