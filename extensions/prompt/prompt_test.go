@@ -22,7 +22,7 @@ func TestPluginImplementsInterface(t *testing.T) {
 
 // TestPluginMetadata checks Name/Provides/Requires return expected values.
 func TestPluginMetadata(t *testing.T) {
-	p := NewPlugin("")
+	p := NewPlugin()
 	if p.Name() != "prompt" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "prompt")
 	}
@@ -31,14 +31,14 @@ func TestPluginMetadata(t *testing.T) {
 		t.Errorf("Provides() = %v, want [prompt_builder]", provides)
 	}
 	req := p.Requires()
-	if len(req) != 1 || req[0] != "memory" {
-		t.Errorf("Requires() = %v, want [memory]", req)
+	if len(req) != 2 || req[0] != "memory" || req[1] != "skills" {
+		t.Errorf("Requires() = %v, want [memory skills]", req)
 	}
 }
 
 // TestMountSetsPromptBuilder verifies Mount populates ctx.PromptBuilder.
 func TestMountSetsPromptBuilder(t *testing.T) {
-	p := NewPlugin("")
+	p := NewPlugin()
 	ctx := &agent.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
@@ -50,7 +50,7 @@ func TestMountSetsPromptBuilder(t *testing.T) {
 
 // TestBuildPrompt verifies the basic structure of the assembled prompt.
 func TestBuildPrompt(t *testing.T) {
-	b := NewPromptBuilder("", nil) // no skills dir → no skills section
+	b := NewPromptBuilder(nil, nil) // no skills dir → no skills section
 	opts := agent.PromptBuildOptions{
 		CWD:            "/test/cwd",
 		ProjectContext: "This is a test project.",
@@ -104,7 +104,7 @@ func TestBuildPrompt(t *testing.T) {
 
 // TestGuidelines returns the expected guideline lines.
 func TestGuidelines(t *testing.T) {
-	b := NewPromptBuilder("", nil)
+	b := NewPromptBuilder(nil, nil)
 	g := b.Guidelines()
 	if len(g) != 5 {
 		t.Fatalf("Guidelines() returned %d lines, want 5", len(g))

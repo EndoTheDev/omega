@@ -8,8 +8,6 @@ package prompt
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -19,26 +17,26 @@ import (
 
 // PromptBuilder is the in-process system prompt builder.
 type PromptBuilder struct {
-	skillsDir string // OMEGA_SKILLS_DIR, empty = no skills
-	memory    agent.MemoryProvider
+	skills agent.SkillsProvider
+	memory agent.MemoryProvider
 }
 
-// NewPromptBuilder creates a PromptBuilder. skillsDir overrides the
-// OMEGA_SKILLS_DIR env var; pass "" to use the env var (the common
-// case when the host wires this via Mount). memory is the MemoryProvider
-// for snapshot injection; pass nil if no memory extension is loaded.
-func NewPromptBuilder(skillsDir string, memory agent.MemoryProvider) *PromptBuilder {
-	if skillsDir == "" {
-		skillsDir = os.Getenv("OMEGA_SKILLS_DIR")
-	}
-	return &PromptBuilder{skillsDir: skillsDir, memory: memory}
+// NewPromptBuilder creates a PromptBuilder. skills is the
+// SkillsProvider for listing available skills; pass nil if no skills
+// extension is loaded. memory is the MemoryProvider for snapshot
+// injection; pass nil if no memory extension is loaded.
+func NewPromptBuilder(skills agent.SkillsProvider, memory agent.MemoryProvider) *PromptBuilder {
+	return &PromptBuilder{skills: skills, memory: memory}
 }
 
 // BuildPrompt assembles the full system prompt from the build options.
 // Returns (prompt, true) on success. It always returns true — the
 // prompt builder is the default source of the system prompt.
 func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOptions) (string, bool) {
-	skills := b.loadSkills()
+	var skills []agent.Skill
+	if b.skills != nil {
+		skills, _ = b.skills.LoadSkills("")
+	}
 
 	var sb strings.Builder
 	sb.WriteString("You are an AI coding agent with access to tools.\n")
@@ -123,59 +121,6 @@ func (b *PromptBuilder) Guidelines() []string {
 		"Report what you did concisely. Do not repeat file contents back.",
 		"If something fails, report the error honestly rather than guessing.",
 	}
-}
-
-// loadSkills reads skills from the configured skills directory. Returns
-// nil if the directory is not set or missing.
-func (b *PromptBuilder) loadSkills() []agent.Skill {
-	if b.skillsDir == "" {
-		return nil
-	}
-	entries, err := os.ReadDir(b.skillsDir)
-	if err != nil {
-		return nil
-	}
-	var skills []agent.Skill
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		skillFile := filepath.Join(b.skillsDir, entry.Name(), entry.Name()+".md")
-		data, err := os.ReadFile(skillFile)
-		if err != nil {
-			continue
-		}
-		s := parseFrontmatter(agent.Skill{Name: entry.Name(), Dir: filepath.Join(b.skillsDir, entry.Name())}, string(data))
-		skills = append(skills, s)
-	}
-	return skills
-}
-
-// parseFrontmatter parses simple YAML frontmatter (name, description)
-// into s and returns it. Data without frontmatter is returned unchanged.
-func parseFrontmatter(s agent.Skill, data string) agent.Skill {
-	lines := strings.Split(data, "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return s
-	}
-	for _, line := range lines[1:] {
-		if strings.TrimSpace(line) == "---" {
-			break
-		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		switch key {
-		case "name":
-			s.Name = val
-		case "description":
-			s.Description = val
-		}
-	}
-	return s
 }
 
 // firstLine returns the first non-empty line of s, or s itself if it

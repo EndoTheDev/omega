@@ -22,7 +22,11 @@ type SkillsProvider struct {
 
 // LoadSkills scans dir for <name>/<name>.md skill files and returns
 // them. A missing directory returns an empty slice, not an error.
+// If dir is empty, uses the provider's configured Dir.
 func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
+	if dir == "" {
+		dir = sp.Dir
+	}
 	return scanSkills(dir)
 }
 

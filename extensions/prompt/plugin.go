@@ -6,15 +6,10 @@ import (
 
 // Plugin is the agent.Plugin adapter for the prompt builder.
 // Seam: prompt_builder (exclusive).
-type Plugin struct {
-	skillsDir string
-}
+type Plugin struct{}
 
-// NewPlugin creates a prompt-builder plugin. skillsDir overrides
-// OMEGA_SKILLS_DIR; pass "" to use the env var.
-func NewPlugin(skillsDir string) *Plugin {
-	return &Plugin{skillsDir: skillsDir}
-}
+// NewPlugin creates a prompt-builder plugin.
+func NewPlugin() *Plugin { return &Plugin{} }
 
 // Name returns the plugin name shown in /extensions.
 func (p *Plugin) Name() string { return "prompt" }
@@ -23,14 +18,14 @@ func (p *Plugin) Name() string { return "prompt" }
 func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
 
 // Requires lists seams that must be mounted before this plugin.
-// The prompt builder needs memory so it can inject the snapshot.
-func (p *Plugin) Requires() []string { return []string{"memory"} }
+// The prompt builder needs memory for snapshot injection and skills
+// for the Available Skills section.
+func (p *Plugin) Requires() []string { return []string{"memory", "skills"} }
 
-// Mount sets ctx.PromptBuilder to a new PromptBuilder. The memory
-// provider from ctx.Memory is passed to the builder for snapshot
-// injection.
+// Mount sets ctx.PromptBuilder. The memory provider is passed for
+// snapshot injection; the skills provider is passed for skill listing.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	ctx.PromptBuilder = NewPromptBuilder(p.skillsDir, ctx.Memory)
+	ctx.PromptBuilder = NewPromptBuilder(ctx.Skills, ctx.Memory)
 	return nil
 }
 

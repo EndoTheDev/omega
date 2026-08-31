@@ -272,7 +272,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		skills.NewPlugin(),
 		compactor.NewPlugin(),
 		memory.NewPlugin(),
-		prompt.NewPlugin(cfg.Skills.Dir),
+		prompt.NewPlugin(),
 		tools.NewPlugin(),
 		mcpPlugin,
 		delegate.NewPlugin(),
