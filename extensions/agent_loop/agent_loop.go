@@ -36,9 +36,6 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 	// Merge tool providers. Existing tools take precedence over
 	// provider tools; provider tools take precedence over extension tools.
-	if opts.ToolProvider != nil {
-		opts.ToolProviders = append([]agent.ToolProvider{opts.ToolProvider}, opts.ToolProviders...)
-	}
 	for _, tp := range opts.ToolProviders {
 		if tp == nil {
 			continue

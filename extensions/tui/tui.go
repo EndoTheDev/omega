@@ -3,8 +3,6 @@ package tui
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -808,7 +806,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// Ephemeral sessions skip the store entirely.
 	if m.store != nil && !m.ephemeral {
 		if m.sessionID == "" {
-			id, err := newSessionID()
+			id, err := agent.NewSessionID()
 			if err != nil {
 				m.storeErr = "session id: " + err.Error()
 				m.busy = false
@@ -1688,15 +1686,6 @@ func (m model) handleCompact() (tea.Model, tea.Cmd) {
 		compacted, err := cp.Compact(context.Background(), history)
 		return compactionResultMsg{messages: compacted, err: err, before: before}
 	}
-}
-
-// newSessionID generates a random 8-character hex session identifier.
-func newSessionID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // resizeTextarea adjusts the textarea height based on its current content,

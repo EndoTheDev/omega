@@ -2,9 +2,7 @@ package http_channel
 
 import (
 	"context"
-	"crypto/rand"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -255,7 +253,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.ID == "" {
-			req.ID = newSessionID()
+			id, err := agent.NewSessionID()
+			if err != nil {
+				// ponytail: crypto/rand never fails on supported platforms; a
+				// fallback timestamp keeps the server alive if it ever does.
+				id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+			}
+			req.ID = id
 		}
 		if err := s.store.CreateSession(r.Context(), req.ID, "", ""); err != nil {
 			http.Error(w, "create session: "+err.Error(), http.StatusConflict)
@@ -309,17 +313,6 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-// newSessionID returns a random hex session id.
-func newSessionID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// ponytail: crypto/rand never fails on supported platforms; a
-		// fallback timestamp keeps the server alive if it ever does.
-		return fmt.Sprintf("sess-%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
 }
 
 // writeJSON writes v as a JSON response with the given status code.

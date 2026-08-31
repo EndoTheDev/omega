@@ -12,13 +12,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// NewStore opens the SQLite database at dsn and returns it as a
-// StoreProvider. The concrete Store (in store_impl.go) implements
-// agent.StoreProvider fully.
-func NewStore(dsn string) (agent.StoreProvider, error) {
-	return Open(dsn)
-}
-
 // searchToolProvider provides the sessions.search tool.
 type searchToolProvider struct {
 	store agent.StoreProvider

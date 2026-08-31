@@ -12,16 +12,16 @@ HTTP channel, or extensions).
 ## Ownership
 
 - `agent.go` - Agent struct, configuration holders, capability seam
-  wiring (`SetCompactionProvider`, `SetToolProvider`, `SetMaxToolOutput`,
+  wiring (`SetCompactionProvider`, `SetMaxToolOutput`,
   `SetCWD`, `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`,
-  `SetLoopProvider`, `SetProvider`, `SetUserInput`, `SetLogger`),
+  `SetLoopProvider`, `SetUserInput`, `SetLogger`),
   `NewFromContext` + `AgentOptions` (fully-wired Agent construction
   from a mounted Context - used by channels, `newAgent`, and the TUI).
   Delegates execution
   to `LoopProvider`. The loop is not set by default; the host wires one
   via `SetLoopProvider` or by mounting the agent-loop extension.
 - `seams.go` - capability seam interfaces (`LoopProvider` + `LoopOptions`,
-  `CompactionProvider`, `ToolProvider` + `DefaultToolProvider`,
+  `CompactionProvider`, `ToolProvider` (`DefaultToolProvider` kept for tests),
   `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel` + `ChannelDeps`, `Frontend` + `FrontendOptions`, `TrustProvider`).
 - `plugin.go` - in-process extension system: `Context` (shared service
   container with typed seam slots), `Plugin` interface (`Name`,
@@ -64,7 +64,7 @@ HTTP channel, or extensions).
   via `BuildPrompt`. The compactor is wired from the compactor
   extension; when no compactor extension is loaded, compaction is
   disabled and the agent surfaces a friendly error on context overflow.
-  The LLM provider is wired via `SetProvider` from the provider
+  The LLM provider is wired via `NewFromContext` from the provider
   extension's mount into `Context.Provider`. Project context and trust
   live in `extensions/trust/` (TrustProvider seam).
 - **Extensions are in-process.** All extensions are Go packages under

@@ -112,8 +112,10 @@ func TestNewFromContextFull(t *testing.T) {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	ag2 := NewFromContext(ctx, opts)
-	ag2.SetProvider(prov2)
+	// Swap the provider for this agent without mutating the shared context.
+	ctxSwap := *ctx
+	ctxSwap.Provider = prov2
+	ag2 := NewFromContext(&ctxSwap, opts)
 	ev2 := collect(t, ag2.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 	end2 := lastAgentEnd(ev2)
 	if end2.Turns != 2 || end2.FinishReason != "stop" {

@@ -22,13 +22,6 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 	if tools == nil {
 		tools = map[string]Tool{}
 	}
-	if opts.ToolProvider != nil {
-		for name, t := range opts.ToolProvider.Tools() {
-			if _, exists := tools[name]; !exists {
-				tools[name] = t
-			}
-		}
-	}
 	for _, tp := range opts.ToolProviders {
 		if tp == nil {
 			continue

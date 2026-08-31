@@ -31,7 +31,7 @@
 - Per-path file locks (serialize concurrent writes to the same file)
 - Extension customization hooks (prompt guidelines, compaction, branch summary, session lifecycle)
 - Session entry types (model_change, thinking_level_change persisted and replayed on resume)
-- Config hot-reload (fsnotify, `OMEGA_HTTP_TIMEOUT` live-applied)
+- Config hot-reload (polling ticker, `OMEGA_HTTP_TIMEOUT` live-applied)
 - `max_turns` configurable (default 100, `OMEGA_MAX_TURNS` env var)
 - Tool schema validation at extension load
 - Agent self-test (`omega test`)

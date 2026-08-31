@@ -382,16 +382,6 @@ func countMessages(msgs []ai.Message, in *agent.Insights, st *sessionStats) {
 	}
 }
 
-// countTokens sums the estimated token count for all messages in a
-// session (chars / 4).
-func countTokens(msgs []ai.Message) int {
-	tokens := 0
-	for _, msg := range msgs {
-		tokens += len(agent.MessageText(msg))
-	}
-	return tokens / 4 // charsPerToken
-}
-
 // updateNotables updates the notable stats if the current session
 // exceeds the running maxima for messages, tokens, or tool calls.
 func updateNotables(in *agent.Insights, st *sessionStats, nt *notableTracker, detail string) {
@@ -427,7 +417,7 @@ func (s *Store) processSession(ctx context.Context, sess agent.Session, in *agen
 	countMessages(msgs, in, st)
 	in.UserMessages += st.userMsgs
 	in.ToolCalls += st.toolCalls
-	st.tokens = countTokens(msgs)
+	st.tokens = agent.EstimateTokens(msgs)
 	in.TotalTokens += st.tokens
 
 	// Daily activity by weekday.

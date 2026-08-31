@@ -84,6 +84,24 @@ func DecodeMessage(role string, payload []byte) (Message, error) {
 	}
 }
 
+// MessageRole returns the role string for a message ("user", "assistant",
+// "system", "tool", or "unknown"). Shared by export, store commands, and
+// the TUI to avoid duplicating the type switch.
+func MessageRole(m Message) string {
+	switch m.(type) {
+	case System:
+		return "system"
+	case User:
+		return "user"
+	case Assistant:
+		return "assistant"
+	case ToolResult:
+		return "tool"
+	default:
+		return "unknown"
+	}
+}
+
 // Message is the sealed interface for all message types.
 // Consumers use type switches or type assertions to access
 // concrete types.

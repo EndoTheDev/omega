@@ -15,12 +15,12 @@ The TUI is now an extension at `extensions/tui/` implementing the
 - `main.go` - CLI entry point, subcommand dispatch, config and home
   path resolution (`omegaHome`, `resolveConfigPath`, `resolveHomePaths`),
   agent wiring (`newAgent`, `buildPlugins`), `cmdServe`, `cmdRun`,
-  `cmdChat`, `cmdTest` (smoke test), `cmdHealth`, config hot-reload
+  `cmdChat`, `cmdHealth`, config hot-reload
   (`WatchConfig`), store wiring (from `ctx.Store` after
   `MountAll`), env vars (`OMEGA_HOME`, `OMEGA_SKILLS_DIR`,
   `OMEGA_BIN` for subagent delegation), global help (`helpText`)
 - `export.go` - session export (`cmdExport`, `exportMessages`,
-  `messageRole`, `resolveSessionCLI`)
+  `resolveSessionCLI`; role mapping via `ai.MessageRole`)
 - `insights.go` - session analytics (`cmdInsights`); formatting
   via `agent.FormatInsights` / `agent.FormatNumber`
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
@@ -47,7 +47,7 @@ The TUI is now an extension at `extensions/tui/` implementing the
 - `main_test.go` - self-check tests for subcommand dispatch,
   chdir error handling, and help/version flags
 - `export_test.go` - self-check tests for `exportMessages`,
-  `messageRole`, and session resolution
+  `ai.MessageRole`, and session resolution
 - `update_test.go` - self-check tests for `assetNameForOS` and
   `findAsset` (asset matching across platforms)
 - `image_test.go` - self-check tests for `parseFileArgs`
@@ -108,7 +108,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   dir, then replaces the running binary and extension binaries. Preserves
   user config files. Progress bar during download. Skips when already
   up to date. On Windows the running exe is renamed to `.old` first.
-  No checksum verification (no release signing yet). Security hardening:
+  SHA256 checksum verification on self-update via `checksums.txt`. Security hardening:
   `safeJoin` prevents path traversal from malicious archive entries
   (CWE-22), `io.LimitReader` caps downloads and API responses to prevent
   OOM, binary replacement is atomic via temp+rename on Linux/macOS.

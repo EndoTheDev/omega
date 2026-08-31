@@ -14,22 +14,6 @@ import (
 	"github.com/EndoTheDev/omega/extensions/store"
 )
 
-// messageRole returns the role string for a message.
-func messageRole(m ai.Message) string {
-	switch m.(type) {
-	case ai.User:
-		return "user"
-	case ai.Assistant:
-		return "assistant"
-	case ai.System:
-		return "system"
-	case ai.ToolResult:
-		return "tool"
-	default:
-		return "unknown"
-	}
-}
-
 // exportMessages writes messages as JSONL (one JSON object per line with
 // role and content fields) to w. Used by both the CLI export subcommand
 // and the TUI /export slash command.
@@ -37,7 +21,7 @@ func exportMessages(messages []ai.Message, w io.Writer) error {
 	enc := json.NewEncoder(w)
 	for _, msg := range messages {
 		entry := map[string]any{
-			"role":    messageRole(msg),
+			"role":    ai.MessageRole(msg),
 			"content": agent.MessageText(msg),
 		}
 		if err := enc.Encode(entry); err != nil {

@@ -303,7 +303,7 @@ func (fm *FileMemory) usage(target string, entries []string) string {
 
 // usageStr formats a usage string like "1,474/2,200 chars".
 func (fm *FileMemory) usageStr(used, limit int) string {
-	return fmt.Sprintf("%s/%s chars", commaInt(used), commaInt(limit))
+	return fmt.Sprintf("%s/%s chars", agent.FormatNumber(used), agent.FormatNumber(limit))
 }
 
 // formatSection renders a store's snapshot as a formatted prompt block.
@@ -318,27 +318,8 @@ func (fm *FileMemory) formatSection(title, subtitle, snapshot string, limit int,
 		pct = used * 100 / limit
 	}
 	border := strings.Repeat("═", 48)
-	header := fmt.Sprintf("%s (%s) [%d%% — %s/%s chars]", title, subtitle, pct, commaInt(used), commaInt(limit))
+	header := fmt.Sprintf("%s (%s) [%d%% — %s/%s chars]", title, subtitle, pct, agent.FormatNumber(used), agent.FormatNumber(limit))
 	return fmt.Sprintf("%s\n%s\n%s\n%s", border, header, border, snapshot)
-}
-
-// commaInt formats an integer with thousands separators.
-func commaInt(n int) string {
-	s := fmt.Sprintf("%d", n)
-	if n < 0 {
-		return "-" + commaInt(-n)
-	}
-	if len(s) <= 3 {
-		return s
-	}
-	var sb strings.Builder
-	for i, c := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			sb.WriteByte(',')
-		}
-		sb.WriteRune(c)
-	}
-	return sb.String()
 }
 
 // --- memory tool ---

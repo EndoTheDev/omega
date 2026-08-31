@@ -15,12 +15,12 @@ func TestPluginImplementsInterface(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestNewStoreOpensAndSearches verifies the store opens, accepts
+// TestOpenOpensAndSearches verifies the store opens, accepts
 // messages, and FTS5 search returns results.
-func TestNewStoreOpensAndSearches(t *testing.T) {
-	s, err := NewStore(":memory:")
+func TestOpenOpensAndSearches(t *testing.T) {
+	s, err := Open(":memory:")
 	if err != nil {
-		t.Fatalf("NewStore: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	defer s.Close()
 
@@ -47,9 +47,9 @@ func TestNewStoreOpensAndSearches(t *testing.T) {
 // TestSearchTool verifies the sessions.search tool returns formatted
 // results with the session label.
 func TestSearchTool(t *testing.T) {
-	s, err := NewStore(":memory:")
+	s, err := Open(":memory:")
 	if err != nil {
-		t.Fatalf("NewStore: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	defer s.Close()
 
@@ -81,9 +81,9 @@ func TestSearchTool(t *testing.T) {
 // TestSearchToolNoResults verifies the tool returns "no results" when
 // the query matches nothing.
 func TestSearchToolNoResults(t *testing.T) {
-	s, err := NewStore(":memory:")
+	s, err := Open(":memory:")
 	if err != nil {
-		t.Fatalf("NewStore: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	defer s.Close()
 

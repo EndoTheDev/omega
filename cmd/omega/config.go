@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/fsnotify/fsnotify"
+	"time"
 	"gopkg.in/yaml.v3"
 )
 
@@ -242,37 +242,28 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// WatchConfig watches the config file at path and calls onChange when
-// it changes. The callback receives the freshly loaded config. If the
-// reload fails (e.g. file is temporarily empty during an atomic save),
-// the error is ignored and the old config stays in effect. Runs until
-// the watcher is closed by the caller.
+// WatchConfig polls the config file at path for modification time changes
+// and calls onChange when it changes. The callback receives the freshly
+// loaded config. If the reload fails (e.g. file is temporarily empty
+// during an atomic save), the error is logged and the old config stays
+// in effect. Runs until the caller's goroutine exits.
 func WatchConfig(path string, onChange func(Config)) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return
-	}
 	go func() {
-		defer watcher.Close()
-		watcher.Add(path)
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-					cfg, err := LoadConfig(path)
-					if err == nil {
-						onChange(cfg)
-					} else {
-						fmt.Fprintf(os.Stderr, "omega: config reload failed (keeping old config): %v\n", err)
-					}
-				}
-			case _, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
+		var lastMod time.Time
+		for range time.Tick(5 * time.Second) {
+			fi, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			if fi.ModTime().Equal(lastMod) {
+				continue
+			}
+			lastMod = fi.ModTime()
+			cfg, err := LoadConfig(path)
+			if err == nil {
+				onChange(cfg)
+			} else {
+				fmt.Fprintf(os.Stderr, "omega: config reload failed (keeping old config): %v\n", err)
 			}
 		}
 	}()

@@ -421,11 +421,11 @@ func TestRenderTranscriptRendersAssistant(t *testing.T) {
 // TestNewSessionIDCryptoRand verifies session IDs are generated from
 // crypto/rand and are the expected hex length.
 func TestNewSessionIDCryptoRand(t *testing.T) {
-	a, err := newSessionID()
+	a, err := agent.NewSessionID()
 	if err != nil {
 		t.Fatalf("newSessionID: %v", err)
 	}
-	b, err := newSessionID()
+	b, err := agent.NewSessionID()
 	if err != nil {
 		t.Fatalf("newSessionID: %v", err)
 	}

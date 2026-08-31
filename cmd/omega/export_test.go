@@ -141,8 +141,8 @@ func TestMessageRole(t *testing.T) {
 		{ai.ToolResult{Content: "x"}, "tool"},
 	}
 	for _, tt := range tests {
-		if got := messageRole(tt.msg); got != tt.want {
-			t.Errorf("messageRole(%T) = %q, want %q", tt.msg, got, tt.want)
+		if got := ai.MessageRole(tt.msg); got != tt.want {
+			t.Errorf("ai.MessageRole(%T) = %q, want %q", tt.msg, got, tt.want)
 		}
 	}
 }

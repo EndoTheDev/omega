@@ -1,8 +1,22 @@
 package agent
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+
 	"github.com/EndoTheDev/omega/ai"
 )
+
+// NewSessionID generates a random 32-character hex session ID.
+// Used by the store, TUI, and HTTP channel to avoid duplicating
+// the crypto/rand boilerplate.
+func NewSessionID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
 
 // Session is a persisted conversation with optional parent linking
 // for branching.

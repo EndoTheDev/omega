@@ -21,7 +21,6 @@ type LoopOptions struct {
 	Provider           ai.Provider
 	Messages           []ai.Message
 	Tools              map[string]Tool
-	ToolProvider       ToolProvider
 	ToolProviders      []ToolProvider // additive tool sources (extensions)
 	CompactionProvider CompactionProvider
 	PromptBuilder      PromptBuilder           // builds system prompt + guidelines
@@ -56,8 +55,8 @@ type ToolProvider interface {
 	Tools() map[string]Tool
 }
 
-// DefaultToolProvider wraps a static tool map. Extension tools are
-// merged by the agent on top of these.
+// DefaultToolProvider wraps a static tool map. Used by tests to
+// satisfy the ToolProvider interface with a simple map.
 type DefaultToolProvider struct {
 	ToolsMap map[string]Tool
 }

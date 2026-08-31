@@ -437,8 +437,8 @@ func TestRunThinkingChunk(t *testing.T) {
 	}
 }
 
-// TestRunToolProviderSingular covers line 39-41: passing ToolProvider
-// (singular) should prepend it to ToolProviders for merging.
+// TestRunToolProviderSingular covers passing a single ToolProvider
+// via ToolProviders (plural) should merge its tools.
 func TestRunToolProviderSingular(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		[]ai.StreamEvent{
@@ -471,7 +471,7 @@ func TestRunToolProviderSingular(t *testing.T) {
 		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:      provider,
 			Messages:      []ai.Message{ai.NewUser("go")},
-			ToolProvider:  toolProvider,
+			ToolProviders: []agent.ToolProvider{toolProvider},
 			Events:        events,
 		})
 	}()

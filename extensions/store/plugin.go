@@ -31,7 +31,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	if dsn == "" {
 		dsn = "omega.db"
 	}
-	s, err := NewStore(dsn)
+	s, err := Open(dsn)
 	if err != nil {
 		return err
 	}

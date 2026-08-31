@@ -68,7 +68,7 @@ func TestFormatNumber(t *testing.T) {
 // --- newSessionID ---
 
 func TestNewSessionID(t *testing.T) {
-	id, err := newSessionID()
+	id, err := agent.NewSessionID()
 	if err != nil {
 		t.Fatalf("newSessionID error: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestNewSessionID(t *testing.T) {
 	}
 
 	// Uniqueness: two calls should not collide.
-	id2, err := newSessionID()
+	id2, err := agent.NewSessionID()
 	if err != nil {
 		t.Fatalf("second newSessionID error: %v", err)
 	}
@@ -106,18 +106,18 @@ func TestMessageRole(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := messageRole(c.m)
+			got := ai.MessageRole(c.m)
 			if got != c.want {
-				t.Fatalf("messageRole(%T) = %q, want %q", c.m, got, c.want)
+				t.Fatalf("ai.MessageRole(%T) = %q, want %q", c.m, got, c.want)
 			}
 		})
 	}
 
 	// Unknown message type returns "unknown".
 	t.Run("unknown", func(t *testing.T) {
-		got := messageRole(ai.ModelChange{Model: "x"})
+		got := ai.MessageRole(ai.ModelChange{Model: "x"})
 		if got != "unknown" {
-			t.Fatalf("messageRole(unknown) = %q, want unknown", got)
+			t.Fatalf("ai.MessageRole(unknown) = %q, want unknown", got)
 		}
 	})
 }
@@ -138,18 +138,18 @@ func TestMessageContent(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := messageContent(c.m)
+			got := agent.MessageText(c.m)
 			if got != c.want {
-				t.Fatalf("messageContent(%T) = %q, want %q", c.m, got, c.want)
+				t.Fatalf("agent.MessageText(%T) = %q, want %q", c.m, got, c.want)
 			}
 		})
 	}
 
 	// Unknown message type returns empty string.
 	t.Run("unknown", func(t *testing.T) {
-		got := messageContent(ai.ModelChange{Model: "x"})
+		got := agent.MessageText(ai.ModelChange{Model: "x"})
 		if got != "" {
-			t.Fatalf("messageContent(unknown) = %q, want empty", got)
+			t.Fatalf("agent.MessageText(unknown) = %q, want empty", got)
 		}
 	})
 }

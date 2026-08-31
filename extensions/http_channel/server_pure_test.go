@@ -136,11 +136,11 @@ func TestDecodeMessagesEmpty(t *testing.T) {
 }
 
 func TestNewSessionID(t *testing.T) {
-	id1 := newSessionID()
+	id1, _ := agent.NewSessionID()
 	if len(id1) != 32 {
 		t.Fatalf("expected 32-char ID, got %d: %q", len(id1), id1)
 	}
-	id2 := newSessionID()
+	id2, _ := agent.NewSessionID()
 	if len(id2) != 32 {
 		t.Fatalf("expected 32-char ID, got %d: %q", len(id2), id2)
 	}
@@ -150,7 +150,7 @@ func TestNewSessionID(t *testing.T) {
 }
 
 func TestNewSessionIDFormat(t *testing.T) {
-	id := newSessionID()
+	id, _ := agent.NewSessionID()
 	if len(id) != 32 {
 		t.Fatalf("expected 32-char ID, got %d: %q", len(id), id)
 	}

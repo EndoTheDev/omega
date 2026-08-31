@@ -23,7 +23,6 @@ type Tool struct {
 type Agent struct {
 	provider       ai.Provider
 	tools          map[string]Tool
-	toolProvider   ToolProvider
 	toolProviders  []ToolProvider
 	maxTurns       int
 	compactor      CompactionProvider
@@ -45,8 +44,7 @@ type Agent struct {
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 // The agent starts with no loop — the host must wire one via
-// SetLoopProvider or by mounting the agent-loop plugin. The provider
-// may be nil if it will be set later via SetProvider.
+// SetLoopProvider or by mounting the agent-loop plugin.
 func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
 		provider: provider,
@@ -58,13 +56,6 @@ func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent 
 // SetCompactionProvider installs the compactor. A nil value disables compaction.
 func (a *Agent) SetCompactionProvider(c CompactionProvider) {
 	a.compactor = c
-}
-
-// SetProvider installs the provider. Used when the provider is created
-// after the agent (e.g. from a provider-seam extension loaded after
-// the agent is constructed).
-func (a *Agent) SetProvider(p ai.Provider) {
-	a.provider = p
 }
 
 // SetMaxToolOutput sets the maximum tool result length in characters.
@@ -95,12 +86,6 @@ func (a *Agent) SetPromptAppend(prompts []string) {
 // Passed to extensions via PromptBuildOptions.ProjectContext.
 func (a *Agent) SetPromptContext(s string) {
 	a.promptContext = s
-}
-
-// SetToolProvider installs a tool provider. When set, the agent merges
-// the provider's tools with its own on each Run. A nil value is ignored.
-func (a *Agent) SetToolProvider(tp ToolProvider) {
-	a.toolProvider = tp
 }
 
 // SetToolProviders installs additional tool providers (from extensions).
@@ -234,7 +219,6 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			Provider:           a.provider,
 			Messages:           messages,
 			Tools:              runTools,
-			ToolProvider:       a.toolProvider,
 			ToolProviders:      a.toolProviders,
 			CompactionProvider: a.compactor,
 			PromptBuilder:      a.promptBuilder,

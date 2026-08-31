@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -253,7 +251,7 @@ func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentI
 		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
 	// Generate a new session ID.
-	id, err := newSessionID()
+	id, err := agent.NewSessionID()
 	if err != nil {
 		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
@@ -311,52 +309,11 @@ func HandleExportCommand(ctx context.Context, store agent.StoreProvider, session
 	defer f.Close()
 	enc := json.NewEncoder(f)
 	for _, msg := range messages {
-		role := messageRole(msg)
-		content := messageContent(msg)
+		role := ai.MessageRole(msg)
+		content := agent.MessageText(msg)
 		if err := enc.Encode(map[string]string{"role": role, "content": content}); err != nil {
 			return agent.CommandResult{}, fmt.Errorf("export: %w", err)
 		}
 	}
 	return agent.CommandResult{Text: fmt.Sprintf("[exported %d messages to %s]", len(messages), path)}, nil
-}
-
-// newSessionID generates a 16-byte random hex session ID.
-func newSessionID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// messageRole returns the role string for a message.
-func messageRole(m ai.Message) string {
-	switch m.(type) {
-	case ai.User:
-		return "user"
-	case ai.Assistant:
-		return "assistant"
-	case ai.System:
-		return "system"
-	case ai.ToolResult:
-		return "tool"
-	default:
-		return "unknown"
-	}
-}
-
-// messageContent extracts the text content from a message.
-func messageContent(m ai.Message) string {
-	switch v := m.(type) {
-	case ai.User:
-		return v.Content
-	case ai.Assistant:
-		return v.Content
-	case ai.System:
-		return v.Content
-	case ai.ToolResult:
-		return v.Content
-	default:
-		return ""
-	}
 }
