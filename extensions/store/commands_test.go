@@ -28,9 +28,9 @@ func TestSessionDisplayName(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := sessionDisplayName(c.label, c.id)
+			got := SessionDisplayName(c.label, c.id)
 			if got != c.want {
-				t.Fatalf("sessionDisplayName(%q, %q) = %q, want %q", c.label, c.id, got, c.want)
+				t.Fatalf("SessionDisplayName(%q, %q) = %q, want %q", c.label, c.id, got, c.want)
 			}
 		})
 	}

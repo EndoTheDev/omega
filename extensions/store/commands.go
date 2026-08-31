@@ -35,7 +35,7 @@ func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args 
 	maxCount := 4
 	for i, s := range sessions {
 		count, _ := store.CountMessages(ctx, s.ID)
-		name := sessionDisplayName(s.Label, s.ID)
+		name := SessionDisplayName(s.Label, s.ID)
 		rows[i] = row{name: name, count: count, id: s.ID}
 		if len(name) > maxName {
 			maxName = len(name)
@@ -78,7 +78,7 @@ func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (agent.Co
 	var flatten func(node *agent.SessionNode, depth int, last bool)
 	flatten = func(node *agent.SessionNode, depth int, last bool) {
 		count, _ := store.CountMessages(ctx, node.ID)
-		name := sessionDisplayName(node.Label, node.ID)
+		name := SessionDisplayName(node.Label, node.ID)
 		glyph := ""
 		if depth > 0 {
 			if last {
@@ -168,8 +168,9 @@ func HandleInsightsCommand(ctx context.Context, store agent.StoreProvider, args 
 	return agent.CommandResult{Text: agent.FormatInsights(stats)}, nil
 }
 
-// sessionDisplayName returns the label, or a truncated ID if no label.
-func sessionDisplayName(label, id string) string {
+// SessionDisplayName returns the label, or a truncated ID if no label.
+// Shared by store commands and the TUI.
+func SessionDisplayName(label, id string) string {
 	if label != "" {
 		return label
 	}

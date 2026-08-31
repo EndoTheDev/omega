@@ -19,6 +19,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/extensions/store"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -1310,7 +1311,7 @@ func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
 		m.err = "session not found: " + args[0]
 		return m, nil
 	}
-	name := sessionDisplayName(m.labelOf(id), id)
+	name := store.SessionDisplayName(m.labelOf(id), id)
 	if err := m.store.DeleteSession(context.Background(), id); err != nil {
 		m.storeErr = "delete: " + err.Error()
 		return m, nil
@@ -1603,18 +1604,6 @@ func (m model) resolveSession(arg string) string {
 		return arg
 	}
 	return ""
-}
-
-// sessionDisplayName returns the label when set, otherwise a truncated
-// session ID (first 12 chars + "...").
-func sessionDisplayName(label, id string) string {
-	if label != "" {
-		return label
-	}
-	if len(id) > 12 {
-		return id[:12] + "..."
-	}
-	return id
 }
 
 // handleCopy copies the last message in the transcript to the system

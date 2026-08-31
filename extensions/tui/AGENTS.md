@@ -22,7 +22,7 @@ entry point (`cmd/omega`) mounts this extension and calls `Run`.
   `modelInfoLoadedMsg`, `contextWindow` field), bracketed paste (file drop),
   `NewModel` (public constructor for the plugin adapter).
   `summarizeForBranch` trims long branch history. `agent.NewSessionID` (shared) generates
-  random hex IDs. `sessionDisplayName` truncates unlabeled IDs.
+  random hex IDs. `store.SessionDisplayName` (shared) truncates unlabeled IDs.
   `renderTranscript` renders full history for resume/resize/theme switch.
   `renderMarkdown`, `renderCodeBlock`, `highlightCode`, `langForTool`,
   `wordWrap`, `truncate` — rendering helpers.

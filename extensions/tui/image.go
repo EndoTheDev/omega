@@ -49,17 +49,7 @@ func extractImages(input string, store agent.StoreProvider, skills []agent.Skill
 			}
 			var sb strings.Builder
 			for _, msg := range msgs {
-				role := "unknown"
-				switch msg.(type) {
-				case ai.System:
-					role = "system"
-				case ai.User:
-					role = "user"
-				case ai.Assistant:
-					role = "assistant"
-				case ai.ToolResult:
-					role = "tool"
-				}
+				role := ai.MessageRole(msg)
 				sb.WriteString(fmt.Sprintf("[%s] %s\n", role, agent.MessageText(msg)))
 			}
 			return sb.String()
