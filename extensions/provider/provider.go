@@ -148,6 +148,39 @@ func messagesToJSON(messages []ai.Message) []map[string]any {
 		case ai.ToolResult:
 			m["role"] = "tool"
 		}
+		// OpenAI wire format requires each tool_calls entry to be
+		// {"id","type":"function","function":{"name","arguments":"<json>"}}
+		// while ai.ToolCall marshals flat with map arguments. Restructure
+		// for both providers (Ollama accepts the OpenAI shape).
+		if calls, ok := m["tool_calls"].([]any); ok {
+			wire := make([]map[string]any, 0, len(calls))
+			for _, c := range calls {
+				cm, ok := c.(map[string]any)
+				if !ok {
+					continue
+				}
+				args := cm["arguments"]
+				if argsMap, ok := args.(map[string]any); ok {
+					if b, err := json.Marshal(argsMap); err == nil {
+						args = string(b)
+					}
+				}
+				fn, _ := cm["function"].(map[string]any)
+				if fn == nil {
+					fn = map[string]any{}
+				}
+				fn["name"], _ = cm["name"].(string)
+				if args != nil {
+					fn["arguments"] = args
+				}
+				wire = append(wire, map[string]any{
+					"id":       cm["id"],
+					"type":     "function",
+					"function": fn,
+				})
+			}
+			m["tool_calls"] = wire
+		}
 		delete(m, "timestamp")
 		msgJSON[i] = m
 	}
@@ -316,6 +349,43 @@ func (p *Provider) modelInfo() (int, error) {
 		// model_info keys are "<arch>.context_length" e.g.
 		// "gemma4.context_length": 131072. Scan for any key ending
 		// in ".context_length". JSON decodes numbers as float64.
+		for k, v := range result.ModelInfo {
+			if strings.HasSuffix(k, ".context_length") {
+				if n, ok := v.(float64); ok {
+					return int(n), nil
+				}
+			}
+		}
+		return 0, nil
+	case "openai", "anthropic":
+		// OpenAI-compatible hosts that are actually ollama lanes (keypool
+		// -> ollama-cloud) also serve /api/show at the ROOT, not under /v1;
+		// strip a trailing /v1 before probing. Non-ollama hosts 404 and we
+		// fall back to the config default.
+		root := strings.TrimSuffix(p.baseURL, "/v1")
+		body, _ := json.Marshal(map[string]any{"model": p.modelName})
+		req, err := http.NewRequest("POST", root+"/api/show", bytes.NewReader(body))
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+		resp, err := ai.HTTPClient().Do(req)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		var result struct {
+			ModelInfo map[string]any `json:"model_info"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return 0, err
+		}
 		for k, v := range result.ModelInfo {
 			if strings.HasSuffix(k, ".context_length") {
 				if n, ok := v.(float64); ok {

@@ -24,8 +24,8 @@ func TestPluginMount(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *HTTPChannel, got %T", ctx.Channels[0])
 	}
-	if ch.addr != ":9999" {
-		t.Errorf("addr = %q, want :9999", ch.addr)
+	if ch.addr != "127.0.0.1:9999" {
+		t.Errorf("addr = %q, want 127.0.0.1:9999", ch.addr)
 	}
 }
 
@@ -44,8 +44,8 @@ func TestPluginMountDefaultConfig(t *testing.T) {
 		t.Fatalf("expected *HTTPChannel, got %T", ctx.Channels[0])
 	}
 	// DefaultConfig port is 8099.
-	if ch.addr != ":8099" {
-		t.Errorf("addr = %q, want :8099", ch.addr)
+	if ch.addr != "127.0.0.1:8099" {
+		t.Errorf("addr = %q, want 127.0.0.1:8099", ch.addr)
 	}
 }
 

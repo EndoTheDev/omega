@@ -44,6 +44,7 @@ type StreamEnd struct {
 	FinishReason    string `json:"finish_reason"`
 	PromptEvalCount *int   `json:"prompt_eval_count,omitempty"`
 	EvalCount       *int   `json:"eval_count,omitempty"`
+	CachedCount     *int   `json:"cached_count,omitempty"`
 	Error           string `json:"error,omitempty"`
 }
 

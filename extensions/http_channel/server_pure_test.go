@@ -219,3 +219,63 @@ func TestEventTypeOfAllCases(t *testing.T) {
 		})
 	}
 }
+// TestAccumulateAssistantSegments verifies the segment boundary: a
+// response chunk after tool results starts a new record, so a tool turn
+// persists as assistant(A+calls) -> tool results -> assistant(B) and
+// the webui reload renders two bubbles like the live view.
+func TestAccumulateAssistantSegments(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	var recs []assistantRecord
+	var rec assistantRecord
+	req := chatRequest{SessionID: "seg1"}
+	feed := func(ev agent.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
+
+	call := ai.ToolCall{ID: "c1", Name: "shell.run"}
+	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: "preamble "}})
+	feed(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: call}})
+	feed(agent.ToolResultEvent{Message: ai.NewToolResult("out", "c1", false)})
+	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: "final answer"}})
+
+	if len(recs) != 1 {
+		t.Fatalf("len(recs) = %d, want 1 (final segment stays in rec)", len(recs))
+	}
+	feed(agent.StreamEvent{Event: ai.StreamEnd{FinishReason: "stop"}})
+	if rec.content != "final answer" {
+		t.Fatalf("rec.content = %q, want 'final answer'", rec.content)
+	}
+	if len(rec.toolCalls) != 0 || len(rec.results) != 0 {
+		t.Fatalf("second segment carries calls/results: %d/%d", len(rec.toolCalls), len(rec.results))
+	}
+	r1 := recs[0]
+	if r1.content != "preamble " {
+		t.Fatalf("first segment content = %q", r1.content)
+	}
+	if len(r1.toolCalls) != 1 || r1.toolCalls[0].ID != "c1" {
+		t.Fatalf("first segment tool calls = %+v", r1.toolCalls)
+	}
+	if len(r1.results) != 1 || r1.results[0].Content != "out" {
+		t.Fatalf("first segment results = %+v", r1.results)
+	}
+}
+
+// TestAccumulateAssistantNoSegmentWithoutResults: thinking and plain
+// responses accumulate into a single record; the split only happens
+// across tool results.
+func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	var recs []assistantRecord
+	var rec assistantRecord
+	req := chatRequest{SessionID: "seg2"}
+	feed := func(ev agent.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
+
+	feed(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "hmm"}})
+	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: "one"}})
+	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: " two"}})
+
+	if len(recs) != 0 {
+		t.Fatalf("len(recs) = %d, want 0 (no tool phase, no split)", len(recs))
+	}
+	if rec.content != "one two" || rec.thinking != "hmm" {
+		t.Fatalf("rec = %+v", rec)
+	}
+}

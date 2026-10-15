@@ -220,15 +220,16 @@ func TestChatUnknownRole(t *testing.T) {
 
 func TestStaticIndex(t *testing.T) {
 	s := newTestServer()
-	req := httptest.NewRequest(http.MethodGet, "/static/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "omega-dev") {
-		t.Fatalf("index body missing title")
+	// works for the committed placeholder AND a synced real build
+	if !strings.Contains(rec.Body.String(), "<!DOCTYPE html") {
+		t.Fatalf("index body missing doctype")
 	}
 }
 
@@ -471,11 +472,42 @@ func TestSessionByIDNoStore(t *testing.T) {
 
 func TestSessionByIDMethodNotAllowed(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
-	req := httptest.NewRequest(http.MethodPut, "/sessions/abc", nil)
+	req := httptest.NewRequest(http.MethodPatch, "/sessions/abc", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestSessionByIDPutLabel(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"id":"t-put"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodPut, "/sessions/t-put", strings.NewReader(`{"label":"my title"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var sess agent.Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if sess.Label != "my title" {
+		t.Fatalf("label = %q, want %q", sess.Label, "my title")
+	}
+	req = httptest.NewRequest(http.MethodPut, "/sessions/t-put", strings.NewReader(`{"label":""}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty label status = %d, want 400", rec.Code)
 	}
 }
 
