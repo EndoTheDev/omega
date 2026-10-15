@@ -29,3 +29,19 @@ coverage.out
 
 # Kanban worktrees
 .worktrees/
+
+# WebUI (Nuxt)
+webui/node_modules/
+webui/.nuxt/
+webui/.output/
+webui/dist/
+webui/.data/
+*.log
+npm-debug.log*
+
+# built-webui sync target (webui/scripts/build.sh copies dist here so
+# go:embed can bake it in). The placeholder index.html stays tracked -
+# without it a plain `go build` fails on an empty embed pattern. After a
+# real sync index.html shows modified; git checkout restores the placeholder.
+extensions/http_channel/static/*
+!extensions/http_channel/static/index.html
