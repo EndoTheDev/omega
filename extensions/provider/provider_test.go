@@ -586,14 +586,16 @@ func TestModelInfo(t *testing.T) {
 		t.Errorf("modelInfo (HTTP 500) = %d, want error", info)
 	}
 
-	// openai/anthropic: not exposed, returns 0, nil without HTTP.
+	// openai/anthropic: ollama-lane hosts (keypool -> ollama-cloud) serve
+	// /api/show at the root; the same test server exposes it, so both types
+	// now report the real context window.
 	p = &Provider{typ: "openai", baseURL: srv.URL}
-	if info, err := p.modelInfo(); err != nil || info != 0 {
-		t.Errorf("modelInfo (openai) = %d, %v; want 0, nil", info, err)
+	if info, err := p.modelInfo(); err != nil || info != 131072 {
+		t.Errorf("modelInfo (openai) = %d, %v; want 131072, nil", info, err)
 	}
 	p = &Provider{typ: "anthropic", baseURL: srv.URL}
-	if info, err := p.modelInfo(); err != nil || info != 0 {
-		t.Errorf("modelInfo (anthropic) = %d, %v; want 0, nil", info, err)
+	if info, err := p.modelInfo(); err != nil || info != 131072 {
+		t.Errorf("modelInfo (anthropic) = %d, %v; want 131072, nil", info, err)
 	}
 }
 

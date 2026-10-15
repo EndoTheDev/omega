@@ -176,6 +176,16 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	return ag
 }
 
+// SetModel switches the provider's model (http_channel model override).
+func (a *Agent) SetModel(model string) {
+	a.provider.SetModel(model)
+}
+
+// ModelInfo returns the current model's metadata (context window).
+func (a *Agent) ModelInfo() (ai.ModelInfo, error) {
+	return a.provider.ModelInfo()
+}
+
 // ModelName returns the name of the model the agent's provider serves.
 func (a *Agent) ModelName() string {
 	return a.provider.ModelName()

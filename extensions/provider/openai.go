@@ -22,6 +22,8 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 		"model":    p.modelName,
 		"messages": messages,
 		"stream":   true,
+		// ask the provider to append a final chunk with token usage
+		"stream_options": map[string]any{"include_usage": true},
 	}
 	if effort := openaiReasoningEffort(p.thinkingLevel); effort != "" {
 		payload["reasoning_effort"] = effort
@@ -67,6 +69,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 	reader := bufio.NewReader(resp.Body)
 	pending := make(map[int]*pendingCall)
 	finishReason := "stop"
+	promptTokens, completionTokens, cachedTokens := 0, 0, 0
 
 	for {
 		payloadLine, ok, readErr := ai.SSEData(reader)
@@ -87,6 +90,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 			Choices []struct {
 				Delta struct {
 					Content   *string `json:"content"`
+					Reasoning *string `json:"reasoning"`
 					ToolCalls []struct {
 						Index    *int   `json:"index"`
 						ID       string `json:"id"`
@@ -101,6 +105,13 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 			Error *struct {
 				Message string `json:"message"`
 			} `json:"error"`
+			Usage *struct {
+				PromptTokens     *int `json:"prompt_tokens"`
+				CompletionTokens *int `json:"completion_tokens"`
+				PromptDetails    *struct {
+					CachedTokens *int `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(payloadLine), &chunk); err != nil {
 			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: parse error: %v", err)}
@@ -108,11 +119,25 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 		if chunk.Error != nil {
 			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: %s", chunk.Error.Message)}
 		}
+		if chunk.Usage != nil {
+			if chunk.Usage.PromptTokens != nil {
+				promptTokens = *chunk.Usage.PromptTokens
+			}
+			if chunk.Usage.CompletionTokens != nil {
+				completionTokens = *chunk.Usage.CompletionTokens
+			}
+			if chunk.Usage.PromptDetails != nil && chunk.Usage.PromptDetails.CachedTokens != nil {
+				cachedTokens = *chunk.Usage.PromptDetails.CachedTokens
+			}
+		}
 		if len(chunk.Choices) == 0 {
 			continue
 		}
 		choice := chunk.Choices[0]
 
+		if choice.Delta.Reasoning != nil && *choice.Delta.Reasoning != "" {
+			sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: *choice.Delta.Reasoning})
+		}
 		if choice.Delta.Content != nil && *choice.Delta.Content != "" {
 			sendEvent(ctx, events, ai.ResponseChunk{Type: "response_chunk", Content: *choice.Delta.Content})
 		}
@@ -150,7 +175,15 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 		func(pc *pendingCall) string { return pc.arguments },
 	)
 
-	return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason}
+	pt, ct := promptTokens, completionTokens
+	ca := cachedTokens
+	return ai.StreamEnd{
+		Type:            "stream_end",
+		FinishReason:    finishReason,
+		PromptEvalCount: &pt,
+		EvalCount:       &ct,
+		CachedCount:     &ca,
+	}
 }
 
 // --- Anthropic ---
