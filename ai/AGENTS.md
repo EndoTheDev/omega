@@ -10,7 +10,7 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
 ## Ownership
 
 - `provider.go` - Provider interface (Stream, ModelName, SetThinkingLevel,
-  SetModel, ListModels, ModelInfo), ModelInfo struct (ContextWindow),
+  WithModel, ListModels, ModelInfo), ModelInfo struct (ContextWindow),
   ToolSchema type, SSEData SSE line reader, shared httpClient with
   SetHTTPTimeout, exported HTTPClient / RetryHTTP / SSEData for extension
   use, ThinkingLevels / ThinkingEnabled

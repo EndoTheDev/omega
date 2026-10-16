@@ -64,8 +64,9 @@ entry point (`cmd/omega`) mounts this extension and calls `Run`.
   > `agent.DefaultContextWindow` (8192). OpenAI/Anthropic providers
   probe `/api/show` on ollama-lane hosts (keypool -> ollama-cloud) and
   report the real window; hosts that 404 fall back to the config
-  default. `Provider.SetModel` is called before `fetchModelInfoCmd` on
-  every model switch so the provider queries the correct model.
+  default. `ModelInfo` runs on a per-lookup `WithModel` copy (the
+  selected model, not the base default) - shared provider state is
+  never mutated.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
 - **Tool results get syntax highlighting.** `highlightCode` applies

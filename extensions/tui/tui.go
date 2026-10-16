@@ -337,7 +337,13 @@ func (m model) fetchModelInfoCmd() tea.Cmd {
 		if m.extensions == nil || m.extensions.Provider == nil {
 			return modelInfoLoadedMsg{err: fmt.Errorf("no provider configured")}
 		}
-		info, err := m.extensions.Provider.ModelInfo()
+		// Query the selected model, not the base default: derive a
+		// per-lookup copy; shared provider state stays untouched.
+		prov := m.extensions.Provider
+		if m.modelName != "" && prov.ModelName() != m.modelName {
+			prov = prov.WithModel(m.modelName)
+		}
+		info, err := prov.ModelInfo()
 		return modelInfoLoadedMsg{contextWindow: info.ContextWindow, err: err}
 	}
 }
