@@ -13,12 +13,14 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 ## Ownership
 
 - `app.vue` - the orchestrator. Send flow (segment split, lazy bubble
-  push, streaming state), session restore (`openSession`, tool-result
-  matching by `tool_call_id`), scroll pinning, pane geometry (sidebar
-  widths, squeeze chain, drag caps, push-back), overlay exclusivity
-  (one drawer on mobile; settings and the inspector share the right
-  slot), theme handling, live stream telemetry (token estimate +
-  chunks/s).
+  push, streaming state - PER SESSION, not global), session restore
+  (`openSession`, tool-result matching by `tool_call_id`), scroll
+  pinning (follows only the stream whose session is being viewed), pane
+  geometry (sidebar widths, squeeze chain, drag caps, push-back),
+  overlay exclusivity (one drawer on mobile; settings and the
+  inspector share the right slot), theme handling, live stream
+  telemetry (token estimate + chunks/s, kept per session), tab-title
+  spinner (read-only over the per-session busy set).
 - `composables/omega.ts` - typed client for the http_channel API.
   Pure, testable core: `parseFrame` (SSE frame -> payload) and
   `handlePayload` (payload -> handler dispatch; error payloads THROW -
@@ -26,7 +28,8 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   fetch helpers (health, models, sessions CRUD, `streamChat`).
 - `components/` - 11 components grouped by concern:
   - shell: `MenuBar` (brand, toggles, gear), `StatusBar` (health dot,
-    token/ctx/rate telemetry), `AppSidebar` (session list), 
+    token/ctx/rate telemetry), `AppSidebar` (session list; a live stream
+    pulses an accent edge on its own row), 
     `RightSidebar` (reserved inspector placeholder), `SettingsDrawer`
     (headless - the gear is the toggle)
   - chat: `ChatMessage`, `ThinkingBlock`, `ToolCallLine` (running/
@@ -42,6 +45,10 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 - `test/omega.test.ts` - unit tests for the SSE parser + dispatch
   (10 tests, node's built-in runner; includes the error-throw
   regression test)
+- `test/streamstate.test.ts` - unit tests for the per-session busy-map
+  logic (`withBusy`/`isBusy`/`anyBusy` in composables/omega.ts): busy(A)
+  never affects B; spinner derives from any-busy; base set never mutated
+  (5 tests; suite total 15)
 - `scripts/build.sh` - `nuxt generate` (NOT `nuxt build` - ssr:false
   build emits a nitro server, generate emits the static SPA) + sync
   to `extensions/http_channel/static/`. Run before `go build`; the
