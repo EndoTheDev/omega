@@ -35,6 +35,26 @@ Or install via `go install`:
 go install github.com/EndoTheDev/omega/cmd/omega@latest
 ```
 
+`go install` puts the binary in `~/go/bin` (or `$GOBIN`) — add it to PATH
+if it isn't already:
+
+```bash
+export PATH="$HOME/go/bin:$PATH"   # add to ~/.bashrc or ~/.zshrc
+```
+
+Releases also ship prebuilt binaries for all platforms (with the webui
+embedded) at [github.com/EndoTheDev/omega/releases](https://github.com/EndoTheDev/omega/releases).
+
+### Runtime layout & update
+
+omega's home is the executable's directory (override with `OMEGA_HOME`);
+`config.yaml`, `mcp.yaml` and the session store live there. Update an
+installed copy with:
+
+```bash
+omega update
+```
+
 ## Architecture
 
 ```txt

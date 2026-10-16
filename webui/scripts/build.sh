@@ -1,9 +1,9 @@
 #!/bin/sh
 # build the webui and sync it into the go embed dir. Run `go build` after
 # this to bake the SPA into the binary (go:embed captures static/ at
-# compile time). The placeholder index.html stays tracked in git so
-# a plain `go build` works without a webui build; the sync replaces it
-# with the real SPA - restore it with git checkout when needed.
+# compile time). static/ is tracked in git: after webui changes, run this
+# and commit the synced output with your change so go install / go build
+# users always get the complete product.
 set -e
 cd "$(dirname "$0")/.."
 # generate, not build: ssr:false build emits a nitro server, generate emits
