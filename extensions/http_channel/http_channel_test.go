@@ -69,6 +69,32 @@ func TestPluginMountMultiple(t *testing.T) {
 	}
 }
 
+// explicit bind list creates one channel per address; empty list falls
+// back to loopback only (TestPluginMountDefaultConfig covers that).
+func TestPluginMountBindList(t *testing.T) {
+	ctx := &agent.Context{Configs: map[string]any{
+		"http_channel": Config{Port: 9999, Bind: []string{"127.0.0.1", "100.101.126.30"}},
+	}}
+	p := NewPlugin()
+	if err := p.Mount(ctx); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	if len(ctx.Channels) != 2 {
+		t.Fatalf("channels = %d, want 2", len(ctx.Channels))
+	}
+	addrs := []string{}
+	for _, c := range ctx.Channels {
+		ch, ok := c.(*HTTPChannel)
+		if !ok {
+			t.Fatalf("expected *HTTPChannel, got %T", c)
+		}
+		addrs = append(addrs, ch.addr)
+	}
+	if addrs[0] != "127.0.0.1:9999" || addrs[1] != "100.101.126.30:9999" {
+		t.Fatalf("addrs = %v", addrs)
+	}
+}
+
 func TestStartNoProvider(t *testing.T) {
 	// A Context with no provider must fail Start, not panic.
 	ch := &HTTPChannel{addr: ":0"}

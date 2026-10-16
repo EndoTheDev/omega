@@ -29,17 +29,22 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	if port <= 0 {
 		port = 8099
 	}
-	// Bind loopback only: the API is unauthenticated and /chat can execute
-	// shell commands via the tool registry — it must not be reachable from
-	// the LAN (a Content-Type-blind JSON decoder also makes cross-origin
-	// no-cors POSTs exploitable from any LAN browser). The webui reaches it
-	// via the devProxy (127.0.0.1) and, in production, omega serves the
-	// built webui itself. Upgrade path when omega.endothe.dev deploys:
-	// keep loopback + Traefik on the same host network, or front it with
-	// the Pocket ID wall.
-	ctx.Channels = append(ctx.Channels, &HTTPChannel{
-		addr: fmt.Sprintf("127.0.0.1:%d", port),
-	})
+	// Bind loopback only by default: the API is unauthenticated and /chat
+	// can execute shell commands via the tool registry — it must not be
+	// reachable from the LAN (a Content-Type-blind JSON decoder also makes
+	// cross-origin no-cors POSTs exploitable from any LAN browser).
+	// Additional addresses (e.g. the Tailscale IP for Traefik) are an
+	// explicit config opt-in. Upgrade path when omega.endothe.dev deploys:
+	// Pocket ID wall in front of every path.
+	binds := cfg.Bind
+	if len(binds) == 0 {
+		binds = []string{"127.0.0.1"}
+	}
+	for _, b := range binds {
+		ctx.Channels = append(ctx.Channels, &HTTPChannel{
+			addr: fmt.Sprintf("%s:%d", b, port),
+		})
+	}
 	return nil
 }
 

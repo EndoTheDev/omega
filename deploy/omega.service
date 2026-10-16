@@ -1,0 +1,12 @@
+[Unit]
+Description=omega agent - http_channel + webui (installed instance)
+After=network-online.target
+
+[Service]
+ExecStart=/home/endo/omega/omega serve
+WorkingDirectory=/home/endo/omega
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
