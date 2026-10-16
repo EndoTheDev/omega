@@ -15,6 +15,9 @@ HTTP channel, or extensions).
   wiring (`SetCompactionProvider`, `SetMaxToolOutput`,
   `SetCWD`, `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`,
   `SetLoopProvider`, `SetUserInput`, `SetLogger`),
+  model metadata passthrough for the HTTP channel
+  (`SetModel` - provider model switch, `ModelInfo` - current model
+  context window),
   `NewFromContext` + `AgentOptions` (fully-wired Agent construction
   from a mounted Context - used by channels, `newAgent`, and the TUI).
   Delegates execution

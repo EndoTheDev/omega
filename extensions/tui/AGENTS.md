@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The terminal frontend. Implements the `Frontend` seam — a Bubble Tea
+The terminal frontend. Implements the `Frontend` seam - a Bubble Tea
 program that streams agent responses, handles slash commands, renders
 markdown with syntax highlighting, and manages session state. The
 entry point (`cmd/omega`) mounts this extension and calls `Run`.
@@ -25,7 +25,7 @@ entry point (`cmd/omega`) mounts this extension and calls `Run`.
   random hex IDs. `store.SessionDisplayName` (shared) truncates unlabeled IDs.
   `renderTranscript` renders full history for resume/resize/theme switch.
   `renderMarkdown`, `renderCodeBlock`, `highlightCode`, `langForTool`,
-  `wordWrap`, `truncate` — rendering helpers.
+  `wordWrap`, `truncate` - rendering helpers.
   `registerCatppuccinChroma` registers chroma styles at init.
   Built-in commands: `/copy`, `/extensions`, `/theme`, `/exit`, `/help`.
   All other commands dispatch to extensions via `handleExtensionCommand`.
@@ -61,10 +61,11 @@ entry point (`cmd/omega`) mounts this extension and calls `Run`.
   `modelsLoadedMsg`. The result arrives as `modelInfoLoadedMsg` and
   sets `m.contextWindow`. Status bar priority: provider
   (`m.contextWindow`) > config (`CompactionConfig.ContextWindow`)
-  > `agent.DefaultContextWindow` (8192). OpenAI/Anthropic return 0
-  > (not exposed by their APIs), so config is the source of truth there.
-  > `Provider.SetModel` is called before `fetchModelInfoCmd` on every
-  > model switch so the provider queries the correct model.
+  > `agent.DefaultContextWindow` (8192). OpenAI/Anthropic providers
+  probe `/api/show` on ollama-lane hosts (keypool -> ollama-cloud) and
+  report the real window; hosts that 404 fall back to the config
+  default. `Provider.SetModel` is called before `fetchModelInfoCmd` on
+  every model switch so the provider queries the correct model.
 - **Bracketed paste inserts file paths.** `msg.Paste` KeyMsgs are
   inserted into the textarea as regular runes, bypassing autocomplete.
 - **Tool results get syntax highlighting.** `highlightCode` applies

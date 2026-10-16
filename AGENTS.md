@@ -12,7 +12,7 @@ in Go.
 
 ## Ownership
 
-- **Repository:** `D:\Code\ideas\omega-dev-golang\omega-dev`
+- **Repository:** `github.com/EndoTheDev/omega` (development checkout: `~/dev/omega`; installed instance: `~/.omega`)
 - **Language:** Go 1.26.5
 - **Module:** `github.com/EndoTheDev/omega`
 - **Dependencies:** Added when a layer requires them, not before.
@@ -24,10 +24,13 @@ in Go.
 ## Architecture
 
 ```txt
-HTTP channel → agent (loop + tools) → ai (provider streaming)
-    │
-    └── extensions/ (in-process plugins mounted into Context)
+webui (Nuxt SPA, embedded) → HTTP channel → agent (loop + tools) → ai (provider streaming)
+                                │
+                                └── extensions/ (in-process plugins mounted into Context)
 ```
+
+The webui is a Nuxt 4 SPA served by the HTTP channel itself (embedded
+at build time); external clients talk to the HTTP channel only.
 
 Each layer has a single responsibility. No layer skips over another.
 Events are typed structs, dispatched via type switch. The provider
@@ -108,7 +111,7 @@ AGENTS.md (root - this file)
 │   ├── compactor/             # context compaction (keep-first/last + LLM summarize middle)
 │   ├── logging/               # operational logging (file logger, LoggerProvider seam)
 │   ├── memory/                # persistent memory (memory tool, two-file §-delimited store)
-│   ├── http_channel/          # HTTP/SSE delivery channel (Channel seam, omega serve transport)
+│   ├── http_channel/          # HTTP/SSE channel + embedded SPA serving (see extensions/http_channel/AGENTS.md)
 │   ├── tui/                   # terminal frontend (Frontend seam, Bubble Tea TUI, themes, @file input)
 │   ├── trust/                 # project trust gate (TrustProvider seam, trust.yaml, AGENTS.md context loading)
 │   ├── prompt/                # system prompt builder + guidelines
@@ -116,16 +119,16 @@ AGENTS.md (root - this file)
 │   ├── mcp/                   # MCP bridge (stdio + HTTP MCP servers)
 │   ├── delegate/              # subagent delegation (delegate.task, delegate.status, InjectedMessages)
 │   └── web/                   # web search/fetch (Ollama Cloud API)
-├── bin/                       # runtime directory (gitignored except templates)
-│   ├── omega.exe              # built binary (gitignored)
-│   ├── config.yaml            # personal config (gitignored)
-│   ├── config.yaml.example    # config template (tracked)
-│   ├── mcp.yaml.example       # MCP bridge config template (tracked)
-│   ├── omega.db               # session database (gitignored)
-│   ├── trust.yaml             # trust state (gitignored)
-│   └── skills/                # skill templates (tracked)
+├── webui/                     # Nuxt 4 SPA (see webui/AGENTS.md) - built output embedded into the binary via extensions/http_channel/static/
+├── deploy/                    # install artifacts (omega.service - systemd --user unit for the installed instance)
+├── bin/                       # build output + local runtime files (gitignored except skills/ templates)
+│   ├── omega                 # built binary (gitignored)
+│   ├── config.yaml           # personal config (gitignored)
+│   ├── omega.db              # session database (gitignored)
+│   ├── trust.yaml            # trust state (gitignored)
+│   └── skills/               # skill templates (tracked)
 └── cmd/
-    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name)
+    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name); config examples in cmd/omega/examples/ (embedded for first-run bootstrap); home resolution (bin-dir installs → ~/.omega), self-update with checksum verification
 ```
 
 ## Child Doc Shape
@@ -166,5 +169,7 @@ rules but cannot override core contracts.
 | `ai/`         | Implemented | Provider contract (interface, messages, events, tool schema), shared HTTP infra (httpClient, retryHTTP), exported HTTPClient / RetryHTTP / SSEData for extension use, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT), `DetectImage` (magic-byte image detection)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `agent/`      | Implemented | Multi-turn loop contract (`LoopProvider` interface), tool execution, compaction (config + token estimation, overflow auto-retry, friendly error when no compactor), capability seams (`CompactionProvider`, `ToolProvider`, `LoopProvider`, `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel`, `Frontend`, `TrustProvider`), Plugin system (`Context`, `Plugin`, `MountAll`); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent; shared data types (Session, SessionNode, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions, Configs map). Loop implementation in `extensions/agent_loop/` |
 | `cmd/omega/`  | Implemented | Single binary: serve, run, health, chat (Frontend dispatch), export, update, insights; project trust (--approve/--no-approve, trust.yaml); `@file` image input; config loading, plugin wiring, `omegaHome` resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `bin/`        | Runtime     | Build output, config, database, skills. Gitignored except `config.yaml.example`, `mcp.yaml.example`, `skills/` (templates). Build via `./build.sh` or `build.bat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `bin/`        | Reference   | Build output, config, database, skills. Gitignored except `skills/` (templates); config examples live in `cmd/omega/examples/`. Build via `./build.sh` or `build.bat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `extensions/` | Implemented | In-process extension packages: agent_loop (default conversation loop), provider (Ollama, OpenAI, Anthropic), store (SQLite + sessions.search), skills (skill loading + /skills command), compactor (context compaction), logging (file logger + LoggerProvider seam), memory (persistent memory + memory tool), http_channel (HTTP/SSE delivery channel), tui (terminal frontend), trust (project trust gate), prompt (system prompt builder), tools (shell, files), mcp (MCP bridge), delegate (subagent delegation), web (web search/fetch). Each implements the `agent.Plugin` interface.                                                                                                                                                     |
+| `webui/`      | Implemented | Nuxt 4 SPA: VS Code-style shell (see `webui/AGENTS.md`); built output embedded into the binary; dev via nuxt dev + devProxy to the dev omega on :8098; unit tests (node --test), stream_check transport probe, build.sh sync script |
+| `deploy/`      | Reference   | Install artifacts: omega.service (systemd --user unit for the installed instance at ~/.omega) |
