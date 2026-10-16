@@ -27,7 +27,7 @@
         @update:model="$emit('update:model', $event)" />
       <button
         class="send"
-        :disabled="busy || !draft.trim()"
+        :disabled="!draft.trim()"
         @click="$emit('send')">
         send
       </button>
@@ -40,7 +40,6 @@
     draft: string;
     model: string;
     models: string[];
-    busy: boolean;
   }>();
 
   defineEmits<{

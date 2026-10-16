@@ -31,7 +31,7 @@ coverage.out
 .worktrees/
 
 # WebUI (Nuxt)
-webui/node_modules/
+webui/node_modules
 webui/.nuxt/
 webui/.output/
 webui/dist/

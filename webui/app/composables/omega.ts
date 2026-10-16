@@ -121,6 +121,29 @@ export function handlePayload(
   }
 }
 
+// Per-session stream busy map: a session is busy iff its own stream is
+// live. Pure operations on value-semantic sets - the caller swaps the
+// whole set per change, so the state stays reactive and the logic is
+// unit-testable without a component framework.
+export type BusyMap = ReadonlySet<string>;
+
+export function withBusy(base: BusyMap, id: string, on: boolean): Set<string> {
+  const next = new Set(base);
+  if (on) next.add(id);
+  else next.delete(id);
+  return next;
+}
+
+export function isBusy(b: BusyMap, id: string): boolean {
+  return b.has(id);
+}
+
+// Global view concerns (tab-title spinner, statusbar) read ANY live
+// stream from the map - they never gate a session.
+export function anyBusy(b: BusyMap): boolean {
+  return b.size > 0;
+}
+
 export async function fetchHealth(): Promise<boolean> {
   try {
     const r = await fetch("/health");

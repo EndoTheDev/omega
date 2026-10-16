@@ -34,6 +34,7 @@
           "
           :sessions="sessions"
           :active-id="activeId"
+          :streaming-ids="busySet"
           :open="drawerOpen"
           @open="openSession"
           @new="newChat" />
@@ -88,7 +89,6 @@
           v-model:draft="draft"
           v-model:model="selectedModel"
           :models="models"
-          :busy="busy"
           @send="send" />
       </main>
 
@@ -142,7 +142,7 @@
 
     <StatusBar
       :healthy="healthy"
-      :streaming="busy"
+      :streaming="anyBusyNow"
       :message-count="messageCount"
       :tokens="tokens"
       :context-size="contextSize"
@@ -152,7 +152,9 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+  import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+  import { anyBusy, withBusy } from "./composables/omega";
+  import type { BusyMap } from "./composables/omega";
 
   interface MessageItem {
     kind: "message";
@@ -179,14 +181,69 @@
   const selectedModel = ref("");
   const sessions = ref<Session[]>([]);
   const activeId = ref<string | null>(null);
-  const transcript = ref<TranscriptItem[]>([]);
   const draft = ref("");
-  const busy = ref(false);
   const messagesEl = ref<HTMLElement | null>(null);
-  const statusLine = ref("");
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
+
+  // --- per-session stream state (Lvl 2) ---
+  // Every session, including the unsaved new chat, owns its transcript and
+  // telemetry. A stream writes ONLY its own state, so any session can
+  // stream while the view sits anywhere else. NEW_KEY holds the state of
+  // an unsaved chat until /sessions returns the real id.
+  const NEW_KEY = "new";
+  interface SessionState {
+    transcript: TranscriptItem[];
+    statusLine: string;
+    tokens: number;
+    tokensPerSecond: number;
+    liveChunksPerSecond: number;
+  }
+  const EMPTY_STATE: SessionState = {
+    transcript: [],
+    statusLine: "",
+    tokens: 0,
+    tokensPerSecond: 0,
+    liveChunksPerSecond: 0,
+  };
+  const streams = reactive(new Map<string, SessionState>());
+
+  function ensureState(key: string): SessionState {
+    let st = streams.get(key);
+    if (!st) {
+      st = {
+        transcript: [],
+        statusLine: "",
+        tokens: 0,
+        tokensPerSecond: 0,
+        liveChunksPerSecond: 0,
+      };
+      streams.set(key, st);
+      // reactive(Map) wraps values on READ - keep the wrapped handle, not
+      // the raw object, or state writes stop triggering the view
+      st = streams.get(key) as SessionState;
+    }
+    return st;
+  }
+
+  const activeKey = computed(() => activeId.value ?? NEW_KEY);
+  const view = computed<SessionState>(
+    () => streams.get(activeKey.value) ?? EMPTY_STATE,
+  );
+
+  // per-session busy set: a session is busy iff its own stream is live.
+  // Swapped value-semantically (withBusy) so set changes are reactive.
+  const busySet = ref<BusyMap>(new Set());
+  // global view concerns: read-only over the busy map, never a lock
+  const anyBusyNow = computed(() => anyBusy(busySet.value));
+
+  // the view reads its own session's state
+  const transcript = computed(() => view.value.transcript);
+  const statusLine = computed(() => view.value.statusLine);
+  const tokens = computed(() => view.value.tokens);
+  const tokensPerSecond = computed(() => view.value.tokensPerSecond);
+  const liveChunksPerSecond = computed(() => view.value.liveChunksPerSecond);
 
   // mobile: sidebars are overlays (slide from their side over a scrim);
   // desktop: same toggles mount/unmount the panes inline + squeeze chain
@@ -215,9 +272,6 @@
   const rightDividerEl = ref<{ persist: (w: number) => void } | null>(null);
   const sidebarVisible = ref(true);
   const rightVisible = ref(true);
-  const tokens = ref(0);
-  const tokensPerSecond = ref(0);
-  const liveChunksPerSecond = ref(0);
   const contextSize = ref(0);
 
   const messageCount = computed(
@@ -229,12 +283,17 @@
   // the persisted Assistant{Thinking, ToolCalls, Content} back into the same
   // three shapes so a reload renders everything that happened.
   async function openSession(id: string) {
-    if (busy.value) return;
     activeId.value = id;
     drawerOpen.value = false;
     inspectorOpen.value = false;
-    transcript.value = [];
-    statusLine.value = "";
+    const st = ensureState(id);
+    // a live stream IS the content - refetching now would clobber the
+    // stream state with a mid-flight persisted snapshot
+    if (busySet.value.has(id)) {
+      scrollDown(true);
+      return;
+    }
+    st.statusLine = "";
     try {
       const detail = await fetchSession(id);
       if (detail.messages) {
@@ -277,19 +336,21 @@
           t.result = m.content || "";
           t.status = m.is_error ? "error" : "done";
         }
-        transcript.value = items;
+        st.transcript = items;
       }
     } catch {
-      // empty or missing session: keep the empty view
+      // empty or missing session: keep the previous view rather than
+      // dropping it on a transient fetch failure
     }
     scrollDown(true);
   }
 
-  async function newChat() {
-    if (busy.value) return;
+  function newChat() {
     activeId.value = null;
-    transcript.value = [];
-    statusLine.value = "";
+    // fresh unsaved-chat state - UNLESS an unsaved stream is live, in
+    // which case +new returns to the view watching it (no global lock)
+    if (!busySet.value.has(NEW_KEY)) streams.delete(NEW_KEY);
+    ensureState(NEW_KEY);
     drawerOpen.value = false;
   }
 
@@ -440,12 +501,19 @@
 
   async function send() {
     const text = draft.value.trim();
-    if (!text || busy.value) return;
+    if (!text) return;
+    const startKey = activeKey.value;
+    // per-session guard: only THIS session's live stream blocks a send
+    if (busySet.value.has(startKey)) return;
     draft.value = "";
-    busy.value = true;
-    statusLine.value = "reasoning";
+    const st = ensureState(startKey);
+    // unsaved chats live under NEW_KEY until /sessions returns the real
+    // id; state AND busy entry re-key to the id right after creation
+    let busyKey = startKey;
+    busySet.value = withBusy(busySet.value, busyKey, true);
+    st.statusLine = "reasoning";
 
-    transcript.value.push({ kind: "message", role: "user", content: text });
+    st.transcript.push({ kind: "message", role: "user", content: text });
     scrollDown(true);
     let assistant: MessageItem = {
       kind: "message",
@@ -459,7 +527,7 @@
     let assistantPushed = false;
     const pushAssistant = () => {
       if (!assistantPushed) {
-        transcript.value.push(assistant);
+        st.transcript.push(assistant);
         assistantPushed = true;
       }
     };
@@ -473,21 +541,25 @@
     // visible proof that the frontend receives chunks as they come -
     // a ticking counter means streaming, a frozen-then-jumping one
     // means something buffers between omega and the page.
-    tokens.value = 0;
-    liveChunksPerSecond.value = 0;
+    st.tokens = 0;
+    st.liveChunksPerSecond = 0;
     const chunkTimes: number[] = [];
+    // the stream writes only its own session's state; auto-scroll follows
+    // it only while the view is actually watching this stream - a stream
+    // running in the background never yanks an open session's scrollbar
+    const isViewed = () => streams.get(activeKey.value) === st;
     const onChunk = (len: number) => {
       const now = Date.now();
       chunkTimes.push(now);
       while (chunkTimes.length && now - chunkTimes[0] > 1000) chunkTimes.shift();
-      liveChunksPerSecond.value = chunkTimes.length;
+      st.liveChunksPerSecond = chunkTimes.length;
       // ponytail: chars/4 token estimate - corrected by real usage at end
-      tokens.value += Math.ceil(len / 4);
+      st.tokens += Math.ceil(len / 4);
     };
 
     try {
       // A session must exist before the first /chat or the backend 404s.
-      if (!activeId.value) {
+      if (startKey === NEW_KEY) {
         const r = await fetch("/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -495,21 +567,28 @@
         });
         if (!r.ok) throw new Error(`create session: ${r.status}`);
         const s = await r.json();
-        activeId.value = s.id;
+        streams.delete(NEW_KEY);
+        streams.set(s.id, st);
+        busySet.value = withBusy(withBusy(busySet.value, busyKey, false), s.id, true);
+        busyKey = s.id;
+        // the row (and its pulse) exists once the sidebar refreshes; the
+        // view moves to the session only if the user stayed on this chat
+        refreshSessions();
+        if (activeKey.value === NEW_KEY) activeId.value = s.id;
       }
       const payload: OmegaMessage[] = [{ role: "user", content: text }];
       await streamChat(
         payload,
-        activeId.value,
+        busyKey,
         {
           onThinking: (content) => {
             if (!thinking) {
               thinking = { kind: "thinking", content: "", streaming: true };
-              transcript.value.push(thinking);
+              st.transcript.push(thinking);
             }
             thinking.content += content;
             onChunk(content.length);
-            scrollDown();
+            if (isViewed()) scrollDown();
           },
           onResponse: (content) => {
             if (thinking?.streaming) thinking.streaming = false;
@@ -529,22 +608,22 @@
             pushAssistant();
             assistant.content += content;
             onChunk(content.length);
-            scrollDown();
+            if (isViewed()) scrollDown();
           },
           onToolCall: (tool) => {
             segmentBreak = true;
-            transcript.value.push({
+            st.transcript.push({
               kind: "tool",
               name: tool.name,
               status: "running",
               output: tool.output,
             });
-            scrollDown();
+            if (isViewed()) scrollDown();
           },
           onToolResult: (result) => {
             // attach the result to the most recent tool line (status -> done)
-            for (let i = transcript.value.length - 1; i >= 0; i--) {
-              const item = transcript.value[i];
+            for (let i = st.transcript.length - 1; i >= 0; i--) {
+              const item = st.transcript[i];
               // strict mode: indexing can yield undefined - skip before narrowing
               if (item?.kind !== "tool") continue;
               if (item.status !== "running") continue;
@@ -552,15 +631,15 @@
               item.result = result.content;
               break;
             }
-            scrollDown();
+            if (isViewed()) scrollDown();
           },
           onStatus: (s) => {
-            statusLine.value = s;
+            st.statusLine = s;
           },
           onUsage: (usage) => {
-            tokens.value = usage.promptTokens + usage.completionTokens;
+            st.tokens = usage.promptTokens + usage.completionTokens;
             const seconds = (Date.now() - sentAt) / 1000;
-            tokensPerSecond.value =
+            st.tokensPerSecond =
               seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
           },
         },
@@ -572,7 +651,7 @@
         assistant.content ? `\n[error: ${e}]` : `[error: ${e}]`;
       assistant.streaming = false;
     } finally {
-      liveChunksPerSecond.value = 0;
+      st.liveChunksPerSecond = 0;
       // thinking is assigned inside stream callbacks the type system can't
       // track across the closure - cast to the item type it is at runtime
       const liveThinking = thinking as ThinkingItem | null;
@@ -581,10 +660,10 @@
       // made it into the transcript at all
       pushAssistant();
       assistant.streaming = false;
-      busy.value = false;
-      statusLine.value = "";
+      busySet.value = withBusy(busySet.value, busyKey, false);
+      st.statusLine = "";
       refreshSessions();
-      scrollDown();
+      if (isViewed()) scrollDown();
     }
   }
 
@@ -645,6 +724,30 @@
 
   watch(themeMode, applyTheme);
 
+  // --- tab-title spinner: a global read over the per-session busy map ---
+  // Any live stream - in any session - spins the tab title; individual
+  // sessions stay untouched (and unlocked) by it.
+  const TITLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+  let savedTitle: string | null = null;
+
+  watch(anyBusyNow, (live) => {
+    if (typeof document === "undefined") return;
+    if (live) {
+      if (savedTitle === null) savedTitle = document.title;
+      let i = 0;
+      spinnerTimer = setInterval(() => {
+        i = (i + 1) % TITLE_FRAMES.length;
+        document.title = `${TITLE_FRAMES[i]} omega`;
+      }, 120);
+    } else {
+      if (spinnerTimer) clearInterval(spinnerTimer);
+      spinnerTimer = null;
+      if (savedTitle !== null) document.title = savedTitle;
+      savedTitle = null;
+    }
+  });
+
   onMounted(async () => {
     // stick-to-bottom: user scroll events drive the pinned flag
     messagesEl.value?.addEventListener("scroll", onMessagesScroll);
@@ -689,5 +792,8 @@
   onUnmounted(() => {
     messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
     window.removeEventListener("resize", squeezeCheck);
+    if (spinnerTimer) clearInterval(spinnerTimer);
+    if (typeof document !== "undefined" && savedTitle !== null)
+      document.title = savedTitle;
   });
 </script>
