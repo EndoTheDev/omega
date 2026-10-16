@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -550,8 +551,29 @@ func runChat(cfg Config, pctx *agent.Context, skills []agent.Skill, appendPrompt
 }
 
 // omegaVersion is set via ldflags at build time:
+//
 //	go build -ldflags "-X main.omegaVersion=v0.1.0"
-var omegaVersion = "dev"
+//
+// go install builds carry no ldflags, so init() falls back to the module
+// version Go stamps into module-built binaries (debug.ReadBuildInfo).
+var omegaVersion = ""
+
+func init() {
+	if omegaVersion == "" {
+		omegaVersion = resolveVersionFromBuildInfo()
+	}
+}
+
+// resolveVersionFromBuildInfo picks the module version for go install
+// builds; returns "dev" for bare go builds (no ldflags, no module stamp).
+func resolveVersionFromBuildInfo() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return "dev"
+}
 
 // cmdHealth checks whether the server is reachable at the configured port.
 func cmdHealth(configPath string) error {

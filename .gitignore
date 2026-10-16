@@ -39,9 +39,6 @@ webui/.data/
 *.log
 npm-debug.log*
 
-# built-webui sync target (webui/scripts/build.sh copies dist here so
-# go:embed can bake it in). The placeholder index.html stays tracked -
-# without it a plain `go build` fails on an empty embed pattern. After a
-# real sync index.html shows modified; git checkout restores the placeholder.
-extensions/http_channel/static/*
-!extensions/http_channel/static/index.html
+# NOTE: extensions/http_channel/static/ IS tracked - the built SPA is
+# committed so go install / go build produce the complete product
+# (placeholder-era ignore rules removed; see webui/scripts/build.sh)
