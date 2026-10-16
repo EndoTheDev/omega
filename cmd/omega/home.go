@@ -10,12 +10,12 @@ import (
 var exampleFiles embed.FS
 
 // homeForExe resolves the omega home: OMEGA_HOME wins, else the exe's
-// directory - except when the exe lives in a directory literally named
-// "bin" (go install -> ~/go/bin, ~/.local/bin, /usr/local/bin), where
-// home moves to ~/.omega so config, db and logs don't scatter into the
-// bin dir.
-// ponytail: ANY folder named "bin" gets the dotfolder home - a portable
-// install extracted into a "bin" dir would too. OMEGA_HOME overrides.
+// directory - except for PATH-style installs, where the binary lives in
+// a shared bin directory (go install's ~/go/bin, ~/.local/bin, ~/bin,
+// /usr/local/bin) and home moves to ~/.omega so config, db and logs
+// don't scatter among other programs' binaries.
+// ponytail: explicit known-bin-dir list; an exotic PATH dir
+// (/opt/homebrew/bin) falls back to exe-dir home - OMEGA_HOME overrides.
 func homeForExe(envHome, exePath, userHome string) string {
 	if envHome != "" {
 		return envHome
@@ -24,10 +24,21 @@ func homeForExe(envHome, exePath, userHome string) string {
 		return filepath.Join(userHome, ".omega")
 	}
 	dir := filepath.Dir(exePath)
-	if filepath.Base(dir) == "bin" {
+	if isPathBinInstall(dir, userHome) {
 		return filepath.Join(userHome, ".omega")
 	}
 	return dir
+}
+
+// isPathBinInstall reports whether dir is a known PATH-style bin
+// directory where a self-contained home is impossible. A repo's bin/
+// build output (e.g. ~/dev/omega/bin) is deliberately NOT in this list -
+// repo builds keep config, db and examples beside the binary.
+func isPathBinInstall(dir, userHome string) bool {
+	return dir == filepath.Join(userHome, "go", "bin") ||
+		dir == filepath.Join(userHome, ".local", "bin") ||
+		dir == filepath.Join(userHome, "bin") ||
+		dir == "/usr/local/bin"
 }
 
 // bootstrapHome makes a fresh install self-documenting: writes the

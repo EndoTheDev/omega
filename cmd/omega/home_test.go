@@ -73,6 +73,11 @@ func TestHomeForExe(t *testing.T) {
 		{"go install", "", "/home/u/go/bin/omega", "/home/u/.omega"},
 		// local bin dir -> ~/.omega
 		{"local bin", "", "/home/u/.local/bin/omega", "/home/u/.omega"},
+		// system PATH install -> ~/.omega
+		{"usr local bin", "", "/usr/local/bin/omega", "/home/u/.omega"},
+		// repo build output: a bin/ subfolder of a checkout keeps home
+		// beside the binary (the v0.6.3 base=="bin" heuristic broke this)
+		{"repo build", "", "/home/u/dev/omega/bin/omega", "/home/u/dev/omega/bin"},
 		// unresolvable exe path -> ~/.omega
 		{"no exe", "", "", "/home/u/.omega"},
 	}
