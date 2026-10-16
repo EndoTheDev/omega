@@ -23,19 +23,31 @@ func newArchiveFile(t *testing.T, content []byte) string {
 	return p
 }
 
+// checksumServer serves the given checksums.txt body.
+func checksumServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// The real contract: the caller passes the bare platform tag from
+// assetNameForOS ("linux_arm64"), and checksums.txt lines carry the full
+// release filename ("omega-v0.6.1-linux_arm64.tar.gz") - which CONTAINS
+// the tag but never ends with it.
+
 func TestVerifyChecksumMatch(t *testing.T) {
 	content := []byte("fake archive content")
 	archivePath := newArchiveFile(t, content)
 
 	h := sha256.Sum256(content)
 	realHash := hex.EncodeToString(h[:])
-	assetName := "omega_linux_amd64.tar.gz"
+	assetName := "linux_arm64"
 
-	body := fmt.Sprintf("%s  omega-v0.1.0_%s\n", realHash, assetName)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, body)
-	}))
-	defer srv.Close()
+	body := fmt.Sprintf("abc123  omega-v0.6.1-darwin_arm64.tar.gz\n%s  omega-v0.6.1-%s.tar.gz\n", realHash, assetName)
+	srv := checksumServer(t, body)
 
 	if err := verifyChecksum(archivePath, srv.URL, assetName); err != nil {
 		t.Fatalf("verifyChecksum returned error on match: %v", err)
@@ -45,14 +57,11 @@ func TestVerifyChecksumMatch(t *testing.T) {
 func TestVerifyChecksumMismatch(t *testing.T) {
 	content := []byte("fake archive content")
 	archivePath := newArchiveFile(t, content)
-	assetName := "omega_linux_amd64.tar.gz"
+	assetName := "linux_arm64"
 
-	// Deliberately wrong hash.
-	body := "0000000000000000000000000000000000000000000000000000000000000000  omega-v0.1.0_" + assetName + "\n"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, body)
-	}))
-	defer srv.Close()
+	// Deliberately wrong hash, real-world line format.
+	body := "0000000000000000000000000000000000000000000000000000000000000000  omega-v0.6.1-linux_arm64.tar.gz\n"
+	srv := checksumServer(t, body)
 
 	err := verifyChecksum(archivePath, srv.URL, assetName)
 	if err == nil {
@@ -66,14 +75,11 @@ func TestVerifyChecksumMismatch(t *testing.T) {
 func TestVerifyChecksumNoEntry(t *testing.T) {
 	content := []byte("fake archive content")
 	archivePath := newArchiveFile(t, content)
-	assetName := "omega_linux_amd64.tar.gz"
+	assetName := "linux_arm64"
 
 	// checksums.txt has entries, but none for our asset.
-	body := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789  omega_windows_amd64.zip\n"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, body)
-	}))
-	defer srv.Close()
+	body := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789  omega-v0.6.1-windows_amd64.zip\n"
+	srv := checksumServer(t, body)
 
 	err := verifyChecksum(archivePath, srv.URL, assetName)
 	if err == nil {
@@ -87,7 +93,7 @@ func TestVerifyChecksumNoEntry(t *testing.T) {
 func TestVerifyChecksumHTTPError(t *testing.T) {
 	content := []byte("fake archive content")
 	archivePath := newArchiveFile(t, content)
-	assetName := "omega_linux_amd64.tar.gz"
+	assetName := "linux_arm64"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)

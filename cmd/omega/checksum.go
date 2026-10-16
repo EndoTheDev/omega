@@ -40,11 +40,13 @@ func verifyChecksum(archivePath, checksumsURL, assetName string) error {
 	if err != nil {
 		return fmt.Errorf("read checksums: %w", err)
 	}
-	// Parse "sha256  filename" lines (sha256sum output format).
+	// Parse "sha256  filename" lines (sha256sum output format). The
+	// filename CONTAINS the goos_goarch tag (e.g. omega-v0.6.1-linux_arm64
+	// .tar.gz) but never ends with it - same matching rule as findAsset.
 	wantHash := ""
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 2 && strings.HasSuffix(fields[1], assetName) {
+		if len(fields) == 2 && strings.Contains(fields[1], assetName) {
 			wantHash = fields[0]
 			break
 		}
