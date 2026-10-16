@@ -46,6 +46,10 @@ func (m *mockStore) ComputeInsights(context.Context, int) (*agent.Insights, erro
 	return nil, nil
 }
 func (m *mockStore) CountMessages(context.Context, string) (int, error) { return 0, nil }
+func (m *mockStore) SessionCounts(context.Context) (map[string]agent.SessionCounts, error) {
+	return nil, nil
+}
+func (m *mockStore) AddSessionTokens(context.Context, string, int, int) error { return nil }
 
 func TestDetectImagePNG(t *testing.T) {
 	dir := t.TempDir()

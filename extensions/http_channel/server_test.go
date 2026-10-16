@@ -323,6 +323,139 @@ func TestSessionsNoStore(t *testing.T) {
 	}
 }
 
+func TestSessionsListCounts(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create s1: %v", err)
+	}
+	if err := st.CreateSession(ctx, "s2", "", ""); err != nil {
+		t.Fatalf("create s2: %v", err)
+	}
+	// s1 carries messages; the tool calls ride the assistant, the
+	// results are separate tool-role rows.
+	s1 := []ai.Message{
+		ai.NewUser("hi"),
+		ai.NewAssistant("working"),
+		ai.ToolResult{Content: "r1"},
+		ai.ToolResult{Content: "r2"},
+		ai.NewUser("again"),
+		ai.NewAssistant("done"),
+	}
+	for _, m := range s1 {
+		if err := st.AppendMessage(ctx, "s1", m); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var list []sessionPayload
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("len = %d, want 2", len(list))
+	}
+	byID := map[string]sessionPayload{}
+	for _, row := range list {
+		byID[row.ID] = row
+	}
+	if got := byID["s1"]; got.MessageCount != 6 || got.ToolCount != 2 {
+		t.Fatalf("s1 = %+v, want 6 messages / 2 tools", got)
+	}
+	if got := byID["s2"]; got.MessageCount != 0 || got.ToolCount != 0 {
+		t.Fatalf("s2 = %+v, want 0/0", got)
+	}
+}
+
+func TestSessionTokensPersistAndAccumulate(t *testing.T) {
+	// Provider scripts stream a response and report usage numbers; each
+	// chat turn consumes exactly one script (the session's label is set
+	// first so the detached title run never fires).
+	provider := &mockProvider{
+		modelName: "mock",
+		scripts: [][]ai.StreamEvent{
+			scripted(
+				ai.ResponseChunk{Type: "response_chunk", Content: "one"},
+				ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
+					PromptEvalCount: ptrInt(100), EvalCount: ptrInt(20)},
+			),
+			scripted(
+				ai.ResponseChunk{Type: "response_chunk", Content: "two"},
+				ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
+					PromptEvalCount: ptrInt(40), EvalCount: ptrInt(5)},
+			),
+		},
+	}
+	a := agent.NewAgent(provider, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, nil, nil)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s.store = st
+
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "labeled"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Turn 1: real usage lands on the session row.
+	if code := postChat(s, "s1"); code != http.StatusOK {
+		t.Fatalf("turn 1 status = %d, want 200", code)
+	}
+	sess, err := st.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if sess.PromptTokens != 100 || sess.CompletionTokens != 20 {
+		t.Fatalf("turn 1 totals = %d/%d, want 100/20", sess.PromptTokens, sess.CompletionTokens)
+	}
+
+	// Turn 2: accumulate on top of turn 1.
+	if code := postChat(s, "s1"); code != http.StatusOK {
+		t.Fatalf("turn 2 status = %d, want 200", code)
+	}
+	sess, err = st.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget: %v", err)
+	}
+	if sess.PromptTokens != 140 || sess.CompletionTokens != 25 {
+		t.Fatalf("turn 2 totals = %d/%d, want 140/25 (accumulated)", sess.PromptTokens, sess.CompletionTokens)
+	}
+
+	// The totals flow through GET /sessions.
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var list []sessionPayload
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 1 || list[0].PromptTokens != 140 || list[0].CompletionTokens != 25 {
+		t.Fatalf("sessions payload = %+v, want totals 140/25", list)
+	}
+}
+
+func ptrInt(n int) *int { return &n }
+
+func postChat(s *Server, sessionID string) int {
+	body, _ := json.Marshal(map[string]any{
+		"session_id": sessionID,
+		"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	return rec.Code
+}
+
 func TestChatWithSessionPersists(t *testing.T) {
 	s, store := newTestServerWithStore(t)
 	ctx := context.Background()

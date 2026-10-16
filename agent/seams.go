@@ -82,6 +82,15 @@ type StoreProvider interface {
 	SearchMessages(ctx context.Context, query string) ([]SearchResult, error)
 	ComputeInsights(ctx context.Context, days int) (*Insights, error)
 	CountMessages(ctx context.Context, sessionID string) (int, error)
+
+	// SessionCounts computes per-session message and tool-result counts
+	// at read time (SQL COUNT, no maintained counters). Sessions with
+	// no messages are absent from the map.
+	SessionCounts(ctx context.Context) (map[string]SessionCounts, error)
+
+	// AddSessionTokens adds a turn's real provider-reported usage to the
+	// session's accumulated token totals. Zero usage is a no-op.
+	AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error
 }
 
 // SkillsProvider is the skill loading seam. The default implementation

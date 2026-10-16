@@ -156,6 +156,15 @@ type assistantRecord struct {
 	content   string
 }
 
+// streamUsage totals the real provider-reported usage across every
+// StreamEnd of one /chat run (a multi-turn tool loop streams once per
+// turn; each StreamEnd carries that turn's usage). Zero means the
+// provider reported nothing.
+type streamUsage struct {
+	prompt     int
+	completion int
+}
+
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -190,9 +199,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tools := s.selectTools(req.Tools)
-	recs := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
+	recs, usage := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
 
-	s.persistAssistant(r.Context(), w, flusher, prov, req, recs)
+	s.persistAssistant(r.Context(), w, flusher, prov, req, recs, usage)
 }
 
 // loadSessionMessages loads persisted history for a session, appends the
@@ -238,22 +247,35 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 
 // streamAgentEvents runs the agent event loop, writing SSE events to w.
 // prov is the per-request provider (a copy carrying the request's model).
-// It returns the accumulated assistant records for session persistence.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) []assistantRecord {
+// It returns the accumulated assistant records for session persistence
+// and the real provider-reported usage for the token totals.
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) ([]assistantRecord, streamUsage) {
 	var recs []assistantRecord
 	var rec assistantRecord
+	var usage streamUsage
 	for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 		s.accumulateAssistant(&recs, &rec, event, req)
+		// Usage arrives on each stream_end; sum every turn of the run.
+		if se, ok := event.(agent.StreamEvent); ok {
+			if end, ok := se.Event.(ai.StreamEnd); ok {
+				if end.PromptEvalCount != nil {
+					usage.prompt += *end.PromptEvalCount
+				}
+				if end.EvalCount != nil {
+					usage.completion += *end.EvalCount
+				}
+			}
+		}
 		eventType, data, err := sseEvent(event)
 		if err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
 			flusher.Flush()
-			return append(recs, rec)
+			return append(recs, rec), usage
 		}
 		writeSSE(w, eventType, data)
 		flusher.Flush()
 	}
-	return append(recs, rec)
+	return append(recs, rec), usage
 }
 
 // accumulateAssistant appends streamed response-chunk content to the
@@ -295,8 +317,9 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 // per response segment: assistant(A + tool calls) -> tool results ->
 // assistant(B). Providers require this order (final answer as its own
 // message after the tool results); the webui reload renders one bubble
-// per message, matching the live segment split.
-func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, req chatRequest, recs []assistantRecord) {
+// per message, matching the live segment split. usage adds the run's
+// real token totals to the session row.
+func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage) {
 	if s.store == nil || req.SessionID == "" || len(recs) == 0 {
 		return
 	}
@@ -328,6 +351,11 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 		if rec.content != "" {
 			lastContent = rec.content
 		}
+	}
+	if err := s.store.AddSessionTokens(ctx, req.SessionID, usage.prompt, usage.completion); err != nil {
+		writeSSE(w, "error", []byte("persist usage: "+err.Error()))
+		flusher.Flush()
+		return
 	}
 	if lastContent != "" {
 		// Detached: the title call is a second agent run, and running it
@@ -406,6 +434,14 @@ func truncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
+// sessionPayload is one /sessions list row: the session row (which
+// carries the persisted token totals) plus the read-time counts.
+type sessionPayload struct {
+	agent.Session
+	MessageCount int `json:"message_count"`
+	ToolCount    int `json:"tool_count"`
+}
+
 // handleSessions serves GET /sessions (list) and POST /sessions (create).
 // It returns 501 when the server has no store.
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -420,7 +456,23 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, sessions)
+		// ponytail: counts are computed at read time from SQL COUNT, so
+		// the list stays accurate with no maintained counters.
+		counts, err := s.store.SessionCounts(r.Context())
+		if err != nil {
+			http.Error(w, "session counts: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out := make([]sessionPayload, 0, len(sessions))
+		for _, sess := range sessions {
+			payload := sessionPayload{Session: sess}
+			if c, ok := counts[sess.ID]; ok {
+				payload.MessageCount = c.MessageCount
+				payload.ToolCount = c.ToolCount
+			}
+			out = append(out, payload)
+		}
+		writeJSON(w, http.StatusOK, out)
 	case http.MethodPost:
 		var req struct {
 			ID string `json:"id"`

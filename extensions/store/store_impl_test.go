@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sort"
 	"testing"
@@ -331,6 +332,134 @@ func TestCountMessages(t *testing.T) {
 	}
 	if n, err := s.CountMessages(ctx, "s1"); err != nil || n != 3 {
 		t.Fatalf("count = %d, err %v; want 3", n, err)
+	}
+}
+
+// TestSessionCounts covers the read-time counts: sessions with N
+// messages and M tool results report exactly those numbers, bookkeeping
+// entries are excluded from message_count, and empty sessions stay out
+// of the map.
+func TestSessionCounts(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2"} {
+		if err := s.CreateSession(ctx, id, "", ""); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	// s1: 5 stored messages (2 user, 1 assistant, 2 tool results) + 2
+	// bookkeeping entries -> message_count 5, tool_count 2.
+	for _, m := range []ai.Message{
+		ai.NewUser("a"),
+		ai.NewAssistant("b"),
+		ai.ToolResult{Content: "t1"},
+		ai.ToolResult{Content: "t2"},
+		ai.NewUser("c"),
+		ai.ModelChange{Model: "m"},
+		ai.ThinkingLevelChange{Level: "high"},
+	} {
+		if err := s.AppendMessage(ctx, "s1", m); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+	counts, err := s.SessionCounts(ctx)
+	if err != nil {
+		t.Fatalf("session counts: %v", err)
+	}
+	got := counts["s1"]
+	if got.MessageCount != 5 || got.ToolCount != 2 {
+		t.Fatalf("s1 = %+v, want 5 messages / 2 tools", got)
+	}
+	if _, ok := counts["s2"]; ok {
+		t.Fatalf("empty session s2 should be absent, got %+v", counts["s2"])
+	}
+}
+
+// TestMigrationAddsTokenColumns upgrades a pre-migration database and
+// verifies the new totals default to 0 instead of breaking on load.
+func TestMigrationAddsTokenColumns(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+	ctx := context.Background()
+
+	// Build the pre-migration schema by hand.
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+	role       TEXT NOT NULL,
+	payload    TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES ('old', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old session: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO messages (session_id, role, payload, created_at) VALUES ('old', 'user', '{"content":"hi"}', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old message: %v", err)
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	// Opening through the store migrates in place.
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	defer s.Close()
+	sess, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old session: %v", err)
+	}
+	if sess.PromptTokens != 0 || sess.CompletionTokens != 0 {
+		t.Fatalf("migrated totals = %d/%d, want 0/0", sess.PromptTokens, sess.CompletionTokens)
+	}
+	msgs, err := s.GetMessages(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len = %d, want 1", len(msgs))
+	}
+
+	// Fresh sessions also default to 0 and accept token adds.
+	if err := s.AddSessionTokens(ctx, "old", 12, 3); err != nil {
+		t.Fatalf("add tokens: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("reget: %v", err)
+	}
+	if sess.PromptTokens != 12 || sess.CompletionTokens != 3 {
+		t.Fatalf("totals = %d/%d, want 12/3", sess.PromptTokens, sess.CompletionTokens)
+	}
+	if err := s.AddSessionTokens(ctx, "old", 8, 0); err != nil {
+		t.Fatalf("add tokens 2: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("reget: %v", err)
+	}
+	if sess.PromptTokens != 20 || sess.CompletionTokens != 3 {
+		t.Fatalf("accumulated totals = %d/%d, want 20/3", sess.PromptTokens, sess.CompletionTokens)
+	}
+	// Zero usage is a no-op.
+	if err := s.AddSessionTokens(ctx, "old", 0, 0); err != nil {
+		t.Fatalf("add zero tokens: %v", err)
 	}
 }
 

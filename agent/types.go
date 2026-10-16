@@ -26,6 +26,20 @@ type Session struct {
 	Label     string `json:"label,omitempty"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+
+	// Real provider-reported usage accumulated per session. Sessions
+	// saved before this data was recorded keep 0 totals.
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}
+
+// SessionCounts is per-session activity computed at read time (SQL
+// COUNT over the messages table, no schema change or maintained
+// counters). message_count covers all stored messages; tool_count is
+// the tool-role subset (tool results).
+type SessionCounts struct {
+	MessageCount int `json:"message_count"`
+	ToolCount    int `json:"tool_count"`
 }
 
 // SessionNode is one node in the session tree returned by GetSessionTree.

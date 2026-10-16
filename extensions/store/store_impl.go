@@ -87,7 +87,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
 	label      TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	updated_at TEXT NOT NULL,
+	prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	completion_tokens INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,6 +133,8 @@ END;
 	for _, stmt := range []string{
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
 		`ALTER TABLE sessions ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -165,17 +169,21 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error) {
 	var sess agent.Session
 	var parent sql.NullString
-	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
+	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
+		&sess.PromptTokens, &sess.CompletionTokens); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
 	return sess, nil
 }
 
+// sessionColumns is the projection shared by GetSession and ListSessions.
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens"
+
 // GetSession returns the session with the given id, or ErrNotFound.
 func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {
 	sess, err := scanSession(s.db.QueryRowContext(ctx,
-		`SELECT id, parent_id, label, created_at, updated_at FROM sessions WHERE id = ?`, id))
+		`SELECT `+sessionColumns+` FROM sessions WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return agent.Session{}, ErrNotFound
 	}
@@ -188,7 +196,7 @@ func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error
 // ListSessions returns all sessions ordered by creation time.
 func (s *Store) ListSessions(ctx context.Context) ([]agent.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, parent_id, label, created_at, updated_at FROM sessions ORDER BY created_at`)
+		`SELECT `+sessionColumns+` FROM sessions ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -320,6 +328,49 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM messages WHERE session_id = ?`, sessionID).Scan(&n)
 	return n, err
+}
+
+// SessionCounts computes per-session message and tool-result counts at
+// read time. ponytail: one GROUP BY over the messages table, no
+// maintained counters; fine for hundreds of sessions - counter columns
+// are the upgrade if a session list ever gets slow. message_count is
+// every stored message; tool_count is the tool-role subset.
+// Bookkeeping entries (model_change, thinking_level_change) are
+// excluded from message_count, matching the insights convention for
+// non-conversation messages.
+func (s *Store) SessionCounts(ctx context.Context) (map[string]agent.SessionCounts, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT session_id,
+		        SUM(role NOT IN ('model_change', 'thinking_level_change')),
+		        SUM(role = 'tool')
+		 FROM messages GROUP BY session_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]agent.SessionCounts)
+	for rows.Next() {
+		var id string
+		var c agent.SessionCounts
+		if err := rows.Scan(&id, &c.MessageCount, &c.ToolCount); err != nil {
+			return nil, err
+		}
+		out[id] = c
+	}
+	return out, rows.Err()
+}
+
+// AddSessionTokens adds a turn's real provider-reported usage to the
+// session's accumulated totals on the sessions row.
+func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error {
+	if prompt == 0 && completion == 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET prompt_tokens = prompt_tokens + ?,
+		 completion_tokens = completion_tokens + ? WHERE id = ?`,
+		prompt, completion, sessionID)
+	return err
 }
 
 // SearchMessages performs a full-text search across all session messages.
