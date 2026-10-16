@@ -13,7 +13,12 @@ into a shared `Context` via `MountAll` at startup.
   implementation); streams provider responses, executes tool calls,
   feeds results back, handles compaction and overflow retry
 - `provider/` - LLM provider (Ollama, OpenAI, Anthropic streaming);
-  registers `/model`, `/models`, `/thinking`, and `/provider` commands
+  registers `/model`, `/models`, `/thinking`, and `/provider` commands.
+  OpenAI-compat streaming captures reasoning deltas (as ThinkingChunk)
+  and token usage (`stream_options.include_usage`), restructures
+  tool_calls to the OpenAI wire format in message history, and probes
+  `/api/show` (root path, `/v1` stripped) for the model context window
+  on ollama-lane hosts
 - `store/` - session store (SQLite implementation + `sessions.search`
   tool; registers `/sessions`, `/tree`, `/search`, `/insights`, `/new`,
   `/resume`, `/branch`, `/label`, `/export` commands)
@@ -31,8 +36,12 @@ into a shared `Context` via `MountAll` at startup.
 - `web/` - web search/fetch (Ollama Cloud API)
 - `memory/` - persistent memory (`memory` tool, two-file store with
   `§`-delimited entries, snapshot read fresh and injected into system prompt)
-- `http_channel/` - HTTP/SSE delivery channel (Channel seam,
-  HTTP server + SSE streaming implementation, `omega serve` transport)
+- `http_channel/` - HTTP/SSE channel + embedded SPA serving (Channel
+  seam, `omega serve` transport; see `extensions/http_channel/AGENTS.md`):
+  loopback-only bind list by default, SSE streaming, segmented session
+  persistence (assistant + calls -> tool results -> assistant),
+  session CRUD, `/models` with cached context window, detached title
+  generation, serves the committed webui SPA at `/`
 - `tui/` - terminal frontend (Frontend seam, Bubble Tea TUI:
   streaming, slash commands, themes, autocomplete, @file input,
   glamour rendering, desktop notifications)
@@ -52,7 +61,7 @@ into a shared `Context` via `MountAll` at startup.
   `ctx.CommandHandler`. Command handlers return `CommandResult` with
   optional `CmdAction` TUI directives. The host interprets actions;
   extensions declare intent.
-- Extensions are compiled into `omega.exe`. No separate binaries, no
+- Extensions are compiled into the omega binary. No separate binaries, no
   runtime loading.
 
 ## Work Guidance
@@ -76,5 +85,5 @@ go vet ./...               # no suspicious constructs
 
 ## Child DOX Index
 
-- `extensions/tui/` — terminal frontend (Frontend seam, Bubble Tea TUI)
-- `extensions/trust/` — project trust gate (TrustProvider seam, trust.yaml, AGENTS.md context loading)
+- `extensions/tui/` - terminal frontend (Frontend seam, Bubble Tea TUI)
+- `extensions/http_channel/` - HTTP/SSE channel + embedded SPA serving (loopback-by-default bind list, segmented session persistence)

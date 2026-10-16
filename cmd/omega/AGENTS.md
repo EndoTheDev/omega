@@ -26,8 +26,8 @@ The TUI is now an extension at `extensions/tui/` implementing the
 - `update.go` - self-update (`cmdUpdate`, `githubRelease`,
   `findAsset`, `assetNameForOS`, `findChecksumURL`, `verifyChecksum`).
   Archive-based: downloads zip/tar.gz, verifies SHA256 checksum,
-  extracts omega + extensions (self-contained subdirectory layout) +
-  config/mcp examples. Progress bar during download. Skips when already
+  extracts the omega binary + extension data
+  files + config/mcp examples. Progress bar during download. Skips when already
   up to date. Preserves user config files. Security: `safeJoin` validates
   archive entries stay within dest (CWE-22 path traversal prevention),
   `io.LimitReader` caps zip reads at 200MB and API responses at 1MB,
@@ -35,6 +35,13 @@ The TUI is now an extension at `extensions/tui/` implementing the
   30s timeout, atomic binary replacement via temp+rename on Linux/macOS.
 - `checksum.go` - release checksum verification (`findChecksumURL`,
   `verifyChecksum` with SHA256 + 30s timeout)
+- `home.go` - install bootstrap and home resolution:
+  `homeForExe` (OMEGA_HOME wins; exe dir for release-folder and repo
+  builds; `~/.omega` for PATH bin-dir installs), `isPathBinInstall`
+  (explicit known bin dirs: `~/go/bin`, `~/.local/bin`, `~/bin`,
+  `/usr/local/bin`), `bootstrapHome` (first run writes the embedded
+  `config.yaml.example` + `mcp.yaml.example` into the home, never
+  overwriting), embedded example files in `examples/`
 - `trust.go` - trust flag parsing (`trustFlags`, `parseTrustArgs`,
   `stripTrustArgs`), `cwd()` helper. Trust logic lives in
   `extensions/trust/` (TrustProvider seam).
@@ -50,6 +57,14 @@ The TUI is now an extension at `extensions/tui/` implementing the
   `ai.MessageRole`, and session resolution
 - `update_test.go` - self-check tests for `assetNameForOS` and
   `findAsset` (asset matching across platforms)
+- `checksum_test.go` - checksum verification tests against the real
+  release line format (bare platform tag; the checksum entry CONTAINS
+  the tag but never ends with it)
+- `home_test.go` - omegaHome env-var and exe-dir tests plus the
+  `homeForExe` table (bin-dir installs, repo builds, env override) and
+  bootstrap idempotence
+- `version_test.go` - buildinfo version resolution table (module stamp,
+  devel, empty, missing buildinfo)
 - `image_test.go` - self-check tests for `parseFileArgs`
   (CLI `@file` input via `ai.DetectImage`)
 
@@ -64,7 +79,9 @@ The TUI is now an extension at `extensions/tui/` implementing the
 - **`--help`/`-h` and `--version`/`-v` are global and exit before
   dispatch.** Any of these flags in the args prints to stdout and
   returns nil, even alongside a subcommand. There is no per-subcommand
-  help. `--version` prints `omega <omegaVersion>`.
+  help. `--version` prints `omega <omegaVersion>`; the version resolves
+  ldflags first (release builds), then the module stamp Go puts into
+  `go install` builds (`resolveVersionFromBuildInfo`), then `dev`.
 - **No subcommand defaults to the TUI.** `omega` (no args) starts the
   TUI. A non-subcommand argument is treated as a project path: omega
   chdirs there (erroring cleanly if it is not a directory) and starts
@@ -76,9 +93,13 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   CLI-only overrides. The TUI prompts interactively for untrusted
   projects; `run`/`serve` skip untrusted context with a stderr warning.
   `--no-approve` wins over `--approve`.
+- **`server.bind` is the listen list.** Default: loopback only - the
+  HTTP channel is unauthenticated and exposes shell tools, so anything
+  beyond loopback is an explicit opt-in (e.g. the Tailscale IP so
+  Traefik can route omega.endothe.dev). One channel per entry.
 - **Config validation is deep.** `Validate` checks provider type
   (ollama/openai/anthropic), host URL parseability, memory char limits
-  (when enabled), max_turns >= 0, http_timeout >= 0 — in addition to
+  (when enabled), max_turns >= 0, http_timeout >= 0 - in addition to
   the required model_name and port > 0.
 - **Export is shared.** `exportMessages` in `export.go` writes JSONL
   from `[]ai.Message`. Both `cmdExport` (CLI) and the store extension's
@@ -105,7 +126,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   the latest GitHub release, matches the asset by `GOOS_GOARCH`,
   downloads a zip/tar.gz archive, extracts omega + extensions
   (self-contained subdirectory layout) + config/mcp examples to a temp
-  dir, then replaces the running binary and extension binaries. Preserves
+  dir, then replaces the running binary and updates extension data files. Preserves
   user config files. Progress bar during download. Skips when already
   up to date. On Windows the running exe is renamed to `.old` first.
   SHA256 checksum verification on self-update via `checksums.txt`. Security hardening:
@@ -119,7 +140,14 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   inlined via `@file` are appended to the prompt content. No auto-resize
   or EXIF correction (defer).
 - **`omegaHome` is the config root.** Resolution order: `OMEGA_HOME`
-  env var, directory of the executable, `~/.omega/` fallback.
+  env var wins; then `homeForExe`: the executable's directory for
+  release-folder and repo builds, `~/.omega` when the executable
+  lives in a known PATH bin dir (`~/go/bin` from `go install`,
+  `~/.local/bin`, `~/bin`, `/usr/local/bin`) so config, db and logs
+  stay in one dotfolder instead of a shared bin dir. A repo's own
+  `bin/` build output is deliberately NOT in that list - repo builds
+  keep their home beside the binary. First run writes the embedded
+  example configs into the home (`bootstrapHome`, idempotent).
   `resolveHomePaths` rewrites relative defaults (`omega.db`,
   `extensions`, `skills`, `memory.md`, `user.md`, `omega.log`) to home-relative paths so omega works from
   any CWD.

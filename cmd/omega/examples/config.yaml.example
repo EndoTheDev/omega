@@ -101,31 +101,31 @@ logging:
   file: omega.log
 
 # Environment variable overrides (take precedence over this file):
-#   OMEGA_HOME              -> omega home directory (default: binary dir, fallback ~/.omega/)
-#   OMEGA_PROVIDER          -> provider.type
-#   OMEGA_API_KEY           -> provider.api_key
-#   OMEGA_MODEL             -> provider.model_name
-#   OMEGA_HOST              -> provider.host
-#   OMEGA_PORT              -> server.port
-#   OMEGA_DB_PATH           -> store.db_path
-#   OMEGA_COMPACTION_ENABLED -> compaction.enabled (true/1 or false/0)
-#   OMEGA_COMPACTION_THRESHOLD -> compaction.threshold
-#   OMEGA_COMPACTION_CONTEXT_WINDOW -> compaction.context_window
-#   OMEGA_COMPACTION_KEEP_FIRST -> compaction.keep_first
-#   OMEGA_COMPACTION_KEEP_LAST -> compaction.keep_last
-#   OMEGA_COMPACTION_RESERVE_TOKENS -> compaction.reserve_tokens
-#   OMEGA_COMPACTION_MAX_TOOL_OUTPUT -> compaction.max_tool_output
-#   OMEGA_SKILLS_DIR        -> skills directory
-#   OMEGA_HTTP_TIMEOUT      -> http_timeout (seconds, default 300)
-#   OMEGA_MAX_TURNS         -> max_turns (default 100)
-#   OMEGA_THEME             -> theme (dark, light, auto)
-#   OMEGA_NOTIFICATIONS     -> notifications (bell, desktop, off)
-#   OMEGA_MEMORY_ENABLED    -> memory.enabled (true/1 or false/0)
-#   OMEGA_USER_PROFILE_ENABLED -> memory.user_profile_enabled (true/1 or false/0)
-#   OMEGA_MEMORY_CHAR_LIMIT -> memory.char_limit (chars, default 2200)
-#   OMEGA_USER_CHAR_LIMIT   -> memory.user_char_limit (chars, default 1375)
-#   OMEGA_LOGGING_ENABLED   -> logging.enabled (true/1 or false/0)
-#   OMEGA_LOGGING_FILE      -> logging.file (default omega.log)
+#   OMEGA_HOME                        -> omega home directory (default: binary dir, fallback ~/.omega/)
+#   OMEGA_PROVIDER                    -> provider.type
+#   OMEGA_API_KEY                     -> provider.api_key
+#   OMEGA_MODEL                       -> provider.model_name
+#   OMEGA_HOST                        -> provider.host
+#   OMEGA_PORT                        -> server.port
+#   OMEGA_DB_PATH                     -> store.db_path
+#   OMEGA_COMPACTION_ENABLED          -> compaction.enabled (true/1 or false/0)
+#   OMEGA_COMPACTION_THRESHOLD        -> compaction.threshold
+#   OMEGA_COMPACTION_CONTEXT_WINDOW   -> compaction.context_window
+#   OMEGA_COMPACTION_KEEP_FIRST       -> compaction.keep_first
+#   OMEGA_COMPACTION_KEEP_LAST        -> compaction.keep_last
+#   OMEGA_COMPACTION_RESERVE_TOKENS   -> compaction.reserve_tokens
+#   OMEGA_COMPACTION_MAX_TOOL_OUTPUT  -> compaction.max_tool_output
+#   OMEGA_SKILLS_DIR                  -> skills directory
+#   OMEGA_HTTP_TIMEOUT                -> http_timeout (seconds, default 300)
+#   OMEGA_MAX_TURNS                   -> max_turns (default 100)
+#   OMEGA_THEME                       -> theme (dark, light, auto)
+#   OMEGA_NOTIFICATIONS               -> notifications (bell, desktop, off)
+#   OMEGA_MEMORY_ENABLED              -> memory.enabled (true/1 or false/0)
+#   OMEGA_USER_PROFILE_ENABLED        -> memory.user_profile_enabled (true/1 or false/0)
+#   OMEGA_MEMORY_CHAR_LIMIT           -> memory.char_limit (chars, default 2200)
+#   OMEGA_USER_CHAR_LIMIT             -> memory.user_char_limit (chars, default 1375)
+#   OMEGA_LOGGING_ENABLED             -> logging.enabled (true/1 or false/0)
+#   OMEGA_LOGGING_FILE                -> logging.file (default omega.log)
 #
 # When omega is installed globally (in PATH), it looks for config.yaml,
 # omega.db, skills/, and trust.yaml in OMEGA_HOME (default:

@@ -20,7 +20,9 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
   `DecodeMessage` (role discriminator + JSON payload serialization,
   shared by the store extension)
 - `events.go` - StreamEvent sealed interface; ThinkingChunk, ResponseChunk,
-  ToolCallEvent, StreamEnd concrete types; ToolCall struct
+  ToolCallEvent, StreamEnd concrete types (StreamEnd carries
+  PromptEvalCount, EvalCount, and CachedCount usage pointers when the
+  provider reports them); ToolCall struct
 - `retry.go` - retryHTTP with exponential backoff and jitter,
   retryableStatus, maxRetries (OMEGA_MAX_RETRIES env)
 - `fake_provider.go` - FakeProvider for deterministic agent loop tests;
@@ -61,6 +63,10 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
 - FakeProvider supports both single-script and per-call-script modes.
   Use NewFakeProviderScripts for multi-turn agent loop tests where each
   turn needs different events.
+- OpenAI-compatible providers deliver reasoning as `reasoning` deltas;
+  the provider extension maps them to ThinkingChunk events, and the
+  final usage chunk (opt-in via `stream_options.include_usage`) is
+  reported on StreamEnd.
 
 ## Verification
 
