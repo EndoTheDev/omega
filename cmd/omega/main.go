@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -34,6 +33,9 @@ import (
 )
 
 func main() {
+	// first-run bootstrap: write the example configs into the home so
+	// any install (release folder, go install, dotfolder) is self-documenting
+	bootstrapHome(omegaHome())
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "omega:", err)
 		os.Exit(1)
@@ -198,21 +200,16 @@ func stripAppendPrompts(args []string) []string {
 }
 
 // omegaHome returns the omega home directory: OMEGA_HOME env var,
-// or the directory containing the omega binary, or ~/.omega/ as a
-// last-resort fallback. This is where config, db, and skills live.
+// the binary's directory (release-folder installs), or ~/.omega for
+// bin-dir installs (see homeForExe). This is where config, db, and
+// skills live.
 func omegaHome() string {
-	if dir := os.Getenv("OMEGA_HOME"); dir != "" {
-		return dir
-	}
+	exePath := ""
 	if exe, err := os.Executable(); err == nil {
-		return filepath.Dir(exe)
+		exePath = exe
 	}
-	// Fallback: ~/.omega/ if the binary path is unresolvable.
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "."
-	}
-	return home + "/.omega"
+	userHome, _ := os.UserHomeDir()
+	return homeForExe(os.Getenv("OMEGA_HOME"), exePath, userHome)
 }
 
 // resolveConfigPath returns the --config value, or <home>/config.yaml
