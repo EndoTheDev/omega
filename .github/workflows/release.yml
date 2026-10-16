@@ -19,6 +19,18 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build webui (embedded SPA)
+        # every Go build below embeds whatever is in static/ - the real
+        # SPA must be synced BEFORE the first go build
+        run: |
+          cd webui
+          npm ci
+          sh scripts/build.sh
+
       - name: Build Windows amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
@@ -51,6 +63,14 @@ jobs:
           cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_amd64/
           cd dist && tar czf "omega-$VERSION-darwin_amd64.tar.gz" "omega-$VERSION-darwin_amd64/"
 
+      - name: Build Linux arm64 (Raspberry Pi)
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-linux_arm64/omega ./cmd/omega
+          cp bin/config.yaml.example dist/omega-$VERSION-linux_arm64/
+          cp bin/mcp.yaml.example dist/omega-$VERSION-linux_arm64/
+          cd dist && tar czf "omega-$VERSION-linux_arm64.tar.gz" "omega-$VERSION-linux_arm64/"
+
       - name: Generate checksums
         run: cd dist && sha256sum omega-* | sed 's|dist/||' > checksums.txt
 
@@ -60,6 +80,7 @@ jobs:
           files: |
             dist/omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip
             dist/omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz
+            dist/omega-${{ steps.version.outputs.VERSION }}-linux_arm64.tar.gz
             dist/omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz
             dist/omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz
             dist/checksums.txt
@@ -69,6 +90,7 @@ jobs:
             ### Downloads
             - **Windows**: `omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip`
             - **Linux**: `omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz`
+            - **Linux (arm64, e.g. Raspberry Pi)**: `omega-${{ steps.version.outputs.VERSION }}-linux_arm64.tar.gz`
             - **macOS (Apple Silicon)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz`
             - **macOS (Intel)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz`
 

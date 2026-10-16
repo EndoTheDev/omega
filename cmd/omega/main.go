@@ -290,7 +290,7 @@ func buildConfigs(cfg Config) map[string]any {
 	return map[string]any{
 		"store":        store.Config{DBPath: cfg.Store.DBPath},
 		"provider":     provider.Config{Type: cfg.Provider.Type, ModelName: cfg.Provider.ModelName, Host: cfg.Provider.Host, APIKey: cfg.Provider.APIKey},
-		"http_channel": httpchannel.Config{Port: cfg.Server.Port},
+		"http_channel": httpchannel.Config{Port: cfg.Server.Port, Bind: cfg.Server.Bind},
 		"skills":       skills.Config{Dir: cfg.Skills.Dir},
 		"memory":       memory.Config{Enabled: cfg.Memory.Enabled, UserProfileEnabled: cfg.Memory.UserProfileEnabled, CharLimit: cfg.Memory.CharLimit, UserProfileCharLimit: cfg.Memory.UserProfileCharLimit, File: cfg.Memory.File, UserProfileFile: cfg.Memory.UserProfileFile},
 		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},

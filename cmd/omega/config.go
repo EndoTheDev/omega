@@ -60,9 +60,13 @@ type ProviderConfig struct {
 	APIKey    string `yaml:"api_key"`
 }
 
-// ServerConfig configures the HTTP listener.
+// ServerConfig configures the HTTP listener(s). Bind is the list of
+// addresses the channel listens on (default: loopback only). Additional
+// addresses - e.g. the Tailscale IP so Traefik can route to omega -
+// are an explicit opt-in, never a default.
 type ServerConfig struct {
-	Port int `yaml:"port"`
+	Port int      `yaml:"port"`
+	Bind []string `yaml:"bind"`
 }
 
 // StoreConfig configures the SQLite session store.
