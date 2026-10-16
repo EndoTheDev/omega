@@ -1,7 +1,7 @@
 # Architecture
 
 ```txt
-HTTP channel -> agent (loop + tools) -> ai (provider streaming)
+webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provider streaming)
 ```
 
 | Layer      | Package       | Responsibility                                                                                                                                          |
@@ -14,28 +14,38 @@ HTTP channel -> agent (loop + tools) -> ai (provider streaming)
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
-everything over HTTP.
+everything over HTTP and serves the embedded webui SPA (built by
+webui/scripts/build.sh, committed in extensions/http_channel/static/,
+baked in at compile time).
 
 ## Project Structure
 
 ```txt
-cmd/omega/        Single binary entry point (serve, run, health, chat)
+cmd/omega/        Single binary entry point (serve, run, health, chat, update)
+cmd/omega/examples/  Config templates, embedded for first-run bootstrap
 ai/               Provider abstraction, stream events, message types, retry
-agent/            Multi-turn loop, tool execution, compaction, seams, Plugin system
+agent/            Multi-turn loop, tool execution, seams, Plugin system
 extensions/        In-process extension packages (15 extensions, compiled into omega)
+extensions/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
+webui/            Nuxt 4 SPA (see webui/AGENTS.md); built output embedded into the binary
+deploy/           Install artifacts (omega.service systemd unit)
 .agents/          Commit conventions (COMMIT.md)
-bin/skills/       Skill templates (tracked)
 build.sh          Build script (Linux/macOS): vet + test + build
 build.bat         Build script (Windows): vet + test + build
 docs/             User documentation (this directory)
-bin/              Runtime directory (gitignored except templates)
-  omega.exe       Built binary
+bin/              Build output + local runtime (gitignored; skills/ templates tracked)
+  omega           Built binary
   config.yaml     Personal configuration (gitignored)
-  config.yaml.example  Configuration template (tracked)
   omega.db        Session database (gitignored)
   trust.yaml      Trust state (gitignored)
   skills/         Skill files
 ```
+
+A released/installed copy is self-contained: the binary, config.yaml,
+omega.db, memory files, and skills live in one home directory - the
+executable's directory for release-folder installs, or `~/.omega` when
+the binary is installed into a PATH bin directory (`~/go/bin`,
+`~/.local/bin`). `OMEGA_HOME` overrides both.
 
 ## Development
 

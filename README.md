@@ -3,6 +3,8 @@
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Status](https://img.shields.io/badge/status-v0.6.4-blue)
+[![Sponsor](https://img.shields.io/badge/sponsor-ko--fi-FF5E5B)](https://ko-fi.com/endothedev)
+[![Sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/EndoTheDev)
 
 omega is a terminal-based AI assistant that reads files, runs
 commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
