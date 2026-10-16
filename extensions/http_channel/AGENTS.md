@@ -57,9 +57,11 @@ rule a security contract, not a preference.
   empty records (no content, thinking, or calls) are skipped. Old
   sessions saved before a fix keep their old shape - baked data is
   never rewritten.
-- **Model override is global agent state** (`SetModel` persists until
-  the next override - the webui model chip sets it per send). Single
-  user; two tabs share one agent by design.
+- **Model override is per-run provider state.** `/chat` builds a
+  copy via `Provider().WithModel(model)` and runs it through
+  `RunWithProvider` - concurrent chats each keep their own model and
+  the default stays untouched. Runs are parallel; the loop is
+  stateless.
 - **Title generation is detached.** It runs after the stream via
   `context.WithoutCancel` in a goroutine; failures are silent (an
   untitled session is cosmetic). Two rapid first-messages can race the

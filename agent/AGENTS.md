@@ -16,7 +16,7 @@ HTTP channel, or extensions).
   `SetCWD`, `SetPromptCustom`, `SetPromptAppend`, `SetPromptContext`,
   `SetLoopProvider`, `SetUserInput`, `SetLogger`),
   model metadata passthrough for the HTTP channel
-  (`SetModel` - provider model switch, `ModelInfo` - current model
+  (`Provider()` - base provider accessor, `ModelInfo` - current model
   context window),
   `NewFromContext` + `AgentOptions` (fully-wired Agent construction
   from a mounted Context - used by channels, `newAgent`, and the TUI).
