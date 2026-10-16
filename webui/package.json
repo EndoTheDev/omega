@@ -7,7 +7,7 @@
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.ts\""
   },
   "dependencies": {
     "nuxt": "^4.2.4",

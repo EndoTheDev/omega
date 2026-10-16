@@ -213,6 +213,7 @@ body {
 }
 
 .session-list li {
+  position: relative;
   padding: 8px 10px;
   border-radius: var(--r-chip);
   cursor: pointer;
@@ -225,6 +226,24 @@ body {
 }
 .session-list li:hover { background: var(--z1-raised); }
 .session-list li.active { background: var(--z1-raised); }
+
+/* streaming pulse: a live stream rings ITS OWN row - the view may sit on
+   any other session (or none) while it runs; row-level, not global */
+.session-list li.streaming::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: stream-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stream-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
 
 .session-title {
   font-size: 13px;

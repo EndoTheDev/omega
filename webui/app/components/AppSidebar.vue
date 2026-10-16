@@ -16,7 +16,7 @@
       <li
         v-for="s in sessions"
         :key="s.id"
-        :class="{ active: s.id === activeId }"
+        :class="{ active: s.id === activeId, streaming: streamingIds.has(s.id) }"
         @click="$emit('open', s.id)">
         <span class="session-title">{{ s.label || s.id }}</span>
         <span class="session-time">{{ shortTime(s.updated_at) }}</span>
@@ -29,6 +29,8 @@
   defineProps<{
     sessions: Session[];
     activeId: string | null;
+    // ids of sessions whose stream is live - the pulse edge renders per row
+    streamingIds: ReadonlySet<string>;
     open: boolean;
   }>();
 
