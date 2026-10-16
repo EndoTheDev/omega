@@ -65,7 +65,9 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.Command
 		if args == "" {
 			return agent.CommandResult{Text: "usage: /model <name>"}, nil
 		}
-		prov.SetModel(args)
+		// Base-provider model set (single user, applied outside a run);
+		// runs themselves carry their own WithModel copy.
+		*prov = *prov.WithModel(args).(*Provider)
 		return agent.CommandResult{
 			Text: "switched to " + args,
 			Actions: []agent.CmdAction{

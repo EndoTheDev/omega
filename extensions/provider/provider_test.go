@@ -53,12 +53,16 @@ func TestNewProviderDefaults(t *testing.T) {
 	}
 }
 
-// TestSetModel verifies SetModel updates the model name.
-func TestSetModel(t *testing.T) {
+// TestWithModel verifies WithModel returns a copy on the new model and
+// leaves the original untouched.
+func TestWithModel(t *testing.T) {
 	p := NewProvider("ollama", "old", "", "")
-	p.SetModel("new")
-	if p.ModelName() != "new" {
-		t.Fatalf("ModelName() = %q, want %q", p.ModelName(), "new")
+	cp := p.WithModel("new")
+	if cp.ModelName() != "new" {
+		t.Fatalf("copy ModelName() = %q, want %q", cp.ModelName(), "new")
+	}
+	if p.ModelName() != "old" {
+		t.Fatalf("original ModelName() = %q, want %q", p.ModelName(), "old")
 	}
 }
 
@@ -374,8 +378,8 @@ func TestInitDefaults(t *testing.T) {
 	}
 }
 
-// TestProviderModelCommand verifies /model <name> sets the model
-// via Provider.SetModel and returns set_model + refresh_title +
+// TestProviderModelCommand verifies /model <name> updates the base
+// provider via WithModel and returns set_model + refresh_title +
 // fetch_model_info CmdActions.
 func TestProviderModelCommand(t *testing.T) {
 	p := &Plugin{}

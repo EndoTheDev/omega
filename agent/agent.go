@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"sync"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -38,8 +37,6 @@ type Agent struct {
 	pendingDeleg   func() int
 	loop           LoopProvider
 	logger         LoggerProvider
-	mu             sync.Mutex
-	running        bool
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
@@ -176,9 +173,10 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	return ag
 }
 
-// SetModel switches the provider's model (http_channel model override).
-func (a *Agent) SetModel(model string) {
-	a.provider.SetModel(model)
+// Provider returns the agent's base provider, so callers can derive
+// per-run copies via WithModel without mutating shared state.
+func (a *Agent) Provider() ai.Provider {
+	return a.provider
 }
 
 // ModelInfo returns the current model's metadata (context window).
@@ -198,24 +196,28 @@ func (a *Agent) ListModels() ([]string, error) {
 
 // Run executes the conversation loop and returns a channel of events.
 // The channel is closed when the loop ends. A non-nil tools map overrides
-// the agent's registered tools for this run. Run returns nil if the agent
-// is already running a loop.
+// the agent's registered tools for this run.
+//
+// Run always spawns - there is no running guard. The loop is stateless
+// (all state rides LoopOptions) and each Run creates its own events
+// channel, so parallel runs are safe by construction; use RunWithProvider
+// to give a run its own model.
+//
+// ponytail: the injected-messages channel and pending delegations are
+// shared across concurrent runs, so a delegated message drains into an
+// arbitrary active run - fine at single-user load. Upgrade path: a
+// per-run injected channel (a config-defined agent registry builds on
+// that later).
 func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string]Tool) <-chan Event {
-	a.mu.Lock()
-	if a.running {
-		a.mu.Unlock()
-		return nil
-	}
-	a.running = true
-	a.mu.Unlock()
+	return a.RunWithProvider(ctx, a.provider, messages, tools)
+}
 
+// RunWithProvider starts a run on the given provider - typically a copy
+// derived from Provider() via WithModel, carrying a per-request model.
+// Returns a channel of events, closed when the run ends.
+func (a *Agent) RunWithProvider(ctx context.Context, provider ai.Provider, messages []ai.Message, tools map[string]Tool) <-chan Event {
 	events := make(chan Event)
 	go func() {
-		defer func() {
-			a.mu.Lock()
-			a.running = false
-			a.mu.Unlock()
-		}()
 		defer close(events)
 		if a.loop == nil {
 			events <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
@@ -226,7 +228,7 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			runTools = a.tools
 		}
 		a.loop.Run(ctx, LoopOptions{
-			Provider:           a.provider,
+			Provider:           provider,
 			Messages:           messages,
 			Tools:              runTools,
 			ToolProviders:      a.toolProviders,
@@ -244,7 +246,7 @@ func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string
 			UserInput:          a.userInput,
 			PendingDelegations: a.pendingDeleg,
 			Logger:             a.logger,
-			})
+		})
 	}()
 	return events
 }

@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -543,12 +546,15 @@ func TestRunConcurrentPromptRejection(t *testing.T) {
 		t.Fatal("first Run() returned nil, want a live channel")
 	}
 
-	// Second Run() while the first is active must be rejected.
-	if second := agent.Run(context.Background(), []ai.Message{ai.NewUser("again")}, nil); second != nil {
-		t.Fatal("second Run() returned a channel, want nil (rejected)")
+	// Second Run() while the first is active must spawn too - a nil
+	// here used to hang a server goroutine ranging over the channel.
+	second := agent.Run(context.Background(), []ai.Message{ai.NewUser("again")}, nil)
+	if second == nil {
+		t.Fatal("second Run() returned nil, want a live channel")
 	}
 
 	collect(t, first)
+	collect(t, second)
 }
 
 func TestRunErrorBodyPassthrough(t *testing.T) {
@@ -781,5 +787,108 @@ func TestRunOverflowNoRetryAfterContent(t *testing.T) {
 	end := lastAgentEnd(events)
 	if end.FinishReason != "error" {
 		t.Fatalf("AgentEnd finish = %q, want error", end.FinishReason)
+	}
+}
+
+// modelRecorder is an ai.Provider stub whose WithModel copies share one
+// recording sink. Each Stream call records the receiving copy's model
+// name, so a test can assert which model served which run.
+type modelRecorder struct {
+	sink      *modelRecord
+	modelName string
+	delay     time.Duration
+}
+
+// modelRecord accumulates model names across concurrent Stream calls.
+type modelRecord struct {
+	mu     sync.Mutex
+	models []string
+}
+
+func (r *modelRecord) add(model string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.models = append(r.models, model)
+}
+
+func (r *modelRecord) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.models...)
+}
+
+func (p *modelRecorder) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+	if p.delay > 0 {
+		time.Sleep(p.delay)
+	}
+	p.sink.add(p.modelName)
+	events := make(chan ai.StreamEvent, 2)
+	events <- ai.ResponseChunk{Type: "response_chunk", Content: "ok"}
+	events <- ai.StreamEnd{Type: "stream_end", FinishReason: "stop"}
+	close(events)
+	return events
+}
+
+func (p *modelRecorder) ModelName() string                { return p.modelName }
+func (p *modelRecorder) SetThinkingLevel(string)          {}
+func (p *modelRecorder) ListModels() ([]string, error)    { return nil, nil }
+func (p *modelRecorder) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}, nil }
+
+func (p *modelRecorder) WithModel(model string) ai.Provider {
+	cp := *p
+	cp.modelName = model
+	return &cp
+}
+
+// TestConcurrentRunsServeTheirOwnModel pins the concurrency contract:
+// two runs started at the same time with different WithModel copies each
+// stream their own model - a per-run copy, not shared mutable state.
+func TestConcurrentRunsServeTheirOwnModel(t *testing.T) {
+	sink := &modelRecord{}
+	base := &modelRecorder{sink: sink, modelName: "base-model", delay: 20 * time.Millisecond}
+	a := newTestAgent(base, nil, 2)
+
+	ctx := context.Background()
+	messages := []ai.Message{ai.NewUser("hi")}
+	first := a.RunWithProvider(ctx, a.Provider().WithModel("model-a"), messages, nil)
+	second := a.RunWithProvider(ctx, a.Provider().WithModel("model-b"), messages, nil)
+	if first == nil || second == nil {
+		t.Fatalf("concurrent runs must each get a non-nil event channel")
+	}
+	collect(t, first)
+	collect(t, second)
+
+	got := sink.snapshot()
+	sort.Strings(got)
+	want := []string{"model-a", "model-b"}
+	if len(got) != 2 {
+		t.Fatalf("streams served = %v, want exactly %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("streams served = %v, want %v (each run must serve its own model)", got, want)
+		}
+	}
+}
+
+// TestRunNonNilWhileRunActive pins the regression: Run used to return
+// nil when a run was active, and a server goroutine ranging over the nil
+// channel hung forever.
+func TestRunNonNilWhileRunActive(t *testing.T) {
+	sink := &modelRecord{}
+	p := &modelRecorder{sink: sink, modelName: "m", delay: 50 * time.Millisecond}
+	a := newTestAgent(p, nil, 2)
+
+	ctx := context.Background()
+	first := a.Run(ctx, []ai.Message{ai.NewUser("one")}, nil)
+	second := a.Run(ctx, []ai.Message{ai.NewUser("two")}, nil)
+	if first == nil || second == nil {
+		t.Fatalf("Run must always return a non-nil channel")
+	}
+	collect(t, first)
+	collect(t, second)
+
+	if got := len(sink.snapshot()); got != 2 {
+		t.Fatalf("provider calls = %d, want 2", got)
 	}
 }

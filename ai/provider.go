@@ -76,7 +76,10 @@ type Provider interface {
 	Stream(ctx context.Context, messages []Message, tools []ToolSchema) <-chan StreamEvent
 	ModelName() string
 	SetThinkingLevel(level string)
-	SetModel(model string)
+	// WithModel returns a copy of the provider serving the given
+	// model. The receiver is left unchanged, so callers derive
+	// per-run providers without mutating shared state.
+	WithModel(model string) Provider
 	ListModels() ([]string, error)
 	ModelInfo() (ModelInfo, error)
 }

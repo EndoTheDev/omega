@@ -15,11 +15,15 @@ type stubProvider struct{ name string }
 func (s *stubProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
 	return nil
 }
-func (s *stubProvider) ModelName() string                  { return s.name }
-func (s *stubProvider) SetThinkingLevel(level string)      {}
-func (s *stubProvider) SetModel(model string)              { s.name = model }
-func (s *stubProvider) ListModels() ([]string, error)      { return nil, nil }
-func (s *stubProvider) ModelInfo() (ai.ModelInfo, error)    { return ai.ModelInfo{}, nil }
+func (s *stubProvider) ModelName() string { return s.name }
+func (s *stubProvider) WithModel(model string) ai.Provider {
+	cp := *s
+	cp.name = model
+	return &cp
+}
+func (s *stubProvider) SetThinkingLevel(level string)    {}
+func (s *stubProvider) ListModels() ([]string, error)    { return nil, nil }
+func (s *stubProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}, nil }
 
 // stubCompactor satisfies CompactionProvider for testing.
 type stubCompactor struct{}
@@ -41,10 +45,10 @@ type testPlugin struct {
 	mount    func(*Context) error
 }
 
-func (p testPlugin) Name() string                  { return p.name }
-func (p testPlugin) Provides() []string            { return p.provides }
-func (p testPlugin) Requires() []string            { return p.requires }
-func (p testPlugin) Mount(ctx *Context) error      { return p.mount(ctx) }
+func (p testPlugin) Name() string             { return p.name }
+func (p testPlugin) Provides() []string       { return p.provides }
+func (p testPlugin) Requires() []string       { return p.requires }
+func (p testPlugin) Mount(ctx *Context) error { return p.mount(ctx) }
 
 func TestMountAllOrdering(t *testing.T) {
 	var order []string
