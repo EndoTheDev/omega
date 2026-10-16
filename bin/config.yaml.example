@@ -1,0 +1,141 @@
+# omega-agent gateway configuration.
+# Copy to config.yaml and edit. Every value can be overridden by an
+# OMEGA_* environment variable (see below).
+
+provider:
+  # Provider type: ollama (default), openai, or anthropic.
+  # For openai, host defaults to https://api.openai.com/v1; for
+  # anthropic, https://api.anthropic.com/v1.
+  type: ollama
+  # Required. The model to use. No default - must be set.
+  # Examples: llama3, gpt-4o, claude-sonnet-4-20250514
+  model_name:
+  # Base URL. Ollama default: http://localhost:11434
+  host: http://localhost:11434
+  # API key for openai/anthropic. Falls back to OPENAI_API_KEY or
+  # ANTHROPIC_API_KEY. Ignored by ollama.
+  api_key:
+
+server:
+  # HTTP listen port. Default: 8099
+  port: 8099
+
+store:
+  # SQLite database path for the session store. Default: omega.db
+  db_path: omega.db
+
+compaction:
+  # Summarize old messages when the conversation nears the context
+  # window. Default: enabled.
+  enabled: true
+  # Fraction of the context window at which compaction triggers.
+  # Default: 0.6
+  threshold: 0.6
+  # Model context window in tokens. Default: 32768
+  context_window: 32768
+  # Messages preserved verbatim at the start and end of the history.
+  # Default: 2 first, 10 last.
+  keep_first: 2
+  keep_last: 10
+  # Tokens reserved for the model's response (subtracted from context_window).
+  # Default: 16384.
+  reserve_tokens: 16384
+  # Maximum bytes of tool output before truncation.
+  # Default: 32768.
+  max_tool_output: 32768
+
+system_prompt:
+  # Optional custom prompt appended to the built-in system prompt
+  # (project context, tools, environment). Leave empty to skip.
+  # Multi-line YAML block:
+  #   |
+  #     You are a helpful assistant.
+  #     Be concise.
+  # Also settable via --append-system-prompt CLI flag (repeatable).
+
+# HTTP timeout for provider requests (seconds).
+# Default: 300. Override via OMEGA_HTTP_TIMEOUT env var.
+http_timeout: 300
+
+# Maximum tool-call turns per run. Default: 100.
+# Override via OMEGA_MAX_TURNS env var.
+max_turns: 100
+
+# TUI color theme: dark, light, or auto (detect OS setting).
+# Default: dark. Override via OMEGA_THEME env var.
+# Switch at runtime with /theme [name] in the TUI.
+theme: dark
+
+skills:
+  # Directory to scan for skill folders. Default: skills
+  dir: skills
+  # CLI flags (no YAML equivalent):
+  #   --extension <path> / -e <path>  load a specific extension (repeatable)
+  #   --no-extensions                 disable extension loading entirely
+  #   --project-extensions            also load <cwd>/.omega/extensions/
+
+# Persistent memory system. Two stores injected into the system prompt
+# each session. The agent manages entries via the memory tool (add, replace, remove).
+memory:
+  # Agent personal notes (env facts, conventions, lessons).
+  # Default: enabled.
+  enabled: true
+  # User profile (preferences, communication style).
+  # Default: enabled.
+  user_profile_enabled: true
+  # Max characters for agent notes. Default: 2200 (~800 tokens).
+  char_limit: 2200
+  # Max characters for user profile. Default: 1375 (~500 tokens).
+  user_char_limit: 1375
+  # File paths (relative to OMEGA_HOME, or absolute).
+  file: memory.md
+  user_file: user.md
+
+# Operational logging. Writes startup messages, warnings, and errors
+# to a log file in OMEGA_HOME.
+logging:
+  # Default: enabled.
+  enabled: true
+  # Log file path (relative to OMEGA_HOME, or absolute).
+  # Default: omega.log
+  file: omega.log
+
+# Environment variable overrides (take precedence over this file):
+#   OMEGA_HOME                        -> omega home directory (default: binary dir, fallback ~/.omega/)
+#   OMEGA_PROVIDER                    -> provider.type
+#   OMEGA_API_KEY                     -> provider.api_key
+#   OMEGA_MODEL                       -> provider.model_name
+#   OMEGA_HOST                        -> provider.host
+#   OMEGA_PORT                        -> server.port
+#   OMEGA_DB_PATH                     -> store.db_path
+#   OMEGA_COMPACTION_ENABLED          -> compaction.enabled (true/1 or false/0)
+#   OMEGA_COMPACTION_THRESHOLD        -> compaction.threshold
+#   OMEGA_COMPACTION_CONTEXT_WINDOW   -> compaction.context_window
+#   OMEGA_COMPACTION_KEEP_FIRST       -> compaction.keep_first
+#   OMEGA_COMPACTION_KEEP_LAST        -> compaction.keep_last
+#   OMEGA_COMPACTION_RESERVE_TOKENS   -> compaction.reserve_tokens
+#   OMEGA_COMPACTION_MAX_TOOL_OUTPUT  -> compaction.max_tool_output
+#   OMEGA_SKILLS_DIR                  -> skills directory
+#   OMEGA_HTTP_TIMEOUT                -> http_timeout (seconds, default 300)
+#   OMEGA_MAX_TURNS                   -> max_turns (default 100)
+#   OMEGA_THEME                       -> theme (dark, light, auto)
+#   OMEGA_NOTIFICATIONS               -> notifications (bell, desktop, off)
+#   OMEGA_MEMORY_ENABLED              -> memory.enabled (true/1 or false/0)
+#   OMEGA_USER_PROFILE_ENABLED        -> memory.user_profile_enabled (true/1 or false/0)
+#   OMEGA_MEMORY_CHAR_LIMIT           -> memory.char_limit (chars, default 2200)
+#   OMEGA_USER_CHAR_LIMIT             -> memory.user_char_limit (chars, default 1375)
+#   OMEGA_LOGGING_ENABLED             -> logging.enabled (true/1 or false/0)
+#   OMEGA_LOGGING_FILE                -> logging.file (default omega.log)
+#
+# When omega is installed globally (in PATH), it looks for config.yaml,
+# omega.db, skills/, and trust.yaml in OMEGA_HOME (default:
+# the binary's directory, fallback ~/.omega/). The working directory is
+# used only for AGENTS.md project context and tool file operations.
+#
+# Extensions are compiled into omega. No external extension binaries
+# or configuration are needed.
+#
+# Project trust: AGENTS.md context is gated by a trust check. Trust
+# decisions live in <home>/trust.yaml (trusted: [{path, level}], level
+# exact or parent). CLI-only flags: --approve (trust current project),
+# --no-approve (skip current project context).

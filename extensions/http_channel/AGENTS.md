@@ -14,7 +14,11 @@ rule a security contract, not a preference.
   (context window cached per model after one provider probe),
   `/chat` (SSE), `/sessions` + `/sessions/{id}` (CRUD + label PUT),
   `/` (embedded SPA catch-all via `fs.Sub` - exact patterns win, so
-  API routes keep working). Session persistence: assistant records
+  API routes keep working). `/sessions` rows carry `message_count` +
+  `tool_count` (SQL counts at read time - no counters, no schema
+  change) and `prompt_tokens` + `completion_tokens` (real usage
+  accumulated per turn at persist, 0 for sessions saved before that
+  landed). Session persistence: assistant records
   accumulate per response segment (a response chunk after tool results
   starts a new segment), persisted as assistant(A + tool calls) ->
   tool results -> assistant(B) - the provider-correct order and the
