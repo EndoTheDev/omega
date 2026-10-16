@@ -42,3 +42,6 @@ npm-debug.log*
 # NOTE: extensions/http_channel/static/ IS tracked - the built SPA is
 # committed so go install / go build produce the complete product
 # (placeholder-era ignore rules removed; see webui/scripts/build.sh)
+
+# dev-instance first-run bootstrap writes its own copies into bin/
+bin/*.example
