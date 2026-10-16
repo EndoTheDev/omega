@@ -109,8 +109,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	s.ctxMu.Unlock()
 	if !cached {
 		// one provider probe per model per process - the webui calls /models
-		// on every page load and the probe is a ~200ms network round trip
-		info, _ := s.agent.ModelInfo()
+		// on every page load and the probe is a ~200ms network round trip.
+		// The probe runs on a copy so the base provider is never mutated.
+		info, _ := s.agent.Provider().WithModel(name).ModelInfo()
 		window = info.ContextWindow
 		s.ctxMu.Lock()
 		s.ctxWindow[name] = window
@@ -134,7 +135,8 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 // chatRequest is the /chat body. tools is an optional list of tool names
 // to enable for this run; empty enables the full server registry.
 // session_id, when set, persists the conversation to that session.
-// model, when set, switches the provider for this run (persists until changed).
+// model, when set, serves this run on that model - the default stays
+// untouched, so concurrent chats keep their own model.
 type chatRequest struct {
 	Messages  []json.RawMessage `json:"messages"`
 	Tools     []string          `json:"tools,omitempty"`
@@ -175,10 +177,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Model override: persists until the next override (the model chip in the
-	// webui sets it per send). Empty keeps the current provider model.
+	// Per-run provider: base copy with a model override when the request
+	// carries one. The copy rides LoopOptions - no shared state mutated.
+	prov := s.agent.Provider()
 	if req.Model != "" {
-		s.agent.SetModel(req.Model)
+		prov = prov.WithModel(req.Model)
 	}
 
 	flusher, ok := setupSSE(w)
@@ -187,9 +190,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tools := s.selectTools(req.Tools)
-	recs := s.streamAgentEvents(r.Context(), w, flusher, messages, tools, req)
+	recs := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
 
-	s.persistAssistant(r.Context(), w, flusher, req, recs)
+	s.persistAssistant(r.Context(), w, flusher, prov, req, recs)
 }
 
 // loadSessionMessages loads persisted history for a session, appends the
@@ -234,11 +237,12 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 }
 
 // streamAgentEvents runs the agent event loop, writing SSE events to w.
-// It returns the accumulated assistant text for session persistence.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) []assistantRecord {
+// prov is the per-request provider (a copy carrying the request's model).
+// It returns the accumulated assistant records for session persistence.
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) []assistantRecord {
 	var recs []assistantRecord
 	var rec assistantRecord
-	for event := range s.agent.Run(ctx, messages, tools) {
+	for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 		s.accumulateAssistant(&recs, &rec, event, req)
 		eventType, data, err := sseEvent(event)
 		if err != nil {
@@ -292,7 +296,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 // assistant(B). Providers require this order (final answer as its own
 // message after the tool results); the webui reload renders one bubble
 // per message, matching the live segment split.
-func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, req chatRequest, recs []assistantRecord) {
+func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, req chatRequest, recs []assistantRecord) {
 	if s.store == nil || req.SessionID == "" || len(recs) == 0 {
 		return
 	}
@@ -329,18 +333,22 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 		// Detached: the title call is a second agent run, and running it
 		// in the request path starved a back-to-back /chat for up to 240s
 		// (observed live with the stream probe). WithoutCancel keeps
-		// request values (logger) after the HTTP request returns.
+		// request values (logger) after the HTTP request returns. The
+		// title run pins this request's provider copy - the session is
+		// titled on the model that served it, regardless of what the
+		// next /chat sends.
 		// ponytail: two rapid first-messages can race the label=="" check -
 		// last write wins, an untitled session is cosmetic. Single user.
-		go s.maybeTitleSession(context.WithoutCancel(ctx), req, lastContent)
+		go s.maybeTitleSession(context.WithoutCancel(ctx), prov, req, lastContent)
 	}
 }
 
 // maybeTitleSession generates a short session title with a cheap model call
 // when the session has no label yet (first exchange) and writes it via
-// UpdateSession. Runs synchronously after the stream ends; failure is
-// silent — an untitled session is cosmetic, not fatal.
-func (s *Server) maybeTitleSession(ctx context.Context, req chatRequest, lastAssistant string) {
+// UpdateSession. prov is the pinned per-request provider copy. Runs in a
+// detached goroutine after the stream ends; failure is silent - an
+// untitled session is cosmetic, not fatal.
+func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req chatRequest, lastAssistant string) {
 	sess, err := s.store.GetSession(ctx, req.SessionID)
 	if err != nil || sess.Label != "" {
 		return
@@ -366,7 +374,7 @@ func (s *Server) maybeTitleSession(ctx context.Context, req chatRequest, lastAss
 	}
 	prompt := "Write a conversation title of at most 5 words for this exchange. Reply with ONLY the title, no quotes, no punctuation at the end.\n\nUser: " + firstUser + "\nAssistant: " + truncate(lastAssistant, 400)
 
-	events := s.agent.Run(ctx, []ai.Message{ai.NewUser(prompt)}, nil)
+	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
 	title := ""
 	for ev := range events {
 		se, ok := ev.(agent.StreamEvent)

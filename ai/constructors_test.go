@@ -168,11 +168,14 @@ func TestFakeProviderModelName(t *testing.T) {
 	}
 }
 
-func TestFakeProviderSetModel(t *testing.T) {
+func TestFakeProviderWithModel(t *testing.T) {
 	p := NewFakeProvider("old-model")
-	p.SetModel("new-model")
-	if name := p.ModelName(); name != "new-model" {
-		t.Errorf("after SetModel, ModelName() = %q, want %q", name, "new-model")
+	cp := p.WithModel("new-model")
+	if name := p.ModelName(); name != "old-model" {
+		t.Errorf("after WithModel, original ModelName() = %q, want %q", name, "old-model")
+	}
+	if name := cp.ModelName(); name != "new-model" {
+		t.Errorf("copy ModelName() = %q, want %q", name, "new-model")
 	}
 }
 

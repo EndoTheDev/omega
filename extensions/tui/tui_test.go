@@ -273,8 +273,8 @@ func TestProviderCommand(t *testing.T) {
 }
 
 // TestModelViaExtension verifies /model <name> routes through the
-// extension CommandHandler, sets the model via Provider.SetModel,
-// and returns CmdAction actions that update TUI state.
+// extension CommandHandler and returns CmdAction actions that update
+// TUI state (the run itself carries a WithModel copy).
 func TestModelViaExtension(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
 
@@ -1758,10 +1758,12 @@ func (emptyModelsProvider) Stream(ctx context.Context, messages []ai.Message, to
 	return ch
 }
 func (emptyModelsProvider) ModelName() string                { return "test" }
-func (emptyModelsProvider) SetModel(string)                 {}
+func (p emptyModelsProvider) WithModel(m string) ai.Provider { cp := p; return cp }
 func (emptyModelsProvider) SetThinkingLevel(string)          {}
-func (emptyModelsProvider) ListModels() ([]string, error)   { return []string{}, nil }
-func (emptyModelsProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{ContextWindow: 8192}, nil }
+func (emptyModelsProvider) ListModels() ([]string, error)    { return []string{}, nil }
+func (emptyModelsProvider) ModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{ContextWindow: 8192}, nil
+}
 
 // errorModelsProvider is a minimal ai.Provider whose ListModels always
 // fails, exercising the error branch of handleModels.
@@ -1773,10 +1775,14 @@ func (errorModelsProvider) Stream(ctx context.Context, messages []ai.Message, to
 	return ch
 }
 func (errorModelsProvider) ModelName() string                { return "test" }
-func (errorModelsProvider) SetModel(string)                 {}
+func (p errorModelsProvider) WithModel(m string) ai.Provider { cp := p; return cp }
 func (errorModelsProvider) SetThinkingLevel(string)          {}
-func (errorModelsProvider) ListModels() ([]string, error)   { return nil, fmt.Errorf("provider unavailable") }
-func (errorModelsProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{ContextWindow: 8192}, nil }
+func (errorModelsProvider) ListModels() ([]string, error) {
+	return nil, fmt.Errorf("provider unavailable")
+}
+func (errorModelsProvider) ModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{ContextWindow: 8192}, nil
+}
 
 // TestHandleModelsWithFakeProvider covers the happy path: a FakeProvider
 // wired into agent.Context returns a model list, and handleModels renders
@@ -2469,6 +2475,7 @@ func TestRenderMarkdownZeroWidth(t *testing.T) {
 		t.Fatalf("expected text preserved at zero width, got %q", plain)
 	}
 }
+
 // stubCompactor is a minimal CompactionProvider for testing handleCompact.
 // It returns a fixed compacted message set regardless of input.
 type stubCompactor struct{}

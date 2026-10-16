@@ -109,8 +109,14 @@ func (p *Provider) ModelName() string { return p.modelName }
 // SetThinkingLevel sets the thinking level for subsequent streams.
 func (p *Provider) SetThinkingLevel(level string) { p.thinkingLevel = level }
 
-// SetModel updates the model name.
-func (p *Provider) SetModel(model string) { p.modelName = model }
+// WithModel returns a copy of the provider serving the given model.
+// The receiver is left unchanged, so per-run providers are derived
+// without mutating the mounted base provider.
+func (p *Provider) WithModel(model string) ai.Provider {
+	cp := *p
+	cp.modelName = model
+	return &cp
+}
 
 // ListModels fetches available models from the provider API.
 func (p *Provider) ListModels() ([]string, error) {

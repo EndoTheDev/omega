@@ -28,7 +28,11 @@ func (m *mockProvider) ModelName() string { return m.modelName }
 
 func (m *mockProvider) SetThinkingLevel(level string) {}
 
-func (m *mockProvider) SetModel(model string) { m.modelName = model }
+func (m *mockProvider) WithModel(model string) ai.Provider {
+	cp := *m
+	cp.modelName = model
+	return &cp
+}
 
 func (m *mockProvider) ListModels() ([]string, error) {
 	return []string{"test-model", "other-model"}, nil

@@ -55,8 +55,13 @@ func (p *FakeProvider) ModelName() string {
 // SetThinkingLevel is a no-op for the fake provider.
 func (p *FakeProvider) SetThinkingLevel(level string) {}
 
-// SetModel updates the model name for testing.
-func (p *FakeProvider) SetModel(model string) { p.modelName = model }
+// WithModel returns a copy of the provider serving model. The copy
+// shares the scripts so it streams the same sequence.
+func (p *FakeProvider) WithModel(model string) Provider {
+	cp := *p
+	cp.modelName = model
+	return &cp
+}
 
 // ListModels returns a hardcoded list for testing.
 func (p *FakeProvider) ListModels() ([]string, error) {

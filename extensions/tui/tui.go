@@ -505,9 +505,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modelName = m.modelList[next]
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.refresh()
-			if m.extensions != nil && m.extensions.Provider != nil {
-		m.extensions.Provider.SetModel(m.modelName)
-	}
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		if msg.Paste {
@@ -656,9 +653,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.segments = nil
 					m.err = ""
 					m.lastRenderedResponse = ""
-					if m.extensions != nil && m.extensions.Provider != nil {
-		m.extensions.Provider.SetModel(m.modelName)
-	}
 					m.startRun()
 					return m, tea.Batch(m.drainEvents(), m.titleCmd())
 				}
@@ -740,9 +734,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.err = ""
 			m.refresh()
-			if m.extensions != nil && m.extensions.Provider != nil {
-		m.extensions.Provider.SetModel(m.modelName)
-	}
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
 		m.err = "no models available"
@@ -830,11 +821,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Capture the current provider settings; /model and /provider apply next turn.
-	// Update the provider's model name at runtime.
-	if m.extensions != nil && m.extensions.Provider != nil {
-		m.extensions.Provider.SetModel(m.modelName)
-	}
+	// Run carries its own provider copy - m.modelName rides the run,
+	// the base provider stays untouched.
 	m.startRun()
 	return m, tea.Batch(m.drainEvents(), m.titleCmd())
 }
@@ -851,6 +839,11 @@ func (m *model) startRun() {
 	}
 	if provider != nil {
 		provider.SetThinkingLevel(m.thinkingLevel)
+		// Per-run copy: the run serves m.modelName, the base provider
+		// keeps its default. Empty modelName keeps the boot config.
+		if m.modelName != "" && provider.ModelName() != m.modelName {
+			provider = provider.WithModel(m.modelName)
+		}
 	}
 	var ag *agent.Agent
 	if m.extensions != nil {
@@ -874,7 +867,11 @@ func (m *model) startRun() {
 	// knows this is TUI mode (don't block on subagent results).
 	m.userInput = make(chan string, 1)
 	ag.SetUserInput(m.userInput)
-	m.events = ag.Run(ctx, m.history, nil)
+	if provider != nil {
+		m.events = ag.RunWithProvider(ctx, provider, m.history, nil)
+	} else {
+		m.events = ag.Run(ctx, m.history, nil)
+	}
 }
 
 // drainEvents returns a command that reads one event from the channel and
