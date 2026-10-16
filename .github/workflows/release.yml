@@ -35,40 +35,40 @@ jobs:
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           GOOS=windows GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
-          cp bin/config.yaml.example dist/omega-$VERSION-windows_amd64/
-          cp bin/mcp.yaml.example dist/omega-$VERSION-windows_amd64/
+          cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-windows_amd64/
+          cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-windows_amd64/
           cd dist && zip -r "omega-$VERSION-windows_amd64.zip" "omega-$VERSION-windows_amd64/"
 
       - name: Build Linux amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           GOOS=linux GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-linux_amd64/omega ./cmd/omega
-          cp bin/config.yaml.example dist/omega-$VERSION-linux_amd64/
-          cp bin/mcp.yaml.example dist/omega-$VERSION-linux_amd64/
+          cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-linux_amd64/
+          cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-linux_amd64/
           cd dist && tar czf "omega-$VERSION-linux_amd64.tar.gz" "omega-$VERSION-linux_amd64/"
 
       - name: Build macOS arm64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-darwin_arm64/omega ./cmd/omega
-          cp bin/config.yaml.example dist/omega-$VERSION-darwin_arm64/
-          cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_arm64/
+          cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-darwin_arm64/
+          cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-darwin_arm64/
           cd dist && tar czf "omega-$VERSION-darwin_arm64.tar.gz" "omega-$VERSION-darwin_arm64/"
 
       - name: Build macOS amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-darwin_amd64/omega ./cmd/omega
-          cp bin/config.yaml.example dist/omega-$VERSION-darwin_amd64/
-          cp bin/mcp.yaml.example dist/omega-$VERSION-darwin_amd64/
+          cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-darwin_amd64/
+          cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-darwin_amd64/
           cd dist && tar czf "omega-$VERSION-darwin_amd64.tar.gz" "omega-$VERSION-darwin_amd64/"
 
       - name: Build Linux arm64 (Raspberry Pi)
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           GOOS=linux GOARCH=arm64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-linux_arm64/omega ./cmd/omega
-          cp bin/config.yaml.example dist/omega-$VERSION-linux_arm64/
-          cp bin/mcp.yaml.example dist/omega-$VERSION-linux_arm64/
+          cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-linux_arm64/
+          cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-linux_arm64/
           cd dist && tar czf "omega-$VERSION-linux_arm64.tar.gz" "omega-$VERSION-linux_arm64/"
 
       - name: Generate checksums

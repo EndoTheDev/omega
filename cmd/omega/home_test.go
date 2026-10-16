@@ -55,3 +55,60 @@ func TestOmegaHomeFallback(t *testing.T) {
 		t.Fatal("omegaHome() returned empty string, want non-empty")
 	}
 }
+
+func TestHomeForExe(t *testing.T) {
+	cases := []struct {
+		name    string
+		envHome string
+		exePath string
+		want    string
+	}{
+		// OMEGA_HOME always wins
+		{"env override", "/custom/home", "/home/u/go/bin/omega", "/custom/home"},
+		// release-folder install: home = exe dir
+		{"release folder", "", "/home/u/omega/omega", "/home/u/omega"},
+		// dotfolder install: not a bin dir, stays put
+		{"dotfolder", "", "/home/u/.omega/omega", "/home/u/.omega"},
+		// go install: ~/go/bin is a bin dir -> ~/.omega
+		{"go install", "", "/home/u/go/bin/omega", "/home/u/.omega"},
+		// local bin dir -> ~/.omega
+		{"local bin", "", "/home/u/.local/bin/omega", "/home/u/.omega"},
+		// unresolvable exe path -> ~/.omega
+		{"no exe", "", "", "/home/u/.omega"},
+	}
+	for _, c := range cases {
+		if got := homeForExe(c.envHome, c.exePath, "/home/u"); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestBootstrapHome(t *testing.T) {
+	home := t.TempDir()
+
+	bootstrapHome(home)
+	for _, name := range []string{"config.yaml.example", "mcp.yaml.example"} {
+		if _, err := os.Stat(filepath.Join(home, name)); err != nil {
+			t.Fatalf("bootstrap did not write %s: %v", name, err)
+		}
+	}
+
+	// idempotent: existing files are never overwritten
+	existing := filepath.Join(home, "config.yaml.example")
+	if err := os.WriteFile(existing, []byte("do not touch"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bootstrapHome(home)
+	data, err := os.ReadFile(existing)
+	if err != nil || string(data) != "do not touch" {
+		t.Fatalf("bootstrap overwrote existing file: %q, %v", data, err)
+	}
+}
+
+func TestBootstrapHomeCreatesDir(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "nested", ".omega")
+	bootstrapHome(home)
+	if _, err := os.Stat(filepath.Join(home, "config.yaml.example")); err != nil {
+		t.Fatalf("bootstrap did not create nested home: %v", err)
+	}
+}

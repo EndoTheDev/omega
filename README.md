@@ -24,9 +24,8 @@ Join the [Discord](https://discord.gg/vQvHrHWkbx) for release announcements and 
 git clone https://github.com/EndoTheDev/omega.git
 cd omega
 ./build.sh        # or build.bat on Windows
-cp bin/config.yaml.example bin/config.yaml
-# Edit bin/config.yaml: set provider type, model_name, api_key
-bin/omega
+bin/omega         # config.yaml.example lands in bin/ on first run;
+                  # create bin/config.yaml for non-default settings
 ```
 
 Or install via `go install`:
@@ -47,9 +46,10 @@ embedded) at [github.com/EndoTheDev/omega/releases](https://github.com/EndoTheDe
 
 ### Runtime layout & update
 
-omega's home is the executable's directory (override with `OMEGA_HOME`);
-`config.yaml`, `mcp.yaml` and the session store live there. Update an
-installed copy with:
+omega's home is the executable's directory (override with `OMEGA_HOME`).
+Installed into a `bin` directory (`go install`, `~/.local/bin`), the home
+moves to `~/.omega` — config, example configs, the session store and logs
+live there. Update an installed copy with:
 
 ```bash
 omega update
