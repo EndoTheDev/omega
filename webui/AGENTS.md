@@ -87,7 +87,7 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   commit the synced output with the change.
 - **Design tokens live in main.css.** Light z-stack
   #ececec/#f7f7f8/#ededf0/#ffffff; dark #121212-family; accent
-  #E8833A (the single accent); radii 6px (panes) / 4px (controls);
+  #E8833A (the single accent); radii 8px (panes) / 6px (cards) / 4px (chips);
   `--shadow-1` 0 1px 4px (dark 0.40, light 0.10) - tight blur sized
   so falloff fits the 3px breathing room. Type: Public Sans +
   JetBrains Mono. No component invents colors.

@@ -1,13 +1,18 @@
 ---
 name: omega
 colors:
-  primary: "#1A1C1E"
-  secondary: "#8A9BA8"
-  tertiary: "#E8833A"
-  neutral: "#14161A"
-  surface: "#1E2126"
-  success: "#4EC96B"
-  error: "#E06C75"
+  z0: "#121212"          # canvas (dark default)
+  z1: "#1a1a1c"          # main surfaces: bars, panes
+  z1_raised: "#212124"   # cards/bubbles inside a layer-1 pane
+  z2: "#26262a"          # overlays
+  stroke: "#2e2e31"
+  text: "#e6e6e9"
+  text_dim: "#8a8a92"
+  accent: "#E8833A"
+  ok: "#3ecf6e"
+  err: "#e05252"
+  # light stack: z0 #ececec, z1 #f7f7f8, z1-raised #ededf0, z2 #ffffff,
+  # stroke #d5d5da, text #1a1a1d, text-dim #6a6a72
 typography:
   h1:
     fontFamily: Public Sans
@@ -23,9 +28,13 @@ typography:
     fontFamily: Public Sans
     fontSize: 0.75rem
 rounded:
-  sm: 4px
-  md: 8px
-  lg: 12px
+  chip: 4px
+  card: 6px
+  pane: 8px
+shadows:
+  layer1: "0 1px 4px rgba(0,0,0,0.40)"    # tight blur - fits the pane-area breathing room
+  layer2: "0 8px 30px rgba(0,0,0,0.50)"
+  # light mode: layer1 rgba(0,0,0,0.10), layer2 rgba(0,0,0,0.16)
 spacing:
   sm: 8px
   md: 16px
@@ -44,17 +53,22 @@ accent for interaction, monospace for anything the machine produced.
 
 ## Colors
 
-- **Primary (#1A1C1E):** headline ink, kept near-white in dark mode via the
-  token system; carries hierarchy, not decoration.
-- **Secondary (#8A9BA8):** slate for metadata, timestamps, session titles,
-  borders. Quiet, never competing with content.
-- **Tertiary (#E8833A):** the single accent - same warm orange family as the
-  beatmatch trainer and the endothe.dev accent. Interaction only: send button,
-  active states, streaming cursor, links.
-- **Neutral (#14161A):** page background, darker than surfaces so panels read
-  as raised.
-- **Surface (#1E2126):** message bubbles, sidebar, settings cards.
-- **Success/Error:** streaming-complete and error states; never decorative.
+Elevation by distance from the light - every surface states its layer:
+
+- **z0 (#121212):** the canvas, darkest. Bars sit flat on it.
+- **z1 (#1a1a1c):** main surfaces - panes and bars, one step lighter, floating
+  (border + radius + shadow).
+- **z1-raised (#212124):** cards and bubbles inside a layer-1 pane.
+- **z2 (#26262a):** overlays - dropdowns, popovers - deeper shadow.
+- **Accent (#E8833A):** the single accent - same warm orange family as the
+  beatmatch trainer and the endothe.dev accent. Interaction only: send
+  button, active states, streaming cursor, links.
+- **Stroke (#2e2e31):** hairline borders; text-dim (#8a8a92) for metadata,
+  timestamps, session titles. Quiet, never competing with content.
+- **ok (#3ecf6e) / err (#e05252):** status colors; never decorative.
+
+Light mode is the same ladder inverted: #ececec canvas, #f7f7f8 surfaces,
+#ffffff overlays.
 
 One accent color. Gradients, glassmorphism, and glow are absent unless they
 communicate state.
@@ -68,13 +82,19 @@ chrome whispers.
 
 ## Layout
 
-- **Chat (default route):** full-height column. Message list left-anchored,
-  max-width for readability, input docked at bottom. Streaming tokens render
-  with a subtle trailing cursor.
-- **Sessions:** left sidebar list (or top dropdown on mobile) - title, relative
-  time, message count. One tap loads history via the existing API.
-- **Settings:** narrow single column, grouped cards (provider, model,
-  generation, system prompt). Forms are honest: labeled fields, explicit save.
+VS Code-style shell: top menu bar (35px, flat chrome) - pane area - status
+bar (29px). Panes are rounded floats on the canvas: sessions sidebar left,
+chat center, inspector/settings sharing the right slot (never both). All
+three panes resizable via dividers; the chat never shrinks below its 320px
+floor and the sidebars yield first. Below 768px the sidebars become
+slide-in drawers over a scrim.
+
+- **Chat:** full-height column. Message list left-anchored, input docked
+  at bottom. Streaming tokens render with a subtle trailing cursor.
+- **Sessions:** left pane - title, relative time. One tap loads history.
+- **Settings:** the right slot's content when the gear is toggled -
+  reasoning, theme, and future groups. The gear is the toggle: no title
+  row, no close button.
 
 ## Motion
 

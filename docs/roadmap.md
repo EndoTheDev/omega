@@ -49,12 +49,16 @@
 - Self-update fix: Python3 detection, unlink-before-rename on Linux
 - Checksum verification for self-update (SHA256, checksums.txt in releases)
 - Improver: autonomous test/coverage loop with safe auto-landing
+- Web UI: Nuxt 4 SPA (VS Code-style shell, streaming, session persistence), embedded into the binary and served by the HTTP channel (v0.6.0)
+- Segmented session persistence: assistant + tool calls -> tool results -> final assistant, matching the webui's live rendering (v0.6.0)
+- Loopback-only default bind with explicit `server.bind` opt-in for reverse-proxy routing (v0.6.0)
+- Release pipeline: tag -> Actions builds 5 platforms with the webui baked in + checksums; `omega update` self-service (v0.6.0-v0.6.4)
+- First-class `go install`: committed SPA, buildinfo version resolution, first-run config bootstrap, `~/.omega` home for bin-dir installs (v0.6.1-v0.6.4)
 
 ## Planned
 
 - More tools (grep, glob, multi-file edit)
 - More providers (Gemini, Mistral)
-- Web UI (via the Frontend seam)
 - Prompt templates with variable interpolation
 - Core-trust extension (pluggable trust gate)
 - Discord/Telegram channels (via the Channel seam)
@@ -62,8 +66,9 @@
 
 ## Known Limitations
 
-- `omega serve` has no authentication, TLS, or CORS - do not expose it
-  on a public network
+- `omega serve` has no authentication, TLS, or CORS - it binds loopback
+  by default; exposing it requires an explicit `server.bind` entry and an
+  authenticating reverse proxy in front
 - `omega health` only checks HTTP 200 on `/health` - does not probe the
   provider or database
 - Compaction is irreversible - summarized messages cannot be restored
