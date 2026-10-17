@@ -349,7 +349,7 @@ body {
 .health.ok { color: var(--ok); }
 .health.down { color: var(--err); }
 
-/* ---- right sidebar (placeholder) ---- */
+/* ---- inspector pane (right sidebar) ---- */
 /* the squeeze victim: flexes below its natural width when the left sidebar
    claims space, down to the 128px floor (then app.vue collapses it).
    (the hard-wall max-width lives on .pane-group - a percentage here would
@@ -362,25 +362,154 @@ body {
   min-height: 0;
 }
 
-.placeholder {
-  margin: auto;
-  padding: 16px;
+/* header tab bar: parked tabs (git view, session details, wire log) are
+   future siblings of the Files tab - same chip language as the shell */
+.inspector-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 10px 0;
+}
+
+.inspector-tab {
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: var(--r-chip);
+  cursor: pointer;
+}
+.inspector-tab.active {
+  color: var(--text);
+  background: var(--z1-raised);
+  cursor: default;
+}
+
+/* the scrolling body: crumbs + entry list (same voice as the session
+   list rows - raised chip hover, mono meta on the edge) */
+.inspector-files {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 8px;
+}
+
+.files-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  padding: 10px 12px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.files-crumbs button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.files-crumbs button:hover:not(:disabled) { color: var(--accent); }
+.crumb-sep { color: var(--text-dim); }
+
+.files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+}
+
+.file-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--r-chip);
+  font-size: 12px;
+  cursor: pointer;
+}
+.file-row:hover { background: var(--z1-raised); }
+.file-row .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-row .dir-mark { color: var(--text-dim); }
+.file-row .size {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.files-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 6px 10px;
+  cursor: default;
+}
+
+/* read-only preview: mono content block pinned under the listing, same
+   raised-border voice as the tool output block in chat */
+.file-preview {
+  border-top: 1px solid var(--stroke);
+  padding: 8px 10px 10px;
+  max-height: 45%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  text-align: center;
+  min-height: 0;
 }
-
-.placeholder-label {
+.preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.preview-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 11px;
   color: var(--text-dim);
 }
-
-.placeholder-note {
-  font-size: 12px;
+.preview-close {
+  border: none;
+  background: none;
   color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.preview-close:hover { color: var(--text); }
+.preview-notice {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.preview-body {
+  margin: 0;
+  overflow: auto;
+  background: var(--z1-raised);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
   line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ---- resize divider between sidebar and chat ---- */

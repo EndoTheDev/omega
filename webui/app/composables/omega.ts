@@ -279,6 +279,100 @@ export function rowMeta(s: Session): string {
   return parts.join(" - ");
 }
 
+// --- inspector: file manager helpers ---
+
+export interface FileEntry {
+  name: string;
+  size_bytes: number;
+  is_dir: boolean;
+  mod_time: string;
+}
+
+export interface FilesBrowsePayload {
+  entries: FileEntry[];
+}
+
+export interface FilesReadPayload {
+  content: string;
+  truncated: boolean;
+  binary: boolean;
+}
+
+// cleanRelPath mirrors the server's path rules so the UI never sends a
+// request the backend rejects: no absolute paths, no empty segments, no
+// dot-prefixed segments (hidden files AND .. traversal die under one
+// rule). Returns the cleaned path, or null when invalid ("" = root).
+export function cleanRelPath(p: string): string | null {
+  if (p === "") return "";
+  if (p.startsWith("/")) return null;
+  const parts = p.split("/");
+  if (parts.some((seg) => !seg || seg.startsWith("."))) return null;
+  return parts.join("/");
+}
+
+// joinRelPath descends one entry: the clicked name onto the current dir.
+export function joinRelPath(base: string, name: string): string {
+  return base ? `${base}/${name}` : name;
+}
+
+export interface FileCrumb {
+  name: string;
+  path: string;
+}
+
+// fileCrumbs derives the breadcrumb trail: the root crumb (path "") plus
+// one crumb per segment, each carrying the path it jumps to.
+export function fileCrumbs(path: string): FileCrumb[] {
+  const crumbs: FileCrumb[] = [{ name: "/", path: "" }];
+  const cleaned = cleanRelPath(path);
+  if (!cleaned) return crumbs;
+  let acc = "";
+  for (const seg of cleaned.split("/")) {
+    acc = joinRelPath(acc, seg);
+    crumbs.push({ name: seg, path: acc });
+  }
+  return crumbs;
+}
+
+// sortFileEntries orders a directory listing: directories first, then
+// names, case-insensitive. Pure - sorts a copy, never the caller's array.
+export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  });
+}
+
+// filesQuery fetches a /files endpoint and unwraps the structured error
+// envelope: a failed request throws the server's error message, not a
+// bare status code.
+async function filesQuery<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  if (!r.ok) {
+    let msg = `request: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (body?.error) msg = body.error;
+    } catch {
+      // non-JSON failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+// fetchFilesBrowse lists one directory of the working dir ("" = root).
+export function fetchFilesBrowse(path = ""): Promise<FilesBrowsePayload> {
+  const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
+  return filesQuery(`/files/browse${suffix}`);
+}
+
+// fetchFilesRead previews one file: up to 64 KiB, truncated flag, and
+// binary=true (empty content) for non-UTF-8 bytes.
+export function fetchFilesRead(path: string): Promise<FilesReadPayload> {
+  return filesQuery(`/files/read?path=${encodeURIComponent(path)}`);
+}
+
 // --- message hover timestamps ---
 
 const MONTHS = [

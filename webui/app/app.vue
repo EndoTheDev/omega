@@ -140,7 +140,8 @@
             :style="
               isMobile ? { width: 'calc(100% - 30%)' } : { flexBasis: rightWidth + 'px' }
             "
-            :open="inspectorOpen" />
+            :open="inspectorOpen"
+            :visible="isMobile ? inspectorOpen : rightVisible && !settingsOpen" />
 
           <SettingsDrawer
             class="slot-pane"
@@ -340,7 +341,9 @@
   const dividerEl = ref<{ persist: (w: number) => void } | null>(null);
   const rightDividerEl = ref<{ persist: (w: number) => void } | null>(null);
   const sidebarVisible = ref(true);
-  const rightVisible = ref(true);
+  // the inspector starts closed every load - open state is not persisted
+  // (the pane width is, via the divider's storage key)
+  const rightVisible = ref(false);
   const contextSize = ref(0);
 
   const messageCount = computed(
