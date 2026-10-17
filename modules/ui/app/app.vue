@@ -41,7 +41,7 @@
           @pin="togglePin" />
 
         <PaneDivider
-          v-if="!isMobile"
+          v-if="!isMobile && sidebarVisible"
           ref="dividerEl"
           :width="sidebarWidth"
           :min="128"
@@ -120,7 +120,7 @@
               : -(rightWidth + 6) + 'px',
         }">
         <PaneDivider
-          v-if="!isMobile"
+          v-if="!isMobile && (rightVisible || settingsOpen)"
           ref="rightDividerEl"
           :width="rightWidth"
           :min="128"
