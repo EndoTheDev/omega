@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed examples/config.yaml.example examples/mcp.yaml.example examples/crons.yaml.example examples/memory.md.example examples/user.md.example
+//go:embed examples/config.yaml.example examples/mcp.yaml.example examples/crons.yaml.example
 var exampleFiles embed.FS
 
 // homeForExe resolves the omega home: OMEGA_HOME wins, else the exe's
@@ -45,22 +45,18 @@ func isPathBinInstall(dir, userHome string) bool {
 // example configs into the home dir (idempotent - never overwrites),
 // creating the home if it doesn't exist yet (~/.omega case). omega runs
 // on defaults without config.yaml, so only the examples are written.
-// memory.md and user.md are also seeded live: they are the memory
-// extension's store, and a fresh install should start with its memory
-// and user profile already populated. Same law as the examples -
-// absent-only, never overwriting. A user's accumulated memory is
-// sacred on upgrade.
+// memory.md and user.md are NOT seeded: nothing is shipped for them -
+// the memory tool's own description teaches the file conventions, and
+// the agent's first 'memory add' creates the files. Existing live
+// memory.md/user.md in an instance home are simply never touched here.
 func bootstrapHome(home string) {
 	os.MkdirAll(home, 0o755)
 	// Only ever written: the .example files. A live crons.yaml is
 	// always human-authored - omega proposes jobs, it never writes
 	// its own schedule (trust gate).
-	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example", "memory.md.example", "user.md.example"} {
+	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example"} {
 		seedFile(home, name, name)
 	}
-	// Live memory store, seeded from the examples.
-	seedFile(home, "memory.md", "memory.md.example")
-	seedFile(home, "user.md", "user.md.example")
 }
 
 // seedFile writes the embedded example src to home/dst when dst does
