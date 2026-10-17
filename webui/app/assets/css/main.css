@@ -295,13 +295,16 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .session-list li:hover { background: var(--z1-raised); }
 .session-list li.active { background: var(--z1-raised); }
 
-/* pin toggle: dim star, top-right; always visible when pinned, and shown
-   on hover otherwise so the affordance exists without adding noise.
-   .stop on the handler - toggling a pin must not open the session. */
+/* pin toggle: dim star sitting LEFT of the session time, both vertically
+   centered - the row's right cluster is [text ... star time]. Always
+   visible when pinned, shown on hover otherwise so the affordance exists
+   without adding noise. .stop on the handler - toggling a pin must not
+   open the session. */
 .pin-btn {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  right: 34px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 22px;
   height: 22px;
   background: transparent;
@@ -358,7 +361,7 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    (in-app comment 4). Text now ellipsizes before the time zone. */
 .session-time {
   position: absolute;
-  right: 30px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 11px;
@@ -369,7 +372,7 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    meta must never run under it */
 .session-title,
 .session-meta {
-  padding-right: 30px;
+  padding-right: 60px;
 }
 
 /* second meta line: model - msgs - tools - tokens */
