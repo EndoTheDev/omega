@@ -64,8 +64,9 @@
   // bubble mounts streaming and freezes at the final value when it ends -
   // the finished answer keeps showing how long it took. Bubbles that
   // arrive already-final (user messages, restored history) never start
-  // and render nothing. A reused instance (transcript keyed by index)
-  // must not carry a stale label across a role change.
+  // and render nothing. The transcript v-for keys on item identity
+  // (createItemKeySource), so a component instance always belongs to one
+  // item - no label ever leaks across a history rebuild or retry.
   const elapsed = ref("");
   const meter = createElapsedMeter((label) => {
     elapsed.value = label;
@@ -77,13 +78,6 @@
       else meter.stop();
     },
     { immediate: true },
-  );
-  watch(
-    () => props.role,
-    () => {
-      meter.stop();
-      elapsed.value = "";
-    },
   );
 
   // Hover timestamp: an empty ref removes the title attribute entirely

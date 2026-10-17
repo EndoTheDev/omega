@@ -817,6 +817,31 @@ export function withoutMarkers(
   return items.filter((item) => item?.kind !== "interrupted");
 }
 
+// createItemKeySource gives transcript items a stable key surviving the
+// two identity-breaking operations the transcript goes through (card
+// t_bc62c9ba round 1): `st.transcript = items` swaps in a rebuilt history
+// array, and `dropLastExchange + push` replaces a retried exchange while
+// re-indexing everything after it. Index-keyed v-fors reuse the bubble
+// COMPONENT across those swaps, so a restored-history message inherited
+// the previous session's frozen elapsed label and a retried tool call
+// resumed the dead attempt's timer. Keying on object identity fixes both:
+// a kept object (history head, pre-interrupt exchange) keeps its
+// component and its state; every newly pushed object mounts fresh.
+// WeakMap: the mapping dies with the item, no leak. This is per-source
+// state, not a global counter - two transcripts never share keys anyway.
+export function createItemKeySource(): (item: object) => number {
+  const keys = new WeakMap<object, number>();
+  let seq = 0;
+  return (item) => {
+    let key = keys.get(item);
+    if (key === undefined) {
+      key = ++seq;
+      keys.set(item, key);
+    }
+    return key;
+  };
+}
+
 // StreamInterruptedError: the SSE transport died mid-stream (reader or
 // fetch failure, connection drop before the terminal event) - NOT an
 // agent error payload, which throws a plain Error and lands in the

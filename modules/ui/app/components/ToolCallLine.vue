@@ -65,14 +65,4 @@
     { immediate: true },
   );
   onUnmounted(() => meter.stop());
-
-  // a reused instance (transcript keyed by index) must not carry a stale
-  // frozen label into a different call
-  watch(
-    () => props.name,
-    () => {
-      meter.stop();
-      elapsed.value = "";
-    },
-  );
 </script>

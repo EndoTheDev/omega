@@ -13,6 +13,7 @@ import {
   dropLastExchange,
   hasInterruptedMarker,
   withoutMarkers,
+  createItemKeySource,
   StreamInterruptedError,
 } from "../app/composables/omega.ts";
 
@@ -219,5 +220,49 @@ describe("retry transcript transitions", () => {
         { kind: "message", role: "assistant", content: "a" },
       ].map((i) => i as TranscriptItemLike),
     );
+  });
+});
+
+// keyed v-for identity (card t_bc62c9ba round 1): index keys reused bubble
+// COMPONENTS across the transcript's two identity-breaking swaps, leaking
+// elapsed labels between sessions and resuming a dead attempt's timer on
+// a retried tool call. Identity keys fix both - tested from the key
+// source's side, which is the whole of the contract.
+describe("createItemKeySource", () => {
+  it("the same object always gets the same key (kept items keep their bubble)", () => {
+    const keyOf = createItemKeySource();
+    const a = { kind: "message" };
+    const b = { kind: "tool" };
+    assert.equal(keyOf(a), keyOf(a));
+    assert.equal(keyOf(b), keyOf(b));
+    assert.notEqual(keyOf(a), keyOf(b));
+  });
+
+  it("a rebuilt/similar object gets a FRESH key (no phantom reuse)", () => {
+    const keyOf = createItemKeySource();
+    const first = { kind: "message", content: "hello" };
+    const second = { kind: "message", content: "hello" };
+    assert.notEqual(keyOf(first), keyOf(second));
+  });
+
+  it("retryStream: kept head items keep keys, the retried exchange mounts fresh", () => {
+    const keyOf = createItemKeySource();
+    const head: TranscriptItemLike[] = [
+      { kind: "message", role: "user", content: "old q" },
+      { kind: "tool", name: "sh", status: "done" },
+    ];
+    const headKeys = head.map(keyOf);
+    // retryStream drops the dead tail and the retried exchange pushes
+    // NEW objects - each must mount as a new bubble, not reuse head keys
+    const retried: TranscriptItemLike = {
+      kind: "tool",
+      name: "sh",
+      status: "running",
+    };
+    assert.notEqual(keyOf(retried), headKeys[0]);
+    assert.notEqual(keyOf(retried), headKeys[1]);
+    // and the dropped tail's key never collides with the next attempt's
+    // (fresh-object keys keep increasing per source)
+    assert.ok(keyOf(retried) > headKeys[1]);
   });
 });

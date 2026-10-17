@@ -66,7 +66,7 @@
             </p>
             <template
               v-for="(item, i) in transcript"
-              :key="i">
+              :key="itemKey(item)">
               <ChatMessage
                 v-if="item.kind === 'message'"
                 :role="item.role"
@@ -187,6 +187,7 @@
     dropLastExchange,
     hasInterruptedMarker,
     withoutMarkers,
+    createItemKeySource,
     StreamInterruptedError,
   } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
@@ -319,6 +320,9 @@
   const tokens = computed(() => view.value.tokens);
   const tokensPerSecond = computed(() => view.value.tokensPerSecond);
   const liveChunksPerSecond = computed(() => view.value.liveChunksPerSecond);
+
+  // keyed v-for: identity, not index (createItemKeySource) - see omega.ts
+  const itemKey = createItemKeySource();
 
   // mobile: sidebars are overlays (slide from their side over a scrim);
   // desktop: same toggles mount/unmount the panes inline + squeeze chain
