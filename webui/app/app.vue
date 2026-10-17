@@ -783,6 +783,13 @@
       busySet.value = withBusy(busySet.value, busyKey, false);
       st.statusLine = "";
       refreshSessions();
+      // the title goroutine writes the session label seconds AFTER the
+      // first exchange ends - the refresh above runs too early to see
+      // it. One delayed refresh picks it up without a manual reload.
+      const row = sessions.value.find(s => s.id === busyKey);
+      if (!row || !row.label) {
+        setTimeout(() => { refreshSessions(); }, 10000);
+      }
       if (isViewed()) scrollDown();
     }
   }

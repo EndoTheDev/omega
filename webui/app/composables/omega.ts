@@ -433,7 +433,10 @@ export function createElapsedMeter(
   onElapsed: (label: string) => void,
   now: () => number = () => Date.now(),
   timers: RenderTimers = {
-    set: setTimeout,
+    // setTimeout is a window method in the browser - a bare reference
+    // invoked on this plain object throws Illegal invocation (WebIDL
+    // receiver check). Wrap it, like clear.
+    set: (fn, ms) => setTimeout(fn, ms),
     clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
   },
 ): ElapsedMeter {
@@ -528,7 +531,9 @@ export function createRenderScheduler(
   render: (src: string) => void,
   intervalMs: number = RENDER_TICK_MS,
   timers: RenderTimers = {
-    set: setTimeout,
+    // same wrap as createElapsedMeter - bare setTimeout is Illegal
+    // invocation in the browser (window method, wrong receiver)
+    set: (fn, ms) => setTimeout(fn, ms),
     clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
   },
 ): RenderScheduler {
