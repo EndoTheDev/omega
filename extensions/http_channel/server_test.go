@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,11 +19,23 @@ import (
 
 // mockProvider is a scripted Provider for http_channel tests. Each call
 // returns the next scripted stream; the final script repeats so loops
-// that must keep going stay alive.
+// that must keep going stay alive. The call counter lives behind a
+// mutex - title generation streams concurrently with the main run.
 type mockProvider struct {
 	modelName string
 	scripts   [][]ai.StreamEvent
-	calls     int
+	mu        *sync.Mutex
+	calls     *int
+}
+
+func newMockProvider(modelName string, scripts ...[]ai.StreamEvent) *mockProvider {
+	calls := 0
+	return &mockProvider{
+		modelName: modelName,
+		scripts:   scripts,
+		mu:        &sync.Mutex{},
+		calls:     &calls,
+	}
 }
 
 func (m *mockProvider) ModelName() string { return m.modelName }
@@ -47,7 +60,7 @@ func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSche
 	events := make(chan ai.StreamEvent)
 	go func() {
 		defer close(events)
-		index := m.calls
+		index := m.nextIndex()
 		if index >= len(m.scripts) {
 			index = len(m.scripts) - 1
 		}
@@ -56,23 +69,38 @@ func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSche
 				events <- e
 			}
 		}
-		m.calls++
 	}()
 	return events
+}
+
+// nextIndex hands out the next script index under the lock. The
+// increment happens here, not after streaming, so concurrent callers
+// cannot claim the same script.
+func (m *mockProvider) nextIndex() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	index := *m.calls
+	*m.calls++
+	return index
+}
+
+// streamCalls reports how many Stream calls were made. Concurrent with
+// in-flight streams it is advisory; callers poll for quiescence.
+func (m *mockProvider) streamCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return *m.calls
 }
 
 func scripted(events ...ai.StreamEvent) []ai.StreamEvent { return events }
 
 func newTestServer() *Server {
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
-			),
-		},
-	}
+	provider := newMockProvider("mock",
+		scripted(
+			ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		),
+	)
 	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, nil)
@@ -456,21 +484,18 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 	// Provider scripts stream a response and report usage numbers; each
 	// chat turn consumes exactly one script (the session's label is set
 	// first so the detached title run never fires).
-	provider := &mockProvider{
-		modelName: "mock",
-		scripts: [][]ai.StreamEvent{
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "one"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
-					PromptEvalCount: ptrInt(100), EvalCount: ptrInt(20)},
-			),
-			scripted(
-				ai.ResponseChunk{Type: "response_chunk", Content: "two"},
-				ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
-					PromptEvalCount: ptrInt(40), EvalCount: ptrInt(5)},
-			),
-		},
-	}
+	provider := newMockProvider("mock",
+		scripted(
+			ai.ResponseChunk{Type: "response_chunk", Content: "one"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
+				PromptEvalCount: ptrInt(100), EvalCount: ptrInt(20)},
+		),
+		scripted(
+			ai.ResponseChunk{Type: "response_chunk", Content: "two"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
+				PromptEvalCount: ptrInt(40), EvalCount: ptrInt(5)},
+		),
+	)
 	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil)
@@ -796,5 +821,211 @@ func TestSessionByIDNotFound(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// captureProvider wraps mockProvider and records the user prompt sent
+// to every Stream call, so the title prompt shape is directly checked.
+type captureProvider struct {
+	mockProvider
+	mu       sync.Mutex
+	prompts  []string
+}
+
+func newCaptureProvider(scripts ...[]ai.StreamEvent) *captureProvider {
+	return &captureProvider{mockProvider: *newMockProvider("mock", scripts...)}
+}
+
+func (c *captureProvider) Stream(ctx context.Context, msgs []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
+	c.mu.Lock()
+	for _, m := range msgs {
+		if ai.MessageRole(m) == "user" {
+			if u, ok := m.(ai.User); ok {
+				c.prompts = append(c.prompts, u.Content)
+			}
+		}
+	}
+	c.mu.Unlock()
+	return c.mockProvider.Stream(ctx, msgs, tools)
+}
+
+func (c *captureProvider) streamPromptCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.prompts)
+}
+
+func (c *captureProvider) streamPrompt(i int) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.prompts[i]
+}
+
+// newTitleTestServerWithStore builds a server whose title calls stream
+// "prov title" first, "final title" after.
+func newTitleTestServerWithStore(t *testing.T) (*Server, *store.Store, *captureProvider) {
+	t.Helper()
+	prov := newCaptureProvider(
+		scripted(
+			ai.ResponseChunk{Type: "response_chunk", Content: "prov title"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		),
+		scripted(
+			ai.ResponseChunk{Type: "response_chunk", Content: "final title"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		),
+	)
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, nil, nil)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s.store = st
+	return s, st, prov
+}
+
+func titleChatRequest(sessionID string) chatRequest {
+	return chatRequest{
+		SessionID: sessionID,
+		Messages:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"greetings friend"}`)},
+	}
+}
+
+// TestMaybeTitleSessionStateGates walks the title state machine through
+// maybeTitleSession synchronously: provisional only from 0, final from
+// 0 or 1, both blocked at 2, and a manually set label never overwritten.
+func TestMaybeTitleSessionStateGates(t *testing.T) {
+	ctx := context.Background()
+	s, st, prov := newTitleTestServerWithStore(t)
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	req := titleChatRequest("s1")
+
+	// Provisional from 0 -> 1: prompt is user-message-only.
+	s.maybeTitleSession(ctx, s.agent.Provider(), req, "", false)
+	sess, err := st.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get s1: %v", err)
+	}
+	if sess.Label != "prov title" || sess.TitleState != 1 {
+		t.Fatalf("after provisional: %+v", sess)
+	}
+	if prov.streamPromptCount() != 1 {
+		t.Fatalf("title calls = %d, want 1", prov.streamPromptCount())
+	}
+	if p := prov.streamPrompt(0); strings.Contains(p, "\nAssistant: ") || !strings.Contains(p, "User: greetings friend") {
+		t.Fatalf("provisional prompt shape: %q", p)
+	}
+
+	// Provisional again at 1: blocked, no second title call.
+	s.maybeTitleSession(ctx, s.agent.Provider(), req, "", false)
+	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != "prov title" || sess.TitleState != 1 {
+		t.Fatalf("second provisional overwrote: %+v", sess)
+	}
+	if prov.streamPromptCount() != 1 {
+		t.Fatalf("title calls = %d, want 1 (blocked at provisional)", prov.streamPromptCount())
+	}
+
+	// Final from 1 -> 2: prompt carries the reply context.
+	s.maybeTitleSession(ctx, s.agent.Provider(), req, "assistant reply text", true)
+	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != "final title" || sess.TitleState != 2 {
+		t.Fatalf("after final: %+v", sess)
+	}
+	if p := prov.streamPrompt(1); !strings.Contains(p, "\nAssistant: assistant reply text") {
+		t.Fatalf("final prompt shape: %q", p)
+	}
+
+	// Both are blocked at 2; a second exchange never retitles.
+	s.maybeTitleSession(ctx, s.agent.Provider(), req, "assistant reply text", true)
+	s.maybeTitleSession(ctx, s.agent.Provider(), req, "", false)
+	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != "final title" || sess.TitleState != 2 {
+		t.Fatalf("state-2 write overwrote: %+v", sess)
+	}
+	if prov.streamPromptCount() != 2 {
+		t.Fatalf("title calls = %d, want 2 (blocked at final)", prov.streamPromptCount())
+	}
+
+	// A manually set label blocks generated titles even at state 0 -
+	// the pre-title-state protection keeps working after migration.
+	if err := st.CreateSession(ctx, "s2", "", ""); err != nil {
+		t.Fatalf("create s2: %v", err)
+	}
+	if err := st.UpdateSession(ctx, "s2", "manual label"); err != nil {
+		t.Fatalf("set manual label: %v", err)
+	}
+	req2 := titleChatRequest("s2")
+	s.maybeTitleSession(ctx, s.agent.Provider(), req2, "", false)
+	s.maybeTitleSession(ctx, s.agent.Provider(), req2, "reply", true)
+	if sess, _ := st.GetSession(ctx, "s2"); sess.Label != "manual label" || sess.TitleState != 0 {
+		t.Fatalf("manual label overwritten: %+v", sess)
+	}
+
+	// A provisionally-titled session is never re-provisioned at state 1,
+	// but the final call still upgrades it from 1.
+	if err := st.CreateSession(ctx, "s3", "", ""); err != nil {
+		t.Fatalf("create s3: %v", err)
+	}
+	if err := st.SetSessionTitle(ctx, "s3", "early prov", false); err != nil {
+		t.Fatalf("early provisional: %v", err)
+	}
+	req3 := titleChatRequest("s3")
+	s.maybeTitleSession(ctx, s.agent.Provider(), req3, "", false)
+	if sess, _ := st.GetSession(ctx, "s3"); sess.Label != "early prov" || sess.TitleState != 1 {
+		t.Fatalf("state-1 reprovisioned: %+v", sess)
+	}
+	// Final still lands from 1.
+	s.maybeTitleSession(ctx, s.agent.Provider(), req3, "reply", true)
+	if sess, _ := st.GetSession(ctx, "s3"); sess.Label != "final title" || sess.TitleState != 2 {
+		t.Fatalf("final from 1 failed: %+v", sess)
+	}
+}
+
+// TestChatFiresProvisionalThenFinalOnce exercises the full /chat flow:
+// a state-0 session gets a provisional title at request start and a
+// final one at persist end, then a second exchange fires no title call.
+func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
+	ctx := context.Background()
+	// Every stream returns the same content, so both title calls
+	// produce "hello" regardless of call order.
+	s, st := newTestServerWithStore(t)
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if code := postChat(s, "s1"); code != http.StatusOK {
+		t.Fatalf("first chat status = %d, want 200", code)
+	}
+	settle := func(wantTitleState int) bool {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if sess, _ := st.GetSession(ctx, "s1"); sess.TitleState == wantTitleState {
+				return true
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		return false
+	}
+	if !settle(2) {
+		sess, _ := st.GetSession(ctx, "s1")
+		t.Fatalf("session never reached final title state: %+v", sess)
+	}
+	sess, _ := st.GetSession(ctx, "s1")
+	if sess.Label == "" {
+		t.Fatalf("label empty after first exchange: %+v", sess)
+	}
+
+	label := sess.Label
+	// Second exchange: no provisional at request start, no final at
+	// persist end - the title never changes again.
+	if code := postChat(s, "s1"); code != http.StatusOK {
+		t.Fatalf("second chat status = %d, want 200", code)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != label || sess.TitleState != 2 {
+		t.Fatalf("second exchange retitled: %+v (was label %q)", sess, label)
 	}
 }

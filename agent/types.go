@@ -35,6 +35,12 @@ type Session struct {
 	// Pinned is the user's keep-at-top flag. Old sessions default to
 	// unpinned; baked data is never rewritten.
 	Pinned bool `json:"pinned"`
+
+	// TitleState tracks generated-title maturity: 0 untitled, 1
+	// provisional (user-message-only), 2 final (first exchange done).
+	// Sessions that already carried a label when the column was added
+	// were migrated straight to 2 - a manual label is never retitled.
+	TitleState int `json:"title_state"`
 }
 
 // SessionCounts is per-session activity computed at read time (SQL

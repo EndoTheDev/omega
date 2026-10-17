@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	updated_at TEXT NOT NULL,
 	prompt_tokens INTEGER NOT NULL DEFAULT 0,
 	completion_tokens INTEGER NOT NULL DEFAULT 0,
-	pinned INTEGER NOT NULL DEFAULT 0
+	pinned INTEGER NOT NULL DEFAULT 0,
+	title_state INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,10 +147,21 @@ END;
 		`ALTER TABLE sessions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN title_state INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
 			if !strings.Contains(err.Error(), "duplicate column") {
+				return err
+			}
+			continue
+		}
+		// The column landed on this open: backfill the data fix that
+		// belongs to it. Sessions that already carried a label before
+		// title_state existed are final (2) - a manual label is never
+		// retitled. Runs once, exactly when the column is new.
+		if strings.Contains(stmt, "title_state") {
+			if _, err := s.db.Exec(`UPDATE sessions SET title_state = 2 WHERE label != ''`); err != nil {
 				return err
 			}
 		}
@@ -182,7 +194,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	var parent sql.NullString
 	var pinned int
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
-		&sess.PromptTokens, &sess.CompletionTokens, &pinned); err != nil {
+		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &sess.TitleState); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
@@ -191,7 +203,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, title_state"
 
 // GetSession returns the session with the given id, or ErrNotFound.
 func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {
@@ -405,6 +417,21 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 	n := boolToInt(pinned)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET pinned = ? WHERE id = ?`, n, sessionID)
+	return err
+}
+
+// SetSessionTitle writes a generated label and its title_state
+// transition in one update. The state machine is enforced by the WHERE
+// clause: provisional only from 0 (moves to 1), final from 0 or 1
+// (moves to 2) - a session at 2 is never touched, including the
+// pre-title-state rows that were migrated to 2 because they carried a
+// label. A losing update (session already advanced) writes nothing.
+func (s *Store) SetSessionTitle(ctx context.Context, sessionID string, title string, final bool) error {
+	stmt := `UPDATE sessions SET label = ?, title_state = 1, updated_at = ? WHERE id = ? AND title_state = 0`
+	if final {
+		stmt = `UPDATE sessions SET label = ?, title_state = 2, updated_at = ? WHERE id = ? AND title_state <= 1`
+	}
+	_, err := s.db.ExecContext(ctx, stmt, title, ai.NowISO(), sessionID)
 	return err
 }
 
