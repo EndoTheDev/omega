@@ -192,6 +192,32 @@ type ChannelDeps struct {
 	Store StoreProvider
 }
 
+// CronProvider schedules omega prompts on cron expressions. The
+// default implementation is the cron extension (extensions/cron/),
+// backed by crons.yaml in OMEGA_HOME. Each fire is one full agent
+// turn in a session labeled cron:<name>.
+//
+// Like Channel, Start blocks until the context is cancelled. The
+// serve host starts the mounted Cron after MountAll (with the store
+// open) and stops it on shutdown.
+type CronProvider interface {
+	// Start runs the scheduler until the context is cancelled or Stop
+	// is called. Blocks.
+	Start(ctx context.Context, deps CronDeps) error
+	// Stop shuts the scheduler down. Called by the host on shutdown.
+	Stop() error
+}
+
+// CronDeps carries everything the cron runner needs. Ctx is the
+// fully-wired plugin Context (Memory for the memory deliver target,
+// Logger for run logs), Agent runs each fire as a full agent turn,
+// Store persists the cron:<name> sessions.
+type CronDeps struct {
+	Ctx   *Context
+	Agent *Agent
+	Store StoreProvider
+}
+
 // Frontend is the user-facing interface seam. The default implementation
 // is the terminal TUI (extensions/tui/). A custom implementation could
 // serve a web UI or any other interactive frontend. The host calls Run

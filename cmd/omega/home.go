@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed examples/config.yaml.example examples/mcp.yaml.example
+//go:embed examples/config.yaml.example examples/mcp.yaml.example examples/crons.yaml.example
 var exampleFiles embed.FS
 
 // homeForExe resolves the omega home: OMEGA_HOME wins, else the exe's
@@ -47,7 +47,10 @@ func isPathBinInstall(dir, userHome string) bool {
 // on defaults without config.yaml, so only the examples are written.
 func bootstrapHome(home string) {
 	os.MkdirAll(home, 0o755)
-	for _, name := range []string{"config.yaml.example", "mcp.yaml.example"} {
+	// Only ever written: the .example files. A live crons.yaml is
+	// always human-authored - omega proposes jobs, it never writes
+	// its own schedule (trust gate).
+	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example"} {
 		dst := filepath.Join(home, name)
 		if _, err := os.Stat(dst); err == nil {
 			continue

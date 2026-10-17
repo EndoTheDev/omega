@@ -17,6 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/extensions/agent_loop"
 	"github.com/EndoTheDev/omega/extensions/compactor"
+	"github.com/EndoTheDev/omega/extensions/cron"
 	"github.com/EndoTheDev/omega/extensions/delegate"
 	httpchannel "github.com/EndoTheDev/omega/extensions/http_channel"
 	"github.com/EndoTheDev/omega/extensions/logging"
@@ -278,6 +279,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		httpchannel.NewPlugin(),
 		tui.NewPlugin(),
 		trust.NewPlugin(),
+		cron.NewPlugin(),
 	}, nil
 }
 
@@ -381,6 +383,19 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 			errCh <- c.Start(ctx, deps)
 		}(ch)
 	}
+
+	// Start the cron runner (if mounted) with the fully-wired agent,
+	// store, memory seam and logger. Runs until shutdown, alongside
+	// the channels.
+	if pctx.Cron != nil {
+		go func() {
+			if err := pctx.Cron.Start(ctx, agent.CronDeps{Ctx: pctx, Agent: ag, Store: store}); err != nil {
+				fmt.Fprintf(os.Stderr, "omega: cron runner: %v\n", err)
+				errCh <- err
+			}
+		}()
+	}
+
 	fmt.Printf("omega: serving %d channel(s) (model %s)\n", len(pctx.Channels), ag.ModelName())
 	if logger != nil {
 		logger.Printf("omega: serving %d channel(s), model %s", len(pctx.Channels), ag.ModelName())
@@ -400,6 +415,11 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	for _, ch := range pctx.Channels {
 		if err := ch.Stop(); err != nil {
 			fmt.Fprintf(os.Stderr, "omega: channel stop error: %v\n", err)
+		}
+	}
+	if pctx.Cron != nil {
+		if err := pctx.Cron.Stop(); err != nil {
+			fmt.Fprintf(os.Stderr, "omega: cron stop error: %v\n", err)
 		}
 	}
 	return nil

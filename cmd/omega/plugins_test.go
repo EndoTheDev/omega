@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// TestBuildPlugins verifies buildPlugins returns all 15 in-process
+// TestBuildPlugins verifies buildPlugins returns all 16 in-process
 // extensions, no error, and every plugin is non-nil, when given a
 // default Config.
 func TestBuildPlugins(t *testing.T) {
@@ -15,7 +15,7 @@ func TestBuildPlugins(t *testing.T) {
 		t.Fatalf("buildPlugins returned error: %v", err)
 	}
 
-	const want = 15
+	const want = 16
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

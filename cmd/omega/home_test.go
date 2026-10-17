@@ -92,7 +92,7 @@ func TestBootstrapHome(t *testing.T) {
 	home := t.TempDir()
 
 	bootstrapHome(home)
-	for _, name := range []string{"config.yaml.example", "mcp.yaml.example"} {
+	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example"} {
 		if _, err := os.Stat(filepath.Join(home, name)); err != nil {
 			t.Fatalf("bootstrap did not write %s: %v", name, err)
 		}
