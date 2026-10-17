@@ -53,6 +53,7 @@ func (m *mockStore) SessionCounts(context.Context) (map[string]agent.SessionCoun
 	return nil, nil
 }
 func (m *mockStore) AddSessionTokens(context.Context, string, int, int) error { return nil }
+func (m *mockStore) SetSessionTitle(context.Context, string, string, bool) error { return nil }
 
 func (m *mockStore) SetSessionPinned(context.Context, string, bool) error { return nil }
 

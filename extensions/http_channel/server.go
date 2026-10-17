@@ -231,6 +231,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		prov = prov.WithModel(req.Model)
 	}
 
+	// Provisional title: one cheap GetSession at request start, and the
+	// title call fires detached before any streaming, so the sidebar
+	// leaves the raw session id while the model is still thinking.
+	// maybeTitleSession re-reads the session and enforces the state
+	// machine before anything is written.
+	if s.store != nil && req.SessionID != "" {
+		if sess, err := s.store.GetSession(r.Context(), req.SessionID); err == nil && sess.TitleState == 0 {
+			go s.maybeTitleSession(context.WithoutCancel(r.Context()), prov, req, "", false)
+		}
+	}
+
 	flusher, ok := setupSSE(w)
 	if !ok {
 		return
@@ -403,20 +414,45 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 		// title run pins this request's provider copy - the session is
 		// titled on the model that served it, regardless of what the
 		// next /chat sends.
-		// ponytail: two rapid first-messages can race the label=="" check -
-		// last write wins, an untitled session is cosmetic. Single user.
-		go s.maybeTitleSession(context.WithoutCancel(ctx), prov, req, lastContent)
+		// Final title: firstUser + reply context, once the exchange is
+		// persisted. The title_state <= 1 check skips sessions already at
+		// final state; maybeTitleSession re-reads and enforces the gate.
+		// ponytail: two rapid first-exchanges can interleave provisional
+		// and final writes - both go through SetSessionTitle guards and
+		// last write still wins on the label, an acceptable cosmetic race
+		// at single-user load.
+		if sess, err := s.store.GetSession(ctx, req.SessionID); err == nil && sess.TitleState <= 1 {
+			go s.maybeTitleSession(context.WithoutCancel(ctx), prov, req, lastContent, true)
+		}
 	}
 }
 
-// maybeTitleSession generates a short session title with a cheap model call
-// when the session has no label yet (first exchange) and writes it via
-// UpdateSession. prov is the pinned per-request provider copy. Runs in a
-// detached goroutine after the stream ends; failure is silent - an
-// untitled session is cosmetic, not fatal.
-func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req chatRequest, lastAssistant string) {
+// maybeTitleSession generates a short session title with a cheap model
+// call and writes it via SetSessionTitle in one state-transitioning
+// update. final=true is the post-exchange call (firstUser + reply
+// context); final=false is the provisional request-start call
+// (user message only). The state machine gate: provisional only for an
+// untitled session (state 0), final only while the title is missing or
+// provisional (state 0 or 1) - and a manually set label (PUT
+// /sessions/{id}, /label) is never overwritten by a generated one.
+// prov is the pinned per-request provider copy. Runs detached; failure
+// is silent - an untitled session is cosmetic, not fatal.
+func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req chatRequest, lastAssistant string, final bool) {
 	sess, err := s.store.GetSession(ctx, req.SessionID)
-	if err != nil || sess.Label != "" {
+	if err != nil {
+		return
+	}
+	// Manual-label guard: a label sitting at title state 0 was set by
+	// a user (PUT /sessions/{id} or /label), not by this flow - never
+	// overwritten. Generated provisional labels carry state 1, so the
+	// final call can still upgrade them, and state 2 blocks everything.
+	if sess.Label != "" && sess.TitleState == 0 {
+		return
+	}
+	if final && sess.TitleState > 1 {
+		return
+	}
+	if !final && sess.TitleState != 0 {
 		return
 	}
 	// ponytail: first user message from the request body, truncated hard —
@@ -438,7 +474,11 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 	if len(firstUser) > 400 {
 		firstUser = firstUser[:400]
 	}
-	prompt := "Write a conversation title of at most 5 words for this exchange. Reply with ONLY the title, no quotes, no punctuation at the end.\n\nUser: " + firstUser + "\nAssistant: " + truncate(lastAssistant, 400)
+	prompt := "Write a conversation title of at most 5 words for this exchange. Reply with ONLY the title, no quotes, no punctuation at the end.\n\nUser: " + firstUser
+	if final {
+		// Final call: the reply's gist is part of the gist.
+		prompt += "\nAssistant: " + truncate(lastAssistant, 400)
+	}
 
 	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
 	title := ""
@@ -460,7 +500,7 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 	if len(title) > 60 {
 		title = title[:60]
 	}
-	_ = s.store.UpdateSession(ctx, req.SessionID, title)
+	_ = s.store.SetSessionTitle(ctx, req.SessionID, title, final)
 }
 
 // truncate cuts s at n runes, appending an ellipsis marker when cut.

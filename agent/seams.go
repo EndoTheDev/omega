@@ -101,6 +101,14 @@ type StoreProvider interface {
 	// user-list concern and does not touch updated_at.
 	SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error
 
+	// SetSessionTitle writes a generated label together with its title
+	// state transition in one update. provisional (final=false) is
+	// allowed only from title state 0 and moves to 1; final (final=true)
+	// is allowed from 0 or 1 and moves to 2. A session already at 2 -
+	// including every pre-title-state row that carried a label - is
+	// never touched. The state machine is enforced here.
+	SetSessionTitle(ctx context.Context, sessionID string, title string, final bool) error
+
 	// SessionModels returns the last recorded model per session,
 	// derived from the session's model_change entries at read time.
 	// Sessions with no model entry are absent from the map.

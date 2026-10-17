@@ -970,3 +970,137 @@ func TestComputeInsightsEmpty(t *testing.T) {
 		}
 	}
 }
+
+// TestMigrationTitlesLabeledSessions covers the title_state data fix: a
+// pre-title-state database with one labeled and one unlabeled session.
+// On migration the labeled row lands at final state 2 (never retitled),
+// the unlabeled row at 0. A reopen must not re-run the backfill.
+func TestMigrationTitlesLabeledSessions(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	for _, row := range [][2]string{{"labeled", "old label"}, {"unlabeled", ""}} {
+		if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES (?, ?, '2026-01-01', '2026-01-01')`, row[0], row[1]); err != nil {
+			t.Fatalf("insert old session %s: %v", row[0], err)
+		}
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	ctx := context.Background()
+	labeled, err := s.GetSession(ctx, "labeled")
+	if err != nil {
+		t.Fatalf("get labeled: %v", err)
+	}
+	if labeled.TitleState != 2 {
+		t.Fatalf("labeled title_state = %d, want 2", labeled.TitleState)
+	}
+	unlabeled, err := s.GetSession(ctx, "unlabeled")
+	if err != nil {
+		t.Fatalf("get unlabeled: %v", err)
+	}
+	if unlabeled.TitleState != 0 {
+		t.Fatalf("unlabeled title_state = %d, want 0", unlabeled.TitleState)
+	}
+
+	// Reopen: the column exists, so the backfill must not fire again -
+	// a provisional state would otherwise be promoted to final.
+	if err := s.SetSessionTitle(ctx, "unlabeled", "generated", false); err != nil {
+		t.Fatalf("provisional title: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	s2, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s2.Close()
+	again, err := s2.GetSession(ctx, "unlabeled")
+	if err != nil {
+		t.Fatalf("get after reopen: %v", err)
+	}
+	if again.Label != "generated" || again.TitleState != 1 {
+		t.Fatalf("reopen mutated title state: %+v", again)
+	}
+}
+
+// TestSetSessionTitleTransitions covers the title_state state machine
+// end to end: provisional only from 0, final from 0 or 1, and every
+// write blocked once the session reached 2.
+func TestSetSessionTitleTransitions(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Provisional 0 -> 1.
+	if err := s.SetSessionTitle(ctx, "s1", "provisional title", false); err != nil {
+		t.Fatalf("provisional: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "s1"); after.Label != "provisional title" || after.TitleState != 1 {
+		t.Fatalf("after provisional: %+v", after)
+	}
+
+	// Provisional again at state 1: blocked, label untouched.
+	if err := s.SetSessionTitle(ctx, "s1", "second provisional", false); err != nil {
+		t.Fatalf("second provisional: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "s1"); after.Label != "provisional title" || after.TitleState != 1 {
+		t.Fatalf("second provisional overwrote: %+v", after)
+	}
+
+	// Final 1 -> 2.
+	if err := s.SetSessionTitle(ctx, "s1", "final title", true); err != nil {
+		t.Fatalf("final: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "s1"); after.Label != "final title" || after.TitleState != 2 {
+		t.Fatalf("after final: %+v", after)
+	}
+
+	// Everything is blocked at 2.
+	for _, tc := range []struct {
+		name  string
+		final bool
+	}{{"provisional at 2", false}, {"final at 2", true}} {
+		if err := s.SetSessionTitle(ctx, "s1", "regression", tc.final); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+	}
+	if after, _ := s.GetSession(ctx, "s1"); after.Label != "final title" || after.TitleState != 2 {
+		t.Fatalf("state-2 write overwrote: %+v", after)
+	}
+
+	// Final directly from 0 (provisional never fired, e.g. the session
+	// was retired before the request-start call landed).
+	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
+		t.Fatalf("create s2: %v", err)
+	}
+	if err := s.SetSessionTitle(ctx, "s2", "final from zero", true); err != nil {
+		t.Fatalf("final from 0: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "s2"); after.Label != "final from zero" || after.TitleState != 2 {
+		t.Fatalf("after final from 0: %+v", after)
+	}
+}
