@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"io/fs"
+	"path"
 	"sync"
 	"strings"
 	"time"
@@ -52,11 +53,46 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
-	// working; assets under /_nuxt/ come from the same FS. Sync the build
-	// with webui/scripts/build.sh before `go build`.
-	mux.Handle("/", http.FileServer(http.FS(webuiFS)))
+	// working; the catch-all falls back to index.html for non-file paths
+	// (history-mode routes like /chat/<id>) and 404s for asset misses.
+	// Sync the build with webui/scripts/build.sh before `go build`.
+	mux.Handle("/", spaHandler(webuiFS))
 	s.httpSrv = &http.Server{Handler: mux}
 	return s
+}
+
+// spaHandler serves the embedded SPA with a history-mode fallback. A
+// request path that maps to a real file is served as-is; a miss under an
+// asset path (or any dotted path) 404s; anything else is a client route
+// (e.g. /chat/<id>) and serves index.html so a reload with a deep URL
+// boots the SPA shell.
+func spaHandler(fsys fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(fsys))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.Trim(r.URL.Path, "/")
+		if name != "" {
+			if _, err := fs.Stat(fsys, name); err != nil {
+				// asset-like miss: /_nuxt/** explicitly, plus any dotted
+				// path (favicon.ico, robots.txt, *.js) - the shell is for
+				// route paths, never for missing files
+				assetLike := strings.HasPrefix(name, "_nuxt/") ||
+					strings.Contains(path.Base(name), ".")
+				if assetLike {
+					fileServer.ServeHTTP(w, r)
+					return
+				}
+				b, err := fs.ReadFile(fsys, "index.html")
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Write(b) //nolint:errcheck // best-effort static response
+				return
+			}
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // Handler returns the HTTP handler, for tests and embedding.

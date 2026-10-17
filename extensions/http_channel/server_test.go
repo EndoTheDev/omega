@@ -237,6 +237,41 @@ func TestStaticIndex(t *testing.T) {
 	}
 }
 
+// TestSPAFallback pins the history-mode fallback: deep route paths serve
+// the SPA shell, asset-like misses under /_nuxt/ still 404.
+func TestSPAFallback(t *testing.T) {
+	s := newTestServer()
+	h := s.Handler()
+
+	// deep route path -> 200 + SPA shell
+	req := httptest.NewRequest(http.MethodGet, "/chat/anything", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/chat/anything status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<!DOCTYPE html") {
+		t.Fatalf("/chat/anything body missing SPA shell doctype")
+	}
+
+	// asset miss under /_nuxt/ -> 404, never the shell
+	req = httptest.NewRequest(http.MethodGet, "/_nuxt/missing.js", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("/_nuxt/missing.js status = %d, want 404", rec.Code)
+	}
+
+	// real assets keep winning: FileServer canonically redirects
+	// /index.html to / (301), not the shell path
+	req = httptest.NewRequest(http.MethodGet, "/index.html", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMovedPermanently {
+		t.Fatalf("/index.html status = %d, want 301", rec.Code)
+	}
+}
+
 // sseFrame is one parsed SSE frame.
 type sseFrame struct {
 	event string

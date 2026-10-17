@@ -150,6 +150,23 @@ export function anyBusy(b: BusyMap): boolean {
   return b.size > 0;
 }
 
+// --- URL <-> session routing (hand-rolled History wiring) ---
+
+// parseSessionPath extracts the session id from a client route path.
+// Only /chat/<id> matches; home, assets, anything else -> null.
+export function parseSessionPath(p: string): string | null {
+  if (!p.startsWith("/chat/")) return null;
+  const id = p.slice("/chat/".length);
+  // a trailing slash or empty id is no route
+  if (!id || id.includes("/")) return null;
+  return id;
+}
+
+// sessionPath is the URL for an open session.
+export function sessionPath(id: string): string {
+  return `/chat/${id}`;
+}
+
 // --- session list: pure bucketing / filtering / formatting helpers ---
 
 // relativeAge renders a compact age for the row meta ("35m", "2h", "3d").

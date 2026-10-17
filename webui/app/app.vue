@@ -154,7 +154,13 @@
 
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-  import { anyBusy, withBusy, pinSession } from "./composables/omega";
+  import {
+    anyBusy,
+    withBusy,
+    pinSession,
+    parseSessionPath,
+    sessionPath,
+  } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
 
   interface MessageItem {
@@ -233,6 +239,30 @@
     () => streams.get(activeKey.value) ?? EMPTY_STATE,
   );
 
+  // --- URL reflects the session: hand-rolled History wiring. Every open
+  // session is a history entry so back/forward and reload work; switching
+  // stays a pure view change (no stream is interrupted). fromHistory is
+  // set while a navigation ORIGINATES in the history API - the URL is
+  // already correct then, so no sync runs (and one is not appended).
+  let fromHistory = false;
+
+  function syncURL(id: string | null, push: boolean) {
+    if (typeof window === "undefined") return;
+    const url = id ? sessionPath(id) : "/";
+    if (push) history.pushState({}, "", url);
+    else history.replaceState({}, "", url);
+  }
+
+  // back/forward walk session entries; switching on popstate is a pure
+  // view change, so it never interrupts a stream
+  function onPop() {
+    fromHistory = true;
+    const id = parseSessionPath(window.location.pathname);
+    if (id) openSession(id);
+    else newChat();
+    fromHistory = false;
+  }
+
   // per-session busy set: a session is busy iff its own stream is live.
   // Swapped value-semantically (withBusy) so set changes are reactive.
   const busySet = ref<BusyMap>(new Set());
@@ -284,6 +314,7 @@
   // the persisted Assistant{Thinking, ToolCalls, Content} back into the same
   // three shapes so a reload renders everything that happened.
   async function openSession(id: string) {
+    if (!fromHistory) syncURL(id, true);
     activeId.value = id;
     drawerOpen.value = false;
     inspectorOpen.value = false;
@@ -347,6 +378,7 @@
   }
 
   function newChat() {
+    if (!fromHistory) syncURL(null, true);
     activeId.value = null;
     // fresh unsaved-chat state - UNLESS an unsaved stream is live, in
     // which case +new returns to the view watching it (no global lock)
@@ -575,7 +607,12 @@
         // the row (and its pulse) exists once the sidebar refreshes; the
         // view moves to the session only if the user stayed on this chat
         refreshSessions();
-        if (activeKey.value === NEW_KEY) activeId.value = s.id;
+        if (activeKey.value === NEW_KEY) {
+          activeId.value = s.id;
+          // the temp id never lands in history: the entry it replaces is
+          // home, so back from the real session returns home
+          syncURL(s.id, false);
+        }
       }
       const payload: OmegaMessage[] = [{ role: "user", content: text }];
       await streamChat(
@@ -794,6 +831,9 @@
     });
     applyTheme();
 
+    // history wiring: back/forward open the session the URL describes
+    window.addEventListener("popstate", onPop);
+
     healthy.value = await fetchHealth();
     try {
       const m = await fetchModels();
@@ -804,9 +844,26 @@
       // models are decoration until a chat runs
     }
     refreshSessions();
+
+    // restore the session named by the URL, if it exists - an unknown or
+    // deleted id routes home (and the URL comes with it)
+    const initial = parseSessionPath(window.location.pathname);
+    if (initial) {
+      try {
+        await fetchSession(initial);
+        fromHistory = true;
+        await openSession(initial);
+        fromHistory = false;
+      } catch {
+        history.replaceState({}, "", "/");
+        activeId.value = null;
+        ensureState(NEW_KEY);
+      }
+    }
   });
 
   onUnmounted(() => {
+    window.removeEventListener("popstate", onPop);
     messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
     window.removeEventListener("resize", squeezeCheck);
     if (spinnerTimer) clearInterval(spinnerTimer);
