@@ -81,6 +81,7 @@
                 v-else-if="item.kind === 'tool'"
                 :name="item.name"
                 :status="item.status"
+                :interrupted="item.interrupted"
                 :output="item.output"
                 :result="item.result" />
               <div
@@ -208,6 +209,9 @@
     kind: "tool";
     name: string;
     status: string;
+    // a dead stream never delivers the tool result - flagged so the
+    // elapsed meter in ToolCallLine freezes instead of ticking forever
+    interrupted?: boolean;
     output?: string;
     result?: string;
   }
@@ -823,6 +827,13 @@
       assistant.streaming = false;
     } finally {
       st.liveChunksPerSecond = 0;
+      // no more events are coming: a tool call still "running" never
+      // receives its result - freeze its elapsed meter now (ToolCallLine
+      // stops ticking) without touching the honest running status
+      for (const item of st.transcript) {
+        if (item.kind === "tool" && item.status === "running")
+          item.interrupted = true;
+      }
       // thinking is assigned inside stream callbacks the type system can't
       // track across the closure - cast to the item type it is at runtime
       const liveThinking = thinking as ThinkingItem | null;

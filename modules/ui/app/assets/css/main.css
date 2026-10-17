@@ -809,8 +809,11 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   color: var(--text-dim);
 }
 .thinking-live { color: var(--accent); animation: blink 1s steps(2) infinite; }
-/* frozen or ticking elapsed time - same voice as the label it extends */
-.thinking-elapsed {
+/* frozen or ticking elapsed time (thinking, tool, response bubbles) -
+   same voice as the label it extends */
+.thinking-elapsed,
+.tool-elapsed,
+.msg-elapsed {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--text-dim);

@@ -10,6 +10,10 @@
         v-html="rendered" />
       <template v-else>{{ content }}</template>
       <span
+        v-if="elapsed"
+        class="msg-elapsed">{{ elapsed }}</span
+      >
+      <span
         v-if="streaming"
         class="cursor" />
     </div>
@@ -20,7 +24,7 @@
   import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../composables/codeblocks";
-  import { createRenderScheduler, formatMsgTime, renderMarkdown } from "../composables/omega";
+  import { createRenderScheduler, createElapsedMeter, formatMsgTime, renderMarkdown } from "../composables/omega";
 
   const props = defineProps<{
     role: "user" | "assistant";
@@ -51,7 +55,36 @@
     { immediate: true },
   );
 
-  onUnmounted(() => scheduler.cancel());
+  onUnmounted(() => {
+    scheduler.cancel();
+    meter.stop();
+  });
+
+  // Elapsed counter (first response chunk -> stream_end): starts when the
+  // bubble mounts streaming and freezes at the final value when it ends -
+  // the finished answer keeps showing how long it took. Bubbles that
+  // arrive already-final (user messages, restored history) never start
+  // and render nothing. A reused instance (transcript keyed by index)
+  // must not carry a stale label across a role change.
+  const elapsed = ref("");
+  const meter = createElapsedMeter((label) => {
+    elapsed.value = label;
+  });
+  watch(
+    () => props.streaming ?? false,
+    (live) => {
+      if (live) meter.start();
+      else meter.stop();
+    },
+    { immediate: true },
+  );
+  watch(
+    () => props.role,
+    () => {
+      meter.stop();
+      elapsed.value = "";
+    },
+  );
 
   // Hover timestamp: an empty ref removes the title attribute entirely
   // (malformed or absent times render nothing, not a blank tooltip).
