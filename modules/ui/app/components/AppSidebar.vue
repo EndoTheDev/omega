@@ -94,12 +94,16 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref } from "vue";
+  import { computed, onUnmounted, ref, watch } from "vue";
   import {
     bucketSessions,
     relativeAge,
     rowMeta,
     filterSessions,
+    withContentMatches,
+    searchSessionContent,
+    CONTENT_SEARCH_DEBOUNCE_MS,
+    createRenderScheduler,
     parseCollapsedLabels,
     serializeCollapsedLabels,
     sessionRowStatus,
@@ -121,8 +125,51 @@
   }>();
 
   const query = ref("");
-  const filtered = computed(() => filterSessions(props.sessions, query.value));
+  // ids returned by the store's FTS5 content search (null = no search
+  // yet / none). The union keeps title matches and adds content-only
+  // hits, so a session matching by CONTENT shows up even with a
+  // non-matching title.
+  const contentIds = ref<string[] | null>(null);
+  const filtered = computed(() =>
+    withContentMatches(
+      filterSessions(props.sessions, query.value),
+      props.sessions,
+      contentIds.value,
+    ),
+  );
   const buckets = computed<SessionBuckets>(() => bucketSessions(filtered.value));
+
+  // Content search is debounced (trailing edge via the same injectable
+  // scheduler as the render tick) and raced: responses for a query the
+  // user already moved past never paint. Failures - 400s from FTS
+  // syntax, network blips - fall back to the title filter alone.
+  let searchSeq = 0;
+  const searchScheduler = createRenderScheduler(
+    (q) => void runContentSearch(q),
+    CONTENT_SEARCH_DEBOUNCE_MS,
+  );
+
+  async function runContentSearch(q: string) {
+    const seq = ++searchSeq;
+    try {
+      const hits = await searchSessionContent(q);
+      if (seq === searchSeq) contentIds.value = hits.map((h) => h.id);
+    } catch {
+      if (seq === searchSeq) contentIds.value = null;
+    }
+  }
+
+  watch(query, (q) => {
+    const term = q.trim();
+    if (!term) {
+      searchSeq++; // invalidate any in-flight response
+      searchScheduler.cancel();
+      contentIds.value = null;
+      return;
+    }
+    searchScheduler.schedule(term);
+  });
+  onUnmounted(() => searchScheduler.cancel());
 
   // --- collapsible sections ---
   // collapsed holds the labels of sections whose rows are hidden. The set

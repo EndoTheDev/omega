@@ -50,6 +50,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/sessions", s.handleSessions)
+	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
@@ -594,6 +595,55 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// sessionSearchHit is one /sessions/search row: the matching session id
+// plus a snippet stub of the hit (a later card renders the context).
+type sessionSearchHit struct {
+	ID      string `json:"id"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// handleSessionSearch serves GET /sessions/search?q=<term>: the store's
+// FTS5 content search over session messages, deduped to one hit per
+// session (the first, best-rank message wins). Sessions match CONTENT
+// here, not their titles. It returns 501 when the server has no store,
+// 200 [] on a missing/empty q (nothing to search), and 400 when FTS5
+// rejects the query syntax.
+func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.store == nil {
+		http.Error(w, "session store not configured", http.StatusNotImplemented)
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, http.StatusOK, []sessionSearchHit{})
+		return
+	}
+	results, err := s.store.SearchMessages(r.Context(), q)
+	if err != nil {
+		// The only input-dependent failure mode of this read-only
+		// query is the query itself; the sqlite driver surfaces FTS5
+		// syntax errors as plain "SQL logic error" strings, so the
+		// bad call gets 400 (a real store fault trips on the /sessions
+		// list too, not just here).
+		http.Error(w, "search: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	seen := make(map[string]bool, len(results))
+	out := make([]sessionSearchHit, 0, len(results))
+	for _, res := range results {
+		if seen[res.SessionID] {
+			continue
+		}
+		seen[res.SessionID] = true
+		out = append(out, sessionSearchHit{ID: res.SessionID, Snippet: res.Snippet})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleSessionByID serves GET /sessions/{id} (session + messages) and
