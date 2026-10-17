@@ -12,13 +12,17 @@ rule a security contract, not a preference.
 
 - `server.go` - HTTP server and handlers. Routes: `/health`, `/models`
   (context window cached per model after one provider probe),
-  `/chat` (SSE), `/sessions` + `/sessions/{id}` (CRUD + label PUT),
-  `/` (embedded SPA catch-all via `fs.Sub` - exact patterns win, so
-  API routes keep working). `/sessions` rows carry `message_count` +
-  `tool_count` (SQL counts at read time - no counters, no schema
-  change) and `prompt_tokens` + `completion_tokens` (real usage
-  accumulated per turn at persist, 0 for sessions saved before that
-  landed). Session persistence: assistant records
+  `/chat` (SSE), `/sessions` + `/sessions/{id}` (CRUD + label PUT +
+  pinned PATCH), `/` (embedded SPA catch-all via `fs.Sub` - exact
+  patterns win, so API routes keep working). `/sessions` rows carry
+  `message_count` + `tool_count` (SQL counts at read time - no
+  counters, no schema change), `prompt_tokens` + `completion_tokens`
+  (real usage accumulated per turn at persist, 0 for sessions saved
+  before that landed), and `model` (the last `model_change` entry,
+  read at read time - omitted when the session never switched models).
+  PATCH `/sessions/{id}` with `{"pinned": true|false}` writes the
+  pinned flag without touching `updated_at` - pinning is not activity,
+  and the webui time buckets read `updated_at`. Session persistence:
   accumulate per response segment (a response chunk after tool results
   starts a new segment), persisted as assistant(A + tool calls) ->
   tool results -> assistant(B) - the provider-correct order and the

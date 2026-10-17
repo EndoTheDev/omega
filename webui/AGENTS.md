@@ -28,8 +28,12 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   fetch helpers (health, models, sessions CRUD, `streamChat`).
 - `components/` - 11 components grouped by concern:
   - shell: `MenuBar` (brand, toggles, gear), `StatusBar` (health dot,
-    token/ctx/rate telemetry), `AppSidebar` (session list; a live stream
-    pulses an accent edge on its own row), 
+    token/ctx/rate telemetry), `AppSidebar` (session list: search box
+    filters labels client-side, PINNED section above the Today /
+    Yesterday / Earlier local-calendar-day buckets, per-row relative
+    age + a model / msgs / tools / tokens meta line, pin toggle PATCHes
+    the flag via app.vue's `togglePin`; a live stream pulses an accent
+    edge on its own row even when pinned),
     `RightSidebar` (reserved inspector placeholder), `SettingsDrawer`
     (headless - the gear is the toggle)
   - chat: `ChatMessage`, `ThinkingBlock`, `ToolCallLine` (running/
@@ -49,6 +53,12 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   logic (`withBusy`/`isBusy`/`anyBusy` in composables/omega.ts): busy(A)
   never affects B; spinner derives from any-busy; base set never mutated
   (5 tests; suite total 15)
+- `test/sessionlist.test.ts` - unit tests for the session list helpers
+  in composables/omega.ts: `bucketSessions` (local-day buckets, pinned
+  sessions excluded from their day bucket, malformed dates land in
+  Earlier), `relativeAge`, `filterSessions`, `formatTokens` (k-abbr
+  above 1000), `rowMeta` (unknown pieces omitted; session with nothing
+  known renders no meta line) (12 tests; suite total 27)
 - `scripts/build.sh` - `nuxt generate` (NOT `nuxt build` - ssr:false
   build emits a nitro server, generate emits the static SPA) + sync
   to `extensions/http_channel/static/`. Run before `go build`; the
@@ -116,7 +126,7 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 ## Verification
 
 ```bash
-npm test                       # 10 unit tests (node --test)
+npm test                       # 27 unit tests (node --test "test/*.test.ts")
 npx nuxt build                 # SPA compiles
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```
