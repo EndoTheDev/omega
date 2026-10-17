@@ -47,6 +47,10 @@ into a shared `Context` via `MountAll` at startup.
   glamour rendering, desktop notifications)
 - `trust/` - project trust gate (TrustProvider seam: trust.yaml
   store, AGENTS.md context loading, interactive trust prompt)
+- `cron/` - scheduled prompts (CronProvider seam, `crons.yaml` in
+  OMEGA_HOME; each fire is a full agent turn in a session labeled
+  `cron:<name>`; catch-up for misses < 24h via `cronstate.json`;
+  mtime-poll hot reload; see `extensions/cron/AGENTS.md`)
 
 ## Local Contracts
 
@@ -54,7 +58,7 @@ into a shared `Context` via `MountAll` at startup.
   `Requires`, `Mount`).
 - Exclusive seams (one plugin per slot): `provider`, `compactor`,
   `store`, `skills`, `loop`, `logging`, `memory`, `prompt_builder`,
-  `frontend`, `trust`.
+  `frontend`, `trust`, `cron`.
 - Additive seams: `tools` and `channel` (multiple plugins contribute
   to `ctx.ToolProviders` and `ctx.Channels`).
 - Commands: extensions register slash commands via `ctx.Commands` +

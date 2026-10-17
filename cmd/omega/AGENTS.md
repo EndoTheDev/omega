@@ -39,9 +39,11 @@ The TUI is now an extension at `extensions/tui/` implementing the
   `homeForExe` (OMEGA_HOME wins; exe dir for release-folder and repo
   builds; `~/.omega` for PATH bin-dir installs), `isPathBinInstall`
   (explicit known bin dirs: `~/go/bin`, `~/.local/bin`, `~/bin`,
-  `/usr/local/bin`), `bootstrapHome` (first run writes the embedded
-  `config.yaml.example` + `mcp.yaml.example` into the home, never
-  overwriting), embedded example files in `examples/`
+  `/usr/local/bin`),  `bootstrapHome` (first run writes the embedded
+  `config.yaml.example` + `mcp.yaml.example` + `crons.yaml.example` into
+  the home, never overwriting; memory.md + user.md are also seeded live
+  there - the memory extension's store, absent-only seeding, existing
+  files never touched), embedded example + seed files in `examples/`
 - `trust.go` - trust flag parsing (`trustFlags`, `parseTrustArgs`,
   `stripTrustArgs`), `cwd()` helper. Trust logic lives in
   `extensions/trust/` (TrustProvider seam).
@@ -61,8 +63,9 @@ The TUI is now an extension at `extensions/tui/` implementing the
   release line format (bare platform tag; the checksum entry CONTAINS
   the tag but never ends with it)
 - `home_test.go` - omegaHome env-var and exe-dir tests plus the
-  `homeForExe` table (bin-dir installs, repo builds, env override) and
-  bootstrap idempotence
+  `homeForExe` table (bin-dir installs, repo builds, env override),
+  bootstrap idempotence, live memory seeding with the never-overwrite
+  check, snapshot-parses proof, and the seed-limits guard
 - `version_test.go` - buildinfo version resolution table (module stamp,
   devel, empty, missing buildinfo)
 - `image_test.go` - self-check tests for `parseFileArgs`

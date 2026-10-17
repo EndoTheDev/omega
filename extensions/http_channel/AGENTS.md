@@ -13,8 +13,17 @@ rule a security contract, not a preference.
 - `server.go` - HTTP server and handlers. Routes: `/health`, `/models`
   (context window cached per model after one provider probe),
   `/chat` (SSE), `/sessions` + `/sessions/{id}` (CRUD + label PUT +
-  pinned PATCH), `/` (embedded SPA catch-all via `fs.Sub` - exact
-  patterns win, so API routes keep working). `/sessions` rows carry
+  pinned PATCH; the GET response's messages additionally carry
+  `created_at`, the store-level write time injected alongside `role`
+  with no payload rewrite), `/files/browse` + `/files/read`
+  (read-only surface for the webui inspector: browse and preview the
+  process working directory - GET only, 64 KiB preview cap,
+  dot-segment + absolute + symlink-containment guards), `/` (embedded
+  SPA catch-all via `fs.Sub` - exact patterns win, so API routes keep
+  working; the catch-all falls back to index.html for non-file paths -
+  history-mode routes like `/chat/<id>` - and still 404s asset-like
+  misses: anything under `/_nuxt/` or any dotted path. `spaHandler`
+  in server.go wraps the FileServer). `/sessions` rows carry
   `message_count` + `tool_count` (SQL counts at read time - no
   counters, no schema change), `prompt_tokens` + `completion_tokens`
   (real usage accumulated per turn at persist, 0 for sessions saved
@@ -41,6 +50,12 @@ rule a security contract, not a preference.
   static index, method gates)
 - `server_pure_test.go` - pure logic tests (tool selection, message
   decode, SSE events, segmented accumulation)
+- `server_files.go` - read-only file surface handlers plus the path
+  safety helpers (segment validation, symlink resolution, containment
+  check, entry sort). No write path exists on this surface.
+- `server_files_test.go` - file surface tests (browse shape + sort,
+  read cap + truncation flag, binary flag, path rejections, method
+  gates)
 - `http_channel_test.go` - plugin mount tests (bind list, defaults)
 
 ## Local Contracts

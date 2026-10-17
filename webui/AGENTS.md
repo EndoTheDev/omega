@@ -14,7 +14,12 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 
 - `app.vue` - the orchestrator. Send flow (segment split, lazy bubble
   push, streaming state - PER SESSION, not global), session restore
-  (`openSession`, tool-result matching by `tool_call_id`), scroll
+  (`openSession`, tool-result matching by `tool_call_id`), URL sync
+  (hand-rolled History wiring: openSession/newChat pushState
+  `/chat/<id>` / `/`, popstate re-opens the URL's session - pure view
+  change, never interrupts a stream; first send replaceStates the
+  real id, unknown id loads home; `parseSessionPath`/`sessionPath`
+  pure, unit-tested in test/routepath.test.ts), scroll
   pinning (follows only the stream whose session is being viewed), pane
   geometry (sidebar widths, squeeze chain, drag caps, push-back),
   overlay exclusivity (one drawer on mobile; settings and the
@@ -24,8 +29,16 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 - `composables/omega.ts` - typed client for the http_channel API.
   Pure, testable core: `parseFrame` (SSE frame -> payload) and
   `handlePayload` (payload -> handler dispatch; error payloads THROW -
-  a swallowed stream error is an invisible dead stream). Plus the
-  fetch helpers (health, models, sessions CRUD, `streamChat`).
+  a swallowed stream error is an invisible dead stream; `agent_end`
+  marks the terminal event in `state.sawEnd`). Plus the fetch helpers
+  (health, models, sessions CRUD, files browse/read, `streamChat` -
+  throws `StreamInterruptedError` when the reader errors or ends
+  without `agent_end`, so the transport death is distinguishable from
+  a clean end), the assistant-bubble markdown renderer
+  (`renderMarkdown`, standard markdown-it, `html: false` - the lib's
+  default escaping is the sanitizer), and `createRenderScheduler`
+  (debounced streaming render: one render per ~150ms tick, injected
+  timers for pure tests).
 - `components/` - 11 components grouped by concern:
   - shell: `MenuBar` (brand, toggles, gear), `StatusBar` (health dot,
     token/ctx/rate telemetry), `AppSidebar` (session list: search box
@@ -34,7 +47,12 @@ into the omega binary via `go:embed` and served by the HTTP channel at
     age + a model / msgs / tools / tokens meta line, pin toggle PATCHes
     the flag via app.vue's `togglePin`; a live stream pulses an accent
     edge on its own row even when pinned),
-    `RightSidebar` (reserved inspector placeholder), `SettingsDrawer`
+    `RightSidebar` (inspector pane: a tab shell - parked tabs slot in
+    later - whose Files tab is a breadcrumb file manager over the
+    working directory: dir rows descend, file rows open a read-only
+    64 KiB-capped mono preview reporting truncated/binary; the
+    listing lazy-loads on first open and the pane starts closed - not
+    persisted), `SettingsDrawer`
     (headless - the gear is the toggle)
   - chat: `ChatMessage`, `ThinkingBlock`, `ToolCallLine` (running/
     done/error with expandable result), `AppComposer` (auto-grow
@@ -52,13 +70,39 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 - `test/streamstate.test.ts` - unit tests for the per-session busy-map
   logic (`withBusy`/`isBusy`/`anyBusy` in composables/omega.ts): busy(A)
   never affects B; spinner derives from any-busy; base set never mutated
-  (5 tests; suite total 15)
+  (5 tests)
 - `test/sessionlist.test.ts` - unit tests for the session list helpers
   in composables/omega.ts: `bucketSessions` (local-day buckets, pinned
   sessions excluded from their day bucket, malformed dates land in
   Earlier), `relativeAge`, `filterSessions`, `formatTokens` (k-abbr
   above 1000), `rowMeta` (unknown pieces omitted; session with nothing
-  known renders no meta line) (12 tests; suite total 27)
+  known renders no meta line) (12 tests)
+- `test/markdown.test.ts` - unit tests for the assistant-bubble
+  markdown path in composables/omega.ts: `renderMarkdown` (plain text /
+  inline styling / fenced code, partially-received fences still render
+  as code, tables, raw HTML + event handlers + javascript: hrefs never
+  render) and `createRenderScheduler` (chunk bursts coalesce into one
+  render per tick, cancel drops the pending render, custom interval
+  honored - fake clock, injectable timers) (13 tests)
+- `test/routepath.test.ts` - unit tests for the URL-sync path helpers
+  (`parseSessionPath`/`sessionPath` in composables/omega.ts) (5 tests)
+- `test/polish.test.ts` - unit tests for the polish helpers in
+  composables/omega.ts: `formatMsgTime` (local HH:MM for today, date-
+  prefixed for older days, other years include the year), the thinking
+  elapsed meter (`formatElapsed` + `createElapsedMeter`, fake clock -
+  ticks per second, stop clears the timer and freezes the final label),
+  and `isAtBottom` / `pillVisible` (plain numbers; the check is strict -
+  distance exactly at the threshold is not at bottom; a non-scrollable
+  container counts as at bottom and never shows the pill) (20 tests)
+- `test/interrupted.test.ts` - unit tests for the interrupted-stream
+  marker + retry: streamChat transport-death detection (stream without
+  `agent_end` throws `StreamInterruptedError`; a reader error
+  mid-stream throws it too; agent error payloads still throw plain
+  Errors) and the transcript transitions (`lastUserText`,
+  `dropLastExchange`, `withoutMarkers`) (13 tests)
+- `test/inspector.test.ts` - unit tests for the file-manager helpers
+  in composables/omega.ts: `cleanRelPath` (mirrors the backend segment
+  rules), `joinRelPath`, `fileCrumbs`, `sortFileEntries` (7 tests)
 - `scripts/build.sh` - `nuxt generate` (NOT `nuxt build` - ssr:false
   build emits a nitro server, generate emits the static SPA) + sync
   to `extensions/http_channel/static/`. Run before `go build`; the
@@ -126,7 +170,7 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 ## Verification
 
 ```bash
-npm test                       # 27 unit tests (node --test "test/*.test.ts")
+npm test                       # 85 unit tests (node --test "test/*.test.ts")
 npx nuxt build                 # SPA compiles
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```

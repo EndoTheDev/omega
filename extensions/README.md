@@ -37,6 +37,7 @@ type Plugin interface {
 | `prompt_builder` | exclusive | System prompt builder                          |
 | `frontend`       | exclusive | User-facing interface (TUI, web UI)            |
 | `trust`          | exclusive | Project trust gate (AGENTS.md context loading) |
+| `cron`           | exclusive | Scheduled agent turns (crons.yaml)             |
 | `tools`          | additive  | Tool provider (multiple plugins contribute)    |
 | `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)       |
 
@@ -63,6 +64,7 @@ Exclusive seams conflict if two plugins provide the same one. The
 | `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
 | `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading)   |
+| `cron/`         | cron           | Scheduled prompts (crons.yaml, cron:<name> sessions) |
 
 ## Writing an extension
 
