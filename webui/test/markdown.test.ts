@@ -23,15 +23,40 @@ describe("renderMarkdown", () => {
     assert.match(html, /<a href="https:\/\/example\.com">l<\/a>/);
   });
 
-  it("fenced code block becomes pre/code", () => {
+  it("fenced code block becomes pre/code (go now highlighted)", () => {
     const html = renderMarkdown("```go\nfmt.Println(1)\n```");
-    assert.match(html, /<pre><code class="language-go">fmt\.Println\(1\)/);
+    assert.match(html, /<pre><code class="hljs language-go">fmt\.Println\(<span class="hljs-number">1<\/span>\)/);
   });
 
   it("a partially-received fence still renders as code", () => {
     const html = renderMarkdown("```py\nprint('un");
     assert.match(html, /<pre><code/);
     assert.match(html, /print\('un/);
+  });
+
+  it("fenced go block gets hljs token markup", () => {
+    const html = renderMarkdown('```go\npackage main\nfunc main() { fmt.Println("hi") }\n```');
+    assert.match(html, /<code class="hljs language-go">/);
+    assert.match(html, /<span class="hljs-keyword">package<\/span>/);
+    assert.match(html, /<span class="hljs-string">&quot;hi&quot;<\/span>/);
+  });
+
+  it("a still-open fence of a KNOWN language renders unstyled (streaming)", () => {
+    const html = renderMarkdown("```go\nfunc main() {\n");
+    assert.match(html, /<pre><code class="language-go">/);
+    assert.doesNotMatch(html, /hljs/);
+  });
+
+  it("unknown language falls back to plain code, no hljs spans", () => {
+    const html = renderMarkdown("```brainfuck\nx\n```");
+    assert.match(html, /<pre><code class="language-brainfuck">x\n<\/code><\/pre>/);
+    assert.doesNotMatch(html, /hljs/);
+  });
+
+  it("highlighting keeps raw html inside the code escaped", () => {
+    const html = renderMarkdown("```go\n// <script>alert(1)</script>\n```");
+    assert.doesNotMatch(html, /<script>/);
+    assert.match(html, /&lt;script&gt;/);
   });
 
   it("tables render as table markup", () => {

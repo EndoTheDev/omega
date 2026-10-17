@@ -661,7 +661,10 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 /* markdown in assistant bubbles: .md carries rendered HTML, so the
    bubble's pre-wrap text mode is switched off and block elements set
    their own spacing. Code blocks ship mono + raised background, tables
-   get hairline borders - tokens only, no highlighting theme. */
+   get hairline borders. Fenced blocks with a registered language carry
+   hljs token spans, colored below - strictly from the palette above,
+   accent keywords, ok strings, dim comments/structure, err deletions.
+   No new tokens, no imported hljs theme. */
 .bubble .md { white-space: normal; }
 .bubble .md > :first-child { margin-top: 0; }
 .bubble .md > :last-child { margin-bottom: 0; }
@@ -694,6 +697,25 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   padding: 1px 4px;
 }
 .bubble .md pre code { background: none; border: none; padding: 0; }
+
+/* hljs token colors - the four palette hues only (--accent/--ok/--err/
+   --text-dim); everything else (numbers, identifiers, punctuation)
+   stays default text. Scoped to bubbles: unstyled fences elsewhere
+   (thinking blocks, tool output) are untouched. */
+.bubble .md pre .hljs-comment,
+.bubble .md pre .hljs-quote,
+.bubble .md pre .hljs-punctuation,
+.bubble .md pre .hljs-operator { color: var(--text-dim); }
+.bubble .md pre .hljs-keyword,
+.bubble .md pre .hljs-built_in,
+.bubble .md pre .hljs-type,
+.bubble .md pre .hljs-selector-tag,
+.bubble .md pre .hljs-tag,
+.bubble .md pre .hljs-meta { color: var(--accent); }
+.bubble .md pre .hljs-string,
+.bubble .md pre .hljs-regexp,
+.bubble .md pre .hljs-addition { color: var(--ok); }
+.bubble .md pre .hljs-deletion { color: var(--err); }
 .bubble .md table {
   border-collapse: collapse;
   margin: 0.4em 0;
