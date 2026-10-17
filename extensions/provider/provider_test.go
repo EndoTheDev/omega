@@ -795,6 +795,221 @@ func TestStreamOllama(t *testing.T) {
 	}
 }
 
+// TestStreamOllamaToolCalls verifies the native tool-call wire format
+// end to end: tools carried in the request, tool_calls parsed from the
+// response (id from the wire, synthetic id when the wire omits one,
+// arguments as object and as JSON string), thinking chunks alongside,
+// done_reason/usage counters on the final line, and
+// finish_reason=tool_call.
+func TestStreamOllamaToolCalls(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"role":"assistant","content":"","thinking":"checking weather"},"done":false}`)
+		fmt.Fprintln(w, `{"message":{"role":"assistant","content":"Calling."},"done":false}`)
+		fmt.Fprintln(w, `{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_ext","function":{"index":0,"name":"get_weather","arguments":{"city":"Tokyo"}}},{"function":{"index":1,"name":"get_weather","arguments":"{\"city\":\"Oslo\"}"}}]},"done":false}`)
+		fmt.Fprintln(w, `{"done":true,"done_reason":"stop","prompt_eval_count":100,"eval_count":20,"prompt_eval_cached_count":50}`)
+	}))
+	defer srv.Close()
+
+	tools := []ai.ToolSchema{{Name: "get_weather", Description: "Get current weather", Parameters: map[string]any{"type": "object"}}}
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
+	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("weather?")}, tools))
+
+	var sent map[string]any
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	apiTools, _ := sent["tools"].([]any)
+	if len(apiTools) != 1 {
+		t.Fatalf("request tools = %v, want 1 function entry", sent["tools"])
+	}
+	fn, _ := apiTools[0].(map[string]any)["function"].(map[string]any)
+	if fn["name"] != "get_weather" {
+		t.Errorf("tool function name = %v, want get_weather", fn["name"])
+	}
+
+	var calls []ai.ToolCallEvent
+	for _, e := range got {
+		switch ev := e.(type) {
+		case ai.ThinkingChunk:
+			if ev.Content != "checking weather" {
+				t.Errorf("thinking chunk = %q, want %q", ev.Content, "checking weather")
+			}
+		case ai.ToolCallEvent:
+			calls = append(calls, ev)
+		}
+	}
+	if len(calls) != 2 {
+		t.Fatalf("got %d ToolCallEvents, want 2", len(calls))
+	}
+	if calls[0].ToolCall.ID != "call_ext" {
+		t.Errorf("call 0 ID = %q, want wire id %q", calls[0].ToolCall.ID, "call_ext")
+	}
+	if city, _ := calls[0].ToolCall.Arguments["city"].(string); city != "Tokyo" {
+		t.Errorf("call 0 args city = %v, want Tokyo (arguments as object)", calls[0].ToolCall.Arguments["city"])
+	}
+	// second call has no id on the wire: a stable synthetic id fills in.
+	if calls[1].ToolCall.ID != "call_1" {
+		t.Errorf("call 1 ID = %q, want synthetic %q", calls[1].ToolCall.ID, "call_1")
+	}
+	if city, _ := calls[1].ToolCall.Arguments["city"].(string); city != "Oslo" {
+		t.Errorf("call 1 args city = %v, want Oslo (arguments as JSON string)", calls[1].ToolCall.Arguments["city"])
+	}
+
+	end := got[len(got)-1].(ai.StreamEnd)
+	if end.FinishReason != "tool_call" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_call")
+	}
+	if end.PromptEvalCount == nil || *end.PromptEvalCount != 100 || end.EvalCount == nil || *end.EvalCount != 20 {
+		t.Errorf("usage = %v/%v, want 100/20", end.PromptEvalCount, end.EvalCount)
+	}
+	if end.CachedCount == nil || *end.CachedCount != 50 {
+		t.Errorf("CachedCount = %v, want 50 (prompt_eval_cached_count)", end.CachedCount)
+	}
+}
+
+// TestStreamOllamaToolResultRoundTrip verifies the request side of the
+// native round-trip: an assistant turn with tool calls serializes to
+// the OpenAI-shaped wire format ollama accepts, and tool results keep
+// their tool_call_id for correlation.
+func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
+	var gotMessages []any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var sent map[string]any
+		json.Unmarshal(body, &sent)
+		gotMessages, _ = sent["messages"].([]any)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"content":"30C"},"done":true,"done_reason":"stop","prompt_eval_count":8,"eval_count":4}`)
+	}))
+	defer srv.Close()
+
+	assistant := ai.NewAssistant("")
+	assistant.ToolCalls = []ai.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	messages := []ai.Message{
+		ai.NewUser("weather?"),
+		assistant,
+		ai.NewToolResult("30C and sunny", "call_ext", false),
+	}
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
+	collectEvents(t, p.Stream(testContext(), messages, nil))
+
+	if len(gotMessages) != 3 {
+		t.Fatalf("request messages = %d, want 3 (user, assistant, tool)", len(gotMessages))
+	}
+	// assistant tool_calls serialize to the wire format.
+	am, _ := gotMessages[1].(map[string]any)
+	calls, _ := am["tool_calls"].([]any)
+	if len(calls) != 1 {
+		t.Fatalf("assistant tool_calls = %d, want 1", len(calls))
+	}
+	call, _ := calls[0].(map[string]any)
+	if call["id"] != "call_ext" || call["type"] != "function" {
+		t.Errorf("tool call wire = %v, want id call_ext + type function", call)
+	}
+	fn, _ := call["function"].(map[string]any)
+	if fn["name"] != "get_weather" {
+		t.Errorf("tool call function name = %v, want get_weather", fn["name"])
+	}
+	if args, _ := fn["arguments"].(string); args != `{"city":"Tokyo"}` {
+		t.Errorf("tool call arguments = %v, want JSON string", fn["arguments"])
+	}
+	// tool result keeps role + tool_call_id.
+	tm, _ := gotMessages[2].(map[string]any)
+	if tm["role"] != "tool" {
+		t.Errorf("tool result role = %v, want tool", tm["role"])
+	}
+	if tm["tool_call_id"] != "call_ext" {
+		t.Errorf("tool result tool_call_id = %v, want call_ext", tm["tool_call_id"])
+	}
+}
+
+// TestStreamOllamaDoneReason verifies the wire's done_reason is
+// respected as the finish reason when the stream produced no tool
+// calls (the phase inference takes precedence for tool_call).
+func TestStreamOllamaDoneReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"content":"partial"},"done":true,"done_reason":"length"}`)
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "m"}
+	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	end := got[len(got)-1].(ai.StreamEnd)
+	if end.FinishReason != "length" {
+		t.Errorf("FinishReason = %q, want wire done_reason %q", end.FinishReason, "length")
+	}
+}
+
+// TestStreamOllamaErrors verifies error paths: an in-stream error
+// payload (bare string or object form), a malformed NDJSON line, a
+// terminal HTTP status, and a stream that just ends without a done
+// line.
+func TestStreamOllamaErrors(t *testing.T) {
+	t.Run("in_stream_error_string", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{"error":"model not found"}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "model not found") {
+			t.Errorf("FinishReason = %q Error = %q, want error / model not found", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("in_stream_error_object", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{"error":{"message":"quota exceeded"}}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "quota exceeded") {
+			t.Errorf("FinishReason = %q Error = %q, want error / quota exceeded", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("malformed_ndjson", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{not json}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "parse error") {
+			t.Errorf("FinishReason = %q Error = %q, want error / parse error", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("http_400", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "nope", http.StatusBadRequest)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "HTTP 400") || !strings.Contains(end.Error, "nope") {
+			t.Errorf("FinishReason = %q Error = %q, want error / HTTP 400 body", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("eof_without_done", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{"message":{"content":"hi"}}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		if end.FinishReason != "stop" {
+			t.Errorf("FinishReason = %q, want stop", end.FinishReason)
+		}
+	})
+}
+
 // TestStreamOpenAI verifies Stream against a fake OpenAI SSE endpoint:
 // content chunks, fragmented tool-call accumulation, finish_reason,
 // Authorization header, and the in-stream error event.
