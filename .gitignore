@@ -45,3 +45,6 @@ npm-debug.log*
 
 # dev-instance first-run bootstrap writes its own copies into bin/
 bin/*.example
+
+# stray root build artifact (go build ./cmd/omega without -o)
+/omega
