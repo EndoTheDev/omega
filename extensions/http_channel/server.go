@@ -435,11 +435,13 @@ func truncate(s string, n int) string {
 }
 
 // sessionPayload is one /sessions list row: the session row (which
-// carries the persisted token totals) plus the read-time counts.
+// carries the pinned flag and the persisted token totals) plus the
+// read-time counts and the last recorded model.
 type sessionPayload struct {
 	agent.Session
-	MessageCount int `json:"message_count"`
-	ToolCount    int `json:"tool_count"`
+	MessageCount int    `json:"message_count"`
+	ToolCount    int    `json:"tool_count"`
+	Model        string `json:"model,omitempty"`
 }
 
 // handleSessions serves GET /sessions (list) and POST /sessions (create).
@@ -463,6 +465,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "session counts: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		models, err := s.store.SessionModels(r.Context())
+		if err != nil {
+			http.Error(w, "session models: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		out := make([]sessionPayload, 0, len(sessions))
 		for _, sess := range sessions {
 			payload := sessionPayload{Session: sess}
@@ -470,6 +477,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				payload.MessageCount = c.MessageCount
 				payload.ToolCount = c.ToolCount
 			}
+			payload.Model = models[sess.ID]
 			out = append(out, payload)
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -565,6 +573,31 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.store.UpdateSession(r.Context(), id, body.Label); err != nil {
 			http.Error(w, "update session: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		sess, err := s.store.GetSession(r.Context(), id)
+		if err != nil {
+			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, sess)
+	case http.MethodPatch:
+		// Pin toggle: {"pinned": true|false}. A list-concern flag - it
+		// writes the sessions row without touching updated_at, so
+		// pinning never re-buckets a session as recently active.
+		var body struct {
+			Pinned *bool `json:"pinned"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Pinned == nil {
+			http.Error(w, "pinned must not be missing", http.StatusBadRequest)
+			return
+		}
+		if err := s.store.SetSessionPinned(r.Context(), id, *body.Pinned); err != nil {
+			http.Error(w, "pin session: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		sess, err := s.store.GetSession(r.Context(), id)

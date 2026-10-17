@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -89,7 +90,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
 	prompt_tokens INTEGER NOT NULL DEFAULT 0,
-	completion_tokens INTEGER NOT NULL DEFAULT 0
+	completion_tokens INTEGER NOT NULL DEFAULT 0,
+	pinned INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +137,7 @@ END;
 		`ALTER TABLE sessions ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -169,16 +172,18 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error) {
 	var sess agent.Session
 	var parent sql.NullString
+	var pinned int
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
-		&sess.PromptTokens, &sess.CompletionTokens); err != nil {
+		&sess.PromptTokens, &sess.CompletionTokens, &pinned); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
+	sess.Pinned = pinned != 0
 	return sess, nil
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned"
 
 // GetSession returns the session with the given id, or ErrNotFound.
 func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {
@@ -358,6 +363,53 @@ func (s *Store) SessionCounts(ctx context.Context) (map[string]agent.SessionCoun
 		out[id] = c
 	}
 	return out, rows.Err()
+}
+
+// SetSessionPinned sets the pinned flag on a session row. It is a
+// user-list concern: updated_at (the time bucketing key) is untouched.
+func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error {
+	n := boolToInt(pinned)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET pinned = ? WHERE id = ?`, n, sessionID)
+	return err
+}
+
+// SessionModels returns the last recorded model per session from the
+// session's model_change entries, read at read time (no schema or
+// counters). Sessions with no model entry are absent from the map.
+// ponytail: one pass over the model_change rows via MAX(id) per session;
+// fine for hundreds of sessions.
+func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT m.session_id, m.payload FROM messages m
+		 WHERE m.role = 'model_change'
+		   AND m.id = (SELECT MAX(id) FROM messages
+		               WHERE session_id = m.session_id AND role = 'model_change')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string)
+	for rows.Next() {
+		var id, payload string
+		if err := rows.Scan(&id, &payload); err != nil {
+			return nil, err
+		}
+		var mc ai.ModelChange
+		if json.Unmarshal([]byte(payload), &mc) != nil || mc.Model == "" {
+			continue
+		}
+		out[id] = mc.Model
+	}
+	return out, rows.Err()
+}
+
+// boolToInt maps a bool to its SQLite 0/1 integer representation.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // AddSessionTokens adds a turn's real provider-reported usage to the

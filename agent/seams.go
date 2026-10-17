@@ -91,6 +91,15 @@ type StoreProvider interface {
 	// AddSessionTokens adds a turn's real provider-reported usage to the
 	// session's accumulated token totals. Zero usage is a no-op.
 	AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error
+
+	// SetSessionPinned sets the pinned flag on a session. It is a
+	// user-list concern and does not touch updated_at.
+	SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error
+
+	// SessionModels returns the last recorded model per session,
+	// derived from the session's model_change entries at read time.
+	// Sessions with no model entry are absent from the map.
+	SessionModels(ctx context.Context) (map[string]string, error)
 }
 
 // SkillsProvider is the skill loading seam. The default implementation

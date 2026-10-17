@@ -609,11 +609,72 @@ func TestSessionByIDNoStore(t *testing.T) {
 
 func TestSessionByIDMethodNotAllowed(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
-	req := httptest.NewRequest(http.MethodPatch, "/sessions/abc", nil)
+	req := httptest.NewRequest(http.MethodPost, "/sessions/abc", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+// TestSessionPatchPinned covers the pin round-trip through the API: PATCH
+// {"pinned": true} persists the flag across a fresh GET /sessions read,
+// {"pinned": false} clears it, and an invalid body is rejected.
+func TestSessionPatchPinned(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "labeled"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	patch := func(t *testing.T, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/sessions/s1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := patch(t, `{"pinned": true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var sess agent.Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !sess.Pinned {
+		t.Fatalf("patch response pinned = false, want true")
+	}
+
+	// the flag survives a fresh list (the webui reload case)
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	listRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(listRec, req)
+	var list []sessionPayload
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 1 || !list[0].Pinned {
+		t.Fatalf("list = %+v, want one pinned session", list)
+	}
+
+	rec = patch(t, `{"pinned": false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unpin status = %d, want 200", rec.Code)
+	}
+	if after, _ := st.GetSession(ctx, "s1"); after.Pinned {
+		t.Fatalf("pinned = true after unpin, want false")
+	}
+
+	rec = patch(t, `not json`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body status = %d, want 400", rec.Code)
+	}
+	rec = patch(t, `{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing pinned status = %d, want 400", rec.Code)
 	}
 }
 

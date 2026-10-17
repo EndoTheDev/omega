@@ -51,6 +51,12 @@ func (m *mockStore) SessionCounts(context.Context) (map[string]agent.SessionCoun
 }
 func (m *mockStore) AddSessionTokens(context.Context, string, int, int) error { return nil }
 
+func (m *mockStore) SetSessionPinned(context.Context, string, bool) error { return nil }
+
+func (m *mockStore) SessionModels(context.Context) (map[string]string, error) {
+	return nil, nil
+}
+
 func TestDetectImagePNG(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.png")

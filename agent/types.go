@@ -31,6 +31,10 @@ type Session struct {
 	// saved before this data was recorded keep 0 totals.
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
+
+	// Pinned is the user's keep-at-top flag. Old sessions default to
+	// unpinned; baked data is never rewritten.
+	Pinned bool `json:"pinned"`
 }
 
 // SessionCounts is per-session activity computed at read time (SQL

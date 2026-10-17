@@ -463,6 +463,114 @@ CREATE TABLE IF NOT EXISTS messages (
 	}
 }
 
+// TestMigrationAddsPinnedColumn upgrades a database that predates the
+// pinned flag and verifies old sessions come through unpinned, then
+// covers the pin/unpin round-trip.
+func TestMigrationAddsPinnedColumn(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+	ctx := context.Background()
+
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES ('old', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old session: %v", err)
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	// Opening through the store migrates in place; old sessions default
+	// to unpinned.
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	defer s.Close()
+	before, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old session: %v", err)
+	}
+	if before.Pinned {
+		t.Fatalf("migrated session pinned = true, want false")
+	}
+	updatedAt := before.UpdatedAt
+
+	// Pin round-trip: set, list, unset. updated_at must not move - the
+	// time buckets read it, and pinning is not activity.
+	if err := s.SetSessionPinned(ctx, "old", true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	pinned, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get pinned: %v", err)
+	}
+	if !pinned.Pinned {
+		t.Fatalf("pinned = false after pin, want true")
+	}
+	if pinned.UpdatedAt != updatedAt {
+		t.Fatalf("pin moved updated_at: %q -> %q", updatedAt, pinned.UpdatedAt)
+	}
+	list, err := s.ListSessions(ctx)
+	if err != nil || len(list) != 1 || !list[0].Pinned {
+		t.Fatalf("list = %+v err %v, want one pinned session", list, err)
+	}
+	if err := s.SetSessionPinned(ctx, "old", false); err != nil {
+		t.Fatalf("unpin: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "old"); after.Pinned {
+		t.Fatalf("pinned = true after unpin, want false")
+	}
+}
+
+// TestSessionModels covers the read-time last-model map: the latest
+// model_change wins, sessions without a model entry stay out of the map.
+func TestSessionModels(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2"} {
+		if err := s.CreateSession(ctx, id, "", ""); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewModelChange("glm-5.2")); err != nil {
+		t.Fatalf("append model change: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s1", ai.NewModelChange("glm-5.3-flash")); err != nil {
+		t.Fatalf("append model change 2: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "s2", ai.NewUser("untouched")); err != nil {
+		t.Fatalf("append s2: %v", err)
+	}
+	models, err := s.SessionModels(ctx)
+	if err != nil {
+		t.Fatalf("session models: %v", err)
+	}
+	// latest model_change wins; model-less sessions are absent
+	if models["s1"] != "glm-5.3-flash" {
+		t.Fatalf("s1 model = %q, want glm-5.3-flash", models["s1"])
+	}
+	if m, ok := models["s2"]; ok {
+		t.Fatalf("model-less s2 present: %q", m)
+	}
+}
+
 func assertUser(t *testing.T, m ai.Message, want string) {
 	t.Helper()
 	u, ok := m.(ai.User)
