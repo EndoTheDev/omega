@@ -513,13 +513,15 @@ func truncate(s string, n int) string {
 }
 
 // sessionPayload is one /sessions list row: the session row (which
-// carries the pinned flag and the persisted token totals) plus the
-// read-time counts and the last recorded model.
+// carries the pinned flag, the persisted token totals, and the
+// last-read stamp) plus the read-time counts, the last recorded model,
+// and the read-time unread state.
 type sessionPayload struct {
 	agent.Session
 	MessageCount int    `json:"message_count"`
 	ToolCount    int    `json:"tool_count"`
 	Model        string `json:"model,omitempty"`
+	Unread       bool   `json:"unread"`
 }
 
 // handleSessions serves GET /sessions (list) and POST /sessions (create).
@@ -556,6 +558,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				payload.ToolCount = c.ToolCount
 			}
 			payload.Model = models[sess.ID]
+			// computed at read time from the row itself - no counters,
+			// no schema writes (same pattern as the counts)
+			payload.Unread = agent.SessionUnread(sess)
 			out = append(out, payload)
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -632,6 +637,7 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"session":  sess,
 			"messages": msgs,
+			"unread":   agent.SessionUnread(sess),
 		})
 	case http.MethodDelete:
 		if err := s.store.DeleteSession(r.Context(), id); err != nil {
@@ -663,23 +669,38 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, sess)
 	case http.MethodPatch:
-		// Pin toggle: {"pinned": true|false}. A list-concern flag - it
-		// writes the sessions row without touching updated_at, so
-		// pinning never re-buckets a session as recently active.
+		// Row flags: {"pinned": true|false} (pin toggle, existing) and
+		// {"read": true} (mark read - stamps last_read_at without
+		// touching updated_at, same shape as the pinned PATCH). Both
+		// are list concerns: pinning and reading are not activity, and
+		// the webui time buckets read updated_at.
 		var body struct {
 			Pinned *bool `json:"pinned"`
+			Read   *bool `json:"read"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body.Pinned == nil {
-			http.Error(w, "pinned must not be missing", http.StatusBadRequest)
+		if body.Pinned == nil && body.Read == nil {
+			http.Error(w, "pinned or read must not be missing", http.StatusBadRequest)
 			return
 		}
-		if err := s.store.SetSessionPinned(r.Context(), id, *body.Pinned); err != nil {
-			http.Error(w, "pin session: "+err.Error(), http.StatusInternalServerError)
+		if body.Read != nil && !*body.Read {
+			http.Error(w, "read must be true", http.StatusBadRequest)
 			return
+		}
+		if body.Pinned != nil {
+			if err := s.store.SetSessionPinned(r.Context(), id, *body.Pinned); err != nil {
+				http.Error(w, "pin session: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if body.Read != nil {
+			if err := s.store.SetSessionRead(r.Context(), id); err != nil {
+				http.Error(w, "read session: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		sess, err := s.store.GetSession(r.Context(), id)
 		if err != nil {

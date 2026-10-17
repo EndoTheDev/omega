@@ -783,6 +783,92 @@ func TestSessionPatchPinned(t *testing.T) {
 	}
 }
 
+// TestSessionPatchRead covers the mark-read round-trip through the API:
+// output landing after the session's last read turns unread on in the
+// list, PATCH {"read": true} stamps it off without touching updated_at,
+// and the invalid-body cases are rejected.
+func TestSessionPatchRead(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "label"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	// Output lands after birth - the session reads unread at the API.
+	if err := st.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	list := func(t *testing.T) sessionPayload {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		var rows []sessionPayload
+		if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("list = %d rows, want 1", len(rows))
+		}
+		return rows[0]
+	}
+
+	if row := list(t); !row.Unread {
+		t.Fatalf("row after new output unread = false, want true")
+	}
+
+	patch := func(t *testing.T, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/sessions/s1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	before, _ := st.GetSession(ctx, "s1")
+	rec := patch(t, `{"read": true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if row := list(t); row.Unread {
+		t.Fatalf("row after mark-read unread = true, want false")
+	}
+	// Reading is not activity: updated_at is untouched.
+	after, _ := st.GetSession(ctx, "s1")
+	if after.UpdatedAt != before.UpdatedAt {
+		t.Fatalf("read moved updated_at: %q -> %q", before.UpdatedAt, after.UpdatedAt)
+	}
+	if after.LastReadAt == "" {
+		t.Fatalf("mark-read left last_read_at empty")
+	}
+
+	// The detail endpoint exposes the same read-time state.
+	req := httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var detail map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	if unread, ok := detail["unread"].(bool); !ok || unread {
+		t.Fatalf("detail unread = %v, want false", detail["unread"])
+	}
+
+	rec = patch(t, `not json`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body status = %d, want 400", rec.Code)
+	}
+	rec = patch(t, `{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing flag status = %d, want 400", rec.Code)
+	}
+	rec = patch(t, `{"read": false}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("read-false status = %d, want 400", rec.Code)
+	}
+}
+
 func TestSessionByIDPutLabel(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"id":"t-put"}`))
