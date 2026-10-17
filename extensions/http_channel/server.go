@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"io/fs"
+	"net/http"
 	"path"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -51,6 +51,8 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
+	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
+	mux.HandleFunc("/files/read", s.handleFilesRead)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
