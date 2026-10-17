@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"time"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -36,11 +37,35 @@ type Session struct {
 	// unpinned; baked data is never rewritten.
 	Pinned bool `json:"pinned"`
 
+	// LastReadAt is the time the session's output was last seen by the
+	// user (empty on rows created before the column existed - the
+	// migration backfills it to updated_at so nothing old turns unread).
+	LastReadAt string `json:"last_read_at,omitempty"`
+
 	// TitleState tracks generated-title maturity: 0 untitled, 1
 	// provisional (user-message-only), 2 final (first exchange done).
 	// Sessions that already carried a label when the column was added
 	// were migrated straight to 2 - a manual label is never retitled.
 	TitleState int `json:"title_state"`
+}
+
+// SessionUnread reports whether a session has output newer than its last
+// read stamp: updated_at after last_read_at. Computed at read time - no
+// counters, no schema writes. Empty stamps read as seen, and the session
+// being compared must have been persisted with RFC 3339 times.
+func SessionUnread(s Session) bool {
+	if s.LastReadAt == "" {
+		return false
+	}
+	updated, err := time.Parse(time.RFC3339, s.UpdatedAt)
+	if err != nil {
+		return s.UpdatedAt > s.LastReadAt
+	}
+	read, err := time.Parse(time.RFC3339, s.LastReadAt)
+	if err != nil {
+		return s.UpdatedAt > s.LastReadAt
+	}
+	return updated.After(read)
 }
 
 // SessionCounts is per-session activity computed at read time (SQL

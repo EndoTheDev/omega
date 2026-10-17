@@ -101,6 +101,10 @@ type StoreProvider interface {
 	// user-list concern and does not touch updated_at.
 	SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error
 
+	// SetSessionRead stamps a session's last-read time so unread
+	// clears. It is a read concern and does not touch updated_at.
+	SetSessionRead(ctx context.Context, sessionID string) error
+
 	// SetSessionTitle writes a generated label together with its title
 	// state transition in one update. provisional (final=false) is
 	// allowed only from title state 0 and moves to 1; final (final=true)

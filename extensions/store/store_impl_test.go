@@ -575,6 +575,102 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
+// TestSessionReadAndUnread covers the server-side unread state: the
+// last_read_at migration stamps existing rows read, CreateSession
+// births sessions read, a message landing after last_read_at flips
+// unread on, and SetSessionRead clears it without touching updated_at.
+func TestSessionReadAndUnread(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+	ctx := context.Background()
+
+	// Pre-migration schema: sessions without last_read_at, one old row.
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES ('old', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old session: %v", err)
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	defer s.Close()
+
+	// Migration data-fix: the old row's stamp is its own updated_at,
+	// so everything the user already saw reads as seen.
+	old, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old session: %v", err)
+	}
+	if old.LastReadAt != old.UpdatedAt {
+		t.Fatalf("migrated last_read_at = %q, want updated_at %q", old.LastReadAt, old.UpdatedAt)
+	}
+	if agent.SessionUnread(old) {
+		t.Fatalf("migrated session unread = true, want false")
+	}
+
+	// New sessions are born read; unread only comes from later output.
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sess, err := s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.LastReadAt == "" || sess.LastReadAt != sess.CreatedAt {
+		t.Fatalf("born session last_read_at = %q, want created time %q", sess.LastReadAt, sess.CreatedAt)
+	}
+	if agent.SessionUnread(sess) {
+		t.Fatalf("never-touched session unread = true, want false")
+	}
+
+	// A message landing after last_read_at flips unread on.
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget: %v", err)
+	}
+	if !agent.SessionUnread(sess) {
+		t.Fatalf("session after new message unread = false, want true")
+	}
+
+	// SetSessionRead clears unread; reading is not activity, updated_at
+	// does not move.
+	updatedAt := sess.UpdatedAt
+	if err := s.SetSessionRead(ctx, "s1"); err != nil {
+		t.Fatalf("mark read: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget after read: %v", err)
+	}
+	if agent.SessionUnread(sess) {
+		t.Fatalf("session after read unread = true, want false")
+	}
+	if sess.UpdatedAt != updatedAt {
+		t.Fatalf("read moved updated_at: %q -> %q", updatedAt, sess.UpdatedAt)
+	}
+}
+
 // TestSessionModels covers the read-time last-model map: the latest
 // model_change wins, sessions without a model entry stay out of the map.
 func TestSessionModels(t *testing.T) {

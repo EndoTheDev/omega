@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	prompt_tokens INTEGER NOT NULL DEFAULT 0,
 	completion_tokens INTEGER NOT NULL DEFAULT 0,
 	pinned INTEGER NOT NULL DEFAULT 0,
-	title_state INTEGER NOT NULL DEFAULT 0
+	title_state INTEGER NOT NULL DEFAULT 0,
+	last_read_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,6 +149,7 @@ END;
 		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN title_state INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -157,11 +159,20 @@ END;
 			continue
 		}
 		// The column landed on this open: backfill the data fix that
-		// belongs to it. Sessions that already carried a label before
-		// title_state existed are final (2) - a manual label is never
-		// retitled. Runs once, exactly when the column is new.
+		// belongs to it. Runs once, exactly when the column is new.
+		// Sessions that already carried a label before title_state
+		// existed are final (2) - a manual label is never retitled.
 		if strings.Contains(stmt, "title_state") {
 			if _, err := s.db.Exec(`UPDATE sessions SET title_state = 2 WHERE label != ''`); err != nil {
+				return err
+			}
+		}
+		// last_read_at arrives empty for every existing row - stamp it
+		// to the row's own updated_at so the whole existing history
+		// counts as seen. Only output written AFTER the upgrade turns
+		// sessions unread; nothing the user already saw does.
+		if strings.Contains(stmt, "last_read_at") {
+			if _, err := s.db.Exec(`UPDATE sessions SET last_read_at = updated_at`); err != nil {
 				return err
 			}
 		}
@@ -181,9 +192,11 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 	if parentID != "" {
 		parent = parentID
 	}
+	// last_read_at = created time: new sessions are born read. Unread
+	// only ever comes from output written afterwards.
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		id, parent, label, now, now)
+		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, parent, label, now, now, now)
 	return err
 }
 
@@ -194,7 +207,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	var parent sql.NullString
 	var pinned int
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
-		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &sess.TitleState); err != nil {
+		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &sess.TitleState, &sess.LastReadAt); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
@@ -203,7 +216,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, title_state"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, title_state, last_read_at"
 
 // GetSession returns the session with the given id, or ErrNotFound.
 func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {
@@ -312,15 +325,24 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]ai.Messag
 	return out, nil
 }
 
-// AppendMessage appends a message to a session's history.
+// AppendMessage appends a message to a session's history and touches
+// the session's updated_at to the message's own write time. Without
+// the touch, updated_at froze after the title's last write - the
+// sidebar's time buckets silently drifted off the real activity, and
+// no unread state could ever be derived from the row.
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error {
 	role, payload, err := ai.EncodeMessage(msg)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx,
+	now := ai.NowISO()
+	if _, err = s.db.ExecContext(ctx,
 		`INSERT INTO messages (session_id, role, payload, created_at) VALUES (?, ?, ?, ?)`,
-		sessionID, role, string(payload), ai.NowISO())
+		sessionID, role, string(payload), now); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE sessions SET updated_at = ? WHERE id = ?`, now, sessionID)
 	return err
 }
 
@@ -417,6 +439,15 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 	n := boolToInt(pinned)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET pinned = ? WHERE id = ?`, n, sessionID)
+	return err
+}
+
+// SetSessionRead stamps the session's last-read time to now, so unread
+// (updated_at after last_read_at) clears. Reading is not activity:
+// updated_at is untouched.
+func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET last_read_at = ? WHERE id = ?`, ai.NowISO(), sessionID)
 	return err
 }
 
