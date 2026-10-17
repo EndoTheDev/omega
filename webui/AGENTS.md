@@ -22,6 +22,10 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   pure, unit-tested in test/routepath.test.ts), scroll
   pinning (follows only the stream whose session is being viewed), pane
   geometry (sidebar widths, squeeze chain, drag caps, push-back),
+  pane open-state persistence (desktop-only `omega.sidebar-open` /
+  `omega.inspector-open` guarded by the same 768px breakpoint as the
+  overlay mode - mobile drawers always open closed, and a live
+  desktop-to-phone squeeze crossing never rewrites the desktop flags),
   overlay exclusivity (one drawer on mobile; settings and the
   inspector share the right slot), theme handling, live stream
   telemetry (token estimate + chunks/s, kept per session), tab-title
@@ -42,17 +46,21 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 - `components/` - 11 components grouped by concern:
   - shell: `MenuBar` (brand, toggles, gear), `StatusBar` (health dot,
     token/ctx/rate telemetry), `AppSidebar` (session list: search box
-    filters labels client-side, PINNED section above the Today /
-    Yesterday / Earlier local-calendar-day buckets, per-row relative
-    age + a model / msgs / tools / tokens meta line, pin toggle PATCHes
-    the flag via app.vue's `togglePin`; a live stream pulses an accent
-    edge on its own row even when pinned),
+    filters labels client-side, collapsed-section state persists under
+    `omega.sidebar-collapsed` as a JSON array of bucket labels -
+    unknown/malformed entries restore expanded, PINNED section above
+    the Today / Yesterday / Earlier local-calendar-day buckets,
+    per-row relative age sits absolute right of the two-line row,
+    vertically centered, + a model / msgs / tools / tokens meta line,
+    pin toggle PATCHes the flag via app.vue's `togglePin`; a live
+    stream pulses an accent edge on its own row even when pinned),
     `RightSidebar` (inspector pane: a tab shell - parked tabs slot in
     later - whose Files tab is a breadcrumb file manager over the
     working directory: dir rows descend, file rows open a read-only
-    64 KiB-capped mono preview reporting truncated/binary; the
-    listing lazy-loads on first open and the pane starts closed - not
-    persisted), `SettingsDrawer`
+    64 KiB-capped mono preview reporting truncated/binary;
+    the listing lazy-loads on first open and the pane's open state
+    persists desktop-side under `omega.inspector-open` (app.vue)),
+    `SettingsDrawer`
     (headless - the gear is the toggle)
   - chat: `ChatMessage`, `ThinkingBlock`, `ToolCallLine` (running/
     done/error with expandable result), `AppComposer` (auto-grow
@@ -76,7 +84,9 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   sessions excluded from their day bucket, malformed dates land in
   Earlier), `relativeAge`, `filterSessions`, `formatTokens` (k-abbr
   above 1000), `rowMeta` (unknown pieces omitted; session with nothing
-  known renders no meta line) (12 tests)
+  known renders no meta line), `parseCollapsedLabels`/`serializeCollapsedLabels`
+  (persisted collapsed-section value: JSON array, unknown/non-string entries
+  dropped, malformed JSON parses empty) (16 tests)
 - `test/markdown.test.ts` - unit tests for the assistant-bubble
   markdown path in composables/omega.ts: `renderMarkdown` (plain text /
   inline styling / fenced code, partially-received fences still render
@@ -170,7 +180,7 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 ## Verification
 
 ```bash
-npm test                       # 85 unit tests (node --test "test/*.test.ts")
+npm test                       # 89 unit tests (node --test "test/*.test.ts")
 npx nuxt build                 # SPA compiles
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```
