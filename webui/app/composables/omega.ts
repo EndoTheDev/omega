@@ -279,6 +279,36 @@ export function rowMeta(s: Session): string {
   return parts.join(" - ");
 }
 
+// --- sidebar: persisted collapsed sections ---
+
+// the only labels a section can take - anything else in the persisted
+// value is stale (renamed bucket) or corrupt and gets dropped
+export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier"];
+
+// parseCollapsedLabels reads the persisted omega.sidebar-collapsed value:
+// a JSON array of section labels. Malformed JSON and non-string/unknown
+// entries are ignored - a bad key restores everything expanded, it never
+// blanks the sidebar.
+export function parseCollapsedLabels(raw: string | null): Set<string> {
+  const out = new Set<string>();
+  if (!raw) return out;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed))
+      for (const v of parsed)
+        if (typeof v === "string" && SIDEBAR_BUCKETS.includes(v)) out.add(v);
+  } catch {
+    return new Set();
+  }
+  return out;
+}
+
+// serializeCollapsedLabels writes the inverse: a Set to the JSON array
+// the parser above accepts (round-trip stable).
+export function serializeCollapsedLabels(set: Iterable<string>): string {
+  return JSON.stringify([...set]);
+}
+
 // --- inspector: file manager helpers ---
 
 export interface FileEntry {

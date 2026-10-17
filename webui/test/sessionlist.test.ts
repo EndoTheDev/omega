@@ -8,8 +8,11 @@ import {
   bucketSessions,
   filterSessions,
   formatTokens,
+  parseCollapsedLabels,
   relativeAge,
   rowMeta,
+  serializeCollapsedLabels,
+  SIDEBAR_BUCKETS,
 } from "../app/composables/omega.ts";
 import type { Session } from "../app/composables/omega.ts";
 
@@ -161,5 +164,32 @@ describe("rowMeta", () => {
 
   it("renders nothing when nothing is known", () => {
     assert.equal(rowMeta(sess({ id: "a" })), "");
+  });
+});
+
+describe("collapsed labels (omega.sidebar-collapsed)", () => {
+  it("parses the JSON array of section labels", () => {
+    assert.deepEqual(parseCollapsedLabels('["today","earlier"]'), new Set(["today", "earlier"]));
+  });
+
+  it("treats null, empty and malformed JSON as fully expanded", () => {
+    assert.deepEqual(parseCollapsedLabels(null), new Set());
+    assert.equal(parseCollapsedLabels("").size, 0);
+    assert.equal(parseCollapsedLabels("not-json{").size, 0);
+    assert.equal(parseCollapsedLabels('{"today":true}').size, 0);
+  });
+
+  it("drops unknown and non-string entries - stale keys never blank rows", () => {
+    assert.deepEqual(
+      parseCollapsedLabels('["today","banana",42,null,["earlier"]]'),
+      new Set(["today"]),
+    );
+    assert.deepEqual([...SIDEBAR_BUCKETS], ["pinned", "today", "yesterday", "earlier"]);
+  });
+
+  it("round-trips serialize -> parse and ignores duplicate-free order", () => {
+    const set = new Set(["pinned", "earlier"]);
+    const back = parseCollapsedLabels(serializeCollapsedLabels(set));
+    assert.deepEqual(back, set);
   });
 });

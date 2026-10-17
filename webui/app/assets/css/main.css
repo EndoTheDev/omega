@@ -180,17 +180,44 @@ body {
   border-color: var(--accent);
 }
 
-/* section headers: pinned / today / yesterday / earlier */
-.session-list li.bucket-label {
+/* section headers: pinned / today / yesterday / earlier - real buttons so
+   the whole row is the click target and keyboard focus lands on it; the
+   wrapper li is neutralized (the generic li row chrome would show through) */
+.session-list li.bucket-row {
+  padding: 0;
+  min-height: 0;
+  display: block;
+  cursor: default;
+}
+.session-list li.bucket-row:hover { background: transparent; }
+.session-list li.bucket-row.active { background: transparent; }
+button.bucket-label {
+  width: 100%; /* whole header row toggles, not just the text */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-family: inherit;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--text-dim);
+  text-align: left;
   padding: 10px 10px 4px;
-  cursor: default;
+  border-radius: var(--r-chip);
   min-height: 0;
 }
-.session-list li.bucket-label:hover { background: transparent; }
+button.bucket-label:hover { color: var(--text); }
+button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
+/* chevron prefix: closed (right) when collapsed, rotated open (down) when
+   the rows are visible */
+.bucket-chevron {
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+.bucket-chevron.open { transform: rotate(90deg); }
 .session-list li.bucket-empty {
   color: var(--text-dim);
   font-size: 12px;
@@ -260,7 +287,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-height: 44px;
+  /* two-line row: title + meta (the age sits absolute, outside the flow) */
+  min-height: 46px;
   align-items: flex-start;
   justify-content: center;
 }
@@ -321,7 +349,15 @@ body {
 }
 .session-list li.active .session-title { color: var(--accent); }
 
+/* relative age: absolute right-of-row, vertically centered - leaves the
+   stacked column so rows read as two lines (title + meta). Rows already
+   reserve 30px right padding, which keeps the time clear of the pin star
+   sitting at right: 6px. */
 .session-time {
+  position: absolute;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
   font-size: 11px;
   color: var(--text-dim);
 }
