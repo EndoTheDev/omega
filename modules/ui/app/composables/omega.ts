@@ -70,6 +70,13 @@ export interface SessionDetail {
         thinking?: string;
         is_error?: boolean;
         tool_call_id?: string;
+        // server-measured generation durations (persisted with the
+        // message; absent on history written before timing existed)
+        timing?: {
+          thinking_ms?: number;
+          response_ms?: number;
+          elapsed_ms?: number;
+        };
         // store-level write time injected by the history endpoint; falls
         // back to the payload timestamp for anything older that lacks it
         created_at?: string;
@@ -516,6 +523,13 @@ export function formatElapsed(startedMs: number, nowMs: number): string {
   const s = total % 60;
   if (h > 0) return `${h}h ${pad2(m)}m`;
   return `${m}m ${pad2(s)}s`;
+}
+
+// formatDurationMs renders a server-measured duration (restored
+// sessions carry real elapsed on the wire; live meters freeze their
+// own) in the same voice as formatElapsed.
+export function formatDurationMs(ms: number): string {
+  return formatElapsed(0, ms);
 }
 
 // ElapsedMeter drives the live "thinking 12s" summary label: start()

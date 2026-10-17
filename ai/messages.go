@@ -150,11 +150,22 @@ func NewUserWithImages(content string, images []ImageContent) User {
 	return User{Content: content, Images: images, Timestamp: NowISO()}
 }
 
+// Timing carries server-measured generation durations so a reloaded
+// session renders real elapsed values - client-side meters die with
+// the SSE stream. Assistant messages carry the thinking/response
+// spans; ToolResult carries the elapsed from its matching call.
+type Timing struct {
+	ThinkingMs int64 `json:"thinking_ms,omitempty"`
+	ResponseMs int64 `json:"response_ms,omitempty"`
+	ElapsedMs  int64 `json:"elapsed_ms,omitempty"`
+}
+
 // Assistant is the model's response in a turn.
 type Assistant struct {
 	Thinking  *string    `json:"thinking,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	Content   string     `json:"content"`
+	Timing    *Timing    `json:"timing,omitempty"`
 	Timestamp string     `json:"timestamp,omitempty"`
 }
 
@@ -169,10 +180,11 @@ func NewAssistant(content string) Assistant {
 // ToolResult is the result of a tool execution, appended to the
 // message history so the model can see the result.
 type ToolResult struct {
-	Content    string `json:"content"`
-	ToolCallID string `json:"tool_call_id"`
-	IsError    bool   `json:"is_error,omitempty"`
-	Timestamp  string `json:"timestamp,omitempty"`
+	Content    string  `json:"content"`
+	ToolCallID string  `json:"tool_call_id"`
+	IsError    bool    `json:"is_error,omitempty"`
+	Timing     *Timing `json:"timing,omitempty"`
+	Timestamp  string  `json:"timestamp,omitempty"`
 }
 
 func (ToolResult) isMessage() {}

@@ -810,14 +810,24 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .thinking-live { color: var(--accent); animation: blink 1s steps(2) infinite; }
 /* frozen or ticking elapsed time (thinking, tool, response bubbles) -
-   same voice as the label it extends */
+   same voice as the label it extends. Right-aligned: the label owns the
+   left edge, the timer sits at the row's right end (in-app comment on
+   session 04ea63f3) */
 .thinking-elapsed,
-.tool-elapsed,
+.tool-elapsed {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
 .msg-elapsed {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+  display: block;
+  text-align: right;
 }
 .thinking-body {
   padding: 0 12px 10px;

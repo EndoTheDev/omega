@@ -10,6 +10,7 @@ import {
   createElapsedMeter,
   formatMsgTime,
   formatElapsed,
+  formatDurationMs,
   isAtBottom,
   pillVisible,
   SCROLL_NEAR_PX,
@@ -190,5 +191,16 @@ describe("pillVisible", () => {
 
   it("a non-scrollable transcript never shows the pill", () => {
     assert.equal(pillVisible(0, 200, 200), false);
+  });
+});
+// formatDurationMs: server-measured durations (restored sessions carry
+// real elapsed on the wire) render in the same voice as formatElapsed
+// (timing persistence, in-app comment session 04ea63f3)
+describe("formatDurationMs", () => {
+  it("renders seconds, minutes, hours like the live meter", () => {
+    assert.equal(formatDurationMs(0), "0s");
+    assert.equal(formatDurationMs(5_000), "5s");
+    assert.equal(formatDurationMs(62_000), "1m 02s");
+    assert.equal(formatDurationMs(3_600_000), "1h 00m");
   });
 });

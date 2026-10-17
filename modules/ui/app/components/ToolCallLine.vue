@@ -6,8 +6,8 @@
         :class="status" />
       <span class="tool-name">{{ name }}</span>
       <span
-        v-if="elapsed"
-        class="tool-elapsed">{{ elapsed }}</span
+        v-if="elapsedLabel"
+        class="tool-elapsed">{{ elapsedLabel }}</span
       >
     </summary>
     <div
@@ -32,7 +32,7 @@
 <script setup lang="ts">
   import { computed, onUnmounted, ref, watch } from "vue";
 
-  import { createElapsedMeter } from "../composables/omega";
+  import { createElapsedMeter, formatDurationMs } from "../composables/omega";
 
   const props = defineProps<{
     name: string;
@@ -40,6 +40,9 @@
     interrupted?: boolean;
     output?: string;
     result?: string;
+    // server-measured duration from restored history - wins over the
+    // live meter (restored items mount final and never start one)
+    finalMs?: number;
   }>();
 
   // Elapsed counter (tool_call event -> tool_result arrival): ticks while
@@ -50,6 +53,9 @@
   const meter = createElapsedMeter((label) => {
     elapsed.value = label;
   });
+  const elapsedLabel = computed(() =>
+    props.finalMs != null ? formatDurationMs(props.finalMs) : elapsed.value,
+  );
 
   // live = no result yet AND the stream survived it: a dead stream never
   // delivers the tool result, so the interrupted flag stops the meter -

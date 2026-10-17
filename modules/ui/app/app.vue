@@ -72,16 +72,19 @@
                 :role="item.role"
                 :content="item.content"
                 :time="item.time"
+                :final-ms="item.finalMs"
                 :streaming="item.streaming" />
               <ThinkingBlock
                 v-else-if="item.kind === 'thinking' && showThinking"
                 :content="item.content"
+                :final-ms="item.finalMs"
                 :streaming="item.streaming" />
               <ToolCallLine
                 v-else-if="item.kind === 'tool'"
                 :name="item.name"
                 :status="item.status"
                 :interrupted="item.interrupted"
+                :final-ms="item.finalMs"
                 :output="item.output"
                 :result="item.result" />
               <div
@@ -200,11 +203,15 @@
     // client-side timestamp for live messages, backend created_at for
     // restored history (ChatMessage renders it as a hover title)
     time?: string;
+    // server-measured response duration (restored history)
+    finalMs?: number;
   }
   interface ThinkingItem {
     kind: "thinking";
     content: string;
     streaming?: boolean;
+    // server-measured thinking duration (restored history)
+    finalMs?: number;
   }
   interface ToolItem {
     kind: "tool";
@@ -215,6 +222,8 @@
     interrupted?: boolean;
     output?: string;
     result?: string;
+    // server-measured duration from the matched result (restored)
+    finalMs?: number;
   }
   // inline "stream interrupted" marker: appears only when the SSE
   // transport died mid-run (never on a clean end). Carries the resume
@@ -439,7 +448,11 @@
             | "user"
             | "assistant";
           if (role === "assistant" && m.thinking) {
-            items.push({ kind: "thinking", content: m.thinking });
+            items.push({
+              kind: "thinking",
+              content: m.thinking,
+              finalMs: m.timing?.thinking_ms,
+            });
           }
           if (m.content) {
             items.push({
@@ -447,6 +460,7 @@
               role,
               content: m.content,
               time: m.created_at || m.timestamp || undefined,
+              finalMs: m.timing?.response_ms,
             });
           }
           if (role === "assistant" && m.tool_calls?.length) {
@@ -473,6 +487,7 @@
           if (!t) continue;
           t.result = m.content || "";
           t.status = m.is_error ? "error" : "done";
+          t.finalMs = m.timing?.elapsed_ms;
         }
         st.transcript = items;
         if (hadInterrupted) st.transcript.push({ kind: "interrupted" });

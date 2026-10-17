@@ -10,8 +10,8 @@
         v-html="rendered" />
       <template v-else>{{ content }}</template>
       <span
-        v-if="elapsed"
-        class="msg-elapsed">{{ elapsed }}</span
+        v-if="elapsedLabel"
+        class="msg-elapsed">{{ elapsedLabel }}</span
       >
       <span
         v-if="streaming"
@@ -24,13 +24,16 @@
   import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../composables/codeblocks";
-  import { createRenderScheduler, createElapsedMeter, formatMsgTime, renderMarkdown } from "../composables/omega";
+  import { createRenderScheduler, createElapsedMeter, formatDurationMs, formatMsgTime, renderMarkdown } from "../composables/omega";
 
   const props = defineProps<{
     role: "user" | "assistant";
     content: string;
     streaming?: boolean;
     time?: string;
+    // server-measured duration from restored history - wins over the
+    // live meter (restored items mount final and never start one)
+    finalMs?: number;
   }>();
 
   // Assistant bubbles render markdown. Stream chunks land at one render
@@ -71,6 +74,9 @@
   const meter = createElapsedMeter((label) => {
     elapsed.value = label;
   });
+  const elapsedLabel = computed(() =>
+    props.finalMs != null ? formatDurationMs(props.finalMs) : elapsed.value,
+  );
   watch(
     () => props.streaming ?? false,
     (live) => {

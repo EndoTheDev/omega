@@ -192,6 +192,16 @@ type assistantRecord struct {
 	toolCalls []ai.ToolCall
 	results   []ai.ToolResult
 	content   string
+	// server-side timing so reloaded sessions render real durations
+	// (client meters die with the SSE stream). Per-chunk deltas, not
+	// first-to-last spans: thinking happens in PHASES (think -> tools
+	// -> think again), and a span would bill the tool gap as thinking.
+	// lastXxx zero = span closed; the next chunk opens a fresh one.
+	thinkingMs, respMs int64
+	lastThink, lastResp time.Time
+	// call dispatch times by tool call id; the matching ToolResult
+	// reads and clears its entry when it arrives.
+	callStarts map[string]time.Time
 }
 
 // streamUsage totals the real provider-reported usage across every
@@ -335,9 +345,14 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 	if s.store == nil || req.SessionID == "" {
 		return
 	}
+	now := time.Now()
 	// ToolResultEvent is a top-level agent event (not wrapped in
 	// StreamEvent) - the TUI persists it the same way
 	if tre, ok := event.(agent.ToolResultEvent); ok {
+		if start, ok := rec.callStarts[tre.Message.ToolCallID]; ok && !start.IsZero() {
+			tre.Message.Timing = &ai.Timing{ElapsedMs: now.Sub(start).Milliseconds()}
+			delete(rec.callStarts, tre.Message.ToolCallID)
+		}
 		rec.results = append(rec.results, tre.Message)
 		return
 	}
@@ -348,6 +363,10 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 	switch ev := se.Event.(type) {
 	case ai.ThinkingChunk:
 		rec.thinking += ev.Content
+		if !rec.lastThink.IsZero() {
+			rec.thinkingMs += now.Sub(rec.lastThink).Milliseconds()
+		}
+		rec.lastThink = now
 	case ai.ResponseChunk:
 		if len(rec.results) > 0 {
 			// tool phase ended the current segment - the frontend
@@ -357,8 +376,21 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 			*rec = assistantRecord{}
 		}
 		rec.content += ev.Content
+		if !rec.lastResp.IsZero() {
+			rec.respMs += now.Sub(rec.lastResp).Milliseconds()
+		}
+		rec.lastResp = now
 	case ai.ToolCallEvent:
 		rec.toolCalls = append(rec.toolCalls, ev.ToolCall)
+		// a tool call closes both spans - the gap while the tool runs
+		// belongs to nobody
+		rec.lastThink, rec.lastResp = time.Time{}, time.Time{}
+		if rec.callStarts == nil {
+			rec.callStarts = map[string]time.Time{}
+		}
+		if ev.ToolCall.ID != "" {
+			rec.callStarts[ev.ToolCall.ID] = now
+		}
 	}
 }
 
@@ -383,6 +415,9 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 			assistant.Thinking = &text
 		}
 		assistant.ToolCalls = rec.toolCalls
+		if rec.thinkingMs > 0 || rec.respMs > 0 {
+			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkingMs, ResponseMs: rec.respMs}
+		}
 		if err := s.store.AppendMessage(ctx, req.SessionID, assistant); err != nil {
 			writeSSE(w, "error", []byte("persist response: "+err.Error()))
 			flusher.Flush()

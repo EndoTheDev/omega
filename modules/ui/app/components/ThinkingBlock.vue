@@ -5,8 +5,8 @@
     <summary>
       <span class="thinking-label">thinking</span>
       <span
-        v-if="elapsed"
-        class="thinking-elapsed">{{ elapsed }}</span
+        v-if="elapsedLabel"
+        class="thinking-elapsed">{{ elapsedLabel }}</span
       >
       <span
         v-if="streaming"
@@ -18,9 +18,9 @@
 </template>
 
 <script setup lang="ts">
-  import { onUnmounted, ref, watch } from "vue";
+  import { computed, onUnmounted, ref, watch } from "vue";
 
-  import { createElapsedMeter } from "../composables/omega";
+  import { createElapsedMeter, formatDurationMs } from "../composables/omega";
 
   // Auto-expand while streaming, collapse when the answer starts: the :open
   // binding tracks `streaming` — true keeps the block open (reasoning visible),
@@ -28,6 +28,9 @@
   const props = defineProps<{
     content: string;
     streaming?: boolean;
+    // server-measured duration from restored history - wins over the
+    // live meter (restored items mount final and never start one)
+    finalMs?: number;
   }>();
 
   // Elapsed counter: ticks every second while the stream is live and
@@ -39,6 +42,9 @@
   const meter = createElapsedMeter((label) => {
     elapsed.value = label;
   });
+  const elapsedLabel = computed(() =>
+    props.finalMs != null ? formatDurationMs(props.finalMs) : elapsed.value,
+  );
 
   watch(
     () => props.streaming ?? false,
