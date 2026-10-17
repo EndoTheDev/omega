@@ -9,7 +9,7 @@ import {
 } from "../app/composables/omega.ts";
 
 describe("parseSessionPath", () => {
-  it(" extracts the id from a /chat/<id> path", () => {
+  it("extracts the id from a /chat/<id> path", () => {
     assert.equal(parseSessionPath("/chat/abc-123"), "abc-123");
   });
 
