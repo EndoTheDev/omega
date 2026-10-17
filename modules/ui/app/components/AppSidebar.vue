@@ -53,19 +53,20 @@
             v-for="s in section.rows"
             :key="s.id"
             :class="rowClasses(s)"
-            @click="$emit('open', s.id)">
+            @click="$emit('open', s.id)"
+            @mouseenter="hoveredId = s.id"
+            @mouseleave="clearHovered(s.id)">
             <!-- the ONE status element: shape = pin (dot, morphing to a
-                 star on hover; click pins/unpins, .stop never opens the
-                 row), color = state (idle grey / streaming orange /
-                 unread blue). Derivation is the pure sessionRowStatus. -->
+                 star when the ROW is hovered; click pins/unpins, .stop
+                 never opens the row), color = state (idle grey /
+                 streaming orange / unread blue). Derivation is the pure
+                 sessionRowStatus. -->
             <button
               class="row-status"
               :class="statusClass(s)"
               :aria-label="s.pinned ? 'Unpin session' : 'Pin session'"
               :title="s.pinned ? 'Unpin session' : 'Pin session'"
-              @click.stop="$emit('pin', s.id, !s.pinned)"
-              @mouseenter="hoveredId = s.id"
-              @mouseleave="clearHovered(s.id)">
+              @click.stop="$emit('pin', s.id, !s.pinned)">
               <span
                 class="glyph glyph-dot"
                 aria-hidden="true"></span>
@@ -159,10 +160,11 @@
   });
   const allEmpty = computed(() => visibleSections.value.length === 0);
 
-  // hoveredId drives the pin affordance: hovering an unpinned row
-  // morphs its dot into a dim star (see sessionRowStatus). Cleared on
-  // leave - only the exact row's id clears, so pointer noise between
-  // rows never flickers a foreign row's star.
+  // hoveredId drives the pin affordance: hovering the session ROW
+  // anywhere (title, meta, time - not just the status element) morphs
+  // an unpinned row's dot into a dim star (see sessionRowStatus).
+  // Cleared on leave - only the exact row's id clears, so pointer noise
+  // between rows never flickers a foreign row's star.
   const hoveredId = ref<string | null>(null);
   function clearHovered(id: string) {
     if (hoveredId.value === id) hoveredId.value = null;
