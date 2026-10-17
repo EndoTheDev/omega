@@ -9,6 +9,10 @@
 :root {
   --accent: #E8833A;
 
+  /* unread: semantic for the unread state ONLY (session rows) - never
+     reuse for decoration. Dark: muted steel blue, readable on z0. */
+  --unread: #5B9DF9;
+
   /* elevation layers */
   --z0: #121212;         /* canvas */
   --z1: #1a1a1c;          /* main surfaces */
@@ -43,6 +47,8 @@ html[data-theme='light'] {
   --stroke: #d5d5da;
   --text: #1a1a1d;
   --text-dim: #6a6a72;
+  /* unread, light theme: a blue that survives the light background */
+  --unread: #2563EB;
   /* light mode: tight blur matches the pane-area's 3px breathing room so the
      shadow fades fully before the status bar - float without the bleed */
   --shadow-1: 0 1px 4px rgba(0, 0, 0, 0.10);
@@ -281,7 +287,9 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 
 .session-list li {
   position: relative;
-  padding: 8px 30px 8px 10px;
+  /* left padding clears the status element's slot, right padding clears
+     only the time band - the star moved to the left edge */
+  padding: 8px 34px 8px 26px;
   border-radius: var(--r-chip);
   cursor: pointer;
   display: flex;
@@ -295,49 +303,60 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .session-list li:hover { background: var(--z1-raised); }
 .session-list li.active { background: var(--z1-raised); }
 
-/* pin toggle: dim star sitting LEFT of the session time, both vertically
-   centered - the row's right cluster is [text ... star time]. Always
-   visible when pinned, shown on hover otherwise so the affordance exists
-   without adding noise. .stop on the handler - toggling a pin must not
-   open the session. */
-.pin-btn {
+/* unified row status: ONE element per row carries streaming/unread/pin.
+   Shape channel = pin: unpinned rows show a dot, pinned rows always a
+   star, hovering an unpinned row morphs the dot into the (dim) star -
+   the pin affordance. Clicking pins/unpins (.stop - it must never open
+   the row). Color channel = state: grey idle, orange streaming, blue
+   unread; the derivation is the pure sessionRowStatus (omega.ts). */
+.row-status {
   position: absolute;
-  right: 34px;
+  left: 4px;
   top: 50%;
   transform: translateY(-50%);
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   background: transparent;
   border: none;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--r-chip);
-  opacity: 0;
+  transition: color 0.12s ease;
+}
+.row-status:focus-visible { outline: 1px solid var(--accent); }
+/* the two glyphs stack in the slot; the shape class cross-fades them */
+.row-status .glyph {
+  position: absolute;
   transition: opacity 0.12s ease;
 }
-.session-list li:hover .pin-btn,
-.pin-btn.pinned { opacity: 1; }
-.pin-btn:hover { color: var(--text); background: var(--z2); }
-.pin-btn.pinned { color: var(--accent); }
-
-/* streaming pulse: a live stream rings ITS OWN row - the view may sit on
-   any other session (or none) while it runs; row-level, not global */
-.session-list li.streaming::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-  animation: stream-pulse 1.2s ease-in-out infinite;
+.glyph-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
-@keyframes stream-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+.glyph-star { font-size: 12px; line-height: 1; }
+.row-status.shape-star .glyph-dot { opacity: 0; }
+.row-status.shape-dot .glyph-star { opacity: 0; }
+
+/* color channel: grey idle (dim), orange streaming, blue unread. The
+   pinned star uses the same channel - pinned+unread is a BLUE star. */
+.row-status.color-idle { color: var(--text-dim); }
+.row-status.color-streaming { color: var(--accent); }
+.row-status.color-unread { color: var(--unread); }
+
+/* streaming pulses - active reads as motion, not just color. Scoped to
+   the visible glyph so the hidden twin never animates its way back in. */
+.row-status.color-streaming.shape-dot .glyph-dot,
+.row-status.color-streaming.shape-star .glyph-star {
+  animation: status-pulse 1.6s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.45); }
 }
 
 .session-title {
@@ -353,12 +372,10 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .session-list li.active .session-title { color: var(--accent); }
 
 /* relative age: absolute right-of-row, vertically centered - leaves the
-   stacked column so rows read as two lines (title + meta). Rows already
-   reserve 30px right padding, which keeps the time clear of the pin star
-   sitting at right: 6px. The text spans additionally reserve the time's
-   band (padding-right 30px) - the content box would otherwise end exactly
-   at the time's right edge, so every truncated title collided with it
-   (in-app comment 4). Text now ellipsizes before the time zone. */
+   stacked column so rows read as two lines (title + meta). It now owns
+   the right edge alone: the row's 34px right padding clears the time
+   band, and the text ellipsizes before the zone (was 60px when the pin
+   star shared the right cluster). */
 .session-time {
   position: absolute;
   right: 8px;
@@ -368,12 +385,8 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   color: var(--text-dim);
 }
 
-/* the time floats vertically centered in its reserved band - title and
-   meta must never run under it */
-.session-title,
-.session-meta {
-  padding-right: 60px;
-}
+/* title and meta keep no extra right padding - the row's 34px right
+   padding already clears the time band */
 
 /* second meta line: model - msgs - tools - tokens */
 .session-meta {

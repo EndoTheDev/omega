@@ -177,6 +177,7 @@
     anyBusy,
     withBusy,
     pinSession,
+    markSessionRead,
     parseSessionPath,
     sessionPath,
     isAtBottom,
@@ -387,11 +388,24 @@
   // reasoning run), tool-call lines, assistant message. Restored sessions map
   // the persisted Assistant{Thinking, ToolCalls, Content} back into the same
   // three shapes so a reload renders everything that happened.
+  // Read-marking: opening a session IS reading it - live-watched
+  // content never unreads itself. The row's unread clears locally so
+  // the status element goes grey instantly; the PATCH {"read": true}
+  // confirms the server-side stamp (updated_at untouched - reading is
+  // not activity). A failed PATCH defers to the next list refresh.
+  function markRead(id: string) {
+    sessions.value = sessions.value.map((s) =>
+      s.id === id ? { ...s, unread: false } : s,
+    );
+    markSessionRead(id).catch(() => refreshSessions());
+  }
+
   async function openSession(id: string) {
     if (!fromHistory) syncURL(id, true);
     activeId.value = id;
     drawerOpen.value = false;
     inspectorOpen.value = false;
+    markRead(id);
     const st = ensureState(id);
     // a live stream IS the content - refetching now would clobber the
     // stream state with a mid-flight persisted snapshot
@@ -815,6 +829,11 @@
       assistant.streaming = false;
       busySet.value = withBusy(busySet.value, busyKey, false);
       st.statusLine = "";
+      // A stream ending on the VIEWED session never unreads itself -
+      // the user watched the content live, so it is marked read. A
+      // background stream (session B while viewing A) leaves its row
+      // unread: that is the feature.
+      if (activeId.value === busyKey) markRead(busyKey);
       refreshSessions();
       // the title goroutine writes the session label seconds AFTER the
       // first exchange ends - the refresh above runs too early to see

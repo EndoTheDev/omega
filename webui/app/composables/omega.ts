@@ -21,6 +21,9 @@ export interface Session {
   completion_tokens?: number;
   model?: string;
   pinned?: boolean;
+  // server-side read stamp + read-time unread (updated_at > last_read_at)
+  last_read_at?: string;
+  unread?: boolean;
 }
 
 export interface SessionDetail {
@@ -307,6 +310,38 @@ export function parseCollapsedLabels(raw: string | null): Set<string> {
 // the parser above accepts (round-trip stable).
 export function serializeCollapsedLabels(set: Iterable<string>): string {
   return JSON.stringify([...set]);
+}
+
+// --- sidebar: unified row status (dot / star x state color) ---
+
+export type RowStatusShape = "dot" | "star";
+export type RowStatusColor = "idle" | "streaming" | "unread";
+
+export interface RowStatus {
+  shape: RowStatusShape;
+  color: RowStatusColor;
+}
+
+// sessionRowStatus derives the sidebar's ONE per-row status element.
+// Shape channel is pinned: pinned rows show a star; hovering an
+// unpinned row morphs the dot into a dim star (the pin affordance);
+// otherwise a dot. Color channel is state, streaming winning over
+// unread over idle - a live stream reads as motion whatever else
+// holds. The session being viewed never reads unread: the open is the
+// read (and the read PATCH confirms it server-side).
+export function sessionRowStatus(
+  s: Pick<Session, "id" | "pinned" | "unread">,
+  streamingSet: ReadonlySet<string>,
+  hovered: boolean,
+  activeId: string | null,
+): RowStatus {
+  const shape: RowStatusShape = s.pinned || hovered ? "star" : "dot";
+  const color: RowStatusColor =
+    streamingSet.has(s.id) ? "streaming"
+    : s.unread && s.id !== activeId
+      ? "unread"
+      : "idle";
+  return { shape, color };
 }
 
 // --- inspector: file manager helpers ---
@@ -623,6 +658,18 @@ export async function pinSession(id: string, pinned: boolean): Promise<void> {
     body: JSON.stringify({ pinned }),
   });
   if (!r.ok) throw new Error(`pin: ${r.status}`);
+}
+
+// markSessionRead stamps the session's last-read time (PATCH {"read":
+// true}). It touches nothing else: reading is not activity, updated_at
+// must not move.
+export async function markSessionRead(id: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ read: true }),
+  });
+  if (!r.ok) throw new Error(`read: ${r.status}`);
 }
 
 // Minimal structural view of a transcript item for the retry helpers -

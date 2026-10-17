@@ -54,12 +54,24 @@
             :key="s.id"
             :class="rowClasses(s)"
             @click="$emit('open', s.id)">
+            <!-- the ONE status element: shape = pin (dot, morphing to a
+                 star on hover; click pins/unpins, .stop never opens the
+                 row), color = state (idle grey / streaming orange /
+                 unread blue). Derivation is the pure sessionRowStatus. -->
             <button
-              class="pin-btn"
-              :class="{ pinned: s.pinned }"
+              class="row-status"
+              :class="statusClass(s)"
+              :aria-label="s.pinned ? 'Unpin session' : 'Pin session'"
               :title="s.pinned ? 'Unpin session' : 'Pin session'"
-              @click.stop="$emit('pin', s.id, !s.pinned)">
-              &#9733;
+              @click.stop="$emit('pin', s.id, !s.pinned)"
+              @mouseenter="hoveredId = s.id"
+              @mouseleave="clearHovered(s.id)">
+              <span
+                class="glyph glyph-dot"
+                aria-hidden="true"></span>
+              <span
+                class="glyph glyph-star"
+                aria-hidden="true">&#9733;</span>
             </button>
             <span class="session-title">{{ s.label || s.id }}</span>
             <span
@@ -89,6 +101,7 @@
     filterSessions,
     parseCollapsedLabels,
     serializeCollapsedLabels,
+    sessionRowStatus,
   } from "../composables/omega";
   import type { Session, SessionBuckets } from "../composables/omega";
 
@@ -146,11 +159,29 @@
   });
   const allEmpty = computed(() => visibleSections.value.length === 0);
 
+  // hoveredId drives the pin affordance: hovering an unpinned row
+  // morphs its dot into a dim star (see sessionRowStatus). Cleared on
+  // leave - only the exact row's id clears, so pointer noise between
+  // rows never flickers a foreign row's star.
+  const hoveredId = ref<string | null>(null);
+  function clearHovered(id: string) {
+    if (hoveredId.value === id) hoveredId.value = null;
+  }
+
   function rowClasses(s: Session): Record<string, boolean> {
     return {
       active: s.id === props.activeId,
-      streaming: props.streamingIds.has(s.id),
     };
+  }
+
+  function statusClass(s: Session): string[] {
+    const st = sessionRowStatus(
+      s,
+      props.streamingIds,
+      hoveredId.value === s.id,
+      props.activeId,
+    );
+    return [`color-${st.color}`, `shape-${st.shape}`];
   }
 
   function age(s: Session): string {
