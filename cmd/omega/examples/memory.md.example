@@ -1,0 +1,9 @@
+# memory
+
+omega's own notes - identity, environment, lessons. The agent
+appends what it learns; the user's sensitive topics never belong
+here (they stay with the user, not the agent).
+
+- Identity: what this agent is and who it serves
+- Environment: instances, ports, paths it should know about
+- Working rules: standing conventions it must respect
