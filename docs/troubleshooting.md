@@ -27,8 +27,9 @@ provider:
 
 ### Other causes
 
-- `config.yaml` not found — omega looks for `<home>/config.yaml` or
-  the path passed via `--config`. Check that the file exists.
+- `config.yaml` not found — omega looks for `<home>/config.yaml` first,
+  then `<home>/config/config.yaml`, or the path passed via `--config`.
+  Check that the file exists in one of those locations.
 - `model_name` left empty in the example file — the example has
   `model_name:` with no value. You must fill it in.
 - **Empty value clobbers the default.** YAML parsers set a key with

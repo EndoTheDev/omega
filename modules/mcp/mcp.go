@@ -438,21 +438,27 @@ func loadConfig() (*mcpConfig, error) {
 	if raw := os.Getenv("MCP_SERVERS"); raw != "" {
 		return parseConfig([]byte(raw))
 	}
-	// Try config file: mcp.yaml first, then mcp.json.
+	// Try config file: mcp.yaml first, then mcp.json. Each name is
+	// looked up at the home root first (legacy installs keep working
+	// unchanged), then in the config/ subdirectory (Endo 2026-10-18
+	// layout where the three infrastructure yamls live).
 	home := os.Getenv("OMEGA_HOME")
 	if home == "" {
 		home = filepath.Join(os.Getenv("HOME"), ".omega")
 	}
+	cfgDir := filepath.Join(home, "config")
 	for _, name := range []string{"mcp.yaml", "mcp.json"} {
-		path := filepath.Join(home, name)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
+		for _, dir := range []string{home, cfgDir} {
+			path := filepath.Join(dir, name)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, fmt.Errorf("read %s: %w", name, err)
 			}
-			return nil, fmt.Errorf("read %s: %w", name, err)
+			return parseConfig(data)
 		}
-		return parseConfig(data)
 	}
 	return &mcpConfig{}, nil
 }

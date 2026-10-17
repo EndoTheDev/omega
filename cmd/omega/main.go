@@ -60,7 +60,7 @@ Usage:
   omega health          check the server at the configured port
 
 Flags:
-  --config <path>       config file (default: <home>/config.yaml)
+  --config <path>       config file (default: <home>/config.yaml, or <home>/config/config.yaml)
   --append-system-prompt <text>   append to system prompt (repeatable)
   --approve             trust the current project's AGENTS.md
   --no-approve          skip the current project's AGENTS.md
@@ -213,15 +213,19 @@ func omegaHome() string {
 	return homeForExe(os.Getenv("OMEGA_HOME"), exePath, userHome)
 }
 
-// resolveConfigPath returns the --config value, or <home>/config.yaml
-// when it exists, or "" to skip YAML entirely.
+// resolveConfigPath returns the --config value, or the home config.yaml
+// when it exists, or "" to skip YAML entirely. The legacy home-root
+// location is checked first (existing installs keep working unchanged);
+// the config/ subdirectory (Endo 2026-10-18 layout) is the fallback.
 func resolveConfigPath(flagPath string) string {
 	if flagPath != "" {
 		return flagPath
 	}
-	homePath := omegaHome() + "/config.yaml"
-	if _, err := os.Stat(homePath); err == nil {
-		return homePath
+	home := omegaHome()
+	for _, p := range []string{home + "/config.yaml", home + "/config/config.yaml"} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
 	return ""
 }

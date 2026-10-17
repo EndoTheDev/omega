@@ -1,12 +1,17 @@
 # Configuration
 
 All values can be set in `config.yaml` or overridden by environment
-variables. omega looks for `config.yaml`, `omega.db`, `skills/`, and
-`memory.md` in its home: the binary's directory for release-folder
+variables. omega looks for its configuration - `config.yaml`, `mcp.yaml`,
+`crons.yaml` - in its home: the binary's directory for release-folder
 installs, `~/.omega` when the binary lives in a PATH bin directory
-(`~/go/bin`, `~/.local/bin`), or `OMEGA_HOME` when set. On first run
-omega writes the example configs into its home. The working directory
-is used only for AGENTS.md project context and tool file operations.
+(`~/go/bin`, `~/.local/bin`), or `OMEGA_HOME` when set. `omega.db`,
+`memory.md`, `user.md`, `skills/`, and log files live at the home root;
+the three infrastructure yaml files live in a `config/` subdirectory of
+the home (Endo 2026-10-18 layout). On first run omega writes the example
+configs into `<home>/config/`. **Existing installs keep working
+unchanged** - the home root is checked first, then `config/`, so a live
+root `config.yaml` keeps being used. The working directory is used only
+for AGENTS.md project context and tool file operations.
 
 ## config.yaml
 

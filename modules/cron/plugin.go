@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -60,8 +61,14 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	return nil
 }
 
-// homeFile returns the crons.yaml path inside home. Kept separate so
-// tests and the watcher share one path constant.
+// homeFile returns the crons.yaml path inside home. The legacy home-root
+// location wins if it exists (existing installs keep working unchanged);
+// otherwise the config/ subdirectory (Endo 2026-10-18 layout) is used.
+// Kept separate so tests and the watcher share one resolution rule.
 func homeFile(home string) string {
-	return filepath.Join(home, stateFileName)
+	root := filepath.Join(home, stateFileName)
+	if _, err := os.Stat(root); err == nil {
+		return root
+	}
+	return filepath.Join(home, "config", stateFileName)
 }

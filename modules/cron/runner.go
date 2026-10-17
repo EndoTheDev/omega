@@ -493,7 +493,7 @@ func (r *Runner) lastFireOf(name string) (int64, bool) {
 // parse keeps the previous job set in effect. Returns when the context
 // is cancelled or Stop is called.
 func (r *Runner) watchJobsFile(ctx context.Context) {
-	path := filepath.Join(r.home, stateFileName)
+	path := homeFile(r.home)
 	var lastMod time.Time
 	if fi, err := os.Stat(path); err == nil {
 		lastMod = fi.ModTime()

@@ -185,6 +185,39 @@ func TestResolveConfigPath(t *testing.T) {
 			t.Errorf("resolveConfigPath(\"\") = %q, want \"\"", got)
 		}
 	})
+
+	t.Run("config subdir fallback", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("OMEGA_HOME", home)
+		if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte("x: 1"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want := home + "/config/config.yaml"
+		if got := resolveConfigPath(""); got != want {
+			t.Errorf("resolveConfigPath(\"\") = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("root wins over config subdir", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("OMEGA_HOME", home)
+		if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte("x: subdir"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("x: root"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want := home + "/config.yaml"
+		if got := resolveConfigPath(""); got != want {
+			t.Errorf("resolveConfigPath(\"\") = %q, want root %q (legacy wins)", got, want)
+		}
+	})
 }
 
 // TestResolveHomePaths verifies only relative defaults are rewritten to

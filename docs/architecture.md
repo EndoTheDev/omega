@@ -35,13 +35,14 @@ build.bat         Build script (Windows): vet + test + build
 docs/             User documentation (this directory)
 bin/              Build output + local runtime (gitignored; skills/ templates tracked)
   omega           Built binary
-  config.yaml     Personal configuration (gitignored)
+  config/         Infrastructure yaml files (config.yaml, mcp.yaml, crons.yaml)
+    config.yaml   Personal configuration (gitignored)
   omega.db        Session database (gitignored)
   trust.yaml      Trust state (gitignored)
   skills/         Skill files
 ```
 
-A released/installed copy is self-contained: the binary, config.yaml,
+A released/installed copy is self-contained: the binary, config/,
 omega.db, memory files, and skills live in one home directory - the
 executable's directory for release-folder installs, or `~/.omega` when
 the binary is installed into a PATH bin directory (`~/go/bin`,

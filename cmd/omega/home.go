@@ -42,20 +42,30 @@ func isPathBinInstall(dir, userHome string) bool {
 }
 
 // bootstrapHome makes a fresh install self-documenting: writes the
-// example configs into the home dir (idempotent - never overwrites),
-// creating the home if it doesn't exist yet (~/.omega case). omega runs
-// on defaults without config.yaml, so only the examples are written.
-// memory.md and user.md are NOT seeded: nothing is shipped for them -
-// the memory tool's own description teaches the file conventions, and
-// the agent's first 'memory add' creates the files. Existing live
-// memory.md/user.md in an instance home are simply never touched here.
+// example configs into the home's config/ subdirectory (idempotent -
+// never overwrites), creating the home and config/ if they don't exist
+// yet (~/.omega case). omega runs on defaults without config.yaml, so
+// only the examples are written. memory.md and user.md are NOT seeded:
+// nothing is shipped for them - the memory tool's own description
+// teaches the file conventions, and the agent's first 'memory add'
+// creates the files. Existing live memory.md/user.md in an instance
+// home are simply never touched here.
+//
+// Only the three infrastructure yaml templates move into config/ (Endo
+// 2026-10-18): config.yaml, mcp.yaml, crons.yaml. omega.db, memory.md,
+// user.md, skills/, and log files stay at the home root. Resolution of
+// the live yamls checks the home root first (legacy installs keep
+// working unchanged), then config/ - see resolveConfigPath and the
+// mcp/cron loaders.
 func bootstrapHome(home string) {
 	os.MkdirAll(home, 0o755)
-	// Only ever written: the .example files. A live crons.yaml is
-	// always human-authored - omega proposes jobs, it never writes
-	// its own schedule (trust gate).
+	cfgDir := filepath.Join(home, "config")
+	os.MkdirAll(cfgDir, 0o755)
+	// Only ever written: the .example files, into config/. A live
+	// crons.yaml is always human-authored - omega proposes jobs, it
+	// never writes its own schedule (trust gate).
 	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example"} {
-		seedFile(home, name, name)
+		seedFile(cfgDir, name, name)
 	}
 }
 

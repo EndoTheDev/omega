@@ -92,11 +92,13 @@ func TestBootstrapHome(t *testing.T) {
 	home := t.TempDir()
 
 	bootstrapHome(home)
+	// The three infrastructure example templates now land in <home>/config/
+	// (Endo 2026-10-18); omega.db, memory.md, user.md, skills/ stay at root.
 	for _, name := range []string{
 		"config.yaml.example", "mcp.yaml.example", "crons.yaml.example",
 	} {
-		if _, err := os.Stat(filepath.Join(home, name)); err != nil {
-			t.Fatalf("bootstrap did not write %s: %v", name, err)
+		if _, err := os.Stat(filepath.Join(home, "config", name)); err != nil {
+			t.Fatalf("bootstrap did not write config/%s: %v", name, err)
 		}
 	}
 	// Nothing is seeded for the memory store: a fresh home boots WITHOUT
@@ -108,13 +110,18 @@ func TestBootstrapHome(t *testing.T) {
 		}
 	}
 	// config.yaml stays example-only: omega runs on defaults, no live
-	// config is ever written.
-	if _, err := os.Stat(filepath.Join(home, "config.yaml")); !os.IsNotExist(err) {
-		t.Fatal("bootstrap wrote a live config.yaml, want none")
+	// config is ever written (neither at root nor in config/).
+	for _, p := range []string{
+		filepath.Join(home, "config.yaml"),
+		filepath.Join(home, "config", "config.yaml"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("bootstrap wrote a live %s, want none", p)
+		}
 	}
 
 	// idempotent: existing files are never overwritten
-	existing := filepath.Join(home, "config.yaml.example")
+	existing := filepath.Join(home, "config", "config.yaml.example")
 	if err := os.WriteFile(existing, []byte("do not touch"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +162,23 @@ func TestBootstrapHomeNeverOverwritesMemory(t *testing.T) {
 func TestBootstrapHomeCreatesDir(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "nested", ".omega")
 	bootstrapHome(home)
-	if _, err := os.Stat(filepath.Join(home, "config.yaml.example")); err != nil {
-		t.Fatalf("bootstrap did not create nested home: %v", err)
+	if _, err := os.Stat(filepath.Join(home, "config", "config.yaml.example")); err != nil {
+		t.Fatalf("bootstrap did not create nested home config/: %v", err)
+	}
+}
+
+// TestBootstrapHomeConfigSubdir is the Endo 2026-10-18 layout law: a
+// fresh home gets exactly <home>/config/{config,mcp,crons}.yaml.example
+// and nothing else writable - omega.db/memory.md/user.md/skills/ stay
+// absent until the agent or operator creates them.
+func TestBootstrapHomeConfigSubdir(t *testing.T) {
+	home := t.TempDir()
+	bootstrapHome(home)
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "config" {
+		t.Fatalf("fresh home should contain only config/, got %v", entries)
 	}
 }

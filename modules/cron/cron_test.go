@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -206,4 +208,47 @@ func TestSchedulePrevNoOccurrence(t *testing.T) {
 // evaluate in server local time).
 func mustLocal(y, m, d, hh, mm int) time.Time {
 	return time.Date(y, time.Month(m), d, hh, mm, 0, 0, time.Local)
+}
+
+// TestHomeFileRootWins verifies the legacy home-root crons.yaml is
+// preferred when present (existing installs keep working unchanged).
+func TestHomeFileRootWins(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config", "crons.yaml"), []byte("subdir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "crons.yaml"), []byte("root"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := homeFile(home); got != filepath.Join(home, "crons.yaml") {
+		t.Fatalf("homeFile = %q, want root (legacy wins)", got)
+	}
+}
+
+// TestHomeFileConfigSubdirFallback verifies crons.yaml in <home>/config/
+// (the Endo 2026-10-18 layout) is used when nothing is at the home root.
+func TestHomeFileConfigSubdirFallback(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config", "crons.yaml"), []byte("subdir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := homeFile(home); got != filepath.Join(home, "config", "crons.yaml") {
+		t.Fatalf("homeFile = %q, want config/ fallback", got)
+	}
+}
+
+// TestHomeFileMissingReturnsConfigPath verifies that when crons.yaml is
+// absent everywhere, homeFile points at the config/ location (the write
+// target for new installs) - never the legacy root.
+func TestHomeFileMissingReturnsConfigPath(t *testing.T) {
+	home := t.TempDir()
+	if got := homeFile(home); got != filepath.Join(home, "config", "crons.yaml") {
+		t.Fatalf("homeFile = %q, want config/ target when absent", got)
+	}
 }

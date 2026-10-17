@@ -68,6 +68,52 @@ func TestLoadConfigEmpty(t *testing.T) {
 	}
 }
 
+// TestLoadConfigYAMLInConfigSubdir verifies mcp.yaml in <home>/config/
+// (the Endo 2026-10-18 layout) is used when nothing is at the home root.
+func TestLoadConfigYAMLInConfigSubdir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config", "mcp.yaml"),
+		[]byte("servers:\n  - name: subserver\n    url: http://localhost:9998\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if len(cfg.Servers) != 1 || cfg.Servers[0].Name != "subserver" {
+		t.Fatalf("cfg: %+v", cfg)
+	}
+}
+
+// TestLoadConfigRootWinsOverSubdir verifies a root mcp.yaml shadows one
+// in config/ (legacy installs keep working unchanged).
+func TestLoadConfigRootWinsOverSubdir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config", "mcp.yaml"),
+		[]byte("servers:\n  - name: subdir\n    url: http://localhost:1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "mcp.yaml"),
+		[]byte("servers:\n  - name: rootwins\n    url: http://localhost:2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Servers[0].Name != "rootwins" {
+		t.Fatalf("root mcp.yaml should win, got %v", cfg.Servers)
+	}
+}
+
 // TestLoadConfigInvalidYAML verifies malformed config surfaces a parse error.
 func TestLoadConfigInvalidYAML(t *testing.T) {
 	t.Setenv("MCP_SERVERS", "{not yaml or json")
