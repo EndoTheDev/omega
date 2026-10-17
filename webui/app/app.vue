@@ -770,6 +770,11 @@
           },
           onToolCall: (tool) => {
             segmentBreak = true;
+            // the segment's text is over - the tool lines carry the
+            // activity now. Killing the flag here hides the streaming
+            // cursor during the whole tool phase (in-app comment 5);
+            // the next onResponse builds a fresh streaming bubble.
+            assistant.streaming = false;
             st.transcript.push({
               kind: "tool",
               name: tool.name,
