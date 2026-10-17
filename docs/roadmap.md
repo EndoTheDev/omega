@@ -65,7 +65,7 @@
 - Inspector pane: tab shell, read-only file manager (`/files/browse` + `/files/read`, EvalSymlinks containment, 64 KiB cap)
 - Dual title generation: provisional title at request start (user-message-only), final title with reply context after the first exchange; `title_state` machine (manual labels never overwritten, old sessions never retitled)
 - Cron extension: jobs in `crons.yaml` (human-authored only, mtime-poll hot reload), robfig/cron expressions, catch-up for misses < 24h, per-job single-instance guard, sessions labeled `cron:<name>`, deliver targets journal/memory
-- First-run memory seeding: `memory.md` + `user.md` created live if absent, never overwritten on upgrade
+- First-run memory seeding removed: fresh homes boot without memory.md/user.md; the agent's first 'memory add' creates them (2026-10-18)
 
 ## Planned
 
