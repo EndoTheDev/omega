@@ -1,4 +1,39 @@
 import MarkdownIt from "markdown-it";
+// Syntax highlighting: highlight.js core + a curated language set, not
+// the full bundle or Shiki - weight matters on the Pi. Only fenced blocks
+// with a registered language get highlighted.
+import hljs from "highlight.js/lib/core";
+import go from "highlight.js/lib/languages/go";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import bash from "highlight.js/lib/languages/bash";
+import json from "highlight.js/lib/languages/json";
+import yaml from "highlight.js/lib/languages/yaml";
+import xml from "highlight.js/lib/languages/xml";
+import css from "highlight.js/lib/languages/css";
+import mdLang from "highlight.js/lib/languages/markdown";
+import sql from "highlight.js/lib/languages/sql";
+import rust from "highlight.js/lib/languages/rust";
+import cLang from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import diff from "highlight.js/lib/languages/diff";
+
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("markdown", mdLang);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("c", cLang);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("diff", diff);
 
 // omega webui: typed client for the http_channel API.
 // Endpoints verified live 2026-10-13 against extensions/http_channel.
@@ -561,14 +596,61 @@ export function pillVisible(
 
 // --- markdown rendering (assistant bubbles) ---
 
+// html:false stays - the sanitizer contract from above: the highlighter
+// operates on the code span TEXT only, its .value output is hljs's own
+// escaping. Unknown/missing info string falls through to markdown-it's
+// default escaped rendering.
+// Emits the complete fence output for a registered language - markdown-it
+// hands a full <pre> block straight through when the highlight result
+// starts with '<pre'. Returns '' for unknown languages so the default
+// (escaped, unstyled) path takes over.
+function highlightFence(code: string, lang: string): string {
+  if (!lang || !hljs.getLanguage(lang)) return "";
+  try {
+    const value = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+    return `<pre><code class="hljs language-${lang}">${value}</code></pre>`;
+  } catch {
+    return "";
+  }
+}
+
+// True when src ends inside an unclosed fenced block - the streaming case
+// (fence opened, closing fence not yet received). Same fence grammar as
+// markdown-it: /^ {0,3}(```+|~~~+)/ opens, a bare same-char fence at the
+// same or greater run closes; a backtick fence's info string may not
+// contain backticks.
+export function endsInOpenFence(src: string): boolean {
+  let open = false;
+  let marker = "";
+  let minLen = 0;
+  for (const line of src.split("\n")) {
+    const m = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (!m) continue;
+    const fence = m[1];
+    if (!open) {
+      if (fence[0] === "`" && m[2].includes("`")) continue;
+      open = true;
+      marker = fence[0];
+      minLen = fence.length;
+    } else if (fence[0] === marker && fence.length >= minLen && m[2].trim() === "") {
+      open = false;
+    }
+  }
+  return open;
+}
+
 // Standard markdown-it, no plugins, no custom rules. html:false is the
 // sanitizer contract: raw HTML in model output is escaped to text by the
 // lib's default path, never executed. Tables and fenced blocks are in
 // the default preset; an unclosed fence still renders as a code block.
-const markdown = new MarkdownIt({ html: false });
+const markdown = new MarkdownIt({ html: false, highlight: highlightFence });
+// The streaming twin: identical grammar, no highlighter - used while the
+// source ends inside an unclosed fence so a mid-stream snapshot renders
+// plain (unstyled) code and never highlights half a token stream.
+const markdownPlain = new MarkdownIt({ html: false });
 
 export function renderMarkdown(src: string): string {
-  return markdown.render(src);
+  return (endsInOpenFence(src) ? markdownPlain : markdown).render(src);
 }
 
 // Debounced render tick for streaming markdown. Chunks only move the
