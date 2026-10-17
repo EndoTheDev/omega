@@ -433,6 +433,14 @@
           if (role === "assistant" && m.thinking) {
             items.push({ kind: "thinking", content: m.thinking });
           }
+          if (m.content) {
+            items.push({
+              kind: "message",
+              role,
+              content: m.content,
+              time: m.created_at || m.timestamp || undefined,
+            });
+          }
           if (role === "assistant" && m.tool_calls?.length) {
             for (const tc of m.tool_calls) {
               const t: ToolItem = {
@@ -447,14 +455,6 @@
               if (tc.id) toolById.set(tc.id, t);
               items.push(t);
             }
-          }
-          if (m.content) {
-            items.push({
-              kind: "message",
-              role,
-              content: m.content,
-              time: m.created_at || m.timestamp || undefined,
-            });
           }
         }
         // second pass: tool-role messages carry the persisted results,
