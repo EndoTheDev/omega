@@ -47,7 +47,7 @@ rule a security contract, not a preference.
 - `config.go` - channel Config (Port, Bind).
 - `http_channel.go` - Channel seam implementation (`Serve` per addr).
 - `static/` - the built webui SPA, embedded via `go:embed` and
-  COMMITTED (synced by `webui/scripts/build.sh`), so a plain
+  COMMITTED (synced by `modules/ui/scripts/build.sh`), so a plain
   `go build` always produces the complete product.
 - `server_test.go` - handler tests (sessions CRUD, chat persistence,
   static index, method gates)
@@ -99,7 +99,7 @@ rule a security contract, not a preference.
 - Pure logic gets a test in `server_pure_test.go`; handler behavior in
   `server_test.go`. Non-trivial accumulation logic leaves a runnable
   check behind (the segmentation tests are the example).
-- Webui changes that alter the SPA require `webui/scripts/build.sh`
+- Webui changes that alter the SPA require `modules/ui/scripts/build.sh`
   and committing the synced `static/` output in the same change -
   the embedded bytes are the product, not a build artifact.
 - A `go build` after touching `server.go` requires a serve restart to
