@@ -273,3 +273,80 @@ func TestFilesReadMethodGate(t *testing.T) {
 		t.Errorf("PUT /files/read status = %d; want 405", rec.Result().StatusCode)
 	}
 }
+
+// TestFilesSymlinkEscape pins the full-request escape guard: symlinks
+// inside the working directory pointing outside (file and directory
+// targets) must get a structured 400 on both endpoints, never a disk
+// read of the target.
+func TestFilesSymlinkEscape(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	targets := map[string]string{
+		"passwd.lnk": "/etc/passwd", // file target outside the root
+		"out.lnk":    "/etc",        // directory target outside the root
+	}
+	for name, target := range targets {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+	}
+	cases := map[string]int{
+		"/files/browse?path=passwd.lnk": http.StatusBadRequest,
+		"/files/browse?path=out.lnk":    http.StatusBadRequest,
+		"/files/read?path=passwd.lnk":   http.StatusBadRequest,
+	}
+	for url, want := range cases {
+		res, body := filesGet(t, url)
+		if res.StatusCode != want {
+			t.Errorf("%s status = %d; want %d", url, res.StatusCode, want)
+		}
+		if msg, ok := body["error"].(string); !ok || msg == "" {
+			t.Errorf("%s error envelope missing or empty: %v", url, body)
+		}
+	}
+}
+
+// TestFilesRootBehindSymlink pins the containment base: a working
+// directory reached through a symlink (PWD points at the symlink) must
+// still serve requests - containment is checked against the
+// EvalSymlinks-resolved root, not the raw one.
+func TestFilesRootBehindSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "realwork")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	marker := []byte("inspector root\n")
+	if err := os.WriteFile(filepath.Join(real, "marker.txt"), marker, 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	// Go's Getwd honors $PWD when it resolves to the current directory,
+	// so the process working directory reads back as the symlink path -
+	// exactly the environment that broke the raw-root containment check
+	t.Setenv("PWD", link)
+	os.Chdir(link) //nolint:errcheck // verified via Getwd below
+	t.Cleanup(func() { os.Chdir("/") }) //nolint:errcheck // test cleanup only
+	if wd, err := os.Getwd(); err != nil || wd != link {
+		t.Fatalf("Getwd = %q, %v; want %q", wd, err, link)
+	}
+	res, body := filesGet(t, "/files/browse")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("browse status = %d; want 200 (root behind symlink must serve)", res.StatusCode)
+	}
+	raw, _ := json.Marshal(body["entries"])
+	var entries []fileEntry
+	json.Unmarshal(raw, &entries)
+	if len(entries) != 1 || entries[0].Name != "marker.txt" {
+		t.Fatalf("entries = %v; want marker.txt", entries)
+	}
+	res, body = filesGet(t, "/files/read?path=marker.txt")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("read status = %d; want 200", res.StatusCode)
+	}
+	if body["content"] != string(marker) {
+		t.Errorf("content = %q; want %q", body["content"], marker)
+	}
+}

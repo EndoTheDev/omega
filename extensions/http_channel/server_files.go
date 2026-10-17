@@ -57,26 +57,32 @@ func validateRelPath(req string) (string, error) {
 }
 
 // resolveUnderRoot joins a validated relative path against root and
-// resolves it through symlink evaluation. A missing leaf is not an error
-// here - the resolved parent is returned and the caller's disk operation
-// reports not-found. Symlink escapes are caught by ensureUnderRoot.
-func resolveUnderRoot(root, rel string) (string, error) {
-	realRoot, err := filepath.EvalSymlinks(root)
+// resolves it through symlink evaluation, returning the real root
+// (EvalSymlinks-resolved) alongside the resolved target. Containment
+// is checked against the returned realRoot, never the raw root: the
+// working directory itself may sit behind a symlink (/tmp on macOS,
+// /var/run/...), and comparing a realRoot-resolved path against the
+// raw root would fail every request in such environments. A missing
+// leaf is not an error here - the resolved parent is returned and the
+// caller's disk operation reports not-found. Symlink escapes are
+// caught by ensureUnderRoot.
+func resolveUnderRoot(root, rel string) (realRoot, resolved string, err error) {
+	realRoot, err = filepath.EvalSymlinks(root)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	target := filepath.Join(realRoot, rel)
-	resolved, err := filepath.EvalSymlinks(target)
+	resolved, err = filepath.EvalSymlinks(target)
 	if err != nil {
 		// EvalSymlinks fails for a nonexistent leaf; resolve the parent
 		// so a missing file still gets the containment check
 		realParent, perr := filepath.EvalSymlinks(filepath.Dir(target))
 		if perr != nil {
-			return "", perr
+			return "", "", perr
 		}
-		return filepath.Join(realParent, filepath.Base(target)), nil
+		return realRoot, filepath.Join(realParent, filepath.Base(target)), nil
 	}
-	return resolved, nil
+	return realRoot, resolved, nil
 }
 
 // ensureUnderRoot verifies a resolved absolute path stays inside realRoot.
@@ -127,12 +133,15 @@ func (s *Server) handleFilesBrowse(w http.ResponseWriter, r *http.Request) {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return
 	}
-	resolved, rerr := resolveUnderRoot(root, rel)
-	if rerr == nil {
-		if err := ensureUnderRoot(root, resolved); err != nil {
-			fileError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
+	if rerr != nil {
+		// fail closed: no containment verdict, no disk access
+		fileError(w, http.StatusInternalServerError, "resolve path: "+rerr.Error())
+		return
+	}
+	if err := ensureUnderRoot(realRoot, resolved); err != nil {
+		fileError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if info, serr := os.Stat(resolved); serr != nil {
 		if os.IsNotExist(serr) {
@@ -184,12 +193,15 @@ func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return
 	}
-	resolved, rerr := resolveUnderRoot(root, rel)
-	if rerr == nil {
-		if err := ensureUnderRoot(root, resolved); err != nil {
-			fileError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
+	if rerr != nil {
+		// fail closed: no containment verdict, no disk access
+		fileError(w, http.StatusInternalServerError, "resolve path: "+rerr.Error())
+		return
+	}
+	if err := ensureUnderRoot(realRoot, resolved); err != nil {
+		fileError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
