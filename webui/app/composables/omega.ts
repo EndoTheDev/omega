@@ -1,3 +1,5 @@
+import MarkdownIt from "markdown-it";
+
 // omega webui: typed client for the http_channel API.
 // Endpoints verified live 2026-10-13 against extensions/http_channel.
 // SSE events: agent_start, turn_start, response_chunk, thinking_chunk,
@@ -264,6 +266,68 @@ export function rowMeta(s: Session): string {
   const tokens = (s.prompt_tokens ?? 0) + (s.completion_tokens ?? 0);
   if (tokens > 0) parts.push(`${formatTokens(tokens)} tok`);
   return parts.join(" - ");
+}
+
+// --- markdown rendering (assistant bubbles) ---
+
+// Standard markdown-it, no plugins, no custom rules. html:false is the
+// sanitizer contract: raw HTML in model output is escaped to text by the
+// lib's default path, never executed. Tables and fenced blocks are in
+// the default preset; an unclosed fence still renders as a code block.
+const markdown = new MarkdownIt({ html: false });
+
+export function renderMarkdown(src: string): string {
+  return markdown.render(src);
+}
+
+// Debounced render tick for streaming markdown. Chunks only move the
+// latest source snapshot; one timer renders once per tick (~150ms), so
+// partial markdown never re-parses per chunk or flash-resizes mid-block.
+// The final full render is the caller's direct renderMarkdown at stream
+// end - see ChatMessage.
+export const RENDER_TICK_MS = 150;
+
+// Timers are injectable for tests: the debounce tests run against a
+// manual fake clock instead of node's mock.timers (node 26 test runner
+// deadlocks when a file mixes mock timers with multiple suites - flaky,
+// bug) and the component uses the real timer pair.
+export interface RenderTimers {
+  set: (fn: () => void, ms: number) => unknown;
+  clear: (handle: unknown) => void;
+}
+
+export interface RenderScheduler {
+  schedule(src: string): void;
+  cancel(): void;
+}
+
+export function createRenderScheduler(
+  render: (src: string) => void,
+  intervalMs: number = RENDER_TICK_MS,
+  timers: RenderTimers = {
+    set: setTimeout,
+    clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  },
+): RenderScheduler {
+  let latest: string | null = null;
+  let handle: unknown = null;
+  const fire = () => {
+    handle = null;
+    const src = latest;
+    latest = null;
+    if (src !== null) render(src);
+  };
+  return {
+    schedule(src: string) {
+      latest = src;
+      if (handle === null) handle = timers.set(fire, intervalMs);
+    },
+    cancel() {
+      if (handle !== null) timers.clear(handle);
+      handle = null;
+      latest = null;
+    },
+  };
 }
 
 export async function fetchHealth(): Promise<boolean> {

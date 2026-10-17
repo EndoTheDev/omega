@@ -441,6 +441,62 @@ body {
   to { opacity: 1; }
 }
 
+/* markdown in assistant bubbles: .md carries rendered HTML, so the
+   bubble's pre-wrap text mode is switched off and block elements set
+   their own spacing. Code blocks ship mono + raised background, tables
+   get hairline borders - tokens only, no highlighting theme. */
+.bubble .md { white-space: normal; }
+.bubble .md > :first-child { margin-top: 0; }
+.bubble .md > :last-child { margin-bottom: 0; }
+.bubble .md p,
+.bubble .md ul,
+.bubble .md ol { margin: 0.4em 0; }
+.bubble .md ul,
+.bubble .md ol { padding-left: 1.4em; }
+.bubble .md h1,
+.bubble .md h2,
+.bubble .md h3,
+.bubble .md h4 { margin: 0.6em 0 0.3em; font-size: 1em; }
+.bubble .md pre {
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  padding: 8px 10px;
+  margin: 0.4em 0;
+  overflow-x: auto;
+}
+.bubble .md code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.bubble .md p code,
+.bubble .md li code {
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  padding: 1px 4px;
+}
+.bubble .md pre code { background: none; border: none; padding: 0; }
+.bubble .md table {
+  border-collapse: collapse;
+  margin: 0.4em 0;
+}
+.bubble .md th,
+.bubble .md td {
+  border: 1px solid var(--stroke);
+  padding: 3px 8px;
+  text-align: left;
+}
+.bubble .md th { background: var(--z2); }
+.bubble .md blockquote {
+  margin: 0.4em 0;
+  padding: 0 10px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-dim);
+}
+.bubble .md a { color: var(--accent); }
+.bubble .md hr { border: none; border-top: 1px solid var(--stroke); }
+
 /* thinking block */
 .thinking {
   border: 1px solid var(--stroke);
