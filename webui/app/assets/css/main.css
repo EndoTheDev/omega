@@ -160,6 +160,46 @@ body {
   padding: 12px 12px 10px;
 }
 
+/* sidebar search: filters the in-memory list client-side */
+.session-search {
+  padding: 0 12px 8px;
+}
+.session-search input {
+  width: 100%;
+  background: var(--z1-raised);
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  border-radius: var(--r-chip);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: var(--sans);
+}
+.session-search input::placeholder { color: var(--text-dim); }
+.session-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* section headers: pinned / today / yesterday / earlier */
+.session-list li.bucket-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  padding: 10px 10px 4px;
+  cursor: default;
+  min-height: 0;
+}
+.session-list li.bucket-label:hover { background: transparent; }
+.session-list li.bucket-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 8px 10px;
+  cursor: default;
+  min-height: 0;
+}
+.session-list li.bucket-empty:hover { background: transparent; }
+
 .head-actions {
   display: flex;
   align-items: center;
@@ -214,7 +254,7 @@ body {
 
 .session-list li {
   position: relative;
-  padding: 8px 10px;
+  padding: 8px 30px 8px 10px;
   border-radius: var(--r-chip);
   cursor: pointer;
   display: flex;
@@ -226,6 +266,30 @@ body {
 }
 .session-list li:hover { background: var(--z1-raised); }
 .session-list li.active { background: var(--z1-raised); }
+
+/* pin toggle: dim star, top-right; always visible when pinned, and shown
+   on hover otherwise so the affordance exists without adding noise.
+   .stop on the handler - toggling a pin must not open the session. */
+.pin-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--r-chip);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.session-list li:hover .pin-btn,
+.pin-btn.pinned { opacity: 1; }
+.pin-btn:hover { color: var(--text); background: var(--z2); }
+.pin-btn.pinned { color: var(--accent); }
 
 /* streaming pulse: a live stream rings ITS OWN row - the view may sit on
    any other session (or none) while it runs; row-level, not global */
@@ -260,6 +324,18 @@ body {
 .session-time {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* second meta line: model - msgs - tools - tokens */
+.session-meta {
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  align-self: stretch;
 }
 
 .sessions-foot {

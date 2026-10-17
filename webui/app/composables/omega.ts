@@ -13,6 +13,12 @@ export interface Session {
   label?: string;
   created_at: string;
   updated_at: string;
+  message_count?: number;
+  tool_count?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  model?: string;
+  pinned?: boolean;
 }
 
 export interface SessionDetail {
@@ -144,6 +150,105 @@ export function anyBusy(b: BusyMap): boolean {
   return b.size > 0;
 }
 
+// --- session list: pure bucketing / filtering / formatting helpers ---
+
+// relativeAge renders a compact age for the row meta ("35m", "2h", "3d").
+// Invalid timestamps render "" and the caller hides the label.
+export function relativeAge(iso: string, now: Date = new Date()): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const mins = Math.floor((now.getTime() - t.getTime()) / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+// formatTokens k-abbreviates above 1000 (2135 -> "2.1k"), passes anything
+// smaller through unchanged.
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  const k = Math.floor(n / 100) / 10;
+  return `${k}k`;
+}
+
+// filterSessions matches the search query as a case-insensitive substring
+// of the session label. An empty query matches everything (no filter).
+export function filterSessions(sessions: Session[], query: string): Session[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return sessions;
+  return sessions.filter((s) => (s.label ?? s.id).toLowerCase().includes(q));
+}
+
+// byNewest orders a session group by last activity, newest first. A
+// missing or malformed updated_at sorts last ("now" beats the unknown).
+function byNewest(a: Session, b: Session): number {
+  const ta = Date.parse(a.updated_at);
+  const tb = Date.parse(b.updated_at);
+  if (Number.isNaN(ta)) return 1;
+  if (Number.isNaN(tb)) return -1;
+  return tb - ta;
+}
+
+// SessionBuckets is the grouped sidebar list: pinned sessions first (the
+// keep-at-top section), then the Today / Yesterday / Earlier time
+// buckets by local calendar day of updated_at. Every group is sorted by
+// last activity within itself.
+export interface SessionBuckets {
+  pinned: Session[];
+  today: Session[];
+  yesterday: Session[];
+  earlier: Session[];
+}
+
+// bucketSessions groups sessions into the sidebar sections. Bucketing is
+// by LOCAL calendar day (midnight boundaries), not a 24h offset - a
+// session touched at 23:50 yesterday stays "Yesterday" at 00:10 today.
+export function bucketSessions(
+  sessions: Session[],
+  now: Date = new Date(),
+): SessionBuckets {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfYesterday = startOfToday.getTime() - 86400000;
+
+  const out: SessionBuckets = {
+    pinned: [],
+    today: [],
+    yesterday: [],
+    earlier: [],
+  };
+  for (const s of sessions) {
+    if (s.pinned) {
+      // the pinned section owns the row - no day-bucket duplicate
+      out.pinned.push(s);
+      continue;
+    }
+    const t = Date.parse(s.updated_at);
+    if (!Number.isNaN(t) && t >= startOfToday.getTime()) out.today.push(s);
+    else if (!Number.isNaN(t) && startOfYesterday <= t) out.yesterday.push(s);
+    else out.earlier.push(s);
+  }
+  for (const group of Object.values(out)) group.sort(byNewest);
+  return out;
+}
+
+// rowMeta renders the row's second line:
+// "<model> - 12 msgs - 3 tools - 2.1k tok". Unknown pieces are omitted -
+// zero tool counts and zero token totals carry no information, and a
+// session with nothing known renders no meta line at all.
+export function rowMeta(s: Session): string {
+  const parts: string[] = [];
+  if (s.model) parts.push(s.model);
+  if (s.message_count != null && s.message_count > 0)
+    parts.push(`${s.message_count} msgs`);
+  if ((s.tool_count ?? 0) > 0) parts.push(`${s.tool_count} tools`);
+  const tokens = (s.prompt_tokens ?? 0) + (s.completion_tokens ?? 0);
+  if (tokens > 0) parts.push(`${formatTokens(tokens)} tok`);
+  return parts.join(" - ");
+}
+
 export async function fetchHealth(): Promise<boolean> {
   try {
     const r = await fetch("/health");
@@ -169,6 +274,16 @@ export async function fetchSession(id: string): Promise<SessionDetail> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}`);
   if (!r.ok) throw new Error(`session: ${r.status}`);
   return r.json();
+}
+
+// pinSession PATCHes the pinned flag directly on the session row.
+export async function pinSession(id: string, pinned: boolean): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pinned }),
+  });
+  if (!r.ok) throw new Error(`pin: ${r.status}`);
 }
 
 // streamChat POSTs messages to /chat and drives the handler callbacks from

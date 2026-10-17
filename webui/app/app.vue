@@ -37,7 +37,8 @@
           :streaming-ids="busySet"
           :open="drawerOpen"
           @open="openSession"
-          @new="newChat" />
+          @new="newChat"
+          @pin="togglePin" />
 
         <PaneDivider
           v-if="!isMobile"
@@ -153,7 +154,7 @@
 
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-  import { anyBusy, withBusy } from "./composables/omega";
+  import { anyBusy, withBusy, pinSession } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
 
   interface MessageItem {
@@ -672,6 +673,22 @@
       sessions.value = await fetchSessions();
     } catch {
       // sidebar refresh is best-effort
+    }
+  }
+
+  // togglePin flips the pinned flag on a session row: optimistically, so
+  // the section move is instant, then PATCHes it onto the server row - a
+  // failed PATCH reverts the local state and the refresh stays honest.
+  async function togglePin(id: string, target: boolean) {
+    const updateList = (list: Session[]) =>
+      list.map((s) => (s.id === id ? { ...s, pinned: target } : s));
+    const before = sessions.value;
+    sessions.value = updateList(sessions.value);
+    try {
+      await pinSession(id, target);
+    } catch {
+      sessions.value = before;
+      refreshSessions();
     }
   }
 
