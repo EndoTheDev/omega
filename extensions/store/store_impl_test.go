@@ -669,6 +669,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 	if sess.UpdatedAt != updatedAt {
 		t.Fatalf("read moved updated_at: %q -> %q", updatedAt, sess.UpdatedAt)
 	}
+
+	// A generated title landing after the read stamp is cosmetic - the
+	// title write must not touch updated_at and resurrect unread.
+	if err := s.SetSessionTitle(ctx, "s1", "generated title", false); err != nil {
+		t.Fatalf("set title: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget after title: %v", err)
+	}
+	if agent.SessionUnread(sess) {
+		t.Fatalf("session unread after title write = true, want false")
+	}
+	if sess.UpdatedAt != updatedAt {
+		t.Fatalf("title write moved updated_at: %q -> %q", updatedAt, sess.UpdatedAt)
+	}
 }
 
 // TestSessionModels covers the read-time last-model map: the latest

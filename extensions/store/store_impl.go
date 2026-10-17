@@ -457,12 +457,14 @@ func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 // (moves to 2) - a session at 2 is never touched, including the
 // pre-title-state rows that were migrated to 2 because they carried a
 // label. A losing update (session already advanced) writes nothing.
+// updated_at is untouched: a generated label is not activity, and a
+// title landing after a read stamp must not turn the session unread.
 func (s *Store) SetSessionTitle(ctx context.Context, sessionID string, title string, final bool) error {
-	stmt := `UPDATE sessions SET label = ?, title_state = 1, updated_at = ? WHERE id = ? AND title_state = 0`
+	stmt := `UPDATE sessions SET label = ?, title_state = 1 WHERE id = ? AND title_state = 0`
 	if final {
-		stmt = `UPDATE sessions SET label = ?, title_state = 2, updated_at = ? WHERE id = ? AND title_state <= 1`
+		stmt = `UPDATE sessions SET label = ?, title_state = 2 WHERE id = ? AND title_state <= 1`
 	}
-	_, err := s.db.ExecContext(ctx, stmt, title, ai.NowISO(), sessionID)
+	_, err := s.db.ExecContext(ctx, stmt, title, sessionID)
 	return err
 }
 
