@@ -352,7 +352,10 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 /* relative age: absolute right-of-row, vertically centered - leaves the
    stacked column so rows read as two lines (title + meta). Rows already
    reserve 30px right padding, which keeps the time clear of the pin star
-   sitting at right: 6px. */
+   sitting at right: 6px. The text spans additionally reserve the time's
+   band (padding-right 30px) - the content box would otherwise end exactly
+   at the time's right edge, so every truncated title collided with it
+   (in-app comment 4). Text now ellipsizes before the time zone. */
 .session-time {
   position: absolute;
   right: 30px;
@@ -360,6 +363,13 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   transform: translateY(-50%);
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* the time floats vertically centered in its reserved band - title and
+   meta must never run under it */
+.session-title,
+.session-meta {
+  padding-right: 30px;
 }
 
 /* second meta line: model - msgs - tools - tokens */
