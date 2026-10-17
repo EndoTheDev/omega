@@ -54,6 +54,18 @@
 - Loopback-only default bind with explicit `server.bind` opt-in for reverse-proxy routing (v0.6.0)
 - Release pipeline: tag -> Actions builds 5 platforms with the webui baked in + checksums; `omega update` self-service (v0.6.0-v0.6.4)
 - First-class `go install`: committed SPA, buildinfo version resolution, first-run config bootstrap, `~/.omega` home for bin-dir installs (v0.6.1-v0.6.4)
+- Concurrent sessions: per-run provider copies (`WithModel`), single-flight guard removed, parallel `/chat` with different models (v0.7.0)
+- Per-session stream state in the webui: pulsing sidebar rows, tab-title spinner, composer usable in every session
+- Hermes-style session list: search, server-side pinned flag (PATCH, `updated_at` untouched), Today/Yesterday/Earlier buckets, rich rows (model, msgs, tools, tokens, relative age)
+- Real token totals per session (usage persisted at stream end), message + tool counts computed at read time
+- URL-addressable sessions: `/chat/<id>` via hand-rolled history API, SPA fallback for non-file paths
+- Markdown rendering in chat bubbles (markdown-it `html:false`, ~150ms debounced streaming renders)
+- Interrupted-stream marker + retry affordance (transport death distinguishable from clean end)
+- Session polish: hover timestamps, thinking elapsed meter, jump-to-live pill
+- Inspector pane: tab shell, read-only file manager (`/files/browse` + `/files/read`, EvalSymlinks containment, 64 KiB cap)
+- Dual title generation: provisional title at request start (user-message-only), final title with reply context after the first exchange; `title_state` machine (manual labels never overwritten, old sessions never retitled)
+- Cron extension: jobs in `crons.yaml` (human-authored only, mtime-poll hot reload), robfig/cron expressions, catch-up for misses < 24h, per-job single-instance guard, sessions labeled `cron:<name>`, deliver targets journal/memory
+- First-run memory seeding: `memory.md` + `user.md` created live if absent, never overwritten on upgrade
 
 ## Planned
 
@@ -69,10 +81,12 @@
 - `omega serve` has no authentication, TLS, or CORS - it binds loopback
   by default; exposing it requires an explicit `server.bind` entry and an
   authenticating reverse proxy in front
+- The shared injected-messages channel means a delegated message drains
+  into an arbitrary active run at single-user load (concurrent /chat
+  runs themselves are safe since v0.7.0)
 - `omega health` only checks HTTP 200 on `/health` - does not probe the
   provider or database
 - Compaction is irreversible - summarized messages cannot be restored
   to their original form
-- No concurrent session safety across HTTP requests
 - SQLite uses a pure-Go driver (`modernc.org/sqlite`, no CGO) but is
   untested under heavy load
