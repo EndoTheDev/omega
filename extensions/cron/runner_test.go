@@ -61,7 +61,12 @@ func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	go r.fire(ctx, r.jobsSnapshot()[0], time.Now()) // slow begins
+	var fired sync.WaitGroup
+	fired.Add(1)
+	go func() { // slow begins
+		defer fired.Done()
+		r.fire(ctx, r.jobsSnapshot()[0], time.Now())
+	}()
 	if got := <-entered; got != "slow" {
 		t.Fatalf("first fire = %s, want slow", got)
 	}
@@ -70,12 +75,19 @@ func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	r.fire(ctx, r.jobsSnapshot()[0], time.Now())
 
 	// Other jobs still fire in parallel while slow runs.
-	go r.fire(ctx, r.jobsSnapshot()[1], time.Now())
+	fired.Add(1)
+	go func() {
+		defer fired.Done()
+		r.fire(ctx, r.jobsSnapshot()[1], time.Now())
+	}()
 	if got := <-entered; got != "fast" {
 		t.Fatalf("parallel fire = %s, want fast", got)
 	}
 
 	close(release)
+	// Fires write cronstate.json into the TempDir; wait them out so
+	// cleanup never races a straggler write.
+	fired.Wait()
 }
 
 func TestFireGuardLogsSkip(t *testing.T) {
