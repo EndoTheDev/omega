@@ -98,7 +98,7 @@ func TestMessagesToJSON(t *testing.T) {
 		ai.NewAssistant("hi"),
 		ai.NewToolResult("result", "t1", false),
 	}
-	result := messagesToJSON(msgs)
+	result := messagesToJSON(msgs, false)
 	if len(result) != 4 {
 		t.Fatalf("got %d maps, want 4", len(result))
 	}
@@ -913,8 +913,11 @@ func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
 	if fn["name"] != "get_weather" {
 		t.Errorf("tool call function name = %v, want get_weather", fn["name"])
 	}
-	if args, _ := fn["arguments"].(string); args != `{"city":"Tokyo"}` {
-		t.Errorf("tool call arguments = %v, want JSON string", fn["arguments"])
+	// ollama's native path requires arguments as the object; a JSON
+	// string fails upstream with "Value looks like object".
+	args, _ := fn["arguments"].(map[string]any)
+	if args["city"] != "Tokyo" {
+		t.Errorf("tool call arguments = %v, want object {city: Tokyo}", fn["arguments"])
 	}
 	// tool result keeps role + tool_call_id.
 	tm, _ := gotMessages[2].(map[string]any)
@@ -1008,6 +1011,91 @@ func TestStreamOllamaErrors(t *testing.T) {
 			t.Errorf("FinishReason = %q, want stop", end.FinishReason)
 		}
 	})
+}
+
+// TestMessagesToJSONToolArgsEncoding verifies the tool_calls argument
+// encoding per provider wire: string for openai, object for ollama
+// (the native path rejects the string) and Anthropic.
+func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
+	assistant := ai.NewAssistant("")
+	assistant.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	msgs := []ai.Message{ai.NewUser("hi"), assistant}
+
+	for _, c := range []struct {
+		name       string
+		stringArgs bool
+		want       any
+	}{
+		{"openai_string", true, `{"city":"Tokyo"}`},
+		{"native_object", false, map[string]any{"city": "Tokyo"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			result := messagesToJSON(msgs, c.stringArgs)
+			// Round-trip through JSON: the wire slice is
+			// []map[string]any in Go, which a []any assertion misses.
+			data, err := json.Marshal(result[1])
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var am map[string]any
+			if err := json.Unmarshal(data, &am); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			calls, _ := am["tool_calls"].([]any)
+			if len(calls) != 1 {
+				t.Fatalf("tool_calls = %d, want 1", len(calls))
+			}
+			call, _ := calls[0].(map[string]any)
+			fn, _ := call["function"].(map[string]any)
+			if !reflect.DeepEqual(fn["arguments"], c.want) {
+				t.Errorf("function.arguments = %v (%T), want %v (%T)", fn["arguments"], fn["arguments"], c.want, c.want)
+			}
+			if call["type"] != "function" {
+				t.Errorf("type = %v, want function", call["type"])
+			}
+		})
+	}
+}
+
+// TestStreamOpenAIToolResultRoundTrip verifies the openai wire keeps
+// the JSON-string argument encoding in message history (the shape the
+// openai endpoint requires), in contrast to the ollama native path.
+func TestStreamOpenAIToolResultRoundTrip(t *testing.T) {
+	var gotMessages []any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var sent map[string]any
+		json.Unmarshal(body, &sent)
+		gotMessages, _ = sent["messages"].([]any)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	assistant := ai.NewAssistant("")
+	assistant.ToolCalls = []ai.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	messages := []ai.Message{
+		ai.NewUser("weather?"),
+		assistant,
+		ai.NewToolResult("30C and sunny", "call_ext", false),
+	}
+	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "gpt-x", apiKey: "test-key"}
+	collectEvents(t, p.Stream(testContext(), messages, nil))
+
+	if len(gotMessages) != 3 {
+		t.Fatalf("request messages = %d, want 3 (user, assistant, tool)", len(gotMessages))
+	}
+	am, _ := gotMessages[1].(map[string]any)
+	calls, _ := am["tool_calls"].([]any)
+	if len(calls) != 1 {
+		t.Fatalf("assistant tool_calls = %d, want 1", len(calls))
+	}
+	call, _ := calls[0].(map[string]any)
+	fn, _ := call["function"].(map[string]any)
+	if args, _ := fn["arguments"].(string); args != `{"city":"Tokyo"}` {
+		t.Errorf("openai arguments = %v, want JSON string", fn["arguments"])
+	}
 }
 
 // TestStreamOpenAI verifies Stream against a fake OpenAI SSE endpoint:

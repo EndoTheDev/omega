@@ -82,7 +82,12 @@ func (p *Provider) Stream(ctx context.Context, messages []ai.Message, tools []ai
 	events := make(chan ai.StreamEvent, 64)
 	go func() {
 		defer close(events)
-		msgJSON := messagesToJSON(messages)
+		// Only the OpenAI wire encodes tool-call arguments as a JSON
+		// string. Ollama's native path parses messages itself and
+		// requires the argument object (a string fails with "Value
+		// looks like object..."); Anthropic's input blocks want one
+		// too.
+		msgJSON := messagesToJSON(messages, p.typ == "openai")
 		toolJSON := toolSchemasToJSON(tools)
 		var end ai.StreamEnd
 		switch p.typ {
@@ -137,8 +142,11 @@ func (p *Provider) ModelInfo() (ai.ModelInfo, error) {
 
 // messagesToJSON serializes ai.Message values to maps with a role
 // field added based on the concrete message type. The timestamp
-// field is dropped (not needed by the provider API).
-func messagesToJSON(messages []ai.Message) []map[string]any {
+// field is dropped (not needed by the provider API). stringArgs
+// selects the tool_calls argument encoding: the OpenAI wire requires
+// a JSON string, the ollama native path and Anthropic expect the
+// argument object.
+func messagesToJSON(messages []ai.Message, stringArgs bool) []map[string]any {
 	msgJSON := make([]map[string]any, len(messages))
 	for i, msg := range messages {
 		data, _ := json.Marshal(msg)
@@ -154,10 +162,11 @@ func messagesToJSON(messages []ai.Message) []map[string]any {
 		case ai.ToolResult:
 			m["role"] = "tool"
 		}
-		// OpenAI wire format requires each tool_calls entry to be
+		// The OpenAI wire format requires each tool_calls entry to be
 		// {"id","type":"function","function":{"name","arguments":"<json>"}}
-		// while ai.ToolCall marshals flat with map arguments. Restructure
-		// for both providers (Ollama accepts the OpenAI shape).
+		// while ai.ToolCall marshals flat with map arguments. The
+		// OpenAI wire needs arguments as a JSON string; ollama's
+		// native path and Anthropic require the object itself.
 		if calls, ok := m["tool_calls"].([]any); ok {
 			wire := make([]map[string]any, 0, len(calls))
 			for _, c := range calls {
@@ -166,9 +175,11 @@ func messagesToJSON(messages []ai.Message) []map[string]any {
 					continue
 				}
 				args := cm["arguments"]
-				if argsMap, ok := args.(map[string]any); ok {
-					if b, err := json.Marshal(argsMap); err == nil {
-						args = string(b)
+				if stringArgs {
+					if argsMap, ok := args.(map[string]any); ok {
+						if b, err := json.Marshal(argsMap); err == nil {
+							args = string(b)
+						}
 					}
 				}
 				fn, _ := cm["function"].(map[string]any)
