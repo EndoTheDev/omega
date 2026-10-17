@@ -698,6 +698,56 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .bubble .md pre code { background: none; border: none; padding: 0; }
 
+/* Codeblock UX: header bar (lang + line count + copy), 60vh cap with
+   internal scroll, collapse. The .codeblock wrapper is added post-render
+   (composables/codeblocks.ts), never emitted by the markdown renderer. */
+.bubble .md .codeblock {
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  margin: 0.4em 0;
+}
+.bubble .md .codeblock pre {
+  background: none;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.codeblock-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--stroke);
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+}
+.codeblock.collapsed .codeblock-head { border-bottom: none; }
+.codeblock-lang,
+.codeblock-lines { color: var(--text-dim); }
+.codeblock-head:hover .codeblock-lang,
+.codeblock-head:hover .codeblock-lines { color: var(--text); }
+.codeblock-copy {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+}
+.codeblock-copy:hover { color: var(--text); }
+.codeblock.collapsed pre { display: none; }
+.codeblock-head,
+.codeblock-lang,
+.codeblock-lines,
+.codeblock-copy,
+.codeblock-copy:hover { font-family: var(--mono); }
+
 /* hljs token colors - the four palette hues only (--accent/--ok/--err/
    --text-dim); everything else (numbers, identifiers, punctuation)
    stays default text. Scoped to bubbles: unstyled fences elsewhere
