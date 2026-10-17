@@ -83,6 +83,12 @@
                 :status="item.status"
                 :output="item.output"
                 :result="item.result" />
+              <div
+                v-else-if="item.kind === 'interrupted'"
+                class="interrupted-line">
+                <span>stream interrupted</span>
+                <button class="resume" @click="retryStream">resume</button>
+              </div>
             </template>
             <div
               v-if="statusLine"
@@ -174,6 +180,11 @@
     sessionPath,
     isAtBottom,
     pillVisible,
+    lastUserText,
+    dropLastExchange,
+    hasInterruptedMarker,
+    withoutMarkers,
+    StreamInterruptedError,
   } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
 
@@ -198,7 +209,17 @@
     output?: string;
     result?: string;
   }
-  type TranscriptItem = MessageItem | ThinkingItem | ToolItem;
+  // inline "stream interrupted" marker: appears only when the SSE
+  // transport died mid-run (never on a clean end). Carries the resume
+  // affordance - see retryStream.
+  interface InterruptedItem {
+    kind: "interrupted";
+  }
+  type TranscriptItem =
+    | MessageItem
+    | ThinkingItem
+    | ToolItem
+    | InterruptedItem;
 
   const healthy = ref(false);
   const models = ref<string[]>([]);
@@ -343,6 +364,11 @@
       return;
     }
     st.statusLine = "";
+    // an interrupted-stream marker is per-session live state: the refetch
+    // below restores PERSISTED history, not the marker - re-append it so
+    // the resume affordance survives a view switch (card: switching is a
+    // pure view change, retry stays per-session)
+    const hadInterrupted = hasInterruptedMarker(st.transcript);
     try {
       const detail = await fetchSession(id);
       if (detail.messages) {
@@ -391,6 +417,7 @@
           t.status = m.is_error ? "error" : "done";
         }
         st.transcript = items;
+        if (hadInterrupted) st.transcript.push({ kind: "interrupted" });
       }
     } catch {
       // empty or missing session: keep the previous view rather than
@@ -554,14 +581,25 @@
     }
   }
 
-  async function send() {
+  function send() {
     const text = draft.value.trim();
     if (!text) return;
+    draft.value = "";
+    submitText(text);
+  }
+
+  // submitText is the ONE send path - the composer and the interrupted
+  // retry both land here. Everything keys off THIS session's state and
+  // busy entry, so retrying session A never touches session B.
+  async function submitText(text: string) {
     const startKey = activeKey.value;
     // per-session guard: only THIS session's live stream blocks a send
     if (busySet.value.has(startKey)) return;
-    draft.value = "";
     const st = ensureState(startKey);
+    // a fresh send retires a stale resume affordance - after a later
+    // exchange the marker no longer describes the transcript state
+    if (hasInterruptedMarker(st.transcript))
+      st.transcript = withoutMarkers(st.transcript);
     // unsaved chats live under NEW_KEY until /sessions returns the real
     // id; state AND busy entry re-key to the id right after creation
     let busyKey = startKey;
@@ -598,6 +636,9 @@
     // (preamble -> tools -> final answer).
     let segmentBreak = false;
     let thinking: ThinkingItem | null = null;
+    // transport-death flag: an interrupted run with NO partial output does
+    // not get an empty ghost bubble - the marker alone carries the state
+    let interrupted = false;
     const sentAt = Date.now();
     // live stream telemetry: per-chunk arrivals make the statusbar a
     // visible proof that the frontend receives chunks as they come -
@@ -714,8 +755,16 @@
       );
       assistant.streaming = false;
     } catch (e) {
-      assistant.content +=
-        assistant.content ? `\n[error: ${e}]` : `[error: ${e}]`;
+      if (e instanceof StreamInterruptedError) {
+        // transport death mid-stream: the partial bubble stays exactly as
+        // it is (finally finalizes its streaming flag) - the marker carries
+        // the resume affordance instead of appending error text to it
+        interrupted = true;
+        st.transcript.push({ kind: "interrupted" });
+      } else {
+        assistant.content +=
+          assistant.content ? `\n[error: ${e}]` : `[error: ${e}]`;
+      }
       assistant.streaming = false;
     } finally {
       st.liveChunksPerSecond = 0;
@@ -723,9 +772,10 @@
       // track across the closure - cast to the item type it is at runtime
       const liveThinking = thinking as ThinkingItem | null;
       if (liveThinking?.streaming) liveThinking.streaming = false;
-      // stream failed before any response chunk: make sure the (error) bubble
-      // made it into the transcript at all
-      pushAssistant();
+      // stream failed before any response chunk: make sure the (error)
+      // bubble made it into the transcript at all - EXCEPT an interrupted
+      // run with no output: it keeps only the marker, no empty bubble
+      if (!interrupted || assistant.content) pushAssistant();
       assistant.streaming = false;
       busySet.value = withBusy(busySet.value, busyKey, false);
       st.statusLine = "";
@@ -740,6 +790,23 @@
     } catch {
       // sidebar refresh is best-effort
     }
+  }
+
+  // resume replays the interrupted run: the transcript tail the failed
+  // run produced (partial bubble, thinking, tool lines, marker) is
+  // dropped, and the message that kicked it off goes out again through
+  // the normal send path - a clean replacement response, NOT a
+  // continuation of the severed stream. Reads and writes only THIS
+  // session's state, so other sessions' transcripts and busy flags are
+  // untouched.
+  function retryStream() {
+    const key = activeKey.value;
+    const st = ensureState(key);
+    if (busySet.value.has(key)) return;
+    const text = lastUserText(st.transcript);
+    if (text === null) return;
+    st.transcript = dropLastExchange(st.transcript);
+    submitText(text);
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so

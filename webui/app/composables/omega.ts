@@ -81,11 +81,12 @@ export function parseFrame(frame: string): unknown | null {
 // handlePayload dispatches a parsed SSE payload to the stream handlers.
 // Pure: all state lives in the state object. THROWS on error payloads -
 // streamChat lets the throw propagate so a mid-stream agent error lands
-// in the chat's error bubble instead of being swallowed.
+// in the chat's error bubble instead of being swallowed. sawEnd records
+// the terminal agent_end event (transport-death detection).
 export function handlePayload(
   payload: unknown,
   handlers: StreamHandlers,
-  state: { seenResponse: boolean },
+  state: { seenResponse: boolean; sawEnd?: boolean },
 ): void {
   const p = payload as Record<string, unknown>;
   switch (p.type) {
@@ -127,6 +128,12 @@ export function handlePayload(
           cachedTokens: (p.cached_count as number) || 0,
         });
       }
+      break;
+    case "agent_end":
+      // the terminal event: only its arrival makes the stream end CLEAN.
+      // A reader that finishes without it means the connection dropped
+      // mid-run (server death, proxy cut) - streamChat flags that.
+      state.sawEnd = true;
       break;
     case "error":
       throw new Error(String(p.error || "agent error"));
@@ -489,6 +496,80 @@ export async function pinSession(id: string, pinned: boolean): Promise<void> {
   if (!r.ok) throw new Error(`pin: ${r.status}`);
 }
 
+// Minimal structural view of a transcript item for the retry helpers -
+// the app's TranscriptItem union satisfies it (all member shapes carry
+// these fields or none of them).
+export interface TranscriptItemLike {
+  kind: string;
+  role?: string;
+  content?: string;
+  name?: string;
+  status?: string;
+  output?: string;
+  result?: string;
+  streaming?: boolean;
+  time?: string;
+}
+
+// lastCompleteUserIndex finds the transcript item a RESEND kicks off from:
+// the last complete user message (kind "message", role "user"). A partial
+// assistant bubble and any trailing marker sit after it; -1 when the
+// transcript has no user message at all.
+export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item?.kind === "message" && item.role === "user") return i;
+  }
+  return -1;
+}
+
+// lastUserText is the text the interrupted retry re-sends through the
+// normal send path (null when there is nothing to resend from).
+export function lastUserText(items: TranscriptItemLike[]): string | null {
+  const idx = lastCompleteUserIndex(items);
+  if (idx === -1) return null;
+  return items[idx]?.content ?? null;
+}
+
+// dropLastExchange drops the last exchange FROM its opening user message:
+// the run's user text, any tool lines / thinking, the partial assistant
+// bubble, and the marker all leave the transcript, so the retry's send
+// path can push the user message back and stream a clean replacement
+// response (no duplicate user bubble). No user message means nothing to
+// drop: the transcript is returned unchanged.
+export function dropLastExchange(
+  items: TranscriptItemLike[],
+): TranscriptItemLike[] {
+  const idx = lastCompleteUserIndex(items);
+  if (idx === -1) return items;
+  return items.slice(0, idx);
+}
+
+// hasInterruptedMarker reports whether an interrupted-stream marker is
+// still live in this transcript.
+export function hasInterruptedMarker(items: TranscriptItemLike[]): boolean {
+  return items.some((item) => item?.kind === "interrupted");
+}
+
+// withoutMarkers strips interrupted-stream markers, keeps order. Used
+// when a fresh send retires a stale resume affordance.
+export function withoutMarkers(
+  items: TranscriptItemLike[],
+): TranscriptItemLike[] {
+  return items.filter((item) => item?.kind !== "interrupted");
+}
+
+// StreamInterruptedError: the SSE transport died mid-stream (reader or
+// fetch failure, connection drop before the terminal event) - NOT an
+// agent error payload, which throws a plain Error and lands in the
+// bubble. The caller reacts with the interrupt marker + resume pill.
+export class StreamInterruptedError extends Error {
+  constructor(message = "stream interrupted") {
+    super(message);
+    this.name = "StreamInterruptedError";
+  }
+}
+
 // streamChat POSTs messages to /chat and drives the handler callbacks from
 // the SSE stream. Error payloads throw - the caller surfaces them.
 export async function streamChat(
@@ -510,10 +591,19 @@ export async function streamChat(
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const state = { seenResponse: false };
+  const state = { seenResponse: false, sawEnd: false };
 
   for (;;) {
-    const { done, value } = await reader.read();
+    let read: ReadableStreamReadResult<Uint8Array>;
+    try {
+      read = await reader.read();
+    } catch {
+      // transport death (network cut, server drop mid-run): frames
+      // already delivered stay with the caller; the failure is flagged
+      // so the stream is marked interrupted, not silently dropped.
+      throw new StreamInterruptedError();
+    }
+    const { done, value } = read;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
@@ -530,4 +620,9 @@ export async function streamChat(
       handlePayload(payload, handlers, state);
     }
   }
+
+  // A reader finishing WITHOUT the terminal event is an abnormal
+  // termination - the server never finished the run (dropped connection,
+  // process death). A clean end always passes through agent_end.
+  if (!state.sawEnd) throw new StreamInterruptedError();
 }
