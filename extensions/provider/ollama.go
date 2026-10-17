@@ -58,11 +58,15 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body))}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("ollama: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
 	}
 
 	phase := ""
+	// Ollama's tool_calls carry no id on some hosts/versions; the
+	// openai path always yields one. Synthesize stable ids (call_N)
+	// when the wire omits them so ToolResult correlation works.
+	toolCallSeq := 0
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, readErr := reader.ReadString('\n')
@@ -74,9 +78,23 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 				return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}
 			}
 
+			// In-stream error payloads surface as an error StreamEnd
+			// (parity with the openai path). The error field is a
+			// bare string on ollama and an object on some proxies.
+			switch eval := chunk["error"].(type) {
+			case string:
+				if eval != "" {
+					return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: eval}
+				}
+			case map[string]any:
+				if msg, ok := eval["message"].(string); ok && msg != "" {
+					return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: msg}
+				}
+			}
+
 			done, _ := chunk["done"].(bool)
 			if done {
-				var pe, ev *int
+				var pe, ev, ca *int
 				if v, ok := chunk["prompt_eval_count"].(float64); ok {
 					n := int(v)
 					pe = &n
@@ -85,11 +103,17 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 					n := int(v)
 					ev = &n
 				}
+				if v, ok := chunk["prompt_eval_cached_count"].(float64); ok {
+					n := int(v)
+					ca = &n
+				}
 				finishReason := "stop"
 				if phase == "tool_call" {
 					finishReason = "tool_call"
+				} else if dr, ok := chunk["done_reason"].(string); ok && dr != "" {
+					finishReason = dr
 				}
-				return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev}
+				return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev, CachedCount: ca}
 			}
 
 			message, _ := chunk["message"].(map[string]any)
@@ -123,6 +147,10 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 						args = map[string]any{}
 					}
 					callID, _ := tc["id"].(string)
+					if callID == "" {
+						toolCallSeq++
+						callID = fmt.Sprintf("call_%d", toolCallSeq)
+					}
 					sendEvent(ctx, events, ai.ToolCallEvent{
 						Type:     "tool_call",
 						ToolCall: ai.ToolCall{ID: callID, Name: name, Arguments: args},
@@ -153,7 +181,6 @@ type pendingCall struct {
 	arguments string
 }
 
-
 func ollamaThinkValue(level string) any {
 	switch level {
 	case "off":
@@ -172,4 +199,3 @@ func ollamaThinkValue(level string) any {
 		return nil
 	}
 }
-
