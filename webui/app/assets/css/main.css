@@ -413,6 +413,32 @@ body {
   gap: 12px;
 }
 
+/* the wrap owns the pill instead of the scroll container: an absolutely
+   positioned child of the scroll container scrolls away with the content */
+.messages-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+.jump-live {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--z1-raised);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+}
+.jump-live:hover { border-color: var(--accent); }
+
 .empty {
   color: var(--text-dim);
   font-family: var(--mono);
@@ -520,6 +546,13 @@ body {
   color: var(--text-dim);
 }
 .thinking-live { color: var(--accent); animation: blink 1s steps(2) infinite; }
+/* frozen or ticking elapsed time - same voice as the label it extends */
+.thinking-elapsed {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
 .thinking-body {
   padding: 0 12px 10px;
   font-family: var(--mono);

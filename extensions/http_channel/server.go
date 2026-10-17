@@ -568,20 +568,23 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
 			return
 		}
-		messages, err := s.store.GetMessages(r.Context(), id)
+		// Typed messages marshal without a role field (ai.User/ai.Assistant
+		// only carry content) - inject ai.MessageRole so the UI can tell
+		// user and assistant apart when restoring history. GetMessagesWithTimes
+		// additionally pairs each message with its store-level created_at,
+		// injected the same way so the UI can show message times.
+		bare, err := s.store.GetMessagesWithTimes(r.Context(), id)
 		if err != nil {
 			http.Error(w, "get messages: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// typed messages marshal without a role field (ai.User/ai.Assistant
-		// only carry content) - inject ai.MessageRole so the UI can tell
-		// user and assistant apart when restoring history.
-		msgs := make([]map[string]any, len(messages))
-		for i, m := range messages {
-			data, _ := json.Marshal(m)
+		msgs := make([]map[string]any, len(bare))
+		for i, sm := range bare {
+			data, _ := json.Marshal(sm.Message)
 			var mm map[string]any
 			json.Unmarshal(data, &mm)
-			mm["role"] = ai.MessageRole(m)
+			mm["role"] = ai.MessageRole(sm.Message)
+			mm["created_at"] = sm.CreatedAt
 			msgs[i] = mm
 		}
 		writeJSON(w, http.StatusOK, map[string]any{

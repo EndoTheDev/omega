@@ -32,6 +32,10 @@ export interface SessionDetail {
         thinking?: string;
         is_error?: boolean;
         tool_call_id?: string;
+        // store-level write time injected by the history endpoint; falls
+        // back to the payload timestamp for anything older that lacks it
+        created_at?: string;
+        timestamp?: string;
         tool_calls?: {
           id?: string;
           name?: string;
@@ -266,6 +270,124 @@ export function rowMeta(s: Session): string {
   const tokens = (s.prompt_tokens ?? 0) + (s.completion_tokens ?? 0);
   if (tokens > 0) parts.push(`${formatTokens(tokens)} tok`);
   return parts.join(" - ");
+}
+
+// --- message hover timestamps ---
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// formatMsgTime renders a message timestamp for the hover title: local
+// HH:MM for the current day, "17 Oct 14:32" for older dates (the year
+// prefixes any other year). Malformed input renders "" and the caller
+// hides the attribute.
+export function formatMsgTime(iso: string, now: Date = new Date()): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hm = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  const sameDay =
+    t.getFullYear() === now.getFullYear() &&
+    t.getMonth() === now.getMonth() &&
+    t.getDate() === now.getDate();
+  if (sameDay) return hm;
+  const day = `${t.getDate()} ${MONTHS[t.getMonth()]}`;
+  if (t.getFullYear() === now.getFullYear()) return `${day} ${hm}`;
+  return `${t.getFullYear()} ${day} ${hm}`;
+}
+
+// --- thinking elapsed counter ---
+
+export const ELAPSED_TICK_MS = 1000;
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+// formatElapsed renders the time since a stream started: "12s" below a
+// minute, then "2m 05s", then "1h 02m". Pure - the ticking lives in
+// createElapsedMeter.
+export function formatElapsed(startedMs: number, nowMs: number): string {
+  const total = Math.max(0, Math.floor((nowMs - startedMs) / 1000));
+  if (total < 60) return `${total}s`;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${pad2(m)}m`;
+  return `${m}m ${pad2(s)}s`;
+}
+
+// ElapsedMeter drives the live "thinking 12s" summary label: start()
+// records the start once and emits a fresh label every tick, stop()
+// cancels the ticking and emits the frozen final label. The component
+// owns the ref; this owns only the timing.
+export interface ElapsedMeter {
+  start(): void;
+  stop(): void;
+}
+
+// createElapsedMeter takes the tick callback and optional clock parts -
+// a fake clock in tests, setInterval/clearTimeout in the component.
+export function createElapsedMeter(
+  onElapsed: (label: string) => void,
+  now: () => number = () => Date.now(),
+  timers: RenderTimers = {
+    set: setTimeout,
+    clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  },
+): ElapsedMeter {
+  let startedAt: number | null = null;
+  let handle: unknown = null;
+  const fire = () => {
+    handle = null;
+    if (startedAt === null) return;
+    onElapsed(formatElapsed(startedAt, now()));
+    if (handle === null) handle = timers.set(fire, ELAPSED_TICK_MS);
+  };
+  return {
+    start() {
+      if (startedAt !== null) return;
+      startedAt = now();
+      onElapsed(formatElapsed(startedAt, startedAt));
+      if (handle === null) handle = timers.set(fire, ELAPSED_TICK_MS);
+    },
+    stop() {
+      // clear FIRST, then emit - the timer must be gone before the final
+      // label lands, or the next tick re-emits past the frozen value
+      if (handle !== null) timers.clear(handle);
+      handle = null;
+      if (startedAt === null) return;
+      onElapsed(formatElapsed(startedAt, now()));
+    },
+  };
+}
+
+// --- transcript scroll position (jump-to-live pill) ---
+
+export const SCROLL_NEAR_PX = 40;
+
+// isAtBottom is the shared near-bottom check: new-content auto-scroll
+// follows the stream only while the user holds the bottom, and the pill
+// is its negation. A container that cannot scroll counts as at bottom.
+export function isAtBottom(
+  scrollTop: number,
+  clientHeight: number,
+  scrollHeight: number,
+  threshold: number = SCROLL_NEAR_PX,
+): boolean {
+  if (scrollHeight <= clientHeight) return true;
+  return scrollHeight - scrollTop - clientHeight < threshold;
+}
+
+// pillVisible derives the jump-to-live pill: scrolled up past the bottom
+// threshold AND with something to scroll back to.
+export function pillVisible(
+  scrollTop: number,
+  clientHeight: number,
+  scrollHeight: number,
+  threshold: number = SCROLL_NEAR_PX,
+): boolean {
+  return !isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
 }
 
 // --- markdown rendering (assistant bubbles) ---

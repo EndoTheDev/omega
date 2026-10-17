@@ -77,6 +77,11 @@ type StoreProvider interface {
 	UpdateSession(ctx context.Context, id, label string) error
 	AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error
 	GetMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
+
+	// GetMessagesWithTimes returns a session's messages in append
+	// order, each paired with its store-level created_at.
+	GetMessagesWithTimes(ctx context.Context, sessionID string) ([]StoredMessage, error)
+
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
 	GetAncestorMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
 	SearchMessages(ctx context.Context, query string) ([]SearchResult, error)

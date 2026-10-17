@@ -262,6 +262,45 @@ func TestAppendAndGetMessages(t *testing.T) {
 	assertToolResult(t, got[3], "ok", "call_1", false)
 }
 
+func TestGetMessagesWithTimes(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	messages := []ai.Message{
+		ai.NewUser("hello"),
+		ai.NewAssistant("hi there"),
+	}
+	for _, m := range messages {
+		if err := s.AppendMessage(ctx, "s1", m); err != nil {
+			t.Fatalf("append message: %v", err)
+		}
+	}
+
+	got, err := s.GetMessagesWithTimes(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get messages with times: %v", err)
+	}
+	if len(got) != len(messages) {
+		t.Fatalf("len = %d, want %d", len(got), len(messages))
+	}
+	for i, sm := range got {
+		if sm.CreatedAt == "" {
+			t.Fatalf("got[%d].CreatedAt empty, want the stored created_at", i)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, sm.CreatedAt); err != nil {
+			t.Fatalf("got[%d].CreatedAt = %q, not RFC3339: %v", i, sm.CreatedAt, err)
+		}
+	}
+	assertUser(t, got[0].Message, "hello")
+	assertAssistant(t, got[1].Message, "hi there")
+
+	if times, err := s.GetMessagesWithTimes(ctx, "missing"); err != nil || times != nil {
+		t.Fatalf("missing session = (%v, %v), want (nil, nil)", times, err)
+	}
+}
+
 func TestMessagesPersistAcrossStoreReopen(t *testing.T) {
 	// A file-backed store proves persistence across Close/Open.
 	dir := t.TempDir()

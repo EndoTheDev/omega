@@ -1,6 +1,8 @@
 <template>
   <div :class="['msg', role]">
-    <div class="bubble">
+    <div
+      class="bubble"
+      :title="timeTitle" >
       <div
         v-if="role === 'assistant'"
         class="md"
@@ -14,14 +16,15 @@
 </template>
 
 <script setup lang="ts">
-  import { onUnmounted, ref, watch } from "vue";
+  import { computed, onUnmounted, ref, watch } from "vue";
 
-  import { createRenderScheduler, renderMarkdown } from "../composables/omega";
+  import { createRenderScheduler, formatMsgTime, renderMarkdown } from "../composables/omega";
 
   const props = defineProps<{
     role: "user" | "assistant";
     content: string;
     streaming?: boolean;
+    time?: string;
   }>();
 
   // Assistant bubbles render markdown. Stream chunks land at one render
@@ -47,4 +50,8 @@
   );
 
   onUnmounted(() => scheduler.cancel());
+
+  // Hover timestamp: an empty ref removes the title attribute entirely
+  // (malformed or absent times render nothing, not a blank tooltip).
+  const timeTitle = computed(() => (props.time ? formatMsgTime(props.time) : null));
 </script>

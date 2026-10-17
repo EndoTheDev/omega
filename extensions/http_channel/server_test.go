@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -345,6 +346,50 @@ func TestSessionsCRUD(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("get after delete status = %d, want 404", rec.Code)
+	}
+}
+
+func TestSessionMessagesCarryCreatedAt(t *testing.T) {
+	s, store := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := store.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := store.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	if err := store.AppendMessage(ctx, "s1", ai.NewAssistant("hello")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Messages) != 2 {
+		t.Fatalf("len = %d, want 2", len(body.Messages))
+	}
+	for i, m := range body.Messages {
+		role, _ := m["role"].(string)
+		createdAt, _ := m["created_at"].(string)
+		if createdAt == "" {
+			t.Fatalf("messages[%d] (role %q) has no created_at", i, role)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, createdAt); err != nil {
+			t.Fatalf("messages[%d].created_at = %q, not RFC3339: %v", i, createdAt, err)
+		}
+	}
+	if body.Messages[0]["role"] != "user" || body.Messages[1]["role"] != "assistant" {
+		t.Fatalf("roles = %v/%v, want user/assistant",
+			body.Messages[0]["role"], body.Messages[1]["role"])
 	}
 }
 

@@ -33,6 +33,9 @@ func (m *mockStore) AppendMessage(context.Context, string, ai.Message) error { r
 func (m *mockStore) GetMessages(_ context.Context, _ string) ([]ai.Message, error) {
 	return m.messages, m.err
 }
+func (m *mockStore) GetMessagesWithTimes(context.Context, string) ([]agent.StoredMessage, error) {
+	return nil, nil
+}
 func (m *mockStore) GetSessionTree(context.Context) ([]*agent.SessionNode, error) {
 	return nil, nil
 }

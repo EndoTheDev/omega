@@ -335,6 +335,32 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]ai.Message
 	return out, rows.Err()
 }
 
+// GetMessagesWithTimes returns a session's messages in append order,
+// each paired with its store-level created_at.
+func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]agent.StoredMessage, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT role, payload, created_at FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []agent.StoredMessage
+	for rows.Next() {
+		var msg agent.StoredMessage
+		var role, payload string
+		if err := rows.Scan(&role, &payload, &msg.CreatedAt); err != nil {
+			return nil, err
+		}
+		m, err := ai.DecodeMessage(role, []byte(payload))
+		if err != nil {
+			return nil, err
+		}
+		msg.Message = m
+		out = append(out, msg)
+	}
+	return out, rows.Err()
+}
+
 // CountMessages returns the number of messages in a session.
 func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error) {
 	var n int

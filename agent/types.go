@@ -52,6 +52,13 @@ type SessionNode struct {
 	Children []*SessionNode
 }
 
+// StoredMessage pairs a message with the store-level time it was
+// written (created_at), for consumers that surface message times.
+type StoredMessage struct {
+	Message   ai.Message
+	CreatedAt string
+}
+
 // SearchResult is a single search hit from SearchMessages.
 type SearchResult struct {
 	SessionID string `json:"session_id"`

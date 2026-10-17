@@ -51,39 +51,51 @@
       </div>
 
       <main class="chat pane">
-        <div
-          class="messages"
-          ref="messagesEl">
-          <p
-            v-if="transcript.length === 0"
-            class="empty">
-            say something to
-            <span class="brand">Ωmega</span>
-          </p>
-          <template
-            v-for="(item, i) in transcript"
-            :key="i">
-            <ChatMessage
-              v-if="item.kind === 'message'"
-              :role="item.role"
-              :content="item.content"
-              :streaming="item.streaming" />
-            <ThinkingBlock
-              v-else-if="item.kind === 'thinking' && showThinking"
-              :content="item.content"
-              :streaming="item.streaming" />
-            <ToolCallLine
-              v-else-if="item.kind === 'tool'"
-              :name="item.name"
-              :status="item.status"
-              :output="item.output"
-              :result="item.result" />
-          </template>
+        <!-- wrap owns the pill's absolute placement: the scroll container
+             itself scrolls its content (an absolutely positioned child of
+             it would scroll away with it) -->
+        <div class="messages-wrap">
           <div
-            v-if="statusLine"
-            class="status-line">
-            {{ statusLine }}…
+            class="messages"
+            ref="messagesEl">
+            <p
+              v-if="transcript.length === 0"
+              class="empty">
+              say something to
+              <span class="brand">Ωmega</span>
+            </p>
+            <template
+              v-for="(item, i) in transcript"
+              :key="i">
+              <ChatMessage
+                v-if="item.kind === 'message'"
+                :role="item.role"
+                :content="item.content"
+                :time="item.time"
+                :streaming="item.streaming" />
+              <ThinkingBlock
+                v-else-if="item.kind === 'thinking' && showThinking"
+                :content="item.content"
+                :streaming="item.streaming" />
+              <ToolCallLine
+                v-else-if="item.kind === 'tool'"
+                :name="item.name"
+                :status="item.status"
+                :output="item.output"
+                :result="item.result" />
+            </template>
+            <div
+              v-if="statusLine"
+              class="status-line">
+              {{ statusLine }}…
+            </div>
           </div>
+          <button
+            v-if="jumpPill"
+            class="jump-live"
+            @click="jumpToLive">
+            ⌄ live
+          </button>
         </div>
 
         <AppComposer
@@ -160,6 +172,8 @@
     pinSession,
     parseSessionPath,
     sessionPath,
+    isAtBottom,
+    pillVisible,
   } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
 
@@ -168,6 +182,9 @@
     role: "user" | "assistant";
     content: string;
     streaming?: boolean;
+    // client-side timestamp for live messages, backend created_at for
+    // restored history (ChatMessage renders it as a hover title)
+    time?: string;
   }
   interface ThinkingItem {
     kind: "thinking";
@@ -356,7 +373,12 @@
             }
           }
           if (m.content) {
-            items.push({ kind: "message", role, content: m.content });
+            items.push({
+              kind: "message",
+              role,
+              content: m.content,
+              time: m.created_at || m.timestamp || undefined,
+            });
           }
         }
         // second pass: tool-role messages carry the persisted results,
@@ -546,7 +568,12 @@
     busySet.value = withBusy(busySet.value, busyKey, true);
     st.statusLine = "reasoning";
 
-    st.transcript.push({ kind: "message", role: "user", content: text });
+    st.transcript.push({
+      kind: "message",
+      role: "user",
+      content: text,
+      time: new Date().toISOString(),
+    });
     scrollDown(true);
     let assistant: MessageItem = {
       kind: "message",
@@ -560,6 +587,8 @@
     let assistantPushed = false;
     const pushAssistant = () => {
       if (!assistantPushed) {
+        // stamped once, at first appearance - it stays the receive time
+        assistant.time = assistant.time ?? new Date().toISOString();
         st.transcript.push(assistant);
         assistantPushed = true;
       }
@@ -735,14 +764,26 @@
   // content bursts >40px as "user scrolled up" and kills the follow).
   const pinned = ref(true);
 
-  function isAtBottom(): boolean {
+  // jump-to-live pill: a scroll-position affordance - visible whenever the
+  // transcript is scrolled up, stream or not. Derived on scroll events only.
+  const jumpPill = ref(false);
+
+  function nearBottom(): boolean {
     const el = messagesEl.value;
     if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    return isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
   function onMessagesScroll() {
-    pinned.value = isAtBottom();
+    pinned.value = nearBottom();
+    const el = messagesEl.value;
+    if (!el) return;
+    jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+  }
+
+  function jumpToLive() {
+    jumpPill.value = false;
+    scrollDown(true);
   }
 
   function scrollDown(force = false) {
