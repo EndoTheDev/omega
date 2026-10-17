@@ -36,7 +36,7 @@ hljs.registerLanguage("cpp", cpp);
 hljs.registerLanguage("diff", diff);
 
 // omega webui: typed client for the http_channel API.
-// Endpoints verified live 2026-10-13 against extensions/http_channel.
+// Endpoints verified live 2026-10-13 against modules/http_channel.
 // SSE events: agent_start, turn_start, response_chunk, thinking_chunk,
 // tool_call, stream_end, assistant_message, turn_end, agent_end, error.
 

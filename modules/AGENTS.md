@@ -40,7 +40,7 @@ into a shared `Context` via `MountAll` at startup.
 - `memory/` - persistent memory (`memory` tool, two-file store with
   `§`-delimited entries, snapshot read fresh and injected into system prompt)
 - `http_channel/` - HTTP/SSE channel + embedded SPA serving (Channel
-  seam, `omega serve` transport; see `extensions/http_channel/AGENTS.md`):
+  seam, `omega serve` transport; see `modules/http_channel/AGENTS.md`):
   loopback-only bind list by default, SSE streaming, segmented session
   persistence (assistant + calls -> tool results -> assistant),
   session CRUD, `/models` with cached context window, detached title
@@ -53,7 +53,7 @@ into a shared `Context` via `MountAll` at startup.
 - `cron/` - scheduled prompts (CronProvider seam, `crons.yaml` in
   OMEGA_HOME; each fire is a full agent turn in a session labeled
   `cron:<name>`; catch-up for misses < 24h via `cronstate.json`;
-  mtime-poll hot reload; see `extensions/cron/AGENTS.md`)
+  mtime-poll hot reload; see `modules/cron/AGENTS.md`)
 
 ## Local Contracts
 
@@ -73,7 +73,7 @@ into a shared `Context` via `MountAll` at startup.
 
 ## Work Guidance
 
-- To add a new extension: create `extensions/<name>/` with
+- To add a new extension: create `modules/<name>/` with
   `<name>.go` (logic), `plugin.go` (Plugin adapter),
   `<name>_test.go` (self-check).
 - Add the plugin to `buildPlugins()` in `cmd/omega/main.go`.
@@ -85,12 +85,12 @@ into a shared `Context` via `MountAll` at startup.
 ## Verification
 
 ```bash
-go test ./extensions/...   # all extension tests
+go test ./modules/...   # all extension tests
 go build ./...             # everything compiles
 go vet ./...               # no suspicious constructs
 ```
 
 ## Child DOX Index
 
-- `extensions/tui/` - terminal frontend (Frontend seam, Bubble Tea TUI)
-- `extensions/http_channel/` - HTTP/SSE channel + embedded SPA serving (loopback-by-default bind list, segmented session persistence)
+- `modules/tui/` - terminal frontend (Frontend seam, Bubble Tea TUI)
+- `modules/http_channel/` - HTTP/SSE channel + embedded SPA serving (loopback-by-default bind list, segmented session persistence)

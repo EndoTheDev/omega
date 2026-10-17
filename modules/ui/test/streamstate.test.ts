@@ -1,5 +1,5 @@
 // omega webui: unit tests for the per-session stream busy map (the pure
-// busy logic in composables/omega.ts). Run: node --test webui/test/ (node >= 23 runs TS natively)
+// busy logic in composables/omega.ts). Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { anyBusy, isBusy, withBusy } from "../app/composables/omega.ts";

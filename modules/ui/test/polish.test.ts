@@ -2,7 +2,7 @@
 // composables/omega.ts - message hover timestamps (formatMsgTime), the
 // thinking elapsed meter (formatElapsed + createElapsedMeter, fake clock),
 // and the transcript scroll math (isAtBottom / pillVisible, plain numbers).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 

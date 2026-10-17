@@ -18,7 +18,7 @@ type Tool struct {
 // LoopProvider. Harness concerns (system prompt, compaction) are injected
 // via interfaces. The loop itself is swappable via SetLoopProvider.
 // The loop is not set by default — the host must wire one (e.g. via
-// the agent-loop plugin in extensions/agent_loop/).
+// the agent-loop plugin in modules/agent_loop/).
 type Agent struct {
 	provider       ai.Provider
 	tools          map[string]Tool

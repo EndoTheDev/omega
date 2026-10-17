@@ -1,4 +1,4 @@
-# extensions/tui
+# modules/tui
 
 ## Purpose
 
@@ -157,7 +157,7 @@ entry point (`cmd/omega`) mounts this extension and calls `Run`.
 ## Verification
 
 ```bash
-go test ./extensions/tui/   # TUI unit tests
+go test ./modules/tui/   # TUI unit tests
 go build ./...              # everything compiles
 go vet ./...                # no suspicious constructs
 ```

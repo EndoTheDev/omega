@@ -1,4 +1,4 @@
-# extensions/http_channel
+# modules/http_channel
 
 ## Purpose
 
@@ -108,8 +108,8 @@ rule a security contract, not a preference.
 ## Verification
 
 ```bash
-go test ./extensions/http_channel/    # handler + pure + mount tests
-go vet ./extensions/http_channel/
+go test ./modules/http_channel/    # handler + pure + mount tests
+go vet ./modules/http_channel/
 python3 webui/scripts/stream_check.py http://127.0.0.1:8099   # live streaming probe
 ```
 

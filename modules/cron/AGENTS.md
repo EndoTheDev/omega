@@ -46,6 +46,6 @@ stopped on shutdown).
 ## Verification
 
 ```bash
-go test ./extensions/cron    # schema, catch-up, guard, deliver, reload
-go test -race ./extensions/cron
+go test ./modules/cron    # schema, catch-up, guard, deliver, reload
+go test -race ./modules/cron
 ```

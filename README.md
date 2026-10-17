@@ -10,7 +10,7 @@ omega is a terminal-based AI assistant that reads files, runs
 commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
 Anthropic) and streams responses in real time. Single binary, full-
 screen TUI, persistent session tree, context compaction, and a
-pluggable extension system.
+in-process module system.
 
 > **Warning:** The shell tool executes commands the LLM generates with
 > no sandboxing. Use Ollama for sensitive work — cloud providers
@@ -65,23 +65,23 @@ HTTP channel -> agent (loop + tools) -> ai (provider streaming)
 
 | Layer    | Responsibility                                             |
 | -------- | ---------------------------------------------------------- |
-| Agent    | Multi-turn loop, tools, compaction, extensions             |
+| Agent    | Multi-turn loop, tools, compaction, modules               |
 | Provider | Ollama + OpenAI + Anthropic streaming                      |
 | CLI      | Entry point, config loading, trust gate, Frontend dispatch |
 
 See [docs/architecture.md](docs/architecture.md) for details.
 
-## Extensions
+## Modules
 
-All extensions are in-process Go packages under `extensions/`. See
-[extensions/README.md](extensions/README.md) for the full list.
+All modules are in-process Go packages under `modules/`. See
+[modules/README.md](modules/README.md) for the full list.
 
 ## Documentation
 
 | Topic           | File                                               |
 | --------------- | -------------------------------------------------- |
 | Configuration   | [docs/configuration.md](docs/configuration.md)     |
-| Extensions      | [docs/extensions.md](docs/extensions.md)           |
+| Extensions      | [docs/modules.md](docs/modules.md)           |
 | TUI Commands    | [docs/tui.md](docs/tui.md)                         |
 | Project Trust   | [docs/project-trust.md](docs/project-trust.md)     |
 | Architecture    | [docs/architecture.md](docs/architecture.md)       |

@@ -1,6 +1,6 @@
 // omega webui: unit tests for markdown rendering (renderMarkdown) and the
 // streaming render tick (createRenderScheduler) in composables/omega.ts.
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {

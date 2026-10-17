@@ -9,6 +9,6 @@ cd "$(dirname "$0")/.."
 # generate, not build: ssr:false build emits a nitro server, generate emits
 # the static SPA (index.html + _nuxt/) that the go binary embeds
 npx nuxt generate
-rm -rf ../extensions/http_channel/static
-cp -r dist ../extensions/http_channel/static
-echo "synced webui/dist -> extensions/http_channel/static"
+rm -rf ../modules/http_channel/static
+cp -r dist ../modules/http_channel/static
+echo "synced modules/ui/dist -> modules/http_channel/static"

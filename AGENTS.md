@@ -26,7 +26,7 @@ in Go.
 ```txt
 webui (Nuxt SPA, embedded) → HTTP channel → agent (loop + tools) → ai (provider streaming)
                                 │
-                                └── extensions/ (in-process plugins mounted into Context)
+                                └── modules/ (in-process plugins mounted into Context)
 ```
 
 The webui is a Nuxt 4 SPA served by the HTTP channel itself (embedded
@@ -56,7 +56,7 @@ via the Plugin interface.
   are not marked with `!` in commit messages (see `.agents/COMMIT.md`).
 - **Secrets never committed.** `.env` is gitignored. See `.gitignore`.
 - **Extensions are in-process.** All extensions are Go packages under
-  `extensions/`. No stdio, no IPC, no separate processes. The host
+  `modules/`. No stdio, no IPC, no separate processes. The host
   calls `MountAll` at startup; the agent loop reads from `Context`.
 
 ## Read Before Editing
@@ -102,7 +102,7 @@ AGENTS.md (root - this file)
 ├── docs/                      # user documentation (tracked)
 ├── ai/                        # provider contract (interface, messages, events), shared HTTP infra, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT)
 ├── agent/                     # multi-turn loop contract (LoopProvider interface), tool execution, compaction (config + token estimation), capability seams (CompactionProvider, ToolProvider, LoopProvider, StoreProvider, SkillsProvider, LoggerProvider, MemoryProvider, PromptBuilder, Channel, Frontend + FrontendOptions, TrustProvider, CronProvider), Plugin system (Context, Plugin, MountAll); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent; shared data types (Session, SessionNode, StoredMessage, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions, Configs map)
-├── extensions/                # in-process extension packages (importable Go packages)
+├── modules/                # in-process extension packages (importable Go packages)
 │   ├── README.md              # extension authoring guide
 │   ├── agent_loop/            # default conversation loop (LoopProvider implementation)
 │   ├── provider/              # LLM provider (Ollama, OpenAI, Anthropic streaming)
@@ -111,7 +111,7 @@ AGENTS.md (root - this file)
 │   ├── compactor/             # context compaction (keep-first/last + LLM summarize middle)
 │   ├── logging/               # operational logging (file logger, LoggerProvider seam)
 │   ├── memory/                # persistent memory (memory tool, two-file §-delimited store)
-│   ├── http_channel/          # HTTP/SSE channel + embedded SPA serving (see extensions/http_channel/AGENTS.md)
+│   ├── http_channel/          # HTTP/SSE channel + embedded SPA serving (see modules/http_channel/AGENTS.md)
 │   ├── tui/                   # terminal frontend (Frontend seam, Bubble Tea TUI, themes, @file input)
 │   ├── trust/                 # project trust gate (TrustProvider seam, trust.yaml, AGENTS.md context loading)
 │   ├── prompt/                # system prompt builder + guidelines
@@ -120,7 +120,7 @@ AGENTS.md (root - this file)
 │   ├── delegate/              # subagent delegation (delegate.task, delegate.status, InjectedMessages)
 │   ├── cron/                  # scheduled prompts (CronProvider seam, crons.yaml)
 │   └── web/                   # web search/fetch (Ollama Cloud API)
-├── webui/                     # Nuxt 4 SPA (see webui/AGENTS.md) - built output embedded into the binary via extensions/http_channel/static/
+├── webui/                     # Nuxt 4 SPA (see webui/AGENTS.md) - built output embedded into the binary via modules/http_channel/static/
 ├── deploy/                    # install artifacts (omega.service - systemd --user unit for the installed instance)
 ├── bin/                       # build output + local runtime files (gitignored except skills/ templates)
 │   ├── omega                 # built binary (gitignored)
@@ -168,9 +168,9 @@ rules but cannot override core contracts.
 | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `.agents/`    | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `ai/`         | Implemented | Provider contract (interface, messages, events, tool schema), shared HTTP infra (httpClient, retryHTTP), exported HTTPClient / RetryHTTP / SSEData for extension use, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT), `DetectImage` (magic-byte image detection)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `agent/`      | Implemented | Multi-turn loop contract (`LoopProvider` interface), tool execution, compaction (config + token estimation, overflow auto-retry, friendly error when no compactor), capability seams (`CompactionProvider`, `ToolProvider`, `LoopProvider`, `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel`, `Frontend`, `TrustProvider`, `CronProvider`), Plugin system (`Context`, `Plugin`, `MountAll`); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent; shared data types (Session, SessionNode, StoredMessage, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions, Configs map). Loop implementation in `extensions/agent_loop/` |
+| `agent/`      | Implemented | Multi-turn loop contract (`LoopProvider` interface), tool execution, compaction (config + token estimation, overflow auto-retry, friendly error when no compactor), capability seams (`CompactionProvider`, `ToolProvider`, `LoopProvider`, `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel`, `Frontend`, `TrustProvider`, `CronProvider`), Plugin system (`Context`, `Plugin`, `MountAll`); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent; shared data types (Session, SessionNode, StoredMessage, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions, Configs map). Loop implementation in `modules/agent_loop/` |
 | `cmd/omega/`  | Implemented | Single binary: serve, run, health, chat (Frontend dispatch), export, update, insights; project trust (--approve/--no-approve, trust.yaml); `@file` image input; config loading, plugin wiring, `omegaHome` resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `bin/`        | Reference   | Build output, config, database, skills. Gitignored except `skills/` (templates); config examples live in `cmd/omega/examples/`. Build via `./build.sh` or `build.bat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `extensions/` | Implemented | In-process extension packages: agent_loop (default conversation loop), provider (Ollama, OpenAI, Anthropic), store (SQLite + sessions.search), skills (skill loading + /skills command), compactor (context compaction), logging (file logger + LoggerProvider seam), memory (persistent memory + memory tool), http_channel (HTTP/SSE delivery channel), tui (terminal frontend), trust (project trust gate), prompt (system prompt builder), tools (shell, files), mcp (MCP bridge), delegate (subagent delegation), web (web search/fetch), cron (scheduled prompts, crons.yaml). Each implements the `agent.Plugin` interface.                                                                                                                                                     |
+| `modules/` | Implemented | In-process extension packages: agent_loop (default conversation loop), provider (Ollama, OpenAI, Anthropic), store (SQLite + sessions.search), skills (skill loading + /skills command), compactor (context compaction), logging (file logger + LoggerProvider seam), memory (persistent memory + memory tool), http_channel (HTTP/SSE delivery channel), tui (terminal frontend), trust (project trust gate), prompt (system prompt builder), tools (shell, files), mcp (MCP bridge), delegate (subagent delegation), web (web search/fetch), cron (scheduled prompts, crons.yaml). Each implements the `agent.Plugin` interface.                                                                                                                                                     |
 | `webui/`      | Implemented | Nuxt 4 SPA: VS Code-style shell (see `webui/AGENTS.md`); built output embedded into the binary; dev via nuxt dev + devProxy to the dev omega on :8098; unit tests (node --test), stream_check transport probe, build.sh sync script |
 | `deploy/`      | Reference   | Install artifacts: omega.service (systemd --user unit for the installed instance at ~/.omega) |

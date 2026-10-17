@@ -1,7 +1,7 @@
 // webui unit tests for the interrupted-stream marker + retry affordance:
 // transport-death detection in streamChat (clean end vs abnormal end) and
 // the pure transcript transitions the marker/retry are built from.
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 

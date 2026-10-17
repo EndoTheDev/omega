@@ -8,11 +8,11 @@ and git history.
 - **Core agent (v0.1-v0.2):** streaming providers with retry/backoff,
   multi-turn agent loop with parallel tool execution, session tree
   (branching, labeling, full persistence), context compaction with
-  auto-retry, skills system, 15-extension system (11 exclusive + 2
+  auto-retry, skills system, 15-module system (11 exclusive + 2
   additive seams), SQLite store with FTS5 search, complete TUI,
   model discovery, image input, self-update
-- **Extension architecture (v0.3-v0.5):** channel seam + HTTP channel,
-  store/TUI/store moved to extensions, per-extension config, config
+- **Module architecture (v0.3-v0.5):** channel seam + HTTP channel,
+  store/TUI/store moved to modules, per-module config, config
   hot-reload, subagent delegation, session insights + export,
   AGENTS.md ancestor walk, 10-level thinking control
 - **Distribution (v0.6.0-v0.6.4):** Nuxt web UI embedded in the binary
@@ -32,12 +32,12 @@ and git history.
 - Unified session status: pin + streaming + unread, server-side
   `last_read_at`, cron sessions land unread
 - Dual title generation (provisional at request start, final after the
-  first exchange), cron extension (`crons.yaml`, hot-reload, catch-up,
+  first exchange), cron module (`crons.yaml`, hot-reload, catch-up,
   `cron:<name>` sessions)
 
 ## Planned
 
-- Module restructure: `extensions/` -> `modules/`, web UI moves to
+- Module restructure: `modules/` -> `modules/`, web UI moves to
   `modules/ui`, instance home gains a `config/` folder for the yaml files
 - Web UI: codeblock UX (max height, copy button, collapse), elapsed
   timing on thinking/tool/response bubbles, content search over the
@@ -50,7 +50,7 @@ and git history.
 - OpenTelemetry observability (research: traces, metrics, tool timings)
 - More tools (grep, glob, multi-file edit)
 - Prompt templates with variable interpolation
-- Core-trust extension (pluggable trust gate)
+- Core-trust module (pluggable trust gate)
 - Discord/Telegram channels (via the Channel seam)
 - Serve-mode delegation support (SSE polling)
 

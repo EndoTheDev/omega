@@ -9,13 +9,13 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Agent      | `agent`       | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)                                       |
 | Provider   | `ai`          | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                                                    |
 | CLI        | `cmd/omega`   | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Extensions | `extensions/` | 15 in-process Go packages: agent_loop, provider, store, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust |
+| Modules    | `modules/` | 15 in-process Go packages: agent_loop, provider, store, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP and serves the embedded webui SPA (built by
-webui/scripts/build.sh, committed in extensions/http_channel/static/,
+modules/ui/scripts/build.sh, committed in modules/http_channel/static/,
 baked in at compile time).
 
 ## Project Structure
@@ -25,9 +25,9 @@ cmd/omega/        Single binary entry point (serve, run, health, chat, update)
 cmd/omega/examples/  Config templates, embedded for first-run bootstrap
 ai/               Provider abstraction, stream events, message types, retry
 agent/            Multi-turn loop, tool execution, seams, Plugin system
-extensions/        In-process extension packages (15 extensions, compiled into omega)
-extensions/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
-webui/            Nuxt 4 SPA (see webui/AGENTS.md); built output embedded into the binary
+modules/        In-process module packages (15 modules, compiled into omega)
+modules/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
+modules/ui        webui - Nuxt 4 SPA (see modules/ui/AGENTS.md); built output embedded into the binary
 deploy/           Install artifacts (omega.service systemd unit)
 .agents/          Commit conventions (COMMIT.md)
 build.sh          Build script (Linux/macOS): vet + test + build

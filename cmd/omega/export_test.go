@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/extensions/store"
+	"github.com/EndoTheDev/omega/modules/store"
 )
 
 func TestExportMessages(t *testing.T) {

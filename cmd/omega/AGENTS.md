@@ -7,7 +7,7 @@ The single binary entry point for omega. It parses the subcommand
 paths, wires the provider, agent, store, and extensions together, and
 either starts all mounted channels - HTTP by default (`serve`), runs one prompt to stdout (`run`), probes
 the server (`health`), or launches the frontend extension (`chat`).
-The TUI is now an extension at `extensions/tui/` implementing the
+The TUI is now an extension at `modules/tui/` implementing the
 `Frontend` seam.
 
 ## Ownership
@@ -46,7 +46,7 @@ The TUI is now an extension at `extensions/tui/` implementing the
   files never touched), embedded example + seed files in `examples/`
 - `trust.go` - trust flag parsing (`trustFlags`, `parseTrustArgs`,
   `stripTrustArgs`), `cwd()` helper. Trust logic lives in
-  `extensions/trust/` (TrustProvider seam).
+  `modules/trust/` (TrustProvider seam).
 - `image.go` - CLI `@file` input (`parseFileArgs` calling `ai.DetectImage`)
 - `config.go` - runtime config: `Config` struct with sub-configs
   (ProviderConfig, ServerConfig, StoreConfig, SkillsConfig, MemoryConfig,

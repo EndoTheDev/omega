@@ -1,7 +1,7 @@
-# omega Extensions
+# omega Modules
 
-Extensions are in-process Go packages that provide capabilities to
-omega. Each extension implements the `Plugin` interface from
+Modules are in-process Go packages that provide capabilities to
+omega. Each module implements the `Plugin` interface from
 `agent/plugin.go` and mounts into a shared `Context`.
 
 ## How it works
@@ -45,7 +45,7 @@ Exclusive seams conflict if two plugins provide the same one. The
 `tools` seam is additive: multiple plugins contribute to
 `Context.ToolProviders`.
 
-## Available extensions
+## Available modules
 
 | Package         | Seam(s)        | Description                                          |
 | --------------- | -------------- | ---------------------------------------------------- |
@@ -66,10 +66,10 @@ Exclusive seams conflict if two plugins provide the same one. The
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading)   |
 | `cron/`         | cron           | Scheduled prompts (crons.yaml, cron:<name> sessions) |
 
-## Writing an extension
+## Writing an module
 
-1. Create a directory under `extensions/<name>/`.
-2. Implement the extension logic as a struct.
+1. Create a directory under `modules/<name>/`.
+2. Implement the module logic as a struct.
 3. Create a `plugin.go` with a `NewPlugin(...)` function returning
    a `Plugin` implementation.
 4. `Mount` populates `Context` slots from config.
@@ -85,7 +85,7 @@ import (
 
 type Plugin struct{}
 
-func (p *Plugin) Name() string       { return "my-extension" }
+func (p *Plugin) Name() string       { return "my-module" }
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return nil }
 func (p *Plugin) Mount(ctx *agent.Context) error {

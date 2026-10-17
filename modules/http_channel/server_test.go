@@ -14,7 +14,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/extensions/store"
+	"github.com/EndoTheDev/omega/modules/store"
 )
 
 // mockProvider is a scripted Provider for http_channel tests. Each call
@@ -108,7 +108,7 @@ func newTestServer() *Server {
 
 // testLoop is a minimal loop for http_channel tests. It mirrors the
 // real loop's event sequence for simple one-turn conversations.
-// The real loop lives in extensions/agent_loop/.
+// The real loop lives in modules/agent_loop/.
 type testLoop struct{}
 
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {

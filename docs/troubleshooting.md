@@ -38,9 +38,9 @@ provider:
   the parser treats everything after `#` as a comment. Always put the
   value before the comment: `model_name: llama3 # my model`.
 
-## Extension not found
+## Module not found
 
-Extensions are compiled into the `omega` binary. If a tool or command
+Modules are compiled into the `omega` binary. If a tool or command
 is missing, rebuild omega:
 
 ```bash

@@ -34,7 +34,7 @@ HTTP channel, or extensions).
   `Budget()` method), token estimation (`EstimateTokens`, `MessageText`), context window
   constants, `BuildCompactedMessages` (shared helper for branch summary
   and compactor extension). Compaction logic lives in
-  `extensions/compactor/`.
+  `modules/compactor/`.
 - `events.go` - event types emitted by the agent loop (`AgentStart`,
   `TurnStart`, `TurnEnd`, `AgentEnd`, `StreamEvent`,
   `AssistantMessageEvent`, `ToolResultEvent`).
@@ -51,7 +51,7 @@ HTTP channel, or extensions).
 
 - **The agent loop is the only place tools are executed.** The HTTP channel
   and TUI route tool calls through the agent; they do not call tools
-  directly. The loop implementation (in `extensions/agent_loop/`)
+  directly. The loop implementation (in `modules/agent_loop/`)
   handles this; a custom `LoopProvider` owns its own tool dispatch.
 - **Extension tools are merged at run time.** Built-in tools take
   precedence on name conflict. The merge happens inside the loop's
@@ -63,31 +63,31 @@ HTTP channel, or extensions).
   registry), `LoopProvider` (conversation loop), `StoreProvider`
   (session persistence), `SkillsProvider` (skill loading),
   `LoggerProvider` (operational logging), `MemoryProvider` (persistent memory), `PromptBuilder` (system prompt), `Frontend` (user-facing interface), `TrustProvider` (project trust gate), `CronProvider` (scheduled jobs; started by the serve host with `CronDeps`, like channels). Default implementations live in
-  `extensions/`. The system prompt is built by the prompt extension
+  `modules/`. The system prompt is built by the prompt extension
   via `BuildPrompt`. The compactor is wired from the compactor
   extension; when no compactor extension is loaded, compaction is
   disabled and the agent surfaces a friendly error on context overflow.
   The LLM provider is wired via `NewFromContext` from the provider
   extension's mount into `Context.Provider`. Project context and trust
-  live in `extensions/trust/` (TrustProvider seam).
+  live in `modules/trust/` (TrustProvider seam).
 - **Extensions are in-process.** All extensions are Go packages under
-  `extensions/`. No stdio, no IPC, no separate processes. The host
+  `modules/`. No stdio, no IPC, no separate processes. The host
   calls `MountAll` at startup; the agent loop reads from `Context`.
 - **No re-exports.** Types defined in `ai/` are imported from
   there, not re-exported from this package.
 - **Subagent delegation injection.** The agent exposes
   `SetInjectedMessages` and `SetPendingDelegations` for delegation
   injection. Draining behavior is owned by the loop implementation
-  (`extensions/agent_loop/`).
+  (`modules/agent_loop/`).
 
 ## Work Guidance
 
 - Add new lifecycle events in `events.go`, then emit them in the loop
-  implementation (`extensions/agent_loop/`).
+  implementation (`modules/agent_loop/`).
 - New extensions implement `agent.Plugin` and mount into `Context` via
   `MountAll`. The agent and TUI stay unchanged.
 - The agent package holds only contracts, types, and the plugin system.
-  Implementation logic lives in `extensions/`.
+  Implementation logic lives in `modules/`.
 
 ## Verification
 

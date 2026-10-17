@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/extensions/skills"
+	"github.com/EndoTheDev/omega/modules/skills"
 )
 
 // TestBuildPromptNilSkills verifies the prompt builder produces a

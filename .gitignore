@@ -31,17 +31,17 @@ coverage.out
 .worktrees/
 
 # WebUI (Nuxt)
-webui/node_modules
-webui/.nuxt/
-webui/.output/
-webui/dist/
-webui/.data/
+modules/ui/node_modules
+modules/ui/.nuxt/
+modules/ui/.output/
+modules/ui/dist/
+modules/ui/.data/
 *.log
 npm-debug.log*
 
-# NOTE: extensions/http_channel/static/ IS tracked - the built SPA is
+# NOTE: modules/http_channel/static/ IS tracked - the built SPA is
 # committed so go install / go build produce the complete product
-# (placeholder-era ignore rules removed; see webui/scripts/build.sh)
+# (placeholder-era ignore rules removed; see modules/ui/scripts/build.sh)
 
 # dev-instance first-run bootstrap writes its own copies into bin/
 bin/*.example

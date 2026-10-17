@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/extensions/store"
+	"github.com/EndoTheDev/omega/modules/store"
 )
 
 // setupInsightsEnv prepares an OMEGA_HOME temp dir with a config.yaml and a

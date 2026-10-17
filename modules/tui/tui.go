@@ -19,7 +19,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
-	"github.com/EndoTheDev/omega/extensions/store"
+	"github.com/EndoTheDev/omega/modules/store"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"

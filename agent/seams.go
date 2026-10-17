@@ -7,7 +7,7 @@ import (
 )
 
 // LoopProvider drives the multi-turn conversation. The default
-// implementation (agent_loop.Loop in extensions/agent_loop/) runs the
+// implementation (agent_loop.Loop in modules/agent_loop/) runs the
 // standard turn loop: stream provider responses, execute tool calls,
 // feed results back. A custom implementation can replace the entire
 // loop logic.
@@ -65,7 +65,7 @@ type DefaultToolProvider struct {
 func (d DefaultToolProvider) Tools() map[string]Tool { return d.ToolsMap }
 
 // StoreProvider is the session persistence seam. The default
-// implementation is SQLite (store.Store in extensions/store/), provided via the store
+// implementation is SQLite (store.Store in modules/store/), provided via the store
 // plugin. All session and message operations go through this interface.
 type StoreProvider interface {
 	Open(dsn string) error
@@ -205,7 +205,7 @@ type ChannelDeps struct {
 }
 
 // CronProvider schedules omega prompts on cron expressions. The
-// default implementation is the cron extension (extensions/cron/),
+// default implementation is the cron extension (modules/cron/),
 // backed by crons.yaml in OMEGA_HOME. Each fire is one full agent
 // turn in a session labeled cron:<name>.
 //
@@ -231,7 +231,7 @@ type CronDeps struct {
 }
 
 // Frontend is the user-facing interface seam. The default implementation
-// is the terminal TUI (extensions/tui/). A custom implementation could
+// is the terminal TUI (modules/tui/). A custom implementation could
 // serve a web UI or any other interactive frontend. The host calls Run
 // after mounting all extensions; Run blocks until the frontend exits.
 type Frontend interface {

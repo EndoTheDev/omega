@@ -57,7 +57,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
 	// (history-mode routes like /chat/<id>) and 404s for asset misses.
-	// Sync the build with webui/scripts/build.sh before `go build`.
+	// Sync the build with modules/ui/scripts/build.sh before `go build`.
 	mux.Handle("/", spaHandler(webuiFS))
 	s.httpSrv = &http.Server{Handler: mux}
 	return s

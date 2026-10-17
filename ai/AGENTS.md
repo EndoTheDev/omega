@@ -5,7 +5,7 @@
 The ai layer defines the LLM provider contract (interface, message types,
 stream event types, tool schema) and shared HTTP infrastructure. Concrete
 provider implementations (Ollama, OpenAI, Anthropic) live in
-`extensions/provider/`, not in this package.
+`modules/provider/`, not in this package.
 
 ## Ownership
 
@@ -40,7 +40,7 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
 - **Messages and events are sealed interfaces.** Consumers dispatch via
   type switch on concrete types. New message or event types implement the
   marker method (`isMessage` / `isStreamEvent`).
-- **Provider implementations are in `extensions/provider/`.** Message
+- **Provider implementations are in `modules/provider/`.** Message
   conversion, streaming, and API-specific logic live there, not here.
   This package exports HTTPClient, RetryHTTP, and SSEData for the
   extension to import.
@@ -54,7 +54,7 @@ provider implementations (Ollama, OpenAI, Anthropic) live in
 
 - The provider extension implements all three providers (Ollama, OpenAI,
   Anthropic). To add a new provider, add a `streamX` function in
-  `extensions/provider/provider.go` and a case in the `Stream` switch.
+  `modules/provider/provider.go` and a case in the `Stream` switch.
 - OpenAI and Anthropic tool-call arguments arrive as fragmented deltas
   keyed by index. Accumulate into a pending map and flush in index order
   after the stream ends.

@@ -1,5 +1,5 @@
 // omega webui: unit tests for the SSE parser + payload dispatch (the
-// pure half of the streamChat composable). Run: node --test webui/test/ (node >= 23 runs TS natively)
+// pure half of the streamChat composable). Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handlePayload, parseFrame } from "../app/composables/omega.ts";
