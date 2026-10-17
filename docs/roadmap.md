@@ -12,7 +12,7 @@ and git history.
   additive seams), SQLite store with FTS5 search, complete TUI,
   model discovery, image input, self-update
 - **Module architecture (v0.3-v0.5):** channel seam + HTTP channel,
-  store/TUI/store moved to modules, per-module config, config
+  store and TUI moved to modules, per-module config, config
   hot-reload, subagent delegation, session insights + export,
   AGENTS.md ancestor walk, 10-level thinking control
 - **Distribution (v0.6.0-v0.6.4):** Nuxt web UI embedded in the binary
@@ -34,11 +34,16 @@ and git history.
 - Dual title generation (provisional at request start, final after the
   first exchange), cron module (`crons.yaml`, hot-reload, catch-up,
   `cron:<name>` sessions)
+- Module restructure: `extensions/` -> `modules/`, web UI at
+  `modules/ui`, instance home gains `config/` for the yaml files
+  (root-first resolution keeps existing installs unchanged)
+- Session-list polish: star morphs on full row hover, dividers hidden
+  with their closed panes
+- First-run seeding removed: memory.md/user.md are agent-created on
+  first use, nothing personal ships in file or binary
 
 ## Planned
 
-- Module restructure: `modules/` -> `modules/`, web UI moves to
-  `modules/ui`, instance home gains a `config/` folder for the yaml files
 - Web UI: codeblock UX (max height, copy button, collapse), elapsed
   timing on thinking/tool/response bubbles, content search over the
   session store, full settings parity with config knobs, VS Code-style
