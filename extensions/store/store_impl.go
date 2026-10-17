@@ -57,6 +57,14 @@ func openStore(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// An in-memory database lives per connection: a pooled second
+	// connection would see an empty database (migrations and data
+	// gone). One connection keeps :memory: usable under pooling.
+	// ponytail: serializes access on in-memory DBs only - file DSNs
+	// keep the full connection pool.
+	if dsn == ":memory:" {
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, err
