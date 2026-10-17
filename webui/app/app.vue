@@ -340,10 +340,43 @@
   const rightWidth = ref(240);
   const dividerEl = ref<{ persist: (w: number) => void } | null>(null);
   const rightDividerEl = ref<{ persist: (w: number) => void } | null>(null);
-  const sidebarVisible = ref(true);
-  // the inspector starts closed every load - open state is not persisted
-  // (the pane width is, via the divider's storage key)
-  const rightVisible = ref(false);
+
+  // desktop pane open-state persists across reloads (omega.sidebar-open /
+  // omega.inspector-open, boolean strings, defaults true / false). Mobile
+  // is deliberately NOT persisted: the drawers stay closed every load -
+  // these flags are desktop-layout state only, guarded at the same 768px
+  // breakpoint the overlay mode uses. The gear/settings drawer is a
+  // headless toggle and stays non-persisted.
+  function loadPaneFlag(key: string, fallback: boolean): boolean {
+    if (typeof window === "undefined") return fallback;
+    const raw = localStorage.getItem(key);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return fallback;
+  }
+  const sidebarVisible = ref(loadPaneFlag("omega.sidebar-open", true));
+  // first visit: the inspector starts closed (the pane width IS persisted,
+  // via the divider's storage key)
+  const rightVisible = ref(loadPaneFlag("omega.inspector-open", false));
+
+  // persisted writes happen on toggle only, desktop only - the mobile
+  // overlay toggles flip drawerOpen/inspectorOpen, these refs move on
+  // desktop toggles and squeeze collapse (dividers are desktop-only).
+  // The guard reads the LIVE matchMedia, not the isMobile ref: at a
+  // breakpoint cross the squeeze chain can fire before the media-query
+  // listener updates the ref, and by-ref would then persist a mobile
+  // squeeze closure over the desktop flag.
+  const MOBILE_MEDIA = "(max-width: 768px)";
+  function isDesktopNow(): boolean {
+    if (typeof window === "undefined") return false;
+    return !window.matchMedia(MOBILE_MEDIA).matches;
+  }
+  watch(sidebarVisible, (v) => {
+    if (isDesktopNow()) localStorage.setItem("omega.sidebar-open", String(v));
+  });
+  watch(rightVisible, (v) => {
+    if (isDesktopNow()) localStorage.setItem("omega.inspector-open", String(v));
+  });
   const contextSize = ref(0);
 
   const messageCount = computed(
