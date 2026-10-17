@@ -35,7 +35,8 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   `handlePayload` (payload -> handler dispatch; error payloads THROW -
   a swallowed stream error is an invisible dead stream; `agent_end`
   marks the terminal event in `state.sawEnd`). Plus the fetch helpers
-  (health, models, sessions CRUD, files browse/read, `streamChat` -
+  (health, models, sessions CRUD incl. the pinned PATCH and the
+  read-mark PATCH, files browse/read, `streamChat` -
   throws `StreamInterruptedError` when the reader errors or ends
   without `agent_end`, so the transport death is distinguishable from
   a clean end), the assistant-bubble markdown renderer
@@ -52,8 +53,15 @@ into the omega binary via `go:embed` and served by the HTTP channel at
     the Today / Yesterday / Earlier local-calendar-day buckets,
     per-row relative age sits absolute right of the two-line row,
     vertically centered, + a model / msgs / tools / tokens meta line,
-    pin toggle PATCHes the flag via app.vue's `togglePin`; a live
-    stream pulses an accent edge on its own row even when pinned),
+    and ONE status element per row at the LEFT edge - a real button
+    (aria-label reflects the pin action) whose shape channel covers
+    pin (unpinned rows show a dot, pinned rows always a star, hovering
+    an unpinned row morphs the dot into the star affordance) and whose
+    color channel covers state (grey idle, pulsing-orange streaming
+    even when pinned, `--unread`-blue unread; priority streaming >
+    unread > idle), derived by the pure `sessionRowStatus` in
+    composables/omega.ts; clicking it pins/unpins via app.vue's
+    `togglePin`),
     `RightSidebar` (inspector pane: a tab shell - parked tabs slot in
     later - whose Files tab is a breadcrumb file manager over the
     working directory: dir rows descend, file rows open a read-only
@@ -87,6 +95,11 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   known renders no meta line), `parseCollapsedLabels`/`serializeCollapsedLabels`
   (persisted collapsed-section value: JSON array, unknown/non-string entries
   dropped, malformed JSON parses empty) (16 tests)
+- `test/sessionstatus.test.ts` - unit tests for the pure row-status
+  selector `sessionRowStatus` in composables/omega.ts: shape channel
+  (pinned star, hover morph, unpinned dot) x color channel (idle grey,
+  streaming pulse wins over unread, unread blue suppressed for the
+  viewed session) incl. priority and neutral defaults (13 tests)
 - `test/markdown.test.ts` - unit tests for the assistant-bubble
   markdown path in composables/omega.ts: `renderMarkdown` (plain text /
   inline styling / fenced code, partially-received fences still render
@@ -158,7 +171,9 @@ into the omega binary via `go:embed` and served by the HTTP channel at
   commit the synced output with the change.
 - **Design tokens live in main.css.** Light z-stack
   #ececec/#f7f7f8/#ededf0/#ffffff; dark #121212-family; accent
-  #E8833A (the single accent); radii 8px (panes) / 6px (cards) / 4px (chips);
+  #E8833A (the single accent); `--unread` joins the token block as an
+  unread-ONLY semantic color (dark #5B9DF9, light #2563EB - never reuse
+  it for decoration); radii 8px (panes) / 6px (cards) / 4px (chips);
   `--shadow-1` 0 1px 4px (dark 0.40, light 0.10) - tight blur sized
   so falloff fits the 3px breathing room. Type: Public Sans +
   JetBrains Mono. No component invents colors.
@@ -180,7 +195,7 @@ into the omega binary via `go:embed` and served by the HTTP channel at
 ## Verification
 
 ```bash
-npm test                       # 89 unit tests (node --test "test/*.test.ts")
+npm test                       # 102 unit tests (node --test "test/*.test.ts")
 npx nuxt build                 # SPA compiles
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```

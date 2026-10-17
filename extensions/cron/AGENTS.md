@@ -23,7 +23,8 @@ stopped on shutdown).
   single-instance-per-job guard, deliver targets (journal | memory |
   none), and an mtime-poll hot-reload of `crons.yaml` that logs the
   diff (added/enabled/disabled/removed) and reschedules without
-  restart.
+  restart. A cron fire's session is never auto-read - it lands unread
+  in any client list until the user opens it.
 - `plugin.go` - Plugin adapter (provides the `cron` seam); Mount loads
   `crons.yaml` from OMEGA_HOME, a load failure is a mount error.
 - `*_test.go` - schema, catch-up, guard, deliver, hot-reload tests.

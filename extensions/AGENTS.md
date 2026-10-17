@@ -20,7 +20,10 @@ into a shared `Context` via `MountAll` at startup.
   `/api/show` (root path, `/v1` stripped) for the model context window
   on ollama-lane hosts
 - `store/` - session store (SQLite implementation + `sessions.search`
-  tool; registers `/sessions`, `/tree`, `/search`, `/insights`, `/new`,
+  tool; sessions carry a `last_read_at` read stamp - new sessions born
+  read, pre-column rows backfilled to their own `updated_at`, and every
+  appended message stamps the row's `updated_at` so the activity time
+  tracks real output; registers `/sessions`, `/tree`, `/search`, `/insights`, `/new`,
   `/resume`, `/branch`, `/label`, `/export` commands)
 - `skills/` - skill loading (`skills.read` tool, `/skills` command)
 - `compactor/` - context compaction (keep-first/last + LLM

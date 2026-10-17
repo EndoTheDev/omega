@@ -27,10 +27,13 @@ rule a security contract, not a preference.
   `message_count` + `tool_count` (SQL counts at read time - no
   counters, no schema change), `prompt_tokens` + `completion_tokens`
   (real usage accumulated per turn at persist, 0 for sessions saved
-  before that landed), and `model` (the last `model_change` entry,
-  read at read time - omitted when the session never switched models).
-  PATCH `/sessions/{id}` with `{"pinned": true|false}` writes the
-  pinned flag without touching `updated_at` - pinning is not activity,
+  before that landed), `model` (the last `model_change` entry, read at
+  read time - omitted when the session never switched models), and
+  `unread` (computed at read time from `updated_at` after `last_read_at` -
+  no counters; GET `/sessions/{id}` exposes the same state on the
+  response). PATCH `/sessions/{id}` accepts `{"pinned": true|false}` and
+  `{"read": true}`; both are list concerns that write the sessions row
+  WITHOUT touching `updated_at` - pinning and reading are not activity,
   and the webui time buckets read `updated_at`. Session persistence:
   accumulate per response segment (a response chunk after tool results
   starts a new segment), persisted as assistant(A + tool calls) ->
