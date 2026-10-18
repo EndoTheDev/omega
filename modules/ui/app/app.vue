@@ -727,7 +727,9 @@
     const onChunk = (len: number) => {
       const now = Date.now();
       chunkTimes.push(now);
-      while (chunkTimes.length && now - chunkTimes[0] > 1000) chunkTimes.shift();
+      // [0] cannot be undefined while length > 0; the fallback keeps
+      // the narrowing honest without an assertion
+      while (chunkTimes.length && now - (chunkTimes[0] ?? now) > 1000) chunkTimes.shift();
       st.liveChunksPerSecond = chunkTimes.length;
       // ponytail: chars/4 token estimate - corrected by real usage at end
       st.tokens += Math.ceil(len / 4);

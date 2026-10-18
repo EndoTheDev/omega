@@ -48,3 +48,4 @@ bin/*.example
 
 # stray root build artifact (go build ./cmd/omega without -o)
 /omega
+.nuxt/

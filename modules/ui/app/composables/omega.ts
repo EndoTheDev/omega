@@ -856,10 +856,12 @@ export function lastUserText(items: TranscriptItemLike[]): string | null {
 // bubble, and the marker all leave the transcript, so the retry's send
 // path can push the user message back and stream a clean replacement
 // response (no duplicate user bubble). No user message means nothing to
-// drop: the transcript is returned unchanged.
-export function dropLastExchange(
-  items: TranscriptItemLike[],
-): TranscriptItemLike[] {
+// drop: the transcript is returned unchanged. Generic so the caller's
+// literal-kind item type flows through (a widened TranscriptItemLike[]
+// return would not satisfy the transcript's TranscriptItem[]).
+export function dropLastExchange<T extends TranscriptItemLike>(
+  items: T[],
+): T[] {
   const idx = lastCompleteUserIndex(items);
   if (idx === -1) return items;
   return items.slice(0, idx);
@@ -873,9 +875,9 @@ export function hasInterruptedMarker(items: TranscriptItemLike[]): boolean {
 
 // withoutMarkers strips interrupted-stream markers, keeps order. Used
 // when a fresh send retires a stale resume affordance.
-export function withoutMarkers(
-  items: TranscriptItemLike[],
-): TranscriptItemLike[] {
+export function withoutMarkers<T extends TranscriptItemLike>(
+  items: T[],
+): T[] {
   return items.filter((item) => item?.kind !== "interrupted");
 }
 
