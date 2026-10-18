@@ -23,16 +23,25 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 	system, apiMessages := anthropicConvertMessages(messages)
 
 	payload := map[string]any{
-		"model":      p.modelName,
-		"messages":   apiMessages,
-		"max_tokens": 4096,
-		"stream":     true,
+		"model":    p.modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
+	// A thinking budget larger than max_tokens is a 400 on the real
+	// Anthropic API (budget_tokens must be less than max_tokens). Grow
+	// max_tokens with the budget.
+	maxTokens := 4096
 	if budget := anthropicBudgetTokens(p.thinkingLevel); budget > 0 {
+		if budget >= maxTokens {
+			maxTokens = budget + 2048
+		}
+		payload["max_tokens"] = maxTokens
 		payload["thinking"] = map[string]any{
 			"type":          "enabled",
 			"budget_tokens": budget,
 		}
+	} else {
+		payload["max_tokens"] = maxTokens
 	}
 	if system != "" {
 		payload["system"] = system
@@ -76,6 +85,10 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 	reader := bufio.NewReader(resp.Body)
 	pending := make(map[int]*pendingTool)
 	finishReason := "stop"
+	// Usage arrives on message_start (input side) and message_delta
+	// (output side, and on keypool also the input side). Either may
+	// omit fields; only report what was actually seen.
+	var promptTokens, completionTokens, cachedTokens *int
 
 	for {
 		payloadLine, ok, err := ai.SSEData(reader)
@@ -98,6 +111,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 			Delta *struct {
 				Type         string `json:"type"`
 				Text         string `json:"text"`
+				Thinking     string `json:"thinking"`
 				InputJSON    string `json:"partial_json"`
 				StopReason   string `json:"stop_reason"`
 				StopSequence string `json:"stop_sequence"`
@@ -107,7 +121,11 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 				ID   string `json:"id"`
 				Name string `json:"name"`
 			} `json:"content_block"`
-			Error *struct {
+			Message *struct {
+				Usage *anthropicUsage `json:"usage"`
+			} `json:"message"`
+			Usage   *anthropicUsage `json:"usage"`
+			Error   *struct {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
@@ -116,6 +134,23 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 		}
 		if chunk.Error != nil {
 			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: %s", chunk.Error.Message)}
+		}
+		if chunk.Message != nil {
+			chunk.Usage = chunk.Message.Usage // message_start carries usage nested in the message object
+		}
+		if chunk.Usage != nil {
+			if chunk.Usage.InputTokens != nil {
+				n := *chunk.Usage.InputTokens
+				promptTokens = &n
+			}
+			if chunk.Usage.OutputTokens != nil {
+				n := *chunk.Usage.OutputTokens
+				completionTokens = &n
+			}
+			if chunk.Usage.CacheReadInputTokens != nil {
+				n := *chunk.Usage.CacheReadInputTokens
+				cachedTokens = &n
+			}
 		}
 
 		switch chunk.Type {
@@ -138,6 +173,10 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 			case "text_delta":
 				if chunk.Delta.Text != "" {
 					sendEvent(ctx, events, ai.ResponseChunk{Type: "response_chunk", Content: chunk.Delta.Text})
+				}
+			case "thinking_delta":
+				if chunk.Delta.Thinking != "" {
+					sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: chunk.Delta.Thinking})
 				}
 			case "input_json_delta":
 				idx := 0
@@ -162,7 +201,16 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 		func(pt *pendingTool) string { return pt.inputJSON },
 	)
 
-	return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason}
+	return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: promptTokens, EvalCount: completionTokens, CachedCount: cachedTokens}
+}
+
+// anthropicUsage is the usage block on message_start and message_delta.
+// Fields are pointers so omitted fields stay unreported (nil) on the
+// StreamEnd rather than becoming a fake zero.
+type anthropicUsage struct {
+	InputTokens          *int `json:"input_tokens"`
+	OutputTokens         *int `json:"output_tokens"`
+	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
 }
 
 // --- Anthropic message conversion ---
@@ -220,11 +268,15 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 				}
 				content, _ := messages[i]["content"].(string)
 				toolCallID, _ := messages[i]["tool_call_id"].(string)
-				blocks = append(blocks, map[string]any{
+				block := map[string]any{
 					"type":        "tool_result",
 					"tool_use_id": toolCallID,
 					"content":     content,
-				})
+				}
+				if isErr, ok := messages[i]["is_error"].(bool); ok && isErr {
+					block["is_error"] = true
+				}
+				blocks = append(blocks, block)
 				i++
 			}
 			i--

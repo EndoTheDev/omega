@@ -68,8 +68,13 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 
 	reader := bufio.NewReader(resp.Body)
 	pending := make(map[int]*pendingCall)
+	// Some openai-compatible hosts omit tool-call ids entirely; the
+	// ollama native path synthesizes stable call_N ids so ToolResult
+	// correlation works. Mirror that here.
+	toolCallSeq := 0
 	finishReason := "stop"
 	promptTokens, completionTokens, cachedTokens := 0, 0, 0
+	sawUsage := false
 
 	for {
 		payloadLine, ok, readErr := ai.SSEData(reader)
@@ -91,7 +96,11 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 				Delta struct {
 					Content   *string `json:"content"`
 					Reasoning *string `json:"reasoning"`
-					ToolCalls []struct {
+					// ReasoningContent is the deepseek-style field
+					// name some openai-compatible hosts use
+					// instead of `reasoning`.
+					ReasoningContent *string `json:"reasoning_content"`
+					ToolCalls        []struct {
 						Index    *int   `json:"index"`
 						ID       string `json:"id"`
 						Function struct {
@@ -120,6 +129,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: %s", chunk.Error.Message)}
 		}
 		if chunk.Usage != nil {
+			sawUsage = true
 			if chunk.Usage.PromptTokens != nil {
 				promptTokens = *chunk.Usage.PromptTokens
 			}
@@ -135,8 +145,14 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 		}
 		choice := chunk.Choices[0]
 
-		if choice.Delta.Reasoning != nil && *choice.Delta.Reasoning != "" {
-			sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: *choice.Delta.Reasoning})
+		reasoning := ""
+		if choice.Delta.Reasoning != nil {
+			reasoning = *choice.Delta.Reasoning
+		} else if choice.Delta.ReasoningContent != nil {
+			reasoning = *choice.Delta.ReasoningContent
+		}
+		if reasoning != "" {
+			sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: reasoning})
 		}
 		if choice.Delta.Content != nil && *choice.Delta.Content != "" {
 			sendEvent(ctx, events, ai.ResponseChunk{Type: "response_chunk", Content: *choice.Delta.Content})
@@ -151,6 +167,10 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 			if !exists {
 				pc = &pendingCall{}
 				pending[idx] = pc
+				// Only synthesize when the wire never sends an id
+				// for this index; later fragments may still carry it.
+				toolCallSeq++
+				pc.id = fmt.Sprintf("call_%d", toolCallSeq)
 			}
 			if tc.ID != "" {
 				pc.id = tc.ID
@@ -177,6 +197,11 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 
 	pt, ct := promptTokens, completionTokens
 	ca := cachedTokens
+	// Parity with the ollama native path: when the host never sent a
+	// usage chunk, report absent counters (nil) instead of fake zeros.
+	if !sawUsage {
+		return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason}
+	}
 	return ai.StreamEnd{
 		Type:            "stream_end",
 		FinishReason:    finishReason,
