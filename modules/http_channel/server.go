@@ -204,12 +204,18 @@ type assistantRecord struct {
 	results   []ai.ToolResult
 	content   string
 	// server-side timing so reloaded sessions render real durations
-	// (client meters die with the SSE stream). Per-chunk deltas, not
-	// first-to-last spans: thinking happens in PHASES (think -> tools
-	// -> think again), and a span would bill the tool gap as thinking.
-	// lastXxx zero = span closed; the next chunk opens a fresh one.
-	thinkingMs, respMs  int64
+	// (client meters die with the SSE stream). Durations accumulate raw
+	// (not per-chunk ms floors): individual sub-millisecond chunk
+	// deltas would each floor to 0, but summed they survive. lastXxx
+	// zero = span closed; the next chunk opens a fresh one. openAt is
+	// the opening boundary of the current span window - the turn start
+	// or last tool result. A chunk opening a span bills boundary-to-
+	// chunk, so provider latency before the first token (prompt
+	// processing, the model's silent build-up) counts as part of the
+	// phase it produces: without it, a single-chunk segment reports 0.
+	thinkDur, respDur   time.Duration
 	lastThink, lastResp time.Time
+	openAt              time.Time
 	// call dispatch times by tool call id; the matching ToolResult
 	// reads and clears its entry when it arrives.
 	callStarts map[string]time.Time
@@ -390,10 +396,20 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 			delete(rec.callStarts, tre.Message.ToolCallID)
 		}
 		rec.results = append(rec.results, tre.Message)
+		// The result opens the next segment's clock: the wait from the
+		// last result to the model's next token is generation latency,
+		// not a tool gap.
+		rec.openAt = now
 		return
 	}
 	se, ok := event.(agent.StreamEvent)
 	if !ok {
+		// TurnStart opens the next provider call's window: from here
+		// until the stream's first chunk, the loop and prompt
+		// processing bill to the phase that first chunk lands in.
+		if _, ok := event.(agent.TurnStart); ok {
+			rec.openAt = now
+		}
 		return
 	}
 	switch ev := se.Event.(type) {
@@ -401,33 +417,33 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 		if len(rec.results) > 0 {
 			// thinking after tool results is turn 2's - persist it
 			// with the next message (the live view splits there
-			// too), not concatenated onto turn 1's record
+			// too), not concatenated onto turn 1's record. The
+			// opening boundary rides into the fresh record so the
+			// post-result latency still bills the new segment.
 			*recs = append(*recs, *rec)
-			*rec = assistantRecord{}
+			*rec = assistantRecord{openAt: rec.openAt}
 		}
 		rec.thinking += ev.Content
-		if !rec.lastThink.IsZero() {
-			rec.thinkingMs += now.Sub(rec.lastThink).Milliseconds()
-		}
+		rec.thinkDur += phaseDelta(rec.lastThink, rec.openAt, now)
 		rec.lastThink = now
+		rec.openAt = now
 	case ai.ResponseChunk:
 		if len(rec.results) > 0 {
 			// tool phase ended the current segment - the frontend
 			// renders a fresh bubble for what follows, so we persist
 			// a fresh record for it
 			*recs = append(*recs, *rec)
-			*rec = assistantRecord{}
+			*rec = assistantRecord{openAt: rec.openAt}
 		}
 		rec.content += ev.Content
-		if !rec.lastResp.IsZero() {
-			rec.respMs += now.Sub(rec.lastResp).Milliseconds()
-		}
+		rec.respDur += phaseDelta(rec.lastResp, rec.openAt, now)
 		rec.lastResp = now
+		rec.openAt = now
 	case ai.ToolCallEvent:
 		rec.toolCalls = append(rec.toolCalls, ev.ToolCall)
 		// a tool call closes both spans - the gap while the tool runs
 		// belongs to nobody
-		rec.lastThink, rec.lastResp = time.Time{}, time.Time{}
+		rec.lastThink, rec.lastResp, rec.openAt = time.Time{}, time.Time{}, time.Time{}
 		if rec.callStarts == nil {
 			rec.callStarts = map[string]time.Time{}
 		}
@@ -435,6 +451,21 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 			rec.callStarts[ev.ToolCall.ID] = now
 		}
 	}
+}
+
+// phaseDelta returns the wall clock the chunk bills into its span:
+// chunk-to-chunk while the same phase is running (last set), and
+// boundary-to-chunk when the chunk opens a span (turn start / last
+// tool result), so a single-chunk phase still carries its latency. An
+// unset boundary contributes nothing.
+func phaseDelta(last, open, now time.Time) time.Duration {
+	if !last.IsZero() {
+		return now.Sub(last)
+	}
+	if !open.IsZero() {
+		return now.Sub(open)
+	}
+	return 0
 }
 
 // persistAssistant saves the assistant turn to the session, one message
@@ -460,8 +491,8 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 			assistant.Thinking = &text
 		}
 		assistant.ToolCalls = rec.toolCalls
-		if rec.thinkingMs > 0 || rec.respMs > 0 {
-			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkingMs, ResponseMs: rec.respMs}
+		if rec.thinkDur > 0 || rec.respDur > 0 {
+			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkDur.Milliseconds(), ResponseMs: rec.respDur.Milliseconds()}
 		}
 		if err := s.store.AppendMessage(ctx, req.SessionID, assistant); err != nil {
 			return fmt.Errorf("persist response: %w", err)
