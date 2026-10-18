@@ -13,11 +13,12 @@
       </span>
     </div>
     <div class="session-search">
-      <input
+      <!-- shared look (SearchInput); the BEHAVIOR stays here: debounced
+           FTS5 content union (runContentSearch below) on top of the
+           client-side title filter -->
+      <SearchInput
         v-model="query"
-        type="search"
-        placeholder="Search sessions"
-        spellcheck="false" />
+        placeholder="Search sessions" />
     </div>
     <ul class="session-list">
       <!-- sections: PINNED first (the keep-at-top group), then the
@@ -105,7 +106,7 @@
     CONTENT_SEARCH_DEBOUNCE_MS,
     createRenderScheduler,
     parseCollapsedLabels,
-    serializeCollapsedLabels,
+    serializeCollapsedKeys,
     sessionRowStatus,
   } from "../composables/omega";
   import type { Session, SessionBuckets } from "../composables/omega";
@@ -191,7 +192,7 @@
     else next.add(label);
     collapsed.value = next;
     if (typeof window !== "undefined")
-      localStorage.setItem(COLLAPSED_KEY, serializeCollapsedLabels(next));
+      localStorage.setItem(COLLAPSED_KEY, serializeCollapsedKeys(next));
   }
   restoreCollapsed();
 

@@ -345,32 +345,39 @@ export function rowMeta(s: Session): string {
 
 // --- sidebar: persisted collapsed sections ---
 
-// the only labels a section can take - anything else in the persisted
-// value is stale (renamed bucket) or corrupt and gets dropped
-export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier"];
-
-// parseCollapsedLabels reads the persisted omega.sidebar-collapsed value:
-// a JSON array of section labels. Malformed JSON and non-string/unknown
-// entries are ignored - a bad key restores everything expanded, it never
-// blanks the sidebar.
-export function parseCollapsedLabels(raw: string | null): Set<string> {
+// parseCollapsedKeys reads a persisted collapsed-sections value: a JSON
+// array of string keys. Malformed JSON and non-string entries are ignored -
+// a bad key restores everything expanded, it never blanks the pane.
+// Group-key agnostic on purpose: the sidebar buckets are allowlisted (see
+// parseCollapsedLabels below), the settings groups are dynamic server data.
+export function parseCollapsedKeys(raw: string | null): Set<string> {
   const out = new Set<string>();
   if (!raw) return out;
   try {
     const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed))
-      for (const v of parsed)
-        if (typeof v === "string" && SIDEBAR_BUCKETS.includes(v)) out.add(v);
+      for (const v of parsed) if (typeof v === "string") out.add(v);
   } catch {
     return new Set();
   }
   return out;
 }
 
-// serializeCollapsedLabels writes the inverse: a Set to the JSON array
+// serializeCollapsedKeys writes the inverse: a Set to the JSON array
 // the parser above accepts (round-trip stable).
-export function serializeCollapsedLabels(set: Iterable<string>): string {
+export function serializeCollapsedKeys(set: Iterable<string>): string {
   return JSON.stringify([...set]);
+}
+
+// the only labels a sidebar section can take - anything else in the
+// persisted value is stale (renamed bucket) or corrupt and gets dropped
+export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier"];
+
+// parseCollapsedLabels is parseCollapsedKeys narrowed to the bucket
+// allowlist.
+export function parseCollapsedLabels(raw: string | null): Set<string> {
+  const all = parseCollapsedKeys(raw);
+  return new Set([...all].filter((v) => SIDEBAR_BUCKETS.includes(v)));
 }
 
 // --- sidebar: unified row status (dot / star x state color) ---
