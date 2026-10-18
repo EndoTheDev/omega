@@ -60,6 +60,9 @@ func (m *mockStore) SetSessionLastRun(context.Context, string, *agent.LastRunSta
 
 func (m *mockStore) SetSessionPinned(context.Context, string, bool) error { return nil }
 func (m *mockStore) SetSessionRead(context.Context, string) error         { return nil }
+func (m *mockStore) SetSessionArchived(context.Context, string, bool) error {
+	return nil
+}
 
 func (m *mockStore) SessionModels(context.Context) (map[string]string, error) {
 	return nil, nil

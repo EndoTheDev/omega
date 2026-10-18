@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -725,6 +726,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Archived filter: default excludes archived sessions from the
+		// list; archived=include returns them (with the rest). The flag
+		// is a user-list concern, so the filter lives at the read.
+		includeArchived := r.URL.Query().Get("archived") == "include"
 		// ponytail: counts are computed at read time from SQL COUNT, so
 		// the list stays accurate with no maintained counters.
 		counts, err := s.store.SessionCounts(r.Context())
@@ -739,6 +744,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		out := make([]sessionPayload, 0, len(sessions))
 		for _, sess := range sessions {
+			if sess.Archived && !includeArchived {
+				continue
+			}
 			payload := sessionPayload{Session: sess}
 			if c, ok := counts[sess.ID]; ok {
 				payload.MessageCount = c.MessageCount
@@ -820,6 +828,25 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		// list too, not just here).
 		http.Error(w, "search: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	// Archived filter: default excludes hits whose session is archived
+	// (the sidebar's toggle drives the same archived=include param the
+	// list takes); archived=include keeps them. One read of the session
+	// list builds the exclusion set - the search stays a pure FTS
+	// query, the flag is a user-list concern applied at read time.
+	if r.URL.Query().Get("archived") != "include" {
+		sessions, err := s.store.ListSessions(r.Context())
+		if err != nil {
+			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		archived := make(map[string]bool, len(sessions))
+		for _, sess := range sessions {
+			archived[sess.ID] = sess.Archived
+		}
+		results = slices.DeleteFunc(results, func(res agent.SearchResult) bool {
+			return archived[res.SessionID]
+		})
 	}
 	seen := make(map[string]bool, len(results))
 	out := make([]sessionSearchHit, 0, len(results))
@@ -910,21 +937,24 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, sess)
 	case http.MethodPatch:
-		// Row flags: {"pinned": true|false} (pin toggle, existing) and
+		// Row flags: {"pinned": true|false} (pin toggle, existing),
 		// {"read": true} (mark read - stamps last_read_at without
-		// touching updated_at, same shape as the pinned PATCH). Both
-		// are list concerns: pinning and reading are not activity, and
-		// the webui time buckets read updated_at.
+		// touching updated_at, same shape as the pinned PATCH) and
+		// {"archived": true|false} (archive toggle, same no-touch
+		// contract). All are list concerns: pinning, reading and
+		// archiving are not activity, and the webui time buckets read
+		// updated_at.
 		var body struct {
-			Pinned *bool `json:"pinned"`
-			Read   *bool `json:"read"`
+			Pinned   *bool `json:"pinned"`
+			Read     *bool `json:"read"`
+			Archived *bool `json:"archived"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body.Pinned == nil && body.Read == nil {
-			http.Error(w, "pinned or read must not be missing", http.StatusBadRequest)
+		if body.Pinned == nil && body.Read == nil && body.Archived == nil {
+			http.Error(w, "pinned, read or archived must not be missing", http.StatusBadRequest)
 			return
 		}
 		if body.Read != nil && !*body.Read {
@@ -940,6 +970,12 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		if body.Read != nil {
 			if err := s.store.SetSessionRead(r.Context(), id); err != nil {
 				http.Error(w, "read session: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if body.Archived != nil {
+			if err := s.store.SetSessionArchived(r.Context(), id, *body.Archived); err != nil {
+				http.Error(w, "archive session: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 		}
