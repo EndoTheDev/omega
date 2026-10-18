@@ -17,7 +17,7 @@ func (p *Plugin) Name() string { return "tools" }
 
 // Provides lists seam names this plugin mounts. "tools" is additive,
 // so multiple plugins can contribute tool providers without conflict.
-func (p *Plugin) Provides() []string { return []string{"tools"} }
+func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections"} }
 
 // Requires lists seam names that must be mounted first. tools
 // has no dependencies — it only provides tools, which need nothing.
@@ -27,6 +27,7 @@ func (p *Plugin) Requires() []string { return nil }
 // the /tools command.
 func (p *Plugin) Mount(ctx *agent.Context) error {
 	ctx.ToolProviders = append(ctx.ToolProviders, &ToolProvider{})
+	ctx.PromptSectioners = append(ctx.PromptSectioners, p)
 
 	ctx.Commands = append(ctx.Commands,
 		agent.ExtensionCommand{Name: "/tools", Description: "list tools or toggle tool result display [on|off|auto|list]"},

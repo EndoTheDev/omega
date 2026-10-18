@@ -26,8 +26,8 @@ func TestPluginContract(t *testing.T) {
 		t.Fatalf("Requires = %v, want empty", p.Requires())
 	}
 	provides := p.Provides()
-	if len(provides) != 1 || provides[0] != "tools" {
-		t.Fatalf("Provides = %v, want [tools]", provides)
+	if len(provides) != 2 || provides[0] != "tools" || provides[1] != "prompt_sections" {
+		t.Fatalf("Provides = %v, want [tools prompt_sections]", provides)
 	}
 }
 

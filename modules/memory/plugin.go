@@ -13,7 +13,7 @@ type Plugin struct{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string       { return "memory" }
-func (p *Plugin) Provides() []string { return []string{"memory", "tools"} }
+func (p *Plugin) Provides() []string { return []string{"memory", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the FileMemory from config and populates ctx.Memory +
@@ -26,6 +26,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	fm := NewFileMemory(cfg)
 	ctx.Memory = fm
 	ctx.ToolProviders = append(ctx.ToolProviders, &memoryToolProvider{mem: fm})
+	ctx.PromptSectioners = append(ctx.PromptSectioners, fm)
 	return nil
 }
 

@@ -11,10 +11,10 @@ import (
 	"github.com/EndoTheDev/omega/modules/skills"
 )
 
-// TestBuildPromptNilSkills verifies the prompt builder produces a
-// valid prompt when no skills provider is mounted.
-func TestBuildPromptNilSkills(t *testing.T) {
-	b := NewPromptBuilder(nil, nil)
+// TestBuildPromptNoSectioners verifies the prompt builder produces a
+// valid prompt when no module contributes prompt sections.
+func TestBuildPromptNoSectioners(t *testing.T) {
+	b := NewPromptBuilder(&agent.Context{})
 	prompt, ok := b.BuildPrompt(context.Background(), agent.PromptBuildOptions{})
 	if !ok {
 		t.Fatal("BuildPrompt returned false")
@@ -27,9 +27,10 @@ func TestBuildPromptNilSkills(t *testing.T) {
 	}
 }
 
-// TestBuildPromptWithSkills verifies skills from the SkillsProvider
-// appear in the Available Skills section.
-func TestBuildPromptWithSkills(t *testing.T) {
+// TestBuildPromptWithSkillsSection verifies skills mounted through the
+// skills plugin appear in the Available Skills section, contributed by
+// the skills module itself.
+func TestBuildPromptWithSkillsSection(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "my-skill")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -40,9 +41,13 @@ func TestBuildPromptWithSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sp := skills.NewSkillsProvider(dir)
-	b := NewPromptBuilder(sp, nil)
-	prompt, ok := b.BuildPrompt(context.Background(), agent.PromptBuildOptions{})
+	ctx := &agent.Context{
+		Configs: map[string]any{"skills": skills.Config{Dir: dir}},
+	}
+	if err := agent.MountAll([]agent.Plugin{skills.NewPlugin(), NewPlugin()}, ctx); err != nil {
+		t.Fatalf("MountAll: %v", err)
+	}
+	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), agent.PromptBuildOptions{})
 	if !ok {
 		t.Fatal("BuildPrompt returned false")
 	}

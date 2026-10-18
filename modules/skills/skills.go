@@ -30,6 +30,29 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
 	return scanSkills(dir)
 }
 
+// promptSectionOrder places the Available Skills section behind the
+// memory snapshot (10) and ahead of the tools list (30).
+const promptSectionOrder = 20
+
+// PromptSections renders the Available Skills section: the skills.read
+// usage instruction plus one line per skill. Empty when no skills are
+// installed. Owned here - the usage instruction describes this module's
+// tool, not the prompt builder's.
+func (sp *SkillsProvider) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
+	skills, _ := sp.LoadSkills("")
+	if len(skills) == 0 {
+		return nil
+	}
+	var sb strings.Builder
+	sb.WriteString("Call the skills.read tool with a skill name to read its full content.\n")
+	for _, s := range skills {
+		fmt.Fprintf(&sb, "- %s: %s\n", s.Name, s.Description)
+	}
+	return []agent.PromptSection{
+		{Title: "Available Skills", Body: sb.String(), Order: promptSectionOrder},
+	}
+}
+
 // Tools returns the skills.read tool.
 func (sp *SkillsProvider) Tools() map[string]agent.Tool {
 	return map[string]agent.Tool{

@@ -179,6 +179,18 @@ type PromptBuilder interface {
 	Guidelines() []string
 }
 
+// PromptSectioner is the additive prompt-section seam. Modules that
+// own a piece of the system prompt (memory snapshot, skills list,
+// tools list) contribute it as a PromptSection; the prompt builder is
+// a generic assembler that renders whatever is contributed. Section
+// layout order: memory 10, skills 20, tools 30 - new sections pick a
+// value between them.
+type PromptSectioner interface {
+	// PromptSections returns the sections this module contributes for
+	// this build. Returns nil when it has nothing to render.
+	PromptSections(opts PromptBuildOptions) []PromptSection
+}
+
 // Channel is a delivery transport that connects external clients to
 // the agent. Channels are additive: multiple can run simultaneously
 // (HTTP + Discord + Telegram). The host starts all mounted channels
