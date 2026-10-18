@@ -519,12 +519,16 @@ func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, 
 	return err
 }
 
-// quoteFTS wraps a user-supplied search term in FTS5 double quotes so it
-// matches as a literal phrase instead of being interpreted as query syntax
-// (apostrophes, AND/OR/NEAR, prefixes, etc.). Embedded double quotes are
-// doubled per FTS5 string-literal rules.
+// quoteFTS wraps a user-supplied search term in FTS5 double quotes so
+// it matches as a literal phrase instead of being interpreted as query
+// syntax (apostrophes, AND/OR/NEAR, prefixes, etc.), with the FTS5
+// trailing-star phrase form `"term"*` so the LAST token also prefix-
+// matches (a search box narrows as you type: "fibo" finds "fibonacci",
+// in-app comment 5 2026-10-18 - exact-token-only made progressive
+// typing empty the results). Embedded double quotes are doubled per
+// FTS5 string-literal rules.
 func quoteFTS(term string) string {
-	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
+	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"*`
 }
 
 // SearchMessages performs a full-text search across all session messages.
