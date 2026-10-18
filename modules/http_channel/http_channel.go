@@ -30,6 +30,7 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 	ag := agent.NewFromContext(deps.Ctx, agent.AgentOptions{})
 	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
 	c.srv.runTimeout = c.runTimeout
+	c.srv.version = deps.Version
 	return c.srv.Serve(ctx, c.addr)
 }
 

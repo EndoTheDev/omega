@@ -97,6 +97,11 @@ type StoreProvider interface {
 	// session's accumulated token totals. Zero usage is a no-op.
 	AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error
 
+	// SetSessionLastRun writes the last-run stats block (or clears it
+	// with nil) on the session's row, so the webui status bar can show
+	// the last-known rates after a reload - no stream required.
+	SetSessionLastRun(ctx context.Context, sessionID string, stats *LastRunStats) error
+
 	// SetSessionPinned sets the pinned flag on a session. It is a
 	// user-list concern and does not touch updated_at.
 	SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error
@@ -261,10 +266,12 @@ type Settings interface {
 // ChannelDeps carries everything a channel needs to run. Ctx is the
 // fully-wired plugin Context — channels create agents from it. Store
 // persists messages. Settings (optional) exposes the config knobs.
+// Version is the host's build tag, surfaced through /health.
 type ChannelDeps struct {
 	Ctx      *Context
 	Store    StoreProvider
 	Settings Settings
+	Version  string
 }
 
 // CronProvider schedules omega prompts on cron expressions. The

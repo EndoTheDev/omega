@@ -25,12 +25,24 @@
       {{ liveChunksPerSecond }} ch/s
     </span>
     <span
+      v-else-if="lastChunksPerSecond"
+      class="seg"
+      title="chunks per second, last run">
+      {{ lastChunksPerSecond }} ch/s
+    </span>
+    <span
       v-if="tokensPerSecond"
       class="seg"
-      title="generation speed">
+      title="generation speed, last run">
       {{ tokensPerSecond }} tok/s
     </span>
     <span class="right">
+      <span
+        v-if="version"
+        class="seg hide-sm"
+        :title="`server build and uptime - ${version}`">
+        {{ version }} · up {{ formatUp }}
+      </span>
       <span class="seg">
         <span
           v-if="streaming"
@@ -45,6 +57,7 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
+  import { formatDurationMs } from "../composables/omega";
 
   const props = defineProps<{
     healthy: boolean;
@@ -54,6 +67,12 @@
     contextSize: number;
     tokensPerSecond: number;
     liveChunksPerSecond: number;
+    // last-known chunks/s (persisted last_run block, or the run that
+    // just ended) - shown while no stream is live
+    lastChunksPerSecond: number;
+    // server build tag + uptime from /health; empty version hides the seg
+    version: string;
+    upSeconds: number;
   }>();
 
   // 1048576 -> "1M", 32768 -> "32k"
@@ -65,5 +84,13 @@
     }
     if (n >= 1_000) return `${Math.round(n / 1000)}k`;
     return String(n);
+  });
+
+  // uptime reads in the same voice as the elapsed meters ("2m 05s",
+  // "1h 02m"); a fresh server reads "0s"
+  const formatUp = computed(() => {
+    const total = Math.floor(props.upSeconds);
+    if (total < 1) return "0s";
+    return formatDurationMs(total * 1000);
   });
 </script>

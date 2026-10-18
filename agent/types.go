@@ -47,6 +47,20 @@ type Session struct {
 	// Sessions that already carried a label when the column was added
 	// were migrated straight to 2 - a manual label is never retitled.
 	TitleState int `json:"title_state"`
+
+	// LastRun is the status bar's last-known run telemetry, computed at
+	// run end (real provider usage over the run's streaming wall clock)
+	// and persisted on the session row. Nil until a run with reported
+	// usage completes - a fresh session never carries phantom rates.
+	LastRun *LastRunStats `json:"last_run,omitempty"`
+}
+
+// LastRunStats is one completed run's average rates, written with the
+// run's final token persist and shown by the webui status bar while no
+// stream is live. Rates round to whole units, matching the live meters.
+type LastRunStats struct {
+	TokensPerSecond int `json:"tokens_per_second"`
+	ChunksPerSecond int `json:"chunks_per_second"`
 }
 
 // SessionUnread reports whether a session has output newer than its last
