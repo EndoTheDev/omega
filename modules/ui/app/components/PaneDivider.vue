@@ -69,10 +69,19 @@
     }
     // no max: sidebars are unbounded; the pane-area squeeze chain keeps the
     // chat at its 320px floor and collapses the far sidebar when starved
-    emit("update:width", next);
-    // attractor, not a clamp: the pane keeps tracking the pointer, releasing
-    // inside the zone is what sticks it to the exact snap size
-    snappedTo.value = snapCandidate(next);
+    const snap = snapCandidate(next);
+    if (snap !== null && snap !== snappedTo.value) {
+      // magnet ENGAGE: rebase the drag anchor to the snap point, so
+      // tracking continues from the stuck position - without the rebase
+      // the width jump feeds back into the delta math and oscillates.
+      startX = e.clientX;
+      startWidth = snap;
+    }
+    // true magnet: inside the zone the width sticks to the exact snap
+    // size; leaving the zone resumes pointer tracking from the rebased
+    // anchor. Attractor, never a clamp.
+    emit("update:width", snap !== null ? snap : next);
+    snappedTo.value = snap;
   }
 
   function stop() {
