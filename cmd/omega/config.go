@@ -191,14 +191,15 @@ func applyEnv(cfg *Config) {
 	}
 
 	// Int assignments with min validation: env var -> *int field.
-	// min is the smallest accepted value (0 for keep_first/keep_last, 1 otherwise).
+	// min is the smallest accepted value (0 for keep_first/keep_last
+	// and context_window, 1 otherwise).
 	for _, n := range []struct {
 		env    string
 		target *int
 		min    int
 	}{
 		{"OMEGA_PORT", &cfg.Server.Port, math.MinInt32},
-		{"OMEGA_COMPACTION_CONTEXT_WINDOW", &cfg.Compaction.ContextWindow, 1},
+		{"OMEGA_COMPACTION_CONTEXT_WINDOW", &cfg.Compaction.ContextWindow, 0},
 		{"OMEGA_COMPACTION_KEEP_FIRST", &cfg.Compaction.KeepFirst, 0},
 		{"OMEGA_COMPACTION_KEEP_LAST", &cfg.Compaction.KeepLast, 0},
 		{"OMEGA_COMPACTION_RESERVE_TOKENS", &cfg.Compaction.ReserveTokens, 1},

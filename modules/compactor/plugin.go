@@ -24,6 +24,19 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 			provider: ctx.Provider,
 			config:   cfg,
 		}
+		// context_window 0 = auto: probe the provider for the model's
+		// context window once at server start and cache it for the
+		// process lifetime (one probe per process, the same pattern
+		// http_channel's ctxWindow cache uses). A failed probe - or a
+		// provider that cannot report a window - leaves autoWindow at
+		// 0, so the DefaultContextWindow fallback in Budget engages
+		// and the server still boots. Manual values > 0 never probe
+		// and keep overriding exactly as today.
+		if cfg.ContextWindow <= 0 && ctx.Provider != nil {
+			if info, err := ctx.Provider.ModelInfo(); err == nil {
+				compactor.autoWindow = info.ContextWindow
+			}
+		}
 	} else {
 		compactor = &Compactor{
 			provider: ctx.Provider,

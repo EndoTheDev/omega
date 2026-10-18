@@ -20,6 +20,11 @@ import (
 type Compactor struct {
 	provider ai.Provider
 	config   agent.CompactionConfig
+	// autoWindow is the context window probed from the provider once
+	// at Mount (server start). The value is cached for the process
+	// lifetime - SetConfig never touches it. 0 = no usable window
+	// (probe failed, offline, or the provider cannot report one).
+	autoWindow int
 }
 
 // SetConfig replaces the compaction config at runtime. The host's
@@ -30,6 +35,20 @@ func (c *Compactor) SetConfig(cfg agent.CompactionConfig) {
 	c.config = cfg
 }
 
+// AutoWindow returns the context window probed at startup, or 0 when
+// the probe produced nothing usable.
+func (c *Compactor) AutoWindow() int { return c.autoWindow }
+
+// window resolves the effective context window: a manual override
+// (>0) wins exactly as before; 0 means auto - the startup-probed
+// window. Both 0 -> Budget's DefaultContextWindow fallback.
+func (c *Compactor) window() int {
+	if c.config.ContextWindow > 0 {
+		return c.config.ContextWindow
+	}
+	return c.autoWindow
+}
+
 // Compact compacts the message history. If disabled or under budget,
 // returns the original messages unchanged.
 func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
@@ -38,7 +57,7 @@ func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Me
 	}
 
 	estTokens := agent.EstimateTokens(messages)
-	budget := c.config.Budget()
+	budget := c.config.BudgetWith(c.window())
 
 	keepFirst := c.config.KeepFirst
 	keepLast := c.config.KeepLast

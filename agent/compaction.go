@@ -33,11 +33,18 @@ type CompactionConfig struct {
 	MaxToolOutput int     `yaml:"max_tool_output"`
 }
 
-// Budget returns the token count at which compaction triggers.
-// ReserveTokens are subtracted from the context window so the model
-// has room for its response after the prompt.
+// Budget returns the token count at which compaction triggers,
+// computed against the manual context window override. 0 or fewer
+// falls back to DefaultContextWindow.
 func (c CompactionConfig) Budget() int {
-	window := c.ContextWindow
+	return c.BudgetWith(c.ContextWindow)
+}
+
+// BudgetWith is Budget against a caller-resolved context window: the
+// compactor passes the window probed from the provider at startup
+// when the config's context_window is 0 (= auto). A window of 0 or
+// less falls back to DefaultContextWindow, unchanged.
+func (c CompactionConfig) BudgetWith(window int) int {
 	if window <= 0 {
 		window = DefaultContextWindow
 	}
