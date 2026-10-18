@@ -387,13 +387,16 @@ func TestBuildConfigs(t *testing.T) {
 		t.Errorf("compactor = %+v, want %+v", cc, cfg.Compaction)
 	}
 
-	// web: web.Config{APIKey}
+	// web: web.Config{APIKey, BaseURL derived from provider host}
 	wc, ok := configs["web"].(web.Config)
 	if !ok {
 		t.Fatalf("web config is %T, want web.Config", configs["web"])
 	}
 	if wc.APIKey != cfg.Provider.APIKey {
 		t.Errorf("web.APIKey = %q, want %q", wc.APIKey, cfg.Provider.APIKey)
+	}
+	if wc.BaseURL != cfg.Provider.Host {
+		t.Errorf("web.BaseURL = %q, want %q", wc.BaseURL, cfg.Provider.Host)
 	}
 
 	// trust: trust.Config{Home} must equal omegaHome() (i.e. OMEGA_HOME).
@@ -403,5 +406,27 @@ func TestBuildConfigs(t *testing.T) {
 	}
 	if tc.Home != home {
 		t.Errorf("trust.Home = %q, want %q (omegaHome)", tc.Home, home)
+	}
+}
+
+// TestWebBaseURL verifies the web endpoint host selection: the explicit
+// web.base_url override wins; otherwise the provider host is used with
+// a trailing /v1 stripped (provider.go strips the same suffix before
+// probing).
+func TestWebBaseURL(t *testing.T) {
+	host := "http://127.0.0.1:11435"
+	if got := webBaseURL(Config{Provider: ProviderConfig{Host: host}}); got != host {
+		t.Errorf("derived = %q, want %q", got, host)
+	}
+	if got := webBaseURL(Config{Provider: ProviderConfig{Host: host + "/v1"}}); got != host {
+		t.Errorf("derived with /v1 = %q, want %q", got, host)
+	}
+	want := "https://ollama.com/api-mirror"
+	got := webBaseURL(Config{Provider: ProviderConfig{Host: host}, Web: WebConfig{BaseURL: want}})
+	if got != want {
+		t.Errorf("override = %q, want %q", got, want)
+	}
+	if got := webBaseURL(Config{}); got != "" {
+		t.Errorf("unset host = %q, want empty", got)
 	}
 }

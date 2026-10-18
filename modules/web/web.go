@@ -13,21 +13,30 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// ponytail: vars (not consts) so tests can point them at an httptest server.
-var (
-	searchURL = "https://ollama.com/api/web_search"
-	fetchURL  = "https://ollama.com/api/web_fetch"
-)
+// defaultBaseURL is the upstream mirror used when no BaseURL is
+// configured.
+const defaultBaseURL = "https://ollama.com"
 
-// Extension provides web search and fetch tools via the Ollama
-// Cloud API. It implements agent.ToolProvider directly.
+// Extension provides web search and fetch tools via the configured
+// provider host's mirrored /api/web_search and /api/web_fetch
+// endpoints (the auth swap + key rotation happen upstream, same as
+// every other call through that host). It implements
+// agent.ToolProvider directly.
 type Extension struct {
-	apiKey string
+	apiKey  string
+	baseURL string
 }
 
-// New creates a web Extension from config.
+// New creates a web Extension from config. An empty BaseURL falls
+// back to the default upstream mirror; the API key is whatever the
+// provider seam supplies (the keypool client key when the provider is
+// keypool — the mirror swaps it for a real client key upstream).
 func New(cfg Config) *Extension {
-	return &Extension{apiKey: cfg.APIKey}
+	base := strings.TrimRight(cfg.BaseURL, "/")
+	if base == "" {
+		base = defaultBaseURL
+	}
+	return &Extension{apiKey: cfg.APIKey, baseURL: base}
 }
 
 // Tools returns the web.search and web.fetch tools.
@@ -118,13 +127,31 @@ type fetchResponse struct {
 	Links   []string `json:"links"`
 }
 
-// doSearch calls the Ollama Cloud search API and formats results.
+// httpError returns a loud error message for a non-2xx status,
+// embedding a truncated body snippet so auth and upstream failures are
+// visible to the agent — never a silent empty result — and "" for
+// success statuses.
+func httpError(status int, body []byte, what string) string {
+	if status >= 200 && status < 300 {
+		return ""
+	}
+	snippet := strings.TrimSpace(string(body))
+	if len(snippet) > 200 {
+		snippet = snippet[:200] + "..."
+	}
+	if snippet == "" {
+		return fmt.Sprintf("error: %s failed: HTTP %d", what, status)
+	}
+	return fmt.Sprintf("error: %s failed: HTTP %d: %s", what, status, snippet)
+}
+
+// doSearch calls the search endpoint and formats results.
 func (e *Extension) doSearch(ctx context.Context, query string, maxResults int) (string, error) {
 	if e.apiKey == "" {
 		return "error: API key not set", nil
 	}
 	body, _ := json.Marshal(searchRequest{Query: query, MaxResults: maxResults})
-	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", e.baseURL+"/api/web_search", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Sprintf("error: building request: %v", err), nil
 	}
@@ -140,6 +167,10 @@ func (e *Extension) doSearch(ctx context.Context, query string, maxResults int) 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Sprintf("error: reading search response: %v", err), nil
+	}
+
+	if msg := httpError(resp.StatusCode, respBody, "search"); msg != "" {
+		return msg, nil
 	}
 
 	var sr searchResponse
@@ -160,13 +191,13 @@ func (e *Extension) doSearch(ctx context.Context, query string, maxResults int) 
 	return sb.String(), nil
 }
 
-// doFetch calls the Ollama Cloud fetch API and formats the page.
+// doFetch calls the fetch endpoint and formats the page.
 func (e *Extension) doFetch(ctx context.Context, url string) (string, error) {
 	if e.apiKey == "" {
 		return "error: API key not set", nil
 	}
 	body, _ := json.Marshal(fetchRequest{URL: url})
-	req, err := http.NewRequestWithContext(ctx, "POST", fetchURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", e.baseURL+"/api/web_fetch", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Sprintf("error: building request: %v", err), nil
 	}
@@ -182,6 +213,10 @@ func (e *Extension) doFetch(ctx context.Context, url string) (string, error) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Sprintf("error: reading fetch response: %v", err), nil
+	}
+
+	if msg := httpError(resp.StatusCode, respBody, "fetch"); msg != "" {
+		return msg, nil
 	}
 
 	var fr fetchResponse

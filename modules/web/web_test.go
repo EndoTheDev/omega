@@ -10,17 +10,12 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"gopkg.in/yaml.v3"
 )
 
-// setURLs points the package-level API URLs at test servers and
-// restores them on cleanup.
-func setURLs(t *testing.T, search, fetch string) {
-	t.Helper()
-	oldSearch, oldFetch := searchURL, fetchURL
-	searchURL, fetchURL = search, fetch
-	t.Cleanup(func() {
-		searchURL, fetchURL = oldSearch, oldFetch
-	})
+// setBase returns an extension pointed at the given test server.
+func setBase(apiKey, base string) *Extension {
+	return &Extension{apiKey: apiKey, baseURL: base}
 }
 
 // TestDoSearchSuccess verifies the happy path: auth header, request
@@ -34,9 +29,8 @@ func TestDoSearchSuccess(t *testing.T) {
 		fmt.Fprint(w, `{"results":[{"title":"T","url":"U","content":"C"}]}`)
 	}))
 	defer srv.Close()
-	setURLs(t, srv.URL, fetchURL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("test-key", srv.URL)
 	result, err := ext.doSearch(context.Background(), "golang", 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -60,9 +54,8 @@ func TestDoSearchZeroResults(t *testing.T) {
 		fmt.Fprint(w, `{"results":[]}`)
 	}))
 	defer srv.Close()
-	setURLs(t, srv.URL, fetchURL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("k", srv.URL)
 	result, err := ext.doSearch(context.Background(), "nothing", 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -92,9 +85,8 @@ func TestRunSearchMaxResults(t *testing.T) {
 				fmt.Fprint(w, `{"results":[]}`)
 			}))
 			defer srv.Close()
-			setURLs(t, srv.URL, fetchURL)
 
-			ext := &Extension{apiKey: "test-key"}
+			ext := setBase("k", srv.URL)
 			if _, err := ext.runSearch(context.Background(), map[string]any{
 				"query":       "q",
 				"max_results": tc.arg,
@@ -114,9 +106,8 @@ func TestDoFetchSuccess(t *testing.T) {
 		fmt.Fprint(w, `{"title":"Page","content":"Body","links":["a","b"]}`)
 	}))
 	defer srv.Close()
-	setURLs(t, searchURL, srv.URL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("k", srv.URL)
 	result, err := ext.doFetch(context.Background(), "https://example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -135,9 +126,8 @@ func TestDoSearchInvalidJSON(t *testing.T) {
 		fmt.Fprint(w, "not json")
 	}))
 	defer srv.Close()
-	setURLs(t, srv.URL, fetchURL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("k", srv.URL)
 	result, err := ext.doSearch(context.Background(), "q", 5)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
@@ -154,9 +144,8 @@ func TestDoFetchInvalidJSON(t *testing.T) {
 		fmt.Fprint(w, "<html>garbage</html>")
 	}))
 	defer srv.Close()
-	setURLs(t, searchURL, srv.URL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("k", srv.URL)
 	result, err := ext.doFetch(context.Background(), "https://example.com")
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
@@ -166,10 +155,57 @@ func TestDoFetchInvalidJSON(t *testing.T) {
 	}
 }
 
-// TestDoSearchHTTP500 verifies 5xx responses surface through the
-// ai.RetryHTTP path: RetryHTTP returns the last (500) response rather
-// than a Go error, so doSearch reads its (empty) body and reports a
-// parse failure. OMEGA_MAX_RETRIES=0 keeps the test fast.
+// TestDoSearchHTTP401 verifies non-2xx statuses surface as loud error
+// strings — the 401 body must never fall through to a silent
+// "No results found."
+func TestDoSearchHTTP401(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "0")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":"unauthorized credentials"}`)
+	}))
+	defer srv.Close()
+
+	ext := setBase("wrong-key", srv.URL)
+	result, err := ext.doSearch(context.Background(), "q", 5)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if !strings.Contains(result, "error: search failed: HTTP 401") {
+		t.Errorf("got %q, want loud HTTP 401 error", result)
+	}
+	if !strings.Contains(result, "unauthorized credentials") {
+		t.Errorf("got %q, want body snippet in error", result)
+	}
+	if strings.Contains(result, "No results found") {
+		t.Errorf("silent empty-result path leaked through: %q", result)
+	}
+}
+
+// TestDoFetchHTTP401 verifies non-2xx statuses surface as loud error
+// strings for fetch too.
+func TestDoFetchHTTP401(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "0")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":"unauthorized credentials"}`)
+	}))
+	defer srv.Close()
+
+	ext := setBase("wrong-key", srv.URL)
+	result, err := ext.doFetch(context.Background(), "https://example.com")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if !strings.Contains(result, "error: fetch failed: HTTP 401") {
+		t.Errorf("got %q, want loud HTTP 401 error", result)
+	}
+}
+
+// TestDoSearchHTTP500 verifies 5xx responses surface as loud errors
+// through the ai.RetryHTTP path: RetryHTTP returns the last (500)
+// response rather than a Go error, so doSearch reads its body and
+// reports the status. OMEGA_MAX_RETRIES=0 keeps the test fast.
 func TestDoSearchHTTP500(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	var hits int
@@ -178,9 +214,8 @@ func TestDoSearchHTTP500(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	setURLs(t, srv.URL, fetchURL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("k", srv.URL)
 	result, err := ext.doSearch(context.Background(), "q", 5)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
@@ -188,34 +223,55 @@ func TestDoSearchHTTP500(t *testing.T) {
 	if hits != 1 {
 		t.Errorf("expected 1 attempt with OMEGA_MAX_RETRIES=0, got %d", hits)
 	}
-	if !strings.Contains(result, "error: parsing search response") {
-		t.Errorf("got %q, want parse error on empty 500 body", result)
+	if !strings.Contains(result, "error: search failed: HTTP 500") {
+		t.Errorf("got %q, want loud HTTP 500 error", result)
 	}
 }
 
-// TestDoFetchHTTP500 verifies 5xx responses surface through the
-// ai.RetryHTTP path: RetryHTTP returns the last (500) response rather
-// than a Go error, so doFetch reads its (empty) body and reports a
-// parse failure.
+// TestDoFetchHTTP500 verifies 5xx responses surface as loud error
+// strings for fetch too.
 func TestDoFetchHTTP500(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	setURLs(t, searchURL, srv.URL)
 
-	ext := &Extension{apiKey: "test-key"}
+	ext := setBase("k", srv.URL)
 	result, err := ext.doFetch(context.Background(), "https://example.com")
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
-	if !strings.Contains(result, "error: parsing fetch response") {
-		t.Errorf("got %q, want parse error on empty 500 body", result)
+	if !strings.Contains(result, "error: fetch failed: HTTP 500") {
+		t.Errorf("got %q, want loud HTTP 500 error", result)
 	}
 }
 
-// TestMountWithConfig verifies the API key flows from config to extension.
+// TestHTTPErrorMessage verifies the snippet truncation rules.
+func TestHTTPErrorMessage(t *testing.T) {
+	long := strings.Repeat("x", 250)
+	msg := httpError(502, []byte("  "+long+"  "), "search")
+	if msg != "error: search failed: HTTP 502: "+strings.Repeat("x", 200)+"..." {
+		t.Errorf("long-snippet case: got %q", msg)
+	}
+	if msg := httpError(204, []byte("ignored"), "search"); msg != "" {
+		t.Errorf("2xx case returned %q, want empty", msg)
+	}
+	if msg := httpError(500, nil, "fetch"); msg != "error: fetch failed: HTTP 500" {
+		t.Errorf("empty-body case: got %q", msg)
+	}
+}
+
+// TestNewDefaultBaseURL verifies the fallback to the default upstream
+// mirror and trailing-slash trimming.
+func TestNewDefaultBaseURL(t *testing.T) {
+	if got := New(Config{}).baseURL; got != defaultBaseURL {
+		t.Errorf("empty BaseURL -> %q, want %q", got, defaultBaseURL)
+	}
+	if got := New(Config{BaseURL: "http://localhost:11435/"}).baseURL; got != "http://localhost:11435" {
+		t.Errorf("trailing slash kept: %q", got)
+	}
+}
 
 // TestPluginInterface verifies the Plugin satisfies agent.Plugin.
 func TestPluginInterface(t *testing.T) {
@@ -307,12 +363,13 @@ func TestMount(t *testing.T) {
 	}
 }
 
-// TestMountWithConfig verifies the API key flows from config to extension.
+// TestMountWithConfig verifies the API key and base URL flow from
+// config to extension.
 func TestMountWithConfig(t *testing.T) {
 	p := NewPlugin()
 	ctx := &agent.Context{
 		Configs: map[string]any{
-			"web": Config{APIKey: "test-key"},
+			"web": Config{APIKey: "sk", BaseURL: "http://host:1"},
 		},
 	}
 	if err := p.Mount(ctx); err != nil {
@@ -328,5 +385,18 @@ func TestMountWithConfig(t *testing.T) {
 	}
 	if ws.Description == "" {
 		t.Error("web.search tool has empty description")
+	}
+}
+
+// TestConfigYAMLTags verifies the yaml tags round-trip, so a
+// config.yaml stanza lands in the right fields.
+func TestConfigYAMLTags(t *testing.T) {
+	var c Config
+	src := []byte("api_key: k\nbase_url: http://h:1\n")
+	if err := yaml.Unmarshal(src, &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if c.APIKey != "k" || c.BaseURL != "http://h:1" {
+		t.Errorf("yaml tags wrong: %+v", c)
 	}
 }

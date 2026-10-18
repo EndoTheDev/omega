@@ -29,6 +29,14 @@ type Config struct {
 	Skills        SkillsConfig           `yaml:"skills"`
 	Memory        MemoryConfig           `yaml:"memory"`
 	Logging       LoggingConfig          `yaml:"logging"`
+	Web           WebConfig              `yaml:"web"`
+}
+
+// WebConfig carries optional overrides for the web tools. BaseURL, when
+// set, overrides the web.search/web.fetch endpoint host; otherwise both
+// derive from provider.host (see buildConfigs).
+type WebConfig struct {
+	BaseURL string `yaml:"base_url"`
 }
 
 // SkillsConfig controls where skills are loaded from.
