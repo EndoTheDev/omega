@@ -67,6 +67,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
+	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
@@ -312,6 +313,27 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Run-slot acquisition comes BEFORE any persistence: a second /chat
+	// for a session with a live run is a 409 that must not leave the
+	// incoming user message appended - the next successful send would
+	// double it. The slot releases if anything below fails before
+	// launchRun takes ownership (runStarted flips once it does).
+	runStarted := false
+	var run *activeRun
+	if s.store != nil && req.SessionID != "" {
+		var live bool
+		run, live = s.runs.start(req.SessionID)
+		if !live {
+			http.Error(w, "session already running", http.StatusConflict)
+			return
+		}
+		defer func() {
+			if !runStarted {
+				s.runs.finish(run) // cur==run guard: no-op once launched
+			}
+		}()
+	}
+
 	messages, ok := s.loadSessionMessages(r.Context(), w, req, messages)
 	if !ok {
 		return
@@ -361,14 +383,47 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// is GET /sessions/{id}/events (handleSessionEvents).
 	// Subscribe BEFORE launch: the origin client must see the run's first
 	// frame, so the consumer channel exists before the run broadcasts.
-	run, live := s.runs.start(req.SessionID)
-	if !live {
-		http.Error(w, "session already running", http.StatusConflict)
-		return
-	}
+	// The slot was taken up top (before persistence); launchRun owns it
+	// from here - the deferred release above sees runStarted and stands
+	// down. A launchRun failure keeps the unwind through its own path.
+	runStarted = true
 	ch := s.runs.subscribe(run)
 	s.launchRun(context.WithoutCancel(r.Context()), run, prov, messages, tools, req)
 	s.serveRunFrames(w, flusher, run, ch, r.Context())
+}
+
+// handleSessionStop serves POST /sessions/{id}/stop: cancels the live
+// run's context. The run does NOT die on a new unwind path - the same
+// WithTimeout ctx the wall-clock cap rides gets cancelled, so the loop
+// unwinds through its proven normal path: partial output persists, the
+// loop's terminal agent_end (finish_reason "cancelled") broadcasts, and
+// deregistration happens when the run really ends. 404 when the session
+// has no live run; 409 when the run exists but has not registered its
+// cancel yet (the start->launchRun window). A repeat stop on a
+// winding-down run is a clean 200 - cancelling an already-cancelled ctx
+// is a no-op.
+func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing session id", http.StatusBadRequest)
+		return
+	}
+	ok, cancellable := s.runs.stop(id)
+	if !ok {
+		http.Error(w, "session not active", http.StatusNotFound)
+		return
+	}
+	if !cancellable {
+		http.Error(w, "run not started", http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"cancelling"}`)) //nolint:errcheck // constant body
 }
 
 // loadSessionMessages loads persisted history for a session, appends the

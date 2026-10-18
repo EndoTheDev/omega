@@ -25,7 +25,27 @@
         :model="model"
         :models="models"
         @update:model="$emit('update:model', $event)" />
+      <!-- while this session's run streams, send becomes CANCEL (stop
+           icon); idle, a retry affordance re-sends the last user message
+           when there is one - next to the plain send button -->
       <button
+        v-if="canRetry && !busy"
+        class="retry"
+        type="button"
+        title="re-send the last user message as a fresh turn"
+        @click="$emit('retry')">
+        ↻ retry
+      </button>
+      <button
+        v-if="busy"
+        class="send cancel"
+        type="button"
+        title="cancel the running response (what streamed stays)"
+        @click="$emit('cancel')">
+        ■ stop
+      </button>
+      <button
+        v-else
         class="send"
         :disabled="!draft.trim()"
         @click="$emit('send')">
@@ -40,12 +60,18 @@
     draft: string;
     model: string;
     models: string[];
+    // THIS session's run is streaming: the send button is CANCEL now
+    busy: boolean;
+    // idle with a last user message in the transcript: retry shows
+    canRetry: boolean;
   }>();
 
   defineEmits<{
     (e: "update:draft", value: string): void;
     (e: "update:model", value: string): void;
     (e: "send"): void;
+    (e: "cancel"): void;
+    (e: "retry"): void;
   }>();
 
   // grow with content: 1 row at rest, up to 4 rows (COMPOSER_MAX), then the
