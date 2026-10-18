@@ -448,8 +448,8 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   cursor: default;
 }
 
-/* the scrolling body: crumbs + entry list (same voice as the session
-   list rows - raised chip hover, mono meta on the edge) */
+/* the scrolling body: entry tree (same voice as the session list rows -
+   raised chip hover, mono meta on the edge) */
 .inspector-files {
   flex: 1;
   min-height: 0;
@@ -458,25 +458,11 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   padding-bottom: 8px;
 }
 
-.files-crumbs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px;
-  padding: 10px 12px 8px;
-  font-family: var(--mono);
-  font-size: 11px;
+.files-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
 }
-.files-crumbs button {
-  border: none;
-  background: none;
-  padding: 0;
-  font: inherit;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-.files-crumbs button:hover:not(:disabled) { color: var(--accent); }
-.crumb-sep { color: var(--text-dim); }
 
 .files-list {
   list-style: none;
@@ -484,26 +470,50 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   padding: 0 8px;
 }
 
-.file-row {
+.tree-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 7px 10px;
+  gap: 7px;
+  padding-block: 5px;
+  padding-inline-end: 10px;
   border-radius: var(--r-chip);
   font-size: 12px;
   cursor: pointer;
 }
-.file-row:hover { background: var(--z1-raised); }
-.file-row .name {
+.tree-row:hover { background: var(--z1-raised); }
+.tree-row .name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.file-row .dir-mark { color: var(--text-dim); }
-.file-row .size {
+.tree-row .dir-mark { color: var(--text-dim); }
+.tree-row .size {
   margin-left: auto;
   flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* the expander: a CSS triangle so no glyph availability is assumed;
+   files carry an empty spacer of the same width to keep names aligned */
+.chev {
+  flex-shrink: 0;
+  align-self: center;
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--text-dim);
+  border-block: 3px solid transparent;
+  transition: transform 0.12s ease;
+}
+.chev.file { border-left-color: transparent; }
+.chev.open { transform: rotate(90deg); }
+
+.tree-error {
+  margin: 0;
+  padding-block: 3px 5px;
+  padding-inline-end: 10px;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--text-dim);

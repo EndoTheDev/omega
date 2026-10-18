@@ -13,54 +13,29 @@
     </div>
 
     <div class="inspector-files">
-      <nav class="files-crumbs">
-        <template
-          v-for="(crumb, i) in crumbs"
-          :key="crumb.path">
-          <span
-            v-if="i"
-            class="crumb-sep">/</span>
-          <button
-            :disabled="i === crumbs.length - 1"
-            @click="openDir(crumb.path)">
-            {{ crumb.name }}
-          </button>
-        </template>
-      </nav>
       <ul class="files-list">
         <li
-          v-if="errorMsg"
+          v-if="rootError"
           class="files-status">
-          {{ errorMsg }}
+          {{ rootError }}
         </li>
         <li
-          v-else-if="loading"
+          v-else-if="loadingRoot"
           class="files-status">
           loading
         </li>
         <li
-          v-else-if="!entries.length"
+          v-else-if="!rootEntries.length"
           class="files-status">
           empty directory
         </li>
-        <li
-          v-for="entry in entries"
-          :key="entry.name"
-          class="file-row"
-          @click="openEntry(entry)">
-          <span class="name"
-            >{{ entry.name
-            }}<span
-              v-if="entry.is_dir"
-              class="dir-mark">/</span
-            ></span
-          >
-          <span
-            v-if="!entry.is_dir"
-            class="size">{{ entry.size_bytes }}</span
-          >
-        </li>
       </ul>
+      <FileTree
+        v-if="rootEntries.length"
+        :entries="rootEntries"
+        base=""
+        :depth="0"
+        @open="openFile" />
     </div>
 
     <div
@@ -98,14 +73,8 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref, watch } from "vue";
-  import {
-    fileCrumbs,
-    fetchFilesBrowse,
-    fetchFilesRead,
-    joinRelPath,
-    sortFileEntries,
-  } from "../composables/omega";
+  import { ref, watch } from "vue";
+  import { fetchFilesBrowse, fetchFilesRead, sortFileEntries } from "../composables/omega";
   import type { FileEntry } from "../composables/omega";
 
   // Inspector pane: a tab shell with the Files tab live. Parked tabs
@@ -116,16 +85,17 @@
   // `open` is the mobile overlay state; `visible` is the desktop
   // slot-occupancy (false while settings holds the slot or the group is
   // closed). Loading is lazy: the pane is always mounted, so the first
-  // visible flag is the one moment the root listing gets fetched.
+  // visible flag is the one moment the root listing gets fetched. Below
+  // the root, FileTree owns the tree: the expanded directory set IS the
+  // location, persisted under omega.filetree-expanded.
   const props = defineProps<{
     open?: boolean;
     visible?: boolean;
   }>();
 
-  const entries = ref<FileEntry[]>([]);
-  const dirPath = ref("");
-  const loading = ref(false);
-  const errorMsg = ref("");
+  const rootEntries = ref<FileEntry[]>([]);
+  const loadingRoot = ref(false);
+  const rootError = ref("");
 
   interface Preview {
     path: string;
@@ -136,21 +106,18 @@
   }
   const preview = ref<Preview | null>(null);
 
-  const crumbs = computed(() => fileCrumbs(dirPath.value));
-
   let rootLoaded = false;
 
-  async function openDir(path: string) {
-    loading.value = true;
-    errorMsg.value = "";
+  async function loadRoot() {
+    loadingRoot.value = true;
+    rootError.value = "";
     try {
-      const data = await fetchFilesBrowse(path);
-      entries.value = sortFileEntries(data.entries ?? []);
-      dirPath.value = path;
+      const data = await fetchFilesBrowse("");
+      rootEntries.value = sortFileEntries(data.entries ?? []);
     } catch (e) {
-      errorMsg.value = e instanceof Error ? e.message : String(e);
+      rootError.value = e instanceof Error ? e.message : String(e);
     } finally {
-      loading.value = false;
+      loadingRoot.value = false;
     }
   }
 
@@ -175,18 +142,12 @@
     }
   }
 
-  function openEntry(entry: FileEntry) {
-    const path = joinRelPath(dirPath.value, entry.name);
-    if (entry.is_dir) openDir(path);
-    else openFile(path);
-  }
-
   watch(
     () => props.visible,
     (visible) => {
       if (visible && !rootLoaded) {
         rootLoaded = true;
-        openDir("");
+        loadRoot();
       }
     },
     { immediate: true },

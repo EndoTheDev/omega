@@ -417,28 +417,50 @@ export function cleanRelPath(p: string): string | null {
   return parts.join("/");
 }
 
-// joinRelPath descends one entry: the clicked name onto the current dir.
+// joinRelPath descends one entry: the clicked name onto its parent dir.
+// The tree component owns path accounting - the UI never tracks a
+// current directory, it only asks "children of X".
 export function joinRelPath(base: string, name: string): string {
   return base ? `${base}/${name}` : name;
 }
 
-export interface FileCrumb {
-  name: string;
-  path: string;
+// --- inspector file tree state ---
+
+// FILETREE_STATE_KEY is the localStorage entry holding the set of
+// expanded tree directories across sessions.
+export const FILETREE_STATE_KEY = "omega.filetree-expanded";
+
+// parseExpandedPaths restores the persisted expanded-directory set:
+// malformed JSON parses empty, and every entry must be a valid relative
+// path (the same rules the backend enforces on /files) - anything else
+// is dropped. Duplicates collapse; order is preserved so deeper levels
+// restore after their parents.
+export function parseExpandedPaths(raw: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of parsed) {
+    if (typeof item !== "string") continue;
+    if (item === "" || cleanRelPath(item) !== item) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+  }
+  return out;
 }
 
-// fileCrumbs derives the breadcrumb trail: the root crumb (path "") plus
-// one crumb per segment, each carrying the path it jumps to.
-export function fileCrumbs(path: string): FileCrumb[] {
-  const crumbs: FileCrumb[] = [{ name: "/", path: "" }];
-  const cleaned = cleanRelPath(path);
-  if (!cleaned) return crumbs;
-  let acc = "";
-  for (const seg of cleaned.split("/")) {
-    acc = joinRelPath(acc, seg);
-    crumbs.push({ name: seg, path: acc });
-  }
-  return crumbs;
+// serializeExpandedPaths writes the set back: paths are sorted so the
+// stored shape is stable regardless of expansion order.
+export function serializeExpandedPaths(paths: Iterable<string>): string {
+  const valid = [...paths].filter((p) => p !== "" && cleanRelPath(p) === p);
+  valid.sort();
+  return JSON.stringify(valid);
 }
 
 // sortFileEntries orders a directory listing: directories first, then

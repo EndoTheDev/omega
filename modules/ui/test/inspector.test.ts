@@ -1,13 +1,14 @@
-// omega webui: unit tests for the inspector file-manager helpers in
-// composables/omega.ts (rel-path join/clean/validate, breadcrumb
-// derivation, entry sort). Run: node --test "test/*.test.ts" (node >= 23
+// omega webui: unit tests for the inspector file-tree helpers in
+// composables/omega.ts (rel-path join/clean/validate, expanded-set
+// persistence, entry sort). Run: node --test "test/*.test.ts" (node >= 23
 // runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanRelPath,
-  fileCrumbs,
   joinRelPath,
+  parseExpandedPaths,
+  serializeExpandedPaths,
   sortFileEntries,
 } from "../app/composables/omega.ts";
 import type { FileEntry } from "../app/composables/omega.ts";
@@ -42,22 +43,57 @@ describe("joinRelPath", () => {
   });
 });
 
-describe("fileCrumbs", () => {
-  it("derives the root crumb plus one crumb per segment", () => {
-    assert.deepEqual(fileCrumbs(""), [{ name: "/", path: "" }]);
-    assert.deepEqual(fileCrumbs("docs"), [
-      { name: "/", path: "" },
-      { name: "docs", path: "docs" },
-    ]);
-    assert.deepEqual(fileCrumbs("docs/guides"), [
-      { name: "/", path: "" },
-      { name: "docs", path: "docs" },
-      { name: "guides", path: "docs/guides" },
+describe("parseExpandedPaths", () => {
+  it("restores valid paths in order", () => {
+    assert.deepEqual(parseExpandedPaths(JSON.stringify(["cmd", "cmd/agent"])), [
+      "cmd",
+      "cmd/agent",
     ]);
   });
 
-  it("falls back to the root trail for invalid paths", () => {
-    assert.deepEqual(fileCrumbs("../evil"), [{ name: "/", path: "" }]);
+  it("parses empty for malformed JSON and non-array payloads", () => {
+    assert.deepEqual(parseExpandedPaths("not json"), []);
+    assert.deepEqual(parseExpandedPaths("42"), []);
+    assert.deepEqual(parseExpandedPaths('{"cmd":1}'), []);
+    assert.deepEqual(parseExpandedPaths(""), []);
+  });
+
+  it("drops entries the backend would reject", () => {
+    assert.deepEqual(
+      parseExpandedPaths(JSON.stringify(["/abs", "..", "a", "", ".x", 7, null])),
+      ["a"],
+    );
+  });
+
+  it("collapses duplicates, preserving first occurrence order", () => {
+    assert.deepEqual(
+      parseExpandedPaths(JSON.stringify(["docs", "a/b", "docs", "a"])),
+      ["docs", "a/b", "a"],
+    );
+  });
+});
+
+describe("serializeExpandedPaths", () => {
+  it("writes a sorted JSON array regardless of set order", () => {
+    assert.equal(
+      serializeExpandedPaths(new Set(["z", "a/b", "a"])),
+      '["a","a/b","z"]',
+    );
+  });
+
+  it("drops invalid paths so a poisoned set never persists", () => {
+    assert.equal(
+      serializeExpandedPaths(["ok/sub", "", ".hid", "/abs"]),
+      '["ok/sub"]',
+    );
+  });
+
+  it("round-trips through parseExpandedPaths", () => {
+    const set = new Set(["docs", "docs/guides", "cmd"]);
+    assert.deepEqual(
+      parseExpandedPaths(serializeExpandedPaths(set)),
+      ["cmd", "docs", "docs/guides"],
+    );
   });
 });
 
