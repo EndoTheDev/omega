@@ -54,6 +54,9 @@ export interface Session {
   tool_count?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
+  // last-known run rates, computed at run end by the server and
+  // persisted with the session - the status bar's durability payload
+  last_run?: LastRunStats;
   model?: string;
   pinned?: boolean;
   // server-side read stamp + read-time unread (updated_at > last_read_at)
@@ -62,6 +65,15 @@ export interface Session {
   // live-run flag from the server: a detached /chat run is streaming
   // this session (drives the post-refresh streaming pulse)
   active?: boolean;
+}
+
+// LastRunStats is one completed run's average rates, stored on the
+// session row at run end and shown by the status bar while no stream
+// is live. Server-computed (chunk counts never leave the server any
+// other way), absent on sessions that never ran.
+export interface LastRunStats {
+  tokens_per_second?: number;
+  chunks_per_second?: number;
 }
 
 export interface SessionDetail {
@@ -753,13 +765,36 @@ export function createRenderScheduler(
   };
 }
 
-export async function fetchHealth(): Promise<boolean> {
+// HealthInfo is the /health payload beyond the status string: the
+// server's build tag and uptime - the status bar's version + up seg.
+export interface HealthInfo {
+  version?: string;
+  uptime_seconds?: number;
+}
+
+export async function fetchHealthInfo(): Promise<HealthInfo | null> {
   try {
     const r = await fetch("/health");
-    return r.ok;
+    if (!r.ok) return null;
+    return (await r.json()) as HealthInfo;
   } catch {
-    return false;
+    // unreachable server: the health dot shows offline, telemetry goes stale
+    return null;
   }
+}
+
+// persistedTelemetry picks the status bar's durable values from a
+// session row: the row's token total (prompt + completion, exactly what
+// the sidebar's tok readout shows) and the last-run average rates.
+// A session with no row or no run yields zeros - no phantom telemetry.
+export function persistedTelemetry(
+  s: Session | undefined,
+): { tokens: number; tps: number; cps: number } {
+  return {
+    tokens: (s?.prompt_tokens ?? 0) + (s?.completion_tokens ?? 0),
+    tps: s?.last_run?.tokens_per_second ?? 0,
+    cps: s?.last_run?.chunks_per_second ?? 0,
+  };
 }
 
 export async function fetchModels(): Promise<ModelsInfo> {

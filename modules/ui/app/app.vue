@@ -172,7 +172,10 @@
       :tokens="tokens"
       :context-size="contextSize"
       :tokens-per-second="tokensPerSecond"
-      :live-chunks-per-second="liveChunksPerSecond" />
+      :live-chunks-per-second="liveChunksPerSecond"
+      :last-chunks-per-second="lastChunksPerSecond"
+      :version="healthVersion"
+      :up-seconds="upSeconds" />
   </div>
 </template>
 
@@ -195,6 +198,9 @@
     createItemKeySource,
     streamChat,
     attachSession,
+    fetchHealthInfo,
+    persistedTelemetry,
+    formatDurationMs,
     StreamInterruptedError,
   } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
@@ -242,6 +248,12 @@
     | InterruptedItem;
 
   const healthy = ref(false);
+  // /health durability payload: server build tag + uptime (polled, the
+  // bar's version + up seg - and the health dot gets a periodic check)
+  const healthVersion = ref("");
+  const upSeconds = ref(0);
+  const HEALTH_POLL_MS = 30000;
+  let healthTimer: ReturnType<typeof setInterval> | null = null;
   const models = ref<string[]>([]);
   const selectedModel = ref("");
   const sessions = ref<Session[]>([]);
@@ -264,6 +276,9 @@
     tokens: number;
     tokensPerSecond: number;
     liveChunksPerSecond: number;
+    // last-known chunks/s, from the session row's last_run block (or
+    // the run that just ended) - the idle state bar's rate display
+    lastChunksPerSecond: number;
   }
   const EMPTY_STATE: SessionState = {
     transcript: [],
@@ -271,6 +286,7 @@
     tokens: 0,
     tokensPerSecond: 0,
     liveChunksPerSecond: 0,
+    lastChunksPerSecond: 0,
   };
   const streams = reactive(new Map<string, SessionState>());
 
@@ -283,6 +299,7 @@
         tokens: 0,
         tokensPerSecond: 0,
         liveChunksPerSecond: 0,
+        lastChunksPerSecond: 0,
       };
       streams.set(key, st);
       // reactive(Map) wraps values on READ - keep the wrapped handle, not
@@ -343,6 +360,7 @@
   const tokens = computed(() => view.value.tokens);
   const tokensPerSecond = computed(() => view.value.tokensPerSecond);
   const liveChunksPerSecond = computed(() => view.value.liveChunksPerSecond);
+  const lastChunksPerSecond = computed(() => view.value.lastChunksPerSecond);
 
   // keyed v-for: identity, not index (createItemKeySource) - see omega.ts
   const itemKey = createItemKeySource();
@@ -470,6 +488,14 @@
     const hadInterrupted = hasInterruptedMarker(st.transcript);
     try {
       const detail = await fetchSession(id);
+      // durable telemetry straight from the persisted row: the token
+      // total and the last-run rates land in the status bar before any
+      // stream runs - reload shows what the session actually has
+      const row = detail.session;
+      const durable = persistedTelemetry(row);
+      st.tokens = durable.tokens;
+      st.tokensPerSecond = durable.tps;
+      st.lastChunksPerSecond = durable.cps;
       if (detail.messages) {
         const items: TranscriptItem[] = [];
         const toolById = new Map<string, ToolItem>();
@@ -735,8 +761,12 @@
     // run (detail.active raced the finish, the 404 path) pushes nothing
     let sawActivity = false;
     const sentAt = Date.now();
+    // a fresh stream takes the meters over: the last-known idle values
+    // step aside until this run's own numbers arrive
     st.tokens = 0;
+    st.tokensPerSecond = 0;
     st.liveChunksPerSecond = 0;
+    st.lastChunksPerSecond = 0;
     // live stream telemetry: per-chunk arrivals make the statusbar a
     // visible proof that the frontend receives chunks as they come - a
     // ticking counter means streaming, a frozen-then-jumping one means
@@ -850,6 +880,9 @@
       // meter, freeze running tools (results never coming - ToolCallLine
       // stops ticking), close thinking and bubbles.
       finalize(interrupted: boolean) {
+        // the run's final live chunk rate becomes the last-known one -
+        // the idle bar keeps showing the rate the user just watched
+        st.lastChunksPerSecond = st.liveChunksPerSecond;
         st.liveChunksPerSecond = 0;
         for (const item of st.transcript) {
           if (item.kind === "tool" && item.status === "running")
@@ -902,11 +935,21 @@
       // background stream (session B while viewing A) leaves its row
       // unread: that is the feature.
       if (activeId.value === key) markRead(key);
-      refreshSessions();
+      // refresh once the row carries the run's persisted numbers, then
+      // re-seed the idle telemetry from it - the bar's last-known values
+      // and the post-reload display come from the SAME source (the row),
+      // not from the live meter's instantaneous last-second tick
+      await refreshSessions();
+      const row = sessions.value.find((s) => s.id === key);
+      if (row && streams.get(activeKey.value) === st) {
+        const durable = persistedTelemetry(row);
+        st.tokens = durable.tokens;
+        st.tokensPerSecond = durable.tps;
+        st.lastChunksPerSecond = durable.cps;
+      }
       // the title goroutine writes the session label seconds AFTER the
       // first exchange ends - the refresh above runs too early to see
       // it. One delayed refresh picks it up without a manual reload.
-      const row = sessions.value.find((s) => s.id === key);
       if (!row || !row.label) {
         setTimeout(() => { refreshSessions(); }, 10000);
       }
@@ -1153,7 +1196,23 @@
     // history wiring: back/forward open the session the URL describes
     window.addEventListener("popstate", onPop);
 
-    healthy.value = await fetchHealth();
+    const h = await fetchHealthInfo();
+    healthy.value = h !== null;
+    if (h) {
+      healthVersion.value = h.version ?? "";
+      upSeconds.value = h.uptime_seconds ?? 0;
+    }
+    // the health poll keeps the status dot honest and ticks the uptime
+    healthTimer = setInterval(async () => {
+      const h = await fetchHealthInfo();
+      if (h) {
+        healthy.value = true;
+        healthVersion.value = h.version ?? "";
+        upSeconds.value = h.uptime_seconds ?? 0;
+      } else {
+        healthy.value = false;
+      }
+    }, HEALTH_POLL_MS);
     try {
       const m = await fetchModels();
       models.value = m.models;
@@ -1183,6 +1242,7 @@
 
   onUnmounted(() => {
     window.removeEventListener("popstate", onPop);
+    if (healthTimer) clearInterval(healthTimer);
     messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
     window.removeEventListener("resize", squeezeCheck);
     if (spinnerTimer) clearInterval(spinnerTimer);

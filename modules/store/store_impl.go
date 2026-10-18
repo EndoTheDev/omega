@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	completion_tokens INTEGER NOT NULL DEFAULT 0,
 	pinned INTEGER NOT NULL DEFAULT 0,
 	title_state INTEGER NOT NULL DEFAULT 0,
-	last_read_at TEXT NOT NULL DEFAULT ''
+	last_read_at TEXT NOT NULL DEFAULT '',
+	last_run TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,6 +151,7 @@ END;
 		`ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN title_state INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -206,17 +208,44 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	var sess agent.Session
 	var parent sql.NullString
 	var pinned int
+	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
-		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &sess.TitleState, &sess.LastReadAt); err != nil {
+		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &sess.TitleState, &sess.LastReadAt,
+		&lastRun); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
 	sess.Pinned = pinned != 0
+	// last_run is a JSON blob; empty means the session never ran. A
+	// malformed blob decodes to nil - the rates just stay blank.
+	if lastRun != "" {
+		var stats agent.LastRunStats
+		if err := json.Unmarshal([]byte(lastRun), &stats); err == nil {
+			sess.LastRun = &stats
+		}
+	}
 	return sess, nil
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, title_state, last_read_at"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, title_state, last_read_at, last_run"
+
+// SetSessionLastRun writes the last-run stats block (JSON) on the
+// session's row, or clears it when stats is nil. It is a telemetry
+// write, not activity - updated_at is untouched.
+func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *agent.LastRunStats) error {
+	encoded := ""
+	if stats != nil {
+		b, err := json.Marshal(stats)
+		if err != nil {
+			return err
+		}
+		encoded = string(b)
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET last_run = ? WHERE id = ?`, encoded, sessionID)
+	return err
+}
 
 // GetSession returns the session with the given id, or ErrNotFound.
 func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {

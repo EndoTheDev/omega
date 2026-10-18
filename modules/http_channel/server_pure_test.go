@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -219,6 +220,7 @@ func TestEventTypeOfAllCases(t *testing.T) {
 		})
 	}
 }
+
 // TestAccumulateAssistantSegments verifies the segment boundary: a
 // response chunk after tool results starts a new record, so a tool turn
 // persists as assistant(A+calls) -> tool results -> assistant(B) and
@@ -277,5 +279,65 @@ func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	}
 	if rec.content != "one two" || rec.thinking != "hmm" {
 		t.Fatalf("rec = %+v", rec)
+	}
+}
+
+// runMeter math: the last-run block is completion tokens and chunk
+// count over the streaming wall clock, rounded, with the same floor
+// the live meter applies. Fields are set directly so the arithmetic is
+// deterministic - the ticker itself is exercised through the run
+// handler tests.
+func TestRunMeterStats(t *testing.T) {
+	// 60 completion tokens over 12 chunks in 2.0s -> 30 tok/s, 6 ch/s.
+	m := &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1002, 0), chunks: 12}
+	got := m.stats(streamUsage{prompt: 5, completion: 60})
+	if got == nil || got.TokensPerSecond != 30 || got.ChunksPerSecond != 6 {
+		t.Fatalf("stats = %+v, want 30 tok/s 6 ch/s", got)
+	}
+
+	// Shorter than the 0.2s floor: no honest average, nothing written.
+	m = &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1000, 100000000), chunks: 3}
+	if got := m.stats(streamUsage{completion: 40}); got != nil {
+		t.Fatalf("sub-floor stats = %+v, want nil", got)
+	}
+
+	// No usage reported by the provider: nothing written.
+	m = &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1010, 0), chunks: 12}
+	if got := m.stats(streamUsage{}); got != nil {
+		t.Fatalf("no-usage stats = %+v, want nil", got)
+	}
+
+	// No chunks (an error run that never streamed): nothing written.
+	m = &runMeter{started: time.Unix(1000, 0)}
+	if got := m.stats(streamUsage{completion: 40}); got != nil {
+		t.Fatalf("no-chunk stats = %+v, want nil", got)
+	}
+
+	// Rounding: 10 tokens over 3 chunks in 0.3s -> 33 tok/s, 10 ch/s.
+	m = &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1000, 300000000), chunks: 3}
+	got = m.stats(streamUsage{completion: 10})
+	if got == nil || got.TokensPerSecond != 33 || got.ChunksPerSecond != 10 {
+		t.Fatalf("rounded stats = %+v, want 33/10", got)
+	}
+}
+
+// tick counts only streamed chunks (thinking AND response); the clock
+// opens at meter creation, not at the first chunk, so prompt
+// processing is part of the run the same way it is for the client.
+func TestRunMeterTick(t *testing.T) {
+	m := newRunMeter()
+	if m.started.IsZero() {
+		t.Fatalf("meter did not start its clock")
+	}
+	m.tick(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "hi"}})
+	m.tick(agent.TurnStart{}) // not a chunk
+	m.tick(agent.StreamEvent{Event: ai.ResponseChunk{Content: "ab"}})
+	m.tick(agent.ToolResultEvent{}) // not a chunk
+	m.tick(agent.StreamEvent{Event: ai.StreamEnd{}})
+	if m.chunks != 2 {
+		t.Fatalf("chunks = %d, want 2", m.chunks)
+	}
+	if m.lastChunk.IsZero() {
+		t.Fatalf("lastChunk not stamped")
 	}
 }

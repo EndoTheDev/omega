@@ -405,6 +405,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 			Ctx:      pctx,
 			Store:    store,
 			Settings: &omegaSettings{path: configFile, pctx: pctx},
+			Version:  omegaVersion,
 		}
 		go func(c agent.Channel) {
 			errCh <- c.Start(ctx, deps)
