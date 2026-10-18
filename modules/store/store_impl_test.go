@@ -1252,3 +1252,117 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("after final from 0: %+v", after)
 	}
 }
+
+// TestSetSessionLastRun covers the last-run stats block: fresh sessions
+// carry none (no phantom rates), a written block round-trips through
+// Get and List, nil clears it, and the write never touches updated_at
+// (telemetry is not activity - the time buckets read it).
+func TestSetSessionLastRun(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sess, err := s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.LastRun != nil {
+		t.Fatalf("fresh session last_run = %+v, want nil", sess.LastRun)
+	}
+	if sess.LastRun != nil || sess.UpdatedAt != sess.CreatedAt {
+		t.Fatalf("unexpected state: %+v", sess)
+	}
+
+	stats := agent.LastRunStats{TokensPerSecond: 41, ChunksPerSecond: 17}
+	if err := s.SetSessionLastRun(ctx, "s1", &stats); err != nil {
+		t.Fatalf("set last run: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget session: %v", err)
+	}
+	if sess.LastRun == nil || sess.LastRun.TokensPerSecond != 41 || sess.LastRun.ChunksPerSecond != 17 {
+		t.Fatalf("last_run round-trip = %+v, want 41/17", sess.LastRun)
+	}
+	// The write is not activity.
+	if sess.UpdatedAt != sess.CreatedAt {
+		t.Fatalf("updated_at moved %q -> %q, want untouched", sess.CreatedAt, sess.UpdatedAt)
+	}
+
+	list, err := s.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(list) != 1 || list[0].LastRun == nil {
+		t.Fatalf("list last_run missing: %+v", list)
+	}
+
+	// nil clears the block - back to no phantom rates.
+	if err := s.SetSessionLastRun(ctx, "s1", nil); err != nil {
+		t.Fatalf("clear last run: %v", err)
+	}
+	sess, err = s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget after clear: %v", err)
+	}
+	if sess.LastRun != nil {
+		t.Fatalf("cleared last_run = %+v, want nil", sess.LastRun)
+	}
+}
+
+// TestMigrationAddsLastRunColumn upgrades a database that predates the
+// last-run block and verifies old rows come through with none, then let
+// a write land normally.
+func TestMigrationAddsLastRunColumn(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+	ctx := context.Background()
+
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES ('old', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old session: %v", err)
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	// Opening through the store migrates in place; old rows have no run.
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	defer s.Close()
+	old, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old session: %v", err)
+	}
+	if old.LastRun != nil {
+		t.Fatalf("migrated last_run = %+v, want nil", old.LastRun)
+	}
+	stats := agent.LastRunStats{TokensPerSecond: 9, ChunksPerSecond: 4}
+	if err := s.SetSessionLastRun(ctx, "old", &stats); err != nil {
+		t.Fatalf("set after migration: %v", err)
+	}
+	old, err = s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("reget: %v", err)
+	}
+	if old.LastRun == nil || old.LastRun.TokensPerSecond != 9 {
+		t.Fatalf("post-migration write = %+v, want 9 tok/s", old.LastRun)
+	}
+}

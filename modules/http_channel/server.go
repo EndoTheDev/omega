@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"path"
 	"strings"
@@ -38,6 +39,12 @@ type Server struct {
 	// restart. Default set here; the mount overrides it from config.
 	runTimeout time.Duration
 
+	// version is the host's build tag, surfaced through /health. Empty
+	// omits the field.
+	version string
+	// startedAt anchors the /health uptime (time since server construction).
+	startedAt time.Time
+
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
 }
@@ -51,7 +58,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	if tools == nil {
 		tools = map[string]agent.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now()}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -139,7 +146,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	out := map[string]any{
+		"status":         "ok",
+		"uptime_seconds": int(time.Since(s.startedAt).Seconds()),
+	}
+	// version rides along when the host supplied one
+	if s.version != "" {
+		out["version"] = s.version
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -230,6 +245,57 @@ type streamUsage struct {
 	completion int
 }
 
+// newRunMeter starts the clock for one run's last-run stats: the clock
+// opens at meter creation (the send boundary, mirroring the webui's
+// live meters) and closes at the last chunk, so prompt-processing
+// latency before the first token is part of the run just like it is
+// for the client measuring wall time.
+func newRunMeter() *runMeter {
+	return &runMeter{started: time.Now()}
+}
+
+// runMeter tallies the chunks and streaming wall clock one run
+// produced. Chunk counts are not persisted anywhere else - the meter
+// is the live-run state the last-known rates are computed from at
+// persist time (newRunMeter -> tick -> stats in the persist call).
+type runMeter struct {
+	started   time.Time
+	lastChunk time.Time
+	chunks    int
+}
+
+// tick counts one streamed chunk (thinking or response - the webui's
+// live chunks/s meter counts both).
+func (m *runMeter) tick(event agent.Event) {
+	se, ok := event.(agent.StreamEvent)
+	if !ok {
+		return
+	}
+	switch se.Event.(type) {
+	case ai.ThinkingChunk, ai.ResponseChunk:
+		m.chunks++
+		m.lastChunk = time.Now()
+	}
+}
+
+// stats computes the run's average rates over its streaming wall
+// clock. A provider that reported no completion tokens, or a run too
+// short to average honestly (same 0.2s floor the live meter applies),
+// yields nil - the caller keeps any previous block instead.
+func (m *runMeter) stats(usage streamUsage) *agent.LastRunStats {
+	if usage.completion <= 0 || m.chunks == 0 || m.lastChunk.IsZero() {
+		return nil
+	}
+	elapsed := m.lastChunk.Sub(m.started).Seconds()
+	if elapsed <= 0.2 {
+		return nil
+	}
+	return &agent.LastRunStats{
+		TokensPerSecond: int(math.Round(float64(usage.completion) / elapsed)),
+		ChunksPerSecond: int(math.Round(float64(m.chunks) / elapsed)),
+	}
+}
+
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -279,8 +345,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// No session to reattach to: the legacy inline path. The stream still
 	// rides this request, client presence still gates the run.
 	if s.store == nil || req.SessionID == "" {
-		recs, usage := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
-		if err := s.persistAssistant(r.Context(), prov, req, recs, usage); err != nil {
+		recs, usage, last := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
+		if err := s.persistAssistant(r.Context(), prov, req, recs, usage, last); err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
 			flusher.Flush()
 		}
@@ -350,12 +416,14 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 // prov is the per-request provider (a copy carrying the request's model).
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) ([]assistantRecord, streamUsage) {
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) ([]assistantRecord, streamUsage, *agent.LastRunStats) {
 	var recs []assistantRecord
 	var rec assistantRecord
 	var usage streamUsage
+	meter := newRunMeter()
 	for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 		s.accumulateAssistant(&recs, &rec, event, req)
+		meter.tick(event)
 		// Usage arrives on each stream_end; sum every turn of the run.
 		if se, ok := event.(agent.StreamEvent); ok {
 			if end, ok := se.Event.(ai.StreamEnd); ok {
@@ -371,12 +439,12 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 		if err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
 			flusher.Flush()
-			return append(recs, rec), usage
+			return append(recs, rec), usage, meter.stats(usage)
 		}
 		writeSSE(w, eventType, data)
 		flusher.Flush()
 	}
-	return append(recs, rec), usage
+	return append(recs, rec), usage, meter.stats(usage)
 }
 
 // accumulateAssistant appends streamed response-chunk content to the
@@ -473,10 +541,13 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 // assistant(B). Providers require this order (final answer as its own
 // message after the tool results); the webui reload renders one bubble
 // per message, matching the live segment split. usage adds the run's
-// real token totals to the session row. The first persistence error is
-// RETURNED, not written to a wire - the caller owns the wire (the legacy
-// request writes one error frame; the detached run broadcasts one).
-func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage) error {
+// real token totals to the session row; last writes the run's computed
+// last-known rates when non-nil (never cleared here - a run without
+// reported usage leaves the previous block standing). The first
+// persistence error is RETURNED, not written to a wire - the caller
+// owns the wire (the legacy request writes one error frame; the
+// detached run broadcasts one).
+func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats) error {
 	if s.store == nil || req.SessionID == "" || len(recs) == 0 {
 		return nil
 	}
@@ -510,6 +581,13 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 	}
 	if err := s.store.AddSessionTokens(ctx, req.SessionID, usage.prompt, usage.completion); err != nil {
 		return fmt.Errorf("persist usage: %w", err)
+	}
+	// the run's last-known rates ride the same persist; a nil block
+	// (no usage, no chunks, too-short run) leaves the previous one
+	if last != nil {
+		if err := s.store.SetSessionLastRun(ctx, req.SessionID, last); err != nil {
+			return fmt.Errorf("persist last run: %w", err)
+		}
 	}
 	if lastContent != "" {
 		// Detached: the title call is a second agent run, and running it

@@ -153,8 +153,10 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage
+		meter := newRunMeter()
 		for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
+			meter.tick(event)
 			// Usage arrives on each stream_end; sum every turn of the run.
 			if se, ok := event.(agent.StreamEvent); ok {
 				if end, ok := se.Event.(ai.StreamEnd); ok {
@@ -169,7 +171,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 			eventType, data, err := sseEvent(event)
 			if err != nil {
 				s.runs.broadcast(run, runFrame{event: "error", data: []byte("event encode: " + err.Error())})
-				s.persistRun(runCtx, run, prov, req, append(recs, rec), usage)
+				s.persistRun(runCtx, run, prov, req, append(recs, rec), usage, meter.stats(usage))
 				return
 			}
 			s.runs.broadcast(run, runFrame{event: eventType, data: data})
@@ -178,7 +180,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 			s.runs.broadcast(run, runFrame{event: "error", data: []byte(
 				"run timeout: the run exceeded its wall-clock cap (" + s.runTimeout.String() + ") and was stopped")})
 		}
-		s.persistRun(runCtx, run, prov, req, append(recs, rec), usage)
+		s.persistRun(runCtx, run, prov, req, append(recs, rec), usage, meter.stats(usage))
 	}()
 }
 
@@ -186,8 +188,8 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 // into a broadcast error frame instead of a write to one request's wire
 // - nobody in particular is listening when persistence fails, and every
 // attached wire should learn about the failure the same way.
-func (s *Server) persistRun(ctx context.Context, run *activeRun, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage) {
-	if err := s.persistAssistant(ctx, prov, req, recs, usage); err != nil {
+func (s *Server) persistRun(ctx context.Context, run *activeRun, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats) {
+	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
 		s.runs.broadcast(run, runFrame{event: "error", data: []byte(err.Error())})
 	}
 }

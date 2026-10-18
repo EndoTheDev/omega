@@ -157,12 +157,44 @@ func TestHealth(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var body map[string]string
+	var body struct {
+		Status        string `json:"status"`
+		Version       string `json:"version"`
+		UptimeSeconds int    `json:"uptime_seconds"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if body["status"] != "ok" {
-		t.Fatalf("status field = %q, want ok", body["status"])
+	if body.Status != "ok" {
+		t.Fatalf("status field = %q, want ok", body.Status)
+	}
+	// uptime is anchored at server construction - non-negative, present
+	if body.UptimeSeconds < 0 {
+		t.Fatalf("uptime_seconds = %d, want >= 0", body.UptimeSeconds)
+	}
+	if body.Version != "" {
+		t.Fatalf("version = %q, want absent without a host build tag", body.Version)
+	}
+}
+
+// TestHealthVersion: the host build tag rides the health payload. The
+// version field must match exactly what the host supplied.
+func TestHealthVersion(t *testing.T) {
+	s := newTestServer()
+	s.version = "v0.5.0-test"
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["version"] != "v0.5.0-test" {
+		t.Fatalf("version = %v, want v0.5.0-test", body["version"])
+	}
+	if body["uptime_seconds"] == nil {
+		t.Fatalf("uptime_seconds missing")
 	}
 }
 
