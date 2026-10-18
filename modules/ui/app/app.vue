@@ -150,6 +150,7 @@
           <SettingsDrawer
             class="slot-pane"
             :class="{ active: settingsOpen }"
+            :open="settingsOpen"
             v-model:show-thinking="showThinking"
             :theme-mode="themeMode"
             @set-theme="setTheme" />

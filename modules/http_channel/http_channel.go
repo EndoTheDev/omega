@@ -26,7 +26,7 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 		return fmt.Errorf("http_channel: no provider configured")
 	}
 	ag := agent.NewFromContext(deps.Ctx, agent.AgentOptions{})
-	c.srv = NewServer(ag, nil, deps.Store)
+	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
 	return c.srv.Serve(ctx, c.addr)
 }
 

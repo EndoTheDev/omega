@@ -380,9 +380,20 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	if len(pctx.Channels) == 0 {
 		return fmt.Errorf("no channels configured — mount a channel extension (e.g. http_channel)")
 	}
+	// Expose the config knobs to the webui settings pane, and hot-reload
+	// non-disruptive knobs (http timeout, compaction) when config.yaml
+	// changes on disk — hand edits and pane saves take the same path.
+	configFile := resolveConfigPath(configPath)
+	WatchConfig(configFile, func(newCfg Config) {
+		hotApply(newCfg, pctx)
+	})
 	errCh := make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
-		deps := agent.ChannelDeps{Ctx: pctx, Store: store}
+		deps := agent.ChannelDeps{
+			Ctx:      pctx,
+			Store:    store,
+			Settings: &omegaSettings{path: configFile, pctx: pctx},
+		}
 		go func(c agent.Channel) {
 			errCh <- c.Start(ctx, deps)
 		}(ch)
@@ -544,7 +555,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 	// notifications) when config.yaml changes on disk.
 	configFile := resolveConfigPath(configPath)
 	WatchConfig(configFile, func(newCfg Config) {
-		ai.SetHTTPTimeout(newCfg.HTTPTimeout)
+		hotApply(newCfg, pctx)
 	})
 
 	return runChat(cfg, pctx, skillsList, appendPrompts, trust)
