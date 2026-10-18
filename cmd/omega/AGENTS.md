@@ -100,6 +100,12 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   HTTP channel is unauthenticated and exposes shell tools, so anything
   beyond loopback is an explicit opt-in (e.g. the Tailscale IP so
   Traefik can route omega.endothe.dev). One channel per entry.
+- **Settings surface never touches secrets or bind.** `settings.go`
+  masks `provider.api_key` (`****`) in every schema payload (GET and
+  save refreshes alike), and hot-PUT rejects `provider.api_key` /
+  `server.bind` outright (400, config.yaml named as the only door) - the
+  unauthenticated /settings endpoint can neither read the key nor flip
+  the listen list.
 - **Config validation is deep.** `Validate` checks provider type
   (ollama/openai/anthropic), host URL parseability, memory char limits
   (when enabled), max_turns >= 0, http_timeout >= 0 - in addition to

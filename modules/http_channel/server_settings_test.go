@@ -22,25 +22,36 @@ type fakeSettings struct {
 	defaultValue any
 }
 
-func (f *fakeSettings) Schema() (any, error) {
+func (f *fakeSettings) Schema() (*agent.SettingsSchema, error) {
 	if f.schemaErr != nil {
 		return nil, f.schemaErr
 	}
-	return map[string]any{
-		"groups": []map[string]any{{
-			"key":   "compaction",
-			"label": "compaction",
-			"knobs": []map[string]any{{
-				"key":   "compaction.enabled",
-				"label": "enabled",
-				"type":  "toggle",
-				"value": f.current("compaction.enabled"),
-			}},
+	return &agent.SettingsSchema{
+		Groups: []agent.SettingsGroup{{
+			Key:   "compaction",
+			Label: "compaction",
+			Knobs: []agent.SettingsKnob{
+				{
+					Key:   "compaction.enabled",
+					Label: "enabled",
+					Type:  "toggle",
+					Value: f.current("compaction.enabled"),
+				},
+				// surface "tui": the GET filter must drop it, the
+				// PUT refresh must serve it back untouched
+				{
+					Key:     "notifications",
+					Label:   "notifications",
+					Type:    "select",
+					Value:   "bell",
+					Surface: "tui",
+				},
+			},
 		}},
 	}, nil
 }
 
-func (f *fakeSettings) Save(values map[string]any) (any, error) {
+func (f *fakeSettings) Save(values map[string]any) (*agent.SettingsSchema, error) {
 	if f.saveErr != nil {
 		return nil, f.saveErr
 	}
@@ -89,14 +100,24 @@ func TestSettingsGET(t *testing.T) {
 			} `json:"knobs"`
 		} `json:"groups"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if len(payload.Groups) != 1 || payload.Groups[0].Key != "compaction" {
 		t.Fatalf("unexpected groups: %+v", payload)
 	}
+	if len(payload.Groups[0].Knobs) != 1 {
+		t.Errorf("tui knob survived the GET filter: %+v", payload.Groups[0].Knobs)
+	}
 	if payload.Groups[0].Knobs[0].Value != true {
 		t.Errorf("knob value %v, want true", payload.Groups[0].Knobs[0].Value)
+	}
+	if len(body) > 0 && strings.Contains(string(body), `"surface"`) {
+		t.Errorf("surface leaked onto the wire: %s", body)
 	}
 }
 
@@ -131,6 +152,9 @@ func TestSettingsPUTRoundTripsAndRefreshes(t *testing.T) {
 	}
 	if payload.Groups[0].Knobs[0].Value != false {
 		t.Errorf("refreshed payload value %v, want false", payload.Groups[0].Knobs[0].Value)
+	}
+	if len(payload.Groups[0].Knobs) != 2 {
+		t.Errorf("refreshed payload knobs %+v, want the unfiltered two", payload.Groups[0].Knobs)
 	}
 }
 

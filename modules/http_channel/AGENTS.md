@@ -40,10 +40,13 @@ rule a security contract, not a preference.
   the sidebar search unions it with the in-memory title filter. GET
   `/sessions/{id}/events` is the reattach surface: SSE subscribe to a
   session's live run (404 when not active, live-only frames for v1).
-  GET/PUT `/settings` serve the Settings seam: GET returns the knob
-  schema + values (no-store; a host without the seam answers 501; the
-  surface filter drops knobs whose `surface` is not this channel's),
-  PUT applies a diff-only values map (unknown key -> 400). Runs are
+  GET/PUT `/settings` serve the Settings seam (typed:
+  agent.SettingsSchema): GET returns the knob schema + values (no-store;
+  a host without the seam answers 501; the surface filter drops knobs
+  whose `surface` is not this channel's; secret values are masked -
+  `provider.api_key` never round-trips), PUT applies a diff-only values
+  map (unknown key -> 400; `server.bind` and `provider.api_key` are
+  gated - config.yaml is their only door). Runs are
   DETACHED from the /chat request (runHub in runs.go): a client
   disconnect never cancels the run, one live run per session (second
   /chat -> 409), a wall-clock `server.run_timeout` (default 30m) ends

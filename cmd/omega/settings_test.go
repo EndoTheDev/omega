@@ -53,7 +53,7 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 }
 
 // schemaKnobKeys flattens the schema groups into a path set.
-func schemaKnobKeys(groups []settingGroup) map[string]bool {
+func schemaKnobKeys(groups []agent.SettingsGroup) map[string]bool {
 	out := map[string]bool{}
 	for _, g := range groups {
 		for _, k := range g.Knobs {
@@ -94,16 +94,15 @@ const testConfigYAML = "provider:\n  model_name: test-model\n"
 func TestApplySettingValuesTyped(t *testing.T) {
 	cfg := DefaultConfig()
 	err := applySettingValues(&cfg, map[string]any{
-		"provider.host":          "  http://host:1234  ",
-		"provider.type":          " OpenAI ",
-		"server.port":            float64(9000),
-		"server.bind":            "127.0.0.1, 100.64.0.1",
-		"compaction.enabled":     false,
-		"compaction.threshold":   0.75,
-		"compaction.keep_first":  float64(3),
-		"http_timeout":           float64(120),
-		"notifications":          "OFF",
-		"logging.file":           "x.log",
+		"provider.host":         "  http://host:1234  ",
+		"provider.type":         " OpenAI ",
+		"server.port":           float64(9000),
+		"compaction.enabled":    false,
+		"compaction.threshold":  0.75,
+		"compaction.keep_first": float64(3),
+		"http_timeout":          float64(120),
+		"notifications":         "OFF",
+		"logging.file":          "x.log",
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -116,9 +115,6 @@ func TestApplySettingValuesTyped(t *testing.T) {
 	}
 	if cfg.Server.Port != 9000 {
 		t.Errorf("port: %d", cfg.Server.Port)
-	}
-	if len(cfg.Server.Bind) != 2 || cfg.Server.Bind[1] != "100.64.0.1" {
-		t.Errorf("bind not parsed: %v", cfg.Server.Bind)
 	}
 	if cfg.Compaction.Enabled {
 		t.Error("compaction.enabled stay true")
@@ -155,6 +151,11 @@ func TestApplySettingValuesErrors(t *testing.T) {
 		{"bool as string", map[string]any{"compaction.enabled": "yes"}, "true or false"},
 		{"bad notifications", map[string]any{"notifications": "morse"}, "bell, desktop, off"},
 		{"string where number", map[string]any{"http_timeout": "120s"}, "whole number"},
+		// gated knobs: the hot-PUT path never writes these, and the
+		// error names config.yaml as the only door
+		{"api_key write", map[string]any{"provider.api_key": "sk-x"}, "config.yaml"},
+		{"bind write", map[string]any{"server.bind": "0.0.0.0"}, "config.yaml"},
+		{"masked echo write", map[string]any{"provider.api_key": maskedSecret}, "config.yaml"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -196,14 +197,10 @@ func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 	}
 
 	// the returned payload reflects the saved values, and groups survive
-	groupsAny, ok := payload.(map[string]any)["groups"]
-	if !ok {
-		t.Fatalf("refreshed payload missing groups: %T", payload)
+	if payload == nil || len(payload.Groups) == 0 {
+		t.Fatalf("refreshed payload missing groups: %v", payload)
 	}
-	groups, ok := groupsAny.([]settingGroup)
-	if !ok || len(groups) == 0 {
-		t.Fatalf("refreshed payload groups wrong type: %T", groupsAny)
-	}
+	groups := payload.Groups
 	if got := schemaKnobKeys(groups); len(got) != len(settingsKnobKeys(t)) {
 		t.Errorf("refreshed schema knob count %d != inventory %d", len(got), len(settingsKnobKeys(t)))
 	}
@@ -256,6 +253,47 @@ func TestWriteConfigFileAtomicNoStrayTemp(t *testing.T) {
 	}
 }
 
+func TestSchemaMasksAPIKey(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML+"  api_key: sk-hunter2\n")
+	payload, err := settingsSchema(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiKey := func(p *agent.SettingsSchema) any {
+		for _, g := range p.Groups {
+			for _, k := range g.Knobs {
+				if k.Key == "provider.api_key" {
+					return k.Value
+				}
+			}
+		}
+		t.Errorf("no provider.api_key knob in schema")
+		return nil
+	}
+	if got := apiKey(payload); got != maskedSecret {
+		t.Errorf("GET schema api_key %q, want masked", got)
+	}
+	// the save-refresh payload rides the same channel: masked too
+	refreshed, err := saveSettings(path, nil, map[string]any{
+		"compaction.keep_last": float64(4),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := apiKey(refreshed); got != maskedSecret {
+		t.Errorf("save-refresh api_key %q, want masked", got)
+	}
+	// empty stays empty: a mask on a missing key would imply one exists
+	path = writeTestConfig(t, testConfigYAML)
+	payload, err = settingsSchema(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := apiKey(payload); got != "" {
+		t.Errorf("api_key without a stored key %q, want empty", got)
+	}
+}
+
 func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	comp := &compactor.Compactor{}
 	pctx := &agent.Context{Compactor: comp}
@@ -290,8 +328,7 @@ func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema: %v", err)
 	}
-	groups, ok := payload.(map[string]any)["groups"].([]settingGroup)
-	if !ok || len(groups) == 0 {
+	if payload == nil || len(payload.Groups) == 0 {
 		t.Fatalf("schema missing groups")
 	}
 	// compile-time assertion also covers the interface; this round-trips

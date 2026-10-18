@@ -20,34 +20,25 @@ import (
 // validates through the normal LoadConfig path, persists atomically,
 // and hot-applies what the running process can use without a restart.
 
-// settingKnob is one exposed config field. Type drives the webui
-// control: toggle, number, text, secret, select, textarea, bindlist
-// (comma-separated address list rendered as a single text input).
-// Live marks knobs the hot-apply path applies without a restart.
-// Surface declares who can USE the knob: "" = every surface, "tui" =
-// terminal app only - each serving surface filters to its own, so an
-// exposed setting is always a usable one (Endo, 2026-10-18: a TUI theme
-// picker in the browser is a settings editor for an app you're not
-// using).
-type settingKnob struct {
-	Key     string   `json:"key"`
-	Label   string   `json:"label"`
-	Type    string   `json:"type"`
-	Value   any      `json:"value"`
-	Options []string `json:"options,omitempty"`
-	Min     *float64 `json:"min,omitempty"`
-	Max     *float64 `json:"max,omitempty"`
-	Step    *float64 `json:"step,omitempty"`
-	Help    string   `json:"help,omitempty"`
-	Live    bool     `json:"live,omitempty"`
-	Surface string   `json:"surface,omitempty"`
-}
+// The knob/group shapes are agent.SettingsKnob / agent.SettingsGroup /
+// agent.SettingsSchema - the seam is typed end to end, so cmd/omega and
+// modules/http_channel cannot drift apart on the wire shape. Masked
+// secrets and the config-yaml-only gate live in this file: the host
+// decides what the unauthenticated API may see and write.
+//
+// maskedSecret stands in for a secret knob's value everywhere the
+// schema is served (GET and save refreshes alike): the pane treats
+// api_key as write-only (diff-only saves), so the plain text never
+// rides the wire. An empty value stays empty - masking a missing key
+// would imply one exists.
+const maskedSecret = "****"
 
-// settingGroup mirrors one config.yaml section.
-type settingGroup struct {
-	Key   string        `json:"key"`
-	Label string        `json:"label"`
-	Knobs []settingKnob `json:"knobs"`
+// maskSecret renders a secret knob's value for the wire.
+func maskSecret(v string) any {
+	if v == "" {
+		return ""
+	}
+	return maskedSecret
 }
 
 // num builds the min/max/step triple for a number knob.
@@ -59,24 +50,24 @@ func num(min, max, step float64) (*float64, *float64, *float64) {
 // knobs. Values come from the same LoadConfig path the server booted
 // with (file + env overrides + defaults), so the pane always shows the
 // effective values.
-func settingsSchema(path string) (any, error) {
+func settingsSchema(path string) (*agent.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
 	}
-	groups := settingGroups(&cfg)
-	return map[string]any{"groups": groups}, nil
+	// the whole payload is headed for the unauthenticated /settings GET
+	return &agent.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
 // settingGroups builds the full knob inventory from a config. Field
 // order follows the config.yaml layout (provider, server, store,
 // compaction, runtime, skills, memory, logging).
-func settingGroups(cfg *Config) []settingGroup {
-	return []settingGroup{
+func settingGroups(cfg *Config) []agent.SettingsGroup {
+	return []agent.SettingsGroup{
 		{
 			Key:   "provider",
 			Label: "provider",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "provider.type", Label: "type", Type: "select",
 					Options: []string{"ollama", "openai", "anthropic"},
 					Value:   strings.ToLower(cfg.Provider.Type),
@@ -88,21 +79,21 @@ func settingGroups(cfg *Config) []settingGroup {
 					Value: cfg.Provider.Host,
 					Help:  "provider base URL (default http://localhost:11434)"},
 				{Key: "provider.api_key", Label: "api key", Type: "secret",
-					Value: cfg.Provider.APIKey,
-					Help:  "blank for local ollama"},
+					Value: maskSecret(cfg.Provider.APIKey),
+					Help:  "masked here; edit config.yaml instead (blank for local ollama)"},
 			},
 		},
 		{
 			Key:   "server",
 			Label: "server",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "server.port", Label: "port", Type: "number",
 					Min: ptrF(1), Max: ptrF(math.MaxUint16), Step: ptrF(1),
 					Value: cfg.Server.Port,
 					Help:  "HTTP channel port; applies on restart"},
 				{Key: "server.bind", Label: "bind addresses", Type: "bindlist",
 					Value: strings.Join(cfg.Server.Bind, ", "),
-					Help:  "comma-separated listen addresses; loopback only by default (unauthenticated API), applies on restart"},
+					Help:  "comma-separated listen addresses; loopback only by default (unauthenticated API); edit config.yaml instead (applies on restart)"},
 				{Key: "server.run_timeout", Label: "run timeout (s)", Type: "number",
 					Min: ptrF(1), Step: ptrF(1),
 					Value: cfg.Server.RunTimeout,
@@ -112,7 +103,7 @@ func settingGroups(cfg *Config) []settingGroup {
 		{
 			Key:   "store",
 			Label: "store",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "store.db_path", Label: "database path", Type: "text",
 					Value: cfg.Store.DBPath,
 					Help:  "SQLite file, relative to the working dir; applies on restart"},
@@ -126,7 +117,7 @@ func settingGroups(cfg *Config) []settingGroup {
 		{
 			Key:   "runtime",
 			Label: "runtime",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "system_prompt", Label: "system prompt", Type: "textarea",
 					Value: cfg.SystemPrompt,
 					Help:  "extra custom prompt lines appended to the system prompt; applies on restart"},
@@ -150,7 +141,7 @@ func settingGroups(cfg *Config) []settingGroup {
 		{
 			Key:   "skills",
 			Label: "skills",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "skills.dir", Label: "skills directory", Type: "text",
 					Value: cfg.Skills.Dir,
 					Help:  "loaded at startup; applies on restart"},
@@ -159,7 +150,7 @@ func settingGroups(cfg *Config) []settingGroup {
 		{
 			Key:   "memory",
 			Label: "memory",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "memory.enabled", Label: "enabled", Type: "toggle",
 					Value: cfg.Memory.Enabled,
 					Help:  "persistent memory system; applies on restart"},
@@ -183,7 +174,7 @@ func settingGroups(cfg *Config) []settingGroup {
 		{
 			Key:   "logging",
 			Label: "logging",
-			Knobs: []settingKnob{
+			Knobs: []agent.SettingsKnob{
 				{Key: "logging.enabled", Label: "enabled", Type: "toggle",
 					Value: cfg.Logging.Enabled,
 					Help:  "operational log; applies on restart"},
@@ -197,9 +188,9 @@ func settingGroups(cfg *Config) []settingGroup {
 
 // compactionKnobs renders the agent.CompactionConfig section. Every
 // compaction knob is read per Compact call, so all hot-apply live.
-func compactionKnobs(cfg *Config) []settingKnob {
+func compactionKnobs(cfg *Config) []agent.SettingsKnob {
 	c := &cfg.Compaction
-	return []settingKnob{
+	return []agent.SettingsKnob{
 		{Key: "compaction.enabled", Label: "enabled", Type: "toggle",
 			Value: c.Enabled,
 			Help:  "summarize history when the token budget is exceeded", Live: true},
@@ -245,7 +236,7 @@ func notificationsValue(v string) string {
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
 // the running context. Returns the refreshed schema payload.
-func saveSettings(path string, pctx *agent.Context, values map[string]any) (any, error) {
+func saveSettings(path string, pctx *agent.Context, values map[string]any) (*agent.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
@@ -260,8 +251,7 @@ func saveSettings(path string, pctx *agent.Context, values map[string]any) (any,
 		return nil, err
 	}
 	hotApply(cfg, pctx)
-	groups := settingGroups(&cfg)
-	return map[string]any{"groups": groups}, nil
+	return &agent.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
 // applySettingValues routes each submitted value into the Config by
@@ -275,12 +265,15 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setString(&cfg.Provider.Type, key, raw, trim)
 		case "provider.model_name", "provider.host":
 			err = setStringField(cfg, key, raw)
-		case "provider.api_key":
-			err = setString(&cfg.Provider.APIKey, key, raw, trim)
+		case "provider.api_key", "server.bind":
+			// gated knobs: bind is the escalation lever for the whole
+			// LAN surface, api_key is the credential. Neither a
+			// restart-required nor a secret knob belongs on the
+			// unauthenticated hot-PUT path - config.yaml is the only
+			// door, and the error says so.
+			err = fmt.Errorf("%s: config.yaml is the only door for this knob - not settable over the API", key)
 		case "server.port":
 			err = setInt(&cfg.Server.Port, key, raw, 1, math.MaxUint16)
-		case "server.bind":
-			err = setBindList(cfg, raw)
 		case "server.run_timeout":
 			err = setInt(&cfg.Server.RunTimeout, key, raw, 1, math.MaxInt32)
 		case "store.db_path", "system_prompt", "theme",
@@ -457,28 +450,6 @@ func setBool(cfg *Config, key string, raw any) error {
 	return nil
 }
 
-// setBindList parses the comma-separated bind-address list. An empty
-// list is valid — the channel falls back to loopback only.
-func setBindList(cfg *Config, raw any) error {
-	s, err := asTrimmedString(raw)
-	if err != nil {
-		return fmt.Errorf("server.bind: %w", err)
-	}
-	var binds []string
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		binds = append(binds, part)
-	}
-	if binds == nil {
-		binds = []string{}
-	}
-	cfg.Server.Bind = binds
-	return nil
-}
-
 // writeConfigFile persists the config as YAML, atomically (temp file +
 // rename) and mode-preserving: a config.yaml can hold an api_key, so a
 // fresh file is 0600 and an existing file keeps its permissions.
@@ -524,9 +495,9 @@ type omegaSettings struct {
 	pctx *agent.Context
 }
 
-func (s *omegaSettings) Schema() (any, error) { return settingsSchema(s.path) }
+func (s *omegaSettings) Schema() (*agent.SettingsSchema, error) { return settingsSchema(s.path) }
 
-func (s *omegaSettings) Save(values map[string]any) (any, error) {
+func (s *omegaSettings) Save(values map[string]any) (*agent.SettingsSchema, error) {
 	return saveSettings(s.path, s.pctx, values)
 }
 

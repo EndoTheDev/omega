@@ -208,20 +208,54 @@ type Channel interface {
 	Stop() error
 }
 
+// SettingsKnob is one exposed config field. Type drives the webui
+// control (toggle, number, text, secret, select, textarea, bindlist).
+// Live marks knobs the hot-apply path applies without a restart.
+// Surface declares who can USE the knob: "" = every surface, "tui" =
+// terminal app only - each serving surface filters to its own.
+type SettingsKnob struct {
+	Key     string   `json:"key"`
+	Label   string   `json:"label"`
+	Type    string   `json:"type"`
+	Value   any      `json:"value"`
+	Options []string `json:"options,omitempty"`
+	Min     *float64 `json:"min,omitempty"`
+	Max     *float64 `json:"max,omitempty"`
+	Step    *float64 `json:"step,omitempty"`
+	Help    string   `json:"help,omitempty"`
+	Live    bool     `json:"live,omitempty"`
+	Surface string   `json:"surface,omitempty"`
+}
+
+// SettingsGroup is one config section: a labeled set of knobs.
+type SettingsGroup struct {
+	Key   string         `json:"key"`
+	Label string         `json:"label"`
+	Knobs []SettingsKnob `json:"knobs"`
+}
+
+// SettingsSchema is the JSON-marshalable settings payload: knob groups
+// in config-file order with current values. Mirrors the wire shape the
+// webui settings pane already consumes.
+type SettingsSchema struct {
+	Groups []SettingsGroup `json:"groups"`
+}
+
 // Settings is the runtime config knobs seam. Channels that host a UI
 // (the webui settings pane lives behind the HTTP channel's /settings)
-// use it to read the host's config knobs and save changes — the host
+// use it to read the host's config knobs and save changes - the host
 // owns the schema, validation, persistence, and hot-apply; the channel
 // never touches config.yaml itself. Nil when the host does not expose
 // settings (endpoints then answer 501).
 type Settings interface {
-	// Schema returns the JSON-marshalable settings payload: knob
-	// groups, each knob's label/type/controls, and current values.
-	Schema() (any, error)
+	// Schema returns the settings payload: knob groups, each knob's
+	// label/type/controls, and current values. Secret values MUST be
+	// masked - the plain text never rides the wire.
+	Schema() (*SettingsSchema, error)
 	// Save applies values (map of dotted yaml path -> JSON value),
 	// validates, persists the config file, hot-applies what the
 	// running process can apply, and returns the refreshed payload.
-	Save(values map[string]any) (any, error)
+	Save(values map[string]any) (*SettingsSchema, error)
 }
 
 // ChannelDeps carries everything a channel needs to run. Ctx is the

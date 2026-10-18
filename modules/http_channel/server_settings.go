@@ -3,6 +3,8 @@ package http_channel
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Config-knob surface for the webui settings pane. Read/write of the
@@ -70,40 +72,29 @@ func writeSettingsJSON(w http.ResponseWriter, payload any) {
 // webui is the http channel's surface: knobs carrying surface "tui" are
 // config for an app this pane isn't, and an exposed setting must be a
 // usable one (Endo, 2026-10-18). Groups left empty by the filter drop
-// out too. Round-trips through generic maps because the Settings seam
-// returns an opaque payload.
-func filterKnobSurface(payload any) any {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return payload
+// out too. The seam is typed (agent.SettingsSchema), so this walks the
+// structs directly - knobs copy out of the range, the input is never
+// mutated. Wire shape is unchanged: surface carries omitempty, so
+// clearing it keeps the JSON exactly what the old map round-trip served.
+func filterKnobSurface(payload *agent.SettingsSchema) *agent.SettingsSchema {
+	if payload == nil {
+		return nil
 	}
-	var doc map[string]any
-	if json.Unmarshal(raw, &doc) != nil {
-		return payload
-	}
-	groups, _ := doc["groups"].([]any)
-	kept := make([]any, 0, len(groups))
-	for _, g := range groups {
-		group, _ := g.(map[string]any)
-		if group == nil {
-			continue
-		}
-		knobs, _ := group["knobs"].([]any)
-		groupKnobs := make([]any, 0, len(knobs))
-		for _, k := range knobs {
-			knob, _ := k.(map[string]any)
-			if knob == nil || knob["surface"] == "tui" {
+	kept := make([]agent.SettingsGroup, 0, len(payload.Groups))
+	for _, g := range payload.Groups {
+		knobs := make([]agent.SettingsKnob, 0, len(g.Knobs))
+		for _, k := range g.Knobs {
+			if k.Surface == "tui" {
 				continue
 			}
-			delete(knob, "surface") // the wire stays clean for the pane
-			groupKnobs = append(groupKnobs, knob)
+			k.Surface = "" // the wire stays clean for the pane
+			knobs = append(knobs, k)
 		}
-		if len(groupKnobs) == 0 {
+		if len(knobs) == 0 {
 			continue
 		}
-		group["knobs"] = groupKnobs
-		kept = append(kept, group)
+		g.Knobs = knobs
+		kept = append(kept, g)
 	}
-	doc["groups"] = kept
-	return doc
+	return &agent.SettingsSchema{Groups: kept}
 }
