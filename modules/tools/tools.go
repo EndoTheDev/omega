@@ -123,6 +123,7 @@ func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (strin
 		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
 	} else {
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+		shellKillSetup(cmd)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

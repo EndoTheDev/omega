@@ -349,3 +349,22 @@ func TestRunReadFileNonStringPath(t *testing.T) {
 		t.Fatal("expected error for non-string path, got nil")
 	}
 }
+// The CI failure shape generalized: a FORKED child (not exec-optimized)
+// holds the output pipe. Killing only the direct child leaves the run
+// blocked until the grandchild exits - the group kill is what ends it.
+func TestRunShellContextKillsGroup(t *testing.T) {
+	p := &ToolProvider{}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := p.RunShell(ctx, map[string]any{"command": "sleep 30 & wait"})
+	if err == nil {
+		t.Fatal("cancelled ctx returned no error - command ran to completion")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("group kill missed: blocked %v", elapsed)
+	}
+}
