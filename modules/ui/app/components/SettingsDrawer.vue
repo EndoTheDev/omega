@@ -1,16 +1,12 @@
 <template>
   <!-- no title row: the menubar gear is the toggle - this is just content -->
   <aside class="settings">
-    <!-- search: narrows every group live; Escape clears -->
-    <input
-      :value="query"
+    <!-- search: narrows every group live; Escape clears (shared look -
+         SearchInput, same component as the sidebar's session search) -->
+    <SearchInput
+      v-model="query"
       class="settings-search"
-      type="search"
-      placeholder="filter settings"
-      aria-label="filter settings"
-      autocomplete="off"
-      @input="query = ($event.target as HTMLInputElement).value"
-      @keydown.esc.prevent="clearSearch" />
+      placeholder="filter settings" />
 
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
@@ -31,8 +27,33 @@
       v-for="group in visibleGroups"
       :key="group.key"
       class="settings-group">
-      <h3>{{ group.label }}</h3>
-      <template v-for="knob in group.knobs" :key="knob.key">
+      <!-- full-row clickable header, same interaction feel as the sidebar
+           day groups: chevron prefix, whole header toggles, aria-expanded.
+           A group is hidden when collapsed, EXCEPT while a search narrows
+           the list - matching results must never hide the sections that
+           found them. -->
+      <button
+        class="settings-group-head"
+        type="button"
+        :aria-expanded="!isCollapsed(group.key)"
+        @click="toggleCollapsed(group.key)">
+        <svg
+          class="bucket-chevron"
+          :class="{ open: !isCollapsed(group.key) }"
+          width="8"
+          height="8"
+          viewBox="0 0 8 8"
+          aria-hidden="true">
+          <path
+            d="M2.5 1L6 4L2.5 7"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2" />
+        </svg>
+        <span class="settings-group-title">{{ group.label }}</span>
+      </button>
+      <template v-if="!isCollapsed(group.key)">
+        <template v-for="knob in group.knobs" :key="knob.key">
         <!-- toggle -->
         <label v-if="knob.type === 'toggle'" class="setting-row">
           <input
@@ -85,6 +106,7 @@
             " />
           <p v-if="knob.help" class="setting-help">{{ knob.help }}</p>
         </div>
+        </template>
       </template>
     </section>
     </div>
@@ -120,6 +142,8 @@
     filterSettingGroups,
     saveSettings,
     settingsDiff,
+    parseCollapsedKeys,
+    serializeCollapsedKeys,
     type SettingGroup,
     type SettingKnob,
     type SettingsPayload,
@@ -214,9 +238,38 @@
     filterSettingGroups(allGroups.value, query.value),
   );
 
-  function clearSearch() {
-    query.value = "";
+  // --- collapsible groups (same mechanic as the sidebar day groups) ---
+  // collapsed holds the group KEYS whose knobs are hidden. Restored from
+  // localStorage on setup; every group defaults expanded (unknown data
+  // restores expanded too, via parseCollapsedKeys' tolerance). Search
+  // wins over collapse: while a query narrows the list, every surviving
+  // group shows its matches (see isCollapsed). Groups are dynamic server
+  // data, so the persisted keys are parsed without a bucket allowlist -
+  // stale keys are inert (no section renders under that key).
+  const COLLAPSED_KEY = "omega.settings-collapsed";
+  const collapsed = ref<Set<string>>(new Set());
+
+  function restoreCollapsed() {
+    if (typeof window === "undefined") return;
+    collapsed.value = parseCollapsedKeys(
+      localStorage.getItem(COLLAPSED_KEY),
+    );
   }
+
+  function toggleCollapsed(key: string) {
+    const next = new Set(collapsed.value);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    collapsed.value = next;
+    if (typeof window !== "undefined")
+      localStorage.setItem(COLLAPSED_KEY, serializeCollapsedKeys(next));
+  }
+
+  // a search that narrows the groups must not also swallow their knobs
+  const isCollapsed = (key: string) =>
+    collapsed.value.has(key) && query.value.trim().length === 0;
+
+  restoreCollapsed();
 
   // --- value plumbing ---
 

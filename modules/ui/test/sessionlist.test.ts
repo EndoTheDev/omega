@@ -11,7 +11,7 @@ import {
   parseCollapsedLabels,
   relativeAge,
   rowMeta,
-  serializeCollapsedLabels,
+  serializeCollapsedKeys,
   withContentMatches,
   SIDEBAR_BUCKETS,
 } from "../app/composables/omega.ts";
@@ -223,7 +223,7 @@ describe("collapsed labels (omega.sidebar-collapsed)", () => {
 
   it("round-trips serialize -> parse and ignores duplicate-free order", () => {
     const set = new Set(["pinned", "earlier"]);
-    const back = parseCollapsedLabels(serializeCollapsedLabels(set));
+    const back = parseCollapsedLabels(serializeCollapsedKeys(set));
     assert.deepEqual(back, set);
   });
 });

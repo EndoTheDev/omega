@@ -166,24 +166,11 @@ body {
   padding: 12px 12px 10px;
 }
 
-/* sidebar search: filters the in-memory list client-side */
+/* sidebar search: filters the in-memory list client-side; the input look
+   lives in the shared .search-input rules below (SettingsDrawer's filter
+   search consumes the same component) */
 .session-search {
   padding: 0 12px 8px;
-}
-.session-search input {
-  width: 100%;
-  background: var(--z1-raised);
-  border: 1px solid var(--stroke);
-  color: var(--text);
-  border-radius: var(--r-chip);
-  padding: 5px 8px;
-  font-size: 12px;
-  font-family: var(--sans);
-}
-.session-search input::placeholder { color: var(--text-dim); }
-.session-search input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 /* section headers: pinned / today / yesterday / earlier - real buttons so
@@ -1193,12 +1180,29 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   transition: transform 0.2s ease-out;
 }
 
-.settings-group h3 {
+/* group headers: full-row clickable, same interaction feel as the sidebar
+   day groups (.bucket-chevron rotation comes from the shared chevron rule
+   up top) */
+button.settings-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  text-align: left;
+  padding: 2px 0;
   margin: 0 0 8px;
+}
+button.settings-group-head:hover { color: var(--text); }
+button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
+.settings-group-title {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--text-dim);
+  color: inherit;
 }
 
 .setting-row {
@@ -1213,21 +1217,51 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 
 .setting-row input { accent-color: var(--accent); }
 
-/* --- settings pane: search + generated knobs --- */
-.settings-search {
+/* --- shared search input (SearchInput.vue) ---
+   ONE look for both search boxes: sidebar session-search and the settings
+   filter. Wrapper elements (.session-search padding, .settings-search
+   inside the pane's flex gap) carry placement only. */
+.search-input {
+  position: relative;
+  display: block;
+}
+.search-input input {
   width: 100%;
   box-sizing: border-box;
-  background: var(--z0);
+  background: var(--z1-raised);
   border: 1px solid var(--stroke);
-  border-radius: var(--r-pane);
   color: var(--text);
-  font: inherit;
-  padding: 6px 10px;
-  font-size: 13px;
+  border-radius: var(--r-chip);
+  /* right padding reserves room for the clear affordance */
+  padding: 5px 22px 5px 8px;
+  font-size: 12px;
+  font-family: var(--sans);
 }
-.settings-search:focus {
+.search-input input::placeholder { color: var(--text-dim); }
+.search-input input::-webkit-search-cancel-button { display: none; }
+.search-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* the custom clear: native type=search chrome is OS-styled and can't be
+   themed, so this replaces it */
+.search-input button.search-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  border-radius: var(--r-chip);
+}
+.search-input button.search-clear:hover { color: var(--text); }
+.search-input button.search-clear:focus-visible {
   outline: 1px solid var(--accent);
-  outline-offset: -1px;
 }
 .settings-empty,
 .settings-error {
