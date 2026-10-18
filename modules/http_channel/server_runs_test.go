@@ -462,6 +462,116 @@ func fetchDetail(t *testing.T, url string) map[string]any {
 	return m
 }
 
+// hangLoop mirrors the real loop's timeout path (modules/agent_loop):
+// turn one streams a tool call and executes it with the run ctx (the
+// hang tool blocks there), and every turn boundary checks ctx.Err()
+// first - so cancelling the run ctx ends the run with a cancelled
+// agent_end, exactly as the real loop unwinds.
+type hangLoop struct{}
+
+func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+	opts.Events <- agent.AgentStart{Type: "agent_start"}
+	turns := 0
+	for {
+		if ctx.Err() != nil {
+			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			return nil
+		}
+		turns++
+		opts.Events <- agent.TurnStart{Type: "turn_start", Turn: turns}
+		if turns > 1 {
+			// The tool returned without a deadline hit (cannot happen
+			// with hangTool, but the shape stays loop-honest).
+			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "stop"}
+			return nil
+		}
+		call := ai.ToolCall{ID: "c1", Name: "hang"}
+		opts.Events <- agent.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: call}}
+		opts.Events <- agent.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+		result, err := opts.Tools["hang"].Run(ctx, call.Arguments)
+		if err != nil {
+			opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), call.ID, true)}
+		} else {
+			opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, call.ID, false)}
+		}
+		opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: 1}
+	}
+}
+
+// TestDetachedRunTimeoutUnbricksSession: a run blocked in a hung tool
+// call (the shell-command-that-never-returns case) must die at the
+// wall-clock cap - agent_end, an error frame naming the timeout,
+// deregistration - and the session accepts a new /chat afterwards. The
+// 409 double-run backstop (TestDetachedRunConflict) must stay separate
+// and green: it covers the LIVE run, this covers the runaway one.
+func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
+	prov := newStepProvider("step")
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(hangLoop{})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := NewServer(a, map[string]agent.Tool{
+		"hang": {
+			Description: "blocks until its context ends",
+			Run: func(ctx context.Context, _ map[string]any) (string, error) {
+				<-ctx.Done()
+				return "", ctx.Err()
+			},
+		},
+	}, st, nil)
+	s.runTimeout = 250 * time.Millisecond
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	createSession(t, ts, "t1")
+	muteTitles(t, st, "t1")
+
+	// The run blocks in the hang tool; nothing from the provider arrives.
+	resp, cancel, sc := postChatStream(t, ts, "t1")
+	defer cancel()
+	defer resp.Body.Close()
+	waitFor(t, "run registered active", func() bool { return s.runs.active("t1") })
+
+	// The wall-clock cap ends the run through the normal path: agent_end.
+	readFrames(t, sc, "agent_end", 1)
+
+	// The error frame naming the timeout follows (it is emitted after
+	// the event loop drains, before persistence).
+	sawTimeout := false
+	for sc.Scan() {
+		if strings.Contains(sc.Text(), "run timeout") {
+			sawTimeout = true
+			break
+		}
+	}
+	if !sawTimeout {
+		t.Fatal("no error frame naming the timeout after agent_end")
+	}
+
+	// The hub lets go: no more 409 for the session.
+	waitFor(t, "run deregistered after timeout", func() bool { return !s.runs.active("t1") })
+
+	body, _ := json.Marshal(map[string]any{
+		"messages":   []map[string]any{{"role": "user", "content": "again"}},
+		"session_id": "t1",
+	})
+	resp2, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("post-chat after timeout: %v", err)
+	}
+	defer resp2.Body.Close()
+	defer cancel()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("post-chat after timeout status = %d, want 200 (got %s)", resp2.StatusCode, resp2.Status)
+	}
+
+	// The replacement run also runs under the cap and lets go again.
+	waitFor(t, "replacement run deregistered", func() bool { return !s.runs.active("t1") })
+}
+
 // TestRunHubCutSlowSubscriber: a subscriber that stops reading fills its
 // queue and gets cut instead of stalling the run - the run keeps serving
 // other subscribers and finishes (the webui renders a cut stream as an

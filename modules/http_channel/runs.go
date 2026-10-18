@@ -2,6 +2,7 @@ package http_channel
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 
@@ -137,13 +138,22 @@ func (h *runHub) finish(run *activeRun) {
 // through completion whether or not any client is listening.
 // runCtx is WithoutCancel(ctx): it keeps the request-scoped values (the
 // logger seam) while outliving the HTTP request that started it.
+//
+// The run ctx carries a wall-clock timeout (s.runTimeout): a hung tool
+// call or LLM call ends the run instead of holding the session's run
+// slot forever. On timeout the loop unwinds through its normal ctx
+// path (the tool result errors out, the next turn boundary emits a
+// cancelled agent_end); an explicit error frame names the cap, and
+// whatever accumulated still persists.
 func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) {
 	go func() {
 		defer s.runs.finish(run)
+		ctx, cancel := context.WithTimeout(runCtx, s.runTimeout)
+		defer cancel()
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage
-		for event := range s.agent.RunWithProvider(runCtx, prov, messages, tools) {
+		for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
 			// Usage arrives on each stream_end; sum every turn of the run.
 			if se, ok := event.(agent.StreamEvent); ok {
@@ -163,6 +173,10 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 				return
 			}
 			s.runs.broadcast(run, runFrame{event: eventType, data: data})
+		}
+		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
+			s.runs.broadcast(run, runFrame{event: "error", data: []byte(
+				"run timeout: the run exceeded its wall-clock cap (" + s.runTimeout.String() + ") and was stopped")})
 		}
 		s.persistRun(runCtx, run, prov, req, append(recs, rec), usage)
 	}()

@@ -32,6 +32,11 @@ type Server struct {
 	store    agent.StoreProvider
 	settings agent.Settings
 	httpSrv  *http.Server
+	// runTimeout caps each detached /chat run's wall-clock time. The
+	// LLM call carries the HTTP timeout, but a hung tool call would
+	// otherwise run forever and hold the session's run slot until
+	// restart. Default set here; the mount overrides it from config.
+	runTimeout time.Duration
 
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
@@ -46,7 +51,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	if tools == nil {
 		tools = map[string]agent.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -203,7 +208,7 @@ type assistantRecord struct {
 	// first-to-last spans: thinking happens in PHASES (think -> tools
 	// -> think again), and a span would bill the tool gap as thinking.
 	// lastXxx zero = span closed; the next chunk opens a fresh one.
-	thinkingMs, respMs int64
+	thinkingMs, respMs  int64
 	lastThink, lastResp time.Time
 	// call dispatch times by tool call id; the matching ToolResult
 	// reads and clears its entry when it arrives.

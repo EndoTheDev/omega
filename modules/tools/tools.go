@@ -105,8 +105,11 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// RunShell executes a shell command and returns combined output.
-func (p *ToolProvider) RunShell(_ context.Context, args map[string]any) (string, error) {
+// RunShell executes a shell command and returns combined output. The
+// command runs under the call ctx: a cancelled ctx (the detached run's
+// wall-clock cap) kills the process - without this, a command that
+// never returns hangs the tool loop past any run timeout.
+func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (string, error) {
 	command, err := argString(args, "command")
 	if err != nil {
 		return "", err
@@ -117,9 +120,9 @@ func (p *ToolProvider) RunShell(_ context.Context, args map[string]any) (string,
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", command)
+		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
 	} else {
-		cmd = exec.Command("sh", "-c", command)
+		cmd = exec.CommandContext(ctx, "sh", "-c", command)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -2,6 +2,7 @@ package http_channel
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 )
@@ -42,7 +43,8 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	}
 	for _, b := range binds {
 		ctx.Channels = append(ctx.Channels, &HTTPChannel{
-			addr: fmt.Sprintf("%s:%d", b, port),
+			addr:       fmt.Sprintf("%s:%d", b, port),
+			runTimeout: time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
 		})
 	}
 	return nil

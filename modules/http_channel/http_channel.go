@@ -8,6 +8,7 @@ package http_channel
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 )
@@ -15,8 +16,9 @@ import (
 // HTTPChannel adapts the HTTP server to the agent.Channel interface.
 // It creates one agent from the Context and reuses it for all requests.
 type HTTPChannel struct {
-	addr string
-	srv  *Server
+	addr       string
+	runTimeout time.Duration // detached-run wall-clock cap from config
+	srv        *Server
 }
 
 // Start creates an agent from deps.Ctx and serves HTTP/SSE until the
@@ -27,6 +29,7 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 	}
 	ag := agent.NewFromContext(deps.Ctx, agent.AgentOptions{})
 	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
+	c.srv.runTimeout = c.runTimeout
 	return c.srv.Serve(ctx, c.addr)
 }
 

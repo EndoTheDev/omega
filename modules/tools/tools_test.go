@@ -6,9 +6,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 )
+
+// TestRunShellContextKill: the shell tool must run under the call ctx -
+// a cancelled ctx kills the process so a hung command cannot outrun the
+// detached run's wall-clock cap.
+func TestRunShellContextKill(t *testing.T) {
+	p := &ToolProvider{}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := p.RunShell(ctx, map[string]any{"command": "sleep 30"})
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("cancelled ctx returned no error - command ran to completion")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("RunShell ignored ctx cancellation: blocked %v", elapsed)
+	}
+}
 
 // self-check: compile-time interface satisfaction, plugin contract,
 // and basic tool behavior (write → read → edit → read).

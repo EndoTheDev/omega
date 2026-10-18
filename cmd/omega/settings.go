@@ -103,6 +103,10 @@ func settingGroups(cfg *Config) []settingGroup {
 				{Key: "server.bind", Label: "bind addresses", Type: "bindlist",
 					Value: strings.Join(cfg.Server.Bind, ", "),
 					Help:  "comma-separated listen addresses; loopback only by default (unauthenticated API), applies on restart"},
+				{Key: "server.run_timeout", Label: "run timeout (s)", Type: "number",
+					Min: ptrF(1), Step: ptrF(1),
+					Value: cfg.Server.RunTimeout,
+					Help:  "wall-clock cap per detached chat run, in seconds; applies on restart"},
 			},
 		},
 		{
@@ -277,6 +281,8 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.Server.Port, key, raw, 1, math.MaxUint16)
 		case "server.bind":
 			err = setBindList(cfg, raw)
+		case "server.run_timeout":
+			err = setInt(&cfg.Server.RunTimeout, key, raw, 1, math.MaxInt32)
 		case "store.db_path", "system_prompt", "theme",
 			"skills.dir", "memory.file", "memory.user_file", "logging.file":
 			err = setStringField(cfg, key, raw)

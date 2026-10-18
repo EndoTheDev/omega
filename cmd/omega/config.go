@@ -9,26 +9,26 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	"time"
 	"gopkg.in/yaml.v3"
+	"time"
 )
 
 // Config holds the runtime configuration. It is loaded from
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider      ProviderConfig          `yaml:"provider"`
-	Server        ServerConfig            `yaml:"server"`
-	Store         StoreConfig             `yaml:"store"`
-	Compaction    agent.CompactionConfig  `yaml:"compaction"`
-	SystemPrompt  string                  `yaml:"system_prompt"`
-	HTTPTimeout   int                     `yaml:"http_timeout"`
-	MaxTurns      int                     `yaml:"max_turns"`
-	Theme         string                  `yaml:"theme"`
-	Notifications string                  `yaml:"notifications"`
-	Skills        SkillsConfig            `yaml:"skills"`
-	Memory        MemoryConfig            `yaml:"memory"`
-	Logging       LoggingConfig           `yaml:"logging"`
+	Provider      ProviderConfig         `yaml:"provider"`
+	Server        ServerConfig           `yaml:"server"`
+	Store         StoreConfig            `yaml:"store"`
+	Compaction    agent.CompactionConfig `yaml:"compaction"`
+	SystemPrompt  string                 `yaml:"system_prompt"`
+	HTTPTimeout   int                    `yaml:"http_timeout"`
+	MaxTurns      int                    `yaml:"max_turns"`
+	Theme         string                 `yaml:"theme"`
+	Notifications string                 `yaml:"notifications"`
+	Skills        SkillsConfig           `yaml:"skills"`
+	Memory        MemoryConfig           `yaml:"memory"`
+	Logging       LoggingConfig          `yaml:"logging"`
 }
 
 // SkillsConfig controls where skills are loaded from.
@@ -62,11 +62,14 @@ type ProviderConfig struct {
 
 // ServerConfig configures the HTTP listener(s). Bind is the list of
 // addresses the channel listens on (default: loopback only). Additional
-// addresses - e.g. the Tailscale IP so Traefik can route to omega -
-// are an explicit opt-in, never a default.
+// addresses - e.g. the Tailscale IP so Traefik can route to omega - are
+// an explicit opt-in, never a default. RunTimeout caps each detached
+// /chat run's wall-clock time, in seconds: a hung tool call must not
+// brick the session's run slot until restart.
 type ServerConfig struct {
-	Port int      `yaml:"port"`
-	Bind []string `yaml:"bind"`
+	Port       int      `yaml:"port"`
+	Bind       []string `yaml:"bind"`
+	RunTimeout int      `yaml:"run_timeout"`
 }
 
 // StoreConfig configures the SQLite session store.
@@ -82,7 +85,8 @@ func DefaultConfig() Config {
 			Host: "http://localhost:11434",
 		},
 		Server: ServerConfig{
-			Port: 8099,
+			Port:       8099,
+			RunTimeout: 1800,
 		},
 		Store: StoreConfig{
 			DBPath: "omega.db",
@@ -111,8 +115,8 @@ func DefaultConfig() Config {
 			Enabled: true,
 			File:    "omega.log",
 		},
-		HTTPTimeout:  300,
-		MaxTurns:     100,
+		HTTPTimeout:   300,
+		MaxTurns:      100,
 		Notifications: "bell",
 	}
 }
