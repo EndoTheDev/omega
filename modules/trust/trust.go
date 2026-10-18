@@ -34,9 +34,40 @@ func NewProvider(home string) *Provider {
 	return &Provider{home: home}
 }
 
-// trustPath returns the path to trust.yaml in omega home.
+// trustPath returns the live trust.yaml path in omega home. The legacy
+// home-root location wins if it exists (existing installs keep working
+// unchanged); otherwise the config/ subdirectory (Endo 2026-10-18
+// layout, matching crons.yaml) is used. Kept separate so Bootstrap,
+// reads and writes share one resolution rule.
 func (p *Provider) trustPath() string {
-	return p.home + "/trust.yaml"
+	root := filepath.Join(p.home, "trust.yaml")
+	if _, err := os.Stat(root); err == nil {
+		return root
+	}
+	return filepath.Join(p.home, "config", "trust.yaml")
+}
+
+// Bootstrap migrates a legacy home-root trust.yaml into config/ on the
+// next boot, keeping upgrade homes in the Endo 2026-10-18 layout. The
+// copy happens only when the target does not exist yet; if both exist
+// the ROOT file stays authoritative (trustPath resolves root-first) and
+// neither is ever deleted or overwritten - the sacred-on-upgrade law.
+// Failures are non-fatal: an un-migrated root store keeps working via
+// root-first resolution.
+func Bootstrap(home string) {
+	root := filepath.Join(home, "trust.yaml")
+	dst := filepath.Join(home, "config", "trust.yaml")
+	if _, err := os.Stat(dst); err == nil {
+		return // config/ copy exists: root stays authoritative, touch nothing
+	}
+	data, err := os.ReadFile(root)
+	if err != nil {
+		return // nothing to migrate (or unreadable: root-first still serves it)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(dst, data, 0o600)
 }
 
 // loadTrusted reads the trust store. A missing or unreadable store is
@@ -53,13 +84,14 @@ func (p *Provider) loadTrusted() []TrustEntry {
 	return store.Trusted
 }
 
-// saveTrusted writes the trust store, creating the home dir if needed.
+// saveTrusted writes the trust store at the resolved path, creating
+// its directory if needed (config/ on new-layout installs).
 func (p *Provider) saveTrusted(entries []TrustEntry) error {
 	data, err := yaml.Marshal(trustStore{Trusted: entries})
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(p.home, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p.trustPath()), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(p.trustPath(), data, 0600)
