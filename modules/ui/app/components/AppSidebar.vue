@@ -79,6 +79,59 @@
             <span
               v-if="meta(s)"
               class="session-meta">{{ meta(s) }}</span>
+            <!-- hover action cluster: archive (box) + delete (trash),
+                 same right-edge slot the age text vacates on hover -->
+            <span
+              class="row-actions"
+              @mouseenter="hoveredId = s.id">
+              <button
+                class="icon-btn row-act"
+                :title="s.archived ? 'Unarchive session' : 'Archive session'"
+                :aria-label="s.archived ? 'Unarchive session' : 'Archive session'"
+                @click.stop="$emit('archive', s.id, !s.archived)">
+                <svg
+                  v-if="!s.archived"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true">
+                  <path
+                    d="M2 4.5h12M5.5 4.5V3h5v1.5M4 4.5l.8 8h6.4l.8-8M8 8v3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.2" />
+                </svg>
+                <svg
+                  v-else
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true">
+                  <path
+                    d="M2 4.5h12M5.5 4.5V3h5v1.5M4 4.5l.8 8h6.4l.8-8M8 7.5v4M6 9.5h4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.2" />
+                </svg>
+              </button>
+              <button
+                class="icon-btn row-act row-delete"
+                title="Delete session"
+                aria-label="Delete session"
+                @click.stop="$emit('remove', s.id)">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true">
+                  <path
+                    d="M3.5 4.5h9M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.8 7v4M9.2 7v4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.2" />
+                </svg>
+              </button>
+            </span>
             <span
               v-if="age(s)"
               class="session-time">{{ age(s) }}</span>
@@ -91,6 +144,18 @@
         no matching sessions
       </li>
     </ul>
+    <div class="sessions-foot">
+      <!-- archived filter toggle: off (default) hides archived rows;
+           on reveals them, muted, still searchable, unarchive from the
+           same hover affordance -->
+      <label class="archived-toggle">
+        <input
+          type="checkbox"
+          :checked="showArchived"
+          @change="$emit('toggle-archived', !showArchived)" />
+        archived
+      </label>
+    </div>
   </aside>
 </template>
 
@@ -117,12 +182,19 @@
     // ids of sessions whose stream is live - the pulse edge renders per row
     streamingIds: ReadonlySet<string>;
     open: boolean;
+    // archived filter: on = the list holds (only) archived rows, muted
+    showArchived: boolean;
   }>();
 
   defineEmits<{
     (e: "open", id: string): void;
     (e: "new"): void;
     (e: "pin", id: string, pinned: boolean): void;
+    (e: "archive", id: string, archived: boolean): void;
+    // delete is destructive and unconfirmed here - app.vue owns the
+    // confirm dialog and only then calls the API
+    (e: "remove", id: string): void;
+    (e: "toggle-archived", on: boolean): void;
   }>();
 
   const query = ref("");
@@ -153,7 +225,7 @@
   async function runContentSearch(q: string) {
     const seq = ++searchSeq;
     try {
-      const hits = await searchSessionContent(q);
+      const hits = await searchSessionContent(q, props.showArchived);
       if (seq === searchSeq) contentIds.value = hits.map((h) => h.id);
     } catch {
       if (seq === searchSeq) contentIds.value = null;
@@ -170,6 +242,16 @@
     }
     searchScheduler.schedule(term);
   });
+  // the toggle changes the backend's hit set (archived=include) - a
+  // query live when it flips re-runs the content search
+  watch(
+    () => props.showArchived,
+    () => {
+      const term = query.value.trim();
+      if (!term) return;
+      searchScheduler.schedule(term);
+    },
+  );
   onUnmounted(() => searchScheduler.cancel());
 
   // --- collapsible sections ---
@@ -221,6 +303,7 @@
   function rowClasses(s: Session): Record<string, boolean> {
     return {
       active: s.id === props.activeId,
+      archived: !!s.archived,
     };
   }
 

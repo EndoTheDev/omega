@@ -387,9 +387,106 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   align-self: stretch;
 }
 
-.sessions-foot {
-  display: none;
+/* hover action cluster: archive + delete, parked in the right-edge slot
+   the age text occupies - on hover the two swap (age fades, actions fade
+   in). .stop on the buttons keeps a click from opening the row. */
+.row-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background: var(--z1-raised);
 }
+.row-act { width: 20px; height: 20px; }
+.row-act:hover { color: var(--text); background: var(--accent-dim, var(--z2)); }
+.row-delete:hover { color: var(--err); }
+.session-list li:hover .row-actions,
+.row-actions:focus-within { opacity: 1; }
+.session-list li:hover .session-time { opacity: 0; }
+
+/* muted archived rows: the archived toggle reveals them at reduced
+   contrast - title, meta and age all dim, the hover action cluster
+   (unarchive / delete) still reads normally */
+.session-list li.archived .session-title,
+.session-list li.archived .session-meta,
+.session-list li.archived .session-time {
+  color: var(--text-faint, var(--text-dim));
+  opacity: 0.55;
+  font-style: italic;
+}
+.session-list li.archived .session-title { white-space: normal; }
+
+/* sidebar foot: the archived filter toggle sits below the list */
+.sessions-foot {
+  flex-shrink: 0;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--stroke);
+  display: block;
+}
+.archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.archived-toggle:hover { color: var(--text); }
+.archived-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+/* destructive confirm scrim + dialog: same frosted language as the
+   mobile scrim, centered box */
+.confirm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-dialog {
+  background: var(--z0);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  padding: 16px 18px;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.confirm-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.confirm-body {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirm-danger {
+  background: var(--err);
+  border: none;
+  color: var(--text-on-accent, #fff);
+  border-radius: var(--r-chip);
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.confirm-danger:hover { filter: brightness(1.1); }
 
 .health {
   font-size: 12px;

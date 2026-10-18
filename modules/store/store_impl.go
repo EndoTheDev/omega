@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	prompt_tokens INTEGER NOT NULL DEFAULT 0,
 	completion_tokens INTEGER NOT NULL DEFAULT 0,
 	pinned INTEGER NOT NULL DEFAULT 0,
+	archived INTEGER NOT NULL DEFAULT 0,
 	title_state INTEGER NOT NULL DEFAULT 0,
 	last_read_at TEXT NOT NULL DEFAULT '',
 	last_run TEXT NOT NULL DEFAULT ''
@@ -149,6 +150,7 @@ END;
 		`ALTER TABLE sessions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN title_state INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
@@ -208,14 +210,16 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	var sess agent.Session
 	var parent sql.NullString
 	var pinned int
+	var archived int
 	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
-		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &sess.TitleState, &sess.LastReadAt,
-		&lastRun); err != nil {
+		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
+		&sess.TitleState, &sess.LastReadAt, &lastRun); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
 	sess.Pinned = pinned != 0
+	sess.Archived = archived != 0
 	// last_run is a JSON blob; empty means the session never ran. A
 	// malformed blob decodes to nil - the rates just stay blank.
 	if lastRun != "" {
@@ -228,7 +232,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, title_state, last_read_at, last_run"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, last_run"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
@@ -468,6 +472,16 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 	n := boolToInt(pinned)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET pinned = ? WHERE id = ?`, n, sessionID)
+	return err
+}
+
+// SetSessionArchived sets the archived flag on a session row. Like
+// pinning, archiving is a user-list concern: updated_at (the time
+// bucketing key) is untouched.
+func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archived bool) error {
+	n := boolToInt(archived)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET archived = ? WHERE id = ?`, n, sessionID)
 	return err
 }
 

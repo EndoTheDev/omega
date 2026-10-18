@@ -110,6 +110,10 @@ type StoreProvider interface {
 	// clears. It is a read concern and does not touch updated_at.
 	SetSessionRead(ctx context.Context, sessionID string) error
 
+	// SetSessionArchived sets the archived flag on a session. It is a
+	// user-list concern and does not touch updated_at.
+	SetSessionArchived(ctx context.Context, sessionID string, archived bool) error
+
 	// SetSessionTitle writes a generated label together with its title
 	// state transition in one update. provisional (final=false) is
 	// allowed only from title state 0 and moves to 1; final (final=true)
