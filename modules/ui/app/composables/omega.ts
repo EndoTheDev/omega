@@ -746,6 +746,54 @@ export async function fetchSession(id: string): Promise<SessionDetail> {
   return r.json();
 }
 
+// --- content search: FTS5 over message content, behind /sessions/search ---
+
+// SessionContentHit is one backend search row. The snippet comes back
+// from the store but is not rendered yet - matching context is later
+// polish; today only the id feeds the sidebar union.
+export interface SessionContentHit {
+  id: string;
+  snippet: string;
+}
+
+// searchSessionContent queries the store's FTS5 index through the
+// server. Throws on non-2xx (400 = FTS rejected the query syntax).
+export async function searchSessionContent(query: string): Promise<SessionContentHit[]> {
+  const r = await fetch(`/sessions/search?q=${encodeURIComponent(query)}`);
+  if (!r.ok) throw new Error(`session search: ${r.status}`);
+  return r.json();
+}
+
+// Debounce for the sidebar's content search - slow enough not to fire
+// per keystroke, fast enough to feel live.
+export const CONTENT_SEARCH_DEBOUNCE_MS = 300;
+
+// withContentMatches unions the title-filtered row with the sessions
+// that matched by CONTENT (ids from the backend, null before the first
+// response arrives). A content-only match surfaces even though its
+// title never contained the query; ids the session list no longer holds
+// (deleted since the search) are dropped. Title matches come first,
+// then the backend-ranked content hits - bucketing re-sorts groups.
+export function withContentMatches(
+  filtered: Session[],
+  sessions: Session[],
+  contentIds: string[] | null,
+): Session[] {
+  if (!contentIds || contentIds.length === 0) return filtered;
+  const byId = new Map(sessions.map((s) => [s.id, s] as const));
+  const present = new Set(filtered.map((s) => s.id));
+  const extra: Session[] = [];
+  for (const id of contentIds) {
+    if (present.has(id)) continue;
+    const s = byId.get(id);
+    if (s) {
+      extra.push(s);
+      present.add(id);
+    }
+  }
+  return filtered.concat(extra);
+}
+
 // pinSession PATCHes the pinned flag directly on the session row.
 export async function pinSession(id: string, pinned: boolean): Promise<void> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {

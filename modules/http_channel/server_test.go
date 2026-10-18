@@ -702,6 +702,97 @@ func TestSessionsPostInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestSessionSearch(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2", "s3"} {
+		if err := st.CreateSession(ctx, id, "", ""); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	// s1 matches twice - the response must dedupe to one hit; s2 has a
+	// title-independent content match; s3 stays silent.
+	for _, m := range []struct {
+		id string
+		m  ai.Message
+	}{
+		{"s1", ai.NewUser("the harbor hides at midnight")},
+		{"s1", ai.NewAssistant("harbor confirmed")},
+		{"s2", ai.NewUser("weather bulletin: harbor closed")},
+		{"s3", ai.NewUser("nothing to see here")},
+	} {
+		if err := st.AppendMessage(ctx, m.id, m.m); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+	h := s.Handler()
+
+	// content term matches s1 and s2, one row each
+	req := httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var hits []sessionSearchHit
+	if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
+		t.Fatalf("decode hits: %v", err)
+	}
+	ids := map[string]string{}
+	for _, ht := range hits {
+		if _, dup := ids[ht.ID]; dup {
+			t.Fatalf("duplicate hit for %s", ht.ID)
+		}
+		ids[ht.ID] = ht.Snippet
+	}
+	if len(ids) != 2 || ids["s1"] == "" || ids["s2"] == "" {
+		t.Fatalf("hits = %+v, want one snippet each for s1 and s2", hits)
+	}
+
+	// empty q searches nothing, 200 []
+	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("empty q: status = %d body = %q, want 200 []", rec.Code, rec.Body.String())
+	}
+
+	// FTS syntax errors are the caller's problem, not a 500
+	req = httptest.NewRequest(http.MethodGet, `/sessions/search?q=%22unbalanced`, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("fts syntax error: status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// wrong method and no store
+	req = httptest.NewRequest(http.MethodPost, "/sessions/search?q=harbor", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("post: status = %d, want 405", rec.Code)
+	}
+	nn := NewServer(nil, nil, nil)
+	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
+	rec = httptest.NewRecorder()
+	nn.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("no store: status = %d, want 501", rec.Code)
+	}
+}
+
+func TestSessionSearchBeforeSessions(t *testing.T) {
+	// /sessions/search must win over /sessions/{id} even though it
+	// sits inside the {id} segment space.
+	s, _ := newTestServerWithStore(t)
+	req := httptest.NewRequest(http.MethodGet, "/sessions/search?q=x", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusNotFound {
+		t.Fatalf("/sessions/search fell through to the {id} handler")
+	}
+}
+
 func TestSessionByIDNoStore(t *testing.T) {
 	s := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/sessions/abc", nil)

@@ -12,6 +12,7 @@ import {
   relativeAge,
   rowMeta,
   serializeCollapsedLabels,
+  withContentMatches,
   SIDEBAR_BUCKETS,
 } from "../app/composables/omega.ts";
 import type { Session } from "../app/composables/omega.ts";
@@ -74,6 +75,39 @@ describe("filterSessions", () => {
     assert.deepEqual(hits.map((s) => s.id), ["b"]);
     assert.equal(filterSessions(sessions, "data").length, 1);
     assert.equal(filterSessions(sessions, "zzz").length, 0);
+  });
+});
+
+describe("withContentMatches", () => {
+  const sessions = [
+    sess({ id: "a", label: "Deploy runbook" }),
+    sess({ id: "b", label: "Webui search box" }),
+    sess({ id: "c", label: "Garden notes" }),
+  ];
+
+  it("null or empty content ids are a no-op", () => {
+    const title = filterSessions(sessions, "search");
+    assert.equal(withContentMatches(title, sessions, null), title);
+    assert.deepEqual(withContentMatches(title, sessions, []), title);
+  });
+
+  it("adds a content-only hit even when its title does not match", () => {
+    // "garden" matches c's CONTENT, not its title; a+b pass the title filter
+    const title = filterSessions(sessions, "search");
+    const out = withContentMatches(title, sessions, ["c"]);
+    assert.deepEqual(out.map((s) => s.id), ["b", "c"]);
+  });
+
+  it("does not duplicate a session matched by both title and content", () => {
+    const title = filterSessions(sessions, "search");
+    const out = withContentMatches(title, sessions, ["b", "a"]);
+    assert.deepEqual(out.map((s) => s.id), ["b", "a"]);
+  });
+
+  it("follows backend rank and drops ids the list no longer holds", () => {
+    const out = withContentMatches([], sessions, ["gone", "c", "a", "gone"]);
+    // unknown id skipped, backend order preserved, no duplicates
+    assert.deepEqual(out.map((s) => s.id), ["c", "a"]);
   });
 });
 
