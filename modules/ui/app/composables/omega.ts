@@ -59,10 +59,17 @@ export interface Session {
   // server-side read stamp + read-time unread (updated_at > last_read_at)
   last_read_at?: string;
   unread?: boolean;
+  // live-run flag from the server: a detached /chat run is streaming
+  // this session (drives the post-refresh streaming pulse)
+  active?: boolean;
 }
 
 export interface SessionDetail {
   session: Session;
+  // live-run flag (GET /sessions/{id}): true while a detached /chat run
+  // streams this session - openSession auto-subscribes to the live
+  // events stream when it sees this, instead of only showing history.
+  active?: boolean;
   messages:
     | {
         role?: string;
@@ -1086,24 +1093,13 @@ export class StreamInterruptedError extends Error {
   }
 }
 
-// streamChat POSTs messages to /chat and drives the handler callbacks from
-// the SSE stream. Error payloads throw - the caller surfaces them.
-export async function streamChat(
-  messages: OmegaMessage[],
-  sessionId: string | null,
-  handlers: StreamHandlers,
-  model?: string,
-): Promise<void> {
-  const body: Record<string, unknown> = { messages };
-  if (sessionId) body.session_id = sessionId;
-  if (model) body.model = model;
-  const resp = await fetch("/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok || !resp.body) throw new Error(`chat: ${resp.status}`);
-
+// consumeSSE reads frames off a fetch Response body and drives the
+// handler callbacks. Shared by both transports: the send stream (POST
+// /chat) and the reattach stream (GET /sessions/<id>/events) - the frame
+// grammar and the clean-end rule are the same. Error payloads throw -
+// the caller surfaces them.
+async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<void> {
+  if (!resp.body) throw new Error("chat: empty response body");
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1141,4 +1137,41 @@ export async function streamChat(
   // termination - the server never finished the run (dropped connection,
   // process death). A clean end always passes through agent_end.
   if (!state.sawEnd) throw new StreamInterruptedError();
+}
+
+// streamChat POSTs messages to /chat and drives the handler callbacks from
+// the SSE stream. Error payloads throw - the caller surfaces them.
+export async function streamChat(
+  messages: OmegaMessage[],
+  sessionId: string | null,
+  handlers: StreamHandlers,
+  model?: string,
+): Promise<void> {
+  const body: Record<string, unknown> = { messages };
+  if (sessionId) body.session_id = sessionId;
+  if (model) body.model = model;
+  const resp = await fetch("/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok || !resp.body) throw new Error(`chat: ${resp.status}`);
+  await consumeSSE(resp, handlers);
+}
+
+// attachSession subscribes to a session's LIVE server-side run and
+// drives the same handlers the send stream uses (card t_2f9b6110: the
+// run is detached server-side, so a page refresh mid-generation lands
+// back in the live stream). Returns false when the session has no live
+// run (404 "session not active") - the caller renders settled history
+// instead. Everything else streams like streamChat: terminal agent_end
+// means clean, its absence throws StreamInterruptedError.
+export async function attachSession(
+  sessionId: string,
+  handlers: StreamHandlers,
+): Promise<boolean> {
+  const resp = await fetch(`/sessions/${encodeURIComponent(sessionId)}/events`);
+  if (!resp.ok || !resp.body) return false;
+  await consumeSSE(resp, handlers);
+  return true;
 }

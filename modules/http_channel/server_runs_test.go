@@ -1,0 +1,507 @@
+package http_channel
+
+// Detached-run tests: a client disconnect must not cancel the run, a
+// subscriber (the reattach surface) must see the live stream, and the
+// registry behavior the webui depends on (active flag, 404, 409).
+// The mockProvider's scripts stream instantly, which cannot model a run
+// still mid-flight - stepProvider streams on the test's schedule.
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/modules/store"
+)
+
+// stepProvider streams ONLY what the test hands to its next channel, in
+// order: each send() batch is forwarded into the in-flight Stream. The
+// test therefore controls both the pacing and the completeness of the run.
+type stepProvider struct {
+	modelName string
+	next      chan []ai.StreamEvent
+}
+
+func newStepProvider(modelName string) *stepProvider {
+	return &stepProvider{modelName: modelName, next: make(chan []ai.StreamEvent)}
+}
+
+func (p *stepProvider) ModelName() string { return p.modelName }
+
+func (p *stepProvider) SetThinkingLevel(level string) {}
+
+func (p *stepProvider) WithModel(model string) ai.Provider {
+	cp := *p
+	cp.modelName = model
+	return &cp
+}
+
+func (p *stepProvider) ListModels() ([]string, error) {
+	return []string{p.modelName}, nil
+}
+
+func (p *stepProvider) ModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{}, nil
+}
+
+func (p *stepProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+	events := make(chan ai.StreamEvent)
+	go func() {
+		defer close(events)
+		for batch := range p.next {
+			for _, e := range batch {
+				events <- e
+			}
+		}
+	}()
+	return events
+}
+
+func (p *stepProvider) send(batch ...ai.StreamEvent) {
+	p.next <- batch
+}
+
+// done closes the script channel: the stream ends without a stop
+// StreamEnd, so the running turn simply produces nothing more.
+func (p *stepProvider) done() {
+	close(p.next)
+}
+
+// finalStep batches the turn-closing tail: the response chunk plus the
+// stop StreamEnd that testLoop answers with the assistant/turn_end/agent_end
+// sequence.
+func finalStep(content string) []ai.StreamEvent {
+	return []ai.StreamEvent{
+		ai.ResponseChunk{Type: "response_chunk", Content: content},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	}
+}
+
+// newStepServer wires agent + store over a stepProvider and starts a
+// live httptest server (real connections - the recorder cannot model a
+// client dropping mid-stream).
+func newStepServer(t *testing.T) (*Server, *stepProvider, *store.Store, *httptest.Server) {
+	t.Helper()
+	prov := newStepProvider("step")
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := NewServer(a, nil, st, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	return s, prov, st, ts
+}
+
+// muteTitles parks a session at title state 2, so the /chat handler's
+// provisional and final title runs never fire. They share the step
+// provider: a title run would compete for the test's scripted batches
+// and deadlock the run mid-flight.
+func muteTitles(t *testing.T, st *store.Store, id string) {
+	t.Helper()
+	if err := st.SetSessionTitle(context.Background(), id, "", true); err != nil {
+		t.Fatalf("mute titles: %v", err)
+	}
+}
+
+// createSession POSTs /sessions with the given id.
+func createSession(t *testing.T, ts *httptest.Server, id string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"id": id})
+	resp, err := http.Post(ts.URL+"/sessions", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create session status = %d, want 201", resp.StatusCode)
+	}
+}
+
+// postChatStream posts a /chat with a cancellable context. The returned
+// builder receives every line read from the stream so callers can assert
+// on what arrived before the disconnect.
+func postChatStream(t *testing.T, ts *httptest.Server, sessionID string) (*http.Response, context.CancelFunc, *bufio.Scanner) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+		"session_id": sessionID,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+"/chat", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new chat request: %v", err)
+	}
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		cancel()
+		t.Fatalf("chat request: %v", err)
+	}
+	return resp, cancel, bufio.NewScanner(resp.Body)
+}
+
+// readFrames drains the scanner until `want` SSE frames of the named
+// event type have been seen, returning the lines read. Fails the test if
+// the stream ends first.
+func readFrames(t *testing.T, sc *bufio.Scanner, want string, n int) []string {
+	t.Helper()
+	var lines []string
+	events := 0
+	for sc.Scan() {
+		line := sc.Text()
+		lines = append(lines, line)
+		if line == "event: "+want {
+			events++
+			if events == n {
+				return lines
+			}
+		}
+	}
+	t.Fatalf("stream ended early: saw %d/%d %q frames (lines so far: %v)", events, n, want, lines)
+	return nil
+}
+
+// waitFor polls cond until it passes or the deadline lapses.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// detachClient cuts the client side of a streaming POST: cancel the
+// request context (tears the connection down server-side) and close the
+// body.
+func detachClient(cancel context.CancelFunc, resp *http.Response) {
+	cancel()
+	resp.Body.Close()
+}
+
+// sessionMessages fetches the persisted history and returns assistant
+// content strings in order.
+func sessionMessages(t *testing.T, ts *httptest.Server, id string) []string {
+	t.Helper()
+	resp, err := http.Get(ts.URL + "/sessions/" + id)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get session status = %d, want 200", resp.StatusCode)
+	}
+	var detail struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode session: %v", err)
+	}
+	var out []string
+	for _, m := range detail.Messages {
+		if m.Role == "assistant" && m.Content != "" {
+			out = append(out, m.Content)
+		}
+	}
+	return out
+}
+
+// TestDetachedRunSurvivesClientDisconnect is the core refresh scenario:
+// the /chat client drops mid-stream, the run keeps going, the reattach
+// subscriber receives the rest of the stream, and everything persists.
+func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
+	s, prov, st, ts := newStepServer(t)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	resp, cancel, sc := postChatStream(t, ts, "s1")
+	defer cancel()
+
+	// First step lands on the wire, run is mid-flight.
+	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "a"})
+	readFrames(t, sc, "response_chunk", 1)
+	waitFor(t, "run registered active", func() bool { return s.runs.active("s1") })
+
+	// Drop the client. The RUN must not notice.
+	detachClient(cancel, resp)
+	waitFor(t, "request context released", func() bool { return true })
+	time.Sleep(50 * time.Millisecond)
+	if !s.runs.active("s1") {
+		t.Fatal("run ended after client disconnect - run is still coupled to the request")
+	}
+
+	// A fresh subscriber (the reattached page) receives the remainder.
+	sseResp, err := http.Get(ts.URL + "/sessions/s1/events")
+	if err != nil {
+		t.Fatalf("events request: %v", err)
+	}
+	sseScanner := bufio.NewScanner(sseResp.Body)
+	defer sseResp.Body.Close()
+
+	// Finish the run with a second subscriber attached. done() closes the
+	// provider stream: the loop's for-range must end or the run never
+	// deregisters (agent_end alone does not end it - same as the real loop).
+	prov.send(finalStep("b")...)
+	prov.done()
+	lines := readFrames(t, sseScanner, "agent_end", 1)
+	if !containsFrame(lines, "response_chunk", "b") {
+		t.Fatalf("reattached stream never saw the second chunk; frames: %v", lines)
+	}
+	// Clean close: nothing but the agent_end frame's own data line after it.
+	for sseScanner.Scan() {
+		if line := sseScanner.Text(); strings.HasPrefix(line, "event: ") {
+			t.Fatalf("unexpected frame after agent_end: %q", line)
+		}
+	}
+
+	// The run deregisters once persistence lands...
+	waitFor(t, "run deregistered after finish", func() bool { return !s.runs.active("s1") })
+	// ...and the run with ZERO attached clients at send-time still
+	// persisted the whole turn ("a" streamed + "b" streamed after attach).
+	msgs := sessionMessages(t, ts, "s1")
+	if len(msgs) != 1 || msgs[0] != "ab" {
+		t.Fatalf("persisted assistant = %q, want [ab]", msgs)
+	}
+
+	// The events surface no longer serves the finished run.
+	resp404, err := http.Get(ts.URL + "/sessions/s1/events")
+	if err != nil {
+		t.Fatalf("events after finish: %v", err)
+	}
+	defer resp404.Body.Close()
+	if resp404.StatusCode != http.StatusNotFound {
+		t.Fatalf("events after finish status = %d, want 404", resp404.StatusCode)
+	}
+}
+
+func containsFrame(lines []string, event, content string) bool {
+	for i := 0; i+1 < len(lines); i++ {
+		if lines[i] == "event: "+event && strings.Contains(lines[i+1], content) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestZeroClientsRunCompletes: nobody ever reads the stream - the client
+// drops before the first frame - and the run still completes and
+// persists everything (segmented persistence unchanged).
+func TestZeroClientsRunCompletes(t *testing.T) {
+	s, prov, st, ts := newStepServer(t)
+	createSession(t, ts, "s2")
+	muteTitles(t, st, "s2")
+
+	resp, cancel, _ := postChatStream(t, ts, "s2")
+	// Drop before any streaming, then finish the script.
+	// The run must not see the disconnect as an end signal.
+	waitFor(t, "run registered active", func() bool { return s.runs.active("s2") })
+	resp.Body.Close()
+	cancel()
+
+	prov.send(finalStep("all by my lonesome")...)
+	prov.done()
+	waitFor(t, "run finished", func() bool { return !s.runs.active("s2") })
+
+	msgs := sessionMessages(t, ts, "s2")
+	if len(msgs) != 1 || msgs[0] != "all by my lonesome" {
+		t.Fatalf("persisted assistant = %q, want the full run content", msgs)
+	}
+}
+
+// TestSessionEvents404: the events surface answers 404 for a session
+// that has never run and 405 for non-GET.
+func TestSessionEvents404(t *testing.T) {
+	_, _, st0, ts := newStepServer(t)
+	createSession(t, ts, "sx")
+	muteTitles(t, st0, "sx")
+
+	resp, err := http.Get(ts.URL + "/sessions/sx/events")
+	if err != nil {
+		t.Fatalf("events for idle session: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("events for idle session status = %d, want 404", resp.StatusCode)
+	}
+
+	pr, _ := http.NewRequest(http.MethodPost, ts.URL+"/sessions/sx/events", nil)
+	resp2, err := (&http.Client{}).Do(pr)
+	if err != nil {
+		t.Fatalf("post events: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST events status = %d, want 405", resp2.StatusCode)
+	}
+}
+
+// TestDetachedRunConflict: a second /chat for a session with a live run
+// is a 409, not a doubled run (the server-side backstop to the webui's
+// per-session busy gate).
+func TestDetachedRunConflict(t *testing.T) {
+	s, prov, st3, ts := newStepServer(t)
+	createSession(t, ts, "s3")
+	muteTitles(t, st3, "s3")
+
+	resp, cancel, sc := postChatStream(t, ts, "s3")
+	defer cancel()
+	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "busy"})
+	readFrames(t, sc, "response_chunk", 1)
+	waitFor(t, "run registered active", func() bool { return s.runs.active("s3") })
+
+	body, _ := json.Marshal(map[string]any{
+		"messages":   []map[string]any{{"role": "user", "content": "again"}},
+		"session_id": "s3",
+	})
+	resp2, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("conflict request: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusConflict {
+		t.Fatalf("double chat status = %d, want 409", resp2.StatusCode)
+	}
+
+	// unwind
+	prov.done()
+	waitFor(t, "run finished", func() bool { return !s.runs.active("s3") })
+	_ = resp.Body.Close()
+}
+
+// TestSessionsListActiveFlag: the list and detail surfaces report the
+// live-run flag the webui's post-refresh pulse reattach reads.
+func TestSessionsListActiveFlag(t *testing.T) {
+	s, prov, st4, ts := newStepServer(t)
+	createSession(t, ts, "s4")
+	muteTitles(t, st4, "s4")
+
+	resp, cancel, sc := postChatStream(t, ts, "s4")
+	defer cancel()
+	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "live"})
+	readFrames(t, sc, "response_chunk", 1)
+	waitFor(t, "run registered active", func() bool { return s.runs.active("s4") })
+
+	// List row active == true mid-run.
+	rows := fetchList(t, ts.URL+"/sessions")
+	assertActive(t, rows, "s4", true, "list mid-run")
+	// Detail active == true mid-run.
+	detail := fetchDetail(t, ts.URL+"/sessions/s4")
+	if !detail["active"].(bool) {
+		t.Fatal("detail mid-run: active = false, want true")
+	}
+
+	prov.send(finalStep("done")...)
+	prov.done()
+	waitFor(t, "run finished", func() bool { return !s.runs.active("s4") })
+
+	rows = fetchList(t, ts.URL+"/sessions")
+	assertActive(t, rows, "s4", false, "list after finish")
+	detail = fetchDetail(t, ts.URL+"/sessions/s4")
+	if detail["active"].(bool) {
+		t.Fatal("detail after finish: active = true, want false")
+	}
+	_ = resp.Body.Close()
+}
+
+func fetchList(t *testing.T, url string) []map[string]any {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("get %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	var rows []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	return rows
+}
+
+func assertActive(t *testing.T, rows []map[string]any, id string, want bool, where string) {
+	t.Helper()
+	for _, row := range rows {
+		if row["id"] == id {
+			got, _ := row["active"].(bool)
+			if got != want {
+				t.Fatalf("%s: active = %v, want %v", where, got, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("%s: session %s missing from list", where, id)
+}
+
+func fetchDetail(t *testing.T, url string) map[string]any {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("get %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	var m map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	return m
+}
+
+// TestRunHubCutSlowSubscriber: a subscriber that stops reading fills its
+// queue and gets cut instead of stalling the run - the run keeps serving
+// other subscribers and finishes (the webui renders a cut stream as an
+// interrupted stream: honest, and it must not matter to the run).
+func TestRunHubCutSlowSubscriber(t *testing.T) {
+	var h runHub
+	run, ok := h.start("cut")
+	if !ok {
+		t.Fatal("start run")
+	}
+	slow := h.subscribe(run)
+
+	// Overrun the slow subscriber's buffer: the (subscriberBuffer+1)-th
+	// frame has no room left, so the hub CUTS the channel. A cut channel
+	// still drains its buffered frames before reading reports closed.
+	for i := 0; i < subscriberBuffer+1; i++ {
+		h.broadcast(run, runFrame{event: "x", data: []byte("1")})
+	}
+	for {
+		_, open := <-slow
+		if !open {
+			break
+		}
+	}
+
+	// The cut must not have ended the run: a FRESH subscriber (a page
+	// reattaching after the dead one was cut) attaches and receives.
+	fresh := h.subscribe(run)
+	h.broadcast(run, runFrame{event: "y", data: []byte("2")})
+	select {
+	case f, ok := <-fresh:
+		if !ok || f.event != "y" {
+			t.Fatalf("fresh subscriber got %+v (open=%v)", f, ok)
+		}
+	default:
+		t.Fatal("fresh subscriber never received the post-cut frame")
+	}
+
+	h.finish(run)
+	h.unsubscribe(run, fresh) // double-close guard: finish already closed it
+	// unsubscribe on an unknown channel must not panic
+	h.unsubscribe(run, make(chan runFrame))
+}

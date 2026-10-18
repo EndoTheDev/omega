@@ -28,6 +28,7 @@ var webuiFS, _ = fs.Sub(staticFS, "static")
 type Server struct {
 	agent    *agent.Agent
 	tools    map[string]agent.Tool
+	runs     runHub // detached /chat runs by session id (reattach surface)
 	store    agent.StoreProvider
 	settings agent.Settings
 	httpSrv  *http.Server
@@ -53,6 +54,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
+	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
@@ -262,9 +264,34 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tools := s.selectTools(req.Tools)
-	recs, usage := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
 
-	s.persistAssistant(r.Context(), w, flusher, prov, req, recs, usage)
+	// No session to reattach to: the legacy inline path. The stream still
+	// rides this request, client presence still gates the run.
+	if s.store == nil || req.SessionID == "" {
+		recs, usage := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
+		if err := s.persistAssistant(r.Context(), prov, req, recs, usage); err != nil {
+			writeSSE(w, "error", []byte(err.Error()))
+			flusher.Flush()
+		}
+		return
+	}
+
+	// Session-backed chats run DETACHED (the cron runner's detached-turn
+	// shape): the run consumes the agent event channel itself on a
+	// context that outlives this request, so a client disconnect - a page
+	// refresh mid-generation - no longer cancels the run. This response
+	// becomes just another subscriber of the run's live frames; reattach
+	// is GET /sessions/{id}/events (handleSessionEvents).
+	// Subscribe BEFORE launch: the origin client must see the run's first
+	// frame, so the consumer channel exists before the run broadcasts.
+	run, live := s.runs.start(req.SessionID)
+	if !live {
+		http.Error(w, "session already running", http.StatusConflict)
+		return
+	}
+	ch := s.runs.subscribe(run)
+	s.launchRun(context.WithoutCancel(r.Context()), run, prov, messages, tools, req)
+	s.serveRunFrames(w, flusher, run, ch, r.Context())
 }
 
 // loadSessionMessages loads persisted history for a session, appends the
@@ -410,10 +437,12 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 // assistant(B). Providers require this order (final answer as its own
 // message after the tool results); the webui reload renders one bubble
 // per message, matching the live segment split. usage adds the run's
-// real token totals to the session row.
-func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage) {
+// real token totals to the session row. The first persistence error is
+// RETURNED, not written to a wire - the caller owns the wire (the legacy
+// request writes one error frame; the detached run broadcasts one).
+func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage) error {
 	if s.store == nil || req.SessionID == "" || len(recs) == 0 {
-		return
+		return nil
 	}
 	lastContent := ""
 	for _, rec := range recs {
@@ -430,17 +459,13 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkingMs, ResponseMs: rec.respMs}
 		}
 		if err := s.store.AppendMessage(ctx, req.SessionID, assistant); err != nil {
-			writeSSE(w, "error", []byte("persist response: "+err.Error()))
-			flusher.Flush()
-			return
+			return fmt.Errorf("persist response: %w", err)
 		}
 		// tool results follow the assistant-with-calls message - providers
 		// require a tool-role message after every tool call in history
 		for _, res := range rec.results {
 			if err := s.store.AppendMessage(ctx, req.SessionID, res); err != nil {
-				writeSSE(w, "error", []byte("persist tool result: "+err.Error()))
-				flusher.Flush()
-				return
+				return fmt.Errorf("persist tool result: %w", err)
 			}
 		}
 		if rec.content != "" {
@@ -448,9 +473,7 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 		}
 	}
 	if err := s.store.AddSessionTokens(ctx, req.SessionID, usage.prompt, usage.completion); err != nil {
-		writeSSE(w, "error", []byte("persist usage: "+err.Error()))
-		flusher.Flush()
-		return
+		return fmt.Errorf("persist usage: %w", err)
 	}
 	if lastContent != "" {
 		// Detached: the title call is a second agent run, and running it
@@ -471,6 +494,7 @@ func (s *Server) persistAssistant(ctx context.Context, w http.ResponseWriter, fl
 			go s.maybeTitleSession(context.WithoutCancel(ctx), prov, req, lastContent, true)
 		}
 	}
+	return nil
 }
 
 // maybeTitleSession generates a short session title with a cheap model
@@ -561,13 +585,16 @@ func truncate(s string, n int) string {
 // sessionPayload is one /sessions list row: the session row (which
 // carries the pinned flag, the persisted token totals, and the
 // last-read stamp) plus the read-time counts, the last recorded model,
-// and the read-time unread state.
+// the read-time unread state, and whether the session has a live run
+// right now (the sidebar's streaming pulse after a page refresh - the
+// in-memory busy map no longer survives the reload).
 type sessionPayload struct {
 	agent.Session
 	MessageCount int    `json:"message_count"`
 	ToolCount    int    `json:"tool_count"`
 	Model        string `json:"model,omitempty"`
 	Unread       bool   `json:"unread"`
+	Active       bool   `json:"active,omitempty"`
 }
 
 // handleSessions serves GET /sessions (list) and POST /sessions (create).
@@ -607,6 +634,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			// computed at read time from the row itself - no counters,
 			// no schema writes (same pattern as the counts)
 			payload.Unread = agent.SessionUnread(sess)
+			payload.Active = s.runs.active(sess.ID)
 			out = append(out, payload)
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -733,6 +761,10 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			"session":  sess,
 			"messages": msgs,
 			"unread":   agent.SessionUnread(sess),
+			// live-run flag: true while a detached /chat run is streaming
+			// this session - the webui open-session flow auto-subscribes
+			// to /sessions/{id}/events when it sees this
+			"active": s.runs.active(id),
 		})
 	case http.MethodDelete:
 		if err := s.store.DeleteSession(r.Context(), id); err != nil {

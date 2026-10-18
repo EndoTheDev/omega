@@ -34,7 +34,7 @@
           "
           :sessions="sessions"
           :active-id="activeId"
-          :streaming-ids="busySet"
+          :streaming-ids="busyAll"
           :open="drawerOpen"
           @open="openSession"
           @new="newChat"
@@ -192,6 +192,8 @@
     hasInterruptedMarker,
     withoutMarkers,
     createItemKeySource,
+    streamChat,
+    attachSession,
     StreamInterruptedError,
   } from "./composables/omega";
   import type { BusyMap } from "./composables/omega";
@@ -320,9 +322,19 @@
 
   // per-session busy set: a session is busy iff its own stream is live.
   // Swapped value-semantically (withBusy) so set changes are reactive.
+  // busySet holds LOCALLY initiated streams; serverBusy holds the
+  // sessions the BACKEND reports as running (the detached-run active
+  // flag on /sessions rows - survives a page refresh, the in-memory map
+  // does not). busyAll is the union every read goes through.
   const busySet = ref<BusyMap>(new Set());
-  // global view concerns: read-only over the busy map, never a lock
-  const anyBusyNow = computed(() => anyBusy(busySet.value));
+  const serverBusy = ref<BusyMap>(new Set());
+  const busyAll = computed<BusyMap>(() => {
+    const all = new Set(busySet.value);
+    for (const id of serverBusy.value) all.add(id);
+    return all;
+  });
+  // global view concerns: read-only over the union, never a lock
+  const anyBusyNow = computed(() => anyBusy(busyAll.value));
 
   // the view reads its own session's state
   const transcript = computed(() => view.value.transcript);
@@ -425,8 +437,12 @@
     inspectorOpen.value = false;
     markRead(id);
     const st = ensureState(id);
-    // a live stream IS the content - refetching now would clobber the
-    // stream state with a mid-flight persisted snapshot
+    // A LOCALLY live stream IS the content - refetching now would clobber
+    // the stream state with a mid-flight persisted snapshot. A server-
+    // reported active run (busyAll via serverBusy, e.g. right after a page
+    // refresh) must NOT skip this: there is no local transcript to
+    // clobber, the fetch below renders persisted history and the attach
+    // lands in the live stream.
     if (busySet.value.has(id)) {
       scrollDown(true);
       return;
@@ -493,6 +509,18 @@
         st.transcript = items;
         if (hadInterrupted) st.transcript.push({ kind: "interrupted" });
       }
+      // Reattach: the run is server-side now (card t_2f9b6110), so a
+      // session mid-generation reports active=true on its detail - the
+      // refreshed page renders the persisted history (the user message
+      // persisted pre-run, nothing after it yet) and then auto-subscribes
+      // to the live events stream. Re-check LOCAL busy only: serverBusy
+      // holds this session right now (the run IS active) and must not
+      // block the attach - only a double-call within this page does.
+      if (detail.active && !busySet.value.has(id)) {
+        await runStream(id, st, async (drv) => {
+          await attachSession(id, drv.handlers);
+        });
+      }
     } catch {
       // empty or missing session: keep the previous view rather than
       // dropping it on a transient fetch failure
@@ -505,7 +533,7 @@
     activeId.value = null;
     // fresh unsaved-chat state - UNLESS an unsaved stream is live, in
     // which case +new returns to the view watching it (no global lock)
-    if (!busySet.value.has(NEW_KEY)) streams.delete(NEW_KEY);
+    if (!busyAll.value.has(NEW_KEY)) streams.delete(NEW_KEY);
     ensureState(NEW_KEY);
     drawerOpen.value = false;
   }
@@ -655,38 +683,15 @@
     }
   }
 
-  function send() {
-    const text = draft.value.trim();
-    if (!text) return;
-    draft.value = "";
-    submitText(text);
-  }
-
-  // submitText is the ONE send path - the composer and the interrupted
-  // retry both land here. Everything keys off THIS session's state and
-  // busy entry, so retrying session A never touches session B.
-  async function submitText(text: string) {
-    const startKey = activeKey.value;
-    // per-session guard: only THIS session's live stream blocks a send
-    if (busySet.value.has(startKey)) return;
-    const st = ensureState(startKey);
-    // a fresh send retires a stale resume affordance - after a later
-    // exchange the marker no longer describes the transcript state
-    if (hasInterruptedMarker(st.transcript))
-      st.transcript = withoutMarkers(st.transcript);
-    // unsaved chats live under NEW_KEY until /sessions returns the real
-    // id; state AND busy entry re-key to the id right after creation
-    let busyKey = startKey;
-    busySet.value = withBusy(busySet.value, busyKey, true);
-    st.statusLine = "reasoning";
-
-    st.transcript.push({
-      kind: "message",
-      role: "user",
-      content: text,
-      time: new Date().toISOString(),
-    });
-    scrollDown(true);
+  // makeStreamDriver builds the per-run stream state over ONE session
+  // state: the SSE handler set plus the finalization that freezes meters
+  // and bubbles when the stream ends. Shared by BOTH transports - the
+  // send stream (POST /chat) and the reattach stream (GET /sessions/<id>/
+  // events, the refresh-mid-generation landing path) - so a reattached
+  // page renders the run's remaining events exactly like the original
+  // sender did. All mutable state (thinking block, current assistant
+  // bubble, segment tracking) lives in this closure.
+  function makeStreamDriver(st: SessionState) {
     let assistant: MessageItem = {
       kind: "message",
       role: "assistant",
@@ -710,21 +715,18 @@
     // (preamble -> tools -> final answer).
     let segmentBreak = false;
     let thinking: ThinkingItem | null = null;
-    // transport-death flag: an interrupted run with NO partial output does
-    // not get an empty ghost bubble - the marker alone carries the state
-    let interrupted = false;
+    // anything at all arrived (chunks, tool lines, status) - the finalize
+    // no-ghost-bubble rule needs this: a reattach to an ALREADY finished
+    // run (detail.active raced the finish, the 404 path) pushes nothing
+    let sawActivity = false;
     const sentAt = Date.now();
-    // live stream telemetry: per-chunk arrivals make the statusbar a
-    // visible proof that the frontend receives chunks as they come -
-    // a ticking counter means streaming, a frozen-then-jumping one
-    // means something buffers between omega and the page.
     st.tokens = 0;
     st.liveChunksPerSecond = 0;
+    // live stream telemetry: per-chunk arrivals make the statusbar a
+    // visible proof that the frontend receives chunks as they come - a
+    // ticking counter means streaming, a frozen-then-jumping one means
+    // something buffers between omega and the page.
     const chunkTimes: number[] = [];
-    // the stream writes only its own session's state; auto-scroll follows
-    // it only while the view is actually watching this stream - a stream
-    // running in the background never yanks an open session's scrollbar
-    const isViewed = () => streams.get(activeKey.value) === st;
     const onChunk = (len: number) => {
       const now = Date.now();
       chunkTimes.push(now);
@@ -735,10 +737,203 @@
       // ponytail: chars/4 token estimate - corrected by real usage at end
       st.tokens += Math.ceil(len / 4);
     };
+    // the stream writes only its own session's state; auto-scroll follows
+    // it only while the view is actually watching this stream - a stream
+    // running in the background never yanks an open session's scrollbar
+    const isViewed = () => streams.get(activeKey.value) === st;
 
+    const handlers: StreamHandlers = {
+      onThinking: (content) => {
+        sawActivity = true;
+        if (!thinking) {
+          thinking = { kind: "thinking", content: "", streaming: true };
+          st.transcript.push(thinking);
+        }
+        thinking.content += content;
+        onChunk(content.length);
+        if (isViewed()) scrollDown();
+      },
+      onResponse: (content) => {
+        sawActivity = true;
+        if (thinking?.streaming) thinking.streaming = false;
+        if (segmentBreak) {
+          // a tool phase closed the previous segment - start a fresh
+          // bubble so the final answer renders after the tool lines
+          assistant.streaming = false;
+          assistant = {
+            kind: "message",
+            role: "assistant",
+            content: "",
+            streaming: true,
+          };
+          assistantPushed = false;
+          segmentBreak = false;
+        }
+        pushAssistant();
+        assistant.content += content;
+        onChunk(content.length);
+        if (isViewed()) scrollDown();
+      },
+      onToolCall: (tool) => {
+        sawActivity = true;
+        segmentBreak = true;
+        // the tool phase closes the thinking block too: turn 2's
+        // thinking must mount as a FRESH item after the tool
+        // lines, not append to the pre-tool block above them
+        if (thinking) {
+          thinking.streaming = false;
+          thinking = null;
+        }
+        // the segment's text is over - the tool lines carry the
+        // activity now. Killing the flag here hides the streaming
+        // cursor during the whole tool phase (in-app comment 5);
+        // the next onResponse builds a fresh streaming bubble.
+        assistant.streaming = false;
+        st.transcript.push({
+          kind: "tool",
+          name: tool.name,
+          status: "running",
+          output: tool.output,
+        });
+        if (isViewed()) scrollDown();
+      },
+      onToolResult: (result) => {
+        sawActivity = true;
+        // attach the result to the most recent tool line (status -> done)
+        for (let i = st.transcript.length - 1; i >= 0; i--) {
+          const item = st.transcript[i];
+          // strict mode: indexing can yield undefined - skip before narrowing
+          if (item?.kind !== "tool") continue;
+          if (item.status !== "running") continue;
+          item.status = result.isError ? "error" : "done";
+          item.result = result.content;
+          break;
+        }
+        if (isViewed()) scrollDown();
+      },
+      onStatus: (s) => {
+        sawActivity = true;
+        st.statusLine = s;
+      },
+      onUsage: (usage) => {
+        st.tokens = usage.promptTokens + usage.completionTokens;
+        const seconds = (Date.now() - sentAt) / 1000;
+        st.tokensPerSecond =
+          seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
+      },
+    };
+
+    return {
+      handlers,
+      // appendError folds a transport-independent failure (agent error
+      // payload, non-2xx /chat) into the current assistant bubble - the
+      // finalize push guarantees it lands in the transcript.
+      appendError(e: unknown) {
+        assistant.content += assistant.content ? `\n[error: ${e}]` : `[error: ${e}]`;
+      },
+      // finalize mirrors the pre-detach finally block: freeze the chunk
+      // meter, freeze running tools (results never coming - ToolCallLine
+      // stops ticking), close thinking and bubbles.
+      finalize(interrupted: boolean) {
+        st.liveChunksPerSecond = 0;
+        for (const item of st.transcript) {
+          if (item.kind === "tool" && item.status === "running")
+            item.interrupted = true;
+        }
+        // thinking is assigned inside stream callbacks the type system can't
+        // track across the closure - cast to the item type it is at runtime
+        const liveThinking = thinking as ThinkingItem | null;
+        if (liveThinking?.streaming) liveThinking.streaming = false;
+        // interrupted with no output keeps only the marker, no empty
+        // ghost bubble; a run with zero events (404 reattach race) also
+        // pushes nothing.
+        if ((!interrupted || assistant.content) && (sawActivity || assistant.content))
+          pushAssistant();
+        assistant.streaming = false;
+      },
+    };
+  }
+  type StreamDriver = ReturnType<typeof makeStreamDriver>;
+
+  // runStream drives one interaction over a transport: start() performs
+  // the POST /chat (send path) or the GET /sessions/<id>/events attach
+  // (reattach path) and consumes the SSE with the driver's handlers.
+  // Owns the busy entry for the session key, error rendering (interrupted
+  // marker vs error text), read-marking and the refresh follow-ups - so
+  // both transports end in the SAME session state.
+  async function runStream(key: string, st: SessionState, start: (drv: StreamDriver) => Promise<void>) {
+    const drv = makeStreamDriver(st);
+    busySet.value = withBusy(busySet.value, key, true);
+    st.statusLine = "reasoning";
+    let interrupted = false;
     try {
-      // A session must exist before the first /chat or the backend 404s.
-      if (startKey === NEW_KEY) {
+      await start(drv);
+    } catch (e) {
+      if (e instanceof StreamInterruptedError) {
+        // transport death mid-stream: the partial bubble stays exactly as
+        // it is (finalize freezes its streaming flag) - the marker carries
+        // the resume affordance instead of appending error text to it
+        interrupted = true;
+        st.transcript.push({ kind: "interrupted" });
+      } else {
+        drv.appendError(e);
+      }
+    } finally {
+      drv.finalize(interrupted);
+      busySet.value = withBusy(busySet.value, key, false);
+      st.statusLine = "";
+      // A stream ending on the VIEWED session never unreads itself -
+      // the user watched the content live, so it is marked read. A
+      // background stream (session B while viewing A) leaves its row
+      // unread: that is the feature.
+      if (activeId.value === key) markRead(key);
+      refreshSessions();
+      // the title goroutine writes the session label seconds AFTER the
+      // first exchange ends - the refresh above runs too early to see
+      // it. One delayed refresh picks it up without a manual reload.
+      const row = sessions.value.find((s) => s.id === key);
+      if (!row || !row.label) {
+        setTimeout(() => { refreshSessions(); }, 10000);
+      }
+      if (streams.get(activeKey.value) === st) scrollDown();
+    }
+  }
+
+  async function send() {
+    const text = draft.value.trim();
+    if (!text) return;
+    draft.value = "";
+    submitText(text);
+  }
+
+  // submitText is the ONE send path - the composer and the interrupted
+  // retry both land here. Everything keys off THIS session's state and
+  // busy entry, so retrying session A never touches session B.
+  async function submitText(text: string) {
+    const startKey = activeKey.value;
+    // per-session guard: only THIS session's live stream blocks a send
+    if (busyAll.value.has(startKey)) return;
+    const st = ensureState(startKey);
+    // a fresh send retires a stale resume affordance - after a later
+    // exchange the marker no longer describes the transcript state
+    if (hasInterruptedMarker(st.transcript))
+      st.transcript = withoutMarkers(st.transcript);
+    let key = startKey;
+    st.transcript.push({
+      kind: "message",
+      role: "user",
+      content: text,
+      time: new Date().toISOString(),
+    });
+    scrollDown(true);
+
+    // A session must exist before the first /chat or the backend 404s.
+    // Unsaved chats live under NEW_KEY until /sessions returns the real
+    // id; the state AND the busy entry re-key right after creation.
+    if (startKey === NEW_KEY) {
+      busySet.value = withBusy(busySet.value, NEW_KEY, true);
+      st.statusLine = "reasoning";
+      try {
         const r = await fetch("/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -748,8 +943,8 @@
         const s = await r.json();
         streams.delete(NEW_KEY);
         streams.set(s.id, st);
-        busySet.value = withBusy(withBusy(busySet.value, busyKey, false), s.id, true);
-        busyKey = s.id;
+        busySet.value = withBusy(busySet.value, NEW_KEY, false);
+        key = s.id;
         // the row (and its pulse) exists once the sidebar refreshes; the
         // view moves to the session only if the user stayed on this chat
         refreshSessions();
@@ -759,141 +954,35 @@
           // home, so back from the real session returns home
           syncURL(s.id, false);
         }
+      } catch (e) {
+        busySet.value = withBusy(busySet.value, NEW_KEY, false);
+        st.statusLine = "";
+        st.transcript.push({
+          kind: "message",
+          role: "assistant",
+          content: `[error: ${e}]`,
+        });
+        return;
       }
-      const payload: OmegaMessage[] = [{ role: "user", content: text }];
-      await streamChat(
-        payload,
-        busyKey,
-        {
-          onThinking: (content) => {
-            if (!thinking) {
-              thinking = { kind: "thinking", content: "", streaming: true };
-              st.transcript.push(thinking);
-            }
-            thinking.content += content;
-            onChunk(content.length);
-            if (isViewed()) scrollDown();
-          },
-          onResponse: (content) => {
-            if (thinking?.streaming) thinking.streaming = false;
-            if (segmentBreak) {
-              // a tool phase closed the previous segment - start a fresh
-              // bubble so the final answer renders after the tool lines
-              assistant.streaming = false;
-              assistant = {
-                kind: "message",
-                role: "assistant",
-                content: "",
-                streaming: true,
-              };
-              assistantPushed = false;
-              segmentBreak = false;
-            }
-            pushAssistant();
-            assistant.content += content;
-            onChunk(content.length);
-            if (isViewed()) scrollDown();
-          },
-          onToolCall: (tool) => {
-            segmentBreak = true;
-            // the tool phase closes the thinking block too: turn 2's
-            // thinking must mount as a FRESH item after the tool
-            // lines, not append to the pre-tool block above them
-            if (thinking) {
-              thinking.streaming = false;
-              thinking = null;
-            }
-            // the segment's text is over - the tool lines carry the
-            // activity now. Killing the flag here hides the streaming
-            // cursor during the whole tool phase (in-app comment 5);
-            // the next onResponse builds a fresh streaming bubble.
-            assistant.streaming = false;
-            st.transcript.push({
-              kind: "tool",
-              name: tool.name,
-              status: "running",
-              output: tool.output,
-            });
-            if (isViewed()) scrollDown();
-          },
-          onToolResult: (result) => {
-            // attach the result to the most recent tool line (status -> done)
-            for (let i = st.transcript.length - 1; i >= 0; i--) {
-              const item = st.transcript[i];
-              // strict mode: indexing can yield undefined - skip before narrowing
-              if (item?.kind !== "tool") continue;
-              if (item.status !== "running") continue;
-              item.status = result.isError ? "error" : "done";
-              item.result = result.content;
-              break;
-            }
-            if (isViewed()) scrollDown();
-          },
-          onStatus: (s) => {
-            st.statusLine = s;
-          },
-          onUsage: (usage) => {
-            st.tokens = usage.promptTokens + usage.completionTokens;
-            const seconds = (Date.now() - sentAt) / 1000;
-            st.tokensPerSecond =
-              seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
-          },
-        },
-        selectedModel.value || undefined,
-      );
-      assistant.streaming = false;
-    } catch (e) {
-      if (e instanceof StreamInterruptedError) {
-        // transport death mid-stream: the partial bubble stays exactly as
-        // it is (finally finalizes its streaming flag) - the marker carries
-        // the resume affordance instead of appending error text to it
-        interrupted = true;
-        st.transcript.push({ kind: "interrupted" });
-      } else {
-        assistant.content +=
-          assistant.content ? `\n[error: ${e}]` : `[error: ${e}]`;
-      }
-      assistant.streaming = false;
-    } finally {
-      st.liveChunksPerSecond = 0;
-      // no more events are coming: a tool call still "running" never
-      // receives its result - freeze its elapsed meter now (ToolCallLine
-      // stops ticking) without touching the honest running status
-      for (const item of st.transcript) {
-        if (item.kind === "tool" && item.status === "running")
-          item.interrupted = true;
-      }
-      // thinking is assigned inside stream callbacks the type system can't
-      // track across the closure - cast to the item type it is at runtime
-      const liveThinking = thinking as ThinkingItem | null;
-      if (liveThinking?.streaming) liveThinking.streaming = false;
-      // stream failed before any response chunk: make sure the (error)
-      // bubble made it into the transcript at all - EXCEPT an interrupted
-      // run with no output: it keeps only the marker, no empty bubble
-      if (!interrupted || assistant.content) pushAssistant();
-      assistant.streaming = false;
-      busySet.value = withBusy(busySet.value, busyKey, false);
-      st.statusLine = "";
-      // A stream ending on the VIEWED session never unreads itself -
-      // the user watched the content live, so it is marked read. A
-      // background stream (session B while viewing A) leaves its row
-      // unread: that is the feature.
-      if (activeId.value === busyKey) markRead(busyKey);
-      refreshSessions();
-      // the title goroutine writes the session label seconds AFTER the
-      // first exchange ends - the refresh above runs too early to see
-      // it. One delayed refresh picks it up without a manual reload.
-      const row = sessions.value.find(s => s.id === busyKey);
-      if (!row || !row.label) {
-        setTimeout(() => { refreshSessions(); }, 10000);
-      }
-      if (isViewed()) scrollDown();
     }
+    await runStream(key, st, (drv) =>
+      streamChat(
+        [{ role: "user", content: text }],
+        key,
+        drv.handlers,
+        selectedModel.value || undefined,
+      ),
+    );
   }
 
   async function refreshSessions() {
     try {
-      sessions.value = await fetchSessions();
+      const list = await fetchSessions();
+      sessions.value = list;
+      // server-reported live runs replace (not union into) the last
+      // snapshot: these are the sessions a JUST-refreshed page sees as
+      // pulsing - local streams carry their own busy entries in busySet.
+      serverBusy.value = new Set(list.filter((s) => s.active).map((s) => s.id));
     } catch {
       // sidebar refresh is best-effort
     }
@@ -909,7 +998,7 @@
   function retryStream() {
     const key = activeKey.value;
     const st = ensureState(key);
-    if (busySet.value.has(key)) return;
+    if (busyAll.value.has(key)) return;
     const text = lastUserText(st.transcript);
     if (text === null) return;
     st.transcript = dropLastExchange(st.transcript);
