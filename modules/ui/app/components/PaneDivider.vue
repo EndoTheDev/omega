@@ -29,9 +29,10 @@
   const dragging = ref(false);
   let startX = 0;
   let startWidth = 0;
-  // magnetic snap: tracks the snap size while the pointer sits inside a
-  // 15px attract zone (320/640). The pane itself keeps following the
-  // pointer - snap engages on RELEASE - the class only lights the guide.
+  // magnetic snap: while the pointer sits inside the 15px attract zone
+  // (320/640) the width attracts to the exact snap size (VS Code magnet
+  // feel); leaving the zone follows the pointer again, releasing inside
+  // sticks. Attractor, never a clamp.
   const snappedTo = ref<number | null>(null);
 
   const key = () => props.storageKey || "omega.sidebar-width";
