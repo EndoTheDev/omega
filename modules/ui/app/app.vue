@@ -95,7 +95,7 @@
                 v-else-if="item.kind === 'interrupted'"
                 class="interrupted-line">
                 <span>stream interrupted</span>
-                <button class="resume" @click="retryStream">resume</button>
+                <button class="resume" @click="retryStream">retry</button>
               </div>
             </template>
             <div
@@ -116,7 +116,11 @@
           v-model:draft="draft"
           v-model:model="selectedModel"
           :models="models"
-          @send="send" />
+          :busy="composerBusy"
+          :can-retry="composerCanRetry"
+          @send="send"
+          @cancel="cancelActiveRun"
+          @retry="retryStream" />
       </main>
 
       <div
@@ -231,12 +235,12 @@
     isAtBottom,
     pillVisible,
     lastUserText,
-    dropLastExchange,
     hasInterruptedMarker,
     withoutMarkers,
     createItemKeySource,
     streamChat,
     attachSession,
+    stopSession,
     fetchHealthInfo,
     persistedTelemetry,
     formatDurationMs,
@@ -321,6 +325,11 @@
     // last-known chunks/s, from the session row's last_run block (or
     // the run that just ended) - the idle state bar's rate display
     lastChunksPerSecond: number;
+    // the live run's stop affordance: set by runStream when the session
+    // gains a stream, cleared in its finally. The composer's cancel
+    // button calls it. A server run another client started (reattach
+    // busy) is stoppable too - the stop POST is session-keyed.
+    cancelRun?: () => void;
   }
   const EMPTY_STATE: SessionState = {
     transcript: [],
@@ -403,6 +412,14 @@
   const tokensPerSecond = computed(() => view.value.tokensPerSecond);
   const liveChunksPerSecond = computed(() => view.value.liveChunksPerSecond);
   const lastChunksPerSecond = computed(() => view.value.lastChunksPerSecond);
+
+  // composer state: the send button is CANCEL while this session's run
+  // streams; a retry affordance shows when idle and the transcript has
+  // a last user message to re-send (interrupted stream or not)
+  const composerBusy = computed(() => busyAll.value.has(activeKey.value));
+  const composerCanRetry = computed(
+    () => !composerBusy.value && lastUserText(transcript.value) !== null,
+  );
 
   // keyed v-for: identity, not index (createItemKeySource) - see omega.ts
   const itemKey = createItemKeySource();
@@ -954,6 +971,12 @@
   async function runStream(key: string, st: SessionState, start: (drv: StreamDriver) => Promise<void>) {
     const drv = makeStreamDriver(st);
     busySet.value = withBusy(busySet.value, key, true);
+    // the stop affordance is bound to THIS stream: the cancel button
+    // stops the run whose events are landing here. The stop POST is
+    // harmless after the run already ended (a benign 404/409 race).
+    st.cancelRun = () => {
+      stopSession(key).catch(() => {});
+    };
     st.statusLine = "reasoning";
     let interrupted = false;
     try {
@@ -971,6 +994,7 @@
     } finally {
       drv.finalize(interrupted);
       busySet.value = withBusy(busySet.value, key, false);
+      st.cancelRun = undefined;
       st.statusLine = "";
       // A stream ending on the VIEWED session never unreads itself -
       // the user watched the content live, so it is marked read. A
@@ -1088,20 +1112,29 @@
     }
   }
 
-  // resume replays the interrupted run: the transcript tail the failed
-  // run produced (partial bubble, thinking, tool lines, marker) is
-  // dropped, and the message that kicked it off goes out again through
-  // the normal send path - a clean replacement response, NOT a
-  // continuation of the severed stream. Reads and writes only THIS
-  // session's state, so other sessions' transcripts and busy flags are
-  // untouched.
+  // cancelActiveRun stops the VIEWED session's live run (the composer's
+  // cancel button). The run's unwind keeps what streamed; the cancelled
+  // agent_end lands as the interrupt marker (handlePayload), which the
+  // retry affordance reads. No-op when this view has no bound stream.
+  function cancelActiveRun() {
+    const st = streams.get(activeKey.value);
+    st?.cancelRun?.();
+  }
+
+  // retry re-sends the session's last COMPLETE user message as a FRESH
+  // turn (card t_6c97a95a): the interrupted exchange stays in the
+  // transcript - its partial output and marker are the honest record -
+  // and submitText appends a NEW user bubble; history is never
+  // rewritten. (The interrupted marker retires per the fresh-send rule:
+  // after a later exchange it would no longer describe the transcript.)
+  // Reads and writes only THIS session's state, so other sessions'
+  // transcripts and busy flags are untouched.
   function retryStream() {
     const key = activeKey.value;
     const st = ensureState(key);
     if (busyAll.value.has(key)) return;
     const text = lastUserText(st.transcript);
     if (text === null) return;
-    st.transcript = dropLastExchange(st.transcript);
     submitText(text);
   }
 

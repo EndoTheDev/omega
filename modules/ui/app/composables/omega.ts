@@ -196,12 +196,25 @@ export function handlePayload(
         });
       }
       break;
-    case "agent_end":
+    case "agent_end": {
       // the terminal event: only its arrival makes the stream end CLEAN.
       // A reader that finishes without it means the connection dropped
       // mid-run (server death, proxy cut) - streamChat flags that.
       state.sawEnd = true;
+      // A run cancelled through the stop affordance unwinds through the
+      // loop's NORMAL ctx path and lands HERE with finish_reason
+      // "cancelled" and error "context canceled" - for EVERY subscriber,
+      // not just the tab that cancelled. Throwing the transport error
+      // routes the ending through the interrupt-marker path (partial
+      // output kept, no error text splattered in the bubble), the same
+      // semantics an SSE drop already had. The wall-clock timeout lands
+      // with "context deadline exceeded" and keeps its own error-frame
+      // path, so only the exact cancel string fires here.
+      if (p.finish_reason === "cancelled" && p.error === "context canceled") {
+        throw new StreamInterruptedError("run cancelled");
+      }
       break;
+    }
     case "error":
       throw new Error(String(p.error || "agent error"));
   }
@@ -1085,7 +1098,7 @@ export function filterArchived(
 }
 
 // Minimal structural view of a transcript item for the retry helpers -
-// only the fields lastCompleteUserIndex/lastUserText/dropLastExchange/
+// only the fields lastCompleteUserIndex/lastUserText/
 // hasInterruptedMarker read; the app's TranscriptItem union satisfies
 // it (all member shapes carry kind, and role/content when applicable).
 export interface TranscriptItemLike {
@@ -1106,28 +1119,12 @@ export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
   return -1;
 }
 
-// lastUserText is the text the interrupted retry re-sends through the
-// normal send path (null when there is nothing to resend from).
+// lastUserText is the text the retry re-sends through the normal send
+// path (null when there is nothing to resend from).
 export function lastUserText(items: TranscriptItemLike[]): string | null {
   const idx = lastCompleteUserIndex(items);
   if (idx === -1) return null;
   return items[idx]?.content ?? null;
-}
-
-// dropLastExchange drops the last exchange FROM its opening user message:
-// the run's user text, any tool lines / thinking, the partial assistant
-// bubble, and the marker all leave the transcript, so the retry's send
-// path can push the user message back and stream a clean replacement
-// response (no duplicate user bubble). No user message means nothing to
-// drop: the transcript is returned unchanged. Generic so the caller's
-// literal-kind item type flows through (a widened TranscriptItemLike[]
-// return would not satisfy the transcript's TranscriptItem[]).
-export function dropLastExchange<T extends TranscriptItemLike>(
-  items: T[],
-): T[] {
-  const idx = lastCompleteUserIndex(items);
-  if (idx === -1) return items;
-  return items.slice(0, idx);
 }
 
 // hasInterruptedMarker reports whether an interrupted-stream marker is
@@ -1147,8 +1144,9 @@ export function withoutMarkers<T extends TranscriptItemLike>(
 // createItemKeySource gives transcript items a stable key surviving the
 // two identity-breaking operations the transcript goes through (card
 // t_bc62c9ba round 1): `st.transcript = items` swaps in a rebuilt history
-// array, and `dropLastExchange + push` replaces a retried exchange while
-// re-indexing everything after it. Index-keyed v-fors reuse the bubble
+// array, and `withoutMarkers + push` strips a stale marker while a retry
+// appends its fresh turn and re-indexes everything after it. Index-keyed
+// v-fors reuse the bubble
 // COMPONENT across those swaps, so a restored-history message inherited
 // the previous session's frozen elapsed label and a retried tool call
 // resumed the dead attempt's timer. Keying on object identity fixes both:
@@ -1244,6 +1242,20 @@ export async function streamChat(
   });
   if (!resp.ok || !resp.body) throw new Error(`chat: ${resp.status}`);
   await consumeSSE(resp, handlers);
+}
+
+// stopSession asks the server to cancel the session's live run
+// (POST /sessions/<id>/stop). The run unwinds through its normal loop
+// path - partial output persists, the cancelled agent_end goes out over
+// every subscriber's wire. A miss is a benign race, not an error: 404
+// means the run already ended, 409 that it has not started yet.
+export async function stopSession(id: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/stop`, {
+    method: "POST",
+  });
+  if (!r.ok && r.status !== 404 && r.status !== 409) {
+    throw new Error(`stop: ${r.status}`);
+  }
 }
 
 // attachSession subscribes to a session's LIVE server-side run and
