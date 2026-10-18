@@ -461,9 +461,7 @@
         for (const m of detail.messages) {
           if (m.role === "tool") continue; // consumed by the result pass below
           if (!m.content && !m.thinking && !m.tool_calls?.length) continue;
-          const role = (m.role === "assistant" ? "assistant" : "user") as
-            | "user"
-            | "assistant";
+          const role = m.role === "assistant" ? "assistant" : "user";
           if (role === "assistant" && m.thinking) {
             items.push({
               kind: "thinking",

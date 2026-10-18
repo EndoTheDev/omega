@@ -24,7 +24,8 @@
   import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../composables/codeblocks";
-  import { createRenderScheduler, createElapsedMeter, formatDurationMs, formatMsgTime, renderMarkdown } from "../composables/omega";
+  import { createRenderScheduler, formatMsgTime, renderMarkdown } from "../composables/omega";
+  import { useElapsed } from "../composables/useElapsed";
 
   const props = defineProps<{
     role: "user" | "assistant";
@@ -60,7 +61,6 @@
 
   onUnmounted(() => {
     scheduler.cancel();
-    meter.stop();
   });
 
   // Elapsed counter (first response chunk -> stream_end): starts when the
@@ -70,20 +70,9 @@
   // and render nothing. The transcript v-for keys on item identity
   // (createItemKeySource), so a component instance always belongs to one
   // item - no label ever leaks across a history rebuild or retry.
-  const elapsed = ref("");
-  const meter = createElapsedMeter((label) => {
-    elapsed.value = label;
-  });
-  const elapsedLabel = computed(() =>
-    props.finalMs != null ? formatDurationMs(props.finalMs) : elapsed.value,
-  );
-  watch(
+  const elapsedLabel = useElapsed(
+    () => props.finalMs,
     () => props.streaming ?? false,
-    (live) => {
-      if (live) meter.start();
-      else meter.stop();
-    },
-    { immediate: true },
   );
 
   // Hover timestamp: an empty ref removes the title attribute entirely

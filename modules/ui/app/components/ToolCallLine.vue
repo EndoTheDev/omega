@@ -30,9 +30,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onUnmounted, ref, watch } from "vue";
-
-  import { createElapsedMeter, formatDurationMs } from "../composables/omega";
+  import { useElapsed } from "../composables/useElapsed";
 
   const props = defineProps<{
     name: string;
@@ -49,26 +47,12 @@
   // the call is running, freezes at the final value once the result
   // lands - the finished line keeps showing how long the call took.
   // Restored history arrives already-final and renders nothing.
-  const elapsed = ref("");
-  const meter = createElapsedMeter((label) => {
-    elapsed.value = label;
-  });
-  const elapsedLabel = computed(() =>
-    props.finalMs != null ? formatDurationMs(props.finalMs) : elapsed.value,
-  );
-
   // live = no result yet AND the stream survived it: a dead stream never
   // delivers the tool result, so the interrupted flag stops the meter -
   // without it the counter would tick forever over a call that cannot
   // finish. It stays honest: dot and status keep saying running.
-  const live = computed(() => props.status === "running" && !props.interrupted);
-  watch(
-    live,
-    (isLive) => {
-      if (isLive) meter.start();
-      else meter.stop();
-    },
-    { immediate: true },
+  const elapsedLabel = useElapsed(
+    () => props.finalMs,
+    () => props.status === "running" && !props.interrupted,
   );
-  onUnmounted(() => meter.stop());
 </script>
