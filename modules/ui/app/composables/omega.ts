@@ -746,6 +746,153 @@ export async function fetchSession(id: string): Promise<SessionDetail> {
   return r.json();
 }
 
+// --- settings pane: config knobs behind /settings ---
+
+// SettingKnob is one exposed config field. Type drives the control:
+// toggle, number, text, secret, select, textarea, bindlist (comma
+// separated address list rendered as one text input). Live knobs apply
+// without a restart; the rest say so in their help text.
+export interface SettingKnob {
+  key: string;
+  label: string;
+  type: "toggle" | "number" | "text" | "secret" | "select" | "textarea" | "bindlist";
+  value: unknown;
+  options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  help?: string;
+  live?: boolean;
+}
+
+export interface SettingGroup {
+  key: string;
+  label: string;
+  knobs: SettingKnob[];
+}
+
+export interface SettingsPayload {
+  groups: SettingGroup[];
+}
+
+// normalizeSettingsPayload sanitizes a /settings response: malformed
+// groups/knobs are dropped (wrong shape never blanks the pane with an
+// exception), knobs keep only known types - an unknown type would have
+// no control to render, so it falls out like any other stale entry.
+const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist"];
+
+export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
+  const groups: SettingGroup[] = [];
+  if (raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).groups)) {
+    for (const g of (raw as Record<string, unknown>).groups as unknown[]) {
+      if (!g || typeof g !== "object") continue;
+      const gr = g as Record<string, unknown>;
+      if (typeof gr.key !== "string" || typeof gr.label !== "string") continue;
+      if (!Array.isArray(gr.knobs)) continue;
+      const knobs: SettingKnob[] = [];
+      for (const k of gr.knobs as unknown[]) {
+        if (!k || typeof k !== "object") continue;
+        const kn = k as Record<string, unknown>;
+        if (typeof kn.key !== "string" || typeof kn.label !== "string") continue;
+        if (typeof kn.type !== "string" || !SETTING_KNOB_TYPES.includes(kn.type)) continue;
+        if (kn.value === undefined) continue;
+        knobs.push({
+          key: kn.key,
+          label: kn.label,
+          type: kn.type as SettingKnob["type"],
+          value: kn.value,
+          options: Array.isArray(kn.options) ? (kn.options as string[]) : undefined,
+          min: typeof kn.min === "number" ? kn.min : undefined,
+          max: typeof kn.max === "number" ? kn.max : undefined,
+          step: typeof kn.step === "number" ? kn.step : undefined,
+          help: typeof kn.help === "string" ? kn.help : undefined,
+          live: kn.live === true,
+        });
+      }
+      groups.push({ key: gr.key, label: gr.label, knobs });
+    }
+  }
+  return { groups };
+}
+
+// fetchSettings loads the config-knob payload. Throws on non-2xx with
+// the server's error message (501 = host serves no settings seam).
+export async function fetchSettings(): Promise<SettingsPayload> {
+  const r = await fetch("/settings");
+  if (!r.ok) {
+    let msg = `settings: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.error === "string") msg = body.error;
+    } catch {
+      // non-JSON failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+  return normalizeSettingsPayload(await r.json());
+}
+
+// saveSettings PUTs the changed knob values and returns the refreshed
+// payload the server computed from disk after the save.
+export async function saveSettings(values: Record<string, unknown>): Promise<SettingsPayload> {
+  const r = await fetch("/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values }),
+  });
+  if (!r.ok) {
+    let msg = `settings save: ${r.status}`;
+    try {
+      // the error envelope is plain text (http.Error), not JSON
+      const text = await r.text();
+      if (text) msg = text;
+    } catch {
+      // keep the status-code message
+    }
+    throw new Error(msg);
+  }
+  return normalizeSettingsPayload(await r.json());
+}
+
+// filterSettingGroups narrows the settings list live: a group survives
+// when any of its knobs matches the case-insensitive query as a
+// substring of the label or help text; groups with no matching knobs
+// drop out. An empty (or whitespace-only) query returns everything
+// unchanged. Pure - never touches the caller's arrays.
+export function filterSettingGroups(
+  groups: SettingGroup[],
+  query: string,
+): SettingGroup[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return groups;
+  const out: SettingGroup[] = [];
+  for (const g of groups) {
+    const knobs = g.knobs.filter(
+      (k) =>
+        k.label.toLowerCase().includes(q) ||
+        (k.help ?? "").toLowerCase().includes(q),
+    );
+    if (knobs.length > 0) out.push({ ...g, knobs });
+  }
+  return out;
+}
+
+// settingsDiff lists draft values that differ from the loaded ones -
+// only changed knobs go on the wire, so an unrelated knob edited
+// server-side between load and save is never clobbered by stale data.
+// Pure; values compare by strict equality (JSON round-trips numbers,
+// booleans and strings losslessly for these knob types).
+export function settingsDiff(
+  loaded: Record<string, unknown>,
+  draft: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(draft)) {
+    if (draft[key] !== loaded[key]) out[key] = draft[key];
+  }
+  return out;
+}
+
 // --- content search: FTS5 over message content, behind /sessions/search ---
 
 // SessionContentHit is one backend search row. The snippet comes back

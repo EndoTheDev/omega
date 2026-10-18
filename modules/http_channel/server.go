@@ -26,10 +26,11 @@ var webuiFS, _ = fs.Sub(staticFS, "static")
 
 // Server exposes the agent over HTTP with SSE streaming.
 type Server struct {
-	agent   *agent.Agent
-	tools   map[string]agent.Tool
-	store   agent.StoreProvider
-	httpSrv *http.Server
+	agent    *agent.Agent
+	tools    map[string]agent.Tool
+	store    agent.StoreProvider
+	settings agent.Settings
+	httpSrv  *http.Server
 
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
@@ -38,12 +39,13 @@ type Server struct {
 // NewServer creates a Server. tools is the registry of executable tools
 // the agent may call; a nil map uses the built-in registry. store is the
 // optional session persistence; a nil store disables persistence and the
-// session CRUD endpoints.
-func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StoreProvider) *Server {
+// session CRUD endpoints. settings is the optional config-knobs seam
+// (/settings endpoints); a nil value answers 501 on those endpoints.
+func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StoreProvider, settings agent.Settings) *Server {
 	if tools == nil {
 		tools = map[string]agent.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, ctxWindow: map[string]int{}}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -54,6 +56,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
+	mux.HandleFunc("/settings", s.handleSettings)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths

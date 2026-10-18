@@ -196,12 +196,29 @@ type Channel interface {
 	Stop() error
 }
 
+// Settings is the runtime config knobs seam. Channels that host a UI
+// (the webui settings pane lives behind the HTTP channel's /settings)
+// use it to read the host's config knobs and save changes — the host
+// owns the schema, validation, persistence, and hot-apply; the channel
+// never touches config.yaml itself. Nil when the host does not expose
+// settings (endpoints then answer 501).
+type Settings interface {
+	// Schema returns the JSON-marshalable settings payload: knob
+	// groups, each knob's label/type/controls, and current values.
+	Schema() (any, error)
+	// Save applies values (map of dotted yaml path -> JSON value),
+	// validates, persists the config file, hot-applies what the
+	// running process can apply, and returns the refreshed payload.
+	Save(values map[string]any) (any, error)
+}
+
 // ChannelDeps carries everything a channel needs to run. Ctx is the
 // fully-wired plugin Context — channels create agents from it. Store
-// persists messages.
+// persists messages. Settings (optional) exposes the config knobs.
 type ChannelDeps struct {
-	Ctx   *Context
-	Store StoreProvider
+	Ctx      *Context
+	Store    StoreProvider
+	Settings Settings
 }
 
 // CronProvider schedules omega prompts on cron expressions. The

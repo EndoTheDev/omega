@@ -22,6 +22,14 @@ type Compactor struct {
 	config   agent.CompactionConfig
 }
 
+// SetConfig replaces the compaction config at runtime. The host's
+// settings hot-apply path (WatchConfig / settings save) calls this so
+// an edited config.yaml takes effect on the running agent without a
+// restart — Compact reads the config on every call.
+func (c *Compactor) SetConfig(cfg agent.CompactionConfig) {
+	c.config = cfg
+}
+
 // Compact compacts the message history. If disabled or under budget,
 // returns the original messages unchanged.
 func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {

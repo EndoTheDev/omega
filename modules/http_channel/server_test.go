@@ -103,7 +103,7 @@ func newTestServer() *Server {
 	)
 	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	return NewServer(a, nil, nil)
+	return NewServer(a, nil, nil, nil)
 }
 
 // testLoop is a minimal loop for http_channel tests. It mirrors the
@@ -498,7 +498,7 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 	)
 	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil)
+	s := NewServer(a, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -772,7 +772,7 @@ func TestSessionSearch(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("post: status = %d, want 405", rec.Code)
 	}
-	nn := NewServer(nil, nil, nil)
+	nn := NewServer(nil, nil, nil, nil)
 	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
 	rec = httptest.NewRecorder()
 	nn.Handler().ServeHTTP(rec, req)
@@ -1054,7 +1054,7 @@ func newTitleTestServerWithStore(t *testing.T) (*Server, *store.Store, *captureP
 	)
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil)
+	s := NewServer(a, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)

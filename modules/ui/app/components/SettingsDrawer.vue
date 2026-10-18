@@ -1,55 +1,301 @@
 <template>
   <!-- no title row: the menubar gear is the toggle - this is just content -->
   <aside class="settings">
-    <section class="settings-group">
-      <h3>reasoning</h3>
-      <label class="setting-row">
-        <input
-          :checked="showThinking"
-          type="checkbox"
-          @change="
-            $emit(
-              'update:showThinking',
-              ($event.target as HTMLInputElement).checked,
-            )
-          " />
-        <span>show thinking blocks in chat</span>
-      </label>
+    <!-- search: narrows every group live; Escape clears -->
+    <input
+      :value="query"
+      class="settings-search"
+      type="search"
+      placeholder="filter settings"
+      aria-label="filter settings"
+      autocomplete="off"
+      @input="query = ($event.target as HTMLInputElement).value"
+      @keydown.esc.prevent="clearSearch" />
+
+    <p v-if="loadError" class="settings-error">
+      {{ loadError }}
+    </p>
+    <p v-else-if="visibleGroups.length === 0" class="settings-empty">
+      no settings match "{{ query.trim() }}"
+    </p>
+
+    <!--
+      Two knob origins share one renderer:
+      - the chat group is client state (props/emits, persisted under
+        omega.theme-mode, panel prefs) - never sent to the server;
+      - every other group is server config, edited in the draft map and
+        saved through PUT /settings (diff-only).
+    -->
+    <section
+      v-for="group in visibleGroups"
+      :key="group.key"
+      class="settings-group">
+      <h3>{{ group.label }}</h3>
+      <template v-for="knob in group.knobs" :key="knob.key">
+        <!-- toggle -->
+        <label v-if="knob.type === 'toggle'" class="setting-row">
+          <input
+            type="checkbox"
+            :checked="toggleValue(group, knob)"
+            @change="
+              setToggle(group, knob, ($event.target as HTMLInputElement).checked)
+            " />
+          <span>{{ knob.label }}</span>
+        </label>
+        <div v-else class="setting-item">
+          <div class="setting-head">
+            <span>{{ knob.label }}</span>
+            <span v-if="serverKnobDirty(knob)" class="setting-dirty">*</span>
+          </div>
+          <!-- select -->
+          <select
+            v-if="knob.type === 'select'"
+            class="model-chip theme-select"
+            :value="selectValue(group, knob)"
+            @change="setSelect(group, knob, ($event.target as HTMLSelectElement).value)">
+            <option v-for="opt in knob.options ?? []" :key="opt" :value="opt">
+              {{ opt }}
+            </option>
+          </select>
+          <!-- textarea -->
+          <textarea
+            v-else-if="knob.type === 'textarea'"
+            class="setting-input setting-textarea"
+            rows="3"
+            :value="serverValue(knob)"
+            @input="setServer(knob, ($event.target as HTMLTextAreaElement).value)" />
+          <!-- text / secret / bindlist / number -->
+          <input
+            v-else
+            class="setting-input"
+            :type="knob.type === 'secret' ? 'password' : knob.type === 'number' ? 'number' : 'text'"
+            :min="knob.min"
+            :max="knob.max"
+            :step="knob.step ?? (knob.type === 'number' ? 1 : undefined)"
+            autocomplete="off"
+            spellcheck="false"
+            :value="knob.type === 'number' ? numberValue(knob) : serverValue(knob)"
+            @input="
+              setServer(
+                knob,
+                ($event.target as HTMLInputElement).value,
+                knob.type === 'number',
+              )
+            " />
+          <p v-if="knob.help" class="setting-help">{{ knob.help }}</p>
+        </div>
+      </template>
     </section>
-    <section class="settings-group">
-      <h3>theme</h3>
-      <select
-        class="model-chip theme-select"
-        :value="themeMode"
-        @change="
-          $emit(
-            'set-theme',
-            ($event.target as HTMLSelectElement).value as
-              | 'auto'
-              | 'light'
-              | 'dark',
-          )
-        ">
-        <option value="auto">auto (system)</option>
-        <option value="light">light</option>
-        <option value="dark">dark</option>
-      </select>
-    </section>
+
+    <div v-if="dirtyCount > 0" class="settings-save-row">
+      <button
+        class="settings-save"
+        type="button"
+        :disabled="saving"
+        @click="save">
+        {{ saving ? "saving…" : `save ${dirtyCount} change${dirtyCount === 1 ? "" : "s"}` }}
+      </button>
+      <button class="settings-revert" type="button" :disabled="saving" @click="resetDraft">
+        discard
+      </button>
+    </div>
+    <p v-if="saveError" class="settings-error">{{ saveError }}</p>
     <p class="settings-note">
-      tools run with the server registry; per-tool toggles arrive with the next
-      backend revision.
+      knobs marked live apply to the running server; the rest take effect
+      on restart.
     </p>
   </aside>
 </template>
 
 <script setup lang="ts">
-  defineProps<{
+  import {
+    computed,
+    ref,
+    watch,
+  } from "vue";
+  import {
+    fetchSettings,
+    filterSettingGroups,
+    saveSettings,
+    settingsDiff,
+    type SettingGroup,
+    type SettingKnob,
+    type SettingsPayload,
+  } from "~/composables/omega";
+
+  const props = defineProps<{
     showThinking: boolean;
     themeMode: "auto" | "light" | "dark";
+    open: boolean;
   }>();
 
-  defineEmits<{
+  const emit = defineEmits<{
     (e: "update:showThinking", value: boolean): void;
     (e: "set-theme", mode: "auto" | "light" | "dark"): void;
   }>();
+
+  // --- server payload state ---
+
+  const groups = ref<SettingGroup[]>([]);
+  // loaded: values as the server handed them; draft: edited values.
+  // Diff-only saves (settingsDiff) keep unrelated knobs untouched.
+  const loaded = ref<Record<string, unknown>>({});
+  const draft = ref<Record<string, unknown>>({});
+  const loadError = ref<string | null>(null);
+  const saveError = ref<string | null>(null);
+  const saving = ref(false);
+  const query = ref("");
+
+  // Load on every open: values can change on disk between opens, and
+  // the pane has no other refresh trigger.
+  watch(
+    () => props.open,
+    (open) => {
+      if (open) void reload();
+    },
+    { immediate: true },
+  );
+
+  async function reload() {
+    loadError.value = null;
+    saveError.value = null;
+    try {
+      applyPayload(await fetchSettings());
+    } catch (err) {
+      // a host without the settings seam (501) or an unreachable
+      // server: keep the client-side settings usable, say why the
+      // server list is missing
+      groups.value = [];
+      loaded.value = {};
+      draft.value = {};
+      loadError.value = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function applyPayload(payload: SettingsPayload) {
+    groups.value = payload.groups;
+    const values: Record<string, unknown> = {};
+    for (const g of payload.groups)
+      for (const k of g.knobs) values[k.key] = k.value;
+    loaded.value = values;
+    draft.value = { ...values };
+  }
+
+  // --- client (chat) group: props in, emits out ---
+
+  const chatGroup = computed<SettingGroup>(() => ({
+    key: "chat",
+    label: "chat",
+    knobs: [
+      {
+        key: "chat.show_thinking",
+        label: "show thinking blocks in chat",
+        type: "toggle",
+        value: props.showThinking,
+      },
+      {
+        key: "chat.theme",
+        label: "theme",
+        type: "select",
+        value: props.themeMode,
+        options: ["auto", "light", "dark"],
+        help: "interface colour theme; auto follows the system",
+      },
+    ],
+  }));
+
+  const isClient = (group: SettingGroup) => group.key === "chat";
+
+  const allGroups = computed<SettingGroup[]>(() => [chatGroup.value, ...groups.value]);
+
+  const visibleGroups = computed<SettingGroup[]>(() =>
+    filterSettingGroups(allGroups.value, query.value),
+  );
+
+  function clearSearch() {
+    query.value = "";
+  }
+
+  // --- value plumbing ---
+
+  const clientValue = (knob: SettingKnob): unknown =>
+    knob.key === "chat.show_thinking" ? props.showThinking : props.themeMode;
+
+  // serverValue reads draft-first: a knob the user edited (dirty or not)
+  // always displays what will be saved.
+  const serverValue = (knob: SettingKnob): unknown =>
+    draft.value[knob.key] ?? loaded.value[knob.key];
+
+  // numberValue: number inputs must never render a half-state - an
+  // empty draft shows "" so the field can be cleared; anything else is
+  // whatever the last parse produced (see setServer).
+  const numberValue = (knob: SettingKnob): unknown => {
+    const v = serverValue(knob);
+    return v === "" ? "" : v;
+  };
+
+  function toggleValue(group: SettingGroup, knob: SettingKnob): boolean {
+    if (isClient(group)) return clientValue(knob) === true;
+    return serverValue(knob) === true;
+  }
+
+  function selectValue(group: SettingGroup, knob: SettingKnob): string {
+    const v = isClient(group) ? clientValue(knob) : serverValue(knob);
+    return typeof v === "string" ? v : String(v);
+  }
+
+  function setToggle(group: SettingGroup, knob: SettingKnob, on: boolean) {
+    if (isClient(group)) {
+      if (knob.key === "chat.show_thinking") emit("update:showThinking", on);
+      return;
+    }
+    draft.value = { ...draft.value, [knob.key]: on };
+  }
+
+  function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
+    if (isClient(group)) {
+      if (knob.key === "chat.theme")
+        emit("set-theme", value as "auto" | "light" | "dark");
+      return;
+    }
+    draft.value = { ...draft.value, [knob.key]: value };
+  }
+
+  // setServer stores text verbatim; numeric inputs parse what the
+  // number field yields ("12" -> 12, "12abc" stays a string so the
+  // server validation surfaces it instead of silently rounding).
+  function setServer(knob: SettingKnob, raw: string, numeric = false) {
+    let value: unknown = raw;
+    if (numeric) {
+      const n = Number(raw);
+      value = raw === "" ? "" : Number.isFinite(n) ? n : raw;
+    }
+    draft.value = { ...draft.value, [knob.key]: value };
+  }
+
+  const serverKnobDirty = (knob: SettingKnob): boolean =>
+    draft.value[knob.key] !== loaded.value[knob.key];
+
+  const dirtyCount = computed(
+    () => Object.keys(settingsDiff(loaded.value, draft.value)).length,
+  );
+
+  function resetDraft() {
+    saveError.value = null;
+    draft.value = { ...loaded.value };
+  }
+
+  async function save() {
+    const changes = settingsDiff(loaded.value, draft.value);
+    if (Object.keys(changes).length === 0) return;
+    saving.value = true;
+    saveError.value = null;
+    try {
+      applyPayload(await saveSettings(changes));
+    } catch (err) {
+      saveError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      saving.value = false;
+    }
+  }
 </script>

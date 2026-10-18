@@ -1195,6 +1195,100 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 
 .setting-row input { accent-color: var(--accent); }
 
+/* --- settings pane: search + generated knobs --- */
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--z0);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pane);
+  color: var(--text);
+  font: inherit;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.settings-search:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.settings-empty,
+.settings-error {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+}
+.settings-error { color: var(--accent); }
+.setting-item {
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.setting-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.setting-dirty { color: var(--accent); font-weight: bold; }
+.setting-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--z0);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pane);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+.setting-input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.setting-textarea {
+  resize: vertical;
+  min-height: 64px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.setting-help {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.settings-save-row {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.settings-save,
+.settings-revert {
+  flex: 1;
+  background: var(--z0);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pane);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.settings-save:hover:not(:disabled),
+.settings-revert:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.settings-save:disabled,
+.settings-revert:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.settings-save {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .theme-select {
   width: 100%;
   max-width: none;
