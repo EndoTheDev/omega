@@ -160,13 +160,14 @@ func TestBuildPromptNilContext(t *testing.T) {
 func TestGuidelines(t *testing.T) {
 	b := NewPromptBuilder(&agent.Context{})
 	g := b.Guidelines()
-	if len(g) != 5 {
-		t.Fatalf("Guidelines() returned %d lines, want 5", len(g))
+	if len(g) != 6 {
+		t.Fatalf("Guidelines() returned %d lines, want 6", len(g))
 	}
 	for i, want := range []string{
 		"Use tools to read files and run commands before making assumptions.",
 		"Prefer the simplest solution that works. Avoid unnecessary abstraction.",
 		"When editing files, match the existing style and conventions.",
+		"Never open omega.db directly - the store tools are the interface to the database.",
 		"Report what you did concisely. Do not repeat file contents back.",
 		"If something fails, report the error honestly rather than guessing.",
 	} {
