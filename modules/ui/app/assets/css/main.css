@@ -841,6 +841,11 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
+  /* codeblock treatment (60vh sweep): long reasoning gets the same 60vh
+     cap + internal scroll as a fenced code block - the summary toggle
+     owns collapse/expand, the answer bubble below is never capped. */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 /* tool call line */
@@ -902,6 +907,12 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   max-height: 240px;
   overflow-y: auto;
 }
+/* codeblock treatment (60vh sweep): RESULT blocks get the full 60vh cap
+   + internal scroll instead of the short 240px window - collapse rides
+   the details summary toggle. The command INPUT block keeps the short
+   cap; tool-call command lines stay one-liners, unchanged. The
+   assistant answer bubble (.bubble) is never capped. */
+.tool-output.tool-result { max-height: 60vh; }
 .tool-output.is-error { color: var(--err); }
 
 /* status line under the streaming message */
