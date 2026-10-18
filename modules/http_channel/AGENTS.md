@@ -31,10 +31,15 @@ rule a security contract, not a preference.
   read time - omitted when the session never switched models), and
   `unread` (computed at read time from `updated_at` after `last_read_at` -
   no counters; GET `/sessions/{id}` exposes the same state on the
-  response). PATCH `/sessions/{id}` accepts `{"pinned": true|false}` and
-  `{"read": true}`; both are list concerns that write the sessions row
-  WITHOUT touching `updated_at` - pinning and reading are not activity,
-  and the webui time buckets read `updated_at`. GET
+  response). PATCH `/sessions/{id}` accepts `{"pinned": true|false}`,
+  `{"read": true}`, and `{"archived": true|false}`; all are list
+  concerns that write the sessions row WITHOUT touching `updated_at` -
+  pinning, reading, and archiving are not activity, and the webui time
+  buckets read `updated_at`. Archived sessions drop out of the default
+  GET `/sessions` list and out of content-search results; an explicit
+  include flag returns them (the sidebar's archived toggle). DELETE
+  `/sessions/{id}` removes the session and its messages - the webui
+  gates it behind a confirm dialog. GET
   `/sessions/search?q=<term>` exposes the store's FTS5 content search
   (one hit per session, best-rank first; malformed FTS query -> 400);
   the sidebar search unions it with the in-memory title filter. GET
