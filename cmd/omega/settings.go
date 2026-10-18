@@ -199,9 +199,9 @@ func compactionKnobs(cfg *Config) []agent.SettingsKnob {
 			Value: c.Threshold,
 			Help:  "fraction of the context window that triggers compaction", Live: true},
 		{Key: "compaction.context_window", Label: "context window", Type: "number",
-			Min: ptrF(1), Step: ptrF(1),
+			Min: ptrF(0), Step: ptrF(1),
 			Value: c.ContextWindow,
-			Help:  "model context window in tokens the budget is measured against", Live: true},
+			Help:  "model context window in tokens the budget is measured against; 0 = auto (probed from the provider at startup)", Live: true},
 		{Key: "compaction.keep_first", Label: "keep first", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
 			Value: c.KeepFirst,
@@ -285,7 +285,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "compaction.threshold":
 			err = setFloat(&cfg.Compaction.Threshold, key, raw, 0.05, 1)
 		case "compaction.context_window":
-			err = setInt(&cfg.Compaction.ContextWindow, key, raw, 1, math.MaxInt32)
+			err = setInt(&cfg.Compaction.ContextWindow, key, raw, 0, math.MaxInt32) // 0 = auto
 		case "compaction.keep_first":
 			err = setInt(&cfg.Compaction.KeepFirst, key, raw, 0, math.MaxInt32)
 		case "compaction.keep_last":
@@ -495,7 +495,33 @@ type omegaSettings struct {
 	pctx *agent.Context
 }
 
-func (s *omegaSettings) Schema() (*agent.SettingsSchema, error) { return settingsSchema(s.path) }
+func (s *omegaSettings) Schema() (*agent.SettingsSchema, error) {
+	schema, err := settingsSchema(s.path)
+	if err != nil {
+		return nil, err
+	}
+	// Read-only hint for the auto-resolved compaction window: the pane
+	// shows what startup probed the provider with as part of the
+	// knob's help line. No probe here - only the value cached at
+	// startup.
+	if s.pctx == nil {
+		return schema, nil
+	}
+	c, ok := s.pctx.Compactor.(*compactor.Compactor)
+	if !ok {
+		return schema, nil
+	}
+	if w := c.AutoWindow(); w > 0 {
+		for _, g := range schema.Groups {
+			for ki, k := range g.Knobs {
+				if k.Key == "compaction.context_window" {
+					g.Knobs[ki].Help = fmt.Sprintf("%s; auto resolves to %d", k.Help, w)
+				}
+			}
+		}
+	}
+	return schema, nil
+}
 
 func (s *omegaSettings) Save(values map[string]any) (*agent.SettingsSchema, error) {
 	return saveSettings(s.path, s.pctx, values)
