@@ -545,7 +545,12 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 // minute, then "2m 05s", then "1h 02m". Pure - the ticking lives in
 // createElapsedMeter.
 export function formatElapsed(startedMs: number, nowMs: number): string {
-  const total = Math.max(0, Math.floor((nowMs - startedMs) / 1000));
+  const delta = Math.max(0, nowMs - startedMs);
+  const total = Math.floor(delta / 1000);
+  // sub-second spans are real measurements (server timing records
+  // milliseconds) - flooring them to "0s" reads as a broken timer.
+  // Show the milliseconds instead (in-app comment 4, 2026-10-18).
+  if (total < 1) return `${Math.round(delta)}ms`;
   if (total < 60) return `${total}s`;
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);

@@ -50,8 +50,8 @@ describe("formatMsgTime", () => {
 
 describe("formatElapsed", () => {
   it("below a minute reads as bare seconds", () => {
-    assert.equal(formatElapsed(0, 0), "0s");
-    assert.equal(formatElapsed(1000, 1200), "0s");
+    assert.equal(formatElapsed(0, 0), "0ms");
+    assert.equal(formatElapsed(1000, 1200), "200ms");
     assert.equal(formatElapsed(0, 59000), "59s");
   });
 
@@ -67,7 +67,7 @@ describe("formatElapsed", () => {
   });
 
   it("a negative skew clamps to 0s", () => {
-    assert.equal(formatElapsed(1000, 500), "0s");
+    assert.equal(formatElapsed(1000, 500), "0ms");
   });
 });
 
@@ -108,10 +108,10 @@ describe("createElapsedMeter (injectable timers)", () => {
     const labels: string[] = [];
     const meter = createElapsedMeter((l) => labels.push(l), clock.now, clock.timers);
     meter.start();
-    assert.deepEqual(labels, ["0s"], "start emits the zero label once");
+    assert.deepEqual(labels, ["0ms"], "start emits the zero label once");
     clock.tick(1000);
     clock.tick(1000);
-    assert.deepEqual(labels, ["0s", "1s", "2s"]);
+    assert.deepEqual(labels, ["0ms", "1s", "2s"]);
   });
 
   it("stop freezes the final value and clears the timer", () => {
@@ -137,7 +137,7 @@ describe("createElapsedMeter (injectable timers)", () => {
     meter.start();
     meter.start();
     clock.tick(3500);
-    assert.deepEqual(labels, ["0s", "3s"]);
+    assert.deepEqual(labels, ["0ms", "3s"]);
   });
 });
 
@@ -198,9 +198,23 @@ describe("pillVisible", () => {
 // (timing persistence, in-app comment session 04ea63f3)
 describe("formatDurationMs", () => {
   it("renders seconds, minutes, hours like the live meter", () => {
-    assert.equal(formatDurationMs(0), "0s");
+    assert.equal(formatDurationMs(0), "0ms");
     assert.equal(formatDurationMs(5_000), "5s");
     assert.equal(formatDurationMs(62_000), "1m 02s");
     assert.equal(formatDurationMs(3_600_000), "1h 00m");
+  });
+});
+
+// sub-second spans render milliseconds, not a floored "0s" (in-app
+// comment 4: fast thinking/tool/response phases are real measurements)
+describe("formatElapsed sub-second", () => {
+  it("shows milliseconds under one second", () => {
+    assert.equal(formatElapsed(0, 208), "208ms");
+    assert.equal(formatElapsed(0, 999), "999ms");
+    assert.equal(formatElapsed(0, 0), "0ms");
+  });
+  it("second+ spans unchanged", () => {
+    assert.equal(formatElapsed(0, 5_000), "5s");
+    assert.equal(formatElapsed(0, 62_000), "1m 02s");
   });
 });
