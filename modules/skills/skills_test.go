@@ -369,3 +369,33 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 		t.Fatalf("expected 1 skill from configured dir, got %d", len(skills))
 	}
 }
+// TestPromptSections verifies the skills provider contributes the
+// Available Skills section, and nil when no skills are installed.
+func TestPromptSections(t *testing.T) {
+	sp := NewSkillsProvider(makeSkillDir(t))
+	secs := sp.PromptSections(agent.PromptBuildOptions{})
+	if len(secs) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(secs))
+	}
+	s := secs[0]
+	if s.Title != "Available Skills" {
+		t.Errorf("Title = %q, want %q", s.Title, "Available Skills")
+	}
+	if s.Order != promptSectionOrder {
+		t.Errorf("Order = %d, want %d", s.Order, promptSectionOrder)
+	}
+	want := "Call the skills.read tool with a skill name to read its full content.\n- test-skill: A test skill\n"
+	if s.Body != want {
+		t.Errorf("Body = %q, want %q", s.Body, want)
+	}
+
+	empty := NewSkillsProvider(t.TempDir())
+	if got := empty.PromptSections(agent.PromptBuildOptions{Extensions: nil}); got != nil {
+		t.Errorf("expected nil sections with no skills, got %v", got)
+	}
+}
+
+// TestSkillsProviderImplementsPromptSectioner verifies the seam contract.
+func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
+	var _ agent.PromptSectioner = (*SkillsProvider)(nil)
+}

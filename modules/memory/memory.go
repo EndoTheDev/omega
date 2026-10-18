@@ -70,6 +70,20 @@ func (fm *FileMemory) Snapshot() string {
 	return strings.Join(sections, "\n\n")
 }
 
+// promptSectionOrder places the memory snapshot first among
+// contributed sections, before skills (20) and the tools list (30).
+const promptSectionOrder = 10
+
+// PromptSections renders the memory snapshot as an untitled prompt
+// block. Empty when both stores are disabled or hold nothing. The
+// module owns its own prompt block; the prompt builder only pastes it.
+func (fm *FileMemory) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
+	if snap := fm.Snapshot(); snap != "" {
+		return []agent.PromptSection{{Body: snap, Order: promptSectionOrder}}
+	}
+	return nil
+}
+
 // Add appends a new entry to the target store.
 func (fm *FileMemory) Add(target, content string) (string, error) {
 	fm.mu.Lock()

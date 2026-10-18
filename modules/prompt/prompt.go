@@ -1,14 +1,17 @@
 // Package prompt builds the omega system prompt.
 //
-// It owns the prompt template and assembly logic: guidelines,
-// project context, skills, tools, environment, and user-supplied
-// custom/append sections. It implements agent.PromptBuilder.
+// It is a generic assembler: identity, guidelines, project context,
+// environment, user-supplied custom/append, plus whatever sections
+// other modules contribute via the agent.PromptSectioner seam. Modules
+// own their prompt content; this package owns only the assembly order.
+// It implements agent.PromptBuilder.
 package prompt
 
 import (
 	"context"
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,27 +20,21 @@ import (
 
 // PromptBuilder is the in-process system prompt builder.
 type PromptBuilder struct {
-	skills agent.SkillsProvider
-	memory agent.MemoryProvider
+	pctx *agent.Context
+	now  func() time.Time // injectable clock for tests
 }
 
-// NewPromptBuilder creates a PromptBuilder. skills is the
-// SkillsProvider for listing available skills; pass nil if no skills
-// extension is loaded. memory is the MemoryProvider for snapshot
-// injection; pass nil if no memory extension is loaded.
-func NewPromptBuilder(skills agent.SkillsProvider, memory agent.MemoryProvider) *PromptBuilder {
-	return &PromptBuilder{skills: skills, memory: memory}
+// NewPromptBuilder creates a PromptBuilder. Contributing prompt
+// sections are read from the Context at build time, so every
+// PromptSectioner plugin mounted anywhere is picked up.
+func NewPromptBuilder(ctx *agent.Context) *PromptBuilder {
+	return &PromptBuilder{pctx: ctx, now: time.Now}
 }
 
 // BuildPrompt assembles the full system prompt from the build options.
 // Returns (prompt, true) on success. It always returns true — the
 // prompt builder is the default source of the system prompt.
 func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOptions) (string, bool) {
-	var skills []agent.Skill
-	if b.skills != nil {
-		skills, _ = b.skills.LoadSkills("")
-	}
-
 	var sb strings.Builder
 	sb.WriteString("You are an AI coding agent with access to tools.\n")
 
@@ -52,25 +49,7 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 		sb.WriteString("\n")
 	}
 
-	// Memory snapshot (read fresh from disk).
-	if b.memory != nil {
-		if snap := b.memory.Snapshot(); snap != "" {
-			sb.WriteString("\n")
-			sb.WriteString(snap)
-			sb.WriteString("\n")
-		}
-	}
-
-	if len(skills) > 0 {
-		sb.WriteString("\n## Available Skills\n")
-		sb.WriteString("Call the skills.read tool with a skill name to read its full content.\n")
-		for _, skill := range skills {
-			fmt.Fprintf(&sb, "- %s: %s\n", skill.Name, skill.Description)
-		}
-	}
-
-	sb.WriteString("\n## Tools\n")
-	writeTools(&sb, opts.Extensions)
+	b.writeSections(&sb, opts)
 
 	sb.WriteString("\n## Environment\n")
 	fmt.Fprintf(&sb, "CWD: %s\n", opts.CWD)
@@ -80,7 +59,7 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 	} else {
 		sb.WriteString("Shell: bash\n")
 	}
-	fmt.Fprintf(&sb, "Date: %s\n", time.Now().Format("2006-01-02"))
+	fmt.Fprintf(&sb, "Date: %s\n", b.now().Format("2006-01-02"))
 
 	if opts.Custom != "" {
 		sb.WriteString("\n")
@@ -96,18 +75,35 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 	return sb.String(), true
 }
 
-// writeTools renders the "## Tools" section body: one "### <extension>"
-// block per extension that has tools.
-func writeTools(sb *strings.Builder, extensions []agent.ExtensionInfo) {
-	for _, ext := range extensions {
-		if len(ext.ToolList) == 0 {
+// writeSections collects PromptSections from every contributing module
+// and renders them in stable order. Untitled sections render as raw
+// blocks with a blank line before and after; titled sections render
+// under a "## <Title>" heading.
+func (b *PromptBuilder) writeSections(sb *strings.Builder, opts agent.PromptBuildOptions) {
+	if b.pctx == nil {
+		return
+	}
+
+	var sections []agent.PromptSection
+	for _, s := range b.pctx.PromptSectioners {
+		if s == nil {
 			continue
 		}
-		fmt.Fprintf(sb, "### %s\n", ext.Name)
-		for _, t := range ext.ToolList {
-			fmt.Fprintf(sb, "- %s: %s\n", t.Name, firstLine(t.Description))
+		sections = append(sections, s.PromptSections(opts)...)
+	}
+	sort.SliceStable(sections, func(i, j int) bool {
+		return sections[i].Order < sections[j].Order
+	})
+
+	for _, sec := range sections {
+		if sec.Title != "" {
+			fmt.Fprintf(sb, "\n## %s\n", sec.Title)
+			sb.WriteString(sec.Body)
+		} else {
+			sb.WriteString("\n")
+			sb.WriteString(sec.Body)
+			sb.WriteString("\n")
 		}
-		sb.WriteString("\n")
 	}
 }
 
@@ -121,17 +117,4 @@ func (b *PromptBuilder) Guidelines() []string {
 		"Report what you did concisely. Do not repeat file contents back.",
 		"If something fails, report the error honestly rather than guessing.",
 	}
-}
-
-// firstLine returns the first non-empty line of s, or s itself if it
-// has no newlines. Used to keep tool descriptions short in the system
-// prompt — full descriptions go to the LLM via the provider's JSON
-// tool schemas.
-func firstLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		if strings.TrimSpace(line) != "" {
-			return strings.TrimSpace(line)
-		}
-	}
-	return s
 }

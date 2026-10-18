@@ -29,6 +29,11 @@ type Context struct {
 	// Tool providers (additive — multiple plugins contribute).
 	ToolProviders []ToolProvider
 
+	// Prompt section contributors (additive — multiple plugins
+	// contribute). Modules that own prompt content implement
+	// PromptSectioner; the prompt builder renders their sections.
+	PromptSectioners []PromptSectioner
+
 	// Frontend (exclusive — one frontend at a time). The host calls
 	// Run after mounting all extensions.
 	Frontend Frontend

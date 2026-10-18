@@ -40,10 +40,14 @@ type Plugin interface {
 | `cron`           | exclusive | Scheduled agent turns (crons.yaml)             |
 | `tools`          | additive  | Tool provider (multiple plugins contribute)    |
 | `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)       |
+| `prompt_sections` | additive | Prompt sections (modules render their own block) |
 
 Exclusive seams conflict if two plugins provide the same one. The
 `tools` seam is additive: multiple plugins contribute to
-`Context.ToolProviders`.
+`Context.ToolProviders`. The `prompt_sections` seam is additive:
+modules that own prompt content append a `PromptSectioner` to
+`Context.PromptSectioners`; the prompt builder renders their
+sections between Project Context and Environment.
 
 ## Available modules
 
@@ -52,12 +56,12 @@ Exclusive seams conflict if two plugins provide the same one. The
 | `agent_loop/`   | loop           | Default conversation loop (LoopProvider impl)        |
 | `provider/`     | provider       | Ollama, OpenAI, Anthropic streaming                  |
 | `store/`        | store, tools   | SQLite session store + sessions.search tool          |
-| `skills/`       | skills, tools  | Skill loading + skills.read tool + /skills command   |
+| `skills/`       | skills, tools, prompt_sections | Skill loading + skills.read tool + /skills command + Available Skills section |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
 | `logging/`      | logging        | Operational logging (file logger, LoggerProvider)    |
-| `memory/`       | memory, tools  | Persistent memory (memory tool, two-file store)      |
-| `prompt/`       | prompt_builder | System prompt builder + guidelines                   |
-| `tools/`        | tools          | Shell command + file tools                           |
+| `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block |
+| `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
+| `tools/`        | tools, prompt_sections | Shell command + file tools + Tools section (firstLine descriptions) |
 | `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
 | `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |

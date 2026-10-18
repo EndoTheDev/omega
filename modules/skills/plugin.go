@@ -18,7 +18,7 @@ type Plugin struct{}
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string       { return "skills" }
-func (p *Plugin) Provides() []string { return []string{"skills", "tools"} }
+func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount populates ctx.Skills, appends the tool provider, and sets
@@ -36,6 +36,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	sp := NewSkillsProvider(dir)
 	ctx.Skills = sp
 	ctx.ToolProviders = append(ctx.ToolProviders, sp)
+	ctx.PromptSectioners = append(ctx.PromptSectioners, sp)
 	ctx.Commands = append(ctx.Commands, sp.Commands()...)
 
 	// Wire command handler if not already set. Multiple plugins could

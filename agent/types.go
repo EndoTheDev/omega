@@ -200,3 +200,14 @@ type PromptBuildOptions struct {
 	Custom         string   // user-supplied prompt from config, may be empty
 	Append         []string // extra prompts from --append-system-prompt, may be nil
 }
+
+// PromptSection is one titled block of system prompt content,
+// contributed by the module that owns it. Sections render between
+// Project Context and Environment, sorted by Order (stable sort; equal
+// orders keep plugin mount order). Current layout: memory 10, skills
+// 20, tools 30.
+type PromptSection struct {
+	Title string // rendered as "\n## <Title>\n"; empty = untitled block
+	Body  string // section content, lines carry their own newlines
+	Order int    // sort key; lower renders earlier
+}

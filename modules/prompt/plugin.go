@@ -17,15 +17,15 @@ func (p *Plugin) Name() string { return "prompt" }
 // Provides lists the seams this plugin mounts.
 func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
 
-// Requires lists seams that must be mounted before this plugin.
-// The prompt builder needs memory for snapshot injection and skills
-// for the Available Skills section.
-func (p *Plugin) Requires() []string { return []string{"memory", "skills"} }
+// Requires lists seams that must be mounted before this plugin. The
+// assembler renders sections contributed by other modules at build
+// time, so it has no mount-order dependencies.
+func (p *Plugin) Requires() []string { return nil }
 
-// Mount sets ctx.PromptBuilder. The memory provider is passed for
-// snapshot injection; the skills provider is passed for skill listing.
+// Mount sets ctx.PromptBuilder. The builder reads prompt section
+// contributors from the Context at build time.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	ctx.PromptBuilder = NewPromptBuilder(ctx.Skills, ctx.Memory)
+	ctx.PromptBuilder = NewPromptBuilder(ctx)
 	return nil
 }
 

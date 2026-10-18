@@ -450,11 +450,11 @@ func TestPluginMetadata(t *testing.T) {
 		t.Errorf("Name() = %q, want %q", p.Name(), "memory")
 	}
 	provides := p.Provides()
-	if len(provides) != 2 {
-		t.Fatalf("Provides() = %v, want 2 items", provides)
+	if len(provides) != 3 {
+		t.Fatalf("Provides() = %v, want 3 items", provides)
 	}
-	if provides[0] != "memory" || provides[1] != "tools" {
-		t.Errorf("Provides() = %v, want [memory tools]", provides)
+	if provides[0] != "memory" || provides[1] != "tools" || provides[2] != "prompt_sections" {
+		t.Errorf("Provides() = %v, want [memory tools prompt_sections]", provides)
 	}
 	if len(p.Requires()) != 0 {
 		t.Errorf("Requires() = %v, want empty", p.Requires())
@@ -605,4 +605,42 @@ func TestPluginMount(t *testing.T) {
 	if _, ok := tools["memory"]; !ok {
 		t.Fatal("memory tool not registered")
 	}
+}
+
+// TestPromptSections verifies FileMemory contributes its snapshot as an
+// untitled prompt section, and nothing when both stores are empty.
+func TestPromptSections(t *testing.T) {
+	fm := newTestMemory(t)
+	fm.Add(targetMemory, "Test fact one")
+
+	secs := fm.PromptSections(agent.PromptBuildOptions{})
+	if len(secs) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(secs))
+	}
+	if secs[0].Title != "" {
+		t.Errorf("Title = %q, want empty (untitled block)", secs[0].Title)
+	}
+	if secs[0].Order != promptSectionOrder {
+		t.Errorf("Order = %d, want %d", secs[0].Order, promptSectionOrder)
+	}
+	if secs[0].Body != fm.Snapshot() {
+		t.Error("section body does not match Snapshot()")
+	}
+
+	empty := NewFileMemory(Config{
+		Enabled:              true,
+		UserProfileEnabled:   true,
+		CharLimit:            200,
+		UserProfileCharLimit: 100,
+		File:                 filepath.Join(t.TempDir(), "memory.md"),
+		UserProfileFile:      filepath.Join(t.TempDir(), "user.md"),
+	})
+	if got := empty.PromptSections(agent.PromptBuildOptions{}); got != nil {
+		t.Errorf("expected nil sections for empty stores, got %v", got)
+	}
+}
+
+// TestFileMemoryImplementsPromptSectioner verifies the seam contract.
+func TestFileMemoryImplementsPromptSectioner(t *testing.T) {
+	var _ agent.PromptSectioner = (*FileMemory)(nil)
 }
