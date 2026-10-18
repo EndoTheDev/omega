@@ -15,9 +15,9 @@ User prefers concise responses
 second memory entry
 
 ════════════════════════════════════════════════
-USER PROFILE (who the user is) [1% — 22/1,375 chars]
+USER PROFILE (who the user is) [2% — 30/1,375 chars]
 ════════════════════════════════════════════════
-Endo lives in Bangkok.
+The user lives in Springfield.
 
 ## Available Skills
 Call the skills.read tool with a skill name to read its full content.

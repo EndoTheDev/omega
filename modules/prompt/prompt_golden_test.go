@@ -70,7 +70,7 @@ func seedMemory(t *testing.T, cfg memory.Config) {
 	if err := os.WriteFile(cfg.File, []byte("User prefers concise responses\n§\nsecond memory entry\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(cfg.UserProfileFile, []byte("Endo lives in Bangkok.\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg.UserProfileFile, []byte("The user lives in Springfield.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
