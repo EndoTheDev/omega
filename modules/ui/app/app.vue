@@ -177,7 +177,8 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+  import { computed, onMounted, onUnmounted, reactive, ref, watch, type Ref } from "vue";
+  import { openClamp } from "./composables/panes";
   import {
     anyBusy,
     withBusy,
@@ -356,7 +357,21 @@
       drawerOpen.value = !drawerOpen.value;
     } else {
       sidebarVisible.value = !sidebarVisible.value;
+      // open-clamp: a stale sub-floor persisted width (manual resize below
+      // 320, then collapse) reopens AT 320; manual resize below still works
+      if (sidebarVisible.value) reopenClip(sidebarWidth, "omega.sidebar-width");
     }
+  }
+
+  // reopen-floor helper, applied when a pane group un-collapses: lift the
+  // width ref to PANE_OPEN_MIN and rewrite the divider's storage key so the
+  // remounting divider restores the clamped value (the ref is already
+  // correct - the key is what the divider's onMounted reads back)
+  function reopenClip(width: Ref<number>, storageKey: string) {
+    const clamped = openClamp(width.value);
+    if (clamped === width.value) return;
+    width.value = clamped;
+    if (typeof window !== "undefined") localStorage.setItem(storageKey, String(clamped));
   }
 
   function closeOverlays() {
@@ -559,6 +574,8 @@
       return;
     }
     pushBackLeft();
+    // open-clamp: stale sub-floor width reopens at the floor (dock constants)
+    reopenClip(rightWidth, "omega.inspector-width");
     rightVisible.value = true;
   }
 

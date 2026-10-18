@@ -597,6 +597,10 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   background: transparent;
 }
 .divider:hover, .divider.active { background: var(--stroke); }
+/* magnetic snap attract: subtle accent guide while the pointer sits inside
+   a snap zone (320/640) - the pane keeps tracking the pointer; releasing
+   inside the zone sticks it to the exact snap size (dock-design constants) */
+.divider.snap { background: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* ---- chat pane ---- */
 .chat {

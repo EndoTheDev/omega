@@ -1,7 +1,7 @@
 <template>
   <div
     class="divider"
-    :class="{ active: dragging }"
+    :class="{ active: dragging, snap: snappedTo !== null }"
     @pointerdown="start"
     @pointermove="move"
     @pointerup="stop"
@@ -12,6 +12,7 @@
 
 <script setup lang="ts">
   import { onMounted, ref } from "vue";
+  import { snapCandidate } from "../composables/panes";
 
   const props = defineProps<{
     width: number;
@@ -28,6 +29,10 @@
   const dragging = ref(false);
   let startX = 0;
   let startWidth = 0;
+  // magnetic snap: tracks the snap size while the pointer sits inside a
+  // 15px attract zone (320/640). The pane itself keeps following the
+  // pointer - snap engages on RELEASE - the class only lights the guide.
+  const snappedTo = ref<number | null>(null);
 
   const key = () => props.storageKey || "omega.sidebar-width";
 
@@ -58,15 +63,21 @@
     if (next < props.min) {
       emit("collapsed");
       dragging.value = false;
+      snappedTo.value = null;
       return;
     }
     // no max: sidebars are unbounded; the pane-area squeeze chain keeps the
     // chat at its 320px floor and collapses the far sidebar when starved
     emit("update:width", next);
+    // attractor, not a clamp: the pane keeps tracking the pointer, releasing
+    // inside the zone is what sticks it to the exact snap size
+    snappedTo.value = snapCandidate(next);
   }
 
   function stop() {
+    if (dragging.value && snappedTo.value !== null) emit("update:width", snappedTo.value);
     dragging.value = false;
+    snappedTo.value = null;
   }
 
   onMounted(() => {
