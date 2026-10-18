@@ -15,9 +15,10 @@
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
     </p>
-    <p v-else-if="visibleGroups.length === 0" class="settings-empty">
-      no settings match "{{ query.trim() }}"
-    </p>
+    <div class="settings-body">
+      <p v-if="!loadError && visibleGroups.length === 0" class="settings-empty">
+        no settings match "{{ query.trim() }}"
+      </p>
 
     <!--
       Two knob origins share one renderer:
@@ -86,7 +87,8 @@
         </div>
       </template>
     </section>
-
+    </div>
+    <!-- save row stays pinned below the scrollable body -->
     <div v-if="dirtyCount > 0" class="settings-save-row">
       <button
         class="settings-save"

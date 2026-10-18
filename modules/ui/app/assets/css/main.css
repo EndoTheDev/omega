@@ -1228,6 +1228,17 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   margin: 0;
 }
 .settings-error { color: var(--accent); }
+/* the scrolling body: same pattern as .session-list / .inspector-files -
+   flex:1 + min-height:0 + overflow-y:auto. 28 knobs overflow the pane
+   otherwise and nothing scrolls (reported by Endo, morning 2026-10-18).
+   search input and save row stay pinned outside it. */
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
 .setting-item {
   padding: 8px 0;
   display: flex;
