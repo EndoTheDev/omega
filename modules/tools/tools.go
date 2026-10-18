@@ -25,6 +25,11 @@ type ToolProvider struct {
 	// Upgrade path: LRU eviction of idle mutexes if path count grows
 	// large, but in practice the set is bounded by working-tree size.
 	fileLocks sync.Map // map[string]*sync.Mutex, keyed by abs path
+
+	// dbGuard refuses any shell command or file path that resolves
+	// into the instance database (ENDO'S LAW 2026-10-18). nil and
+	// zero-value guards are pass-through.
+	dbGuard *dbGuard
 }
 
 // Tools returns the tool map keyed by tool name.
@@ -117,6 +122,9 @@ func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (strin
 	if strings.TrimSpace(command) == "" {
 		return "", fmt.Errorf("command must not be empty")
 	}
+	if p.dbGuard.denyShell(command) {
+		return "", dbDenied(command)
+	}
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
@@ -140,6 +148,9 @@ func (p *ToolProvider) RunReadFile(_ context.Context, args map[string]any) (stri
 	}
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path must not be empty")
+	}
+	if p.dbGuard.denyFile(path) {
+		return "", dbDenied(path)
 	}
 
 	mu := p.fileMutex(path)
@@ -208,6 +219,9 @@ func (p *ToolProvider) RunWriteFile(_ context.Context, args map[string]any) (str
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path must not be empty")
 	}
+	if p.dbGuard.denyFile(path) {
+		return "", dbDenied(path)
+	}
 
 	mu := p.fileMutex(path)
 	mu.Lock()
@@ -241,6 +255,9 @@ func (p *ToolProvider) RunEdit(_ context.Context, args map[string]any) (string, 
 	}
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path must not be empty")
+	}
+	if p.dbGuard.denyFile(path) {
+		return "", dbDenied(path)
 	}
 	if oldString == "" {
 		return "", fmt.Errorf("old_string must not be empty")
