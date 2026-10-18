@@ -519,13 +519,22 @@ func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, 
 	return err
 }
 
+// quoteFTS wraps a user-supplied search term in FTS5 double quotes so it
+// matches as a literal phrase instead of being interpreted as query syntax
+// (apostrophes, AND/OR/NEAR, prefixes, etc.). Embedded double quotes are
+// doubled per FTS5 string-literal rules.
+func quoteFTS(term string) string {
+	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
+}
+
 // SearchMessages performs a full-text search across all session messages.
-// Returns matching sessions with a snippet of the matching content.
+// The term is matched literally (phrase-quoted); returns matching sessions
+// with a snippet of the matching content.
 func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.SearchResult, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
 		 FROM messages_fts WHERE messages_fts MATCH ?
-		 ORDER BY rank`, query)
+		 ORDER BY rank`, quoteFTS(query))
 	if err != nil {
 		return nil, err
 	}

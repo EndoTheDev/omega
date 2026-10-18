@@ -757,12 +757,16 @@ func TestSessionSearch(t *testing.T) {
 		t.Fatalf("empty q: status = %d body = %q, want 200 []", rec.Code, rec.Body.String())
 	}
 
-	// FTS syntax errors are the caller's problem, not a 500
+	// SearchMessages phrase-quotes the term, so even FTS-breaking
+	// input ("unbalanced quote) becomes a valid literal phrase and
+	// degrades to a no-hit search, not an error. The 400 backstop
+	// for FTS syntax errors stays in the handler for store-level
+	// faults, but user input can no longer reach it.
 	req = httptest.NewRequest(http.MethodGet, `/sessions/search?q=%22unbalanced`, nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("fts syntax error: status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf(`unbalanced quote term: status = %d body = %q, want 200 []`, rec.Code, rec.Body.String())
 	}
 
 	// wrong method and no store

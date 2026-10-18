@@ -852,6 +852,42 @@ func TestSearchMessages(t *testing.T) {
 	if len(empty) != 0 {
 		t.Fatalf("expected 0 results for no-match query, got %d", len(empty))
 	}
+
+	// Apostrophe in the term is a literal, not FTS syntax.
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser("what's the plan for today")); err != nil {
+		t.Fatalf("append apostrophe msg: %v", err)
+	}
+	results, err = s.SearchMessages(ctx, "what's")
+	if err != nil {
+		t.Fatalf("search apostrophe: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results for literal apostrophe search, want >= 1")
+	}
+
+	// A term containing FTS keywords is matched literally.
+	if err := s.AppendMessage(ctx, "s2", ai.NewUser("we say foo AND bar out loud")); err != nil {
+		t.Fatalf("append AND msg: %v", err)
+	}
+	results, err = s.SearchMessages(ctx, "foo AND bar")
+	if err != nil {
+		t.Fatalf("search AND keyword: %v", err)
+	}
+	if len(results) != 1 || results[0].SessionID != "s2" {
+		t.Fatalf("expected literal 'foo AND bar' to hit s2 only, got %+v", results)
+	}
+
+	// Embedded double quotes are escaped, not a syntax error.
+	if err := s.AppendMessage(ctx, "s1", ai.NewUser(`the "quoted" section`)); err != nil {
+		t.Fatalf("append quote msg: %v", err)
+	}
+	results, err = s.SearchMessages(ctx, `"quoted"`)
+	if err != nil {
+		t.Fatalf("search embedded quotes: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results for term with embedded double quotes, want >= 1")
+	}
 }
 
 // helperAssistantWithTools builds an Assistant message with tool calls.
