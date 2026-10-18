@@ -21,7 +21,7 @@
       class="tool-section">
       <span class="tool-section-label">output</span>
       <pre
-        class="tool-output"
+        class="tool-output tool-result"
         :class="{ 'is-error': status === 'error' }"
         >{{ result }}</pre
       >
