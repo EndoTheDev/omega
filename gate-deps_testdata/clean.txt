@@ -1,0 +1,4 @@
+PKG github.com/EndoTheDev/omega/agent|github.com/EndoTheDev/omega/ai||
+PKG github.com/EndoTheDev/omega/ai|encoding/json||
+github.com/EndoTheDev/omega/ai
+github.com/EndoTheDev/omega/agent

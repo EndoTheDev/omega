@@ -10,6 +10,12 @@ mkdir -p bin
 
 echo "==> vet"
 go vet $(go list ./... | grep -v '/bin/')
+echo "==> dep law (ai/ and agent/ never import modules/)"
+if OMEGA_GATE_FIXTURE=gate-deps_testdata/bad.txt ./gate-deps.sh; then
+	echo "self-test broken: fixture violation not detected"
+	exit 1
+fi
+./gate-deps.sh
 echo "==> test"
 go test $(go list ./... | grep -v '/bin/')
 echo "==> build"
