@@ -24,6 +24,11 @@ import (
 // control: toggle, number, text, secret, select, textarea, bindlist
 // (comma-separated address list rendered as a single text input).
 // Live marks knobs the hot-apply path applies without a restart.
+// Surface declares who can USE the knob: "" = every surface, "tui" =
+// terminal app only - each serving surface filters to its own, so an
+// exposed setting is always a usable one (Endo, 2026-10-18: a TUI theme
+// picker in the browser is a settings editor for an app you're not
+// using).
 type settingKnob struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -35,6 +40,7 @@ type settingKnob struct {
 	Step    *float64 `json:"step,omitempty"`
 	Help    string   `json:"help,omitempty"`
 	Live    bool     `json:"live,omitempty"`
+	Surface string   `json:"surface,omitempty"`
 }
 
 // settingGroup mirrors one config.yaml section.
@@ -131,10 +137,10 @@ func settingGroups(cfg *Config) []settingGroup {
 				{Key: "notifications", Label: "notifications", Type: "select",
 					Options: []string{"bell", "desktop", "off"},
 					Value:   notificationsValue(cfg.Notifications),
-					Help:    "turn-complete notification (TUI)"},
+					Help:    "turn-complete notification (TUI)", Surface: "tui"},
 				{Key: "theme", Label: "theme (TUI)", Type: "text",
 					Value: cfg.Theme,
-					Help:  "TUI theme name; the webui theme lives in this pane's theme select"},
+					Help:  "TUI theme name; the webui theme lives in this pane's theme select", Surface: "tui"},
 			},
 		},
 		{

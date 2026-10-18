@@ -25,7 +25,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "load settings: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeSettingsJSON(w, payload)
+		writeSettingsJSON(w, filterKnobSurface(payload))
 	case http.MethodPut:
 		if s.settings == nil {
 			http.Error(w, "settings not configured", http.StatusNotImplemented)
@@ -64,4 +64,46 @@ func writeSettingsJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// filterKnobSurface drops knobs this serving surface cannot use. The
+// webui is the http channel's surface: knobs carrying surface "tui" are
+// config for an app this pane isn't, and an exposed setting must be a
+// usable one (Endo, 2026-10-18). Groups left empty by the filter drop
+// out too. Round-trips through generic maps because the Settings seam
+// returns an opaque payload.
+func filterKnobSurface(payload any) any {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return payload
+	}
+	var doc map[string]any
+	if json.Unmarshal(raw, &doc) != nil {
+		return payload
+	}
+	groups, _ := doc["groups"].([]any)
+	kept := make([]any, 0, len(groups))
+	for _, g := range groups {
+		group, _ := g.(map[string]any)
+		if group == nil {
+			continue
+		}
+		knobs, _ := group["knobs"].([]any)
+		groupKnobs := make([]any, 0, len(knobs))
+		for _, k := range knobs {
+			knob, _ := k.(map[string]any)
+			if knob == nil || knob["surface"] == "tui" {
+				continue
+			}
+			delete(knob, "surface") // the wire stays clean for the pane
+			groupKnobs = append(groupKnobs, knob)
+		}
+		if len(groupKnobs) == 0 {
+			continue
+		}
+		group["knobs"] = groupKnobs
+		kept = append(kept, group)
+	}
+	doc["groups"] = kept
+	return doc
 }
