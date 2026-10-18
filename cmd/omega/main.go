@@ -299,9 +299,21 @@ func buildConfigs(cfg Config) map[string]any {
 		"memory":       memory.Config{Enabled: cfg.Memory.Enabled, UserProfileEnabled: cfg.Memory.UserProfileEnabled, CharLimit: cfg.Memory.CharLimit, UserProfileCharLimit: cfg.Memory.UserProfileCharLimit, File: cfg.Memory.File, UserProfileFile: cfg.Memory.UserProfileFile},
 		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},
 		"compactor":    cfg.Compaction,
-		"web":          web.Config{APIKey: cfg.Provider.APIKey},
+		"web":          web.Config{APIKey: cfg.Provider.APIKey, BaseURL: webBaseURL(cfg)},
 		"trust":        trust.Config{Home: omegaHome()},
 	}
+}
+
+// webBaseURL returns the host the web tools target: the explicit
+// web.base_url override when set, otherwise the provider host (with a
+// trailing /v1 stripped, mirroring provider.go's probe), so the
+// keypool mirror serves /api/web_search and /api/web_fetch with the
+// same auth swap + rotation as every other call.
+func webBaseURL(cfg Config) string {
+	if cfg.Web.BaseURL != "" {
+		return cfg.Web.BaseURL
+	}
+	return strings.TrimSuffix(cfg.Provider.Host, "/v1")
 }
 
 // newAgent wires config into a provider, agent, store, and extensions
