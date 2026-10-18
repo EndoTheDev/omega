@@ -35,10 +35,10 @@ build.bat         Build script (Windows): vet + test + build
 docs/             User documentation (this directory)
 bin/              Build output + local runtime (gitignored; skills/ templates tracked)
   omega           Built binary
-  config/         Infrastructure yaml files (config.yaml, mcp.yaml, crons.yaml)
+  config/         Config + trust state (config.yaml, trust.yaml, *.example seeds; legacy root trust.yaml still wins)
     config.yaml   Personal configuration (gitignored)
+    trust.yaml    Trust state (gitignored)
   omega.db        Session database (gitignored)
-  trust.yaml      Trust state (gitignored)
   skills/         Skill files
 ```
 
