@@ -1206,6 +1206,28 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .send:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* cancel: the send button's slot while the session's run streams - the
+   same shape, a muted fill so it reads as "stop", not "answer" */
+.send.cancel { background: var(--text-dim); }
+
+/* retry: outline-accent affordance left of send - re-sends the last
+   user message as a fresh turn (interrupted stream or not). Carries
+   the send button's auto-margin; the real send sits flush after. */
+.retry {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+  border-radius: var(--r-chip);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  min-height: 32px;
+}
+.retry:disabled { opacity: 0.4; cursor: not-allowed; }
+.retry + .send { margin-left: 8px; }
+
 /* ---- layer 2: overlays (settings drawer, scrims) ---- */
 .scrim {
   position: fixed;
