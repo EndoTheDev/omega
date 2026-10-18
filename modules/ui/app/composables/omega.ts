@@ -59,6 +59,9 @@ export interface Session {
   last_run?: LastRunStats;
   model?: string;
   pinned?: boolean;
+  // server-side archive flag: hidden from the default list, revealed
+  // by the sidebar's archived toggle (muted rows), still searchable
+  archived?: boolean;
   // server-side read stamp + read-time unread (updated_at > last_read_at)
   last_read_at?: string;
   unread?: boolean;
@@ -810,8 +813,9 @@ export async function fetchModels(): Promise<ModelsInfo> {
   return r.json();
 }
 
-export async function fetchSessions(): Promise<Session[]> {
-  const r = await fetch("/sessions");
+export async function fetchSessions(includeArchived = false): Promise<Session[]> {
+  const url = includeArchived ? "/sessions?archived=include" : "/sessions";
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`sessions: ${r.status}`);
   return r.json();
 }
@@ -980,9 +984,18 @@ export interface SessionContentHit {
 }
 
 // searchSessionContent queries the store's FTS5 index through the
-// server. Throws on non-2xx (400 = FTS rejected the query syntax).
-export async function searchSessionContent(query: string): Promise<SessionContentHit[]> {
-  const r = await fetch(`/sessions/search?q=${encodeURIComponent(query)}`);
+// server. includeArchived toggles the backend's archived filter - with
+// the sidebar's archived toggle off the hits stay off (default), with
+// it on the archived sessions' content is searched too. Throws on
+// non-2xx (400 = FTS rejected the query syntax).
+export async function searchSessionContent(
+  query: string,
+  includeArchived = false,
+): Promise<SessionContentHit[]> {
+  const suffix = includeArchived ? "&archived=include" : "";
+  const r = await fetch(
+    `/sessions/search?q=${encodeURIComponent(query)}${suffix}`,
+  );
   if (!r.ok) throw new Error(`session search: ${r.status}`);
   return r.json();
 }
@@ -1037,6 +1050,38 @@ export async function markSessionRead(id: string): Promise<void> {
     body: JSON.stringify({ read: true }),
   });
   if (!r.ok) throw new Error(`read: ${r.status}`);
+}
+
+// archiveSession PATCHes the archived flag directly on the session row.
+// Same contract as pin: a list concern, updated_at never moves.
+export async function archiveSession(id: string, archived: boolean): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived }),
+  });
+  if (!r.ok) throw new Error(`archive: ${r.status}`);
+}
+
+// deleteSession removes a session PERMANENTLY (messages cascade
+// server-side). There is no undo - the caller must confirm first.
+export async function deleteSession(id: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!r.ok) throw new Error(`delete: ${r.status}`);
+}
+
+// filterArchived keeps one side of the archive flag: the archived rows
+// (toggle on) or the live ones (toggle off). The server already filters
+// the fetched list to match - this is the client-side gate for the rows
+// left in state after a patch (archive drops the row instantly, before
+// the refresh lands).
+export function filterArchived(
+  sessions: Session[],
+  includeArchived: boolean,
+): Session[] {
+  return sessions.filter((s) => (includeArchived ? s.archived : !s.archived));
 }
 
 // Minimal structural view of a transcript item for the retry helpers -

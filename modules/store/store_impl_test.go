@@ -575,6 +575,75 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
+// TestMigrationAddsArchivedColumn upgrades a database that predates
+// the archived flag and verifies old sessions come through unarchived,
+// then covers the archive/unarchive round-trip.
+func TestMigrationAddsArchivedColumn(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+	ctx := context.Background()
+
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES ('old', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old session: %v", err)
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	// Opening through the store migrates in place; old sessions default
+	// to unarchived.
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	defer s.Close()
+	before, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old session: %v", err)
+	}
+	if before.Archived {
+		t.Fatalf("migrated session archived = true, want false")
+	}
+	updatedAt := before.UpdatedAt
+
+	// Archive round-trip: set, get, unset. updated_at must not move -
+	// the time buckets read it, and archiving is not activity.
+	if err := s.SetSessionArchived(ctx, "old", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	archived, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get archived: %v", err)
+	}
+	if !archived.Archived {
+		t.Fatalf("archived = false after archive, want true")
+	}
+	if archived.UpdatedAt != updatedAt {
+		t.Fatalf("archive moved updated_at: %q -> %q", updatedAt, archived.UpdatedAt)
+	}
+	if err := s.SetSessionArchived(ctx, "old", false); err != nil {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "old"); after.Archived {
+		t.Fatalf("archived = true after unarchive, want false")
+	}
+}
+
 // TestSessionReadAndUnread covers the server-side unread state: the
 // last_read_at migration stamps existing rows read, CreateSession
 // births sessions read, a message landing after last_read_at flips

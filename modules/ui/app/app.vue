@@ -36,9 +36,13 @@
           :active-id="activeId"
           :streaming-ids="busyAll"
           :open="drawerOpen"
+          :show-archived="showArchived"
           @open="openSession"
           @new="newChat"
-          @pin="togglePin" />
+          @pin="togglePin"
+          @archive="toggleArchive"
+          @remove="askDelete"
+          @toggle-archived="showArchived = $event" />
 
         <PaneDivider
           v-if="!isMobile && sidebarVisible"
@@ -165,6 +169,39 @@
       class="scrim"
       @click="settingsOpen = false" />
 
+    <!-- destructive confirm: delete walks the store cascade server-side,
+         so there is no undo - the dialog names the session -->
+    <div
+      v-if="deleteId"
+      class="confirm-scrim"
+      @click.self="cancelDelete">
+      <div
+        class="confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-delete-title">
+        <p
+          id="confirm-delete-title"
+          class="confirm-title">Delete session?</p>
+        <p class="confirm-body">
+          "{{ deleteLabel }}" and its full history are removed
+          permanently. There is no undo.
+        </p>
+        <div class="confirm-actions">
+          <button
+            class="new-btn"
+            @click="cancelDelete">
+            cancel
+          </button>
+          <button
+            class="confirm-danger"
+            @click="confirmDelete">
+            delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <StatusBar
       :healthy="healthy"
       :streaming="anyBusyNow"
@@ -187,6 +224,8 @@
     withBusy,
     pinSession,
     markSessionRead,
+    archiveSession,
+    deleteSession,
     parseSessionPath,
     sessionPath,
     isAtBottom,
@@ -257,6 +296,9 @@
   const models = ref<string[]>([]);
   const selectedModel = ref("");
   const sessions = ref<Session[]>([]);
+  // archived filter: off (default) lists live sessions only; on fetches
+  // with archived=include and shows only - muted - archived rows
+  const showArchived = ref(false);
   const activeId = ref<string | null>(null);
   const draft = ref("");
   const messagesEl = ref<HTMLElement | null>(null);
@@ -1035,7 +1077,7 @@
 
   async function refreshSessions() {
     try {
-      const list = await fetchSessions();
+      const list = await fetchSessions(showArchived.value);
       sessions.value = list;
       // server-reported live runs replace (not union into) the last
       // snapshot: these are the sessions a JUST-refreshed page sees as
@@ -1078,6 +1120,59 @@
       refreshSessions();
     }
   }
+
+  // toggleArchive flips the archive flag. Instant + reversible: the row
+  // leaves the list the moment the flag lands locally (the server list
+  // already carries only the visible archive side, so the patched row
+  // is gated exactly like refreshSessions - on in archived view, off in
+  // the live view). A failed PATCH reverts and re-syncs.
+  async function toggleArchive(id: string, target: boolean) {
+    const updateList = (list: Session[]) =>
+      list
+        .map((s) => (s.id === id ? { ...s, archived: target } : s))
+        .filter((s) => (showArchived.value ? s.archived : !s.archived));
+    const before = sessions.value;
+    sessions.value = updateList(sessions.value);
+    try {
+      await archiveSession(id, target);
+    } catch {
+      sessions.value = before;
+      refreshSessions();
+    }
+  }
+
+  // delete flow: the sidebar only signals intent; the confirm dialog is
+  // the only door to the API call. Deleting the VIEWED session walks the
+  // view back to an unsaved chat.
+  const deleteId = ref<string | null>(null);
+  const deleteLabel = ref("");
+  function askDelete(id: string) {
+    const s = sessions.value.find((x) => x.id === id);
+    deleteId.value = s ? s.id : "";
+    deleteLabel.value = (s?.label || s?.id || "").slice(0, 80);
+  }
+  function cancelDelete() {
+    deleteId.value = null;
+  }
+  async function confirmDelete() {
+    const id = deleteId.value;
+    deleteId.value = null;
+    if (!id) return;
+    try {
+      await deleteSession(id);
+    } catch {
+      // a failed DELETE leaves the row in place - the refresh shows the
+      // truth
+      refreshSessions();
+      return;
+    }
+    if (activeId.value === id) newChat();
+    refreshSessions();
+  }
+
+  // toggling the archived filter refetches through the include filter -
+  // the two archive sides never mix in one list
+  watch(showArchived, () => refreshSessions());
 
   // scrollDown keeps the view pinned to the newest content. "pinned" tracks
   // the USER's intent: it only changes on actual scroll events, not when

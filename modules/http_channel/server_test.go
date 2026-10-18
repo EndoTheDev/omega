@@ -910,6 +910,133 @@ func TestSessionPatchPinned(t *testing.T) {
 	}
 }
 
+// TestSessionPatchArchived covers the archive round-trip through the
+// API: PATCH {"archived": true} persists the flag, the default GET
+// /sessions excludes the row, archived=include returns it, unarchive
+// brings it back, and updated_at never moves.
+func TestSessionPatchArchived(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "labeled"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	patch := func(t *testing.T, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/sessions/s1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := patch(t, `{"archived": true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var sess agent.Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !sess.Archived {
+		t.Fatalf("patch response archived = false, want true")
+	}
+	updatedAt := sess.UpdatedAt
+
+	// default list excludes archived; include brings it back
+	listDec := func(t *testing.T, url string) []sessionPayload {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		listRec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(listRec, req)
+		if listRec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", url, listRec.Code)
+		}
+		var list []sessionPayload
+		if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		return list
+	}
+	if list := listDec(t, "/sessions"); len(list) != 0 {
+		t.Fatalf("default list = %+v, want archived session excluded", list)
+	}
+	if list := listDec(t, "/sessions?archived=include"); len(list) != 1 || !list[0].Archived {
+		t.Fatalf("include list = %+v, want one archived session", list)
+	}
+
+	// the PATCH is not activity: updated_at untouched
+	if got, _ := st.GetSession(ctx, "s1"); got.UpdatedAt != updatedAt {
+		t.Fatalf("archive moved updated_at: %q -> %q", updatedAt, got.UpdatedAt)
+	}
+
+	rec = patch(t, `{"archived": false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unarchive status = %d, want 200", rec.Code)
+	}
+	if after, _ := st.GetSession(ctx, "s1"); after.Archived {
+		t.Fatalf("archived = true after unarchive, want false")
+	}
+	if list := listDec(t, "/sessions"); len(list) != 1 {
+		t.Fatalf("default list after unarchive = %+v, want the session back", list)
+	}
+
+	rec = patch(t, `not json`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body status = %d, want 400", rec.Code)
+	}
+	rec = patch(t, `{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing archived status = %d, want 400", rec.Code)
+	}
+}
+
+// TestSessionSearchArchivedFilter covers the search-side archived
+// filter: hits whose session is archived are excluded by default and
+// restored by archived=include.
+func TestSessionSearchArchivedFilter(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2"} {
+		if err := st.CreateSession(ctx, id, "", ""); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+		if err := st.AppendMessage(ctx, id, ai.NewUser("quiet harbor town")); err != nil {
+			t.Fatalf("append %s: %v", id, err)
+		}
+	}
+	if err := st.SetSessionArchived(ctx, "s1", true); err != nil {
+		t.Fatalf("archive s1: %v", err)
+	}
+
+	searchDec := func(t *testing.T, url string) map[string]string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d; body=%s", url, rec.Code, rec.Body.String())
+		}
+		var hits []sessionSearchHit
+		if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		out := map[string]string{}
+		for _, h := range hits {
+			out[h.ID] = h.Snippet
+		}
+		return out
+	}
+
+	if hits := searchDec(t, "/sessions/search?q=harbor"); len(hits) != 1 || hits["s2"] == "" {
+		t.Fatalf("default hits = %+v, want only the unarchived s2", hits)
+	}
+	hits := searchDec(t, "/sessions/search?q=harbor&archived=include")
+	if len(hits) != 2 || hits["s1"] == "" || hits["s2"] == "" {
+		t.Fatalf("include hits = %+v, want s1 and s2", hits)
+	}
+}
+
 // TestSessionPatchRead covers the mark-read round-trip through the API:
 // output landing after the session's last read turns unread on in the
 // list, PATCH {"read": true} stamps it off without touching updated_at,
