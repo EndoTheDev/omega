@@ -993,18 +993,13 @@ export async function markSessionRead(id: string): Promise<void> {
 }
 
 // Minimal structural view of a transcript item for the retry helpers -
-// the app's TranscriptItem union satisfies it (all member shapes carry
-// these fields or none of them).
+// only the fields lastCompleteUserIndex/lastUserText/dropLastExchange/
+// hasInterruptedMarker read; the app's TranscriptItem union satisfies
+// it (all member shapes carry kind, and role/content when applicable).
 export interface TranscriptItemLike {
   kind: string;
   role?: string;
   content?: string;
-  name?: string;
-  status?: string;
-  output?: string;
-  result?: string;
-  streaming?: boolean;
-  time?: string;
 }
 
 // lastCompleteUserIndex finds the transcript item a RESEND kicks off from:

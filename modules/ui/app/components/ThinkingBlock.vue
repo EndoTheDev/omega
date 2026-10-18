@@ -18,9 +18,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onUnmounted, ref, watch } from "vue";
-
-  import { createElapsedMeter, formatDurationMs } from "../composables/omega";
+  import { useElapsed } from "../composables/useElapsed";
 
   // Auto-expand while streaming, collapse when the answer starts: the :open
   // binding tracks `streaming` — true keeps the block open (reasoning visible),
@@ -35,25 +33,9 @@
 
   // Elapsed counter: ticks every second while the stream is live and
   // freezes at the final value when it ends - the collapsed summary keeps
-  // showing how long the run thought. The meter carries no interval of its
-  // own across unmount: stop() is called on unmount too (clears the timer,
-  // keeps the last label).
-  const elapsed = ref("");
-  const meter = createElapsedMeter((label) => {
-    elapsed.value = label;
-  });
-  const elapsedLabel = computed(() =>
-    props.finalMs != null ? formatDurationMs(props.finalMs) : elapsed.value,
-  );
-
-  watch(
+  // showing how long the run thought.
+  const elapsedLabel = useElapsed(
+    () => props.finalMs,
     () => props.streaming ?? false,
-    (live) => {
-      if (live) meter.start();
-      else meter.stop();
-    },
-    { immediate: true },
   );
-
-  onUnmounted(() => meter.stop());
 </script>
