@@ -793,6 +793,13 @@
           },
           onToolCall: (tool) => {
             segmentBreak = true;
+            // the tool phase closes the thinking block too: turn 2's
+            // thinking must mount as a FRESH item after the tool
+            // lines, not append to the pre-tool block above them
+            if (thinking) {
+              thinking.streaming = false;
+              thinking = null;
+            }
             // the segment's text is over - the tool lines carry the
             // activity now. Killing the flag here hides the streaming
             // cursor during the whole tool phase (in-app comment 5);

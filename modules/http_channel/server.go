@@ -363,6 +363,13 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 	}
 	switch ev := se.Event.(type) {
 	case ai.ThinkingChunk:
+		if len(rec.results) > 0 {
+			// thinking after tool results is turn 2's - persist it
+			// with the next message (the live view splits there
+			// too), not concatenated onto turn 1's record
+			*recs = append(*recs, *rec)
+			*rec = assistantRecord{}
+		}
 		rec.thinking += ev.Content
 		if !rec.lastThink.IsZero() {
 			rec.thinkingMs += now.Sub(rec.lastThink).Milliseconds()
