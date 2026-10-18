@@ -412,19 +412,20 @@ provider:
 	}
 }
 
-func TestApplyEnvInvalidCompactionContextWindow(t *testing.T) {
+func TestApplyEnvZeroCompactionContextWindow(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:
   model_name: llama3
 `)
-	// Zero context window — should be skipped, default preserved.
+	// Zero context window is now valid: 0 = auto (probed from the
+	// provider at startup), so it must pass through, not be skipped.
 	t.Setenv("OMEGA_COMPACTION_CONTEXT_WINDOW", "0")
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Compaction.ContextWindow != 32768 {
-		t.Errorf("context_window = %d, want default 32768 (invalid env skipped)", cfg.Compaction.ContextWindow)
+	if cfg.Compaction.ContextWindow != 0 {
+		t.Errorf("context_window = %d, want 0 (auto)", cfg.Compaction.ContextWindow)
 	}
 }
 
