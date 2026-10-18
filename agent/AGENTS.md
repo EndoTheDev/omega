@@ -25,7 +25,7 @@ HTTP channel, or extensions).
   via `SetLoopProvider` or by mounting the agent-loop extension.
 - `seams.go` - capability seam interfaces (`LoopProvider` + `LoopOptions`,
   `CompactionProvider`, `ToolProvider` (`DefaultToolProvider` kept for tests),
-  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel` + `ChannelDeps`, `Frontend` + `FrontendOptions`, `TrustProvider`, `CronProvider` + `CronDeps`).
+  `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel` + `ChannelDeps` (incl. `Settings`), `Frontend` + `FrontendOptions`, `TrustProvider`, `CronProvider` + `CronDeps`).
 - `plugin.go` - in-process extension system: `Context` (shared service
   container with typed seam slots), `Plugin` interface (`Name`,
   `Provides`, `Requires`, `Mount`), `MountAll` (topological sort by

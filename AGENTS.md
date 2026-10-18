@@ -97,6 +97,7 @@ go vet ./...      # no suspicious constructs
 ```txt
 AGENTS.md (root - this file)
 ├── build.sh                   # build script (Linux/macOS): vet + test + build to bin/
+├── gate-deps.sh               # dependency-law gate: ai/ and agent/ never import modules/
 ├── build.bat                  # build script (Windows): vet + test + build to bin\
 ├── .agents/                   # conventions (COMMIT.md)
 ├── docs/                      # user documentation (tracked)

@@ -63,10 +63,11 @@ into the omega binary via `go:embed` and served by the HTTP channel at
     composables/omega.ts; clicking it pins/unpins via app.vue's
     `togglePin`),
     `RightSidebar` (inspector pane: a tab shell - parked tabs slot in
-    later - whose Files tab is a breadcrumb file manager over the
-    working directory: dir rows descend, file rows open a read-only
-    64 KiB-capped mono preview reporting truncated/binary;
-    the listing lazy-loads on first open and the pane's open state
+    later - whose Files tab is a VS Code-style TREE over the
+    working directory: folders expand/collapse in place (chevron per
+    folder, lazy one level per expand via /files/browse), click file =
+    read-only 64 KiB-capped mono preview reporting truncated/binary,
+    expanded/collapsed state persists; the pane's open state
     persists desktop-side under `omega.inspector-open` (app.vue)),
     `SettingsDrawer`
     (headless - the gear is the toggle)

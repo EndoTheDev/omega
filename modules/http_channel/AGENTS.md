@@ -34,7 +34,20 @@ rule a security contract, not a preference.
   response). PATCH `/sessions/{id}` accepts `{"pinned": true|false}` and
   `{"read": true}`; both are list concerns that write the sessions row
   WITHOUT touching `updated_at` - pinning and reading are not activity,
-  and the webui time buckets read `updated_at`. Session persistence:
+  and the webui time buckets read `updated_at`. GET
+  `/sessions/search?q=<term>` exposes the store's FTS5 content search
+  (one hit per session, best-rank first; malformed FTS query -> 400);
+  the sidebar search unions it with the in-memory title filter. GET
+  `/sessions/{id}/events` is the reattach surface: SSE subscribe to a
+  session's live run (404 when not active, live-only frames for v1).
+  GET/PUT `/settings` serve the Settings seam: GET returns the knob
+  schema + values (no-store; a host without the seam answers 501; the
+  surface filter drops knobs whose `surface` is not this channel's),
+  PUT applies a diff-only values map (unknown key -> 400). Runs are
+  DETACHED from the /chat request (runHub in runs.go): a client
+  disconnect never cancels the run, one live run per session (second
+  /chat -> 409), a wall-clock `server.run_timeout` (default 30m) ends
+  hung runs. Session persistence:
   accumulate per response segment (a response chunk after tool results
   starts a new segment), persisted as assistant(A + tool calls) ->
   tool results -> assistant(B) - the provider-correct order and the
@@ -44,7 +57,7 @@ rule a security contract, not a preference.
 - `plugin.go` - bind list construction. **Loopback only by default**;
   additional addresses (e.g. the Tailscale IP for Traefik) are an
   explicit `server.bind` opt-in.
-- `config.go` - channel Config (Port, Bind).
+- `config.go` - channel Config (Port, Bind, RunTimeout).
 - `http_channel.go` - Channel seam implementation (`Serve` per addr).
 - `static/` - the built webui SPA, embedded via `go:embed` and
   COMMITTED (synced by `modules/ui/scripts/build.sh`), so a plain
