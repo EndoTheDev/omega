@@ -62,7 +62,7 @@ func kanbanHome() string {
 	return home
 }
 
-// KToolProvider exposes the board as agent tools. The tools take the
+// ToolProvider exposes the board as agent tools. The tools take the
 // provider seam instead of *Store so embedders can swap implementations.
 type ToolProvider struct {
 	board agent.KanbanProvider
