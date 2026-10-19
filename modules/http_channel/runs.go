@@ -190,6 +190,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 	go func() {
 		defer s.runs.finish(run)
 		defer cancel()
+		// detached runs carry the session id too: task tools in the detached
+		// loop link to the same conversation the request started
+		ctx = agent.WithSessionID(ctx, req.SessionID)
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage

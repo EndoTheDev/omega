@@ -33,6 +33,9 @@ type Server struct {
 	runs     runHub // detached /chat runs by session id (reattach surface)
 	store    agent.StoreProvider
 	settings agent.Settings
+	// Kanban is the optional board seam (modules/kanban). A nil value
+	// answers 501 on the /tasks endpoints - the board is optional.
+	Kanban agent.KanbanProvider
 	httpSrv  *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -71,6 +74,9 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
+	mux.HandleFunc("/tasks", s.handleTasks)
+	mux.HandleFunc("/tasks/{id}/comments", s.handleTaskComments)
+	mux.HandleFunc("/tasks/{id}", s.handleTaskByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/tools", s.handleTools)
@@ -475,6 +481,9 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
 func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) ([]assistantRecord, streamUsage, *agent.LastRunStats) {
+	// tools run in THIS session's context: board tools read the session
+	// id from ctx to auto-link tasks created mid-chat.
+	ctx = agent.WithSessionID(ctx, req.SessionID)
 	var recs []assistantRecord
 	var rec assistantRecord
 	var usage streamUsage
