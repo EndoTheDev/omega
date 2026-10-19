@@ -742,6 +742,11 @@ func TestSessionSearch(t *testing.T) {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
+	// s4 matches by LABEL only - the unified search must surface it as
+	// a title hit (titleMatch set, snippet = the label itself).
+	if err := st.CreateSession(ctx, "s4", "", "Harbor patrol log"); err != nil {
+		t.Fatalf("create s4: %v", err)
+	}
 	// s1 matches twice - the response must dedupe to one hit; s2 has a
 	// title-independent content match; s3 stays silent.
 	for _, m := range []struct {
@@ -771,14 +776,43 @@ func TestSessionSearch(t *testing.T) {
 		t.Fatalf("decode hits: %v", err)
 	}
 	ids := map[string]string{}
+	titled := map[string]bool{}
 	for _, ht := range hits {
 		if _, dup := ids[ht.ID]; dup {
 			t.Fatalf("duplicate hit for %s", ht.ID)
 		}
 		ids[ht.ID] = ht.Snippet
+		titled[ht.ID] = ht.TitleMatch
 	}
-	if len(ids) != 2 || ids["s1"] == "" || ids["s2"] == "" {
-		t.Fatalf("hits = %+v, want one snippet each for s1 and s2", hits)
+	if len(ids) != 3 || ids["s1"] == "" || ids["s2"] == "" {
+		t.Fatalf("hits = %+v, want one snippet each for s1, s2 and s4", hits)
+	}
+	// s4 hit by label: titleMatch set, snippet is the label itself, and
+	// it leads (title hits rank ahead of content hits).
+	if !titled["s4"] || hits[0].ID != "s4" || hits[0].Snippet != "Harbor patrol log" {
+		t.Fatalf("s4 must be the first, title-marked hit; got %+v", hits)
+	}
+
+	// Renaming s4's label away from the term drops its title hit; s4
+	// has no harbor content, so any leftover s4 row must not be
+	// title-marked (the fresh label never contains 'harbor').
+	if err := st.UpdateSession(ctx, "s4", "Fishing journal"); err != nil {
+		t.Fatalf("rename s4: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post-rename: status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	hits = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
+		t.Fatalf("decode post-rename hits: %v", err)
+	}
+	for _, ht := range hits {
+		if ht.ID == "s4" && ht.TitleMatch {
+			t.Fatalf("stale label must not be a title hit after rename: %+v", hits)
+		}
 	}
 
 	// empty q searches nothing, 200 []

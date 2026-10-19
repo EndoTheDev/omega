@@ -267,14 +267,6 @@ export function formatTokens(n: number): string {
   return `${k}k`;
 }
 
-// filterSessions matches the search query as a case-insensitive substring
-// of the session label. An empty query matches everything (no filter).
-export function filterSessions(sessions: Session[], query: string): Session[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return sessions;
-  return sessions.filter((s) => (s.label ?? s.id).toLowerCase().includes(q));
-}
-
 // byNewest orders a session group by last activity, newest first. A
 // missing or malformed updated_at sorts last ("now" beats the unknown).
 function byNewest(a: Session, b: Session): number {
@@ -969,52 +961,47 @@ export function settingsDiff(
   return out;
 }
 
-// --- content search: FTS5 over message content, behind /sessions/search ---
+// --- session search: one endpoint owns title AND content hits ---
 
-// SessionContentHit is one backend search row. The snippet comes back
-// from the store but is not rendered yet - matching context is later
-// polish; today only the id feeds the sidebar union.
-export interface SessionContentHit {
+// SessionSearchHit is one /sessions/search row. The backend ranks
+// label matches ahead of content matches and dedups to one hit per
+// session; the snippet is context for later polish - today only the
+// id feeds the sidebar, titleMatch marks label hits.
+export interface SessionSearchHit {
   id: string;
   snippet: string;
+  titleMatch?: boolean;
 }
 
-// searchSessionContent queries the store's FTS5 index through the
-// server. Throws on non-2xx (400 = FTS rejected the query syntax).
-export async function searchSessionContent(query: string): Promise<SessionContentHit[]> {
+// searchSessions queries the unified endpoint. Throws on non-2xx
+// (400 = FTS rejected the query syntax).
+export async function searchSessions(query: string): Promise<SessionSearchHit[]> {
   const r = await fetch(`/sessions/search?q=${encodeURIComponent(query)}`);
   if (!r.ok) throw new Error(`session search: ${r.status}`);
   return r.json();
 }
 
-// Debounce for the sidebar's content search - slow enough not to fire
+// Debounce for the sidebar's session search - slow enough not to fire
 // per keystroke, fast enough to feel live.
-export const CONTENT_SEARCH_DEBOUNCE_MS = 300;
+export const SESSION_SEARCH_DEBOUNCE_MS = 300;
 
-// withContentMatches unions the title-filtered row with the sessions
-// that matched by CONTENT (ids from the backend, null before the first
-// response arrives). A content-only match surfaces even though its
-// title never contained the query; ids the session list no longer holds
-// (deleted since the search) are dropped. Title matches come first,
-// then the backend-ranked content hits - bucketing re-sorts groups.
-export function withContentMatches(
-  filtered: Session[],
-  sessions: Session[],
-  contentIds: string[] | null,
-): Session[] {
-  if (!contentIds || contentIds.length === 0) return filtered;
+// withSearchHits maps the backend's ranked ids onto the session list:
+// the ONE source of truth for what a query matches, titles and content
+// alike - no in-memory filter runs alongside it. hitIds null means no
+// query or the first response has not landed yet: the full list stands.
+// Ids the list no longer holds (deleted since the search) are dropped.
+export function withSearchHits(sessions: Session[], hitIds: string[] | null): Session[] {
+  if (!hitIds) return sessions;
   const byId = new Map(sessions.map((s) => [s.id, s] as const));
-  const present = new Set(filtered.map((s) => s.id));
-  const extra: Session[] = [];
-  for (const id of contentIds) {
-    if (present.has(id)) continue;
+  const out: Session[] = [];
+  const seen = new Set<string>();
+  for (const id of hitIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
     const s = byId.get(id);
-    if (s) {
-      extra.push(s);
-      present.add(id);
-    }
+    if (s) out.push(s);
   }
-  return filtered.concat(extra);
+  return out;
 }
 
 // pinSession PATCHes the pinned flag directly on the session row.

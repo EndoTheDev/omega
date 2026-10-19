@@ -784,19 +784,22 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sessionSearchHit is one /sessions/search row: the matching session id
-// plus a snippet stub of the hit (a later card renders the context).
+// sessionSearchHit is one /sessions/search row: the matching session
+// id plus the hit (a title hit carries the label with titleMatch set;
+// a content hit carries a snippet stub - a later card renders the
+// context).
 type sessionSearchHit struct {
-	ID      string `json:"id"`
-	Snippet string `json:"snippet,omitempty"`
+	ID         string `json:"id"`
+	Snippet    string `json:"snippet,omitempty"`
+	TitleMatch bool   `json:"titleMatch,omitempty"`
 }
 
 // handleSessionSearch serves GET /sessions/search?q=<term>: the store's
-// FTS5 content search over session messages, deduped to one hit per
-// session (the first, best-rank message wins). Sessions match CONTENT
-// here, not their titles. It returns 501 when the server has no store,
-// 200 [] on a missing/empty q (nothing to search), and 400 when FTS5
-// rejects the query syntax.
+// unified FTS5 search (SearchSessions) - one endpoint, one result
+// shape, session labels AND message content in the same index pass,
+// deduped to one hit per session with title hits ranked first. It
+// returns 501 when the server has no store, 200 [] on a missing/empty
+// q (nothing to search), and 400 when FTS5 rejects the query syntax.
 func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -811,7 +814,7 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []sessionSearchHit{})
 		return
 	}
-	results, err := s.store.SearchMessages(r.Context(), q)
+	results, err := s.store.SearchSessions(r.Context(), q)
 	if err != nil {
 		// The only input-dependent failure mode of this read-only
 		// query is the query itself; the sqlite driver surfaces FTS5
@@ -821,14 +824,9 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "search: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	seen := make(map[string]bool, len(results))
 	out := make([]sessionSearchHit, 0, len(results))
 	for _, res := range results {
-		if seen[res.SessionID] {
-			continue
-		}
-		seen[res.SessionID] = true
-		out = append(out, sessionSearchHit{ID: res.SessionID, Snippet: res.Snippet})
+		out = append(out, sessionSearchHit{ID: res.SessionID, Snippet: res.Snippet, TitleMatch: res.Title})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

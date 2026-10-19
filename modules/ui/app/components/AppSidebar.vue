@@ -100,15 +100,14 @@
     bucketSessions,
     relativeAge,
     rowMeta,
-    filterSessions,
-    withContentMatches,
-    searchSessionContent,
-    CONTENT_SEARCH_DEBOUNCE_MS,
+    withSearchHits,
+    searchSessions,
+    SESSION_SEARCH_DEBOUNCE_MS,
     createRenderScheduler,
     parseCollapsedLabels,
     serializeCollapsedKeys,
     sessionRowStatus,
-  } from "../composables/omega";
+} from "../composables/omega";
   import type { Session, SessionBuckets } from "../composables/omega";
 
   const props = defineProps<{
@@ -126,37 +125,33 @@
   }>();
 
   const query = ref("");
-  // ids returned by the store's FTS5 content search (null = no search
-  // yet / none). The union keeps title matches and adds content-only
-  // hits, so a session matching by CONTENT shows up even with a
-  // non-matching title.
-  const contentIds = ref<string[] | null>(null);
-  const filtered = computed(() =>
-    withContentMatches(
-      filterSessions(props.sessions, query.value),
-      props.sessions,
-      contentIds.value,
-    ),
-  );
+  // ids and rank order returned by the backend's unified session
+  // search (null = no query / first response not in yet). The endpoint
+  // owns BOTH title and content hits - no in-memory filter runs
+  // alongside it; ids the session list no longer holds drop out in
+  // withSearchHits.
+  const hitIds = ref<string[] | null>(null);
+  const filtered = computed(() => withSearchHits(props.sessions, hitIds.value));
   const buckets = computed<SessionBuckets>(() => bucketSessions(filtered.value));
 
-  // Content search is debounced (trailing edge via the same injectable
+  // Search is debounced (trailing edge via the same injectable
   // scheduler as the render tick) and raced: responses for a query the
   // user already moved past never paint. Failures - 400s from FTS
-  // syntax, network blips - fall back to the title filter alone.
+  // syntax, network blips - clear the hits: the undecorated list
+  // stands rather than a stale, wrong filter.
   let searchSeq = 0;
   const searchScheduler = createRenderScheduler(
-    (q) => void runContentSearch(q),
-    CONTENT_SEARCH_DEBOUNCE_MS,
+    (q) => void runSearch(q),
+    SESSION_SEARCH_DEBOUNCE_MS,
   );
 
-  async function runContentSearch(q: string) {
+  async function runSearch(q: string) {
     const seq = ++searchSeq;
     try {
-      const hits = await searchSessionContent(q);
-      if (seq === searchSeq) contentIds.value = hits.map((h) => h.id);
+      const hits = await searchSessions(q);
+      if (seq === searchSeq) hitIds.value = hits.map((h) => h.id);
     } catch {
-      if (seq === searchSeq) contentIds.value = null;
+      if (seq === searchSeq) hitIds.value = null;
     }
   }
 
@@ -165,7 +160,7 @@
     if (!term) {
       searchSeq++; // invalidate any in-flight response
       searchScheduler.cancel();
-      contentIds.value = null;
+      hitIds.value = null;
       return;
     }
     searchScheduler.schedule(term);
