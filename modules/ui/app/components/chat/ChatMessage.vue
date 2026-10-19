@@ -9,6 +9,18 @@
         class="md"
         v-html="rendered" />
       <template v-else>{{ content }}</template>
+      <!-- uploaded/attached images: thumbnails, click opens full size -->
+      <div
+        v-if="images?.length"
+        class="msg-images">
+        <img
+          v-for="(img, i) in images"
+          :key="i"
+          class="msg-image"
+          :src="dataUrl(img)"
+          :alt="'attached image ' + (i + 1)"
+          @click="openImage(img)" />
+      </div>
       <span
         v-if="elapsedLabel"
         class="msg-elapsed">{{ elapsedLabel }}</span
@@ -24,7 +36,13 @@
   import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../../composables/codeblocks";
-  import { createRenderScheduler, formatMsgTime, renderMarkdown } from "../../composables/omega";
+  import {
+    createRenderScheduler,
+    dataUrl,
+    formatMsgTime,
+    renderMarkdown,
+    type OmegaImage,
+  } from "../../composables/omega";
   import { useElapsed } from "../../composables/useElapsed";
 
   const props = defineProps<{
@@ -32,10 +50,18 @@
     content: string;
     streaming?: boolean;
     time?: string;
+    // image attachments (user messages; restored history carries them)
+    images?: OmegaImage[];
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
   }>();
+
+  // Click-to-open: a data URL in a new browser tab is the plain full
+  // view (no lightbox infrastructure for v1).
+  function openImage(img: OmegaImage) {
+    window.open(dataUrl(img), "_blank");
+  }
 
   // Assistant bubbles render markdown. Stream chunks land at one render
   // per tick (createRenderScheduler), so partial markdown does not
