@@ -6,13 +6,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   bucketSessions,
-  filterSessions,
   formatTokens,
   parseCollapsedLabels,
   relativeAge,
   rowMeta,
   serializeCollapsedKeys,
-  withContentMatches,
+  withSearchHits,
   SIDEBAR_BUCKETS,
 } from "../app/composables/omega.ts";
 import type { Session } from "../app/composables/omega.ts";
@@ -58,56 +57,34 @@ describe("formatTokens", () => {
   });
 });
 
-describe("filterSessions", () => {
-  const sessions = [
-    sess({ id: "a", label: "Database migration" }),
-    sess({ id: "b", label: "Webui search box" }),
-    sess({ id: "c" }),
-  ];
-
-  it("empty query matches everything", () => {
-    assert.equal(filterSessions(sessions, "").length, 3);
-    assert.equal(filterSessions(sessions, "   ").length, 3);
-  });
-
-  it("matches the label as a case-insensitive substring", () => {
-    const hits = filterSessions(sessions, "SEARCH");
-    assert.deepEqual(hits.map((s) => s.id), ["b"]);
-    assert.equal(filterSessions(sessions, "data").length, 1);
-    assert.equal(filterSessions(sessions, "zzz").length, 0);
-  });
-});
-
-describe("withContentMatches", () => {
+describe("withSearchHits", () => {
   const sessions = [
     sess({ id: "a", label: "Deploy runbook" }),
     sess({ id: "b", label: "Webui search box" }),
     sess({ id: "c", label: "Garden notes" }),
   ];
 
-  it("null or empty content ids are a no-op", () => {
-    const title = filterSessions(sessions, "search");
-    assert.equal(withContentMatches(title, sessions, null), title);
-    assert.deepEqual(withContentMatches(title, sessions, []), title);
+  it("null hit ids mean no query yet: the full list stands", () => {
+    assert.deepEqual(withSearchHits(sessions, null), sessions);
   });
 
-  it("adds a content-only hit even when its title does not match", () => {
-    // "garden" matches c's CONTENT, not its title; a+b pass the title filter
-    const title = filterSessions(sessions, "search");
-    const out = withContentMatches(title, sessions, ["c"]);
-    assert.deepEqual(out.map((s) => s.id), ["b", "c"]);
+  it("empty hits mean the query matched nothing: the list empties", () => {
+    assert.deepEqual(withSearchHits(sessions, []), []);
   });
 
-  it("does not duplicate a session matched by both title and content", () => {
-    const title = filterSessions(sessions, "search");
-    const out = withContentMatches(title, sessions, ["b", "a"]);
-    assert.deepEqual(out.map((s) => s.id), ["b", "a"]);
+  it("keeps only the sessions the backend matched", () => {
+    const out = withSearchHits(sessions, ["a", "c"]);
+    assert.deepEqual(out.map((s) => s.id), ["a", "c"]);
   });
 
-  it("follows backend rank and drops ids the list no longer holds", () => {
-    const out = withContentMatches([], sessions, ["gone", "c", "a", "gone"]);
-    // unknown id skipped, backend order preserved, no duplicates
+  it("follows backend rank, not the list order", () => {
+    const out = withSearchHits(sessions, ["c", "a"]);
     assert.deepEqual(out.map((s) => s.id), ["c", "a"]);
+  });
+
+  it("drops ids the list no longer holds and skips duplicates", () => {
+    const out = withSearchHits(sessions, ["gone", "b", "b", "a", "gone"]);
+    assert.deepEqual(out.map((s) => s.id), ["b", "a"]);
   });
 });
 

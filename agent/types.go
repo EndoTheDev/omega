@@ -112,6 +112,10 @@ type StoredMessage struct {
 type SearchResult struct {
 	SessionID string `json:"session_id"`
 	Snippet   string `json:"snippet"`
+	// Title marks a hit that matched the session's label rather than
+	// message content (SearchSessions). When set, Snippet holds the
+	// label itself.
+	Title bool `json:"title"`
 }
 
 // Skill is a loaded skill from a skill directory. The YAML frontmatter

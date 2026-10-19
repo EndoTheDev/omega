@@ -85,6 +85,13 @@ type StoreProvider interface {
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
 	GetAncestorMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
 	SearchMessages(ctx context.Context, query string) ([]SearchResult, error)
+
+	// SearchSessions is the unified search behind /sessions/search:
+	// one phrase-quoted term queries both session labels and message
+	// content, merged to one hit per session. Label matches come
+	// first (Title set, Snippet = label), then content-only sessions
+	// by best rank.
+	SearchSessions(ctx context.Context, query string) ([]SearchResult, error)
 	ComputeInsights(ctx context.Context, days int) (*Insights, error)
 	CountMessages(ctx context.Context, sessionID string) (int, error)
 
