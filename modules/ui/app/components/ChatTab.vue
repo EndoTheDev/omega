@@ -6,6 +6,7 @@
     <div class="messages-wrap">
       <div
         class="messages"
+        :class="{ stacked: appearance === 'stacked' }"
         ref="messagesEl">
         <p
           v-if="transcript.length === 0"

@@ -959,6 +959,12 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    12px gap) so the items render exactly as they did flat; the block
    boundary is the pane gap - spacing only, no chrome. */
 .msg-block { display: flex; flex-direction: column; gap: 12px; }
+
+/* stacked mode (card t_84e4653c, visual fix): the BETWEEN-turn gap must
+   outweigh the within-turn gap or the block grouping is invisible - 12px
+   inside a turn (above), 28px between turns (here). Flat 'chat' keeps
+   the uniform 12px chronology. */
+.messages.stacked { gap: 28px; }
 /* The LIVE block (the turn currently responding) sticks to the top of
    the scroll pane while its answer streams below it; `busy` drives the
    class, so agent_end drops it and the block settles back in order.
