@@ -15,6 +15,8 @@ import {
   setPaneComponent,
   openTab,
   closeTab,
+  moveTab,
+  PLUS_TAB_COMPONENTS,
   dragSplitDivider,
   serialize,
   deserialize,
@@ -233,6 +235,115 @@ describe("tab ops", () => {
     p = findPane(t, id)!;
     assert.equal(p.tabs.length, 0, "closing the last tab empties the pane");
     assert.equal(p.active, 0);
+  });
+
+  describe("moveTab (card 2 DnD)", () => {
+    function tabComps(t: DockNode, id: string): (string | undefined)[] {
+      return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
+    }
+    /** split shell: left pane sidebar/inspector tabs, right pane chat */
+    function twoPaneTree(): { t: DockNode; left: DockPane; right: DockPane } {
+      const root = makePane("sidebar");
+      const left = asPane(openTab(root, root.id, { component: "inspector" }));
+      const right = makePane("chat");
+      const t = makeSplit("row", [left, right]);
+      return { t, left: findPane(t, left.id)!, right: findPane(t, right.id)! };
+    }
+
+    it("reorders within a pane, keeping the moved tab focused", () => {
+      let t: DockNode = makePane("chat");
+      const id = t.id;
+      t = openTab(t, id, { component: "inspector" });
+      t = openTab(t, id, { component: "sidebar" });
+      // [chat, inspector, sidebar]; focus chat first, then drag it to the end
+      t = focusTab(t, id, 0);
+      t = moveTab(t, id, 0, id, 2);
+      let p = findPane(t, id)!;
+      assert.deepEqual(tabComps(t, id), ["inspector", "sidebar", "chat"]);
+      assert.equal(p.active, 2, "the moved tab stays focused");
+      // drag it back left across the active bookkeeping: [chat, inspector, sidebar]
+      t = moveTab(t, id, 2, id, 0);
+      p = findPane(t, id)!;
+      assert.deepEqual(tabComps(t, id), ["chat", "inspector", "sidebar"]);
+      // focus was on inspector (1); moving sidebar(2) before it shifts focus +1
+      t = focusTab(t, id, 1);
+      t = moveTab(t, id, 2, id, 1);
+      p = findPane(t, id)!;
+      assert.deepEqual(tabComps(t, id), ["chat", "sidebar", "inspector"]);
+      assert.equal(p.active, 2, "the un-touched active tab tracks its component");
+    });
+
+    it("same-position drag is a no-op returning the ORIGINAL tree", () => {
+      const { t, left } = twoPaneTree();
+      assert.equal(moveTab(t, left.id, 0, left.id, 0), t);
+    });
+
+    it("moves between panes, focusing the dropped tab in the target", () => {
+      const { t, left, right } = twoPaneTree();
+      // drag sidebar (left tab 0) onto the chat pane
+      const out = moveTab(t, left.id, 0, right.id, right.tabs.length);
+      const l = findPane(out, left.id)!;
+      const r = findPane(out, right.id)!;
+      assert.equal(l.tabs.length, 1);
+      assert.deepEqual(tabComps(out, left.id), ["inspector"]);
+      assert.deepEqual(tabComps(out, right.id), ["chat", "sidebar"]);
+      assert.equal(r.active, 1, "dropped tab focuses in the target");
+      assert.equal(l.active, 0, "survivor keeps the focus");
+    });
+
+    it("inserts at the caret index in the target pane", () => {
+      const { t, left, right } = twoPaneTree();
+      // target caret before tab 0: post-removal index 0
+      const out = moveTab(t, left.id, 0, right.id, 0);
+      assert.deepEqual(tabComps(out, right.id), ["sidebar", "chat"]);
+      assert.equal(findPane(out, right.id)!.active, 0);
+    });
+
+    it("moving a pane's LAST tab empties but KEEPS the pane", () => {
+      const { t, left, right } = twoPaneTree();
+      // drain left pane one tab at a time (target index from the FRESH
+      // pane - destructured refs point at the pre-move tree)
+      let cur = moveTab(t, left.id, 0, right.id, findPane(t, right.id)!.tabs.length);
+      assert.equal(panes(cur).length, 2, "no pane vanished");
+      cur = moveTab(cur, left.id, 0, right.id, findPane(cur, right.id)!.tabs.length);
+      const l = findPane(cur, left.id)!;
+      assert.equal(l.tabs.length, 0, "source pane empty");
+      assert.equal(panes(cur).length, 2, "empty source pane survives (menu ruling)");
+      assert.deepEqual(tabComps(cur, right.id), ["chat", "sidebar", "inspector"]);
+      assert.ok(
+        findPane(cur, right.id)!.tabs.some((t) => t.component === "sidebar"),
+        "the drained tab landed in the right pane",
+      );
+    });
+
+    it("emptying the source moves focus to the remaining neighbor", () => {
+      const two = twoPaneTree();
+      // left has sidebar(0, active) + inspector(1). Move tab 0 away.
+      const out = moveTab(two.t, two.left.id, 0, two.right.id, 0);
+      const l = findPane(out, two.left.id)!;
+      assert.equal(l.tabs.length, 1);
+      assert.equal(l.active, 0, "neighbor takes over the focus");
+    });
+
+    it("guards: unknown panes, bad index return the original tree", () => {
+      const { t, left, right } = twoPaneTree();
+      assert.equal(moveTab(t, "nzz", 0, right.id, 0), t);
+      assert.equal(moveTab(t, left.id, 0, "nzz", 0), t);
+      assert.equal(moveTab(t, left.id, 5, right.id, 0), t);
+      assert.equal(moveTab(t, left.id, -1, right.id, 0), t);
+    });
+
+    it("round-trips through persistence after a move", () => {
+      const { t, left, right } = twoPaneTree();
+      const moved = moveTab(t, left.id, 0, right.id, 0);
+      const back = deserialize(serialize(moved))!;
+      assert.deepEqual(tabComps(back, left.id), ["inspector"]);
+      assert.deepEqual(tabComps(back, right.id), ["sidebar", "chat"]);
+    });
+  });
+
+  it("PLUS_TAB_COMPONENTS: card 2 ships chat only (card 4 grows the list)", () => {
+    assert.deepEqual([...PLUS_TAB_COMPONENTS], ["chat"]);
   });
 });
 
