@@ -22,6 +22,16 @@ type Config struct {
 	Store         StoreConfig            `yaml:"store"`
 	Compaction    agent.CompactionConfig `yaml:"compaction"`
 	SystemPrompt  string                 `yaml:"system_prompt"`
+	// VisionModel is the auxiliary captioner (vision_model knob): when
+	// set, image-carrying user messages are described once with this
+	// model and the main model sees the caption as text. Empty keeps
+	// today's behavior - images ride to the main provider and a model
+	// that cannot see them fails loudly.
+	VisionModel string `yaml:"vision_model"`
+	// TitleModel is the auxiliary title generator (title_model knob):
+	// maybeTitleSession's cheap calls (provisional + final) route
+	// through it when set. Empty = the main model (today's behavior).
+	TitleModel string `yaml:"title_model"`
 	HTTPTimeout   int                    `yaml:"http_timeout"`
 	MaxTurns      int                    `yaml:"max_turns"`
 	Theme         string                 `yaml:"theme"`
@@ -174,6 +184,8 @@ func applyEnv(cfg *Config) {
 		{"OMEGA_API_KEY", &cfg.Provider.APIKey},
 		{"OMEGA_MODEL", &cfg.Provider.ModelName},
 		{"OMEGA_HOST", &cfg.Provider.Host},
+		{"OMEGA_VISION_MODEL", &cfg.VisionModel},
+		{"OMEGA_TITLE_MODEL", &cfg.TitleModel},
 		{"OMEGA_DB_PATH", &cfg.Store.DBPath},
 		{"OMEGA_SKILLS_DIR", &cfg.Skills.Dir},
 		{"OMEGA_THEME", &cfg.Theme},

@@ -144,6 +144,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
 	session_id UNINDEXED,
 	label
 );
+-- Image captions keyed by content hash (vision_model knob). Captions
+-- are shared across sessions by design: one row per distinct image.
+CREATE TABLE IF NOT EXISTS image_captions (
+	image_id   TEXT PRIMARY KEY,
+	caption    TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
 CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
 	INSERT INTO sessions_fts(session_id, label) VALUES (new.id, new.label);
 END;
@@ -571,6 +578,37 @@ func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// GetImageCaption returns the persisted caption for an image id
+// (media type + sha256 of the payload, set by the captioner).
+// Implements agent.CaptionStore.
+func (s *Store) GetImageCaption(ctx context.Context, imageID string) (caption string, ok bool, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`SELECT caption FROM image_captions WHERE image_id = ?`, imageID).
+		Scan(&caption)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return caption, true, nil
+}
+
+// SaveImageCaption persists one image caption. Re-saving the same image
+// id keeps the first caption - a cached caption is never rewritten
+// (nothing benefits from the churn; the id is content-addressed).
+// Implements agent.CaptionStore.
+func (s *Store) SaveImageCaption(ctx context.Context, imageID, caption string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO image_captions (image_id, caption, created_at) VALUES (?, ?, ?)
+		 ON CONFLICT(image_id) DO NOTHING`,
+		imageID, caption, ai.NowISO())
+	return err
+}
+
+// Compile-time assertion that Store implements agent.CaptionStore.
+var _ agent.CaptionStore = (*Store)(nil)
 
 // boolToInt maps a bool to its SQLite 0/1 integer representation.
 func boolToInt(b bool) int {

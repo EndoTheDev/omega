@@ -75,6 +75,12 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 				{Key: "provider.model_name", Label: "model name", Type: "text",
 					Value: cfg.Provider.ModelName,
 					Help:  "default model the agent serves; the webui model picker overrides per chat"},
+				{Key: "provider.vision_model", Label: "vision model", Type: "text",
+					Value: cfg.VisionModel,
+					Help:  "captioner model for image messages (e.g. gemma4:31b); empty = images reach the main model unchanged and may fail loudly; applies on restart"},
+				{Key: "provider.title_model", Label: "title model", Type: "text",
+					Value: cfg.TitleModel,
+					Help:  "cheap model for session titles; empty = the main model; applies on restart"},
 				{Key: "provider.host", Label: "host", Type: "text",
 					Value: cfg.Provider.Host,
 					Help:  "provider base URL (default http://localhost:11434)"},
@@ -263,7 +269,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		switch key {
 		case "provider.type":
 			err = setString(&cfg.Provider.Type, key, raw, trim)
-		case "provider.model_name", "provider.host":
+		case "provider.model_name", "provider.host", "provider.vision_model", "provider.title_model":
 			err = setStringField(cfg, key, raw)
 		case "provider.api_key", "server.bind":
 			// gated knobs: bind is the escalation lever for the whole
@@ -335,6 +341,10 @@ func setStringField(cfg *Config, key string, raw any) error {
 	switch key {
 	case "provider.model_name":
 		cfg.Provider.ModelName = v
+	case "provider.vision_model":
+		cfg.VisionModel = v
+	case "provider.title_model":
+		cfg.TitleModel = v
 	case "provider.host":
 		cfg.Provider.Host = v
 	case "store.db_path":

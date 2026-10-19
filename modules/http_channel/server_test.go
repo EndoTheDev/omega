@@ -35,17 +35,24 @@ type mockProvider struct {
 	// seenLevels records the thinkingLevel of every Stream call,
 	// shared with WithModel/WithThinkingLevel copies behind mu.
 	seenLevels *[]string
+	// seenModels records the modelName of every Stream call, shared
+	// with WithModel copies behind mu (same pattern as seenLevels) so
+	// tests can assert which model a call - e.g. the title_model-routed
+	// title call - actually streamed through.
+	seenModels *[]string
 }
 
 func newMockProvider(modelName string, scripts ...[]ai.StreamEvent) *mockProvider {
 	calls := 0
 	levels := []string{}
+	models := []string{}
 	return &mockProvider{
 		modelName:  modelName,
 		scripts:    scripts,
 		mu:         &sync.Mutex{},
 		calls:      &calls,
 		seenLevels: &levels,
+		seenModels: &models,
 	}
 }
 
@@ -80,6 +87,7 @@ func (m *mockProvider) ModelInfo() (ai.ModelInfo, error) {
 func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
 	m.mu.Lock()
 	*m.seenLevels = append(*m.seenLevels, m.thinkingLevel)
+	*m.seenModels = append(*m.seenModels, m.modelName)
 	m.mu.Unlock()
 	events := make(chan ai.StreamEvent)
 	go func() {
@@ -106,6 +114,13 @@ func (m *mockProvider) nextIndex() int {
 	index := *m.calls
 	*m.calls++
 	return index
+}
+
+// servedModelNames copies the model behind every Stream call.
+func (m *mockProvider) servedModelNames() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), *m.seenModels...)
 }
 
 // streamCalls reports how many Stream calls were made. Concurrent with
@@ -1417,6 +1432,36 @@ func TestSessionByIDPutLabel(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("empty label status = %d, want 400", rec.Code)
+	}
+}
+
+// TestMaybeTitleSessionTitleModelRouting pins the title_model knob:
+// with the knob set, the title call streams through the title model;
+// without it, it streams through the call's pinned provider (main).
+func TestMaybeTitleSessionTitleModelRouting(t *testing.T) {
+	ctx := context.Background()
+	// With the knob.
+	s, st, prov := newTitleTestServerWithStore(t)
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	s.titleModel = "gemcheap"
+	s.maybeTitleSession(ctx, prov, titleChatRequest("s1"), "", false)
+	if models := prov.mockProvider.servedModelNames(); len(models) != 1 || models[0] != "gemcheap" {
+		t.Fatalf("provisional call served by %v, want [gemcheap]", models)
+	}
+	if sess, _ := st.GetSession(ctx, "s1"); sess.TitleState != 1 {
+		t.Fatalf("title state = %d, want provisional (1)", sess.TitleState)
+	}
+
+	// Without the knob: the pinned provider (main) serves directly.
+	s, st, prov = newTitleTestServerWithStore(t)
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	s.maybeTitleSession(ctx, prov, titleChatRequest("s1"), "", false)
+	if models := prov.mockProvider.servedModelNames(); len(models) != 1 || models[0] != "mock" {
+		t.Fatalf("no-knob call served by %v, want [mock]", models)
 	}
 }
 
