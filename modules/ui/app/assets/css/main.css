@@ -387,12 +387,13 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   align-self: stretch;
 }
 
-/* hover action cluster: archive + delete, parked in the right-edge slot
-   the age text occupies - on hover the two swap (age fades, actions fade
-   in). .stop on the buttons keeps a click from opening the row. */
+/* hover action cluster: archive + delete, inset LEFT of the time slot -
+   on hover the age text fades but its slot (the row's 34px right
+   padding band) stays empty: title ... [box][bin] [empty time band].
+   .stop on the buttons keeps a click from opening the row. */
 .row-actions {
   position: absolute;
-  right: 4px;
+  right: 34px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -406,6 +407,8 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .row-delete:hover { color: var(--err); }
 .session-list li:hover .row-actions,
 .row-actions:focus-within { opacity: 1; }
+/* the time slot is reserved on hover: opacity/visibility only, never
+   display:none - the number fades back into its exact position */
 .session-list li:hover .session-time { opacity: 0; }
 
 /* muted archived rows: the archived toggle reveals them at reduced
