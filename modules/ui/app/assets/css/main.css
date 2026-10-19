@@ -987,6 +987,12 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 /* hover affordance matches the tool-call rows (Endo 2026-10-20) */
 .messages.stacked .thinking summary:hover { background: var(--z1-raised); }
 
+/* full-width sweep (Endo 2026-10-20: "make the bubbles full width -
+the duration timer isn't fully right"): the last classic-mode cap in
+the stacked column - tool rows were still 70% wide, so their elapsed
+labels stopped short of the right edge. */
+.messages.stacked .toolcall { max-width: 100%; }
+
 .messages.stacked .msg.assistant .bubble {
   width: 100%;
   max-width: 100%;
