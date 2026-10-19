@@ -1,8 +1,8 @@
 <template>
   <div class="shell">
     <MenuBar
-      :sidebar-open="isMobile ? drawerOpen : sidebarVisible"
-      :inspector-open="isMobile ? inspectorOpen : rightVisible"
+      :sidebar-open="sidebarPaneOpen"
+      :inspector-open="inspectorPaneOpen"
       :view="mainView"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
@@ -18,174 +18,142 @@
       @click="closeOverlays" />
 
     <div class="pane-area">
-      <!-- always-mounted pane groups: closed state slides via negative
-           margin (clipped by pane-area overflow) instead of v-if unmount,
-           so every pane animates on both desktop and mobile -->
-      <div
-        class="pane-group"
-        :style="{
-          marginLeft:
-            sidebarVisible || isMobile
-              ? '0'
-              : -(sidebarWidth + 6) + 'px',
-        }">
-        <AppSidebar
-          class="pane"
-          :style="
-            isMobile ? { width: 'calc(100% - 30%)' } : { width: sidebarWidth + 'px' }
-          "
-          :sessions="sessions"
-          :active-id="activeId"
-          :streaming-ids="busyAll"
-          :open="drawerOpen"
-          :show-archived="showArchived"
-          @open="openSession"
-          @new="newChat"
-          @pin="togglePin"
-          @archive="toggleArchive"
-          @remove="askDelete"
-          @toggle-archived="showArchived = $event" />
+      <!-- dock: THE layout tree (card t_63253264). Recursive split/pane
+           components render omega.dock-layout; the named region templates
+           below flow down and surface inside whichever pane hosts them.
+           A split creates a second, empty pane - its menu (the settled '+'
+           component-menu ruling) lists what it can host. Mobile keeps the
+           drawer/overlay geometry; mobile cells collapse via kind- CSS. -->
+      <DockSplit :node="dock.tree.value">
+        <template #pane-sidebar>
+          <AppSidebar
+            class="pane"
+            :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
+            :sessions="sessions"
+            :active-id="activeId"
+            :streaming-ids="busyAll"
+            :open="drawerOpen"
+            :show-archived="showArchived"
+            @open="openSession"
+            @new="newChat"
+            @pin="togglePin"
+            @archive="toggleArchive"
+            @remove="askDelete"
+            @toggle-archived="showArchived = $event" />
+        </template>
 
-        <PaneDivider
-          v-if="!isMobile && sidebarVisible"
-          ref="dividerEl"
-          :width="sidebarWidth"
-          :min="128"
-          storage-key="omega.sidebar-width"
-          @update:width="onResize"
-          @collapsed="sidebarVisible = false" />
-      </div>
-
-      <main class="chat pane">
-        <!-- main-view switcher: chat content hides (display:contents keeps
-             the flex layout transparent so composer/wrap stay direct
-             flex children), the module-owned board (modules/kanban/ui)
-             replaces it through the composition panel list -->
-        <div :style="{ display: mainView === 'chat' ? 'contents' : 'none' }">
-        <!-- wrap owns the pill's absolute placement: the scroll container
-             itself scrolls its content (an absolutely positioned child of
-             it would scroll away with it) -->
-        <div class="messages-wrap">
-          <div
-            class="messages"
-            ref="messagesEl">
-            <p
-              v-if="transcript.length === 0"
-              class="empty">
-              say something to
-              <span class="brand">Ωmega</span>
-            </p>
-            <template
-              v-for="(item, i) in transcript"
-              :key="itemKey(item)">
-              <ChatMessage
-                v-if="item.kind === 'message'"
-                :role="item.role"
-                :content="item.content"
-                :time="item.time"
-                :final-ms="item.finalMs"
-                :streaming="item.streaming" />
-              <ThinkingBlock
-                v-else-if="item.kind === 'thinking' && showThinking"
-                :content="item.content"
-                :final-ms="item.finalMs"
-                :streaming="item.streaming" />
-              <ToolCallLine
-                v-else-if="item.kind === 'tool'"
-                :name="item.name"
-                :status="item.status"
-                :interrupted="item.interrupted"
-                :final-ms="item.finalMs"
-                :output="item.output"
-                :result="item.result" />
+        <template #pane-chat>
+          <main class="chat pane">
+            <!-- main-view switcher: chat content hides (display:contents keeps
+                 the flex layout transparent so composer/wrap stay direct
+                 flex children), the module-owned board (modules/kanban/ui)
+                 replaces it through the composition panel list -->
+            <div :style="{ display: mainView === 'chat' ? 'contents' : 'none' }">
+            <!-- wrap owns the pill's absolute placement: the scroll container
+                 itself scrolls its content (an absolutely positioned child of
+                 it would scroll away with it) -->
+            <div class="messages-wrap">
               <div
-                v-else-if="item.kind === 'interrupted'"
-                class="interrupted-line">
-                <span>stream interrupted</span>
-                <button class="resume" @click="retryStream">retry</button>
+                class="messages"
+                ref="messagesEl">
+                <p
+                  v-if="transcript.length === 0"
+                  class="empty">
+                  say something to
+                  <span class="brand">Ωmega</span>
+                </p>
+                <template
+                  v-for="(item, i) in transcript"
+                  :key="itemKey(item)">
+                  <ChatMessage
+                    v-if="item.kind === 'message'"
+                    :role="item.role"
+                    :content="item.content"
+                    :time="item.time"
+                    :final-ms="item.finalMs"
+                    :streaming="item.streaming" />
+                  <ThinkingBlock
+                    v-else-if="item.kind === 'thinking' && showThinking"
+                    :content="item.content"
+                    :final-ms="item.finalMs"
+                    :streaming="item.streaming" />
+                  <ToolCallLine
+                    v-else-if="item.kind === 'tool'"
+                    :name="item.name"
+                    :status="item.status"
+                    :interrupted="item.interrupted"
+                    :final-ms="item.finalMs"
+                    :output="item.output"
+                    :result="item.result" />
+                  <div
+                    v-else-if="item.kind === 'interrupted'"
+                    class="interrupted-line">
+                    <span>stream interrupted</span>
+                    <button class="resume" @click="retryStream">retry</button>
+                  </div>
+                </template>
+                <div
+                  v-if="statusLine"
+                  class="status-line">
+                  {{ statusLine }}…
+                </div>
               </div>
-            </template>
-            <div
-              v-if="statusLine"
-              class="status-line">
-              {{ statusLine }}…
+              <button
+                v-if="jumpPill"
+                class="jump-live"
+                @click="jumpToLive">
+                ⌄ live
+              </button>
             </div>
+
+            <AppComposer
+              v-model:draft="draft"
+              v-model:model="selectedModel"
+              :models="models"
+              :busy="composerBusy"
+              :can-retry="composerCanRetry"
+              @send="send"
+              @cancel="cancelActiveRun"
+              @retry="retryStream" />
+            </div>
+
+            <div
+              v-if="mainView === 'board'"
+              class="board-pane">
+              <component
+                :is="boardComponent"
+                v-if="boardComponent"
+                @open-session="openBoardSession" />
+              <p
+                v-else
+                class="empty">
+                board module not loaded
+              </p>
+            </div>
+          </main>
+        </template>
+
+        <template #pane-inspector>
+          <!-- both right panes always mounted, stacked in one slot: toggling
+               slides one in over the other instead of a v-if content flash -->
+          <div class="pane-slot">
+            <RightSidebar
+              class="slot-pane"
+              :class="{ active: !settingsOpen }"
+              :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
+              :open="inspectorOpen"
+              :visible="isMobile ? inspectorOpen : !settingsOpen" />
+
+            <SettingsDrawer
+              class="slot-pane"
+              :class="{ active: settingsOpen }"
+              :open="settingsOpen"
+              v-model:show-thinking="showThinking"
+              :theme-mode="themeMode"
+              @set-theme="setTheme" />
           </div>
-          <button
-            v-if="jumpPill"
-            class="jump-live"
-            @click="jumpToLive">
-            ⌄ live
-          </button>
-        </div>
-
-        <AppComposer
-          v-model:draft="draft"
-          v-model:model="selectedModel"
-          :models="models"
-          :busy="composerBusy"
-          :can-retry="composerCanRetry"
-          @send="send"
-          @cancel="cancelActiveRun"
-          @retry="retryStream" />
-        </div>
-
-        <div
-          v-if="mainView === 'board'"
-          class="board-pane">
-          <component
-            :is="boardComponent"
-            v-if="boardComponent"
-            @open-session="openBoardSession" />
-          <p
-            v-else
-            class="empty">
-            board module not loaded
-          </p>
-        </div>
-      </main>
-
-      <div
-        class="pane-group"
-        :style="{
-          marginRight:
-            rightVisible || settingsOpen || isMobile
-              ? '0'
-              : -(rightWidth + 6) + 'px',
-        }">
-        <PaneDivider
-          v-if="!isMobile && (rightVisible || settingsOpen)"
-          ref="rightDividerEl"
-          :width="rightWidth"
-          :min="128"
-          :invert="true"
-          storage-key="omega.inspector-width"
-          @update:width="onRightResize"
-          @collapsed="onRightCollapsed" />
-
-        <!-- both right panes always mounted, stacked in one slot: toggling
-             slides one in over the other instead of a v-if content flash -->
-        <div
-          class="pane-slot"
-          :style="isMobile ? undefined : { width: rightWidth + 'px' }">
-          <RightSidebar
-            class="slot-pane"
-            :class="{ active: !settingsOpen }"
-            :style="
-              isMobile ? { width: 'calc(100% - 30%)' } : { flexBasis: rightWidth + 'px' }
-            "
-            :open="inspectorOpen"
-            :visible="isMobile ? inspectorOpen : rightVisible && !settingsOpen" />
-
-          <SettingsDrawer
-            class="slot-pane"
-            :class="{ active: settingsOpen }"
-            :open="settingsOpen"
-            v-model:show-thinking="showThinking"
-            :theme-mode="themeMode"
-            @set-theme="setTheme" />
-        </div>
-      </div>
+        </template>
+      </DockSplit>
     </div>
 
     <!-- frosted backdrop only on mobile - on desktop the settings drawer
@@ -243,8 +211,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, reactive, ref, watch, type Ref } from "vue";
-  import { openClamp } from "./composables/panes";
+  import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from "vue";
   import { modulePanels } from "./composables/module-panels.generated";
   import {
     anyBusy,
@@ -281,7 +248,7 @@
     ToolItem,
     InterruptedItem,
   } from "./composables/omega";
-
+  import { createDock, DOCK_API_KEY } from "./composables/dock";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
@@ -317,6 +284,21 @@
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
+
+  // --- dock store (card t_63253264): the layout tree is the single
+  // source of layout truth. Loading seeds from omega.dock-layout or
+  // migrates the pre-dock pane keys once; every mutation persists the
+  // whole tree. The components resolve it via injection. ---
+  const dock = createDock(window.localStorage);
+  provide(DOCK_API_KEY, dock);
+  // MenuBar flags: the drawers (mobile) and the tree (desktop) - the
+  // inspector flag reads settingsOpen too, mirroring the shared right slot
+  const sidebarPaneOpen = computed(() =>
+    isMobile.value ? drawerOpen.value : dock.has("sidebar"),
+  );
+  const inspectorPaneOpen = computed(() =>
+    isMobile.value ? inspectorOpen.value : dock.has("inspector") && !settingsOpen.value,
+  );
 
   // --- per-session stream state (Lvl 2) ---
   // Every session, including the unsaved new chat, owns its transcript and
@@ -466,26 +448,17 @@
   // mobile: one drawer at a time - opening any pane closes the other two
   function toggleSidebar() {
     if (isMobile.value) {
+      // the drawer needs its pane rendered (empty panes are hidden by CSS):
+      // absent -> insert it first, then flip the overlay open
+      dock.ensureEdge("sidebar", "before");
       inspectorOpen.value = false;
       settingsOpen.value = false;
       drawerOpen.value = !drawerOpen.value;
     } else {
-      sidebarVisible.value = !sidebarVisible.value;
-      // open-clamp: a stale sub-floor persisted width (manual resize below
-      // 320, then collapse) reopens AT 320; manual resize below still works
-      if (sidebarVisible.value) reopenClip(sidebarWidth, "omega.sidebar-width");
+      // desktop: the TREE owns presence - remove/re-insert the edge pane
+      // (the store remembers the width and applies the reopen-clamp)
+      dock.toggleEdge("sidebar", "before");
     }
-  }
-
-  // reopen-floor helper, applied when a pane group un-collapses: lift the
-  // width ref to PANE_OPEN_MIN and rewrite the divider's storage key so the
-  // remounting divider restores the clamped value (the ref is already
-  // correct - the key is what the divider's onMounted reads back)
-  function reopenClip(width: Ref<number>, storageKey: string) {
-    const clamped = openClamp(width.value);
-    if (clamped === width.value) return;
-    width.value = clamped;
-    if (typeof window !== "undefined") localStorage.setItem(storageKey, String(clamped));
   }
 
   function closeOverlays() {
@@ -495,48 +468,6 @@
   }
   const settingsOpen = ref(false);
   const showThinking = ref(true);
-
-  const sidebarWidth = ref(240);
-  const rightWidth = ref(240);
-  const dividerEl = ref<{ persist: (w: number) => void } | null>(null);
-  const rightDividerEl = ref<{ persist: (w: number) => void } | null>(null);
-
-  // desktop pane open-state persists across reloads (omega.sidebar-open /
-  // omega.inspector-open, boolean strings, defaults true / false). Mobile
-  // is deliberately NOT persisted: the drawers stay closed every load -
-  // these flags are desktop-layout state only, guarded at the same 768px
-  // breakpoint the overlay mode uses. The gear/settings drawer is a
-  // headless toggle and stays non-persisted.
-  function loadPaneFlag(key: string, fallback: boolean): boolean {
-    if (typeof window === "undefined") return fallback;
-    const raw = localStorage.getItem(key);
-    if (raw === "true") return true;
-    if (raw === "false") return false;
-    return fallback;
-  }
-  const sidebarVisible = ref(loadPaneFlag("omega.sidebar-open", true));
-  // first visit: the inspector starts closed (the pane width IS persisted,
-  // via the divider's storage key)
-  const rightVisible = ref(loadPaneFlag("omega.inspector-open", false));
-
-  // persisted writes happen on toggle only, desktop only - the mobile
-  // overlay toggles flip drawerOpen/inspectorOpen, these refs move on
-  // desktop toggles and squeeze collapse (dividers are desktop-only).
-  // The guard reads the LIVE matchMedia, not the isMobile ref: at a
-  // breakpoint cross the squeeze chain can fire before the media-query
-  // listener updates the ref, and by-ref would then persist a mobile
-  // squeeze closure over the desktop flag.
-  const MOBILE_MEDIA = "(max-width: 768px)";
-  function isDesktopNow(): boolean {
-    if (typeof window === "undefined") return false;
-    return !window.matchMedia(MOBILE_MEDIA).matches;
-  }
-  watch(sidebarVisible, (v) => {
-    if (isDesktopNow()) localStorage.setItem("omega.sidebar-open", String(v));
-  });
-  watch(rightVisible, (v) => {
-    if (isDesktopNow()) localStorage.setItem("omega.inspector-open", String(v));
-  });
   const contextSize = ref(0);
 
   const messageCount = computed(
@@ -632,51 +563,29 @@
     drawerOpen.value = false;
   }
 
-  // opening the inspector is the ONE moment the right sidebar may push back:
-  // if the left sidebar grew so wide the inspector auto-collapsed, reopening
-  // shrinks the left sidebar just enough to fit inspector + chat floor.
+  // mobile: one drawer at a time - free the slot first
   function toggleInspector() {
-    // mobile: same slot rule - free it first
     if (isMobile.value) {
       if (settingsOpen.value) settingsOpen.value = false;
+      dock.ensureEdge("inspector", "after"); // overlay needs its pane present
       drawerOpen.value = false;
       inspectorOpen.value = !inspectorOpen.value;
       return;
     }
-    // desktop: the right group hosts one pane - if settings is open, the
-    // inspector toggle CLOSES settings and explicitly OPENS the inspector
+    // desktop: the right edge pane hosts ONE visible pane - the inspector
+    // toggle closes settings and shows the inspector; otherwise it toggles
+    // the pane itself (the store remembers the width + reopen-clamps)
     if (settingsOpen.value) {
       settingsOpen.value = false;
-      rightVisible.value = true;
+      dock.ensureEdge("inspector", "after");
       return;
     }
-    if (rightVisible.value) {
-      rightVisible.value = false;
-      return;
-    }
-    pushBackLeft();
-    // open-clamp: stale sub-floor width reopens at the floor (dock constants)
-    reopenClip(rightWidth, "omega.inspector-width");
-    rightVisible.value = true;
+    dock.toggleEdge("inspector", "after");
   }
 
-  // shared by the inspector reopen and openSettings: shrink the left
-  // sidebar to its floor when it grew too wide for the right group to fit
-  function pushBackLeft() {
-    if (typeof window === "undefined") return;
-    const area = document.querySelector(".pane-area");
-    if (!area) return;
-    const available = area.clientWidth - 8;
-    const needed = sidebarWidth.value + 320 + 128 + 8;
-    if (available < needed) {
-      sidebarWidth.value = Math.max(128, available - 320 - 128 - 8);
-      dividerEl.value?.persist(sidebarWidth.value);
-    }
-  }
-
-  // gear is a toggle; the right group hosts one pane - opening settings
-  // first closes the inspector if open, then opens settings (and vice
-  // versa in toggleInspector). No interaction with the left sidebar.
+  // gear is a toggle; the right edge pane hosts settings and the inspector
+  // stacked (slot-pane transforms swap them) - opening settings just makes
+  // sure the pane is present.
   function openSettings() {
     if (settingsOpen.value) {
       settingsOpen.value = false;
@@ -686,97 +595,9 @@
       // mobile: one drawer at a time - close both other drawers
       inspectorOpen.value = false;
       drawerOpen.value = false;
-    } else {
-      // desktop: same push-back as the inspector reopen - shrink the left
-      // sidebar if it grew too wide for the right group to fit
-      rightVisible.value = false;
-      pushBackLeft();
     }
+    dock.ensureEdge("inspector", "after"); // the pane hosts the drawer too
     settingsOpen.value = true;
-  }
-
-  function onResize(w: number) {
-    w = Math.max(128, w); // floor: sub-min values (incl. stale localStorage) dead-lock the divider
-    sidebarWidth.value = w;
-    // squeeze the RIGHT first (shrink/close), then cap against the
-    // post-squeeze room - mirrors onRightResize so both dividers behave
-    // identically
-    squeezeCheck();
-    const cap = dragCap(
-      rightVisible.value || settingsOpen.value ? rightWidth.value : 0,
-    );
-    if (cap >= 128 && sidebarWidth.value > cap) sidebarWidth.value = cap;
-    dividerEl.value?.persist(sidebarWidth.value);
-  }
-
-  // JS width-wall: the CSS group cap alone lets an oversized inline width
-  // overflow the group (content sliding out of bounds). Clamping the ref
-  // here means the stored/dragged width can never exceed the chat floor.
-  function dragCap(otherWidth: number): number {
-    if (typeof window === "undefined") return Infinity;
-    const area = document.querySelector(".pane-area");
-    if (!area) return Infinity;
-    return area.clientWidth - 8 - otherWidth - 320 - 8; // dividers + chat floor
-  }
-
-  function onRightResize(w: number) {
-    w = Math.max(128, w); // floor: sub-min values (incl. stale localStorage) dead-lock the divider
-    rightWidth.value = w;
-    // squeeze the LEFT first - it shrinks and eventually closes, freeing
-    // space; only THEN cap against the post-squeeze room so the chain
-    // stays draggable (drag wide -> left closes -> right grows to the wall)
-    squeezeCheckLeft();
-    const cap = dragCap(sidebarVisible.value ? sidebarWidth.value : 0);
-    if (cap >= 128 && rightWidth.value > cap) rightWidth.value = cap;
-    rightDividerEl.value?.persist(rightWidth.value);
-  }
-
-  // squeeze below the min floor closes whichever pane is visible in the
-  // right slot - settings or the inspector
-  function onRightCollapsed() {
-    if (settingsOpen.value) settingsOpen.value = false;
-    else rightVisible.value = false;
-  }
-
-  // mirrored squeeze: dragging the right divider wide starves the left
-  // sidebar first - it shrinks to fit, and closes below its floor, exactly
-  // like the right sidebar does when the left divider over-drags it.
-  function squeezeCheckLeft() {
-    if (!sidebarVisible.value || typeof window === "undefined") return;
-    const area = document.querySelector(".pane-area");
-    if (!area) return;
-    const available = area.clientWidth - 8;
-    const room = available - 320 - rightWidth.value - 8; // chat floor + dividers
-    if (room < 128) {
-      sidebarVisible.value = false;
-      return;
-    }
-    if (sidebarWidth.value > room) {
-      sidebarWidth.value = room;
-      dividerEl.value?.persist(room);
-    }
-  }
-
-  // squeeze chain (mirror of squeezeCheckLeft): dragging the left sidebar
-  // wide starves the right first - it SHRINKS to the remaining room, and
-  // closes below its floor. Runs on left-drag and window resize.
-  function squeezeCheck() {
-    const rightActive = rightVisible.value || settingsOpen.value;
-    if (!rightActive || typeof window === "undefined") return;
-    const area = document.querySelector(".pane-area");
-    if (!area) return;
-    const available = area.clientWidth - 8;
-    const room = available - 320 - sidebarWidth.value - 8; // chat floor + dividers
-    if (room < 128) {
-      // close whichever pane is visible in the right slot
-      if (settingsOpen.value) settingsOpen.value = false;
-      else rightVisible.value = false;
-      return;
-    }
-    if (rightWidth.value > room) {
-      rightWidth.value = room;
-      rightDividerEl.value?.persist(room);
-    }
   }
 
   // makeStreamDriver builds the per-run stream state over ONE session
@@ -1292,9 +1113,6 @@
     // stick-to-bottom: user scroll events drive the pinned flag
     messagesEl.value?.addEventListener("scroll", onMessagesScroll);
 
-    // squeeze check on window resize (left drag checks in onResize)
-    window.addEventListener("resize", squeezeCheck);
-
     // mobile detection: sidebars become slide-in overlays below 768px
     const mobileQuery = window.matchMedia("(max-width: 768px)");
     isMobile.value = mobileQuery.matches;
@@ -1375,7 +1193,6 @@
     if (healthTimer) clearInterval(healthTimer);
     if (runningTimer) clearInterval(runningTimer);
     messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
-    window.removeEventListener("resize", squeezeCheck);
     if (spinnerTimer) clearInterval(spinnerTimer);
     if (typeof document !== "undefined" && savedTitle !== null)
       document.title = savedTitle;
