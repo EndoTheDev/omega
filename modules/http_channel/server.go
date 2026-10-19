@@ -72,6 +72,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
+	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/settings", s.handleSettings)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
@@ -1043,6 +1044,48 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// toolListing is one /tools row: the registry entry's name and
+// short description (the inventory, not the schemas - parameter maps
+// would only bloat the listing the UI shows).
+type toolListing struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// handleTools serves GET /tools: the agent's executable tool registry as
+// a name+description array, sorted by name. The inventory is the union
+// the chat loop actually runs with - the agent's ToolProviders plus the
+// server registry (agent.Tools() copies defensively; the server's own
+// set overlays on top, matching the loop's merge precedent where
+// existing entries win). The webui's module-owned tools panel
+// (modules/tools/ui/ToolsList.vue) renders this. Descriptions only -
+// parameter maps would only bloat the listing the UI shows.
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	inventory := s.agent.Tools()
+	if inventory == nil {
+		inventory = map[string]agent.Tool{}
+	}
+	for name, t := range s.tools {
+		if _, exists := inventory[name]; !exists {
+			inventory[name] = t
+		}
+	}
+	names := make([]string, 0, len(inventory))
+	for name := range inventory {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	out := make([]toolListing, 0, len(names))
+	for _, name := range names {
+		out = append(out, toolListing{Name: name, Description: inventory[name].Description})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // writeJSON writes v as a JSON response with the given status code.

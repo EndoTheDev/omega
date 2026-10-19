@@ -173,8 +173,8 @@
     parseCollapsedLabels,
     serializeCollapsedKeys,
     sessionRowStatus,
-  } from "../composables/omega";
-  import type { Session, SessionBuckets } from "../composables/omega";
+  } from "../../composables/omega";
+  import type { Session, SessionBuckets } from "../../composables/omega";
 
   const props = defineProps<{
     sessions: Session[];

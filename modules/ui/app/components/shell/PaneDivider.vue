@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
   import { onMounted, ref } from "vue";
-  import { snapCandidate } from "../composables/panes";
+  import { snapCandidate } from "../../composables/panes";
 
   const props = defineProps<{
     width: number;

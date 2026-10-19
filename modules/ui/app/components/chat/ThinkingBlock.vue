@@ -18,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-  import { useElapsed } from "../composables/useElapsed";
+  import { useElapsed } from "../../composables/useElapsed";
 
   // Auto-expand while streaming, collapse when the answer starts: the :open
   // binding tracks `streaming` — true keeps the block open (reasoning visible),

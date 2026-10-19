@@ -36,6 +36,8 @@ modules/ui/.nuxt/
 modules/ui/.output/
 modules/ui/dist/
 modules/ui/.data/
+# generated at config-eval time by nuxt.config.ts (module-panels)
+modules/ui/app/composables/module-panels.generated.ts
 *.log
 npm-debug.log*
 
