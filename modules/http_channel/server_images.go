@@ -2,6 +2,8 @@ package http_channel
 
 import (
 	"encoding/json"
+	"net"
+	"net/url"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,6 +44,37 @@ type attachImageRequest struct {
 	URL string `json:"url"`
 }
 
+// urlHost extracts the host (IP or hostname) from an absolute http(s)
+// URL, or "" when parsing fails.
+func urlHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// isInternalHost reports whether host is an IP literal inside the box
+// itself or the private rings: loopback, link-local (incl. cloud
+// metadata), RFC1918, and the Tailscale CGNAT 100.64/10 range.
+func isInternalHost(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false // hostname, not an IP literal
+	}
+	for _, ring := range []string{"127.0.0.0/8", "::1/128", "169.254.0.0/16", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12", "100.64.0.0/10"} {
+		if _, net4, err := net.ParseCIDR(ring); err == nil && net4.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// internalHostGuard is the seam the fetch-flow tests stub out (httptest
+// servers always bind 127.0.0.1); the wire contract itself refuses
+// every internal address via isInternalHost below.
+var internalHostGuard = isInternalHost
+
 // handleAttachImage serves POST /attach-image: the SERVER fetches the
 // URL's bytes (the webui never fetches cross-origin itself), sniffs
 // the magic bytes, and answers {media_type, base64} in the ai.Image-
@@ -66,6 +99,15 @@ func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
 		http.Error(w, "invalid request: url must be http(s)", http.StatusBadRequest)
+		return
+	}
+	// internal-address guard: the server fetches this URL, so it must not
+	// become a probe of the box itself or the LAN/Tailscale ring. IP
+	// literals only - hostnames that resolve internally are the ponytail:
+	// ceiling (no DNS games); upgrade path is resolving + range-checking
+	// if omega ever serves beyond a single user.
+	if host := urlHost(trimmed); internalHostGuard(host) {
+		http.Error(w, "refusing to fetch internal address "+host, http.StatusBadRequest)
 		return
 	}
 

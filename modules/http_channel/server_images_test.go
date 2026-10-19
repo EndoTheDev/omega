@@ -72,6 +72,10 @@ func TestChatOversizeImageRejected(t *testing.T) {
 }
 
 func TestAttachImage(t *testing.T) {
+	oldGuard := internalHostGuard
+	internalHostGuard = func(string) bool { return false }
+	defer func() { internalHostGuard = oldGuard }()
+
 	// upstream: a server that answers with PNG bytes
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -105,6 +109,10 @@ func TestAttachImage(t *testing.T) {
 }
 
 func TestAttachImageNonImage(t *testing.T) {
+	oldGuard := internalHostGuard
+	internalHostGuard = func(string) bool { return false }
+	defer func() { internalHostGuard = oldGuard }()
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("<html>this is text</html>")) //nolint:errcheck // test server
 	}))
@@ -125,6 +133,10 @@ func TestAttachImageNonImage(t *testing.T) {
 }
 
 func TestAttachImageOversize(t *testing.T) {
+	oldGuard := internalHostGuard
+	internalHostGuard = func(string) bool { return false }
+	defer func() { internalHostGuard = oldGuard }()
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(onePNG) //nolint:errcheck // test server
 		// pad past the cap
@@ -203,4 +215,22 @@ func TestStoreImagesRoundTrip(t *testing.T) {
 		t.Fatalf("images round-trip mismatch: %+v", user.Images)
 	}
 	_ = s
+}
+// TestAttachImageRefusesInternal exercises the wire contract itself: IP
+// literals inside the box, the LAN, and the Tailscale ring are refused
+// before any fetch happens; a public literal is allowed through the guard.
+func TestAttachImageRefusesInternal(t *testing.T) {
+	s := newTestServer()
+	for _, host := range []string{
+		"127.0.0.1", "10.1.2.3", "192.168.1.4", "172.16.0.9",
+		"169.254.169.254", "100.101.126.30", "[::1]",
+	} {
+		body := `{"url":"http://` + host + `/x.png"}`
+		req := httptest.NewRequest(http.MethodPost, "/attach-image", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		s.handleAttachImage(w, req)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "internal address") {
+			t.Fatalf("%s: status = %d, body = %q, want 400 internal-address refusal", host, w.Code, w.Body.String())
+		}
+	}
 }
