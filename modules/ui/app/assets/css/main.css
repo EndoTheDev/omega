@@ -194,6 +194,7 @@ body {
 
 .dock-pane {
   display: flex;
+  flex-direction: column; /* tab bar header (card 2) above the content */
   position: relative;
 }
 .dock-content {
@@ -203,6 +204,95 @@ body {
   min-height: 0;
 }
 .dock-content > .pane { flex: 1; }
+
+/* card 2: the TAB BAR is the pane's header. Height = the MenuBar contract
+   (35px); VS Code editor-group look: component-title tabs, '+' new-tab,
+   ⋯ pane-actions. Drop affordances here are layout-inert by design: the
+   drop highlight is an outline, the insertion caret an absolute bar - a
+   dragging gesture reflows nothing (card verify (d)). */
+.dock-tabbar {
+  flex: 0 0 auto;
+  height: 35px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding-right: 4px;
+  background: var(--z1);
+  border-bottom: 1px solid var(--stroke);
+  user-select: none;
+  min-width: 0;
+}
+.dock-tabs { display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
+.dock-tabs.empty { flex: 1; } /* spacer: the empty pane's × hugs the right */
+.dock-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  min-width: 72px;
+  max-width: 160px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.dock-tab:hover { color: var(--text); background: var(--z1-raised); }
+/* active tab: the existing accent, as an inset top bar (zero layout churn) */
+.dock-tab.active {
+  color: var(--text);
+  background: var(--z1-raised);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.dock-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-tab-close {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  font-size: 13px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.dock-tab:hover .dock-tab-close,
+.dock-tab.active .dock-tab-close,
+.dock-tab-close:focus-visible { opacity: 1; }
+.dock-tab-close:hover { background: var(--z2); color: var(--text); }
+.dock-tab-new, .dock-tab-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  cursor: pointer;
+}
+.dock-tab-new { position: relative; }
+.dock-tab-btn { margin-left: auto; }
+.dock-tab-new:hover, .dock-tab-btn:hover { background: var(--z1-raised); color: var(--text); }
+/* insertion caret: 2px accent bar between tabs - 'caret-before' also rides
+   the '+' button's left edge for the after-the-last-tab position */
+.dock-tab.caret-before::after,
+.dock-tab-new.caret-before::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+/* hovered drop target: outline only, never a size change */
+.dock-pane.drop-hover {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -3px;
+}
 
 /* empty pane: the '+' component menu (VS Code empty editor-group style) */
 .dock-empty {
@@ -215,25 +305,6 @@ body {
   min-height: 64px;
 }
 .dock-empty-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
-
-.dock-plus {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 5;
-  width: 24px;
-  height: 24px;
-  line-height: 1;
-  font-size: 15px;
-  border: 1px solid var(--stroke);
-  border-radius: 6px;
-  background: var(--z1);
-  color: var(--text);
-  opacity: 0; /* hover affordance like VS Code's corner actions */
-  transition: opacity 0.15s ease-out;
-}
-.dock-pane:hover .dock-plus, .dock-plus:focus-visible { opacity: 1; }
-.dock-plus:hover { background: var(--z1-raised); border-color: var(--accent); }
 
 .dock-menu {
   position: absolute;
@@ -1689,7 +1760,7 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 
   .divider { display: none; }
   .dock-divider { display: none; }
-  .dock-plus, .dock-menu { display: none; }
+  .dock-menu, .dock-tabbar { display: none; }
 
   /* inspector: mirrored overlay from the right */
   .aside {
