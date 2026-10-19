@@ -456,9 +456,11 @@ export function sessionPath(id: string): string {
 }
 
 // Modules that ship a MAIN-pane view (a switcher destination, not an
-// inspector panel) claim it through the composition: the shell mounts
-// them by module name (app.vue looks the panel up) and the inspector's
-// module-panels mount skips them here. One fact, one home.
+// inspector panel) claim it by module name - the shell mounts the panel
+// by lookup (app.vue) and never re-exports the module's ownership. The
+// inspector's tab list is FIXED (card t_4ae27e0d: files + cron +
+// http_channel + skills + tools, dock tabbar-hosted), so this set is
+// declaration-only chrome for future main-view modules.
 export const mainViewModules = new Set<string>(["kanban"]);
 
 // --- session list: pure bucketing / filtering / formatting helpers ---

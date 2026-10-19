@@ -1,13 +1,16 @@
 <template>
   <div
     class="dock-pane dock-cell"
-    :class="[kindClass, { 'drop-hover': dropHover }]"
+    :class="[kindClass, { 'drop-hover': dropHover, pinned }]"
     :style="cellStyle"
     :data-pane-id="node.id"
     @dragover="onPaneDragOver"
     @dragleave="onPaneDragLeave"
     @drop="onPaneDrop">
-    <!-- the pane's tab bar IS the header (35px, MenuBar contract) -->
+    <!-- the pane's tab bar IS the header (35px, MenuBar contract).
+         card t_4ae27e0d: pinned panes (sessions / inspector) host
+         unclosable tabs - no X on any tab, no '+', no actions menu; main
+         panes' tabs show the X on hover only. -->
     <div
       ref="tabsEl"
       class="dock-tabbar">
@@ -25,13 +28,16 @@
             role="tab"
             :aria-selected="i === node.active"
             :title="tabTitle(t)"
-            draggable="true"
+            :draggable="tabClosable(t) ? 'true' : 'false'"
             @click="api.focus(node.id, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
             <span class="dock-tab-title">{{ tabTitle(t) }}</span>
+            <!-- the close X: closable tabs of MAIN panes only, and it
+                 surfaces on hover (CSS); pinned sidebars never render one -->
             <button
+              v-if="tabClosable(t)"
               class="dock-tab-close"
               :aria-label="'close ' + tabTitle(t) + ' tab'"
               title="close tab"
@@ -42,6 +48,7 @@
           <!-- insertion caret "after the last tab" rides the '+' button's
                left edge (absolute pseudo-element, no reflow) -->
           <button
+            v-if="!pinned"
             class="dock-tab-new"
             :class="{ 'caret-before': dropIdx === node.tabs.length }"
             aria-label="new tab"
@@ -51,6 +58,7 @@
           </button>
         </div>
         <button
+          v-if="!pinned"
           class="dock-tab-btn actions"
           aria-label="pane actions"
           title="pane actions"
@@ -61,6 +69,7 @@
       <template v-else>
         <span class="dock-tabs empty" />
         <button
+          v-if="api.canRemovePane(node.id)"
           class="dock-tab-btn"
           aria-label="remove pane"
           title="remove pane"
@@ -85,9 +94,10 @@
     </div>
 
     <!-- empty pane: the '+' component menu IS the pane's content (VS Code
-         empty editor-group watermark); the bar above carries the close-X.
-         Card 4: the dockable registry drives it - the singleton policy
-         decides open-vs-focus, icons come with the inventory. -->
+         empty editor-group watermark); the bar above carries the close-X
+         (hidden when the remove would be refused - card t_4ae27e0d).
+         Card 4: the dockable registry drives it - MAIN-area dockables
+         only now: the pinned sidebars have no menu-open path. -->
     <div
       v-else
       class="dock-empty">
@@ -96,7 +106,7 @@
         role="menu"
         aria-label="pane components">
         <button
-          v-for="d in DOCKABLES"
+          v-for="d in MAIN_DOCKABLES"
           :key="d.id"
           class="dock-menu-btn"
           role="menuitem"
@@ -109,7 +119,8 @@
 
     <!-- '+' new-tab menu: card 4's dockable registry inventory with icons
          (replaces card 2's chat-only list). A singleton that already lives
-         FOCUSES instead of opening a second instance. -->
+         FOCUSES instead of opening a second instance. Main-area inventory
+         only (card t_4ae27e0d). -->
     <div
       v-if="newTabMenu"
       class="dock-menu"
@@ -117,7 +128,7 @@
       aria-label="new tab components"
       @click.stop>
       <button
-        v-for="d in DOCKABLES"
+        v-for="d in MAIN_DOCKABLES"
         :key="d.id"
         class="dock-menu-btn"
         role="menuitem"
@@ -127,7 +138,7 @@
       </button>
     </div>
 
-    <!-- corner affordance: split / remove -->
+    <!-- corner affordance: split / remove (never on a pinned pane) -->
     <div
       v-if="menuOpen"
       class="dock-menu"
@@ -147,6 +158,7 @@
         split down
       </button>
       <button
+        v-if="api.canRemovePane(node.id)"
         class="dock-menu-btn danger"
         role="menuitem"
         @click="api.remove(node.id)">
@@ -162,14 +174,18 @@
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
-    COMPONENT_TITLES,
-    DOCKABLES,
-    type DockIcon,
-    type DockableComponent,
     type DockPane as DockPaneNode,
-    type DockComponentName,
     type DockTab,
   } from "../composables/dock";
+  import {
+    COMPONENT_TITLES,
+    MAIN_DOCKABLES,
+    isClosableTab,
+    isPinnedTab,
+    type DockIcon,
+    type DockableComponent,
+    type DockComponentName,
+  } from "../composables/dockables";
   // the re-export path keeps one import surface for engine-side consumers;
   // dockables.ts is the registry's true source (card t_30ee04fb)
 
@@ -190,6 +206,14 @@
 
   function tabTitle(tab: DockTab): string {
     return tabTitleFor?.(tab) ?? COMPONENT_TITLES[tab.component];
+  }
+
+  // card t_4ae27e0d: the pinned identity. A pane hosting any sidebar-
+  // pinned tab (sessions / the inspector's five views) is fixed chrome -
+  // no X, no '+', no actions, and no tab may drag into it.
+  const pinned = computed(() => props.node.tabs.some((t) => isPinnedTab(t.component)));
+  function tabClosable(t: DockTab): boolean {
+    return isClosableTab(t.component);
   }
 
   const outletName = computed(() => {
@@ -277,6 +301,8 @@
   }
 
   function onTabDragStart(e: DragEvent, index: number) {
+    // card t_4ae27e0d: pinned tabs never leave their sidebar pane
+    if (pinned.value) return;
     e.dataTransfer?.setData(TAB_MIME, JSON.stringify({ p: props.node.id, t: index }));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
   }
@@ -308,6 +334,7 @@
   }
 
   function onTabbarDragOver(e: DragEvent) {
+    if (pinned.value) return; // a pinned pane is never a drop target
     if (!isTabDrag(e)) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
@@ -317,6 +344,7 @@
 
   // tab drops bubble here from the bar; the pane-level handler skips them
   function onTabbarDrop(e: DragEvent) {
+    if (pinned.value) return; // engine refuses anyway; no highlight was shown
     e.preventDefault();
     e.stopPropagation();
     const d = payloadOf(e);
@@ -329,6 +357,7 @@
   }
 
   function onPaneDragOver(e: DragEvent) {
+    if (pinned.value) return; // a pinned pane is never a drop target
     if (!isTabDrag(e)) return;
     e.preventDefault(); // a drop anywhere in the pane lands
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";

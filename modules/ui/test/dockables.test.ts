@@ -1,15 +1,21 @@
 // omega webui: unit tests for THE DOCKABLE CONTRACT (card t_30ee04fb) -
 // the registry (dockables.ts), the singleton opener (openSingleton in the
-// engine), the store-level singleton semantics (has / openSingleton /
-// toggleEdge / ensureEdge), and the composition-manifest lift
-// (dockablesFromPanels). Render-free; node's built-in test runner.
+// engine), the store-level semantics (has / openSingleton / the reset-era
+// main-pane ops), and the composition-manifest lift (dockablesFromPanels).
+// card t_4ae27e0d rewrote the identities: sidebar-pinned sidebars
+// (unclosable), the closable main class, the fixed five-tab inspector.
+// Render-free; node's built-in test runner.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
   COMPONENT_TITLES,
-  PLUS_TAB_COMPONENTS,
+  INSPECTOR_TAB_COMPONENTS,
+  LEGACY_DOCK_COMPONENTS,
+  MAIN_DOCKABLES,
+  isClosableTab,
+  isPinnedTab,
   dockableOf,
   dockablesFromPanels,
   type DockableComponent,
@@ -18,18 +24,20 @@ import {
   DOCK_LAYOUT_KEY,
   createDock,
   focusTab,
+  openTab,
+  removePane,
   makePane,
   makeSplit,
-  moveTab,
+  nextNodeId,
   openSingleton,
   serialize,
   splitPane,
   allNodes,
+  firstMainPaneId,
   type DockNode,
   type DockPane,
   type DockSplit,
 } from "../app/composables/dock.ts";
-import { PANE_OPEN_MIN } from "../app/composables/panes.ts";
 
 // helpers ------------------------------------------------------------------
 
@@ -56,13 +64,25 @@ function instanceCount(t: DockNode, component: string): number {
     0,
   );
 }
-/** the default migrateLayout shape: row [sidebar(240), chat(flex), inspector(300)] */
+/**
+ * default shell shape (card t_4ae27e0d): row
+ * [sidebar(240), chat(flex), the five-tab inspector pane(300)].
+ */
 function defaultTree(): DockSplit {
-  return asSplit(makeSplit("row", [
-    makePane("sidebar", 240),
-    makePane("chat", null),
-    makePane("inspector", 300),
-  ]));
+  const inspector: DockPane = {
+    kind: "pane",
+    id: nextNodeId(),
+    tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+    active: 0,
+    fixed: 300,
+  };
+  return asSplit(
+    makeSplit("row", [
+      makePane("sidebar", 240),
+      makePane("chat", null),
+      inspector,
+    ]),
+  );
 }
 /** two chat panes - a tree with NO singleton instance in it */
 function chatOnlyTree(): DockSplit {
@@ -92,6 +112,11 @@ class MemoryStorage {
   }
 }
 
+// microtask bridge: Vue's watcher scheduler flushes on a macrotask boundary
+function flush(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
+
 // --- the registry itself ----------------------------------------------------
 
 describe("the dockable registry", () => {
@@ -101,10 +126,9 @@ describe("the dockable registry", () => {
     assert.deepEqual([...ids].sort(), [...DOCK_COMPONENTS].sort());
   });
 
-  it("carries the contract fields: non-empty lowercase title, ink, one policy", () => {
+  it("carries the contract fields: non-empty title, ink, one policy, an area", () => {
     for (const d of DOCKABLES) {
       assert.ok(d.title.length > 0, `${d.id}: title`);
-      assert.equal(d.title, d.title.toLowerCase(), `${d.id}: shell voice is lowercase`);
       const hasInk =
         d.icon.rect !== undefined ||
         (d.icon.paths.length > 0 && d.icon.paths.every((p) => p.length > 0));
@@ -113,16 +137,46 @@ describe("the dockable registry", () => {
         d.policy === "singleton" || d.policy === "multi",
         `${d.id}: policy is one of the two`,
       );
+      assert.ok(
+        d.area === "left" || d.area === "right" || d.area === "main",
+        `${d.id}: area is one of the three`,
+      );
+      assert.equal(typeof d.closable, "boolean", `${d.id}: closable flag`);
+      // the pinned identity is the whole invariant: pin <-> unclosable
+      assert.equal(!isClosableTab(d.id), isPinnedTab(d.id), `${d.id}: pin/unclosable agree`);
     }
   });
 
-  it("policy split: sessions + inspector + settings singleton, chat the only multi", () => {
-    const singletons = DOCKABLES.filter((d) => d.policy === "singleton").map((d) => d.id);
-    // the settled design names singleton: sessions, files/inspector,
-    // settings (card t_35b5594a swaps the drawer for the singleton tab)
-    assert.deepEqual(singletons.sort(), ["inspector", "settings", "sidebar"]);
+  it("policy split (card t_4ae27e0d): chat the only multi, chat+settings closable", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
     assert.deepEqual(multi, ["chat"]);
+    const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
+    assert.deepEqual(closable.sort(), ["chat", "settings"]);
+  });
+
+  it("the fixed sidebars: sidebar pinned left, the inspector five pinned right", () => {
+    assert.deepEqual(
+      DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
+      ["sidebar"],
+    );
+    assert.deepEqual(
+      DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
+      ["files", "cron", "http_channel", "skills", "tools"],
+    );
+    // the inspector tab inventory IS the right-area set, in one place
+    assert.deepEqual(
+      [...INSPECTOR_TAB_COMPONENTS],
+      ["files", "cron", "http_channel", "skills", "tools"],
+    );
+    assert.ok(
+      INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
+      "no X on any of the five",
+    );
+  });
+
+  it("legacy ids: pre-reset trees deserialize but nothing may open one", () => {
+    assert.deepEqual([...LEGACY_DOCK_COMPONENTS], ["inspector"]);
+    assert.ok(!(DOCK_COMPONENTS as readonly string[]).includes("inspector"));
   });
 
   it("settings: the gear flow is plain openSingleton - create, then focus (card 5)", () => {
@@ -137,7 +191,14 @@ describe("the dockable registry", () => {
     t = focusTab(first.tree, pane.id, 0); // park it behind the chat tab
     const again = openSingleton(t, panes(t)[1]!.id, "settings");
     assert.equal(again.action, "focused", "re-opening focuses, never duplicates");
-    assert.equal(instanceCount(again.tree, "settings"), 1);
+    t = again.tree;
+    assert.equal(instanceCount(t, "settings"), 1);
+    const firstPane = paneById(t, pane.id);
+    assert.deepEqual(
+      firstPane.tabs.map((x) => x.component).sort(),
+      ["chat", "settings"],
+    );
+    assert.equal(firstPane.active, 1, "the parked settings tab became active");
   });
 
   it("dockableOf resolves every openable component, throws outside the union", () => {
@@ -148,12 +209,15 @@ describe("the dockable registry", () => {
     assert.throws(() => dockableOf("kanban" as never), /unknown component/);
   });
 
-  it("derives the tab-title fallback and the '+' inventory from the registry", () => {
+  it("derives the tab-title fallback and the main-area '+' inventory", () => {
     assert.deepEqual(
       Object.fromEntries(DOCKABLES.map((d) => [d.id, d.title])),
       { ...COMPONENT_TITLES },
     );
-    assert.deepEqual([...PLUS_TAB_COMPONENTS], DOCKABLES.map((d) => d.id));
+    // the pinned sidebars have no menu-open path (card t_4ae27e0d)
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "settings"]);
+    const ids = DOCKABLES.map((d) => d.id);
+    assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
   });
 
   it("chrome is NOT in the registry (MenuBar/StatusBar are the window, not content)", () => {
@@ -165,25 +229,25 @@ describe("the dockable registry", () => {
 // --- openSingleton (the engine half of the contract) ------------------------
 
 describe("openSingleton", () => {
-  it("creates in an EMPTY pane when no instance exists", () => {
+  it("creates in an EMPTY MAIN pane when no instance exists", () => {
     const tree = chatOnlyTree();
     const base = splitPane(tree, panes(tree)[0]!.id, "row", "after");
     const empty = panes(base).find((p) => p.tabs.length === 0)!;
-    const res = openSingleton(base, empty.id, "sidebar");
+    const res = openSingleton(base, empty.id, "settings");
     assert.equal(res.action, "created");
     const pane = paneById(res.tree, empty.id);
-    assert.deepEqual(pane.tabs.map((x) => x.component), ["sidebar"]);
+    assert.deepEqual(pane.tabs.map((x) => x.component), ["settings"]);
     assert.equal(pane.active, 0);
-    assert.equal(instanceCount(res.tree, "sidebar"), 1);
+    assert.equal(instanceCount(res.tree, "settings"), 1);
   });
 
-  it("appends + activates in an OCCUPIED pane when no instance exists", () => {
+  it("appends + activates in an OCCUPIED main pane when no instance exists", () => {
     const t = chatOnlyTree();
     const target = panes(t)[1]!;
-    const res = openSingleton(t, target.id, "inspector");
+    const res = openSingleton(t, target.id, "settings");
     assert.equal(res.action, "created");
     const pane = paneById(res.tree, target.id);
-    assert.deepEqual(pane.tabs.map((x) => x.component), ["chat", "inspector"]);
+    assert.deepEqual(pane.tabs.map((x) => x.component), ["chat", "settings"]);
     assert.equal(pane.active, 1, "the opened tab takes focus");
   });
 
@@ -191,154 +255,208 @@ describe("openSingleton", () => {
     const t = defaultTree();
     const base = splitPane(t, panes(t)[1]!.id, "row", "after");
     const empty = panes(base).find((p) => p.tabs.length === 0)!;
-    const before = panes(base).map((p) => p.tabs.length).join(",");
-    const res = openSingleton(base, empty.id, "sidebar");
+    const withTab = openSingleton(base, empty.id, "settings");
+    assert.equal(withTab.action, "created");
+    const other = panes(withTab.tree).find((p) => p.id !== empty.id)!;
+    const res = openSingleton(withTab.tree, other.id, "settings");
     assert.equal(res.action, "focused");
-    assert.equal(instanceCount(res.tree, "sidebar"), 1, "never a second singleton");
-    assert.equal(paneById(res.tree, empty.id).tabs.length, 0, "the empty pane stays empty");
+    assert.equal(instanceCount(res.tree, "settings"), 1, "never a second singleton");
     assert.equal(
-      panes(res.tree).map((p) => p.tabs.length).join(","),
-      before,
+      paneById(res.tree, empty.id).tabs.length,
+      1,
       "no structural change - only focus moved",
     );
   });
 
   it("focuses the instance even while it sits as an INACTIVE tab", () => {
-    // inspector moves into the chat pane and is parked inactive
-    let t: DockNode = makeSplit("row", [makePane("chat", null), makePane("inspector", null)]);
-    const insPane = panes(t).find((p) => p.tabs[0]?.component === "inspector")!;
-    const chatPane = panes(t).find((p) => p.tabs[0]?.component === "chat")!;
-    t = moveTab(t, insPane.id, 0, chatPane.id, 1);
-    t = focusTab(t, chatPane.id, 0); // inspector inactive in the chat pane
-    const other = panes(t).find((p) => p.id !== chatPane.id)!;
-    const res = openSingleton(t, other.id, "inspector");
+    // settings parked inactive in a second tab of the first pane
+    let t: DockNode = chatOnlyTree();
+    const a = panes(t)[0]!;
+    const b = panes(t)[1]!;
+    t = openTab(t, a.id, { component: "settings" });
+    t = focusTab(t, a.id, 0); // settings inactive in pane a
+    const res = openSingleton(t, b.id, "settings");
     assert.equal(res.action, "focused");
-    const pane = paneById(res.tree, chatPane.id);
-    assert.equal(instanceCount(res.tree, "inspector"), 1);
-    assert.equal(pane.active, 1, "the parked inspector tab became active");
+    const pane = paneById(res.tree, a.id);
+    assert.equal(instanceCount(res.tree, "settings"), 1);
+    assert.equal(pane.active, 1, "the parked settings tab became active");
   });
 
   it("re-opening in the same pane still lands on the instance (no duplicate)", () => {
     let t: DockNode = chatOnlyTree();
     const paneA = panes(t)[0]!;
-    const first = openSingleton(t, paneA.id, "inspector");
+    const first = openSingleton(t, paneA.id, "settings");
     assert.equal(first.action, "created");
     t = first.tree;
-    // inspector active in paneA; blur it by focusing chat, then re-open
+    // settings active in paneA; blur it by focusing chat, then re-open
     t = focusTab(t, paneA.id, 0);
-    const res = openSingleton(t, paneA.id, "inspector");
+    const res = openSingleton(t, paneA.id, "settings");
     assert.equal(res.action, "focused");
-    assert.equal(instanceCount(res.tree, "inspector"), 1);
+    assert.equal(instanceCount(res.tree, "settings"), 1);
     assert.equal(paneById(res.tree, paneA.id).tabs.length, 2);
   });
 
   it("no-ops when the target pane vanished (concurrent close)", () => {
     const t = chatOnlyTree();
-    const res = openSingleton(t, "nDoesNotExist", "sidebar");
+    const res = openSingleton(t, "n999z", "settings");
     assert.equal(res.action, "noop");
     assert.equal(res.tree, t, "the tree object is preserved untouched");
   });
+
+  it("refuses PINNED components and PINNED panes (no open path into the sidebars)", () => {
+    const t = defaultTree();
+    for (const c of INSPECTOR_TAB_COMPONENTS) {
+      const res = openSingleton(t, firstMainPaneId(t)!, c);
+      assert.equal(res.action, "noop", `${c} opens nowhere`);
+      assert.equal(res.tree, t);
+    }
+    const side = paneById(t, asSplit(t).children[0].id);
+    const res = openSingleton(t, side.id, "settings");
+    assert.equal(res.action, "noop", "no settings tab into the sessions pane");
+    assert.equal(res.tree, t);
+  });
 });
 
-// --- the store half (createDock over the singleton semantics) ---------------
+// --- the store (createDock: the reset-era ops over a persisted tree) ---------
 
-describe("dock store singleton semantics", () => {
+describe("dock store: the pane-model reset", () => {
   it("has() reads EVERY tab: a parked inactive singleton exists", async () => {
-    let t: DockNode = makeSplit("row", [makePane("chat", null), makePane("inspector", null)]);
-    const insPane = panes(t).find((p) => p.tabs[0]?.component === "inspector")!;
-    const chatPane = panes(t).find((p) => p.tabs[0]?.component === "chat")!;
-    t = focusTab(moveTab(t, insPane.id, 0, chatPane.id, 1), chatPane.id, 0);
+    let t: DockNode = chatOnlyTree();
+    const a = panes(t)[0]!;
+    t = openTab(t, a.id, { component: "settings" });
+    t = focusTab(t, a.id, 0);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
-    assert.equal(dock.has("inspector"), true, "inactive singleton still exists");
-    assert.equal(dock.has("sidebar"), false);
+    assert.equal(dock.has("settings"), true, "inactive singleton still exists");
     assert.equal(dock.has("chat"), true);
-    // the MenuBar-flag regression this guards: the old active-only has()
-    // under-reported and let toggleEdge insert a second singleton
+    assert.equal(dock.has("files"), true, "the pinned inspector edge came back");
+    // active-only has() would under-report and duplicate singletons
   });
 
-  it("openSingleton focuses an existing instance across panes (store-level)", async () => {
-    const t = defaultTree();
-    const base = splitPane(t, panes(t)[1]!.id, "row", "after");
-    const empty = panes(base).find((p) => p.tabs.length === 0)!;
+  it("a loaded pre-reset tree modernizes: the inspector tab expands to five", async () => {
+    const legacy: DockNode = {
+      kind: "split",
+      id: "n1",
+      direction: "row",
+      children: [
+        { kind: "pane", id: "n2", tabs: [{ component: "sidebar" }], active: 0, fixed: 240 },
+        { kind: "pane", id: "n3", tabs: [{ component: "chat" }], active: 0, fixed: null },
+        { kind: "pane", id: "n4", tabs: [{ component: "inspector" }], active: 0, fixed: 300 },
+      ],
+      sizes: [1 / 3, 1 / 3, 1 / 3],
+    };
     const mem = new MemoryStorage();
-    mem.setItem(DOCK_LAYOUT_KEY, serialize(base));
+    mem.setItem(DOCK_LAYOUT_KEY, JSON.stringify({ v: 1, tree: legacy }));
     const dock = createDock(mem as unknown as Storage);
-    await flush();
-    const verdict = dock.openSingleton(empty.id, "sidebar");
-    assert.equal(verdict, "focused");
-    assert.equal(instanceCount(dock.tree.value, "sidebar"), 1);
-    assert.equal(paneById(dock.tree.value, empty.id).tabs.length, 0);
-  });
-
-  it("toggleEdge closes a shared-pane singleton as a TAB (the pane survives)", async () => {
-    let t: DockNode = makeSplit("row", [
-      makePane("sidebar", 200),
-      makePane("chat", null),
-      makePane("inspector", 300),
-    ]);
-    // park inspector as an inactive tab inside the sidebar pane
-    const insPane = panes(t).find((p) => p.tabs[0]?.component === "inspector")!;
-    const sbPane = panes(t).find((p) => p.tabs[0]?.component === "sidebar")!;
-    t = focusTab(moveTab(t, insPane.id, 0, sbPane.id, 1), sbPane.id, 0);
-    const mem = new MemoryStorage();
-    mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
-    const dock = createDock(mem as unknown as Storage);
-    await flush();
-    dock.toggleEdge("inspector", "after");
-    await flush();
-    const sb = paneById(dock.tree.value, sbPane.id);
-    assert.deepEqual(sb.tabs.map((x) => x.component), ["sidebar"], "only the tab was closed");
-    assert.equal(dock.has("inspector"), false);
-    assert.equal(instanceCount(dock.tree.value, "chat"), 1, "chat pane untouched");
-  });
-
-  it("toggleEdge removes a pane the singleton owns alone (split hoists)", async () => {
-    const t = defaultTree();
-    const mem = new MemoryStorage();
-    mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
-    const dock = createDock(mem as unknown as Storage);
-    await flush();
-    dock.toggleEdge("sidebar", "before");
     await flush();
     const tree = dock.tree.value;
-    assert.equal(dock.has("sidebar"), false);
-    // the two-child row hoists to its survivor; no empty shells
-    for (const n of allNodes(tree)) {
-      if (n.kind === "split") assert.ok((n as DockSplit).children.length >= 2);
-    }
-    const comps = panes(tree).map((p) => p.tabs[p.active]?.component);
-    assert.deepEqual(comps.sort(), ["chat", "inspector"]);
+    const insp = paneById(tree, "n4");
+    assert.deepEqual(
+      insp.tabs.map((x) => x.component),
+      ["files", "cron", "http_channel", "skills", "tools"],
+      "the chip strip's tabs are real now",
+    );
+    // persisted at once so the next boot never re-modernizes
+    const stored = JSON.parse(mem.getItem(DOCK_LAYOUT_KEY) ?? "{}");
+    assert.deepEqual(stored.tree, tree as unknown, "the modern tree persisted on boot");
   });
 
-  it("ensureEdge never duplicates a singleton parked anywhere", async () => {
-    const t = defaultTree();
+  it("a tree with sidebars toggled away gets its fixed shape back", async () => {
+    const t: DockNode = makePane("chat");
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
-    dock.ensureEdge("sidebar", "before");
-    await flush();
-    assert.equal(instanceCount(dock.tree.value, "sidebar"), 1);
-    assert.equal(panes(dock.tree.value).length, 3, "the tree did not grow");
+    const tree = dock.tree.value;
+    assert.equal(panes(tree).length, 3, "sidebar + chat + inspector");
+    const comps = panes(tree).map((p) => p.tabs[0]?.component);
+    assert.deepEqual(comps[0], "sidebar");
+    assert.equal(panes(tree)[0]!.fixed, 240);
   });
 
-  it("reopen-clamp: a stale sub-floor width reopens at " + PANE_OPEN_MIN, async () => {
-    const t = asSplit(makeSplit("row", [makePane("chat", null), makePane("sidebar", 100)]));
-    const sidebarPane = panes(t).find((p) => p.tabs[0]?.component === "sidebar")!;
+  it("ensureMainPane returns the first main pane; never inserts when one lives", async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(defaultTree()));
+    const dock = createDock(mem as unknown as Storage);
+    await flush();
+    const before = serialize(dock.tree.value);
+    const chatPane = panes(dock.tree.value).find((p) => p.tabs[0]?.component === "chat")!;
+    assert.equal(dock.ensureMainPane(), chatPane.id, "no pane inserted");
+    assert.equal(serialize(dock.tree.value), before, "the tree is untouched");
+  });
+
+  it("ensureMainPane re-inserts a main pane when the user removed the last one", async () => {
+    let t: DockNode = defaultTree();
+    // strip both main candidates: the chat pane (pinned sidebars refuse,
+    // so the tree keeps its shape) - only remove-able pane is the chat
+    const chatPane = asSplit(t).children[1];
+    t = removePane(t, asPane(chatPane).id);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
-    dock.toggleEdge("sidebar", "before"); // close
+    assert.equal(panes(dock.tree.value).length, 2, "sidebars only");
+    const id = dock.ensureMainPane();
+    const tree = dock.tree.value;
+    const pane = paneById(tree, id);
+    assert.equal(pane.tabs.length, 0, "a fresh flexible pane");
+    assert.equal(panes(tree).length, 3, "the dock has a main pane again");
+    assert.equal(panes(tree)[2]!.id, id, "inserted at the root's after-edge");
+  });
+
+  it("canRemovePane: pinned never, the last remaining pane never", async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(defaultTree()));
+    const dock = createDock(mem as unknown as Storage);
     await flush();
-    assert.equal(dock.has("sidebar"), false);
-    dock.toggleEdge("sidebar", "before"); // reopen
+    const tree = dock.tree.value;
+    const side = paneById(tree, asSplit(tree).children[0].id);
+    const files = paneById(tree, asSplit(tree).children[2].id);
+    const chatPane = paneById(tree, asSplit(tree).children[1].id);
+    assert.equal(dock.canRemovePane(side.id), false, "sessions pane unclosable");
+    assert.equal(dock.canRemovePane(files.id), false, "inspector pane unclosable");
+    assert.equal(dock.canRemovePane(chatPane.id), true, "a main pane may go");
+  });
+
+  it("closing every main pane still leaves the dock alive (the pinned two)", async () => {
+    const t: DockNode = makePane("chat");
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
+    const dock = createDock(mem as unknown as Storage);
     await flush();
-    const pane = panes(dock.tree.value).find((p) => p.tabs[0]?.component === "sidebar")!;
-    assert.equal(pane.fixed, PANE_OPEN_MIN, "the stale 100px width reopens at the clamp");
+    // boot repair already has the fixed shape; dropping the chat pane
+    // must leave the pinned two (the engine's never-empty guard is what
+    // would refuse a zero-pane dock from any other call path)
+    const chatPane = panes(dock.tree.value).find((p) => p.tabs[0]?.component === "chat")!;
+    dock.remove(chatPane.id);
+    await flush();
+    const tree = dock.tree.value;
+    assert.equal(panes(tree).length, 2, "the pinned sidebars hold the dock");
+    assert.equal(dock.ensureMainPane().length > 0, true, "a main pane reopens");
+  });
+
+  it("closeTab through the store refuses the pinned sidebars' tabs", async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(defaultTree()));
+    const dock = createDock(mem as unknown as Storage);
+    await flush();
+    const tree = dock.tree.value;
+    const files = paneById(tree, asSplit(tree).children[2].id);
+    dock.closeTab(files.id, 0);
+    dock.closeTab(files.id, 1);
+    await flush();
+    assert.equal(
+      paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
+      "files,cron,http_channel,skills,tools",
+      "none of the five may close",
+    );
+    // the main class still closes through the store
+    const chatPane = paneById(tree, asSplit(tree).children[1].id);
+    dock.closeTab(chatPane.id, 0);
+    await flush();
+    assert.equal(paneById(dock.tree.value, chatPane.id).tabs.length, 0);
   });
 });
 
@@ -377,8 +495,3 @@ describe("dockablesFromPanels", () => {
     assert.deepEqual(lifted.map((d) => d.id), ["kanban"]);
   });
 });
-
-// microtask bridge: Vue's watcher scheduler flushes on a macrotask boundary
-function flush(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 0));
-}
