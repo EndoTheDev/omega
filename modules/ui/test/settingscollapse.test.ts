@@ -1,7 +1,7 @@
 // omega webui: unit tests for the settings-group collapse persistence
 // helpers (parseCollapsedKeys/serializeCollapsedKeys in
 // composables/omega.ts) and the SHARED search-input contract
-// (SearchInput.vue consumed by AppSidebar AND SettingsDrawer - only the
+// (SearchInput.vue consumed by AppSidebar AND SettingsTab - only the
 // look is shared; filter/union behaviors stay with the consumers).
 // The component tests are structural (source assertions): the unit suite
 // has no DOM, so what is pinned is the wiring, not the paint.
@@ -66,10 +66,10 @@ test("SearchInput owns exactly one input (no duplicated look)", () => {
   );
 });
 
-test("AppSidebar and SettingsDrawer both consume SearchInput via v-model", () => {
+test("AppSidebar and SettingsTab both consume SearchInput via v-model", () => {
   const consumers = [
     ["AppSidebar", "sessions"],
-    ["SettingsDrawer", "settings"],
+    ["SettingsTab", "settings"],
   ] as const;
   for (const [name, area] of consumers) {
     const src = comp(name, area);

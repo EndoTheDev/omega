@@ -1,5 +1,6 @@
 <template>
-  <!-- no title row: the menubar gear is the toggle - this is just content -->
+  <!-- no title row: the dock tab bar carries the "settings" title; the
+       menubar gear OPENS this tab (singleton) - this is just content -->
   <aside class="settings">
     <!-- search: narrows every group live; Escape clears (shared look -
          SearchInput, same component as the sidebar's session search) -->
@@ -134,8 +135,8 @@
 <script setup lang="ts">
   import {
     computed,
+    onMounted,
     ref,
-    watch,
   } from "vue";
   import {
     fetchSettings,
@@ -152,7 +153,6 @@
   const props = defineProps<{
     showThinking: boolean;
     themeMode: "auto" | "light" | "dark";
-    open: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -172,15 +172,13 @@
   const saving = ref(false);
   const query = ref("");
 
-  // Load on every open: values can change on disk between opens, and
-  // the pane has no other refresh trigger.
-  watch(
-    () => props.open,
-    (open) => {
-      if (open) void reload();
-    },
-    { immediate: true },
-  );
+  // Card 5: settings is a dock TAB, not an overlay - the tab opens once
+  // and stays mounted, so the load-on-open watch dies with the drawer
+  // shape. The tab mount loads; the save round-trip refreshes from the
+  // server response the same way it did before.
+  onMounted(() => {
+    void reload();
+  });
 
   async function reload() {
     loadError.value = null;

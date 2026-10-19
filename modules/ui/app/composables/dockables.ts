@@ -22,7 +22,7 @@
 
 // component names a dock pane may host. Single source: the registry
 // below IS this list (dock.ts re-exports for engine-side consumers).
-export const DOCK_COMPONENTS = ["sidebar", "chat", "inspector"] as const;
+export const DOCK_COMPONENTS = ["sidebar", "chat", "inspector", "settings"] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
 export type DockInstancePolicy = "singleton" | "multi";
@@ -45,9 +45,11 @@ export interface DockableComponent {
   policy: DockInstancePolicy;
 }
 
-// THE migrated inventory (card t_30ee04fb). Card 1 built the engine,
-// card 2 the tabs/DnD, card 3 chat multi-instance: this is the moment
-// sidebar and inspector become contract-carrying dockable singletons.
+// THE migrated inventory. Card 1 built the engine, card 2 the tabs/DnD,
+// card 3 chat multi-instance, card 4 the contract for sidebar+inspector;
+// card 5 (t_35b5594a) closes the list: settings swaps the overlay drawer
+// for a dock-tab singleton - the menubar gear OPENS the tab (or FOCUSES
+// the live instance per the singleton policy).
 export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "sidebar",
@@ -70,6 +72,19 @@ export const DOCKABLES: readonly DockableComponent[] = [
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
       paths: ["M15 3v18", "M8 9l3 3-3 3"],
+    },
+    policy: "singleton",
+  },
+  {
+    id: "settings",
+    title: "settings",
+    icon: {
+      // cog: hub circle + eight teeth, same 2px round-join stroke style
+      paths: [
+        "M12 9a3 3 0 1 0 .0001 0",
+        "M12 2v3", "M12 19v3", "M2 12h3", "M19 12h3",
+        "M4.9 4.9L7 7", "M17 17l2.1 2.1", "M19.1 4.9L17 7", "M7 17l-2.1 2.1",
+      ],
     },
     policy: "singleton",
   },

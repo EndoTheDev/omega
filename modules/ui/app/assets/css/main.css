@@ -107,7 +107,7 @@ body {
   height: 35px;
   padding: 0 12px;
   background: var(--z0);
-  /* chrome stays above all overlays: drawers (12), scrim (10), settings (11),
+  /* chrome stays above all overlays: drawers (12), scrim (10),
      model dropdown (30). Coupling: mobile drawer insets use this height. */
   position: relative;
   z-index: 40;
@@ -375,7 +375,7 @@ body {
 }
 
 /* sidebar search: filters the in-memory list client-side; the input look
-   lives in the shared .search-input rules below (SettingsDrawer's filter
+   lives in the shared .search-input rules below (SettingsTab's filter
    search consumes the same component) */
 .session-search {
   padding: 0 12px 8px;
@@ -1450,7 +1450,7 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .retry:disabled { opacity: 0.4; cursor: not-allowed; }
 .retry + .send { margin-left: 8px; }
 
-/* ---- layer 2: overlays (settings drawer, scrims) ---- */
+/* ---- layer 2: overlays (mobile drawer scrims) ---- */
 .scrim {
   position: fixed;
   inset: 0;
@@ -1462,39 +1462,14 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   z-index: 10;
 }
 
-/* ---- right slot (desktop only): both panes stacked, one visible -
-   toggling settings vs inspector slides one in over the other (no v-if
-   flash). The slot fills its dock pane; panes absolute inside.
-   Scoped to >=769px so the mobile fixed-overlay drawers never see these
-   transforms. */
-@media (min-width: 769px) {
-  .pane-slot {
-    position: relative;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden; /* clip the sliding panes */
-  }
-  .slot-pane {
-    position: absolute;
-    inset: 0;
-    transform: translateX(100%);
-    transition:
-      transform 0.2s ease-out,
-      visibility 0s linear 0.2s;
-    visibility: hidden; /* closed: inert under the active pane */
-  }
-  .slot-pane.active {
-    transform: translateX(0);
-    visibility: visible;
-    z-index: 1; /* incoming slides in OVER the outgoing */
-    transition: transform 0.2s ease-out;
-  }
-}
+/* card 5 (t_35b5594a): the settings overlay drawer is gone - settings now
+   docks as a singleton TAB in a main pane, rendered in-pane by the dock
+   outlet. The rounded-panel look carries over verbatim; no transforms,
+   no visibility tricks, no z-index. */
 
 .settings {
-  /* a real pane inside the right pane-group on desktop - pushes the chat
-     left exactly like the inspector, same width from the same binding.
-     (fixed-overlay geometry for mobile lives in the media block below) */
+  /* a real pane in the dock: the outlet wraps it in .dock-content (flex),
+     so `flex: 1` fills the pane below the tab bar */
   background: var(--z1);
   border: 1px solid var(--stroke);
   border-radius: var(--r-pane);
@@ -1504,13 +1479,7 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   flex-direction: column;
   gap: 20px;
   min-height: 0;
-}
-
-.settings.active {
-  transform: translateX(0);
-  visibility: visible;
-  /* no visibility delay on open - appear-then-slide instantly */
-  transition: transform 0.2s ease-out;
+  flex: 1;
 }
 
 /* group headers: full-row clickable, same interaction feel as the sidebar
@@ -1783,23 +1752,6 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
     transition: transform 0.2s ease-out;
   }
   .aside.open { transform: translateX(0); }
-
-  /* settings drawer: on mobile adopt the drawer geometry - same 70% width,
-     edge-flush right, docked between the bars - so it reads as a sibling
-     of the sidebars instead of a floating card */
-  .settings {
-    position: fixed;
-    top: 35px;
-    right: 0;
-    bottom: 29px;
-    width: calc(100% - 30%);
-    z-index: 12;
-    transform: translateX(100%);
-    transition:
-      transform 0.2s ease-out,
-      visibility 0s linear 0.2s;
-    visibility: hidden; /* closed: not focusable off-screen */
-  }
 
   /* ponytail: a push-slide variant (240%-wide sliding grid row) was tried
      here and reverted - vw units, innerWidth and transform % all misbehave

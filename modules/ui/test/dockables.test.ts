@@ -116,12 +116,28 @@ describe("the dockable registry", () => {
     }
   });
 
-  it("policy split: sessions + inspector singleton, chat the only multi", () => {
+  it("policy split: sessions + inspector + settings singleton, chat the only multi", () => {
     const singletons = DOCKABLES.filter((d) => d.policy === "singleton").map((d) => d.id);
-    // the settled design names singleton: sessions, files/inspector, settings
-    assert.deepEqual(singletons.sort(), ["inspector", "sidebar"]);
+    // the settled design names singleton: sessions, files/inspector,
+    // settings (card t_35b5594a swaps the drawer for the singleton tab)
+    assert.deepEqual(singletons.sort(), ["inspector", "settings", "sidebar"]);
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
     assert.deepEqual(multi, ["chat"]);
+  });
+
+  it("settings: the gear flow is plain openSingleton - create, then focus (card 5)", () => {
+    // the overlay drawer's death leaves no bespoke rule behind: the gears
+    // open/focus semantics ARE the singleton contract, pinned here on the
+    // component the gear targets
+    let t: DockNode = chatOnlyTree();
+    const pane = panes(t)[0]!;
+    const first = openSingleton(t, pane.id, "settings");
+    assert.equal(first.action, "created");
+    assert.equal(instanceCount(first.tree, "settings"), 1);
+    t = focusTab(first.tree, pane.id, 0); // park it behind the chat tab
+    const again = openSingleton(t, panes(t)[1]!.id, "settings");
+    assert.equal(again.action, "focused", "re-opening focuses, never duplicates");
+    assert.equal(instanceCount(again.tree, "settings"), 1);
   });
 
   it("dockableOf resolves every openable component, throws outside the union", () => {
