@@ -18,6 +18,7 @@ import (
 type HTTPChannel struct {
 	addr       string
 	runTimeout time.Duration // detached-run wall-clock cap from config
+	titleModel string        // title_model knob from config
 	srv        *Server
 }
 
@@ -37,6 +38,7 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 	c.srv.Cron = deps.Ctx.Cron
 	c.srv.logger = deps.Ctx.Logger
 	c.srv.runTimeout = c.runTimeout
+	c.srv.titleModel = c.titleModel
 	c.srv.version = deps.Version
 	return c.srv.Serve(ctx, c.addr)
 }

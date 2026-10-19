@@ -53,6 +53,10 @@ type Server struct {
 	// version is the host's build tag, surfaced through /health. Empty
 	// omits the field.
 	version string
+	// titleModel is the title_model knob: session-title calls route
+	// through this model when set, instead of the call's pinned
+	// provider (the main model). Empty = no override.
+	titleModel string
 	// startedAt anchors the /health uptime (time since server construction).
 	startedAt time.Time
 
@@ -765,6 +769,12 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 // prov is the pinned per-request provider copy. Runs detached; failure
 // is silent - an untitled session is cosmetic, not fatal.
 func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req chatRequest, lastAssistant string, final bool) {
+	// title_model knob: when set, BOTH title calls route through it -
+	// the request's pinned provider (the model that served the chat)
+	// is overridden. Without the knob everything is unchanged.
+	if s.titleModel != "" {
+		prov = prov.WithModel(s.titleModel)
+	}
 	sess, err := s.store.GetSession(ctx, req.SessionID)
 	if err != nil {
 		return

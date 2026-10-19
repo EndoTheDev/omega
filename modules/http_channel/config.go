@@ -14,6 +14,10 @@ type Config struct {
 	// wall-clock cap, holding the session's run slot until restart.
 	// 0 or negative falls back to Default().RunTimeout at mount.
 	RunTimeout int `yaml:"run_timeout"`
+	// TitleModel is the title_model knob: session-title calls
+	// (provisional + final) route through it when set. Empty = the
+	// main model (today's behavior).
+	TitleModel string `yaml:"title_model"`
 }
 
 // defaultRunTimeout is the detached-run wall-clock cap: 30 minutes is
