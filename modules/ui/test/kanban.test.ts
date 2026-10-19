@@ -104,19 +104,18 @@ test("board view ships module-owned and the shell mounts it", () => {
   // /board anchors in history like /chat/<id>
   assert.match(appVue, /\/board/);
 
-  // the inspector does NOT get the main view: the tab card's helper
-  // (compose.inspectorPanelTabs) filters module panels through
-  // mainViewModules (omega.ts owns the fact), and RightSidebar builds
-  // its tab bar through that helper
-  const sidebarVue = readFileSync(
-    join(uiRoot, "app", "components", "files", "RightSidebar.vue"),
+  // the inspector does NOT get the main view: card t_4ae27e0d fixed the
+  // inspector's tab list (files + cron + http_channel + skills + tools)
+  // in the dockable registry - the board is a MAIN-view module, and no
+  // registry id may carry the kanban module name
+  const registry = readFileSync(
+    join(uiRoot, "app", "composables", "dockables.ts"),
     "utf8",
   );
-  assert.match(sidebarVue, /inspectorPanelTabs\(modulePanels, mainViewModules\)/);
+  assert.ok(!registry.includes('"kanban"'), "kanban is a main view, not a dock tab");
+  assert.ok(registry.includes("http_channel"), "the logs module owns an inspector tab");
   assert.match(
-    readFileSync(join(uiRoot, "app", "composables", "compose.ts"), "utf8"),
-    /mainViews\.has\(p\.module\)/,
+    readFileSync(join(uiRoot, "app", "composables", "omega.ts"), "utf8"),
+    /mainViewModules = new Set<string>\(\["kanban"\]\)/,
   );
-  const omegaTs = readFileSync(join(uiRoot, "app", "composables", "omega.ts"), "utf8");
-  assert.match(omegaTs, /mainViewModules = new Set<string>\(\["kanban"\]\)/);
 });

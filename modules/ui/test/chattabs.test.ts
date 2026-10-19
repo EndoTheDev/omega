@@ -113,12 +113,12 @@ describe("closeSessionTabs", () => {
     const k2 = paneAt(base, 1).tabs[0]!.key!;
     let tree = setTabSessionRef(base, k1, "gone");
     tree = setTabSessionRef(tree, k2, "kept");
-    tree = openTab(tree, paneAt(tree, 0).id, { component: "inspector" });
-    // pane1: [gone, inspector] -> [inspector]; pane2 keeps "kept"
+    tree = openTab(tree, paneAt(tree, 0).id, { component: "settings" });
+    // pane1: [gone, settings] -> [settings]; pane2 keeps "kept"
     const next = closeSessionTabs(tree, "gone");
     const p1 = paneAt(next, 0);
     const p2 = paneAt(next, 1);
-    assert.deepEqual(p1.tabs.map((t) => t.component), ["inspector"]);
+    assert.deepEqual(p1.tabs.map((t) => t.component), ["settings"]);
     assert.equal(p1.tabs.length, 1);
     assert.equal(p2.tabs[0]!.sessionRef, "kept");
   });

@@ -16,7 +16,8 @@ import {
   openTab,
   closeTab,
   moveTab,
-  PLUS_TAB_COMPONENTS,
+  MAIN_DOCKABLES,
+  INSPECTOR_TAB_COMPONENTS,
   dragSplitDivider,
   serialize,
   deserialize,
@@ -25,11 +26,15 @@ import {
   findPane,
   findComponentPane,
   allNodes,
+  isPinnedPane,
+  paneCount,
+  firstMainPaneId,
+  insertMainPane,
+  expandInspectorTabs,
+  ensurePinnedEdges,
   normalizeSizes,
-  LEGACY_OPEN_KEYS,
   LEGACY_WIDTH_KEYS,
   MIN_PANE_PX,
-  PANE_OPEN_MIN,
   type DockNode,
   type DockPane,
   type DockSplit,
@@ -45,13 +50,24 @@ function asSplit(n: DockNode): DockSplit {
   assert.equal(n.kind, "split");
   return n as DockSplit;
 }
-/** default shell shape: row [sidebar(fixed 240), chat(flex), inspector(fixed 300)] */
+/**
+ * default shell shape (card t_4ae27e0d): row
+ * [sidebar(fixed 240), chat(flex), inspector-pane(fixed 300: the five
+ * real view tabs, files active)].
+ */
 function defaultTree(): DockSplit {
+  const inspector: DockPane = {
+    kind: "pane",
+    id: nextNodeId(),
+    tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+    active: 0,
+    fixed: 300,
+  };
   return asSplit(
     makeSplit("row", [
       makePane("sidebar", 240),
       makePane("chat", null),
-      makePane("inspector", 300),
+      inspector,
     ]),
   );
 }
@@ -70,7 +86,7 @@ function comps(t: DockNode): (string | undefined)[] {
       : n.children.flatMap(walk);
   return walk(root);
 }
-function paneByComponent(t: DockNode, c: "sidebar" | "chat" | "inspector"): DockPane {
+function paneByComponent(t: DockNode, c: "sidebar" | "chat" | "files"): DockPane {
   const p = findComponentPane(t, c);
   assert.ok(p, `expected a pane hosting ${c}`);
   return p;
@@ -97,6 +113,16 @@ describe("tree construction", () => {
     assert.deepEqual(normalizeSizes(2, [0, 0]), [0.5, 0.5]); // zero sum
     assert.deepEqual(normalizeSizes(2, [NaN, 1]), [0.5, 0.5]);
   });
+
+  it("default shape carries the five real inspector tabs (files active)", () => {
+    const t = defaultTree();
+    const insp = asSplit(t).children[2];
+    assert.deepEqual(
+      asPane(insp).tabs.map((x) => x.component),
+      ["files", "cron", "http_channel", "skills", "tools"],
+    );
+    assert.equal(asPane(insp).active, 0);
+  });
 });
 
 describe("insertPane / splitPane", () => {
@@ -109,7 +135,7 @@ describe("insertPane / splitPane", () => {
     assert.equal(inner.direction, "row");
     assert.equal(asPane(inner.children[0]).id, chat.id);
     assert.equal(asPane(inner.children[1]).tabs.length, 0);
-    assert.deepEqual(comps(out), ["sidebar", "chat", undefined, "inspector"]);
+    assert.deepEqual(comps(out), ["sidebar", "chat", undefined, "files"]);
   });
   it("side 'before' puts the new pane left", () => {
     const t = defaultTree();
@@ -139,26 +165,46 @@ describe("insertPane / splitPane", () => {
   });
 });
 
-describe("removePane", () => {
+describe("removePane (card t_4ae27e0d refusals)", () => {
   it("removes a pane; the split keeps its survivors", () => {
+    let t: DockNode = defaultTree();
+    const chat = paneByComponent(t, "chat");
+    t = splitPane(t, chat.id, "row", "after"); // 4 panes now
+    assert.equal(paneCount(t), 4);
+    const empty = panes(t).find((p) => p.tabs.length === 0)!; // the split-away pane
+    const out = asSplit(removePane(t, empty.id));
+    assert.ok(!findPane(out, empty.id));
+    assert.equal(paneCount(out), 3);
+  });
+  it("a single-child split hoists to the child", () => {
+    // split the chat: root [sidebar, row[chat, empty], files]; dropping
+    // the empty pane single-childrens the interior row - it hoists to the
+    // chat pane itself (the engine guard never even called here: the
+    // split never went below 2 children, it collapsed instead)
+    let t: DockNode = defaultTree();
+    const chat = paneByComponent(t, "chat");
+    t = splitPane(t, chat.id, "row", "after");
+    const empty = panes(t).find((p) => p.tabs.length === 0)!;
+    t = removePane(t, empty.id);
+    assert.equal(paneCount(t), 3);
+    const survivor = asSplit(t).children[1];
+    assert.equal(survivor.kind, "pane", "the interior row hoisted to its child");
+    assert.equal(survivor.id, chat.id, "the chat pane is the survivor");
+  });
+  it("the LAST REMAINING pane is refused (never-empty invariant)", () => {
+    const t = asPane(makePane("chat"));
+    assert.equal(removePane(t, t.id), t, "the tree object is returned untouched");
+    // even sidebars-only... the guard reads COUNT, not identity: with one
+    // pane left of any kind, the close is a no-op
+    assert.equal(removePane(t, t.id), t);
+  });
+  it("pinned panes refuse removal (sidebar panes are fixed chrome)", () => {
     const t = defaultTree();
     const side = paneByComponent(t, "sidebar");
-    const out = removePane(t, side.id);
-    assert.ok(!findPane(out, side.id));
-    assert.deepEqual(comps(asSplit(out)), ["chat", "inspector"]);
-  });
-  it("a single-child split hoists to the child (root may become a pane)", () => {
-    let out: DockNode = defaultTree();
-    out = removePane(out, paneByComponent(out, "sidebar").id);
-    out = removePane(out, paneByComponent(out, "inspector").id);
-    assert.equal(out.kind, "pane");
-    assert.equal(asPane(out).tabs[0].component, "chat");
-  });
-  it("removing the last pane leaves ONE empty pane (the menu rules it)", () => {
-    const t = asPane(makePane("chat"));
-    const out = asPane(removePane(t, t.id));
-    assert.equal(out.tabs.length, 0);
-    assert.equal(out.active, 0);
+    const files = paneByComponent(t, "files");
+    assert.equal(removePane(t, side.id), t, "sessions pane unclosable");
+    assert.equal(removePane(t, files.id), t, "inspector pane unclosable");
+    assert.equal(paneCount(t), 3);
   });
   it("no-op for an unknown id", () => {
     const t = defaultTree();
@@ -167,39 +213,44 @@ describe("removePane", () => {
 });
 
 describe("movePane", () => {
-  it("moves after a target: order [chat, inspector, sidebar]", () => {
-    const t = defaultTree();
-    const side = paneByComponent(t, "sidebar");
-    const insp = paneByComponent(t, "inspector");
-    const out = movePane(t, side.id, insp.id, "after");
-    assert.deepEqual(comps(out), ["chat", "inspector", "sidebar"]);
+  it("a MAIN pane moves: root [sidebar, hoisted-empty, chat, files]", () => {
+    let t: DockNode = defaultTree();
+    const chat = paneByComponent(t, "chat");
+    t = splitPane(t, chat.id, "row", "after");
+    const mainHalf = findPane(t, chat.id)!;
+    const out = movePane(t, mainHalf.id, paneByComponent(t, "files").id, "before");
+    // the detach hoisted the chat's split to its EMPTY pane, which now
+    // sits between sidebar and the insert point - the menu ruling again
+    assert.deepEqual(comps(out), ["sidebar", undefined, "chat", "files"]);
   });
-  it("moves before a target: order [inspector, sidebar, chat]", () => {
-    const t = defaultTree();
+  it("pinned panes refuse pane-moves (fixed chrome)", () => {
+    let t: DockNode = defaultTree();
+    const chat = paneByComponent(t, "chat");
+    t = splitPane(t, chat.id, "row", "after");
     const side = paneByComponent(t, "sidebar");
-    const insp = paneByComponent(t, "inspector");
-    const out = movePane(t, insp.id, side.id, "before");
-    assert.deepEqual(comps(out), ["inspector", "sidebar", "chat"]);
+    const files = paneByComponent(t, "files");
+    assert.equal(movePane(t, side.id, files.id, "after"), t);
+    assert.equal(movePane(t, files.id, side.id, "before"), t);
   });
   it("moving out of a nested split collapses it to the survivor", () => {
     const t = defaultTree();
     const chat = paneByComponent(t, "chat");
     const t2 = splitPane(t, chat.id, "row", "after");
     const rowPane = findPane(t2, chat.id)!;
-    const out = movePane(t2, rowPane.id, paneByComponent(t2, "inspector").id, "after");
-    // root: [sidebar, inspector, chat]; the split that held half the chat
+    const out = movePane(t2, rowPane.id, paneByComponent(t2, "files").id, "after");
+    // root: [sidebar, files, chat]; the split that held half the chat
     // keeps only its empty pane -> hoisted, so the empty pane is top-level
-    assert.deepEqual(comps(out), ["sidebar", undefined, "inspector", "chat"]);
+    assert.deepEqual(comps(out), ["sidebar", undefined, "files", "chat"]);
     const empty = panes(out).find((p) => p.tabs.length === 0)!;
     assert.ok(empty, "the split-away empty pane survives the move");
     assert.equal(splits(out).length, 2); // root + the split wrapping the drop target
   });
   it("no-ops: self-move / unknown ids", () => {
     const t = defaultTree();
-    const side = paneByComponent(t, "sidebar");
-    assert.equal(movePane(t, side.id, side.id, "after"), t);
-    assert.equal(movePane(t, side.id, "n999", "after"), t);
-    assert.equal(movePane(t, "n999", side.id, "after"), t);
+    const chat = paneByComponent(t, "chat");
+    assert.equal(movePane(t, chat.id, chat.id, "after"), t);
+    assert.equal(movePane(t, chat.id, "n999", "after"), t);
+    assert.equal(movePane(t, "n999", chat.id, "after"), t);
   });
 });
 
@@ -222,7 +273,7 @@ describe("tab ops", () => {
   it("openTab appends and focuses; closeTab removes and shifts focus", () => {
     const t0 = asPane(makePane("chat"));
     const id = t0.id;
-    let t: DockNode = openTab(t0, id, { component: "inspector" });
+    let t: DockNode = openTab(t0, id, { component: "settings" });
     let p = findPane(t, id)!;
     assert.equal(p.tabs.length, 2);
     assert.equal(p.active, 1);
@@ -236,16 +287,24 @@ describe("tab ops", () => {
     assert.equal(p.tabs.length, 0, "closing the last tab empties the pane");
     assert.equal(p.active, 0);
   });
+  it("an UNCLOSEABLE tab refuses closeTab (sidebar tabs have no X)", () => {
+    const t = defaultTree();
+    const side = paneByComponent(t, "sidebar");
+    const files = paneByComponent(t, "files");
+    assert.equal(closeTab(t, side.id, 0), t, "sessions tab unclosable");
+    assert.equal(closeTab(t, files.id, 0), t, "files tab unclosable");
+    assert.equal(closeTab(t, files.id, 4), t, "tools tab unclosable");
+  });
 
   describe("moveTab (card 2 DnD)", () => {
     function tabComps(t: DockNode, id: string): (string | undefined)[] {
       return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
     }
-    /** split shell: left pane sidebar/inspector tabs, right pane chat */
+    /** split shell: left pane main tabs, right pane chat */
     function twoPaneTree(): { t: DockNode; left: DockPane; right: DockPane } {
-      const root = makePane("sidebar");
-      const left = asPane(openTab(root, root.id, { component: "inspector" }));
-      const right = makePane("chat");
+      const root = makePane("chat");
+      const left = asPane(openTab(root, root.id, { component: "settings" }));
+      const right = makePane("chat", null);
       const t = makeSplit("row", [left, right]);
       return { t, left: findPane(t, left.id)!, right: findPane(t, right.id)! };
     }
@@ -253,24 +312,25 @@ describe("tab ops", () => {
     it("reorders within a pane, keeping the moved tab focused", () => {
       let t: DockNode = makePane("chat");
       const id = t.id;
-      t = openTab(t, id, { component: "inspector" });
-      t = openTab(t, id, { component: "sidebar" });
-      // [chat, inspector, sidebar]; focus chat first, then drag it to the end
-      t = focusTab(t, id, 0);
-      t = moveTab(t, id, 0, id, 2);
+      t = openTab(t, id, { component: "settings" });
+      assert.deepEqual(tabComps(t, id), ["chat", "settings"]);
+      // [chat, settings]; chat is NOT the focused tab (openTab focused
+      // settings) - dragging chat right moves it after settings, and the
+      // parked active tab TRACKS its component (settings shifts left)
+      t = moveTab(t, id, 0, id, 1);
       let p = findPane(t, id)!;
-      assert.deepEqual(tabComps(t, id), ["inspector", "sidebar", "chat"]);
-      assert.equal(p.active, 2, "the moved tab stays focused");
-      // drag it back left across the active bookkeeping: [chat, inspector, sidebar]
-      t = moveTab(t, id, 2, id, 0);
+      assert.deepEqual(tabComps(t, id), ["settings", "chat"]);
+      assert.equal(p.active, 0, "the parked active tab tracks its component");
+      // drag the focused tab (settings, now at 0) left of chat: no-op
+      t = moveTab(t, id, 0, id, 0);
       p = findPane(t, id)!;
-      assert.deepEqual(tabComps(t, id), ["chat", "inspector", "sidebar"]);
-      // focus was on inspector (1); moving sidebar(2) before it shifts focus +1
+      assert.equal(p.active, 0, "focused tab keeps its position");
+      // now focus chat and drag it back left across the bookkeeping
       t = focusTab(t, id, 1);
-      t = moveTab(t, id, 2, id, 1);
+      t = moveTab(t, id, 1, id, 0);
       p = findPane(t, id)!;
-      assert.deepEqual(tabComps(t, id), ["chat", "sidebar", "inspector"]);
-      assert.equal(p.active, 2, "the un-touched active tab tracks its component");
+      assert.deepEqual(tabComps(t, id), ["chat", "settings"]);
+      assert.equal(p.active, 0, "the moved tab stays focused");
     });
 
     it("same-position drag is a no-op returning the ORIGINAL tree", () => {
@@ -280,13 +340,13 @@ describe("tab ops", () => {
 
     it("moves between panes, focusing the dropped tab in the target", () => {
       const { t, left, right } = twoPaneTree();
-      // drag sidebar (left tab 0) onto the chat pane
+      // drag chat (left tab 0) onto the chat pane
       const out = moveTab(t, left.id, 0, right.id, right.tabs.length);
       const l = findPane(out, left.id)!;
       const r = findPane(out, right.id)!;
       assert.equal(l.tabs.length, 1);
-      assert.deepEqual(tabComps(out, left.id), ["inspector"]);
-      assert.deepEqual(tabComps(out, right.id), ["chat", "sidebar"]);
+      assert.deepEqual(tabComps(out, left.id), ["settings"]);
+      assert.deepEqual(tabComps(out, right.id), ["chat", "chat"]);
       assert.equal(r.active, 1, "dropped tab focuses in the target");
       assert.equal(l.active, 0, "survivor keeps the focus");
     });
@@ -295,7 +355,7 @@ describe("tab ops", () => {
       const { t, left, right } = twoPaneTree();
       // target caret before tab 0: post-removal index 0
       const out = moveTab(t, left.id, 0, right.id, 0);
-      assert.deepEqual(tabComps(out, right.id), ["sidebar", "chat"]);
+      assert.deepEqual(tabComps(out, right.id), ["chat", "chat"]);
       assert.equal(findPane(out, right.id)!.active, 0);
     });
 
@@ -309,20 +369,34 @@ describe("tab ops", () => {
       const l = findPane(cur, left.id)!;
       assert.equal(l.tabs.length, 0, "source pane empty");
       assert.equal(panes(cur).length, 2, "empty source pane survives (menu ruling)");
-      assert.deepEqual(tabComps(cur, right.id), ["chat", "sidebar", "inspector"]);
+      assert.deepEqual(tabComps(cur, right.id), ["chat", "chat", "settings"]);
       assert.ok(
-        findPane(cur, right.id)!.tabs.some((t) => t.component === "sidebar"),
+        findPane(cur, right.id)!.tabs.some((x) => x.component === "settings"),
         "the drained tab landed in the right pane",
       );
     });
 
     it("emptying the source moves focus to the remaining neighbor", () => {
       const two = twoPaneTree();
-      // left has sidebar(0, active) + inspector(1). Move tab 0 away.
+      // left has chat(0, active) + settings(1). Move tab 0 away.
       const out = moveTab(two.t, two.left.id, 0, two.right.id, 0);
       const l = findPane(out, two.left.id)!;
       assert.equal(l.tabs.length, 1);
       assert.equal(l.active, 0, "neighbor takes over the focus");
+    });
+
+    it("PINNED tab refuses to move; PINNED target refuses a drop", () => {
+      const t = defaultTree();
+      const side = paneByComponent(t, "sidebar");
+      const files = paneByComponent(t, "files");
+      const chat = paneByComponent(t, "chat");
+      // a pinned tab never leaves its pane...
+      assert.equal(moveTab(t, side.id, 0, chat.id, 0), t);
+      assert.equal(moveTab(t, files.id, 0, chat.id, 0), t);
+      // ...and no tab may move INTO a pinned pane
+      assert.equal(moveTab(t, chat.id, 0, side.id, 0), t);
+      assert.equal(moveTab(t, chat.id, 0, files.id, 0), t);
+      assert.deepEqual(tabComps(t, chat.id), ["chat"]);
     });
 
     it("guards: unknown panes, bad index return the original tree", () => {
@@ -337,13 +411,13 @@ describe("tab ops", () => {
       const { t, left, right } = twoPaneTree();
       const moved = moveTab(t, left.id, 0, right.id, 0);
       const back = deserialize(serialize(moved))!;
-      assert.deepEqual(tabComps(back, left.id), ["inspector"]);
-      assert.deepEqual(tabComps(back, right.id), ["sidebar", "chat"]);
+      assert.deepEqual(tabComps(back, left.id), ["settings"]);
+      assert.deepEqual(tabComps(back, right.id), ["chat", "chat"]);
     });
   });
 
-  it("PLUS_TAB_COMPONENTS: the registry inventory, card 5 closes it", () => {
-    assert.deepEqual([...PLUS_TAB_COMPONENTS], ["sidebar", "chat", "inspector", "settings"]);
+  it("MAIN_DOCKABLES: the MAIN-area inventory only (card t_4ae27e0d)", () => {
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "settings"]);
   });
 });
 
@@ -358,8 +432,6 @@ describe("serialize / deserialize", () => {
   });
   it("normalizes drifted sizes on load", () => {
     const t = defaultTree();
-    const raw = serialize(t).replace('"sizes":[0.3333333333333333,0.3333333333333333,0.3333333333333333]', '"sizes":[1,2,3]');
-    // default tree was built with equal sizes; craft raw with drifted ones
     const obj = JSON.parse(serialize(t));
     obj.tree.sizes = [2, 4, 6]; // ratio 1:2:3, not summing to 1
     const back = asSplit(deserialize(JSON.stringify(obj))!);
@@ -403,7 +475,7 @@ describe("serialize / deserialize", () => {
       "single-child split (should have been hoisted)",
     );
   });
-  it("rejects unknown components and empty tabs arrays of bad shape", () => {
+  it("rejects unknown components and future versions (forces migration)", () => {
     assert.equal(
       deserialize(
         JSON.stringify({
@@ -424,57 +496,143 @@ describe("serialize / deserialize", () => {
       "future version forces migration instead of crashing",
     );
   });
+  it("ACCEPTS the legacy inspector tab (pre-reset trees deserialize)", () => {
+    const back = deserialize(
+      JSON.stringify({
+        v: 1,
+        tree: {
+          kind: "split",
+          id: "n1",
+          direction: "row",
+          children: [
+            { kind: "pane", id: "n2", tabs: [{ component: "sidebar" }], active: 0, fixed: 240 },
+            { kind: "pane", id: "n3", tabs: [{ component: "chat", key: "c1" }], active: 0, fixed: null },
+            { kind: "pane", id: "n4", tabs: [{ component: "inspector" }], active: 0, fixed: 300 },
+          ],
+          sizes: [1 / 3, 1 / 3, 1 / 3],
+        },
+      }),
+    );
+    assert.ok(back, "legacy trees load, the modernizer owns the rest");
+    const insp = findPane(back!, "n4")!;
+    assert.deepEqual(insp.tabs.map((x) => x.component), ["inspector"]);
+  });
 });
 
-describe("migrateLegacy", () => {
-  it("default flags: sidebar open (240), inspector closed -> [sidebar, chat]", () => {
+describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
+  it("always three panes: sidebar(240), chat, inspector-5(240 default)", () => {
     const t = migrateLegacy(() => null);
-    assert.deepEqual(comps(t), ["sidebar", "chat"]);
     const root = asSplit(t);
+    assert.equal(root.children.length, 3);
+    assert.equal(asPane(root.children[0]).tabs[0].component, "sidebar");
     assert.equal(asPane(root.children[0]).fixed, 240);
+    assert.equal(asPane(root.children[1]).tabs[0].component, "chat");
     assert.equal(asPane(root.children[1]).fixed, null);
+    assert.equal(asPane(root.children[2]).fixed, 240);
+    assert.deepEqual(
+      asPane(root.children[2]).tabs.map((x) => x.component),
+      ["files", "cron", "http_channel", "skills", "tools"],
+    );
   });
-  it("both open: [sidebar, chat, inspector]; widths are fixed px", () => {
+  it("persisted widths render verbatim, open flags are dead history", () => {
     const t = migrateLegacy((k) =>
-      k === LEGACY_OPEN_KEYS.sidebar ? "true"
-      : k === LEGACY_OPEN_KEYS.inspector ? "true"
-      : k === LEGACY_WIDTH_KEYS.sidebar ? "300"
+      k === LEGACY_WIDTH_KEYS.sidebar ? "300"
       : k === LEGACY_WIDTH_KEYS.inspector ? "400"
-      : null,
+      : "false", // even a persisted 'closed' flag changes nothing
     );
     const root = asSplit(t);
-    assert.deepEqual(comps(t), ["sidebar", "chat", "inspector"]);
     assert.equal(asPane(root.children[0]).fixed, 300);
     assert.equal(asPane(root.children[2]).fixed, 400);
   });
   it("sub-floor legacy width renders verbatim (open pane keeps its width)", () => {
     const t = migrateLegacy((k) =>
-      k === LEGACY_OPEN_KEYS.sidebar ? "true" : k === LEGACY_WIDTH_KEYS.sidebar ? "150" : null,
+      k === LEGACY_WIDTH_KEYS.sidebar ? "150" : null,
     );
     assert.equal(asPane(asSplit(t).children[0]).fixed, 150);
   });
-  it("closed panes drop out of the tree", () => {
+  it("bad flag strings fall back to the default widths", () => {
     const t = migrateLegacy((k) =>
-      k === LEGACY_OPEN_KEYS.sidebar ? "false" : k === LEGACY_OPEN_KEYS.inspector ? "false" : null,
+      k === LEGACY_WIDTH_KEYS.sidebar ? "abc" : k === LEGACY_WIDTH_KEYS.inspector ? "maybe" : null,
     );
-    assert.equal(t.kind, "pane"); // single child hoists out of the root split
-    assert.deepEqual(asPane(t).tabs.map((x) => x.component), ["chat"]);
+    const root = asSplit(t);
+    assert.equal(asPane(root.children[0]).fixed, 240);
+    assert.equal(asPane(root.children[2]).fixed, 240);
   });
-  it("bad flag strings fall back to defaults", () => {
-    const t = migrateLegacy((k) =>
-      k === LEGACY_OPEN_KEYS.sidebar ? "banana"
-      : k === LEGACY_OPEN_KEYS.inspector ? "maybe"
-      : k === LEGACY_WIDTH_KEYS.sidebar ? "abc"
-      : null,
+});
+
+// --- the pane-model reset specifics (card t_4ae27e0d) ------------------------
+
+describe("pane-model reset", () => {
+  it("expandInspectorTabs expands the legacy id into the five real tabs", () => {
+    const legacy: DockNode = {
+      kind: "pane",
+      id: "n1",
+      tabs: [{ component: "inspector" }],
+      active: 0,
+      fixed: 300,
+    };
+    const out = expandInspectorTabs(legacy);
+    assert.deepEqual(
+      (out as DockPane).tabs.map((x) => x.component),
+      ["files", "cron", "http_channel", "skills", "tools"],
     );
-    // defaults: sidebar open (default true), inspector closed (default false)
-    assert.deepEqual(comps(t), ["sidebar", "chat"]);
-    assert.equal(asPane(asSplit(t).children[0]).fixed, 240);
+    assert.equal((out as DockPane).active, 0);
+  });
+  it("expandInspectorTabs is a no-op (same reference) on a modern tree", () => {
+    const t = defaultTree();
+    assert.equal(expandInspectorTabs(t), t);
+  });
+  it("ensurePinnedEdges re-inserts a missing sessions pane at the LEFT edge", () => {
+    const t: DockNode = makePane("chat");
+    const out = asSplit(ensurePinnedEdges(t));
+    assert.equal(out.direction, "row");
+    assert.equal(
+      asPane(out.children[0]).tabs.map((x) => x.component)[0],
+      "sidebar",
+    );
+    assert.equal(asPane(out.children[0]).fixed, 240);
+  });
+  it("ensurePinnedEdges re-inserts the inspector pane (five tabs) at the RIGHT edge", () => {
+    const t: DockNode = makePane("chat");
+    const out = asSplit(ensurePinnedEdges(t));
+    const right = asPane(out.children[2]); // [sidebar, chat, inspector]
+    assert.deepEqual(
+      right.tabs.map((x) => x.component),
+      ["files", "cron", "http_channel", "skills", "tools"],
+    );
+    assert.equal(right.fixed, 240);
+  });
+  it("a modern tree passes ensurePinnedEdges untouched", () => {
+    const t = defaultTree();
+    assert.equal(ensurePinnedEdges(t), t);
+  });
+  it("firstMainPaneId skips the pinned sidebars", () => {
+    const t = defaultTree();
+    assert.equal(firstMainPaneId(t), paneByComponent(t, "chat").id);
+  });
+  it("insertMainPane appends a flexible pane and returns its id", () => {
+    const t = defaultTree();
+    const before = paneIds(t);
+    const res = insertMainPane(t);
+    const root = asSplit(res.tree);
+    // a row root appends at its after-edge, ids preserved in order
+    assert.deepEqual(paneIds(res.tree), [...before, res.paneId]);
+    const fresh = findPane(res.tree, res.paneId)!;
+    assert.equal(fresh.fixed, null);
+    assert.equal(fresh.tabs.length, 0);
+    assert.equal(paneCount(res.tree), 4);
+  });
+  it("paneCount / isPinnedPane read the whole tree", () => {
+    const t = defaultTree();
+    assert.equal(paneCount(t), 3);
+    assert.equal(isPinnedPane(paneByComponent(t, "sidebar")), true);
+    assert.equal(isPinnedPane(paneByComponent(t, "files")), true);
+    assert.equal(isPinnedPane(paneByComponent(t, "chat")), false);
   });
 });
 
 describe("dragSplitDivider", () => {
-  // shell: row [sidebar(fixed 240), chat(flex), inspector(fixed 300)],
+  // shell: row [sidebar(fixed 240), chat(flex), inspector pane(fixed 300)],
   // split content box 1000px. Rendered start widths sum to the content box
   // minus gutters; the pure math only needs consistent startPx + contentPx.
   const CONTENT = 1000;
