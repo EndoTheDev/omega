@@ -17,6 +17,23 @@
 // fractions for flexible pairs.
 
 import { PANE_OPEN_MIN, snapCandidate } from "./panes.ts";
+import {
+  DOCK_COMPONENTS,
+  DOCKABLES,
+  PLUS_TAB_COMPONENTS,
+  COMPONENT_TITLES,
+  type DockComponentName,
+} from "./dockables.ts";
+// the openable component universe, the '+' inventory and the tab-title
+// fallback live in THE dockable registry (dockables.ts, card t_30ee04fb);
+// re-exported here so engine-side consumers keep one import surface
+export {
+  DOCK_COMPONENTS,
+  DOCKABLES,
+  PLUS_TAB_COMPONENTS,
+  COMPONENT_TITLES,
+};
+export type { DockComponentName };
 // re-export for consumers that think in dock terms (tests, toggle helpers)
 export { PANE_OPEN_MIN };
 
@@ -42,21 +59,8 @@ export const CHAT_FLOOR_PX = 320;
 // shell carried (pane-area padding contributes the outer 4px on the root).
 export const SPLIT_GUTTER_PX = 4;
 
-// component names panes may host. Card 2 turns these into real tabs.
-export const DOCK_COMPONENTS = ["sidebar", "chat", "inspector"] as const;
-export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
-
-/** the tab-bar '+' menu inventory (card 2): chat only until the dockable
-    registry (card 4) hands over the migrated component list with icons. */
-export const PLUS_TAB_COMPONENTS: readonly DockComponentName[] = ["chat"];
-
-/** tab titles (card 2 tab bars): VS Code-style group titles, lowercase to
-    match the shell's voice; the empty-pane menu keeps its action labels */
-export const COMPONENT_TITLES: Record<DockComponentName, string> = {
-  sidebar: "sidebar",
-  chat: "chat",
-  inspector: "inspector",
-};
+// component names panes may host: the dockable registry is the single
+// source (see the re-exports above)
 
 export interface DockTab {
   component: DockComponentName;
@@ -208,6 +212,55 @@ export function findComponentPane(tree: DockNode, component: DockComponentName):
     if (isPane(n) && n.tabs[n.active]?.component === component) return n;
   }
   return null;
+}
+
+/** the FIRST tab hosting `component` anywhere in the tree - the singleton
+    lookup (card t_30ee04fb): a singleton exists at most once, active or
+    not, so its finders must read every tab, not just active ones. */
+export interface ComponentTabLocation {
+  paneId: string;
+  index: number;
+  tab: DockTab;
+}
+export function findComponentTab(
+  tree: DockNode,
+  component: DockComponentName,
+): ComponentTabLocation | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    const index = n.tabs.findIndex((t) => t.component === component);
+    if (index >= 0) return { paneId: n.id, index, tab: n.tabs[index]! };
+  }
+  return null;
+}
+
+// --- the singleton opener (card t_30ee04fb) ---------------------------------
+// One contract rule, one pure function: opening a SINGLETON component
+// while an instance is alive FOCUSES that instance wherever it lives;
+// otherwise it opens (empty pane = becomes its only tab, occupied pane =
+// appended + activated - the tab paths). Multi components (chat) never
+// come through here: they mint a tab via the app's opener every time.
+
+export type OpenSingletonAction = "created" | "focused" | "noop";
+
+export function openSingleton(
+  tree: DockNode,
+  paneId: string,
+  component: DockComponentName,
+): { tree: DockNode; action: OpenSingletonAction } {
+  const found = findComponentTab(tree, component);
+  if (found) {
+    // focus it in place - even when the target pane is this one (a
+    // re-click on '+' while the singleton sits in another tab of the
+    // same pane still lands on it)
+    return { tree: focusTab(tree, found.paneId, found.index), action: "focused" };
+  }
+  const pane = findPane(tree, paneId);
+  if (!pane) return { tree, action: "noop" }; // target vanished - no-op
+  const next = pane.tabs.length === 0
+    ? setPaneComponent(tree, paneId, component)
+    : openTab(tree, paneId, { component });
+  return { tree: next, action: "created" };
 }
 
 // --- pure tree operations ----------------------------------------------------
@@ -778,7 +831,9 @@ export function graftSplit(root: DockNode, replacement: DockSplit): DockNode {
 export interface DockApi {
   /** the reactive root (swap on every op; deep-watched for persistence) */
   tree: Ref<DockNode>;
-  /** first pane hosting the component, if any */
+  /** whether the component has an instance anywhere in the tree - the
+      singleton semantics (card t_30ee04fb): a singleton exists at most
+      once, so its presence check reads EVERY tab, not just active ones */
   has: (component: DockComponentName) => boolean;
   /** open a component as the pane's single tab (empty-pane menu path) */
   setComponent: (paneId: string, component: DockComponentName) => void;
@@ -790,6 +845,10 @@ export interface DockApi {
   closeTab: (paneId: string, index: number) => void;
   /** card 2 DnD: move a tab (same-pane reorder or between panes) */
   moveTab: (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => void;
+  /** card 4 - the dockable contract opener: singletons FOCUS their one
+      instance when it lives (created | focused), multi goes through the
+      app's chat opener instead - this must only be called for singletons */
+  openSingleton: (paneId: string, component: DockComponentName) => "created" | "focused";
   /** card 3: chat tab binding - write the session id a tab owns. */
   setSessionRef: (key: string, sessionRef: string | null) => void;
   /** card 3: close every chat tab bound to a session (delete flow). */
@@ -799,10 +858,13 @@ export interface DockApi {
   firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
-  /** desktop toggle: removes the edge pane or re-inserts it at the remembered
-      size with the old reopen-clamp (stale sub-floor width reopens at 320) */
+  /** desktop toggle: closes the singleton's instance (a shared pane loses
+      just its TAB, a pane it owns alone goes away) or re-inserts it at the
+      remembered size with the old reopen-clamp (stale sub-floor width
+      reopens at 320) */
   toggleEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
-  /** ensure the edge pane exists (mobile drawer path; no toggle semantics) */
+  /** ensure the edge pane exists (mobile drawer path; no toggle semantics,
+      and never a second singleton instance) */
   ensureEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
   /** divider drag: measured start widths flow in on the first move event */
   drag: (splitId: string, dividerIndex: number, startPx: number[], deltaPx: number, contentPx: number) => void;
@@ -846,11 +908,14 @@ export function createDock(store: Storage): DockApi {
     tree,
     (t) => {
       store.setItem(DOCK_LAYOUT_KEY, serialize(t));
-      // keep the reopen memory fresh: an edge pane's fixed size IS its width
+      // keep the reopen memory fresh: a fixed pane carrying one of the
+      // edge singletons (its tab OR its active) updates that width
       for (const n of allNodes(t)) {
         if (isPane(n) && n.fixed !== null) {
-          const c = n.tabs[n.active]?.component;
-          if (c === "sidebar" || c === "inspector") EDGE_DEFAULT_PX[c] = n.fixed;
+          for (const tab of n.tabs) {
+            if (tab.component === "sidebar" || tab.component === "inspector")
+              EDGE_DEFAULT_PX[tab.component] = n.fixed;
+          }
         }
       }
     },
@@ -858,7 +923,21 @@ export function createDock(store: Storage): DockApi {
   );
 
   const has = (component: DockComponentName): boolean =>
-    findComponentPane(tree.value, component) !== null;
+    // singleton semantics (card t_30ee04fb): exists anywhere, active tab
+    // or not - findComponentPane (active-only) would under-report a
+    // singleton parked as an inactive tab and let toggles duplicate it
+    findComponentTab(tree.value, component) !== null;
+
+  const openSingletonIn = (
+    paneId: string,
+    component: DockComponentName,
+  ): "created" | "focused" => {
+    const res = openSingleton(tree.value, paneId, component);
+    if (res.action !== "noop") tree.value = res.tree;
+    // noop (a vanished target pane) preserves the tree, nothing opened;
+    // report "focused" - the only honest closed set on a no-op
+    return res.action === "created" ? "created" : "focused";
+  };
 
   const setComponent = (paneId: string, component: DockComponentName) => {
     tree.value = setPaneComponent(tree.value, paneId, component);
@@ -888,14 +967,23 @@ export function createDock(store: Storage): DockApi {
     tree.value = removePane(tree.value, paneId);
   };
   const toggleEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
+    const found = findComponentTab(tree.value, component);
+    if (found) {
+      // the singleton lives: close the INSTANCE - a pane it shares loses
+      // just its tab (the pane must survive: other tabs run there); a
+      // pane it owns alone goes away entirely (split hoists)
+      const pane = findPane(tree.value, found.paneId);
+      tree.value = pane && pane.tabs.length === 1
+        ? removePane(tree.value, pane.id)
+        : closeTab(tree.value, found.paneId, found.index);
+      return;
+    }
     // reopen-clamp: a stale sub-floor remembered width reopens AT 320
     const fixed = Math.max(PANE_OPEN_MIN, EDGE_DEFAULT_PX[component]);
-    tree.value = has(component)
-      ? removePane(tree.value, findComponentPane(tree.value, component)!.id)
-      : insertEdgePane(tree.value, component, side, fixed);
+    tree.value = insertEdgePane(tree.value, component, side, fixed);
   };
   const ensureEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
-    if (has(component)) return;
+    if (has(component)) return; // the singleton already lives somewhere
     tree.value = insertEdgePane(
       tree.value,
       component,
@@ -918,6 +1006,7 @@ export function createDock(store: Storage): DockApi {
 
   return {
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
+    openSingleton: openSingletonIn,
     setSessionRef, closeSession,
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),

@@ -64,6 +64,57 @@ test("scanModuleUIs tolerates a missing or unreadable modules root", () => {
   assert.deepEqual(scanModuleUIs("/definitely/not/here/o/omega"), []);
 });
 
+// --- ui/dockable.json: the module's dockable declaration (card t_30ee04fb) ---
+
+test("scanModuleUIs reads a valid dockable.json alongside the components", () => {
+  const scratch = makeScratch();
+  try {
+    mkdirSync(join(scratch, "kanban", "ui"), { recursive: true });
+    writeFileSync(join(scratch, "kanban", "ui", "Board.vue"), "<template/>");
+    writeFileSync(
+      join(scratch, "kanban", "ui", "dockable.json"),
+      JSON.stringify({ title: "board", policy: "singleton" }),
+    );
+    const found = scanModuleUIs(scratch);
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0].dockable, { title: "board", policy: "singleton" });
+    assert.deepEqual(found[0].components, ["Board.vue"], "the declaration is not a component");
+  } finally {
+    rm(scratch);
+  }
+});
+
+test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped declarations", () => {
+  const scratch = makeScratch();
+  try {
+    mkdirSync(join(scratch, "a", "ui"), { recursive: true });
+    writeFileSync(join(scratch, "a", "ui", "A.vue"), "<template/>");
+    // absent -> null
+    const a = scanModuleUIs(scratch)[0]!;
+    assert.equal(a.dockable, null);
+
+    writeFileSync(join(scratch, "a", "ui", "dockable.json"), "{not json");
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "malformed JSON");
+
+    writeFileSync(join(scratch, "a", "ui", "dockable.json"), JSON.stringify({ policy: "weird" }));
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "unknown policy");
+
+    writeFileSync(join(scratch, "a", "ui", "dockable.json"), JSON.stringify([]));
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "not an object");
+
+    writeFileSync(
+      join(scratch, "a", "ui", "dockable.json"),
+      JSON.stringify({ icon: { paths: [] } }),
+    );
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "icon with no ink");
+
+    writeFileSync(join(scratch, "a", "ui", "dockable.json"), JSON.stringify(null));
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "null body");
+  } finally {
+    rm(scratch);
+  }
+});
+
 // --- the canary wiring (structural): ToolsList ships from the tools
 // module dir and the shell mounts whatever the generated list carries ---
 

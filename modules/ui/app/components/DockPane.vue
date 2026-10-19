@@ -85,7 +85,9 @@
     </div>
 
     <!-- empty pane: the '+' component menu IS the pane's content (VS Code
-         empty editor-group watermark); the bar above carries the close-X -->
+         empty editor-group watermark); the bar above carries the close-X.
+         Card 4: the dockable registry drives it - the singleton policy
+         decides open-vs-focus, icons come with the inventory. -->
     <div
       v-else
       class="dock-empty">
@@ -94,18 +96,20 @@
         role="menu"
         aria-label="pane components">
         <button
-          v-for="c in DOCK_COMPONENTS"
-          :key="c"
+          v-for="d in DOCKABLES"
+          :key="d.id"
           class="dock-menu-btn"
           role="menuitem"
-          @click="onEmptyMenu(c)">
-          {{ menuLabel(c) }}
+          @click="openDockable(d)">
+          <DockItemIcon :icon="d.icon" />
+          {{ menuLabel(d) }}
         </button>
       </div>
     </div>
 
-    <!-- '+' new-tab menu: the card-2 inventory is chat only; card 4's
-         dockable registry replaces this list -->
+    <!-- '+' new-tab menu: card 4's dockable registry inventory with icons
+         (replaces card 2's chat-only list). A singleton that already lives
+         FOCUSES instead of opening a second instance. -->
     <div
       v-if="newTabMenu"
       class="dock-menu"
@@ -113,12 +117,13 @@
       aria-label="new tab components"
       @click.stop>
       <button
-        v-for="c in PLUS_TAB_COMPONENTS"
-        :key="c"
+        v-for="d in DOCKABLES"
+        :key="d.id"
         class="dock-menu-btn"
         role="menuitem"
-        @click="onNewTab(c)">
-        new {{ COMPONENT_TITLES[c] }}
+        @click="openDockable(d)">
+        <DockItemIcon :icon="d.icon" />
+        {{ menuLabel(d) }}
       </button>
     </div>
 
@@ -152,18 +157,21 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, inject, onBeforeUnmount, onMounted, ref } from "vue";
+  import { computed, h, inject, onBeforeUnmount, onMounted, ref } from "vue";
   import {
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
-    DOCK_COMPONENTS,
     COMPONENT_TITLES,
-    PLUS_TAB_COMPONENTS,
+    DOCKABLES,
+    type DockIcon,
+    type DockableComponent,
     type DockPane as DockPaneNode,
     type DockComponentName,
     type DockTab,
   } from "../composables/dock";
+  // the re-export path keeps one import surface for engine-side consumers;
+  // dockables.ts is the registry's true source (card t_30ee04fb)
 
   const props = defineProps<{
     node: DockPaneNode;
@@ -193,26 +201,55 @@
     () => "kind-" + (props.node.tabs[props.node.active]?.component ?? "empty"),
   );
 
-  const menuLabels: Record<DockComponentName, string> = {
-    sidebar: "sidebar",
-    chat: "new chat",
-    inspector: "inspector",
-  };
-  function menuLabel(c: DockComponentName): string {
-    return menuLabels[c];
+  // menu labels: the registry's voice; chat's multi policy reads as a verb
+  function menuLabel(d: DockableComponent): string {
+    return d.policy === "multi" ? "new " + d.title : d.title;
+  }
+  // THE open path (card 4): the singleton policy decides - at most one
+  // instance, so opening while it lives FOCUSES it wherever it sits; chat
+  // (multi) always mints a fresh tab through the app's opener
+  function openDockable(d: DockableComponent) {
+    newTabMenu.value = false;
+    if (d.policy === "multi") {
+      if (openChat) openChat(props.node.id, null);
+      else api.setComponent(props.node.id, d.id); // unreachable: app always provides the opener
+      return;
+    }
+    api.openSingleton(props.node.id, d.id);
   }
 
-  // chat goes through the app's opener (state mint + dock.openTab);
-  // singleton components keep the plain setComponent until card 4
-  function onNewTab(c: DockComponentName) {
-    newTabMenu.value = false;
-    if (c === "chat" && openChat) openChat(props.node.id, null);
-    else onEmptyMenu(c);
-  }
-  function onEmptyMenu(c: DockComponentName) {
-    if (c === "chat" && openChat) openChat(props.node.id, null);
-    else api.setComponent(props.node.id, c);
-  }
+  // the registry's icon renderer: 14px in the shell's 24-box stroke style
+  const DockItemIcon = (p: { icon: DockIcon }) =>
+    h(
+      "svg",
+      {
+        class: "dock-item-icon",
+        width: "14",
+        height: "14",
+        viewBox: "0 0 24 24",
+        "aria-hidden": "true",
+      },
+      [
+        h("g", {
+          fill: "none",
+          stroke: "currentColor",
+          "stroke-width": "2",
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+        }, [
+          ...(p.icon.rect
+            ? [h("rect", {
+                x: p.icon.rect.x,
+                y: p.icon.rect.y,
+                width: p.icon.rect.width,
+                height: p.icon.rect.height,
+                rx: p.icon.rect.rx ?? 2,
+              })]
+            : []),
+          ...p.icon.paths.map((d) => h("path", { d })),
+        ]),
+      ],
+    );
 
   // --- tab DnD (card 2): within-pane reorder + between-pane moves. Drop
   // targets only highlight (outline) and the caret is an absolute bar - no

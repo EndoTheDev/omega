@@ -342,8 +342,8 @@ describe("tab ops", () => {
     });
   });
 
-  it("PLUS_TAB_COMPONENTS: card 2 ships chat only (card 4 grows the list)", () => {
-    assert.deepEqual([...PLUS_TAB_COMPONENTS], ["chat"]);
+  it("PLUS_TAB_COMPONENTS: the card 4 registry inventory replaces the card 2 chat-only list", () => {
+    assert.deepEqual([...PLUS_TAB_COMPONENTS], ["sidebar", "chat", "inspector"]);
   });
 });
 
