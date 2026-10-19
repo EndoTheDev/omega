@@ -46,6 +46,18 @@ export const SPLIT_GUTTER_PX = 4;
 export const DOCK_COMPONENTS = ["sidebar", "chat", "inspector"] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
+/** the tab-bar '+' menu inventory (card 2): chat only until the dockable
+    registry (card 4) hands over the migrated component list with icons. */
+export const PLUS_TAB_COMPONENTS: readonly DockComponentName[] = ["chat"];
+
+/** tab titles (card 2 tab bars): VS Code-style group titles, lowercase to
+    match the shell's voice; the empty-pane menu keeps its action labels */
+export const COMPONENT_TITLES: Record<DockComponentName, string> = {
+  sidebar: "sidebar",
+  chat: "chat",
+  inspector: "inspector",
+};
+
 export interface DockTab {
   component: DockComponentName;
   sessionRef?: string;
@@ -279,7 +291,9 @@ export function setPaneComponent(
   });
 }
 
-/** card 2: open a new tab in a pane */
+/** open a new tab in a pane, appending at the end and activating it
+    (the tab-bar '+' menu path; works on an empty pane too - the first
+    tab revives it). */
 export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode {
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
@@ -296,6 +310,56 @@ export function closeTab(tree: DockNode, paneId: string, index: number): DockNod
       if (n.tabs.length <= index) return;
       n.tabs = n.tabs.filter((_, i) => i !== index);
       n.active = Math.max(0, Math.min(n.active > index ? n.active - 1 : n.active, n.tabs.length - 1));
+    }
+  });
+}
+
+/** card 2 DnD: move a tab between positions/panes. `toIndex` is the
+    insertion index into the TARGET pane's tabs AFTER the tab has been
+    lifted out of the source (for a same-pane reorder, the callers pass
+    the post-removal index - clamped to the remaining range). Both panes
+    survive: emptying the source leaves it showing the '+' menu (settled
+    ruling), never a removal. VS Code semantics: the moved tab FOCUSES in
+    the target pane; the source focuses whatever neighbor remains. */
+export function moveTab(
+  tree: DockNode,
+  fromPaneId: string,
+  fromIndex: number,
+  toPaneId: string,
+  toIndex: number,
+): DockNode {
+  const from = findPane(tree, fromPaneId);
+  if (!from || fromIndex < 0 || fromIndex >= from.tabs.length) return tree;
+  if (!findPane(tree, toPaneId)) return tree;
+  const tab = from.tabs[fromIndex];
+  if (fromPaneId === toPaneId) {
+    // reorder: lift the tab out, then insert within what remains
+    const target = clamp(toIndex, 0, from.tabs.length - 1);
+    if (target === fromIndex) return tree;
+    return cloneTreeWith(tree, (n) => {
+      if (isPane(n) && n.id === fromPaneId) {
+        const rest = n.tabs.filter((_, i) => i !== fromIndex);
+        rest.splice(target, 0, tab);
+        n.tabs = rest;
+        if (n.active === fromIndex) n.active = target;
+        else if (fromIndex < n.active && target >= n.active) n.active -= 1;
+        else if (target <= n.active && fromIndex > n.active) n.active += 1;
+      }
+    });
+  }
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n)) return;
+    if (n.id === fromPaneId) {
+      n.tabs = n.tabs.filter((_, i) => i !== fromIndex);
+      // the moved tab was active: its neighbor takes over (VS Code's
+      // editor-group behavior); other positions just shift
+      if (n.active === fromIndex)
+        n.active = Math.min(n.active, Math.max(0, n.tabs.length - 1));
+      else if (n.active > fromIndex) n.active -= 1;
+    } else if (n.id === toPaneId) {
+      const at = clamp(toIndex, 0, n.tabs.length);
+      n.tabs = [...n.tabs.slice(0, at), tab, ...n.tabs.slice(at)];
+      n.active = at;
     }
   });
 }
@@ -598,6 +662,14 @@ export interface DockApi {
   has: (component: DockComponentName) => boolean;
   /** open a component as the pane's single tab (empty-pane menu path) */
   setComponent: (paneId: string, component: DockComponentName) => void;
+  /** card 2 tabs: activate a tab within its pane */
+  focus: (paneId: string, index: number) => void;
+  /** card 2 tabs: open a NEW tab of a component in the pane, activating it */
+  openTab: (paneId: string, tab: DockTab) => void;
+  /** card 2 tabs: close a tab (last one empties the pane - it stays alive) */
+  closeTab: (paneId: string, index: number) => void;
+  /** card 2 DnD: move a tab (same-pane reorder or between panes) */
+  moveTab: (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => void;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
   /** desktop toggle: removes the edge pane or re-inserts it at the remembered
@@ -651,6 +723,18 @@ export function createDock(store: Storage): DockApi {
   const setComponent = (paneId: string, component: DockComponentName) => {
     tree.value = setPaneComponent(tree.value, paneId, component);
   };
+  const focus = (paneId: string, index: number) => {
+    tree.value = focusTab(tree.value, paneId, index);
+  };
+  const openTabIn = (paneId: string, tab: DockTab) => {
+    tree.value = openTab(tree.value, paneId, tab);
+  };
+  const closeTabIn = (paneId: string, index: number) => {
+    tree.value = closeTab(tree.value, paneId, index);
+  };
+  const moveTabIn = (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => {
+    tree.value = moveTab(tree.value, fromPaneId, fromIndex, toPaneId, toIndex);
+  };
   const split = (paneId: string, direction: "row" | "column", side: "before" | "after") => {
     tree.value = splitPane(tree.value, paneId, direction, side);
   };
@@ -686,5 +770,5 @@ export function createDock(store: Storage): DockApi {
     if (replacement !== node) tree.value = graftSplit(tree.value, replacement);
   };
 
-  return { tree, has, setComponent, split, remove, toggleEdge, ensureEdge, drag };
+  return { tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn, split, remove, toggleEdge, ensureEdge, drag };
 }
