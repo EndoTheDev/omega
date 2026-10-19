@@ -3,6 +3,7 @@
     class="dock-pane dock-cell"
     :class="[kindClass, { 'drop-hover': dropHover }]"
     :style="cellStyle"
+    :data-pane-id="node.id"
     @dragover="onPaneDragOver"
     @dragleave="onPaneDragLeave"
     @drop="onPaneDrop">
@@ -23,16 +24,16 @@
             :data-index="i"
             role="tab"
             :aria-selected="i === node.active"
-            :title="tabTitle(t.component)"
+            :title="tabTitle(t)"
             draggable="true"
             @click="api.focus(node.id, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
-            <span class="dock-tab-title">{{ tabTitle(t.component) }}</span>
+            <span class="dock-tab-title">{{ tabTitle(t) }}</span>
             <button
               class="dock-tab-close"
-              :aria-label="'close ' + tabTitle(t.component) + ' tab'"
+              :aria-label="'close ' + tabTitle(t) + ' tab'"
               title="close tab"
               @click.stop="api.closeTab(node.id, i)">
               ×
@@ -70,12 +71,17 @@
     </div>
 
     <!-- the pane's active tab: rendered by app.vue via the forwarded slot
-         named pane-<component> (multiple panes MAY host the same component -
-         both attach, the events endpoint is multi-subscriber) -->
+         named pane-<component>; the slot carries WHERE it renders (pane)
+         and WHICH tab - so the chat outlet renders the tab's own session
+         instance (multiple panes MAY host the same component - both
+         attach, the events endpoint is multi-subscriber) -->
     <div
       v-if="outletName"
       class="dock-content">
-      <slot :name="outletName" />
+      <slot
+        :name="outletName"
+        :pane="node.id"
+        :tab="node.tabs[node.active]" />
     </div>
 
     <!-- empty pane: the '+' component menu IS the pane's content (VS Code
@@ -92,7 +98,7 @@
           :key="c"
           class="dock-menu-btn"
           role="menuitem"
-          @click="api.setComponent(node.id, c)">
+          @click="onEmptyMenu(c)">
           {{ menuLabel(c) }}
         </button>
       </div>
@@ -149,11 +155,14 @@
   import { computed, inject, onBeforeUnmount, onMounted, ref } from "vue";
   import {
     DOCK_API_KEY,
+    DOCK_CHAT_OPEN_KEY,
+    DOCK_TAB_TITLE_KEY,
     DOCK_COMPONENTS,
     COMPONENT_TITLES,
     PLUS_TAB_COMPONENTS,
     type DockPane as DockPaneNode,
     type DockComponentName,
+    type DockTab,
   } from "../composables/dock";
 
   const props = defineProps<{
@@ -162,6 +171,18 @@
   }>();
 
   const api = inject(DOCK_API_KEY)!;
+  // card 3: the chat tab is multi-instance - opening a chat (the '+'
+  // menu, the empty-pane menu's "new chat") mints a REAL tab through the
+  // app's opener (this pane's id goes with it). Card 4's dockable
+  // registry replaces the openers wholesale.
+  const openChat = inject(DOCK_CHAT_OPEN_KEY, null);
+  // card 3: chat tabs show their session's title ('new chat' unsaved);
+  // other components keep the generic titles
+  const tabTitleFor = inject(DOCK_TAB_TITLE_KEY, null);
+
+  function tabTitle(tab: DockTab): string {
+    return tabTitleFor?.(tab) ?? COMPONENT_TITLES[tab.component];
+  }
 
   const outletName = computed(() => {
     const c = props.node.tabs[props.node.active]?.component;
@@ -172,9 +193,6 @@
     () => "kind-" + (props.node.tabs[props.node.active]?.component ?? "empty"),
   );
 
-  function tabTitle(c: DockComponentName): string {
-    return COMPONENT_TITLES[c];
-  }
   const menuLabels: Record<DockComponentName, string> = {
     sidebar: "sidebar",
     chat: "new chat",
@@ -184,9 +202,16 @@
     return menuLabels[c];
   }
 
+  // chat goes through the app's opener (state mint + dock.openTab);
+  // singleton components keep the plain setComponent until card 4
   function onNewTab(c: DockComponentName) {
     newTabMenu.value = false;
-    api.openTab(props.node.id, { component: c });
+    if (c === "chat" && openChat) openChat(props.node.id, null);
+    else onEmptyMenu(c);
+  }
+  function onEmptyMenu(c: DockComponentName) {
+    if (c === "chat" && openChat) openChat(props.node.id, null);
+    else api.setComponent(props.node.id, c);
   }
 
   // --- tab DnD (card 2): within-pane reorder + between-pane moves. Drop
