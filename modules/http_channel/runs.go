@@ -29,6 +29,12 @@ const subscriberBuffer = 256
 type activeRun struct {
 	id   string
 	subs map[chan runFrame]struct{}
+	// cancel is the run's internal ctx cancel (the wall-clock cap's own
+	// WithTimeout func), registered by launchRun the moment the run ctx
+	// exists. Stop handlers cancel through it: the loop unwinds through
+	// its normal path, exactly like the timeout does. nil only in the
+	// start->launchRun window - a stop landing there is a 409.
+	cancel context.CancelFunc
 }
 
 // runHub tracks detached runs by session id. It is the reattach
@@ -55,6 +61,36 @@ func (h *runHub) start(id string) (*activeRun, bool) {
 	run := &activeRun{id: id, subs: map[chan runFrame]struct{}{}}
 	h.runs[id] = run
 	return run, true
+}
+
+// registerCancel stores the run's internal ctx cancel, making the run
+// stoppable. The cur == run guard makes a late registration a no-op when
+// another run has already re-registered the same session id.
+func (h *runHub) registerCancel(run *activeRun, cancel context.CancelFunc) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cur, ok := h.runs[run.id]; ok && cur == run {
+		run.cancel = cancel
+	}
+}
+
+// stop cancels the session's live run. ok is false when the session has
+// no live run - the stop endpoint answers 404. cancellable is false when
+// the run exists but has not registered its cancel yet (the sub-milli-
+// second start->launchRun window) - the endpoint answers 409; the run
+// unwinds on its own right after. Cancelling the run ctx is idempotent,
+// so a repeated stop on the same winding-down run is a clean no-op 200.
+func (h *runHub) stop(id string) (ok bool, cancellable bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	run, found := h.runs[id]
+	if !found {
+		return false, false
+	}
+	if run.cancel != nil {
+		run.cancel()
+	}
+	return true, run.cancel != nil
 }
 
 // active reports whether the session has a live run.
@@ -146,10 +182,17 @@ func (h *runHub) finish(run *activeRun) {
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
 func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) {
+	ctx, cancel := context.WithTimeout(runCtx, s.runTimeout)
+	// Register the internal cancel BEFORE the goroutine starts: a stop
+	// request arriving during launch must find the run cancellable, not
+	// stuck in the 409 "not started" window.
+	s.runs.registerCancel(run, cancel)
 	go func() {
 		defer s.runs.finish(run)
-		ctx, cancel := context.WithTimeout(runCtx, s.runTimeout)
 		defer cancel()
+		// detached runs carry the session id too: task tools in the detached
+		// loop link to the same conversation the request started
+		ctx = agent.WithSessionID(ctx, req.SessionID)
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage

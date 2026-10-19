@@ -61,7 +61,12 @@ into the omega binary via `go:embed` and served by the HTTP channel at
     even when pinned, `--unread`-blue unread; priority streaming >
     unread > idle), derived by the pure `sessionRowStatus` in
     composables/omega.ts; clicking it pins/unpins via app.vue's
-    `togglePin`),
+    `togglePin`. Row hover also swaps the age cluster for two action
+    glyphs - archive box (PATCH archived:true) and trash (DELETE
+    after a confirm dialog naming the session). Archived rows
+    vanish from the default list; the sidebar foot's 'archived'
+    toggle reveals them muted/italic with an unarchive affordance,
+    and they only appear in content search with the toggle on.
     `RightSidebar` (inspector pane: a tab shell - parked tabs slot in
     later - whose Files tab is a VS Code-style TREE over the
     working directory: folders expand/collapse in place (chevron per

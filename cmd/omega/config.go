@@ -30,6 +30,7 @@ type Config struct {
 	Memory        MemoryConfig           `yaml:"memory"`
 	Logging       LoggingConfig          `yaml:"logging"`
 	Web           WebConfig              `yaml:"web"`
+	Kanban        KanbanConfig           `yaml:"kanban"`
 }
 
 // WebConfig carries optional overrides for the web tools. BaseURL, when
@@ -85,6 +86,12 @@ type StoreConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
+// KanbanConfig configures the board database. The relative default
+// (kanban.db) resolves against OMEGA_HOME in the plugin mount.
+type KanbanConfig struct {
+	DBPath string `yaml:"db_path"`
+}
+
 // DefaultConfig returns the configuration used when neither YAML nor
 // environment variables provide a value.
 func DefaultConfig() Config {
@@ -98,6 +105,9 @@ func DefaultConfig() Config {
 		},
 		Store: StoreConfig{
 			DBPath: "omega.db",
+		},
+		Kanban: KanbanConfig{
+			DBPath: "kanban.db",
 		},
 		Compaction: agent.CompactionConfig{
 			Enabled:       true,

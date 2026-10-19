@@ -114,6 +114,7 @@ func (b *PromptBuilder) Guidelines() []string {
 		"Use tools to read files and run commands before making assumptions.",
 		"Prefer the simplest solution that works. Avoid unnecessary abstraction.",
 		"When editing files, match the existing style and conventions.",
+		"Never open omega.db directly - the store tools are the interface to the database.",
 		"Report what you did concisely. Do not repeat file contents back.",
 		"If something fails, report the error honestly rather than guessing.",
 	}

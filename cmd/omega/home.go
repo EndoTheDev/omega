@@ -4,6 +4,8 @@ import (
 	"embed"
 	"os"
 	"path/filepath"
+
+	"github.com/EndoTheDev/omega/modules/trust"
 )
 
 //go:embed examples/config.yaml.example examples/mcp.yaml.example examples/crons.yaml.example
@@ -67,6 +69,11 @@ func bootstrapHome(home string) {
 	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example"} {
 		seedFile(cfgDir, name, name)
 	}
+	// Upgrade path: a legacy home-root trust.yaml copies into config/
+	// (Endo 2026-10-18 layout) when the target doesn't exist; root
+	// stays untouched and authoritative either way. The trust module
+	// owns the paths - bootstrap just fires it on every boot.
+	trust.Bootstrap(home)
 }
 
 // seedFile writes the embedded example src to home/dst when dst does

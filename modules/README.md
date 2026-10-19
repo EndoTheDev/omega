@@ -61,7 +61,7 @@ sections between Project Context and Environment.
 | `logging/`      | logging        | Operational logging (file logger, LoggerProvider)    |
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block |
 | `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
-| `tools/`        | tools, prompt_sections | Shell command + file tools + Tools section (firstLine descriptions) |
+| `tools/`        | tools, prompt_sections | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools) |
 | `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
 | `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
@@ -77,6 +77,18 @@ sections between Project Context and Environment.
 3. Create a `plugin.go` with a `NewPlugin(...)` function returning
    a `Plugin` implementation.
 4. `Mount` populates `Context` slots from config.
+
+### Module-owned UI
+
+UI for module X lives in `modules/X/ui/`; shell components live in
+`modules/ui/app/components/<area>/`; components only move to a module
+when the module owns the domain. The registration is a directory: put
+top-level `.vue` components there (e.g. the tools module's
+`ui/ToolsList.vue`) and the webui build (modules/ui/nuxt.config.ts)
+discovers them - no manifest, no registry. Each file becomes one panel
+in the shell's inspector, and the module name is the namespace prefix,
+so module and shell component names never collide. A module's UI is
+tested there and reviewed as part of the module.
 
 Example:
 

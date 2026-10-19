@@ -85,6 +85,13 @@ type StoreProvider interface {
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
 	GetAncestorMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
 	SearchMessages(ctx context.Context, query string) ([]SearchResult, error)
+
+	// SearchSessions is the unified search behind /sessions/search:
+	// one phrase-quoted term queries both session labels and message
+	// content, merged to one hit per session. Label matches come
+	// first (Title set, Snippet = label), then content-only sessions
+	// by best rank.
+	SearchSessions(ctx context.Context, query string) ([]SearchResult, error)
 	ComputeInsights(ctx context.Context, days int) (*Insights, error)
 	CountMessages(ctx context.Context, sessionID string) (int, error)
 
@@ -109,6 +116,10 @@ type StoreProvider interface {
 	// SetSessionRead stamps a session's last-read time so unread
 	// clears. It is a read concern and does not touch updated_at.
 	SetSessionRead(ctx context.Context, sessionID string) error
+
+	// SetSessionArchived sets the archived flag on a session. It is a
+	// user-list concern and does not touch updated_at.
+	SetSessionArchived(ctx context.Context, sessionID string, archived bool) error
 
 	// SetSessionTitle writes a generated label together with its title
 	// state transition in one update. provisional (final=false) is
@@ -298,6 +309,40 @@ type CronDeps struct {
 	Ctx   *Context
 	Agent *Agent
 	Store StoreProvider
+}
+
+// CronJobInfo is one read-only row in the cron inspector listing
+// (GET /cron/jobs, card t_db430fea): the job's name, its 5-field cron
+// schedule, whether the scheduler fires it, and the next fire time in
+// RFC3339 local time. Next is empty when the job is disabled, the
+// schedule does not parse, or nothing ever fires - a disabled job must
+// never promise a next fire.
+type CronJobInfo struct {
+	Name     string `json:"name"`
+	Schedule string `json:"schedule"`
+	Enabled  bool   `json:"enabled"`
+	Next     string `json:"next"`
+}
+
+// CronLister is the read-only inspector view over the cron scheduler.
+// It is a separate interface from CronProvider on purpose: starting a
+// scheduler and reading its state are different concerns, and any type
+// implementing CronProvider may grow this method without breaking the
+// serve host. A CronProvider that is not a CronLister serves an empty
+// listing.
+type CronLister interface {
+	// Jobs returns the current job set with computed next fire times.
+	Jobs() []CronJobInfo
+}
+
+// SkillsLister is the read-only inspector view over the skill
+// inventory (GET /skills, card t_db430fea). SkillsProvider loads one
+// shot from a directory; a SkillsLister re-reads on demand, so the
+// listing tracks the directory without a reload step.
+type SkillsLister interface {
+	// ListSkills returns the currently loaded skills, name and
+	// description included (content is inspector-irrelevant).
+	ListSkills() ([]Skill, error)
 }
 
 // Frontend is the user-facing interface seam. The default implementation

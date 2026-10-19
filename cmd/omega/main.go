@@ -20,6 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/cron"
 	"github.com/EndoTheDev/omega/modules/delegate"
 	httpchannel "github.com/EndoTheDev/omega/modules/http_channel"
+	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/mcp"
 	"github.com/EndoTheDev/omega/modules/memory"
@@ -239,6 +240,9 @@ func resolveHomePaths(cfg *Config) error {
 	if cfg.Store.DBPath == "omega.db" {
 		cfg.Store.DBPath = home + "/omega.db"
 	}
+	if cfg.Kanban.DBPath == "kanban.db" {
+		cfg.Kanban.DBPath = home + "/kanban.db"
+	}
 	if cfg.Skills.Dir == "skills" {
 		cfg.Skills.Dir = home + "/skills"
 	}
@@ -284,6 +288,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		tui.NewPlugin(),
 		trust.NewPlugin(),
 		cron.NewPlugin(),
+		kanbanModule.NewPlugin(),
 	}, nil
 }
 
@@ -301,6 +306,7 @@ func buildConfigs(cfg Config) map[string]any {
 		"compactor":    cfg.Compaction,
 		"web":          web.Config{APIKey: cfg.Provider.APIKey, BaseURL: webBaseURL(cfg)},
 		"trust":        trust.Config{Home: omegaHome()},
+		"kanban":       kanbanModule.Config{DBPath: cfg.Kanban.DBPath},
 	}
 }
 

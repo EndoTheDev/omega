@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/modules/store"
 )
 
 // Plugin adapts ToolProvider into the agent.Plugin interface.
@@ -24,9 +25,16 @@ func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount appends the ToolProvider to ctx.ToolProviders and registers
-// the /tools command.
+// the /tools command. The provider also carries the store-door
+// deny-guard (ENDO'S LAW 2026-10-18) built from the store config.
 func (p *Plugin) Mount(ctx *agent.Context) error {
-	ctx.ToolProviders = append(ctx.ToolProviders, &ToolProvider{})
+	provider := &ToolProvider{}
+	if c, ok := ctx.Configs["store"].(store.Config); ok {
+		provider.dbGuard = newDBGuard(c.DBPath)
+	} else {
+		provider.dbGuard = newDBGuard("")
+	}
+	ctx.ToolProviders = append(ctx.ToolProviders, provider)
 	ctx.PromptSectioners = append(ctx.PromptSectioners, p)
 
 	ctx.Commands = append(ctx.Commands,

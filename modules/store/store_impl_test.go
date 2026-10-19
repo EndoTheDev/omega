@@ -575,6 +575,75 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
+// TestMigrationAddsArchivedColumn upgrades a database that predates
+// the archived flag and verifies old sessions come through unarchived,
+// then covers the archive/unarchive round-trip.
+func TestMigrationAddsArchivedColumn(t *testing.T) {
+	dir := t.TempDir()
+	dsn := dir + "/old.db"
+	ctx := context.Background()
+
+	pre, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open pre-migration db: %v", err)
+	}
+	_, err = pre.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+	id         TEXT PRIMARY KEY,
+	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	label      TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`)
+	if err != nil {
+		t.Fatalf("create pre-migration schema: %v", err)
+	}
+	if _, err := pre.Exec(`INSERT INTO sessions (id, label, created_at, updated_at) VALUES ('old', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatalf("insert old session: %v", err)
+	}
+	if err := pre.Close(); err != nil {
+		t.Fatalf("close pre-migration db: %v", err)
+	}
+
+	// Opening through the store migrates in place; old sessions default
+	// to unarchived.
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("open post-migration: %v", err)
+	}
+	defer s.Close()
+	before, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get old session: %v", err)
+	}
+	if before.Archived {
+		t.Fatalf("migrated session archived = true, want false")
+	}
+	updatedAt := before.UpdatedAt
+
+	// Archive round-trip: set, get, unset. updated_at must not move -
+	// the time buckets read it, and archiving is not activity.
+	if err := s.SetSessionArchived(ctx, "old", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	archived, err := s.GetSession(ctx, "old")
+	if err != nil {
+		t.Fatalf("get archived: %v", err)
+	}
+	if !archived.Archived {
+		t.Fatalf("archived = false after archive, want true")
+	}
+	if archived.UpdatedAt != updatedAt {
+		t.Fatalf("archive moved updated_at: %q -> %q", updatedAt, archived.UpdatedAt)
+	}
+	if err := s.SetSessionArchived(ctx, "old", false); err != nil {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if after, _ := s.GetSession(ctx, "old"); after.Archived {
+		t.Fatalf("archived = true after unarchive, want false")
+	}
+}
+
 // TestSessionReadAndUnread covers the server-side unread state: the
 // last_read_at migration stamps existing rows read, CreateSession
 // births sessions read, a message landing after last_read_at flips
@@ -887,6 +956,121 @@ func TestSearchMessages(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatal("no results for term with embedded double quotes, want >= 1")
+	}
+}
+
+// helperSessionWithContent creates a session and appends one user message.
+func helperSessionWithContent(t *testing.T, s *Store, id, label, content string) {
+	t.Helper()
+	if err := s.CreateSession(context.Background(), id, "", label); err != nil {
+		t.Fatalf("create session %s: %v", id, err)
+	}
+	if err := s.AppendMessage(context.Background(), id, ai.NewUser(content)); err != nil {
+		t.Fatalf("append message to %s: %v", id, err)
+	}
+}
+
+// TestSearchSessions covers the unified search: one pass over the label
+// index and the message-content index, merged to one hit per session
+// with label (title) hits first. Progressive typing must never empty
+// mid-word: fib -> fibo -> fibonacci each keep hitting (quoteFTS
+// trailing star).
+func TestSearchSessions(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// s1 matches by BOTH label and content; title must win (one hit,
+	// Title=true, snippet is the label itself).
+	helperSessionWithContent(t, s, "s1", "Fibonacci series",
+		"why does the fibonacci sequence grow so fast")
+	// s2 matches by content only.
+	helperSessionWithContent(t, s, "s2", "Weather notes",
+		"recursion homework: fibonacci numbers again")
+	// s3 matches by label only.
+	helperSessionWithContent(t, s, "s3", "Fibonacci proof sketch", "no useful terms")
+
+	// Title hits lead, content hits follow, one hit per session.
+	results, err := s.SearchSessions(ctx, "fib")
+	if err != nil {
+		t.Fatalf("search fib: %v", err)
+	}
+	ids := make([]string, 0, len(results))
+	var s1Hit *agent.SearchResult
+	for i, r := range results {
+		ids = append(ids, r.SessionID)
+		if r.SessionID == "s1" {
+			if s1Hit != nil {
+				t.Fatalf("s1 hit twice: %+v", results)
+			}
+			s1Hit = &results[i]
+		}
+	}
+	if len(ids) != 3 {
+		t.Fatalf("want 3 hits for 'fib', got %+v", results)
+	}
+	if ids[0] != "s1" || s1Hit == nil || !s1Hit.Title || s1Hit.Snippet != "Fibonacci series" {
+		t.Fatalf("want s1 titled-label hit first, got %+v", results)
+	}
+	for _, r := range results {
+		if r.SessionID == "s2" && r.Title {
+			t.Fatalf("content-only hit mislabeled as title: %+v", results)
+		}
+		if r.SessionID == "s3" && !r.Title {
+			t.Fatalf("label-only hit (s3) must be a title hit: %+v", results)
+		}
+	}
+
+	// Progressive typing never empties mid-word.
+	for _, q := range []string{"fib", "fibo", "fibonacci"} {
+		hits, err := s.SearchSessions(ctx, q)
+		if err != nil {
+			t.Fatalf("progressive search %q: %v", q, err)
+		}
+		if len(hits) == 0 {
+			t.Fatalf("progressive typing emptied results at %q", q)
+		}
+	}
+
+	// Title-only search: "weather" finds s2 by label alone.
+	hits, err := s.SearchSessions(ctx, "weather")
+	if err != nil {
+		t.Fatalf("title-only search: %v", err)
+	}
+	if len(hits) != 1 || hits[0].SessionID != "s2" || !hits[0].Title ||
+		hits[0].Snippet != "Weather notes" {
+		t.Fatalf("title-only search for 'weather', got %+v", hits)
+	}
+
+	// No-match query returns empty, no error.
+	none, err := s.SearchSessions(ctx, "nonexistentterm12345")
+	if err != nil {
+		t.Fatalf("no-match search: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("want 0 hits for no-match, got %+v", none)
+	}
+
+	// Renaming the label updates the title index both ways: the new
+	// label hits as a title, the old one falls back to content-only.
+	if err := s.UpdateSession(ctx, "s1", "Prime numbers"); err != nil {
+		t.Fatalf("rename s1: %v", err)
+	}
+	hits, err = s.SearchSessions(ctx, "prime")
+	if err != nil {
+		t.Fatalf("search renamed label: %v", err)
+	}
+	if len(hits) != 1 || hits[0].SessionID != "s1" || !hits[0].Title ||
+		hits[0].Snippet != "Prime numbers" {
+		t.Fatalf("renamed label must hit as title, got %+v", hits)
+	}
+	hits, err = s.SearchSessions(ctx, "fibonacci")
+	if err != nil {
+		t.Fatalf("search after rename: %v", err)
+	}
+	for _, h := range hits {
+		if h.SessionID == "s1" && h.Title {
+			t.Fatalf("stale label still a title hit after rename: %+v", hits)
+		}
 	}
 }
 

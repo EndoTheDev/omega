@@ -45,6 +45,9 @@ func (m *mockStore) GetAncestorMessages(context.Context, string) ([]ai.Message, 
 func (m *mockStore) SearchMessages(context.Context, string) ([]agent.SearchResult, error) {
 	return nil, nil
 }
+func (m *mockStore) SearchSessions(context.Context, string) ([]agent.SearchResult, error) {
+	return nil, nil
+}
 func (m *mockStore) ComputeInsights(context.Context, int) (*agent.Insights, error) {
 	return nil, nil
 }
@@ -60,6 +63,9 @@ func (m *mockStore) SetSessionLastRun(context.Context, string, *agent.LastRunSta
 
 func (m *mockStore) SetSessionPinned(context.Context, string, bool) error { return nil }
 func (m *mockStore) SetSessionRead(context.Context, string) error         { return nil }
+func (m *mockStore) SetSessionArchived(context.Context, string, bool) error {
+	return nil
+}
 
 func (m *mockStore) SessionModels(context.Context) (map[string]string, error) {
 	return nil, nil

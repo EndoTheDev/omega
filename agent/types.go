@@ -37,6 +37,10 @@ type Session struct {
 	// unpinned; baked data is never rewritten.
 	Pinned bool `json:"pinned"`
 
+	// Archived is the user's hide-from-list flag. Old sessions default
+	// to unarchived; baked data is never rewritten.
+	Archived bool `json:"archived"`
+
 	// LastReadAt is the time the session's output was last seen by the
 	// user (empty on rows created before the column existed - the
 	// migration backfills it to updated_at so nothing old turns unread).
@@ -108,6 +112,10 @@ type StoredMessage struct {
 type SearchResult struct {
 	SessionID string `json:"session_id"`
 	Snippet   string `json:"snippet"`
+	// Title marks a hit that matched the session's label rather than
+	// message content (SearchSessions). When set, Snippet holds the
+	// label itself.
+	Title bool `json:"title"`
 }
 
 // Skill is a loaded skill from a skill directory. The YAML frontmatter

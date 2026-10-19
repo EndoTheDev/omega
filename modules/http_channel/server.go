@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,16 @@ type Server struct {
 	runs     runHub // detached /chat runs by session id (reattach surface)
 	store    agent.StoreProvider
 	settings agent.Settings
+	// Kanban is the optional board seam (modules/kanban). A nil value
+	// answers 501 on the /tasks endpoints - the board is optional.
+	Kanban agent.KanbanProvider
+	// Inspector seams (card t_db430fea, read-only v1). All optional:
+	// a nil Skills serves an empty list on /skills, a nil Cron an
+	// empty list on /cron/jobs, and a nil logger (or one without a
+	// path) 404s on /logs.
+	Skills agent.SkillsProvider
+	Cron   agent.CronProvider
+	logger agent.LoggerProvider
 	httpSrv  *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -47,6 +58,11 @@ type Server struct {
 
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
+
+	// themes serves GET /themes backed by the OMEGA_HOME/themes folder,
+	// watched with the cron watcher's mtime-poll pattern. Nil-safe: no
+	// home configured means an empty list and no watcher.
+	themes *themeRegistry
 }
 
 // NewServer creates a Server. tools is the registry of executable tools
@@ -58,19 +74,30 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	if tools == nil {
 		tools = map[string]agent.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now()}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
+	mux.HandleFunc("/attach-image", s.handleAttachImage)
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
+	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
+	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
+	mux.HandleFunc("/tasks", s.handleTasks)
+	mux.HandleFunc("/tasks/{id}/comments", s.handleTaskComments)
+	mux.HandleFunc("/tasks/{id}", s.handleTaskByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
+	mux.HandleFunc("/tools", s.handleTools)
+	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
+	mux.HandleFunc("/skills", s.handleSkills)
+	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/settings", s.handleSettings)
+	mux.HandleFunc("/themes", s.handleThemes)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
@@ -126,6 +153,8 @@ func (s *Server) Handler() http.Handler {
 // which passes a signal-derived context here.
 func (s *Server) Serve(ctx context.Context, addr string) error {
 	s.httpSrv.Addr = addr
+	// hot-reload: the themes folder watcher dies with the server ctx.
+	go s.themes.watch(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.httpSrv.ListenAndServe()
@@ -204,11 +233,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 // id rides the first `session` SSE frame). Without a store the run stays
 // ephemeral. model, when set, serves this run on that model - the
 // default stays untouched, so concurrent chats keep their own model.
+// thinking_level indexes the shared ai.ThinkingLevels ladder (0 = none
+// = no thinking parameter sent = provider default); unset means
+// provider default.
 type chatRequest struct {
-	Messages  []json.RawMessage `json:"messages"`
-	Tools     []string          `json:"tools,omitempty"`
-	SessionID string            `json:"session_id,omitempty"`
-	Model     string            `json:"model,omitempty"`
+	Messages      []json.RawMessage `json:"messages"`
+	Tools         []string          `json:"tools,omitempty"`
+	SessionID     string            `json:"session_id,omitempty"`
+	Model         string            `json:"model,omitempty"`
+	ThinkingLevel int               `json:"thinking_level,omitempty"`
 }
 
 // assistantRecord accumulates one response segment of an assistant turn
@@ -314,15 +347,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid messages: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := checkImageSizes(messages); err != nil {
+		http.Error(w, "image too large: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// Auto-create: a /chat without session_id IS a new session now
 	// (Endo 2026-10-18: /chat is always durable, the webui's
 	// create-then-send dance is gone). Generate the id here and ride
 	// the normal session-backed path - persistence, provisional title,
 	// live reattach all behave exactly as for a POST /sessions id.
-	// This runs BEFORE loadSessionMessages: the incoming user messages
-	// belong to the new session and persist through the same path as
-	// for a pre-created id.
+	// This runs BEFORE the run-slot acquisition and loadSessionMessages:
+	// the new session must exist and carry its id for both, and the
+	// incoming user messages persist through the same path as for a
+	// pre-created id.
 	autoCreated := false
 	if s.store != nil && req.SessionID == "" {
 		id, err := agent.NewSessionID()
@@ -340,16 +378,48 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		autoCreated = true
 	}
 
+	// Run-slot acquisition comes BEFORE any persistence: a second /chat
+	// for a session with a live run is a 409 that must not leave the
+	// incoming user message appended - the next successful send would
+	// double it. The slot releases if anything below fails before
+	// launchRun takes ownership (runStarted flips once it does).
+	runStarted := false
+	var run *activeRun
+	if s.store != nil && req.SessionID != "" {
+		var live bool
+		run, live = s.runs.start(req.SessionID)
+		if !live {
+			http.Error(w, "session already running", http.StatusConflict)
+			return
+		}
+		defer func() {
+			if !runStarted {
+				s.runs.finish(run) // cur==run guard: no-op once launched
+			}
+		}()
+	}
+
 	messages, ok := s.loadSessionMessages(r.Context(), w, req, messages)
 	if !ok {
 		return
 	}
 
 	// Per-run provider: base copy with a model override when the request
-	// carries one. The copy rides LoopOptions - no shared state mutated.
+	// carries one, plus a thinking level from the shared ladder.
+	// thinking_level 0 ("none") is skipped: no parameter sent, the
+	// provider keeps its default. The copy rides LoopOptions - no
+	// shared state mutated.
 	prov := s.agent.Provider()
 	if req.Model != "" {
 		prov = prov.WithModel(req.Model)
+	}
+	if req.ThinkingLevel != 0 {
+		if req.ThinkingLevel < 0 || req.ThinkingLevel >= len(ai.ThinkingLevels) {
+			http.Error(w, fmt.Sprintf("invalid thinking_level: %d (0..%d)",
+				req.ThinkingLevel, len(ai.ThinkingLevels)-1), http.StatusBadRequest)
+			return
+		}
+		prov = prov.WithThinkingLevel(ai.ThinkingLevels[req.ThinkingLevel])
 	}
 
 	// Provisional title: one cheap GetSession at request start, and the
@@ -398,14 +468,47 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// is GET /sessions/{id}/events (handleSessionEvents).
 	// Subscribe BEFORE launch: the origin client must see the run's first
 	// frame, so the consumer channel exists before the run broadcasts.
-	run, live := s.runs.start(req.SessionID)
-	if !live {
-		http.Error(w, "session already running", http.StatusConflict)
-		return
-	}
+	// The slot was taken up top (before persistence); launchRun owns it
+	// from here - the deferred release above sees runStarted and stands
+	// down. A launchRun failure keeps the unwind through its own path.
+	runStarted = true
 	ch := s.runs.subscribe(run)
 	s.launchRun(context.WithoutCancel(r.Context()), run, prov, messages, tools, req)
 	s.serveRunFrames(w, flusher, run, ch, r.Context())
+}
+
+// handleSessionStop serves POST /sessions/{id}/stop: cancels the live
+// run's context. The run does NOT die on a new unwind path - the same
+// WithTimeout ctx the wall-clock cap rides gets cancelled, so the loop
+// unwinds through its proven normal path: partial output persists, the
+// loop's terminal agent_end (finish_reason "cancelled") broadcasts, and
+// deregistration happens when the run really ends. 404 when the session
+// has no live run; 409 when the run exists but has not registered its
+// cancel yet (the start->launchRun window). A repeat stop on a
+// winding-down run is a clean 200 - cancelling an already-cancelled ctx
+// is a no-op.
+func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing session id", http.StatusBadRequest)
+		return
+	}
+	ok, cancellable := s.runs.stop(id)
+	if !ok {
+		http.Error(w, "session not active", http.StatusNotFound)
+		return
+	}
+	if !cancellable {
+		http.Error(w, "run not started", http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"cancelling"}`)) //nolint:errcheck // constant body
 }
 
 // loadSessionMessages loads persisted history for a session, appends the
@@ -454,6 +557,9 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
 func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) ([]assistantRecord, streamUsage, *agent.LastRunStats) {
+	// tools run in THIS session's context: board tools read the session
+	// id from ctx to auto-link tasks created mid-chat.
+	ctx = agent.WithSessionID(ctx, req.SessionID)
 	var recs []assistantRecord
 	var rec assistantRecord
 	var usage streamUsage
@@ -738,14 +844,18 @@ func truncate(s string, n int) string {
 // last-read stamp) plus the read-time counts, the last recorded model,
 // the read-time unread state, and whether the session has a live run
 // right now (the sidebar's streaming pulse after a page refresh - the
-// in-memory busy map no longer survives the reload).
+// in-memory busy map no longer survives the reload). The running flag
+// is the backend's single truth for "is this session streaming" (it
+// derives from the runHub, never from a client's memory of its own
+// stream), so it is ALWAYS present on the row - true and false alike -
+// and every tab reconciles its pulse against it.
 type sessionPayload struct {
 	agent.Session
 	MessageCount int    `json:"message_count"`
 	ToolCount    int    `json:"tool_count"`
 	Model        string `json:"model,omitempty"`
 	Unread       bool   `json:"unread"`
-	Active       bool   `json:"active,omitempty"`
+	Running      bool   `json:"running"`
 }
 
 // handleSessions serves GET /sessions (list) and POST /sessions (create).
@@ -762,6 +872,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Archived filter: default excludes archived sessions from the
+		// list; archived=include returns them (with the rest). The flag
+		// is a user-list concern, so the filter lives at the read.
+		includeArchived := r.URL.Query().Get("archived") == "include"
 		// ponytail: counts are computed at read time from SQL COUNT, so
 		// the list stays accurate with no maintained counters.
 		counts, err := s.store.SessionCounts(r.Context())
@@ -776,6 +890,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		out := make([]sessionPayload, 0, len(sessions))
 		for _, sess := range sessions {
+			if sess.Archived && !includeArchived {
+				continue
+			}
 			payload := sessionPayload{Session: sess}
 			if c, ok := counts[sess.ID]; ok {
 				payload.MessageCount = c.MessageCount
@@ -785,7 +902,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			// computed at read time from the row itself - no counters,
 			// no schema writes (same pattern as the counts)
 			payload.Unread = agent.SessionUnread(sess)
-			payload.Active = s.runs.active(sess.ID)
+			payload.Running = s.runs.active(sess.ID)
 			out = append(out, payload)
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -821,19 +938,22 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sessionSearchHit is one /sessions/search row: the matching session id
-// plus a snippet stub of the hit (a later card renders the context).
+// sessionSearchHit is one /sessions/search row: the matching session
+// id plus the hit (a title hit carries the label with titleMatch set;
+// a content hit carries a snippet stub - a later card renders the
+// context).
 type sessionSearchHit struct {
-	ID      string `json:"id"`
-	Snippet string `json:"snippet,omitempty"`
+	ID         string `json:"id"`
+	Snippet    string `json:"snippet,omitempty"`
+	TitleMatch bool   `json:"titleMatch,omitempty"`
 }
 
 // handleSessionSearch serves GET /sessions/search?q=<term>: the store's
-// FTS5 content search over session messages, deduped to one hit per
-// session (the first, best-rank message wins). Sessions match CONTENT
-// here, not their titles. It returns 501 when the server has no store,
-// 200 [] on a missing/empty q (nothing to search), and 400 when FTS5
-// rejects the query syntax.
+// unified FTS5 search (SearchSessions) - one endpoint, one result
+// shape, session labels AND message content in the same index pass,
+// deduped to one hit per session with title hits ranked first. It
+// returns 501 when the server has no store, 200 [] on a missing/empty
+// q (nothing to search), and 400 when FTS5 rejects the query syntax.
 func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -848,7 +968,7 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []sessionSearchHit{})
 		return
 	}
-	results, err := s.store.SearchMessages(r.Context(), q)
+	results, err := s.store.SearchSessions(r.Context(), q)
 	if err != nil {
 		// The only input-dependent failure mode of this read-only
 		// query is the query itself; the sqlite driver surfaces FTS5
@@ -858,14 +978,28 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "search: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	seen := make(map[string]bool, len(results))
+	// Archived filter: default excludes hits whose session is archived
+	// (the sidebar's toggle drives the same archived=include param the
+	// list takes); archived=include keeps them. One read of the session
+	// list builds the exclusion set - the search stays a pure FTS
+	// query, the flag is a user-list concern applied at read time.
+	if r.URL.Query().Get("archived") != "include" {
+		sessions, err := s.store.ListSessions(r.Context())
+		if err != nil {
+			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		archived := make(map[string]bool, len(sessions))
+		for _, sess := range sessions {
+			archived[sess.ID] = sess.Archived
+		}
+		results = slices.DeleteFunc(results, func(res agent.SearchResult) bool {
+			return archived[res.SessionID]
+		})
+	}
 	out := make([]sessionSearchHit, 0, len(results))
 	for _, res := range results {
-		if seen[res.SessionID] {
-			continue
-		}
-		seen[res.SessionID] = true
-		out = append(out, sessionSearchHit{ID: res.SessionID, Snippet: res.Snippet})
+		out = append(out, sessionSearchHit{ID: res.SessionID, Snippet: res.Snippet, TitleMatch: res.Title})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -912,10 +1046,11 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			"session":  sess,
 			"messages": msgs,
 			"unread":   agent.SessionUnread(sess),
-			// live-run flag: true while a detached /chat run is streaming
-			// this session - the webui open-session flow auto-subscribes
-			// to /sessions/{id}/events when it sees this
-			"active": s.runs.active(id),
+			// live-run flag (always present, running:true/false): true while
+			// a detached /chat run is streaming this session - the webui
+			// open-session flow auto-subscribes to /sessions/{id}/events
+			// when it sees this
+			"running": s.runs.active(id),
 		})
 	case http.MethodDelete:
 		if err := s.store.DeleteSession(r.Context(), id); err != nil {
@@ -947,21 +1082,24 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, sess)
 	case http.MethodPatch:
-		// Row flags: {"pinned": true|false} (pin toggle, existing) and
+		// Row flags: {"pinned": true|false} (pin toggle, existing),
 		// {"read": true} (mark read - stamps last_read_at without
-		// touching updated_at, same shape as the pinned PATCH). Both
-		// are list concerns: pinning and reading are not activity, and
-		// the webui time buckets read updated_at.
+		// touching updated_at, same shape as the pinned PATCH) and
+		// {"archived": true|false} (archive toggle, same no-touch
+		// contract). All are list concerns: pinning, reading and
+		// archiving are not activity, and the webui time buckets read
+		// updated_at.
 		var body struct {
-			Pinned *bool `json:"pinned"`
-			Read   *bool `json:"read"`
+			Pinned   *bool `json:"pinned"`
+			Read     *bool `json:"read"`
+			Archived *bool `json:"archived"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body.Pinned == nil && body.Read == nil {
-			http.Error(w, "pinned or read must not be missing", http.StatusBadRequest)
+		if body.Pinned == nil && body.Read == nil && body.Archived == nil {
+			http.Error(w, "pinned, read or archived must not be missing", http.StatusBadRequest)
 			return
 		}
 		if body.Read != nil && !*body.Read {
@@ -980,6 +1118,12 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if body.Archived != nil {
+			if err := s.store.SetSessionArchived(r.Context(), id, *body.Archived); err != nil {
+				http.Error(w, "archive session: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		sess, err := s.store.GetSession(r.Context(), id)
 		if err != nil {
 			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
@@ -989,6 +1133,48 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// toolListing is one /tools row: the registry entry's name and
+// short description (the inventory, not the schemas - parameter maps
+// would only bloat the listing the UI shows).
+type toolListing struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// handleTools serves GET /tools: the agent's executable tool registry as
+// a name+description array, sorted by name. The inventory is the union
+// the chat loop actually runs with - the agent's ToolProviders plus the
+// server registry (agent.Tools() copies defensively; the server's own
+// set overlays on top, matching the loop's merge precedent where
+// existing entries win). The webui's module-owned tools panel
+// (modules/tools/ui/ToolsList.vue) renders this. Descriptions only -
+// parameter maps would only bloat the listing the UI shows.
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	inventory := s.agent.Tools()
+	if inventory == nil {
+		inventory = map[string]agent.Tool{}
+	}
+	for name, t := range s.tools {
+		if _, exists := inventory[name]; !exists {
+			inventory[name] = t
+		}
+	}
+	names := make([]string, 0, len(inventory))
+	for name := range inventory {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	out := make([]toolListing, 0, len(names))
+	for _, name := range names {
+		out = append(out, toolListing{Name: name, Description: inventory[name].Description})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // writeJSON writes v as a JSON response with the given status code.

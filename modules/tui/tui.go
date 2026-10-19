@@ -874,9 +874,9 @@ func (m *model) startRun() {
 	m.userInput = make(chan string, 1)
 	ag.SetUserInput(m.userInput)
 	if provider != nil {
-		m.events = ag.RunWithProvider(ctx, provider, m.history, nil)
+		m.events = ag.RunWithProvider(agent.WithSessionID(ctx, m.sessionID), provider, m.history, nil)
 	} else {
-		m.events = ag.Run(ctx, m.history, nil)
+		m.events = ag.Run(agent.WithSessionID(ctx, m.sessionID), m.history, nil)
 	}
 }
 

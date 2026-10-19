@@ -39,6 +39,7 @@ type Context struct {
 	Frontend Frontend
 	Trust    TrustProvider
 	Cron     CronProvider
+	Kanban   KanbanProvider
 
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAll.
@@ -88,6 +89,7 @@ var exclusiveSeams = map[string]bool{
 	"frontend":       true,
 	"trust":          true,
 	"cron":           true,
+	"kanban":         true,
 }
 
 // MountAll sorts plugins by dependencies and mounts each into ctx.

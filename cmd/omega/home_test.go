@@ -182,3 +182,31 @@ func TestBootstrapHomeConfigSubdir(t *testing.T) {
 		t.Fatalf("fresh home should contain only config/, got %v", entries)
 	}
 }
+
+// TestBootstrapHomeMigratesTrust fires the trust.yaml migration through
+// the real boot path: a home with a legacy root trust.yaml comes out of
+// bootstrapHome with a config/ copy, root untouched. Nothing is
+// invented on a fresh home (no source, no copy).
+func TestBootstrapHomeMigratesTrust(t *testing.T) {
+	home := t.TempDir()
+	content := []byte("trusted: [{path: /legacy, level: exact}]\n")
+	if err := os.WriteFile(filepath.Join(home, "trust.yaml"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bootstrapHome(home)
+	cfgCopy, err := os.ReadFile(filepath.Join(home, "config", "trust.yaml"))
+	if err != nil || string(cfgCopy) != string(content) {
+		t.Fatalf("bootstrapHome did not migrate trust.yaml to config/: %q, %v", cfgCopy, err)
+	}
+	before, err := os.ReadFile(filepath.Join(home, "trust.yaml"))
+	if err != nil || string(before) != string(content) {
+		t.Fatalf("bootstrapHome touched root trust.yaml: %q, %v", before, err)
+	}
+
+	// Fresh home: no source, no copy invented.
+	fresh := t.TempDir()
+	bootstrapHome(fresh)
+	if _, err := os.Stat(filepath.Join(fresh, "config", "trust.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("bootstrap invented config/trust.yaml without a source")
+	}
+}

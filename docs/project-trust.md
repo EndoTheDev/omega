@@ -5,7 +5,11 @@ filesystem root and injects them into the system prompt. Because those
 files can contain instructions, omega gates them behind a trust check.
 
 The trust unit is the nearest directory (walking up from cwd) containing
-an `AGENTS.md`. Trust decisions are stored in `<home>/trust.yaml`:
+an `AGENTS.md`. Trust decisions are stored in `<home>/config/trust.yaml`:
+
+A legacy `<home>/trust.yaml` is migrated to `config/` on boot when the
+target does not exist; while a root file exists it stays authoritative
+(root-first resolution), so existing installs keep working unchanged.
 
 ```yaml
 trusted:

@@ -15,7 +15,7 @@ func TestBuildPlugins(t *testing.T) {
 		t.Fatalf("buildPlugins returned error: %v", err)
 	}
 
-	const want = 16
+	const want = 17 // +kanban (card t_33487fb6)
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

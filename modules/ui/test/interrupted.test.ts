@@ -1,6 +1,7 @@
 // webui unit tests for the interrupted-stream marker + retry affordance:
-// transport-death detection in streamChat (clean end vs abnormal end) and
-// the pure transcript transitions the marker/retry are built from.
+// transport-death detection in streamChat, the server-side cancel path
+// (agent_end "cancelled" reads as interrupted), the stopSession POST,
+// and the pure transcript transitions the marker/retry are built from.
 // Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -8,9 +9,9 @@ import assert from "node:assert/strict";
 import {
   handlePayload,
   streamChat,
+  stopSession,
   lastCompleteUserIndex,
   lastUserText,
-  dropLastExchange,
   hasInterruptedMarker,
   withoutMarkers,
   createItemKeySource,
@@ -127,6 +128,75 @@ describe("streamChat: clean end vs transport death", () => {
   });
 });
 
+describe("server-side cancel reads as interrupted", () => {
+  it("agent_end finish_reason cancelled + 'context canceled' throws StreamInterruptedError", async () => {
+    stubFetch(
+      sseResponse([
+        'event: response_chunk\ndata: {"type":"response_chunk","content":"par"}\n\n',
+        'event: agent_end\ndata: {"type":"agent_end","turns":1,"finish_reason":"cancelled","error":"context canceled"}\n\n',
+      ]),
+    );
+    await assert.rejects(
+      () => streamChat([{ role: "user", content: "q" }], "s1", silent),
+      StreamInterruptedError,
+    );
+  });
+
+  it("agent_end cancelled with a DEADLINE error does NOT throw (timeout keeps its error frame)", async () => {
+    stubFetch(
+      sseResponse([
+        'event: agent_end\ndata: {"type":"agent_end","turns":1,"finish_reason":"cancelled","error":"context deadline exceeded"}\n\n',
+      ]),
+    );
+    await assert.doesNotReject(() =>
+      streamChat([{ role: "user", content: "q" }], "s1", silent),
+    );
+  });
+
+  it("cancelled agent_end still marks the transport state sawEnd", () => {
+    const state = { seenResponse: false, sawEnd: false };
+    assert.throws(() =>
+      handlePayload(
+        { type: "agent_end", turns: 1, finish_reason: "cancelled", error: "context canceled" },
+        silent,
+        state,
+      ),
+    );
+    assert.equal(state.sawEnd, true);
+  });
+});
+
+describe("stopSession", () => {
+  it("POSTs /sessions/<id>/stop", async () => {
+    const calls: { url: RequestInfo | URL; init?: RequestInit }[] = [];
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url, init });
+      return { ok: true } as unknown as Response;
+    }) as typeof globalThis.fetch;
+    await stopSession("s1");
+    assert.equal(calls.length, 1);
+    assert.equal(String(calls[0].url), "/sessions/s1/stop");
+    assert.equal(calls[0].init?.method, "POST");
+  });
+
+  it("404 (run already ended) and 409 (not started yet) stay silent", async () => {
+    savedFetch = globalThis.fetch;
+    for (const status of [404, 409]) {
+      globalThis.fetch = (async () =>
+        ({ ok: false, status }) as unknown as Response) as typeof globalThis.fetch;
+      await assert.doesNotReject(() => stopSession("s1"));
+    }
+  });
+
+  it("an unexpected failure throws", async () => {
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      ({ ok: false, status: 500 }) as unknown as Response) as typeof globalThis.fetch;
+    await assert.rejects(() => stopSession("s1"), /stop: 500/);
+  });
+});
+
 describe("last complete user message", () => {
   const transcript: TranscriptItemLike[] = [
     { kind: "message", role: "user", content: "first" },
@@ -150,59 +220,63 @@ describe("last complete user message", () => {
   });
 });
 
-describe("retry transcript transitions", () => {
-  const transcript: TranscriptItemLike[] = [
-    { kind: "message", role: "user", content: "old q" },
-    { kind: "message", role: "assistant", content: "old a" },
-    { kind: "message", role: "user", content: "kick off" },
-    { kind: "thinking", content: "hm" },
-    { kind: "tool", name: "sh", status: "done" },
-    { kind: "message", role: "assistant", content: "partial" },
-    { kind: "interrupted" },
-  ];
-
-  it("abnormal end: marker pushed, transcript otherwise intact", () => {
-    const st = [
+describe("retry transcript transitions (fresh-turn semantics)", () => {
+  // the retry re-sends the last user message as a NEW turn: the
+  // interrupted exchange stays, a fresh user bubble is appended,
+  // history is never rewritten
+  it("retry keeps the exchange and appends a fresh user message", () => {
+    const st: TranscriptItemLike[] = [
+      { kind: "message", role: "user", content: "old q" },
+      { kind: "message", role: "assistant", content: "old a" },
       { kind: "message", role: "user", content: "kick off" },
+      { kind: "thinking", content: "hm" },
+      { kind: "tool" },
       { kind: "message", role: "assistant", content: "partial" },
+      { kind: "interrupted" },
     ];
-    st.push({ kind: "interrupted" });
-    assert.equal(hasInterruptedMarker(st), true);
-    assert.equal(st.length, 3);
-    assert.deepEqual(st[1], { kind: "message", role: "assistant", content: "partial" });
-  });
-
-  it("clean end: no marker in the transcript", () => {
-    const st = [
-      { kind: "message", role: "user", content: "q" },
-      { kind: "message", role: "assistant", content: "full a" },
-    ];
-    assert.equal(hasInterruptedMarker(st), false);
-  });
-
-  it("retry drops the exchange (user msg + tail) and re-sends its text", () => {
-    const text = lastUserText(transcript);
+    // what the app's retryStream does: read the text, re-send through
+    // submitText (which strips markers on a fresh send and pushes a new
+    // user bubble)
+    const text = lastUserText(st);
     assert.equal(text, "kick off");
-    const after = dropLastExchange(transcript);
-    // everything the failed run produced is gone, including its opening
-    // user message (the send path pushes it back - no duplicate bubble)
-    assert.equal(hasInterruptedMarker(after), false);
+    const after = withoutMarkers(st);
+    after.push({ kind: "message", role: "user", content: text! });
+    // every pre-retry item survives, in order
     assert.deepEqual(
       after.map((i) => [i.kind, i.role, i.content]),
       [
         ["message", "user", "old q"],
         ["message", "assistant", "old a"],
+        ["message", "user", "kick off"],
+        ["thinking", undefined, "hm"],
+        ["tool", undefined, undefined],
+        ["message", "assistant", "partial"],
+        ["message", "user", "kick off"],
       ],
     );
+    assert.equal(hasInterruptedMarker(after), false);
   });
 
-  it("retry without a user message leaves the transcript unchanged", () => {
+  it("retry of a CLEAN last exchange is the same append (no history rewrite)", () => {
+    const st: TranscriptItemLike[] = [
+      { kind: "message", role: "user", content: "q" },
+      { kind: "message", role: "assistant", content: "a" },
+    ];
+    const text = lastUserText(st);
+    assert.equal(text, "q");
+    st.push({ kind: "message", role: "user", content: text! });
+    assert.equal(st.length, 3);
+    assert.equal(hasInterruptedMarker(st), false);
+  });
+
+  it("retry without a user message does nothing (composer hides the button)", () => {
     const st: TranscriptItemLike[] = [
       { kind: "message", role: "assistant", content: "x" },
       { kind: "interrupted" },
     ];
-    const after = dropLastExchange(st);
-    assert.equal(after, st);
+    assert.equal(lastUserText(st), null);
+    // append-side has nothing to base a transcript rewrite on
+    assert.equal(hasInterruptedMarker(st), true);
   });
 
   it("markers only: withoutMarkers strips them, keeping order", () => {
