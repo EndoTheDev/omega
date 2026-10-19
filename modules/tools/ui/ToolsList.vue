@@ -33,9 +33,10 @@
 <script setup lang="ts">
   import { onMounted, ref } from "vue";
 
-  // Module-owned UI canary: the tool inventory, sourced from GET /tools
-  // and shipped by the tools module itself (modules/tools/ui/) through
-  // the module-UI composition. This is the seed of the future tools tab.
+  // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
+  // content (card t_db430fea): the tool inventory, sourced from
+  // GET /tools and shipped by the tools module itself
+  // (modules/tools/ui/) through the module-UI composition.
   // The fetch is deliberately self-contained - the shell's API client
   // is shell code; a module's UI carries its own wiring so it can ride
   // the desktop / VS Code builds alone.

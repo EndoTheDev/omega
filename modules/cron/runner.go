@@ -432,6 +432,32 @@ func (r *Runner) jobsSnapshot() []Job {
 	return append([]Job(nil), r.jobs...)
 }
 
+// Jobs is the read-only inspector snapshot (agent.CronLister, card
+// t_db430fea): every job in the current config with its enablement and
+// next fire time in RFC3339 local time, sorted by name. A disabled job
+// and a job whose schedule does not parse (validated at load, so
+// unexpected) report an empty Next. Works before Start - the job set
+// exists the moment the plugin mounts, whether or not the scheduler
+// has been started by the host.
+func (r *Runner) Jobs() []agent.CronJobInfo {
+	jobs := r.jobsSnapshot()
+	now := r.now()
+	out := make([]agent.CronJobInfo, 0, len(jobs))
+	for _, j := range jobs {
+		row := agent.CronJobInfo{Name: j.Name, Schedule: j.Schedule, Enabled: j.IsEnabled()}
+		if row.Enabled {
+			if sched, err := scheduleParser.Parse(j.Schedule); err == nil {
+				if next := sched.Next(now); !next.IsZero() {
+					row.Next = next.Format(time.RFC3339)
+				}
+			}
+		}
+		out = append(out, row)
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].Name < out[k].Name })
+	return out
+}
+
 // --- state (cronstate.json) ---
 
 // loadCronState reads cronstate.json. A missing or corrupt file is a
