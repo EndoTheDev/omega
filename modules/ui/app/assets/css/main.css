@@ -115,6 +115,32 @@ body {
 
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
+/* main-view switcher: chat | board pill, matches .icon-btn chrome */
+.view-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--z1-raised);
+  border-radius: 7px;
+}
+.view-tab {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text);
+  opacity: 0.55;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.view-tab:hover { opacity: 0.85; }
+.view-tab.on {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--z1-raised);
+}
 
 /* ---- layer 1: pane area — floating rounded panes on the canvas ---- */
 .pane-area {
@@ -698,6 +724,17 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
      sidebars stay unbounded - the squeeze chain flexes them instead. */
   min-width: 320px;
   min-height: 320px;
+}
+
+/* board view (module-owned UI from modules/kanban/ui): the component's
+   root fills this holder; the holder is the only shell-side CSS the
+   board gets - column/card chrome is the module's own */
+.board-pane {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
 }
 
 .messages {

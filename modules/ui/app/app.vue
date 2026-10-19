@@ -3,9 +3,11 @@
     <MenuBar
       :sidebar-open="isMobile ? drawerOpen : sidebarVisible"
       :inspector-open="isMobile ? inspectorOpen : rightVisible"
+      :view="mainView"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
-      @settings="openSettings" />
+      @settings="openSettings"
+      @view="switchMainView" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
          backdrop-filter frost needs the same backdrop root as the settings
@@ -55,6 +57,11 @@
       </div>
 
       <main class="chat pane">
+        <!-- main-view switcher: chat content hides (display:contents keeps
+             the flex layout transparent so composer/wrap stay direct
+             flex children), the module-owned board (modules/kanban/ui)
+             replaces it through the composition panel list -->
+        <div :style="{ display: mainView === 'chat' ? 'contents' : 'none' }">
         <!-- wrap owns the pill's absolute placement: the scroll container
              itself scrolls its content (an absolutely positioned child of
              it would scroll away with it) -->
@@ -121,6 +128,21 @@
           @send="send"
           @cancel="cancelActiveRun"
           @retry="retryStream" />
+        </div>
+
+        <div
+          v-if="mainView === 'board'"
+          class="board-pane">
+          <component
+            :is="boardComponent"
+            v-if="boardComponent"
+            @open-session="openBoardSession" />
+          <p
+            v-else
+            class="empty">
+            board module not loaded
+          </p>
+        </div>
       </main>
 
       <div
@@ -223,6 +245,7 @@
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, reactive, ref, watch, type Ref } from "vue";
   import { openClamp } from "./composables/panes";
+  import { modulePanels } from "./composables/module-panels.generated";
   import {
     anyBusy,
     withBusy,
@@ -357,20 +380,49 @@
   // already correct then, so no sync runs (and one is not appended).
   let fromHistory = false;
 
-  function syncURL(id: string | null, push: boolean) {
+  // view is the main-pane view the entry anchors: "chat" walks session
+  // paths, "board" roots at /board (the module-owned kanban view)
+  function syncURL(id: string | null, push: boolean, view: "chat" | "board" = "chat") {
     if (typeof window === "undefined") return;
-    const url = id ? sessionPath(id) : "/";
+    const url = view === "board" ? "/board" : id ? sessionPath(id) : "/";
     if (push) history.pushState({}, "", url);
     else history.replaceState({}, "", url);
   }
 
-  // back/forward walk session entries; switching on popstate is a pure
-  // view change, so it never interrupts a stream
+  // --- main-view: chat transcript vs the module-owned board (the
+  // kanban module ships it through the composition panel list; the shell
+  // only knows the mount slot). Switching is the same pure view change a
+  // session switch is - no stream is interrupted; /board is a history
+  // entry like every open session.
+  const mainView = ref<"chat" | "board">("chat");
+  const boardComponent = computed(
+    () => modulePanels.find((p) => p.module === "kanban")?.component,
+  );
+
+  function switchMainView(v: "chat" | "board") {
+    if (mainView.value === v) return;
+    mainView.value = v;
+    if (!fromHistory) syncURL(activeId.value, true, v);
+  }
+
+  // a board card's transcript chip lands the user in that conversation
+  function openBoardSession(id: string) {
+    mainView.value = "chat";
+    openSession(id);
+  }
+
+  // back/forward walk board and session entries; switching on popstate is
+  // a pure view change, so it never interrupts a stream
   function onPop() {
     fromHistory = true;
-    const id = parseSessionPath(window.location.pathname);
-    if (id) openSession(id);
-    else newChat();
+    if (/^\/board\/?$/.test(window.location.pathname)) {
+      mainView.value = "board";
+    } else {
+      mainView.value = "chat";
+      const id = parseSessionPath(window.location.pathname);
+      if (id) openSession(id);
+      else newChat();
+    }
     fromHistory = false;
   }
 
@@ -509,6 +561,9 @@
 
   async function openSession(id: string, preloaded?: TranscriptDetail) {
     if (!fromHistory) syncURL(id, true);
+    // the switcher follows: opening a chat is a main-view move (from the
+    // board, from the sidebar, from history - all land in the transcript)
+    mainView.value = "chat";
     activeId.value = id;
     drawerOpen.value = false;
     inspectorOpen.value = false;
@@ -569,6 +624,7 @@
   function newChat() {
     if (!fromHistory) syncURL(null, true);
     activeId.value = null;
+    mainView.value = "chat";
     // fresh unsaved-chat state - UNLESS an unsaved stream is live, in
     // which case +new returns to the view watching it (no global lock)
     if (!busyAll.value.has(NEW_KEY)) streams.delete(NEW_KEY);
@@ -1293,8 +1349,12 @@
     // running-state poller: every tab reconciles against the rows
     runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
 
-    // restore the session named by the URL, if it exists - an unknown or
-    // deleted id routes home (and the URL comes with it)
+    // restore the view named by the URL: /board mounts the kanban view,
+    // a session path restores that session, anything else routes home
+    // (and the URL comes with it)
+    if (/^\/board\/?$/.test(window.location.pathname)) {
+      mainView.value = "board";
+    }
     const initial = parseSessionPath(window.location.pathname);
     if (initial) {
       try {

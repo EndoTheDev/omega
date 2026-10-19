@@ -1,6 +1,27 @@
 <template>
   <header class="menubar">
     <span class="brand">Ωmega</span>
+    <div
+      class="view-switch"
+      role="tablist"
+      aria-label="main view">
+      <button
+        class="view-tab"
+        :class="{ on: view === 'chat' }"
+        role="tab"
+        :aria-selected="view === 'chat'"
+        @click="$emit('view', 'chat')">
+        chat
+      </button>
+      <button
+        class="view-tab"
+        :class="{ on: view === 'board' }"
+        role="tab"
+        :aria-selected="view === 'board'"
+        @click="$emit('view', 'board')">
+        board
+      </button>
+    </div>
     <span class="menubar-spacer" />
     <button
       class="icon-btn"
@@ -112,11 +133,13 @@
   defineProps<{
     sidebarOpen: boolean;
     inspectorOpen: boolean;
+    view: "chat" | "board";
   }>();
 
   defineEmits<{
     (e: "toggle-sidebar"): void;
     (e: "toggle-inspector"): void;
     (e: "settings"): void;
+    (e: "view", v: "chat" | "board"): void;
   }>();
 </script>

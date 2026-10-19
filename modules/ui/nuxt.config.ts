@@ -75,6 +75,7 @@ export default defineNuxtConfig({
       "/tools": { target: "http://127.0.0.1:8098/tools" },
       "/chat": { target: "http://127.0.0.1:8098/chat" },
       "/sessions": { target: "http://127.0.0.1:8098/sessions" },
+      "/tasks": { target: "http://127.0.0.1:8098/tasks" },
     },
     output: {
       publicDir: "dist",
