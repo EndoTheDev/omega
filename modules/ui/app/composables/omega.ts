@@ -244,6 +244,47 @@ export function renderTranscriptItems(
   return out;
 }
 
+// --- chat appearance (card t_84e4653c) ---
+//
+// 'chat' is the chronological transcript (the pre-stacked appearance,
+// default); 'stacked' renders each turn as a self-contained block - the
+// user message plus everything the run produced in response. The
+// choice persists in localStorage under APPEARANCE_KEY (same pattern
+// as omega.theme-mode / omega.thinking-level).
+
+export type Appearance = "chat" | "stacked";
+
+export const APPEARANCE_KEY = "omega.appearance";
+
+// parseAppearance guards the localStorage round-trip: anything but the
+// exact "stacked" string (missing key, older build, tampered value)
+// falls back to the default appearance.
+export function parseAppearance(v: unknown): Appearance {
+  return v === "stacked" ? "stacked" : "chat";
+}
+
+// splitBlocks cuts the transcript where the backend's segmented
+// persistence does: every user message opens a block and everything
+// after it belongs to that block; non-user items BEFORE the first user
+// message (an orphaned error bubble from a failed session create) form
+// their own block, and an assistant-only tail stays in the block it
+// follows. Live streams append into the CURRENT block (the stream
+// never opens one), so while a run is producing, the block that holds
+// its user message also holds the answer underneath it. Pure.
+export function splitBlocks(items: TranscriptItem[]): TranscriptItem[][] {
+  const blocks: TranscriptItem[][] = [];
+  for (const item of items) {
+    if (item.kind === "message" && item.role === "user") {
+      blocks.push([item]);
+    } else if (blocks.length === 0) {
+      blocks.push([item]);
+    } else {
+      blocks[blocks.length - 1]!.push(item);
+    }
+  }
+  return blocks;
+}
+
 export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}/transcript`);
   if (!r.ok) throw new Error(`transcript: ${r.status}`);

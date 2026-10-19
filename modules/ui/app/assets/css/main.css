@@ -953,6 +953,31 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   border-radius: var(--r-card);
 }
 
+/* ---- stacked chat appearance (card t_84e4653c) ----
+   One turn = one block: the user message plus everything its run
+   produced. Blocks repeat the pane's internal rhythm (flex column,
+   12px gap) so the items render exactly as they did flat; the block
+   boundary is the pane gap - spacing only, no chrome. */
+.msg-block { display: flex; flex-direction: column; gap: 12px; }
+/* The LIVE block (the turn currently responding) sticks to the top of
+   the scroll pane while its answer streams below it; `busy` drives the
+   class, so agent_end drops it and the block settles back in order.
+   The pane surface + cover padding keep scrolled content from showing
+   through the block's internal gaps - the negative margins absorb the
+   padding, so the sticky state never changes the layout, only the
+   paint. Blocks sit above non-positioned siblings while stuck. */
+.msg-block.live {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--z1);
+  padding: 8px 0 14px;
+  margin: -8px 0 0;
+  border-radius: var(--r-pane);
+}
+/* the status line under a live block keeps breathing room from it */
+.msg-block.live + .status-line { margin-top: 4px; }
+
 .jump-live {
   position: absolute;
   bottom: 12px;

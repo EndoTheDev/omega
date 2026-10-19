@@ -13,35 +13,32 @@
           say something to
           <span class="brand">Ωmega</span>
         </p>
-        <template
-          v-for="item in transcript"
-          :key="itemKey(item)">
-          <ChatMessage
-            v-if="item.kind === 'message'"
-            :role="item.role"
-            :content="item.content"
-            :time="item.time"
-            :final-ms="item.finalMs"
-            :streaming="item.streaming" />
-          <ThinkingBlock
-            v-else-if="item.kind === 'thinking' && showThinking"
-            :content="item.content"
-            :final-ms="item.finalMs"
-            :streaming="item.streaming" />
-          <ToolCallLine
-            v-else-if="item.kind === 'tool'"
-            :name="item.name"
-            :status="item.status"
-            :interrupted="item.interrupted"
-            :final-ms="item.finalMs"
-            :output="item.output"
-            :result="item.result" />
+        <!-- ONE item renderer, two container layouts (card t_84e4653c):
+             ChatItem is a fragment - it renders exactly the per-item DOM
+             the old flat v-for did, so 'chat' stays pixel-identical.
+             'stacked' wraps each turn block: a user message plus its
+             full response subtree, separated by the block gap. -->
+        <template v-if="appearance === 'stacked'">
           <div
-            v-else-if="item.kind === 'interrupted'"
-            class="interrupted-line">
-            <span>{{ item.label ?? "stream interrupted" }}</span>
-            <button class="resume" @click="onRetry">retry</button>
+            v-for="(block, bi) in blocks"
+            :key="blockKey(block)"
+            class="msg-block"
+            :class="{ live: bi === blocks.length - 1 && busy }">
+            <ChatItem
+              v-for="item in block"
+              :key="itemKey(item)"
+              :item="item"
+              :show-thinking="showThinking"
+              @retry="onRetry" />
           </div>
+        </template>
+        <template v-else>
+          <ChatItem
+            v-for="item in transcript"
+            :key="itemKey(item)"
+            :item="item"
+            :show-thinking="showThinking"
+            @retry="onRetry" />
         </template>
         <div
           v-if="statusLine"
@@ -87,13 +84,20 @@
   import {
     CHAT_HOST_KEY,
     type ChatState,
+    type TranscriptItem,
   } from "../composables/chat";
-  import { createItemKeySource, isAtBottom, pillVisible, lastUserText, thinkingLevelWire } from "../composables/omega";
+  import {
+    createItemKeySource,
+    isAtBottom,
+    pillVisible,
+    lastUserText,
+    splitBlocks,
+    thinkingLevelWire,
+    type Appearance,
+  } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import AppComposer from "./chat/AppComposer.vue";
-  import ChatMessage from "./chat/ChatMessage.vue";
-  import ThinkingBlock from "./chat/ThinkingBlock.vue";
-  import ToolCallLine from "./chat/ToolCallLine.vue";
+  import ChatItem from "./ChatItem.vue";
 
   const props = defineProps<{
     /** the tab this instance renders (its `key` is the state key) */
@@ -104,6 +108,8 @@
     models: string[];
     /** reasoning-effort chip selection ("default" = no field sent) */
     thinking: string;
+    /** chat appearance: chronolog | stacked blocks (card t_84e4653c) */
+    appearance: Appearance;
   }>();
 
   const emit = defineEmits<{
@@ -128,6 +134,16 @@
 
   const transcript = computed(() => state.value?.transcript ?? []);
   const statusLine = computed(() => state.value?.statusLine ?? "");
+  const itemKey = createItemKeySource();
+  // stacked layout (card t_84e4653c): the transcript cut at user
+  // messages - user message + response subtree = one visual block.
+  // Blocks recompute from the SAME item objects, so the inner keys stay
+  // stable through streaming appends.
+  const blocks = computed(() => splitBlocks(transcript.value));
+  function blockKey(block: TranscriptItem[]): number {
+    const first = block[0];
+    return first ? itemKey(first) : -1;
+  }
   // draft lives per state (survives tab switches)
   const draft = computed({
     get: () => state.value?.draft ?? "",
@@ -148,8 +164,6 @@
   const canRetry = computed(
     () => !busy.value && lastUserText(transcript.value) !== null,
   );
-
-  const itemKey = createItemKeySource();
 
   // --- scroll pinning + jump-to-live pill: PER INSTANCE now - multiple
   // panes may render the same component, each owns its scrollbar ---
