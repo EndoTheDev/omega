@@ -31,11 +31,6 @@
       <!-- while this session's run streams, send becomes CANCEL (stop
            icon); idle, a retry affordance re-sends the last user message
            when there is one - next to the plain send button -->
-=======
-      <ThinkingSelect
-        :level="thinking"
-        @update:level="$emit('update:thinking', $event)" />
->>>>>>> Stashed changes:modules/ui/app/components/AppComposer.vue
       <button
         v-if="canRetry && !busy"
         class="retry"

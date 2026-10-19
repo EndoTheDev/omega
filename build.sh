@@ -16,6 +16,11 @@ if OMEGA_GATE_FIXTURE=gate-deps_testdata/bad.txt ./gate-deps.sh; then
 	exit 1
 fi
 ./gate-deps.sh
+echo "==> webui bundle gate (no conflict markers in the embedded SPA)"
+if grep -rqE '<<<<<<<|Stashed changes' modules/http_channel/static/; then
+	echo "conflict markers in the embedded SPA - regenerate via modules/ui/scripts/build.sh"
+	exit 1
+fi
 echo "==> test"
 go test $(go list ./... | grep -v '/bin/')
 echo "==> build"
