@@ -60,7 +60,13 @@ export const COMPONENT_TITLES: Record<DockComponentName, string> = {
 
 export interface DockTab {
   component: DockComponentName;
+  /** the session id a CHAT tab is bound to (null = unsaved composer-first
+      chat; written by the host once /chat creates the session) */
   sessionRef?: string;
+  /** chat tab instance key (card t_4f0e88f2): minted at tab creation,
+      stable across pane moves and reloads - the per-tab chat host keys
+      its stream state on it. Always present on chat tabs after boot. */
+  key?: string;
 }
 export interface DockPane {
   kind: "pane";
@@ -95,6 +101,44 @@ export function syncIdSeed(tree: DockNode): number {
     if (Number.isFinite(num) && num > idSeed) idSeed = num;
   }
   return idSeed;
+}
+
+// --- chat tab instance keys (card t_4f0e88f2) -------------------------------
+
+let tabKeySeed = 0;
+/** tab keys use their own c-prefixed namespace so they never collide with
+    pane/split node ids; seeded from the loaded tree at boot */
+export function nextTabKey(): string {
+  return "c" + (++tabKeySeed).toString(36);
+}
+
+export function syncTabKeySeed(tree: DockNode): number {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    for (const t of n.tabs) {
+      if (!t.key) continue;
+      const num = Number.parseInt(t.key.slice(1), 36);
+      if (Number.isFinite(num) && num > tabKeySeed) tabKeySeed = num;
+    }
+  }
+  return tabKeySeed;
+}
+
+/** boots every chat tab to the key invariant the host relies on: chat tabs
+    minted anywhere (make Pane defaults, pre-card-3 persisted trees) that
+    carry no key get one right there - mutates, so callers run it on PLAIN
+    loaded data before the ref is set (and persist the result). */
+export function assignChatKeys(tree: DockNode): DockNode {
+  syncTabKeySeed(tree);
+  // deep copy in one pass: chat tabs gaining keys is the only mutation
+  const copy = clone(tree);
+  for (const n of allNodes(copy)) {
+    if (!isPane(n)) continue;
+    n.tabs = n.tabs.map((t) =>
+      (t.component === "chat" && !t.key) ? { ...t, key: nextTabKey() } : t,
+    );
+  }
+  return copy;
 }
 
 // --- small building blocks ---------------------------------------------------
@@ -376,6 +420,81 @@ export function splitPane(
   return insertPane(tree, paneId, direction, side, makePane(null));
 }
 
+// --- chat tab session binding (card t_4f0e88f2) -------------------------------
+
+export interface ChatTabLocation {
+  paneId: string;
+  index: number;
+  tab: DockTab;
+}
+
+/** locate a chat tab by its instance key (the host's state key). */
+export function findChatTab(tree: DockNode, key: string): ChatTabLocation | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    const index = n.tabs.findIndex((t) => t.component === "chat" && t.key === key);
+    if (index >= 0) return { paneId: n.id, index, tab: n.tabs[index]! };
+  }
+  return null;
+}
+
+/** the first chat tab in the tree, depth-first (boot/restore + fallback
+    focus helpers use it). */
+export function firstChatTab(
+  tree: DockNode,
+  sessionRef?: string,
+): ChatTabLocation | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    const index = n.tabs.findIndex(
+      (t) => t.component === "chat" && (sessionRef === undefined || t.sessionRef === sessionRef),
+    );
+    if (index >= 0) return { paneId: n.id, index, tab: n.tabs[index]! };
+  }
+  return null;
+}
+
+/** write the session id back onto the chat tab that owns `key` - the
+    unsaved ('+' / sidebar-new) tab's first send mints its real id and the
+    tab's binding lands IN THE TREE, not in some side variable. */
+export function setTabSessionRef(
+  tree: DockNode,
+  key: string,
+  sessionRef: string | null,
+): DockNode {
+  if (!findChatTab(tree, key)) return tree; // vanished (concurrent close) - no-op
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n)) return;
+    const idx = n.tabs.findIndex((t) => t.component === "chat" && t.key === key);
+    if (idx < 0) return;
+    const tab = n.tabs[idx]!;
+    const next: DockTab =
+      sessionRef ? { component: "chat", sessionRef, key }
+        : { component: "chat", key: tab.key! };
+    const tabs = [...n.tabs];
+    tabs[idx] = next;
+    n.tabs = tabs;
+  });
+}
+
+/** close EVERY chat tab bound to a session (the delete flow): the tab
+    bar's close math (active adjustment, empty pane -> menu) per pane. */
+export function closeSessionTabs(tree: DockNode, sessionId: string): DockNode {
+  if (firstChatTab(tree, sessionId) === null) return tree;
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n)) return;
+    const drop = new Set<number>();
+    n.tabs.forEach((t, i) => {
+      if (t.component === "chat" && t.sessionRef === sessionId) drop.add(i);
+    });
+    if (drop.size === 0) return;
+    const tabs = n.tabs.filter((_, i) => !drop.has(i));
+    const before = [...drop].filter((i) => i < n.active).length;
+    n.tabs = tabs;
+    n.active = clamp(n.active - before, 0, tabs.length - 1);
+  });
+}
+
 // --- resize ------------------------------------------------------------------
 
 export interface DividerDragResult {
@@ -527,7 +646,7 @@ function validateNode(raw: unknown): DockNode | null {
   const tabs: DockTab[] = [];
   for (const t of n.tabs) {
     if (!t || typeof t !== "object") return null;
-    const tab = t as { component?: unknown; sessionRef?: unknown };
+    const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown };
     if (
       typeof tab.component !== "string" ||
       !(DOCK_COMPONENTS as readonly string[]).includes(tab.component)
@@ -538,6 +657,7 @@ function validateNode(raw: unknown): DockNode | null {
         ? { component: tab.component as DockComponentName, sessionRef: tab.sessionRef }
         : { component: tab.component as DockComponentName },
     );
+    if (typeof tab.key === "string" && tab.key) tabs[tabs.length - 1]!.key = tab.key;
   }
   const fixed = typeof n.fixed === "number" && Number.isFinite(n.fixed) && n.fixed >= 0
     ? n.fixed
@@ -670,6 +790,13 @@ export interface DockApi {
   closeTab: (paneId: string, index: number) => void;
   /** card 2 DnD: move a tab (same-pane reorder or between panes) */
   moveTab: (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => void;
+  /** card 3: chat tab binding - write the session id a tab owns. */
+  setSessionRef: (key: string, sessionRef: string | null) => void;
+  /** card 3: close every chat tab bound to a session (delete flow). */
+  closeSession: (sessionRef: string) => void;
+  /** card 3: chat tab lookups (focus helpers; read-only over the live tree) */
+  findChatTab: (key: string) => ChatTabLocation | null;
+  firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
   /** desktop toggle: removes the edge pane or re-inserts it at the remembered
@@ -683,6 +810,18 @@ export interface DockApi {
 
 export const DOCK_API_KEY: InjectionKey<DockApi> = Symbol("omega-dock-api");
 
+// card t_4f0e88f2: chat is multi-instance now. Opening a chat ('+'
+// menu, empty-pane "new chat") mints a REAL tab through the app's
+// opener - a session-less composer-first chat carries no legacy op.
+export const DOCK_CHAT_OPEN_KEY: InjectionKey<
+  (paneId: string, sessionId: string | null) => void
+> = Symbol("omega-dock-chat-open");
+// the app resolves chat tab titles to their session label (sidebar
+// highlight follows the FOCUSED tab, so labels must read in the bar);
+// null falls back to the generic COMPONENT_TITLES entry
+export const DOCK_TAB_TITLE_KEY: InjectionKey<(tab: DockTab) => string | null> =
+  Symbol("omega-dock-tab-title");
+
 /** the persisted reopen sizes for edge panes (page-lifetime memory: closing
     the sidebar and reopening restores the width the user had last) */
 const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
@@ -692,9 +831,10 @@ const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
 
 export function createDock(store: Storage): DockApi {
   const stored = deserialize(store.getItem(DOCK_LAYOUT_KEY));
-  const initial =
-    stored ??
-    migrateLegacy((k) => store.getItem(k));
+  // assignChatKeys boots loaded chat tabs to the key invariant (chat tabs
+  // persist with their key; migration/legacy trees gain fresh ones)
+  let initial = stored ?? migrateLegacy((k) => store.getItem(k));
+  initial = assignChatKeys(initial);
   syncIdSeed(initial);
   // shallowRef: the tree stays PLAIN data (structuredClone rejects proxies);
   // every op swaps the root, so reactivity rides the ref change alone
@@ -735,6 +875,12 @@ export function createDock(store: Storage): DockApi {
   const moveTabIn = (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => {
     tree.value = moveTab(tree.value, fromPaneId, fromIndex, toPaneId, toIndex);
   };
+  const setSessionRef = (key: string, sessionRef: string | null) => {
+    tree.value = setTabSessionRef(tree.value, key, sessionRef);
+  };
+  const closeSession = (sessionRef: string) => {
+    tree.value = closeSessionTabs(tree.value, sessionRef);
+  };
   const split = (paneId: string, direction: "row" | "column", side: "before" | "after") => {
     tree.value = splitPane(tree.value, paneId, direction, side);
   };
@@ -770,5 +916,11 @@ export function createDock(store: Storage): DockApi {
     if (replacement !== node) tree.value = graftSplit(tree.value, replacement);
   };
 
-  return { tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn, split, remove, toggleEdge, ensureEdge, drag };
+  return {
+    tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
+    setSessionRef, closeSession,
+    findChatTab: (key: string) => findChatTab(tree.value, key),
+    firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
+    split, remove, toggleEdge, ensureEdge, drag,
+  };
 }

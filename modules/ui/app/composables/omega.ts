@@ -967,6 +967,19 @@ export async function fetchSessions(includeArchived = false): Promise<Session[]>
   return r.json();
 }
 
+// createSession posts the empty session body the wire contract defines:
+// an early /sessions POST was inline in app.vue before card t_4f0e88f2.
+// (Session restore is transcript-owned - fetchTranscript - since the
+// backend-owns-facts rework; no fetchSession here.)
+export async function createSession(): Promise<Session> {
+  const r = await fetch("/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!r.ok) throw new Error(`create session: ${r.status}`);
+  return r.json();
+}
 // --- settings pane: config knobs behind /settings ---
 
 // SettingKnob is one exposed config field. Type drives the control:
@@ -1301,6 +1314,17 @@ export class StreamInterruptedError extends Error {
   }
 }
 
+// SessionBusyError: POST /chat answered 409 - the runHub already holds a
+// live run for the session (detached-run slot, server.go) so nothing was
+// persisted. The caller renders the busy affordance; retrying once the
+// run ends re-sends through the normal path.
+export class SessionBusyError extends Error {
+  constructor(message = "session already running") {
+    super(message);
+    this.name = "SessionBusyError";
+  }
+}
+
 // consumeSSE reads frames off a fetch Response body and drives the
 // handler callbacks. Shared by both transports: the send stream (POST
 // /chat) and the reattach stream (GET /sessions/<id>/events) - the frame
@@ -1363,6 +1387,7 @@ export async function streamChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (resp.status === 409) throw new SessionBusyError();
   if (!resp.ok || !resp.body) throw new Error(`chat: ${resp.status}`);
   await consumeSSE(resp, handlers);
 }
