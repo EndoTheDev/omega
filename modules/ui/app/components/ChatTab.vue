@@ -185,12 +185,29 @@
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
+  // stacked live turn (Endo 2026-10-20): the USER MESSAGE pins to the
+  // top of the pane while its answer streams below - so the follow
+  // logic targets the live block's top, not the content tail. Pushing
+  // the block top to the pane top on send is what "pushes everything
+  // else up"; the sticky CSS holds it there while the run is busy.
+  function liveBlockGap(el: HTMLElement): number | null {
+    if (props.appearance !== "stacked") return null;
+    const live = el.querySelector<HTMLElement>(".msg-block.live");
+    if (!live) return null;
+    return live.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  }
+
   function scrollDown(force = false) {
     if (force) pinned.value = true;
     requestAnimationFrame(() => {
       const el = messagesEl.value;
       if (!el) return;
       if (!force && !pinned.value) return;
+      const gap = liveBlockGap(el);
+      if (gap !== null) {
+        el.scrollTop += gap;
+        return;
+      }
       el.scrollTop = el.scrollHeight;
     });
   }

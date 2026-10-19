@@ -984,6 +984,9 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   border: none;
 }
 
+/* hover affordance matches the tool-call rows (Endo 2026-10-20) */
+.messages.stacked .thinking summary:hover { background: var(--z1-raised); }
+
 .messages.stacked .msg.assistant .bubble {
   width: 100%;
   max-width: 100%;
