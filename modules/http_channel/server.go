@@ -58,6 +58,11 @@ type Server struct {
 
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
+
+	// themes serves GET /themes backed by the OMEGA_HOME/themes folder,
+	// watched with the cron watcher's mtime-poll pattern. Nil-safe: no
+	// home configured means an empty list and no watcher.
+	themes *themeRegistry
 }
 
 // NewServer creates a Server. tools is the registry of executable tools
@@ -69,7 +74,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	if tools == nil {
 		tools = map[string]agent.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now()}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -92,6 +97,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/skills", s.handleSkills)
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/settings", s.handleSettings)
+	mux.HandleFunc("/themes", s.handleThemes)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
@@ -147,6 +153,8 @@ func (s *Server) Handler() http.Handler {
 // which passes a signal-derived context here.
 func (s *Server) Serve(ctx context.Context, addr string) error {
 	s.httpSrv.Addr = addr
+	// hot-reload: the themes folder watcher dies with the server ctx.
+	go s.themes.watch(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.httpSrv.ListenAndServe()

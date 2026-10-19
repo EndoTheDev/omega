@@ -1044,7 +1044,10 @@ export interface SettingKnob {
   label: string;
   type: "toggle" | "number" | "text" | "secret" | "select" | "textarea" | "bindlist";
   value: unknown;
-  options?: string[];
+  // options drive select knobs: plain strings are value+label; the
+  // object form splits them (user themes label their names, value
+  // theme:<id>). Server knobs only ever send plain strings.
+  options?: (string | { value: string; label: string })[];
   min?: number;
   max?: number;
   step?: number;
@@ -1139,6 +1142,124 @@ export async function saveSettings(values: Record<string, unknown>): Promise<Set
     throw new Error(msg);
   }
   return normalizeSettingsPayload(await r.json());
+}
+
+// --- themes: user token themes behind /themes ---
+
+// ThemeMode is the theme select's value space: the three built-in
+// modes, or a user theme applied by id (theme:<id> from GET /themes).
+export type ThemeMode = "auto" | "light" | "dark" | `theme:${string}`;
+
+export interface UserTheme {
+  id: string;
+  name: string;
+  base: "dark" | "light";
+  tokens: Record<string, string>;
+  error?: string;
+}
+
+// THEME_TOKEN_KEYS mirrors the server's token allowlist (the color set
+// main.css defines, plus the two layer shadows). It exists to CLEAR
+// overrides when a user theme is switched off (built-in modes must
+// restore :root / [data-theme=light] values untouched); the server
+// validates what may be set.
+export const THEME_TOKEN_KEYS = [
+  "accent",
+  "unread",
+  "z0",
+  "z1",
+  "z1-raised",
+  "z2",
+  "stroke",
+  "text",
+  "text-dim",
+  "ok",
+  "err",
+  "shadow-1",
+  "shadow-2",
+] as const;
+
+// themeSelectValue / parseThemeSelect: the wire value of a user theme
+// in the theme select.
+const THEME_SELECT_PREFIX = "theme:";
+export const themeSelectValue = (id: string) =>
+  `${THEME_SELECT_PREFIX}${id}`;
+export const parseThemeSelect = (value: string): string | null =>
+  value.startsWith(THEME_SELECT_PREFIX)
+    ? value.slice(THEME_SELECT_PREFIX.length)
+    : null;
+
+// usableThemes: the picker lists only themes that parsed and validated.
+export function usableThemes(themes: UserTheme[]): UserTheme[] {
+  return themes.filter((t) => !t.error);
+}
+
+// normalizeThemesPayload sanitizes a /themes response: malformed
+// entries drop out; error-flagged entries survive so the server's loud
+// failure stays inspectable. Pure.
+export function normalizeThemesPayload(raw: unknown): UserTheme[] {
+  const list =
+    raw && typeof raw === "object" && "themes" in (raw as Record<string, unknown>)
+      ? (raw as Record<string, unknown>).themes
+      : raw;
+  if (!Array.isArray(list)) return [];
+  const out: UserTheme[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.id !== "string") continue;
+    const base = v.base === "light" ? "light" : "dark";
+    const error = typeof v.error === "string" && v.error ? v.error : undefined;
+    const tokens: Record<string, string> = {};
+    if (v.tokens && typeof v.tokens === "object") {
+      for (const [k, tok] of Object.entries(v.tokens as Record<string, unknown>)) {
+        if (typeof tok === "string") tokens[k] = tok;
+      }
+    }
+    out.push({
+      id: v.id,
+      name: typeof v.name === "string" && v.name ? v.name : v.id,
+      base,
+      tokens,
+      error,
+    });
+  }
+  return out;
+}
+
+// fetchThemes loads the user theme list. Throws on non-2xx with the
+// server's message; the pane survives a failure (list just goes empty).
+export async function fetchThemes(): Promise<UserTheme[]> {
+  const r = await fetch("/themes");
+  if (!r.ok) {
+    let msg = `themes: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.error === "string") msg = body.error;
+    } catch {
+      // non-JSON failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+  return normalizeThemesPayload(await r.json());
+}
+
+// clearThemeTokens removes every token override the inline style
+// carries - the undo half of applying a user theme.
+export function clearThemeTokens(style: CSSStyleDeclaration): void {
+  for (const k of THEME_TOKEN_KEYS) style.removeProperty(`--${k}`);
+}
+
+// applyThemeTokens writes a user theme's overrides into the element's
+// inline style. Inline style beats both :root and [data-theme=light],
+// so overrides stack cleanly on the theme file's chosen base; clearing
+// first makes a re-apply (a file edited on disk) replace, not mix.
+export function applyThemeTokens(
+  style: CSSStyleDeclaration,
+  tokens: Record<string, string>,
+): void {
+  clearThemeTokens(style);
+  for (const [k, v] of Object.entries(tokens)) style.setProperty(`--${k}`, v);
 }
 
 // filterSettingGroups narrows the settings list live: a group survives

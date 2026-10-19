@@ -97,6 +97,7 @@
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
             :theme-mode="themeMode"
+            :user-themes="userThemes"
             @set-theme="setTheme" />
         </template>
       </DockSplit>
@@ -165,6 +166,25 @@
     pinSession,
     parseAppearance,
     APPEARANCE_KEY,
+    isAtBottom,
+    pillVisible,
+    lastUserText,
+    dropLastExchange,
+    hasInterruptedMarker,
+    withoutMarkers,
+    createItemKeySource,
+    streamChat,
+    attachSession,
+    fetchHealthInfo,
+    persistedTelemetry,
+    formatDurationMs,
+    StreamInterruptedError,
+    fetchThemes,
+    applyThemeTokens,
+    clearThemeTokens,
+    parseThemeSelect,
+    type UserTheme,
+    type ThemeMode,
   } from "./composables/omega";
   import type { Session, Appearance } from "./composables/omega";
   import {
@@ -630,14 +650,32 @@
   // the two archive sides never mix in one list
   watch(showArchived, () => refreshSessions());
 
-  // --- theme: light / dark / auto, persisted, auto follows the OS live ---
-  type ThemeMode = "auto" | "light" | "dark";
+  // --- theme: light / dark / auto / user themes, persisted, auto
+  // follows the OS live. A user theme (theme:<id> from GET /themes)
+  // recolors live by writing its token overrides into the inline style;
+  // the built-in modes undo that (clear overrides, data-theme only). ---
   const themeMode = ref<ThemeMode>("auto");
   let systemPrefersDark = true;
   let mediaQuery: MediaQueryList | null = null;
+  const userThemes = ref<UserTheme[]>([]);
 
   function applyTheme() {
     if (typeof document === "undefined") return;
+    const userId = parseThemeSelect(themeMode.value);
+    if (userId) {
+      const theme = userThemes.value.find((t) => t.id === userId && !t.error);
+      if (theme) {
+        // overrides stack on the theme file's chosen base palette
+        document.documentElement.dataset.theme = theme.base;
+        applyThemeTokens(document.documentElement.style, theme.tokens);
+        return;
+      }
+      // the theme file vanished from the folder: fall back to auto and
+      // stop persisting the dead id
+      themeMode.value = "auto";
+      localStorage.setItem("omega.theme-mode", "auto");
+    }
+    clearThemeTokens(document.documentElement.style);
     const dark =
       themeMode.value === "auto" ?
         systemPrefersDark
@@ -652,6 +690,41 @@
   }
 
   watch(themeMode, applyTheme);
+  // a user theme edited (or deleted) on disk re-applies live the moment
+  // the refreshed list lands - the drawer refetches on every open, so
+  // an edit reflects on the next apply without restart or reload
+  watch(
+    userThemes,
+    () => {
+      if (parseThemeSelect(themeMode.value)) applyTheme();
+    },
+    { deep: true },
+  );
+
+  // and the picker refetches on every settings open: a theme dropped
+  // into the folder while the app runs shows up (and a broken file
+  // disappears from the list) without a restart
+  watch(settingsOpen, (open) => {
+    if (open) void loadUserThemes();
+  });
+
+  // loadUserThemes refreshes the picker's list. Fetched on mount (so a
+  // persisted theme:<id> applies) and on every settings open (so a
+  // dropped or edited file shows up without a restart). A failure just
+  // empties the list - the pane keeps its built-in modes.
+  async function loadUserThemes() {
+    try {
+      userThemes.value = await fetchThemes();
+    } catch {
+      userThemes.value = [];
+    }
+    const userId = parseThemeSelect(themeMode.value);
+    if (userId && !userThemes.value.some((t) => t.id === userId && !t.error)) {
+      themeMode.value = "auto";
+      localStorage.setItem("omega.theme-mode", "auto");
+    }
+    applyTheme();
+  }
 
   // --- tab-title spinner: a global read over the per-session busy map ---
   // Any live stream - in any session, any tab - spins the tab title;
@@ -690,10 +763,16 @@
       closeOverlays(); // crossing the breakpoint resets overlay state
     });
 
-    // restore persisted mode
-    const saved = localStorage.getItem("omega.theme-mode") as ThemeMode | null;
-    if (saved === "light" || saved === "dark" || saved === "auto")
-      themeMode.value = saved;
+    // restore persisted mode: a built-in mode or theme:<id>
+    const saved = localStorage.getItem("omega.theme-mode");
+    if (
+      saved === "light" ||
+      saved === "dark" ||
+      saved === "auto" ||
+      saved?.startsWith("theme:")
+    )
+      themeMode.value = saved as ThemeMode;
+    void loadUserThemes();
 
     // restore the chat appearance (chat | stacked) - parseAppearance
     // falls back to the default on a missing/tampered value
