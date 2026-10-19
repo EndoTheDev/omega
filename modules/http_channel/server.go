@@ -198,9 +198,12 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 // chatRequest is the /chat body. tools is an optional list of tool names
 // to enable for this run; empty enables the full server registry.
-// session_id, when set, persists the conversation to that session.
-// model, when set, serves this run on that model - the default stays
-// untouched, so concurrent chats keep their own model.
+// session_id, when set, persists the conversation to that session; when
+// empty on a server WITH a store, the request auto-creates a session and
+// persists normally (Endo 2026-10-18: /chat is always durable - the new
+// id rides the first `session` SSE frame). Without a store the run stays
+// ephemeral. model, when set, serves this run on that model - the
+// default stays untouched, so concurrent chats keep their own model.
 type chatRequest struct {
 	Messages  []json.RawMessage `json:"messages"`
 	Tools     []string          `json:"tools,omitempty"`
@@ -312,6 +315,31 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-create: a /chat without session_id IS a new session now
+	// (Endo 2026-10-18: /chat is always durable, the webui's
+	// create-then-send dance is gone). Generate the id here and ride
+	// the normal session-backed path - persistence, provisional title,
+	// live reattach all behave exactly as for a POST /sessions id.
+	// This runs BEFORE loadSessionMessages: the incoming user messages
+	// belong to the new session and persist through the same path as
+	// for a pre-created id.
+	autoCreated := false
+	if s.store != nil && req.SessionID == "" {
+		id, err := agent.NewSessionID()
+		if err != nil {
+			// same fallback POST /sessions uses - crypto/rand never
+			// fails on supported platforms; this only keeps the
+			// server alive if it ever does
+			id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+		}
+		if err := s.store.CreateSession(r.Context(), id, "", ""); err != nil {
+			http.Error(w, "create session: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		req.SessionID = id
+		autoCreated = true
+	}
+
 	messages, ok := s.loadSessionMessages(r.Context(), w, req, messages)
 	if !ok {
 		return
@@ -340,11 +368,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tell the client its session id before any run frames: the webui
+	// re-keys its stream state from this frame (it no longer POSTs
+	// /sessions first). Only the auto-created origin stream carries it -
+	// reattach subscribers already know the id from their URL.
+	if autoCreated {
+		writeSSE(w, "session", []byte(fmt.Sprintf(`{"id":%q}`, req.SessionID)))
+		flusher.Flush()
+	}
+
 	tools := s.selectTools(req.Tools)
 
-	// No session to reattach to: the legacy inline path. The stream still
-	// rides this request, client presence still gates the run.
-	if s.store == nil || req.SessionID == "" {
+	// No store: the legacy ephemeral path. The stream still rides this
+	// request, client presence still gates the run.
+	if s.store == nil {
 		recs, usage, last := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
 		if err := s.persistAssistant(r.Context(), prov, req, recs, usage, last); err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
