@@ -91,6 +91,35 @@ func (a *Agent) SetToolProviders(tps []ToolProvider) {
 	a.toolProviders = tps
 }
 
+// Tools returns a snapshot of the agent's executable tool registry: the
+// explicit tools plus every ToolProvider's map - the union Run actually
+// loops with (see RunWithProvider / the loop's merge order). The copy is
+// defensive: callers (e.g. the HTTP channel's /tools listing) can never
+// mutate the agent's underlying maps.
+func (a *Agent) Tools() map[string]Tool {
+	size := len(a.tools)
+	for _, tp := range a.toolProviders {
+		if tp != nil {
+			size += len(tp.Tools())
+		}
+	}
+	tools := make(map[string]Tool, size)
+	for name, t := range a.tools {
+		tools[name] = t
+	}
+	for _, tp := range a.toolProviders {
+		if tp == nil {
+			continue
+		}
+		for name, t := range tp.Tools() {
+			if _, exists := tools[name]; !exists {
+				tools[name] = t
+			}
+		}
+	}
+	return tools
+}
+
 // SetPromptBuilder installs the prompt builder for system prompt assembly.
 func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb

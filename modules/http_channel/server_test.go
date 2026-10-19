@@ -111,6 +111,11 @@ func newTestServer() *Server {
 // The real loop lives in modules/agent_loop/.
 type testLoop struct{}
 
+// testToolProvider is a stub ToolProvider for the /tools inventory test.
+type testToolProvider struct{ tools map[string]agent.Tool }
+
+func (p testToolProvider) Tools() map[string]agent.Tool { return p.tools }
+
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
 	if opts.Provider != nil {
@@ -1367,5 +1372,74 @@ func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != label || sess.TitleState != 2 {
 		t.Fatalf("second exchange retitled: %+v (was label %q)", sess, label)
+	}
+}
+
+// TestTools: GET /tools lists the registry as {name, description}, sorted
+// by name; a bare server (nil registry) answers []; any other method is
+// 405. The webui's module-owned tools panel renders this inventory.
+func TestTools(t *testing.T) {
+	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, map[string]agent.Tool{
+		"shell.run":   {Description: "run a shell command"},
+		"files.read":  {Description: "read a file"},
+		"files.write": {Description: "write a file"},
+	}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/tools", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []toolListing
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("tools = %+v, want 3 rows", got)
+	}
+	if got[0].Name != "files.read" || got[1].Name != "files.write" || got[2].Name != "shell.run" {
+		t.Fatalf("tools = %+v, want sorted by name", got)
+	}
+	if got[0].Description != "read a file" {
+		t.Fatalf("description = %q, want 'read a file'", got[0].Description)
+	}
+
+	// the real registry comes from the agent's ToolProviders (the loop
+	// merges those with the server set) - /tools must show them too
+	a.SetToolProviders([]agent.ToolProvider{testToolProvider{tools: map[string]agent.Tool{
+		"web.search": {Description: "search the web"},
+	}}})
+	rec4 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec4, httptest.NewRequest(http.MethodGet, "/tools", nil))
+	var got4 []toolListing
+	if err := json.Unmarshal(rec4.Body.Bytes(), &got4); err != nil {
+		t.Fatalf("decode provider body: %v", err)
+	}
+	if len(got4) != 4 {
+		t.Fatalf("tools = %+v, want 4 rows (server set + provider set)", got4)
+	}
+	if got4[0].Name != "files.read" || got4[3].Name != "web.search" {
+		t.Fatalf("tools = %+v, want provider tools in the sorted union", got4)
+	}
+
+	// empty registry: [] on the wire, never null
+	bare := newTestServer()
+	rec2 := httptest.NewRecorder()
+	bare.Handler().ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/tools", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("bare status = %d, want 200", rec2.Code)
+	}
+	if body := rec2.Body.String(); body != "[]\n" {
+		t.Fatalf("bare body = %q, want []", body)
+	}
+
+	// method gate
+	rec3 := httptest.NewRecorder()
+	bare.Handler().ServeHTTP(rec3, httptest.NewRequest(http.MethodPost, "/tools", nil))
+	if rec3.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d, want 405", rec3.Code)
 	}
 }

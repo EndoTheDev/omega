@@ -61,8 +61,8 @@
     parseExpandedPaths,
     sortFileEntries,
     serializeExpandedPaths,
-  } from "../composables/omega";
-  import type { FileEntry } from "../composables/omega";
+  } from "../../composables/omega";
+  import type { FileEntry } from "../../composables/omega";
 
   // Inspector file tree (VS Code-style): one row per entry, chevron rows
   // expand in place, and expanding a directory lazy-loads exactly one

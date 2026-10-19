@@ -69,13 +69,26 @@
         <pre class="preview-body">{{ preview.content }}</pre>
       </template>
     </div>
+    <!-- module-panels: the composition mount (see composables/
+         module-panels.generated.ts). Each module that ships UI in
+         modules/<name>/ui/ renders here, self-titled. Provisional host
+         for the panels; the inspector-tab card gives them real tabs. -->
+    <div
+      v-if="modulePanels.length"
+      class="module-panels">
+      <component
+        :is="p.component"
+        v-for="p in modulePanels"
+        :key="p.module" />
+    </div>
   </aside>
 </template>
 
 <script setup lang="ts">
   import { ref, watch } from "vue";
-  import { fetchFilesBrowse, fetchFilesRead, sortFileEntries } from "../composables/omega";
-  import type { FileEntry } from "../composables/omega";
+  import { fetchFilesBrowse, fetchFilesRead, sortFileEntries } from "../../composables/omega";
+  import type { FileEntry } from "../../composables/omega";
+  import { modulePanels } from "../../composables/module-panels.generated";
 
   // Inspector pane: a tab shell with the Files tab live. Parked tabs
   // (git view, session details, SSE wire log) are future siblings in the
