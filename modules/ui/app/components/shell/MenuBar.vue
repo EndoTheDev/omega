@@ -23,13 +23,16 @@
       </button>
     </div>
     <span class="menubar-spacer" />
+    <!-- the sidebars are FIXED panes (card t_4ae27e0d): no desktop
+         toggle exists. On mobile the dock panes turn into slide-in
+         drawers below 768px - these buttons surface ONLY there, as the
+         drawers' handles. -->
     <button
-      class="icon-btn"
-      aria-label="Toggle left sidebar"
-      :title="sidebarOpen ? 'Close left sidebar' : 'Open left sidebar'"
+      class="icon-btn drawer-btn"
+      aria-label="Open the sessions drawer"
+      title="sessions"
       @click="$emit('toggle-sidebar')">
       <svg
-        v-if="sidebarOpen"
         xmlns="http://www.w3.org/2000/svg"
         width="16"
         height="16"
@@ -46,38 +49,16 @@
             x="3"
             y="3"
             rx="2" />
-          <path d="M9 3v18m7-6l-3-3l3-3" />
-        </g>
-      </svg>
-      <svg
-        v-else
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M9 3v18m5-12l3 3l-3 3" />
+          <path d="M9 3v18" />
         </g>
       </svg>
     </button>
     <button
-      class="icon-btn"
-      aria-label="Toggle right sidebar"
-      :title="inspectorOpen ? 'Close right sidebar' : 'Open right sidebar'"
+      class="icon-btn drawer-btn"
+      aria-label="Open the inspector drawer"
+      title="inspector"
       @click="$emit('toggle-inspector')">
       <svg
-        v-if="inspectorOpen"
         xmlns="http://www.w3.org/2000/svg"
         width="16"
         height="16"
@@ -94,28 +75,7 @@
             x="3"
             y="3"
             rx="2" />
-          <path d="M15 3v18M8 9l3 3l-3 3" />
-        </g>
-      </svg>
-      <svg
-        v-else
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M15 3v18m-5-6l-3-3l3-3" />
+          <path d="M15 3v18" />
         </g>
       </svg>
     </button>
@@ -130,9 +90,10 @@
 </template>
 
 <script setup lang="ts">
+  // desktop: the toggles are gone - the sidebars are fixed panes. The
+  // drawer buttons surface on mobile only (the CSS hides them above
+  // 768px); `view` drives the chat/board switch chips.
   defineProps<{
-    sidebarOpen: boolean;
-    inspectorOpen: boolean;
     view: "chat" | "board";
   }>();
 

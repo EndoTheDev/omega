@@ -1,8 +1,6 @@
 <template>
   <div class="shell">
     <MenuBar
-      :sidebar-open="sidebarPaneOpen"
-      :inspector-open="inspectorPaneOpen"
       :view="mainView"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
@@ -77,15 +75,40 @@
           </div>
         </template>
 
-        <template #pane-inspector>
-          <!-- mobile: the slide-in overlay; desktop: a real dock pane.
-               `visible` stays the root-listing fetch trigger (drawer flag
-               on mobile, always true in the dock tab). -->
-          <RightSidebar
+        <!-- card t_4ae27e0d: the RIGHT sidebar's views are REAL dock tabs
+             (Files / Cron / Logs / Skills / Tools - the chip strip is
+             gone). Files is the shell's own panel; each module view is
+             the composition panel body, resolved by module name - the
+             dock tabbar hosts the tab, this outlet only hosts content. -->
+        <template #pane-files>
+          <FilesTab
             class="pane"
             :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
-            :open="inspectorOpen"
-            :visible="isMobile ? inspectorOpen : true" />
+            :open="inspectorOpen" />
+        </template>
+        <template #pane-cron>
+          <InspectorPanel
+            class="pane"
+            module="cron"
+            :open="isMobile ? inspectorOpen : false" />
+        </template>
+        <template #pane-http_channel>
+          <InspectorPanel
+            class="pane"
+            module="http_channel"
+            :open="isMobile ? inspectorOpen : false" />
+        </template>
+        <template #pane-skills>
+          <InspectorPanel
+            class="pane"
+            module="skills"
+            :open="isMobile ? inspectorOpen : false" />
+        </template>
+        <template #pane-tools>
+          <InspectorPanel
+            class="pane"
+            module="tools"
+            :open="isMobile ? inspectorOpen : false" />
         </template>
 
         <!-- card 5 (t_35b5594a): settings is a dock-tab singleton - the
@@ -187,10 +210,9 @@
   } from "./composables/omega";
   import type { Session, Appearance } from "./composables/omega";
   import {
-    allNodes,
     createDock,
     findPane,
-    isPane,
+    isPinnedPane,
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
@@ -264,15 +286,9 @@
   // whole tree. The components resolve it via injection. ---
   const dock = createDock(window.localStorage);
   provide(DOCK_API_KEY, dock);
-  // MenuBar flags: the drawers (mobile) and the tree (desktop). The
-  // gear is not a toggle flag (card 5): it OPENS the settings singleton
-  // tab, and a second click FOCUSES the live instance wherever it sits.
-  const sidebarPaneOpen = computed(() =>
-    isMobile.value ? drawerOpen.value : dock.has("sidebar"),
-  );
-  const inspectorPaneOpen = computed(() =>
-    isMobile.value ? inspectorOpen.value : dock.has("inspector"),
-  );
+  // the sidebars are FIXED panes (card t_4ae27e0d): no open/close state
+  // exists on desktop. drawerOpen/inspectorOpen are the MOBILE overlay
+  // flags only; the MenuBar drawer buttons surface on mobile only.
 
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
@@ -318,12 +334,18 @@
   provide(CHAT_HOST_KEY, host);
 
   // chat tab titles read the session labels; the sidebar highlight
-  // follows the FOCUSED tab - the bar label has to show it
+  // follows the FOCUSED tab - the bar label has to show it. Non-chat
+  // tabs: the inspector's module views resolve their ui/dockable.json
+  // title (the same voice the old chip strip used); the registry
+  // fallback covers the rest (files = "Files").
   provide(DOCK_TAB_TITLE_KEY, (tab) => {
-    if (tab.component !== "chat") return null;
-    if (!tab.sessionRef) return "new chat";
-    const s = sessions.value.find((x) => x.id === tab.sessionRef);
-    return s?.label || "chat";
+    if (tab.component === "chat") {
+      if (!tab.sessionRef) return "new chat";
+      const s = sessions.value.find((x) => x.id === tab.sessionRef);
+      return s?.label || "chat";
+    }
+    const panel = modulePanels.find((p) => p.module === tab.component);
+    return panel?.dockable?.title ?? null;
   });
 
   // chat is multi-instance: the '+' / empty-pane "new chat" MUST go
@@ -397,43 +419,48 @@
   }
 
   // the pane a singleton open targets when no click has landed yet: the
-  // first pane in the tree (depth-first, same walk openSingleton uses)
+  // LAST-CLICKED pane when it is a main pane, else the first main pane.
+  // card t_4ae27e0d: pinned sidebars never host singleton opens - a chat/
+  // settings tab must never land in them.
   function resolveFocusedPaneId(): string {
     const tree = dock.tree.value;
     const focused = lastPaneId.value ?
       findPane(tree, lastPaneId.value) :
       null;
-    if (focused) return focused.id;
-    for (const n of allNodes(tree)) {
-      if (isPane(n)) return n.id;
-    }
-    return ""; // unreachable: the tree always contains at least one pane
+    if (focused && !isPinnedPane(focused)) return focused.id;
+    return dock.ensureMainPane();
   }
 
+  // the pane the BOARD view hosts into (and chat opens fall back to): an
+  // actually chat-hosting pane first, else the first main pane (never the
+  // pinned sidebars). The dock's ensureMainPane re-inserts a flexible pane
+  // when the user managed to remove every main pane.
   function resolveActivePaneId(): string {
     const tree = dock.tree.value;
     const focused = activeChatPaneId.value ?
       findPane(tree, activeChatPaneId.value) :
       null;
-    if (focused && focused.tabs.some((t) => t.component === "chat")) return focused.id;
-    // not focused on a chat-hosting pane: the first pane that hosts one,
-    // else the first pane in the tree (never auto-splits for the user)
-    for (const n of allNodes(tree)) {
-      if (isPane(n) && n.tabs.some((t) => t.component === "chat")) return n.id;
-    }
-    for (const n of allNodes(tree)) {
-      if (isPane(n)) return n.id;
-    }
-    return ""; // unreachable: the tree always contains at least one pane
+    if (focused && !isPinnedPane(focused) && focused.tabs.some((t) => t.component === "chat")) return focused.id;
+    return dock.ensureMainPane();
   }
 
   // openChatTab is THE tab-opener: the sidebar's row click (session id)
   // and the '+' flows (null = unsaved composer-first) go through it.
-  // Always a NEW tab - the settled ruling allows the same session in
-  // two tabs; the sidebar's highlight follows the focused tab.
+  // card t_4ae27e0d routing: a session ALWAYS opens in the main pane, and
+  // a tab already bound to that session is FOCUSED wherever it lives -
+  // never a duplicate. Only "new" (or an unbound session) mints a tab.
   function openChatTab(sessionId: string | null, paneId?: string) {
-    const pane = paneId ?? resolveActivePaneId();
-    if (!pane) return;
+    if (sessionId) {
+      const found = dock.firstChatTab(sessionId);
+      if (found?.tab.key) {
+        dock.focus(found.paneId, found.index);
+        focusedKey.value = found.tab.key;
+        markRead(sessionId);
+        if (isMobile.value) drawerOpen.value = false;
+        return;
+      }
+    }
+    const pane = paneId ?? dock.ensureMainPane();
     const key = nextTabKey();
     dock.openTab(pane, {
       component: "chat",
@@ -525,19 +552,13 @@
     }
   }
 
-  // mobile: one drawer at a time - opening any pane closes the other
+  // mobile: one drawer at a time. The sidebars are FIXED (card
+  // t_4ae27e0d): the desktop tree never gains or loses them; the
+  // MenuBar's drawer buttons surface only under the 768px breakpoint,
+  // so these are pure overlay flips of the always-present panes.
   function toggleSidebar() {
-    if (isMobile.value) {
-      // the drawer needs its pane rendered (empty panes are hidden by CSS):
-      // absent -> insert it first, then flip the overlay open
-      dock.ensureEdge("sidebar", "before");
-      inspectorOpen.value = false;
-      drawerOpen.value = !drawerOpen.value;
-    } else {
-      // desktop: the TREE owns presence - remove/re-insert the edge pane
-      // (the store remembers the width and applies the reopen-clamp)
-      dock.toggleEdge("sidebar", "before");
-    }
+    inspectorOpen.value = false;
+    drawerOpen.value = !drawerOpen.value;
   }
 
   function closeOverlays() {
@@ -547,22 +568,16 @@
 
   // mobile: one drawer at a time
   function toggleInspector() {
-    if (isMobile.value) {
-      dock.ensureEdge("inspector", "after"); // overlay needs its pane present
-      drawerOpen.value = false;
-      inspectorOpen.value = !inspectorOpen.value;
-      return;
-    }
-    // desktop: the TREE owns presence - the store remembers the width and
-    // reopen-clamps
-    dock.toggleEdge("inspector", "after");
+    drawerOpen.value = false;
+    inspectorOpen.value = !inspectorOpen.value;
   }
 
   // card 5 (t_35b5594a): the menubar gear is the settings singleton's
   // opener - NOT a toggle. First click OPENS a settings tab in the
-  // focused main pane (the last pane clicked, else the tree's first
-  // pane); every later click FOCUSES the existing instance wherever it
-  // was dragged to (openSingleton's contract). Closing is the tab's ×.
+  // focused MAIN pane (the last pane clicked, else the first main pane
+  // - card t_4ae27e0d: never a pinned sidebar); every later click
+  // FOCUSES the existing instance wherever it was dragged to
+  // (openSingleton's contract). Closing is the tab's ×.
   function openSettings() {
     dock.openSingleton(resolveFocusedPaneId(), "settings");
     // the picker refetches on every settings open: a theme dropped into

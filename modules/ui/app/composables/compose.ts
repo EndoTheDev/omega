@@ -66,32 +66,6 @@ export function scanModuleUIs(modulesRoot: string): ModuleUI[] {
 // is null (the scan must never throw on module content it does not own).
 const DOCKABLE_POLICIES = new Set(["singleton", "multi"]);
 
-// --- the inspector tab model (card t_db430fea) ---
-
-// One inspector tab backing a module panel.
-export interface InspectorPanelTab {
-  module: string;
-  title: string;
-}
-
-/**
- * The inspector tab bar's module entries: one per module-UI panel that
- * is NOT a main-view module (kanban's board renders in its own pane,
- * never as inspector content), in the generated list's order -
- * alphabetical by module name, which the composition guarantees stable.
- * The shell's Files tab prepends itself; this returns only the module
- * tabs. A tab's label is the module's ui/dockable.json title, falling
- * back to the module name.
- */
-export function inspectorPanelTabs(
-  panels: readonly { module: string; dockable?: { title?: string } | null }[],
-  mainViews: ReadonlySet<string>,
-): InspectorPanelTab[] {
-  return panels
-    .filter((p) => !mainViews.has(p.module))
-    .map((p) => ({ module: p.module, title: p.dockable?.title ?? p.module }));
-}
-
 function validIcon(v: unknown): boolean {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   const i = v as { paths?: unknown; rect?: unknown };

@@ -259,9 +259,13 @@ body {
   opacity: 0;
   transition: opacity 0.15s ease-out;
 }
+/* card t_4ae27e0d: the X shows on HOVER ONLY (never the resting active
+   tab); keyboard users still get the focus-visible reveal. Pinned panes
+   (sessions / inspector) never render one at all - belt and braces for
+   the template's v-if. */
 .dock-tab:hover .dock-tab-close,
-.dock-tab.active .dock-tab-close,
 .dock-tab-close:focus-visible { opacity: 1; }
+.dock-pane.pinned .dock-tab-close { display: none; }
 .dock-tab-close:hover { background: var(--z2); color: var(--text); }
 .dock-tab-new, .dock-tab-btn {
   flex: 0 0 auto;
@@ -459,6 +463,10 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .icon-btn svg { display: block; }
 .icon-btn:hover { color: var(--text); background: var(--z1-raised); }
+/* card t_4ae27e0d: the sidebar toggles are gone - desktop has fixed
+   panes. The two remaining drawer buttons exist ONLY as the mobile
+   drawers' handles (the media query below re-shows them under 768px). */
+.icon-btn.drawer-btn { display: none; }
 
 .new-btn {
   background: transparent;
@@ -719,29 +727,9 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   min-height: 0;
 }
 
-/* header tab bar: parked tabs (git view, session details, wire log) are
-   future siblings of the Files tab - same chip language as the shell */
-.inspector-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 10px 0;
-}
-
-.inspector-tab {
-  border: 1px solid var(--stroke);
-  background: transparent;
-  color: var(--text-dim);
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: var(--r-chip);
-  cursor: pointer;
-}
-.inspector-tab.active {
-  color: var(--text);
-  background: var(--z1-raised);
-  cursor: default;
-}
+/* header tab bar: DISSOLVED (card t_4ae27e0d) - the inspector's views
+   (Files / Cron / Logs / Skills / Tools) are real dock tabs hosted by
+   the dock tabbar; the in-pane chip strip is gone. */
 
 /* the module panel body (cron / skills / tools / logs tabs, card
    t_db430fea): one scroll region, same voice as the files tree */
@@ -1857,10 +1845,17 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 
   .pane-area { padding: 0; gap: 0; }
 
-  /* dock cells: sidebar/inspector panes host the slide-in overlays - the
+  /* dock cells: the pinned sidebars host the slide-in overlays - the
      CELL must not take flex space while their content floats fixed.
-     !important beats the tree's inline sizes. */
-  .dock-cell.kind-sidebar, .dock-cell.kind-inspector {
+     !important beats the tree's inline sizes. card t_4ae27e0d: the
+     inspector pane's cells carry its tab's kind (kind-files and the
+     module kinds, not the old kind-inspector). */
+  .dock-cell.kind-sidebar,
+  .dock-cell.kind-files,
+  .dock-cell.kind-cron,
+  .dock-cell.kind-http_channel,
+  .dock-cell.kind-skills,
+  .dock-cell.kind-tools {
     width: 0 !important;
     height: 0 !important;
     min-width: 0 !important;
@@ -1869,6 +1864,10 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
     overflow: visible; /* the fixed overlays escape the zero cell */
   }
   .dock-split { flex-wrap: nowrap; }
+
+  /* the drawer handles come back under the breakpoint (fixed panes are
+     desktop chrome; on a phone they are drawers) */
+  .icon-btn.drawer-btn { display: inline-flex; }
 
   .sessions {
     position: fixed;
