@@ -123,6 +123,17 @@ func (p *Provider) WithModel(model string) ai.Provider {
 	return &cp
 }
 
+// WithThinkingLevel returns a copy of the provider streaming at the
+// given thinking level (the shared ai.ThinkingLevels ladder; "none"
+// sends no thinking parameter). Copy discipline matches WithModel:
+// the receiver is left unchanged, so per-run providers derived from
+// the mounted base never mutate it.
+func (p *Provider) WithThinkingLevel(level string) ai.Provider {
+	cp := *p
+	cp.thinkingLevel = level
+	return &cp
+}
+
 // ListModels fetches available models from the provider API.
 func (p *Provider) ListModels() ([]string, error) {
 	return p.listModels()
@@ -417,4 +428,3 @@ func (p *Provider) modelInfo() (int, error) {
 }
 
 // --- thinking level mappers ---
-

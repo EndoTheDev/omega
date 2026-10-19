@@ -80,6 +80,11 @@ type Provider interface {
 	// model. The receiver is left unchanged, so callers derive
 	// per-run providers without mutating shared state.
 	WithModel(model string) Provider
+	// WithThinkingLevel returns a copy of the provider streaming at
+	// the given thinking level (ai.ThinkingLevels ladder values).
+	// Same copy discipline as WithModel: the receiver is left
+	// unchanged, so concurrent per-run derivations don't interfere.
+	WithThinkingLevel(level string) Provider
 	ListModels() ([]string, error)
 	ModelInfo() (ModelInfo, error)
 }

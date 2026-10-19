@@ -1757,10 +1757,11 @@ func (emptyModelsProvider) Stream(ctx context.Context, messages []ai.Message, to
 	go close(ch)
 	return ch
 }
-func (emptyModelsProvider) ModelName() string                { return "test" }
-func (p emptyModelsProvider) WithModel(m string) ai.Provider { cp := p; return cp }
-func (emptyModelsProvider) SetThinkingLevel(string)          {}
-func (emptyModelsProvider) ListModels() ([]string, error)    { return []string{}, nil }
+func (emptyModelsProvider) ModelName() string                      { return "test" }
+func (p emptyModelsProvider) WithModel(m string) ai.Provider       { cp := p; return cp }
+func (p emptyModelsProvider) WithThinkingLevel(string) ai.Provider { cp := p; return cp }
+func (emptyModelsProvider) SetThinkingLevel(string)                {}
+func (emptyModelsProvider) ListModels() ([]string, error)          { return []string{}, nil }
 func (emptyModelsProvider) ModelInfo() (ai.ModelInfo, error) {
 	return ai.ModelInfo{ContextWindow: 8192}, nil
 }
@@ -1774,9 +1775,10 @@ func (errorModelsProvider) Stream(ctx context.Context, messages []ai.Message, to
 	go close(ch)
 	return ch
 }
-func (errorModelsProvider) ModelName() string                { return "test" }
-func (p errorModelsProvider) WithModel(m string) ai.Provider { cp := p; return cp }
-func (errorModelsProvider) SetThinkingLevel(string)          {}
+func (errorModelsProvider) ModelName() string                      { return "test" }
+func (p errorModelsProvider) WithModel(m string) ai.Provider       { cp := p; return cp }
+func (p errorModelsProvider) WithThinkingLevel(string) ai.Provider { cp := p; return cp }
+func (errorModelsProvider) SetThinkingLevel(string)                {}
 func (errorModelsProvider) ListModels() ([]string, error) {
 	return nil, fmt.Errorf("provider unavailable")
 }

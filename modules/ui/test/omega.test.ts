@@ -120,3 +120,32 @@ describe("handlePayload", () => {
     );
   });
 });
+
+import {
+  THINKING_LEVELS,
+  THINKING_UI_LEVELS,
+  thinkingLevelWire,
+} from "../app/composables/omega.ts";
+
+describe("thinkingLevelWire", () => {
+  it("UI levels mirror the go ladder with 'default' replacing 'none'", () => {
+    assert.deepEqual(
+      [...THINKING_UI_LEVELS],
+      ["default", ...THINKING_LEVELS.slice(1)],
+    );
+    assert.equal(THINKING_LEVELS.length, 10);
+  });
+
+  it("maps the selection to the wire index", () => {
+    assert.equal(thinkingLevelWire("default"), undefined);
+    assert.equal(thinkingLevelWire("none"), 0); // backend skips 0: no param
+    assert.equal(thinkingLevelWire("off"), 1);
+    assert.equal(thinkingLevelWire("medium"), 5);
+    assert.equal(thinkingLevelWire("ultra"), 9);
+  });
+
+  it("unknown selections fall back to unset (provider default)", () => {
+    assert.equal(thinkingLevelWire(""), undefined);
+    assert.equal(thinkingLevelWire("bogus"), undefined);
+  });
+});

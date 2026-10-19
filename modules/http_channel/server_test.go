@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -26,21 +28,39 @@ type mockProvider struct {
 	scripts   [][]ai.StreamEvent
 	mu        *sync.Mutex
 	calls     *int
+	// thinkingLevel is the ladder value a WithThinkingLevel copy
+	// carries; tests assert per-run threading from it.
+	thinkingLevel string
+	// seenLevels records the thinkingLevel of every Stream call,
+	// shared with WithModel/WithThinkingLevel copies behind mu.
+	seenLevels *[]string
 }
 
 func newMockProvider(modelName string, scripts ...[]ai.StreamEvent) *mockProvider {
 	calls := 0
+	levels := []string{}
 	return &mockProvider{
-		modelName: modelName,
-		scripts:   scripts,
-		mu:        &sync.Mutex{},
-		calls:     &calls,
+		modelName:  modelName,
+		scripts:    scripts,
+		mu:         &sync.Mutex{},
+		calls:      &calls,
+		seenLevels: &levels,
 	}
 }
 
 func (m *mockProvider) ModelName() string { return m.modelName }
 
-func (m *mockProvider) SetThinkingLevel(level string) {}
+func (m *mockProvider) SetThinkingLevel(level string) { m.thinkingLevel = level }
+
+// WithThinkingLevel returns a copy at the given thinking level under
+// the same lock-free value-copy discipline as WithModel: the receiver
+// is untouched, so concurrent derivations stay isolated. thinkingLevel
+// is read by tests; Stream itself never touches it.
+func (m *mockProvider) WithThinkingLevel(level string) ai.Provider {
+	cp := *m
+	cp.thinkingLevel = level
+	return &cp
+}
 
 func (m *mockProvider) WithModel(model string) ai.Provider {
 	cp := *m
@@ -57,6 +77,9 @@ func (m *mockProvider) ModelInfo() (ai.ModelInfo, error) {
 }
 
 func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+	m.mu.Lock()
+	*m.seenLevels = append(*m.seenLevels, m.thinkingLevel)
+	m.mu.Unlock()
 	events := make(chan ai.StreamEvent)
 	go func() {
 		defer close(events)
@@ -260,6 +283,109 @@ func TestChatSSE(t *testing.T) {
 	}
 	if chunk.Content != "hello" {
 		t.Fatalf("content = %q, want hello", chunk.Content)
+	}
+}
+
+// chatThinking is a /chat POST body with one user message and the
+// given thinking_level (-1 = omitted: unset on the wire).
+func chatThinking(t *testing.T, level int) []byte {
+	t.Helper()
+	msg := map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	}
+	if level != -1 {
+		msg["thinking_level"] = level
+	}
+	body, _ := json.Marshal(msg)
+	return body
+}
+
+// postChatBody runs one stateless /chat against s and returns the recorder.
+func postChatBody(s *Server, body []byte) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// TestChatThinkingLevel threads the ladder index into a per-run
+// provider copy: the Stream the loop runs sees the mapped ladder
+// level while the mounted base provider stays untouched.
+func TestChatThinkingLevel(t *testing.T) {
+	s := newTestServer()
+	base := s.agent.Provider().(*mockProvider)
+
+	rec := postChatBody(s, chatThinking(t, 6)) // "high" on the ladder
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := *base.seenLevels; len(got) != 1 || got[0] != "high" {
+		t.Fatalf("streamed levels = %v, want [high]", got)
+	}
+	if base.thinkingLevel != "" {
+		t.Fatalf("base mutated: thinkingLevel = %q, want empty", base.thinkingLevel)
+	}
+}
+
+// TestChatThinkingLevelDefault: index 0 ("none") and an omitted field
+// both leave the provider untouched - no thinking parameter sent.
+func TestChatThinkingLevelDefault(t *testing.T) {
+	s := newTestServer()
+	base := s.agent.Provider().(*mockProvider)
+
+	rec := postChatBody(s, chatThinking(t, 0))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status(0) = %d, want 200", rec.Code)
+	}
+	rec = postChatBody(s, chatThinking(t, -1))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status(omitted) = %d, want 200", rec.Code)
+	}
+	if got := *base.seenLevels; len(got) != 2 || got[0] != "" || got[1] != "" {
+		t.Fatalf("streamed levels = %v, want two empty (no override)", got)
+	}
+}
+
+// TestChatThinkingLevelInvalid: out-of-ladder indexes are a 400.
+func TestChatThinkingLevelInvalid(t *testing.T) {
+	s := newTestServer()
+	rec := postChatBody(s, chatThinking(t, len(ai.ThinkingLevels)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	rec = postChatBody(s, chatThinking(t, -3))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestChatThinkingLevelConcurrent is the concurrency law for the
+// thinking level: two /chat runs with different levels at the same
+// time each stream on their own copy, in order-indeed - and the base
+// provider keeps no level.
+func TestChatThinkingLevelConcurrent(t *testing.T) {
+	s := newTestServer()
+	base := s.agent.Provider().(*mockProvider)
+
+	var wg sync.WaitGroup
+	for _, level := range []int{2, 7} { // "on", "extra high"
+		wg.Add(1)
+		go func(level int) {
+			defer wg.Done()
+			if rec := postChatBody(s, chatThinking(t, level)); rec.Code != http.StatusOK {
+				t.Errorf("status(%d) = %d, want 200", level, rec.Code)
+			}
+		}(level)
+	}
+	wg.Wait()
+
+	levels := *base.seenLevels
+	sort.Strings(levels)
+	if !reflect.DeepEqual(levels, []string{"extra high", "on"}) {
+		t.Fatalf("streamed levels = %v, want [extra high, on]", levels)
+	}
+	if base.thinkingLevel != "" {
+		t.Fatalf("base mutated: thinkingLevel = %q", base.thinkingLevel)
 	}
 }
 
@@ -1207,8 +1333,8 @@ func TestSessionByIDNotFound(t *testing.T) {
 // to every Stream call, so the title prompt shape is directly checked.
 type captureProvider struct {
 	mockProvider
-	mu       sync.Mutex
-	prompts  []string
+	mu      sync.Mutex
+	prompts []string
 }
 
 func newCaptureProvider(scripts ...[]ai.StreamEvent) *captureProvider {
