@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -775,7 +776,12 @@ func TestChatWithSessionMissing(t *testing.T) {
 	}
 }
 
-func TestChatWithoutSessionStateless(t *testing.T) {
+// TestChatWithoutSessionAutoCreates pins the Endo 2026-10-18 contract:
+// a /chat with no session_id on a store-backed server creates a session,
+// persists normally, and tells the client the id via a leading `session`
+// SSE frame. Without a store the run stays ephemeral (TestChatSSE pins
+// that shape).
+func TestChatWithoutSessionAutoCreates(t *testing.T) {
 	s, store := newTestServerWithStore(t)
 	body, _ := json.Marshal(map[string]any{
 		"messages": []map[string]any{{"role": "user", "content": "hi"}},
@@ -786,12 +792,107 @@ func TestChatWithoutSessionStateless(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
+
+	// the leading frame names the created session
+	events := parseSSE(t, rec.Body.String())
+	if len(events) < 2 || events[0].event != "session" {
+		t.Fatalf("first frames = %v, want a leading session frame", events)
+	}
+	var sessFrame struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(events[0].data, &sessFrame); err != nil {
+		t.Fatalf("decode session frame: %v", err)
+	}
+	if sessFrame.ID == "" {
+		t.Fatalf("session frame id empty")
+	}
+
+	// the session exists and carries the whole persisted exchange
+	ctx := context.Background()
+	messages, err := store.GetMessages(ctx, sessFrame.ID)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("len = %d, want 2 (user + assistant)", len(messages))
+	}
+	if _, ok := messages[1].(ai.Assistant); !ok {
+		t.Fatalf("messages[1] = %T, want ai.Assistant", messages[1])
+	}
+
+	// and it shows up in the list like any other session
+	sessions, err := store.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != sessFrame.ID {
+		t.Fatalf("list = %+v, want exactly the created session %q", sessions, sessFrame.ID)
+	}
+}
+
+// TestChatNoSessionConcurrent pins the no-collision property: N parallel
+// session-less /chat calls each land in their OWN session - no shared
+// id, no CreateSession clash, every exchange persisted intact.
+func TestChatNoSessionConcurrent(t *testing.T) {
+	s, store := newTestServerWithStore(t)
+	body, _ := json.Marshal(map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	const n = 12
+	ids := make(chan string, n)
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				errs <- fmt.Errorf("status = %d", rec.Code)
+				return
+			}
+			events := parseSSE(t, rec.Body.String())
+			if len(events) == 0 || events[0].event != "session" {
+				errs <- fmt.Errorf("no leading session frame")
+				return
+			}
+			var frame struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(events[0].data, &frame); err != nil {
+				errs <- fmt.Errorf("decode: %v", err)
+				return
+			}
+			ids <- frame.ID
+		}()
+	}
+	seen := map[string]bool{}
+	for i := 0; i < n; i++ {
+		select {
+		case err := <-errs:
+			t.Fatalf("concurrent chat: %v", err)
+		case id := <-ids:
+			if seen[id] {
+				t.Fatalf("session id %q reused across concurrent chats", id)
+			}
+			seen[id] = true
+		}
+	}
 	sessions, err := store.ListSessions(context.Background())
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Fatalf("stateless chat should persist nothing, got %d sessions", len(sessions))
+	if len(sessions) != n {
+		t.Fatalf("list has %d sessions, want %d", len(sessions), n)
+	}
+	for _, sess := range sessions {
+		messages, err := store.GetMessages(context.Background(), sess.ID)
+		if err != nil {
+			t.Fatalf("get messages: %v", err)
+		}
+		if len(messages) != 2 {
+			t.Fatalf("session %s has %d messages, want 2", sess.ID, len(messages))
+		}
 	}
 }
 
