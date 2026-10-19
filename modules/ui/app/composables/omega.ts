@@ -81,15 +81,16 @@ export interface LastRunStats {
 }
 
 // TranscriptDetail is the GET /sessions/{id}/transcript payload: the
-// session row (telemetry, active flag) plus the server-rendered
+// session row (telemetry, running flag) plus the server-rendered
 // transcript items - restore's single fetch, no client-side
 // reconstruction.
 export interface TranscriptDetail {
   session: Session;
-  // live-run flag (GET /sessions/{id}, always present true/false): true
-  // while a detached /chat run streams this session - openSession
-  // auto-subscribes to the live events stream when it sees this,
-  // instead of only showing history.
+  // live-run flag (always present, true/false): true while a detached
+  // /chat run streams this session - openSession auto-subscribes to the
+  // live events stream when it sees this, instead of only showing
+  // history. The runHub, not the client, owns "is this session
+  // streaming" - every tab reconciles against the row.
   running?: boolean;
   items: TranscriptWireItem[];
 }

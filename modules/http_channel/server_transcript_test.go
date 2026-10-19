@@ -221,7 +221,7 @@ func TestSessionTranscriptHandler(t *testing.T) {
 	var body struct {
 		Session agent.Session `json:"session"`
 		Items   []transcriptItem
-		Active  bool `json:"active"`
+		Running bool `json:"running"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -229,8 +229,8 @@ func TestSessionTranscriptHandler(t *testing.T) {
 	if body.Session.ID != "s1" || body.Session.Label != "Run tests" {
 		t.Fatalf("session row = %+v", body.Session)
 	}
-	if body.Active {
-		t.Fatalf("no run is live - active must be false")
+	if body.Running {
+		t.Fatalf("no run is live - running must be false")
 	}
 	want := []string{"user", "thinking", "tool_call", "tool_result", "message"}
 	if got := kindsOf(body.Items); len(got) != len(want) {

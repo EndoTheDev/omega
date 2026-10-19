@@ -75,7 +75,10 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": sess,
 		"items":   buildTranscriptItems(bare),
-		"active":  s.runs.active(id),
+		// live-run flag (always present, running:true/false): the runHub,
+		// not the client, owns "is this session streaming" - the webui
+		// reattach flow reads this on session open
+		"running": s.runs.active(id),
 	})
 }
 
