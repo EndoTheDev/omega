@@ -31,6 +31,8 @@ import {
   hasInterruptedMarker,
   withoutMarkers,
   lastUserText,
+  attachImageUrl,
+  type OmegaImage,
 } from "./omega.ts";
 
 // --- transcript item shapes (moved from app.vue: every chat instance
@@ -46,6 +48,9 @@ export interface MessageItem {
   time?: string;
   // server-measured response duration (restored history)
   finalMs?: number;
+  // image attachments on user messages (paste/picker/url) - rendered
+  // as thumbnails inside the bubble
+  images?: OmegaImage[];
 }
 export interface ThinkingItem {
   kind: "thinking";
@@ -91,6 +96,9 @@ export interface ChatState {
   // the composer draft lives per state: switching tabs (unmount) keeps
   // half-written input, exactly like a VS Code editor keeps its buffer
   draft: string;
+  // pending image attachments, per tab like the draft: paste/picker/
+  // url-attach collect here and the next send carries them
+  attachments: OmegaImage[];
   statusLine: string;
   tokens: number;
   tokensPerSecond: number;
@@ -124,6 +132,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   sessionId: null,
   transcript: [],
   draft: "",
+  attachments: [],
   statusLine: "",
   tokens: 0,
   tokensPerSecond: 0,
@@ -171,6 +180,12 @@ export interface ChatHost {
   /** the ONE send path (composer submit + retry). Returns false when
       the per-session gate refused (double send, never double run). */
   submit(key: string, text: string, model?: string, thinking?: number): Promise<boolean>;
+  /** add picked/pasted images to this tab's pending attachments */
+  attachFiles(key: string, images: OmegaImage[]): void;
+  /** remove one pending attachment by index */
+  removeAttachment(key: string, index: number): void;
+  /** server-side fetch of an image URL into this tab's attachments */
+  attachUrl(key: string, url: string): Promise<void>;
   /** re-send this tab's last complete user message (interrupted/rebusy
       affordance); no-op while the session's run slot is taken */
   retry(key: string, model?: string, thinking?: number): Promise<boolean>;
@@ -221,6 +236,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         sessionId,
         transcript: [],
         draft: "",
+        attachments: [],
         statusLine: "",
         tokens: 0,
         tokensPerSecond: 0,
@@ -536,7 +552,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     thinking?: number,
   ): Promise<boolean> {
     const st = ensureState(key);
-    if (!text) return false;
+    if (!text && !st.attachments.length) return false;
     // per-session gate: the run slot is per session - a live run on the
     // SAME session anywhere (either of this page's tabs, the server's
     // active set) blocks a second send locally; the runHub 409 is the
@@ -552,6 +568,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       kind: "message",
       role: "user",
       content: text,
+      images: st.attachments.length ? st.attachments.slice() : undefined,
       time: new Date().toISOString(),
     });
     st.notify?.(true);
@@ -575,9 +592,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         return false;
       }
     }
+    const images = st.attachments.slice();
+    st.attachments = [];
     await runStream(st, (drv) =>
       streamChat(
-        [{ role: "user", content: text }],
+        [{ role: "user", content: text, images: images.length ? images : undefined }],
         st.sessionId!,
         drv.handlers,
         model,
@@ -598,6 +617,25 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     if (text === null) return false;
     submit(key, text, model, thinking);
     return true;
+  }
+
+  function attachFiles(key: string, images: OmegaImage[]): void {
+    const st = ensureState(key);
+    st.attachments = st.attachments.concat(images);
+  }
+
+  function removeAttachment(key: string, index: number): void {
+    const st = ensureState(key);
+    st.attachments = st.attachments.filter((_, i) => i !== index);
+  }
+
+  async function attachUrl(key: string, url: string): Promise<void> {
+    const st = ensureState(key);
+    try {
+      st.attachments.push(await attachImageUrl(url));
+    } catch (e) {
+      st.statusLine = `attach failed: ${e}`;
+    }
   }
 
   function cancel(key: string) {
@@ -650,6 +688,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     load,
     attach,
     submit,
+    attachFiles,
+    removeAttachment,
+    attachUrl,
     retry,
     cancel,
     composerBusy,

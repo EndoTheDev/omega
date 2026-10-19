@@ -64,11 +64,15 @@
       :busy="busy"
       :can-retry="canRetry"
       :thinking="thinking"
+      :attachments="state.attachments"
       @update:model="emit('update:model', $event)"
       @update:thinking="emit('update:thinking', $event)"
       @send="onSend"
       @cancel="host.cancel(stateKey)"
-      @retry="onRetry" />
+      @retry="onRetry"
+      @attach-files="(imgs: never[]) => host.attachFiles(stateKey, imgs)"
+      @remove-attachment="(i: number) => host.removeAttachment(stateKey, i)"
+      @attach-url="(u: string) => host.attachUrl(stateKey, u)" />
   </main>
 </template>
 
