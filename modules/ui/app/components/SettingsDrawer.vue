@@ -75,8 +75,8 @@
             class="model-chip theme-select"
             :value="selectValue(group, knob)"
             @change="setSelect(group, knob, ($event.target as HTMLSelectElement).value)">
-            <option v-for="opt in knob.options ?? []" :key="opt" :value="opt">
-              {{ opt }}
+            <option v-for="opt in knob.options ?? []" :key="optValue(opt)" :value="optValue(opt)">
+              {{ optLabel(opt) }}
             </option>
           </select>
           <!-- textarea -->
@@ -144,20 +144,24 @@
     settingsDiff,
     parseCollapsedKeys,
     serializeCollapsedKeys,
+    themeSelectValue,
     type SettingGroup,
     type SettingKnob,
     type SettingsPayload,
+    type ThemeMode,
+    type UserTheme,
   } from "~/composables/omega";
 
   const props = defineProps<{
     showThinking: boolean;
-    themeMode: "auto" | "light" | "dark";
+    themeMode: ThemeMode;
+    userThemes: UserTheme[];
     open: boolean;
   }>();
 
   const emit = defineEmits<{
     (e: "update:showThinking", value: boolean): void;
-    (e: "set-theme", mode: "auto" | "light" | "dark"): void;
+    (e: "set-theme", mode: ThemeMode): void;
   }>();
 
   // --- server payload state ---
@@ -209,6 +213,25 @@
 
   // --- client (chat) group: props in, emits out ---
 
+  // --- theme picker: built-in modes + server-side user themes ---
+
+  // A broken theme (server-flagged error) never enters the list; the
+  // option labels carry the yaml name, the value is theme:<id>.
+  const themeOptions = computed<(string | { value: string; label: string })[]>(() => [
+    "auto",
+    "light",
+    "dark",
+    ...props.userThemes
+      .filter((t) => !t.error)
+      .map((t) => ({ value: themeSelectValue(t.id), label: t.name })),
+  ]);
+
+  // select options arrive as strings or {value,label}: one renderer each
+  const optLabel = (opt: string | { value: string; label: string }) =>
+    typeof opt === "string" ? opt : opt.label;
+  const optValue = (opt: string | { value: string; label: string }) =>
+    typeof opt === "string" ? opt : opt.value;
+
   const chatGroup = computed<SettingGroup>(() => ({
     key: "chat",
     label: "chat",
@@ -224,8 +247,8 @@
         label: "theme",
         type: "select",
         value: props.themeMode,
-        options: ["auto", "light", "dark"],
-        help: "interface colour theme; auto follows the system",
+        options: themeOptions.value,
+        help: "interface colour theme; auto follows the system, user themes live in the server's themes/ folder",
       },
     ],
   }));
@@ -309,8 +332,7 @@
 
   function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
     if (isClient(group)) {
-      if (knob.key === "chat.theme")
-        emit("set-theme", value as "auto" | "light" | "dark");
+      if (knob.key === "chat.theme") emit("set-theme", value as ThemeMode);
       return;
     }
     draft.value = { ...draft.value, [knob.key]: value };
