@@ -281,6 +281,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       if (!assistantPushed) {
         assistant.time = assistant.time ?? new Date().toISOString();
         st.transcript.push(assistant);
+        // reactivity: the raw literal bypasses the reactive proxy, so
+        // later streaming-flag mutations would not re-render (the
+        // stuck-cursor bug) - re-capture the PROXY the array hands back
+        assistant = st.transcript[st.transcript.length - 1] as MessageItem;
         assistantPushed = true;
       }
     };
@@ -317,6 +321,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         if (!thinking) {
           thinking = { kind: "thinking", content: "", streaming: true };
           st.transcript.push(thinking);
+          // reactivity: same proxy re-capture as pushAssistant
+          thinking = st.transcript[st.transcript.length - 1] as ThinkingItem;
         }
         thinking.content += content;
         onChunk(content.length);
