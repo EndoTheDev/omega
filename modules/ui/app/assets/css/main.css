@@ -322,6 +322,9 @@ body {
   box-shadow: var(--shadow-1);
 }
 .dock-menu-btn, .dock-empty-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   text-align: left;
   background: none;
@@ -332,6 +335,10 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
+/* card t_30ee04fb: the dockable registry's inventory glyphs (14px, muted
+   until hover so the label leads) */
+.dock-item-icon { flex: none; opacity: 0.75; }
+.dock-menu-btn:hover .dock-item-icon, .dock-empty-btn:hover .dock-item-icon { opacity: 1; }
 .dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
 .dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
 
