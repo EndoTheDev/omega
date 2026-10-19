@@ -10,8 +10,8 @@
       @view="switchMainView" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
-         backdrop-filter frost needs the same backdrop root as the settings
-         scrim to render identically -->
+         backdrop-filter frost renders against the shell's root, so the
+         mobile drawers slide under identical frost -->
     <div
       v-if="isMobile && (drawerOpen || inspectorOpen)"
       class="scrim"
@@ -75,34 +75,28 @@
         </template>
 
         <template #pane-inspector>
-          <!-- both right panes always mounted, stacked in one slot: toggling
-               slides one in over the other instead of a v-if content flash -->
-          <div class="pane-slot">
-            <RightSidebar
-              class="slot-pane"
-              :class="{ active: !settingsOpen }"
-              :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
-              :open="inspectorOpen"
-              :visible="isMobile ? inspectorOpen : !settingsOpen" />
+          <!-- mobile: the slide-in overlay; desktop: a real dock pane.
+               `visible` stays the root-listing fetch trigger (drawer flag
+               on mobile, always true in the dock tab). -->
+          <RightSidebar
+            class="pane"
+            :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
+            :open="inspectorOpen"
+            :visible="isMobile ? inspectorOpen : true" />
+        </template>
 
-            <SettingsDrawer
-              class="slot-pane"
-              :class="{ active: settingsOpen }"
-              :open="settingsOpen"
-              v-model:show-thinking="showThinking"
-              :theme-mode="themeMode"
-              @set-theme="setTheme" />
-          </div>
+        <!-- card 5 (t_35b5594a): settings is a dock-tab singleton - the
+             menubar gear opens it into the focused main pane; the overlay
+             drawer shape is gone. Same component, in-pane. -->
+        <template #pane-settings>
+          <SettingsTab
+            class="pane"
+            v-model:show-thinking="showThinking"
+            :theme-mode="themeMode"
+            @set-theme="setTheme" />
         </template>
       </DockSplit>
     </div>
-
-    <!-- frosted backdrop only on mobile - on desktop the settings drawer
-         is the right sidebar swapped for settings content, no overlay -->
-    <div
-      v-if="isMobile && settingsOpen"
-      class="scrim"
-      @click="settingsOpen = false" />
 
     <!-- destructive confirm: delete walks the store cascade server-side,
          so there is no undo - the dialog names the session -->
@@ -184,6 +178,7 @@
     type ChatState,
   } from "./composables/chat";
   import ChatTab from "./components/ChatTab.vue";
+  import SettingsTab from "./components/settings/SettingsTab.vue";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
@@ -225,13 +220,14 @@
   // whole tree. The components resolve it via injection. ---
   const dock = createDock(window.localStorage);
   provide(DOCK_API_KEY, dock);
-  // MenuBar flags: the drawers (mobile) and the tree (desktop) - the
-  // inspector flag reads settingsOpen too, mirroring the shared right slot
+  // MenuBar flags: the drawers (mobile) and the tree (desktop). The
+  // gear is not a toggle flag (card 5): it OPENS the settings singleton
+  // tab, and a second click FOCUSES the live instance wherever it sits.
   const sidebarPaneOpen = computed(() =>
     isMobile.value ? drawerOpen.value : dock.has("sidebar"),
   );
   const inspectorPaneOpen = computed(() =>
-    isMobile.value ? inspectorOpen.value : dock.has("inspector") && !settingsOpen.value,
+    isMobile.value ? inspectorOpen.value : dock.has("inspector"),
   );
 
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
@@ -344,11 +340,30 @@
 
   // clicks carry the pane focus: the document-level listener reads the
   // dock-pane id (DnD moves, menus and composer clicks all bubble here)
+  // and remembers the LAST FOCUSED pane - the gear's settings tab opens
+  // into that pane (card 5's "focused main pane" target).
+  const lastPaneId = ref<string | null>(null);
   function onDocClick(e: MouseEvent) {
     const el = e.target instanceof Element ?
       e.target.closest("[data-pane-id]") :
       null;
-    refocusFrom(el?.getAttribute("data-pane-id") ?? null);
+    const paneId = el?.getAttribute("data-pane-id") ?? null;
+    if (paneId) lastPaneId.value = paneId;
+    refocusFrom(paneId);
+  }
+
+  // the pane a singleton open targets when no click has landed yet: the
+  // first pane in the tree (depth-first, same walk openSingleton uses)
+  function resolveFocusedPaneId(): string {
+    const tree = dock.tree.value;
+    const focused = lastPaneId.value ?
+      findPane(tree, lastPaneId.value) :
+      null;
+    if (focused) return focused.id;
+    for (const n of allNodes(tree)) {
+      if (isPane(n)) return n.id;
+    }
+    return ""; // unreachable: the tree always contains at least one pane
   }
 
   function resolveActivePaneId(): string {
@@ -466,14 +481,13 @@
     }
   }
 
-  // mobile: one drawer at a time - opening any pane closes the other two
+  // mobile: one drawer at a time - opening any pane closes the other
   function toggleSidebar() {
     if (isMobile.value) {
       // the drawer needs its pane rendered (empty panes are hidden by CSS):
       // absent -> insert it first, then flip the overlay open
       dock.ensureEdge("sidebar", "before");
       inspectorOpen.value = false;
-      settingsOpen.value = false;
       drawerOpen.value = !drawerOpen.value;
     } else {
       // desktop: the TREE owns presence - remove/re-insert the edge pane
@@ -485,45 +499,28 @@
   function closeOverlays() {
     drawerOpen.value = false;
     inspectorOpen.value = false;
-    settingsOpen.value = false;
   }
-  const settingsOpen = ref(false);
 
-  // mobile: one drawer at a time - free the slot first
+  // mobile: one drawer at a time
   function toggleInspector() {
     if (isMobile.value) {
-      if (settingsOpen.value) settingsOpen.value = false;
       dock.ensureEdge("inspector", "after"); // overlay needs its pane present
       drawerOpen.value = false;
       inspectorOpen.value = !inspectorOpen.value;
       return;
     }
-    // desktop: the right edge pane hosts ONE visible pane - the inspector
-    // toggle closes settings and shows the inspector; otherwise it toggles
-    // the pane itself (the store remembers the width + reopen-clamps)
-    if (settingsOpen.value) {
-      settingsOpen.value = false;
-      dock.ensureEdge("inspector", "after");
-      return;
-    }
+    // desktop: the TREE owns presence - the store remembers the width and
+    // reopen-clamps
     dock.toggleEdge("inspector", "after");
   }
 
-  // gear is a toggle; the right edge pane hosts settings and the inspector
-  // stacked (slot-pane transforms swap them) - opening settings just makes
-  // sure the pane is present.
+  // card 5 (t_35b5594a): the menubar gear is the settings singleton's
+  // opener - NOT a toggle. First click OPENS a settings tab in the
+  // focused main pane (the last pane clicked, else the tree's first
+  // pane); every later click FOCUSES the existing instance wherever it
+  // was dragged to (openSingleton's contract). Closing is the tab's ×.
   function openSettings() {
-    if (settingsOpen.value) {
-      settingsOpen.value = false;
-      return;
-    }
-    if (isMobile.value) {
-      // mobile: one drawer at a time - close both other drawers
-      inspectorOpen.value = false;
-      drawerOpen.value = false;
-    }
-    dock.ensureEdge("inspector", "after"); // the pane hosts the drawer too
-    settingsOpen.value = true;
+    dock.openSingleton(resolveFocusedPaneId(), "settings");
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so

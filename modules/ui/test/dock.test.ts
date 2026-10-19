@@ -342,8 +342,8 @@ describe("tab ops", () => {
     });
   });
 
-  it("PLUS_TAB_COMPONENTS: the card 4 registry inventory replaces the card 2 chat-only list", () => {
-    assert.deepEqual([...PLUS_TAB_COMPONENTS], ["sidebar", "chat", "inspector"]);
+  it("PLUS_TAB_COMPONENTS: the registry inventory, card 5 closes it", () => {
+    assert.deepEqual([...PLUS_TAB_COMPONENTS], ["sidebar", "chat", "inspector", "settings"]);
   });
 });
 
