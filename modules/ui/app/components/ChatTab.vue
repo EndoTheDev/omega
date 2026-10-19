@@ -204,7 +204,12 @@
       if (!el) return;
       if (!force && !pinned.value) return;
       const gap = liveBlockGap(el);
-      if (gap !== null) {
+      // pinned-then-follow (Endo 2026-10-20): the FIRST appearance of
+      // the live block (gap > 1, its top still below the viewport top)
+      // scrolls it to the pane top - older content rides up; once the
+      // sticky CSS holds it there (gap 0), the follow returns to the
+      // streaming tail so the newest agent output shows underneath
+      if (gap !== null && gap > 1) {
         el.scrollTop += gap;
         return;
       }
