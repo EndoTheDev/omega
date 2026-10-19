@@ -132,8 +132,112 @@ body {
   background: var(--z0);
 }
 
-/* panes adjacent: every pane keeps its full border on all sides - the
+/* panes adjacent: every pane keeps its full border on all four sides - the
    divider sits in the 4px gap between the two 1px strokes. */
+
+/* ---- dock (card t_63253264): the recursive layout tree ---- */
+.dock-split {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-split.row { flex-direction: row; }
+.dock-split.column { flex-direction: column; }
+/* the ROOT split fills the pane-area (its padding 0 4px 3px unchanged) */
+.pane-area > .dock-root { flex: 1; }
+.dock-cell { min-width: 0; min-height: 0; }
+
+.dock-divider {
+  width: 4px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  border-radius: 2px;
+  background: transparent;
+}
+.dock-split.column > .dock-divider {
+  width: auto;
+  height: 4px;
+  cursor: row-resize;
+}
+.dock-divider:hover, .dock-divider.active { background: var(--stroke); }
+/* magnetic snap attract: subtle accent guide while the pointer sits inside
+   a snap zone (320/640) - the pane keeps tracking the pointer; releasing
+   inside the zone sticks it to the exact snap size (dock-design constants) */
+.dock-divider.snap { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+.dock-pane {
+  display: flex;
+  position: relative;
+}
+.dock-content {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-content > .pane { flex: 1; }
+
+/* empty pane: the '+' component menu (VS Code empty editor-group style) */
+.dock-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--stroke);
+  border-radius: var(--r-pane);
+  min-height: 64px;
+}
+.dock-empty-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+
+.dock-plus {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  font-size: 15px;
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  background: var(--z1);
+  color: var(--text);
+  opacity: 0; /* hover affordance like VS Code's corner actions */
+  transition: opacity 0.15s ease-out;
+}
+.dock-pane:hover .dock-plus, .dock-plus:focus-visible { opacity: 1; }
+.dock-plus:hover { background: var(--z1-raised); border-color: var(--accent); }
+
+.dock-menu {
+  position: absolute;
+  top: 36px;
+  right: 8px;
+  z-index: 6;
+  min-width: 130px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--z1-raised);
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  box-shadow: var(--shadow-1);
+}
+.dock-menu-btn, .dock-empty-btn {
+  padding: 6px 10px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
+.dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
+
 
 .pane {
   background: var(--z1);
@@ -1240,34 +1344,15 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   z-index: 10;
 }
 
-/* ---- pane groups: always-mounted, closed state slides via negative
-   margin (clipped by pane-area's overflow) - one motion language for
-   every pane on desktop; mobile overlays slide via their own transforms.
-   The hard-wall max-width lives HERE: percentages resolve against the
-   pane-area (the group's parent), keeping the chat's 320px floor. */
-.pane-group {
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-  /* groups never flex-shrink: their content (pane + divider) defines the
-     width, so rendered width always equals the ref - if the group could
-     squeeze, the JS dragCap (computed from refs) would desync from the
-     rendered layout and freeze drags; mutual space handling belongs to
-     the squeeze chain instead */
-  flex: 0 0 auto;
-  max-width: calc(100% - 320px - 4px); /* chat floor + divider */
-  transition: margin 0.2s ease-out;
-}
-
 /* ---- right slot (desktop only): both panes stacked, one visible -
    toggling settings vs inspector slides one in over the other (no v-if
-   flash). The slot is the fixed-width flex item; panes absolute inside.
+   flash). The slot fills its dock pane; panes absolute inside.
    Scoped to >=769px so the mobile fixed-overlay drawers never see these
    transforms. */
 @media (min-width: 769px) {
   .pane-slot {
     position: relative;
-    flex: 0 0 auto;
+    flex: 1;
     min-width: 0;
     overflow: hidden; /* clip the sliding panes */
   }
@@ -1534,6 +1619,19 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 
   .pane-area { padding: 0; gap: 0; }
 
+  /* dock cells: sidebar/inspector panes host the slide-in overlays - the
+     CELL must not take flex space while their content floats fixed.
+     !important beats the tree's inline sizes. */
+  .dock-cell.kind-sidebar, .dock-cell.kind-inspector {
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+    position: static;
+    overflow: visible; /* the fixed overlays escape the zero cell */
+  }
+  .dock-split { flex-wrap: nowrap; }
+
   .sessions {
     position: fixed;
     top: 35px; /* menubar height - slides under the chrome */
@@ -1550,6 +1648,8 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .sessions.open { transform: translateX(0); }
 
   .divider { display: none; }
+  .dock-divider { display: none; }
+  .dock-plus, .dock-menu { display: none; }
 
   /* inspector: mirrored overlay from the right */
   .aside {
