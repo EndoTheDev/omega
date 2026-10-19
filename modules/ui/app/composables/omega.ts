@@ -298,6 +298,9 @@ export interface ModelsInfo {
 }
 
 // StreamEvents the chat renderer needs, normalized from SSE payloads.
+// onSession is OPTIONAL - only the auto-create origin stream (a /chat
+// sent with NO session_id) carries a `session` frame; the attach path
+// and session-keyed send streams never do.
 export interface StreamHandlers {
   onThinking: (content: string) => void;
   onResponse: (content: string) => void;
@@ -309,6 +312,9 @@ export interface StreamHandlers {
     completionTokens: number;
     cachedTokens: number;
   }) => void;
+  /** the server auto-created this chat's session - bind the id (the
+      tab learns /chat/<id>, the binding lands in the dock tree) */
+  onSession?: (sessionId: string) => void;
 }
 
 // parseFrame extracts the JSON payload from one SSE frame
@@ -1020,19 +1026,6 @@ export async function fetchSessions(includeArchived = false): Promise<Session[]>
   return r.json();
 }
 
-// createSession posts the empty session body the wire contract defines:
-// an early /sessions POST was inline in app.vue before card t_4f0e88f2.
-// (Session restore is transcript-owned - fetchTranscript - since the
-// backend-owns-facts rework; no fetchSession here.)
-export async function createSession(): Promise<Session> {
-  const r = await fetch("/sessions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
-  if (!r.ok) throw new Error(`create session: ${r.status}`);
-  return r.json();
-}
 // --- settings pane: config knobs behind /settings ---
 
 // SettingKnob is one exposed config field. Type drives the control:
@@ -1608,6 +1601,16 @@ async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<voi
     while ((idx = buffer.indexOf("\n\n")) !== -1) {
       const frame = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
+      // Named control frames ride the SSE event line, not the payload's
+      // type field (`event: session` + {"id":...} - the auto-created
+      // session's id, sent before the run's own frames). Dispatch by
+      // event name first; everything else is a typed payload.
+      const evName = frame.split("\n").find((l) => l.startsWith("event: "));
+      if (evName?.slice(7).trim() === "session") {
+        const s = parseFrame(frame) as { id?: string } | null;
+        if (typeof s?.id === "string" && s.id) handlers.onSession?.(s.id);
+        continue;
+      }
       const payload = parseFrame(frame);
       if (payload === null) continue;
       handlePayload(payload, handlers, state);
