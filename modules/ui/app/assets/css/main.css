@@ -976,6 +976,14 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    no card fill, no stroke, no padding - the raised bubble treatment
    belongs to classic chat; stacked reads like a document where only
    the user rows carry a surface */
+/* stacked: thinking strips print on the pane background too (Endo
+   2026-10-20) - same document language as assistant text; the raised
+   bordered card stays classic-chat-only */
+.messages.stacked .thinking {
+  background: none;
+  border: none;
+}
+
 .messages.stacked .msg.assistant .bubble {
   width: 100%;
   max-width: 100%;
