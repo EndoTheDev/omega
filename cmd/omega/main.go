@@ -299,7 +299,7 @@ func buildConfigs(cfg Config) map[string]any {
 	return map[string]any{
 		"store":        store.Config{DBPath: cfg.Store.DBPath},
 		"provider":     provider.Config{Type: cfg.Provider.Type, ModelName: cfg.Provider.ModelName, Host: cfg.Provider.Host, APIKey: cfg.Provider.APIKey},
-		"http_channel": httpchannel.Config{Port: cfg.Server.Port, Bind: cfg.Server.Bind, RunTimeout: cfg.Server.RunTimeout},
+		"http_channel": httpchannel.Config{Port: cfg.Server.Port, Bind: cfg.Server.Bind, RunTimeout: cfg.Server.RunTimeout, TitleModel: cfg.TitleModel},
 		"skills":       skills.Config{Dir: cfg.Skills.Dir},
 		"memory":       memory.Config{Enabled: cfg.Memory.Enabled, UserProfileEnabled: cfg.Memory.UserProfileEnabled, CharLimit: cfg.Memory.CharLimit, UserProfileCharLimit: cfg.Memory.UserProfileCharLimit, File: cfg.Memory.File, UserProfileFile: cfg.Memory.UserProfileFile},
 		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},
@@ -338,16 +338,9 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		return nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
 
-	ag := agent.NewFromContext(ctx, agent.AgentOptions{
-		MaxTurns:      cfg.MaxTurns,
-		MaxToolOutput: cfg.Compaction.MaxToolOutput,
-		PromptCustom:  cfg.SystemPrompt,
-		PromptAppend:  appendPrompts,
-		PromptContext: ctx.Trust.ResolveContext(cwd(), trust.approve, trust.noApprove, false),
-		CWD:           cwd(),
-	})
-
-	// Open the store.
+	// The store resolves BEFORE the agent is built: the captioner
+	// (vision_model knob) holds the caption sink from the start, and
+	// NewFromContext copies ctx.Captioner onto every agent it creates.
 	if ctx.Store != nil {
 		if err := ctx.Store.Open(cfg.Store.DBPath); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
@@ -360,8 +353,38 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		}
 		ctx.Store = s
 	}
+	wireCaptioner(cfg, ctx)
+
+	ag := agent.NewFromContext(ctx, agent.AgentOptions{
+		MaxTurns:      cfg.MaxTurns,
+		MaxToolOutput: cfg.Compaction.MaxToolOutput,
+		PromptCustom:  cfg.SystemPrompt,
+		PromptAppend:  appendPrompts,
+		PromptContext: ctx.Trust.ResolveContext(cwd(), trust.approve, trust.noApprove, false),
+		CWD:           cwd(),
+	})
 
 	return ag, ctx.Store, ctx.Logger, ctx, nil
+}
+
+// wireCaptioner builds the image captioner (vision_model knob) onto the
+// context: a pinned vision-model provider copy, the store as the caption
+// sink, and the logger. An unset knob (or a store without caption
+// support) changes nothing. Called after the store resolves, before any
+// agent is built from the context - serve, TUI, and cron agents all
+// inherit through NewFromContext.
+func wireCaptioner(cfg Config, pctx *agent.Context) {
+	if cfg.VisionModel == "" || pctx == nil {
+		return
+	}
+	var sink agent.CaptionStore
+	if cs, ok := pctx.Store.(agent.CaptionStore); ok {
+		sink = cs
+	}
+	pctx.Captioner = provider.NewCaptioner(pctx.Provider, cfg.VisionModel, sink, pctx.Logger)
+	if sink == nil && pctx.Logger != nil {
+		pctx.Logger.Printf("omega: vision_model set but the store does not support captions - captions cache in-process only")
+	}
 }
 
 // signalContext returns a context cancelled on SIGINT/SIGTERM.
@@ -560,6 +583,8 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 		pctx.Store = s
 	}
 	defer pctx.Store.Close()
+
+	wireCaptioner(cfg, pctx)
 
 	// Load skills.
 	var skillsList []agent.Skill

@@ -45,6 +45,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		ctx.Channels = append(ctx.Channels, &HTTPChannel{
 			addr:       fmt.Sprintf("%s:%d", b, port),
 			runTimeout: time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
+			titleModel: cfg.TitleModel,
 		})
 	}
 	return nil

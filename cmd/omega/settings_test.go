@@ -22,6 +22,8 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 	return map[string]bool{
 		"provider.type":              true,
 		"provider.model_name":         true,
+		"provider.vision_model":       true,
+		"provider.title_model":        true,
 		"provider.host":               true,
 		"provider.api_key":            true,
 		"server.port":                 true,
