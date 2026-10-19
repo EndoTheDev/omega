@@ -565,6 +565,11 @@
   // was dragged to (openSingleton's contract). Closing is the tab's ×.
   function openSettings() {
     dock.openSingleton(resolveFocusedPaneId(), "settings");
+    // the picker refetches on every settings open: a theme dropped into
+    // the folder while the app runs shows up (and a broken file
+    // disappears) without a restart - the dock-tab replacement for the
+    // old drawer's settingsOpen watch
+    void loadUserThemes();
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so
@@ -700,12 +705,8 @@
     { deep: true },
   );
 
-  // and the picker refetches on every settings open: a theme dropped
-  // into the folder while the app runs shows up (and a broken file
-  // disappears from the list) without a restart
-  watch(settingsOpen, (open) => {
-    if (open) void loadUserThemes();
-  });
+  // (the drawer-era settingsOpen watch died with the overlay - the
+  // dock-era openSettings below carries the refetch-on-open)
 
   // loadUserThemes refreshes the picker's list. Fetched on mount (so a
   // persisted theme:<id> applies) and on every settings open (so a
