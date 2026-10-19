@@ -20,8 +20,13 @@ import { PANE_OPEN_MIN, snapCandidate } from "./panes.ts";
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
-  PLUS_TAB_COMPONENTS,
+  INSPECTOR_TAB_COMPONENTS,
+  LEGACY_DOCK_COMPONENTS,
+  MAIN_DOCKABLES,
   COMPONENT_TITLES,
+  isClosableTab,
+  isPinnedTab,
+  type DockableComponentLike,
   type DockComponentName,
 } from "./dockables.ts";
 // the openable component universe, the '+' inventory and the tab-title
@@ -30,10 +35,14 @@ import {
 export {
   DOCK_COMPONENTS,
   DOCKABLES,
-  PLUS_TAB_COMPONENTS,
+  INSPECTOR_TAB_COMPONENTS,
+  LEGACY_DOCK_COMPONENTS,
+  MAIN_DOCKABLES,
   COMPONENT_TITLES,
+  isClosableTab,
+  isPinnedTab,
 };
-export type { DockComponentName };
+export type { DockComponentName, DockableComponentLike };
 // re-export for consumers that think in dock terms (tests, toggle helpers)
 export { PANE_OPEN_MIN };
 
@@ -41,10 +50,6 @@ export const DOCK_LAYOUT_KEY = "omega.dock-layout";
 
 // pre-dock pane state. Consumed ONCE by migrateLayout (first boot without a
 // dock key), then untouched - the tree is the single source of truth after.
-export const LEGACY_OPEN_KEYS = {
-  sidebar: "omega.sidebar-open",
-  inspector: "omega.inspector-open",
-} as const;
 export const LEGACY_WIDTH_KEYS = {
   sidebar: "omega.sidebar-width",
   inspector: "omega.inspector-width",
@@ -234,6 +239,111 @@ export function findComponentTab(
   return null;
 }
 
+// --- the pane-model reset (card t_4ae27e0d) ---------------------------------
+// three identities the whole engine enforces:
+//   pinned pane   hosts at least one sidebar-pinned tab (left/right):
+//                 never closable, never removable, never a tab target.
+//   main pane     everything else (chat / settings / empty) - the closable
+//                 class, hover-X tabs.
+//   never-empty   the dock always holds at least one pane; refusals are
+//                 no-ops (the tree comes back untouched).
+
+export function paneCount(tree: DockNode): number {
+  let n = 0;
+  for (const node of allNodes(tree)) if (isPane(node)) n++;
+  return n;
+}
+
+/** a pane is PINNED when any of its tabs is sidebar-pinned - the sessions
+    pane (one "sidebar" tab) and the inspector pane (its five view tabs).
+    Empty panes and main-panel panes are main. */
+export function isPinnedPane(pane: DockPane): boolean {
+  return pane.tabs.some((t) => isPinnedTab(t.component));
+}
+
+/** the first main pane, depth-first - where session opens land. The pinned
+    sidebars never host chat, so the walk skips them. Null = no main pane
+    in the tree (all sidebars): the opener must insert one. */
+export function firstMainPaneId(tree: DockNode): string | null {
+  for (const n of allNodes(tree)) {
+    if (isPane(n) && !isPinnedPane(n)) return n.id;
+  }
+  return null;
+}
+
+/** insert an EMPTY flexible main pane at the root's after-edge (the fixed
+    shell's recovery path: the opener uses this when the user managed to
+    remove the last main pane). Returns the new pane's id for focusing. */
+export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string } {
+  const pane = makePane(null);
+  if (isPane(tree) || !isSplit(tree) || tree.direction !== "row") {
+    // pane root, or a column root: wrap in a row, new pane right of the tree
+    return { tree: makeSplit("row", [tree, pane]), paneId: pane.id };
+  }
+  const copy = clone(tree);
+  copy.children.push(pane);
+  copy.sizes = normalizeSizes(copy.children.length, copy.sizes);
+  return { tree: copy, paneId: pane.id };
+}
+
+/** the sidebar-pinned panes are fixed chrome: a loaded tree that somehow
+    lost one of the two (a pre-reset tree that was toggled closed) gets it
+    re-inserted at its edge. Pure; no-op returns the SAME tree. */
+export function ensurePinnedEdges(tree: DockNode): DockNode {
+  let result = tree;
+  if (!findComponentTab(tree, "sidebar")) {
+    result = insertRootEdge(result, "before", makePane("sidebar", 240));
+  }
+  if (!INSPECTOR_TAB_COMPONENTS.some((c) => findComponentTab(result, c) !== null)) {
+    const pane: DockPane = {
+      kind: "pane",
+      id: nextNodeId(),
+      tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+      active: 0,
+      fixed: 240,
+    };
+    result = insertRootEdge(result, "after", pane);
+  }
+  return result;
+}
+
+/** insert `pane` at the root's edge of a row (a pane root or a column
+    root wraps into a row, keeping the edge meaningful - the pre-reset
+    toggle path's behavior). Private to the reset helpers. */
+function insertRootEdge(tree: DockNode, side: "before" | "after", pane: DockPane): DockNode {
+  if (isPane(tree) || !isSplit(tree) || tree.direction !== "row") {
+    const pair = side === "after" ? [tree, pane] : [pane, tree];
+    return makeSplit("row", pair);
+  }
+  const copy = clone(tree);
+  if (side === "after") copy.children.push(pane);
+  else copy.children.unshift(pane);
+  copy.sizes = normalizeSizes(copy.children.length, copy.sizes);
+  return copy;
+}
+
+/** pre-reset trees persisted the inspector as ONE tab hosting its own
+    chip strip; card t_4ae27e0d dissolved the strip - the five views are
+    real tabs. Expands every legacy "inspector" tab into the inspector
+    group (order matters: active lands on files). No-op returns the SAME
+    tree. Pure. */
+export function expandInspectorTabs(tree: DockNode): DockNode {
+  let done = false;
+  const copy = clone(tree);
+  for (const n of allNodes(copy)) {
+    if (!isPane(n)) continue;
+    if (!n.tabs.some((t) => (t.component as string) === "inspector")) continue;
+    n.tabs = n.tabs.flatMap((t) =>
+      (t.component as string) === "inspector"
+        ? INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c }))
+        : [t],
+    );
+    n.active = clamp(n.active, 0, Math.max(0, n.tabs.length - 1));
+    done = true;
+  }
+  return done ? copy : tree;
+}
+
 // --- the singleton opener (card t_30ee04fb) ---------------------------------
 // One contract rule, one pure function: opening a SINGLETON component
 // while an instance is alive FOCUSES that instance wherever it lives;
@@ -248,6 +358,10 @@ export function openSingleton(
   paneId: string,
   component: DockComponentName,
 ): { tree: DockNode; action: OpenSingletonAction } {
+  // pinned components have no open path (card t_4ae27e0d): the sidebars
+  // live because the shell puts them there, never because a menu opened
+  // them into an arbitrary pane
+  if (isPinnedTab(component)) return { tree, action: "noop" };
   const found = findComponentTab(tree, component);
   if (found) {
     // focus it in place - even when the target pane is this one (a
@@ -257,6 +371,7 @@ export function openSingleton(
   }
   const pane = findPane(tree, paneId);
   if (!pane) return { tree, action: "noop" }; // target vanished - no-op
+  if (isPinnedPane(pane)) return { tree, action: "noop" }; // pinned - no tab hosts
   const next = pane.tabs.length === 0
     ? setPaneComponent(tree, paneId, component)
     : openTab(tree, paneId, { component });
@@ -308,13 +423,14 @@ export function insertPane(
   return result;
 }
 
-/** remove a pane by id. Its parent split hoists the lone survivor; the whole
-    tree going empty degrades to a single empty pane (shows the menu). */
+/** remove a pane by id. Its parent split hoists the lone survivor.
+    card t_4ae27e0d refusals: a PINNED pane (it hosts unclosable tabs) and
+    the LAST REMAINING pane both come back untouched - the dock never
+    empties (the fixed shape always keeps at least one pane). */
 export function removePane(tree: DockNode, paneId: string): DockNode {
-  if (!findPane(tree, paneId)) return tree;
-  if (isPane(tree) && tree.id === paneId) {
-    return makePane(null);
-  }
+  const pane = findPane(tree, paneId);
+  if (!pane || isPinnedPane(pane)) return tree;
+  if (paneCount(tree) <= 1) return tree; // the never-empty invariant
   const hoist = (n: DockNode): DockNode => {
     if (isSplit(n)) {
       n.children = n.children.map(hoist);
@@ -355,7 +471,7 @@ export function movePane(
 ): DockNode {
   if (paneId === targetId) return tree;
   const pane = findPane(tree, paneId);
-  if (!pane || !findPane(tree, targetId)) return tree;
+  if (!pane || isPinnedPane(pane) || !findPane(tree, targetId)) return tree;
   // detach must not collapse while the source still anchors the insert:
   // locate the target BEFORE removing (ids survive the reclone)
   const without = removePane(tree, paneId);
@@ -374,12 +490,16 @@ export function focusTab(tree: DockNode, paneId: string, index: number): DockNod
 }
 
 /** give an EMPTY pane its first component (the '+' menu path), replacing
-    tabs wholesale. Emptying back is closeTab's job (card 2). */
+    tabs wholesale. Emptying back is closeTab's job (card 2). card
+    t_4ae27e0d: pinned panes and pinned components are off-limits - the
+    sidebars' tab lists are fixed. */
 export function setPaneComponent(
   tree: DockNode,
   paneId: string,
   component: DockComponentName,
 ): DockNode {
+  const pane = findPane(tree, paneId);
+  if (!pane || isPinnedPane(pane) || isPinnedTab(component)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       n.tabs = [{ component }];
@@ -390,8 +510,12 @@ export function setPaneComponent(
 
 /** open a new tab in a pane, appending at the end and activating it
     (the tab-bar '+' menu path; works on an empty pane too - the first
-    tab revives it). */
+    tab revives it). Refusals (card t_4ae27e0d): a PINNED pane takes no
+    tabs, and pinned components open nowhere - a main pane may only host
+    the closable class. */
 export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode {
+  const pane = findPane(tree, paneId);
+  if (!pane || isPinnedPane(pane) || isPinnedTab(tab.component)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       n.tabs = [...n.tabs, tab];
@@ -400,8 +524,13 @@ export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode 
   });
 }
 
-/** card 2: close a tab; the last one empties the pane (menu reappears) */
+/** card 2: close a tab; the last one empties the pane (menu reappears).
+    card t_4ae27e0d: an UNCLOSEABLE tab refuses - the pinned sidebars'
+    tabs have no X at all. */
 export function closeTab(tree: DockNode, paneId: string, index: number): DockNode {
+  const pane = findPane(tree, paneId);
+  const tab = pane?.tabs[index];
+  if (!pane || !tab || !isClosableTab(tab.component)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       if (n.tabs.length <= index) return;
@@ -427,8 +556,12 @@ export function moveTab(
 ): DockNode {
   const from = findPane(tree, fromPaneId);
   if (!from || fromIndex < 0 || fromIndex >= from.tabs.length) return tree;
-  if (!findPane(tree, toPaneId)) return tree;
+  const to = findPane(tree, toPaneId);
+  if (!to) return tree;
   const tab = from.tabs[fromIndex];
+  // card t_4ae27e0d: pinned tabs never leave their sidebar pane, and no
+  // tab may move INTO a pinned pane (the sidebars' tab lists are fixed)
+  if (isPinnedTab(tab.component) || isPinnedPane(to)) return tree;
   if (fromPaneId === toPaneId) {
     // reorder: lift the tab out, then insert within what remains
     const target = clamp(toIndex, 0, from.tabs.length - 1);
@@ -700,9 +833,14 @@ function validateNode(raw: unknown): DockNode | null {
   for (const t of n.tabs) {
     if (!t || typeof t !== "object") return null;
     const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown };
+    // legacy "inspector" tabs deserialize (pre-reset trees carry them);
+    // createDock's modernizer expands them to the inspector group on load
     if (
       typeof tab.component !== "string" ||
-      !(DOCK_COMPONENTS as readonly string[]).includes(tab.component)
+      !(
+        (DOCK_COMPONENTS as readonly string[]).includes(tab.component) ||
+        (LEGACY_DOCK_COMPONENTS as readonly string[]).includes(tab.component)
+      )
     )
       return null;
     tabs.push(
@@ -723,12 +861,6 @@ function validateNode(raw: unknown): DockNode | null {
 
 // --- migration (first boot without a dock key) ---------------------------------
 
-function readFlag(get: (k: string) => string | null, key: string, fallback: boolean): boolean {
-  const raw = get(key);
-  if (raw === "true") return true;
-  if (raw === "false") return false;
-  return fallback;
-}
 function readWidth(get: (k: string) => string | null, key: string): number | null {
   const raw = get(key);
   if (raw === null || raw === "") return null;
@@ -737,31 +869,30 @@ function readWidth(get: (k: string) => string | null, key: string): number | nul
 }
 
 /**
- * Seeds the tree from the pre-dock persisted pane state so existing users
- * see their current layout, not a default. A persisted width renders
- * verbatim (sub-floor widths stayed while OPEN in the old shell; the
- * reopen-clamp fires on toggle-after-collapse in the store, not here).
+ * Seeds the tree from the pre-dock persisted pane state. card t_4ae27e0d:
+ * the shape is FIXED - left sessions pane, chat, right inspector pane with
+ * its five view tabs - both sidebars always present (the open flags are
+ * dead history). A persisted width renders verbatim; unknown width ->
+ * the old default 240.
  */
 export function migrateLegacy(
   get: (k: string) => string | null,
 ): DockNode {
-  const sidebarOpen = readFlag(get, LEGACY_OPEN_KEYS.sidebar, true);
-  const inspectorOpen = readFlag(get, LEGACY_OPEN_KEYS.inspector, false);
-  // a persisted width renders verbatim (the old shell kept sub-floor widths
-  // while OPEN - reopenClip only fired on toggle-after-collapse, which the
-  // store's toggle applies, not migration); unknown width -> old default 240
-  const fixedFor = (key: string): number | null => {
+  const fixedFor = (key: string): number => {
     const w = readWidth(get, key);
     return w === null ? 240 : w;
   };
   const sw = fixedFor(LEGACY_WIDTH_KEYS.sidebar);
   const iw = fixedFor(LEGACY_WIDTH_KEYS.inspector);
 
-  const children: DockNode[] = [];
-  if (sidebarOpen) children.push(makePane("sidebar", sw));
-  children.push(makePane("chat", null));
-  if (inspectorOpen) children.push(makePane("inspector", iw));
-  if (children.length === 1) return children[0]; // nothing to split - it IS the shell
+  const inspector: DockPane = {
+    kind: "pane",
+    id: nextNodeId(),
+    tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+    active: 0,
+    fixed: iw,
+  };
+  const children: DockNode[] = [makePane("sidebar", sw), makePane("chat", null), inspector];
 
   // fractions across the flexible chat: fixed panes ignore theirs, the
   // chat absorbs - equal fractions keep deserialize()/normalize honest
@@ -773,33 +904,6 @@ export function migrateLegacy(
     sizes: normalizeSizes(children.length, undefined),
   };
   return root;
-}
-// --- edge insert / component toggles -----------------------------------------
-
-/** insert a pane with `component` at the ROOT's edge (far left/right of a
-    row, top/bottom of a column) - the sidebar / inspector toggle path. A
-    root pane wraps into a split; an empty root keeps its shape. */
-export function insertEdgePane(
-  tree: DockNode,
-  component: DockComponentName,
-  side: "before" | "after",
-  fixed: number | null,
-): DockNode {
-  const pane = makePane(component, fixed);
-  if (isPane(tree)) return makeSplit("row", side === "after" ? [tree, pane] : [pane, tree]);
-  if (tree.direction !== "row") {
-    // wrapping a column root in a row keeps the toggle's edge meaningful
-    const wrapper = makeSplit("row", [
-      side === "after" ? tree : pane,
-      side === "after" ? pane : tree,
-    ]);
-    return wrapper;
-  }
-  const next = clone(tree);
-  if (side === "after") next.children.push(pane);
-  else next.children.unshift(pane);
-  next.sizes = normalizeSizes(next.children.length, next.sizes);
-  return next;
 }
 
 // --- store ---------------------------------------------------------------
@@ -858,14 +962,15 @@ export interface DockApi {
   firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
-  /** desktop toggle: closes the singleton's instance (a shared pane loses
-      just its TAB, a pane it owns alone goes away) or re-inserts it at the
-      remembered size with the old reopen-clamp (stale sub-floor width
-      reopens at 320) */
-  toggleEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
-  /** ensure the edge pane exists (mobile drawer path; no toggle semantics,
-      and never a second singleton instance) */
-  ensureEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
+  /** card t_4ae27e0d: the id of the FIRST main pane - the only place a
+      session tab may open. The pinned sidebars are skipped; when the tree
+      holds no main pane (the user removed the last one) a fresh flexible
+      pane is inserted at the root's after-edge and its id returned. */
+  ensureMainPane: () => string;
+  /** whether the pane's X may remove it: pinned panes never (they host
+      unclosable tabs) and the last remaining pane never (the dock never
+      empties). The UI hides the X instead of offering a refused click. */
+  canRemovePane: (paneId: string) => boolean;
   /** divider drag: measured start widths flow in on the first move event */
   drag: (splitId: string, dividerIndex: number, startPx: number[], deltaPx: number, contentPx: number) => void;
 }
@@ -893,11 +998,20 @@ const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
 
 export function createDock(store: Storage): DockApi {
   const stored = deserialize(store.getItem(DOCK_LAYOUT_KEY));
-  // assignChatKeys boots loaded chat tabs to the key invariant (chat tabs
-  // persist with their key; migration/legacy trees gain fresh ones)
-  let initial = stored ?? migrateLegacy((k) => store.getItem(k));
+  // card t_4ae27e0d: loaded trees modernize (legacy "inspector" tabs expand
+  // to the five real view tabs) and the fixed shape re-asserts itself (a
+  // pre-reset tree sidebars-toggled-closed gets its panes back). Any change
+  // persists at once - the next boot must see the modern shape even if no
+  // mutation fires this session.
+  let initial = stored
+    ? expandInspectorTabs(stored)
+    : migrateLegacy((k) => store.getItem(k));
+  initial = ensurePinnedEdges(initial);
   initial = assignChatKeys(initial);
   syncIdSeed(initial);
+  // a modernized/fixed-shape-repaired load persists at once so the next
+  // boot sees the modern tree even if no mutation fires this session
+  if (stored) store.setItem(DOCK_LAYOUT_KEY, serialize(initial));
   // shallowRef: the tree stays PLAIN data (structuredClone rejects proxies);
   // every op swaps the root, so reactivity rides the ref change alone
   const tree = shallowRef(initial) as Ref<DockNode>;
@@ -908,16 +1022,6 @@ export function createDock(store: Storage): DockApi {
     tree,
     (t) => {
       store.setItem(DOCK_LAYOUT_KEY, serialize(t));
-      // keep the reopen memory fresh: a fixed pane carrying one of the
-      // edge singletons (its tab OR its active) updates that width
-      for (const n of allNodes(t)) {
-        if (isPane(n) && n.fixed !== null) {
-          for (const tab of n.tabs) {
-            if (tab.component === "sidebar" || tab.component === "inspector")
-              EDGE_DEFAULT_PX[tab.component] = n.fixed;
-          }
-        }
-      }
     },
     { deep: true },
   );
@@ -966,30 +1070,16 @@ export function createDock(store: Storage): DockApi {
   const remove = (paneId: string) => {
     tree.value = removePane(tree.value, paneId);
   };
-  const toggleEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
-    const found = findComponentTab(tree.value, component);
-    if (found) {
-      // the singleton lives: close the INSTANCE - a pane it shares loses
-      // just its tab (the pane must survive: other tabs run there); a
-      // pane it owns alone goes away entirely (split hoists)
-      const pane = findPane(tree.value, found.paneId);
-      tree.value = pane && pane.tabs.length === 1
-        ? removePane(tree.value, pane.id)
-        : closeTab(tree.value, found.paneId, found.index);
-      return;
-    }
-    // reopen-clamp: a stale sub-floor remembered width reopens AT 320
-    const fixed = Math.max(PANE_OPEN_MIN, EDGE_DEFAULT_PX[component]);
-    tree.value = insertEdgePane(tree.value, component, side, fixed);
+  const ensureMainPane = (): string => {
+    const first = firstMainPaneId(tree.value);
+    if (first) return first;
+    const res = insertMainPane(tree.value);
+    tree.value = res.tree;
+    return res.paneId;
   };
-  const ensureEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
-    if (has(component)) return; // the singleton already lives somewhere
-    tree.value = insertEdgePane(
-      tree.value,
-      component,
-      side,
-      Math.max(PANE_OPEN_MIN, EDGE_DEFAULT_PX[component]),
-    );
+  const canRemovePane = (paneId: string): boolean => {
+    const pane = findPane(tree.value, paneId);
+    return !!pane && !isPinnedPane(pane) && paneCount(tree.value) > 1;
   };
   const drag = (
     splitId: string,
@@ -1010,6 +1100,6 @@ export function createDock(store: Storage): DockApi {
     setSessionRef, closeSession,
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
-    split, remove, toggleEdge, ensureEdge, drag,
+    split, remove, ensureMainPane, canRemovePane, drag,
   };
 }

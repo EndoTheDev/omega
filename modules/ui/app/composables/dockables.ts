@@ -1,10 +1,10 @@
 // omega webui: THE DOCKABLE CONTRACT (card t_30ee04fb). One registry for
 // everything a dock pane can host: id, title, icon, and the INSTANCE
-// POLICY. "singleton" components (sessions sidebar, files inspector)
-// exist at most once - opening one while an instance is alive FOCUSES
-// that instance instead of creating a second; "multi" components (chat)
-// mint a real tab every open. Global chrome (MenuBar, StatusBar) is NOT
-// in this registry: they are the window, not content - never dockable.
+// POLICY. "singleton" components exist at most once - opening one while
+// an instance is alive FOCUSES that instance instead of creating a
+// second; "multi" components (chat) mint a real tab every open. Global
+// chrome (MenuBar, StatusBar) is NOT in this registry: they are the
+// window, not content - never dockable.
 //
 // PURE on purpose: no Vue, no fs. The engine (dock.ts) re-exports the
 // component universe from here, the menus render the inventory, and the
@@ -14,18 +14,41 @@
 // (t_d984b493): a module may ship ui/dockable.json beside its panels -
 // the same declaration shape, read at build time by compose.ts and
 // carried on the generated panel list. dockablesFromPanels() lifts
-// those into registry-shaped entries; the board's dock-native mount
-// (card 5) is the first consumer, so module entries stay OUT of the
-// openable DockComponentName union until an outlet slot exists - a menu
-// entry without an outlet renders an empty pane, and this card's menu
-// lists the migrated inventory only.
+// those into registry-shaped entries; module entries stay OUT of the
+// openable DockComponentName union until an outlet slot exists.
 
 // component names a dock pane may host. Single source: the registry
 // below IS this list (dock.ts re-exports for engine-side consumers).
-export const DOCK_COMPONENTS = ["sidebar", "chat", "inspector", "settings"] as const;
+//
+// card t_4ae27e0d (the pane-model reset): "inspector" is no longer a
+// component - the right sidebar's five views (files + the four module
+// panels) became REAL dock tabs living in one sidebar-pinned pane. The
+// four module ids mirror the shipped module names verbatim
+// (cron / http_channel / skills / tools) so the app's outlet templates
+// and the composition lookup agree without an alias map.
+export const DOCK_COMPONENTS = [
+  "sidebar",
+  "chat",
+  "settings",
+  "files",
+  "cron",
+  "http_channel",
+  "skills",
+  "tools",
+] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
+// pre-reset trees persist tabs {component: "inspector"}; deserialize
+// still accepts the legacy id (createDock modernizes it to the five
+// inspector tabs on load) but nothing may open one again.
+export const LEGACY_DOCK_COMPONENTS = ["inspector"] as const;
+
 export type DockInstancePolicy = "singleton" | "multi";
+
+// where a component may live (card t_4ae27e0d): "left" is the
+// sidebar-pinned sessions pane, "right" the sidebar-pinned inspector
+// pane, "main" the closable main pane class (hover-X).
+export type DockArea = "left" | "right" | "main";
 
 // icon glyphs render at 14px in a 24x24 viewBox, currentColor stroke,
 // 2px round-cap joins (the shell's MenuBar icon scale). rect is the
@@ -37,43 +60,43 @@ export interface DockIcon {
 
 // one registry entry. `title` is the tab/menu voice (lowercase, like
 // the shell's tab bars); the open flows add their own verb (chat's
-// multi policy reads "new chat" in the menus).
+// multi policy reads "new chat" in the menus). Module-tab titles are
+// resolved at runtime from each module's ui/dockable.json (the app's
+// DOCK_TAB_TITLE resolver) - the registry title is only the fallback.
 export interface DockableComponent {
   id: DockComponentName;
   title: string;
   icon: DockIcon;
   policy: DockInstancePolicy;
+  area: DockArea;
+  /** tab shows a hover-X. Pinned components (left/right) are unclosable:
+      their pane hosts them forever; main tabs close (hover-X). */
+  closable: boolean;
 }
 
-// THE migrated inventory. Card 1 built the engine, card 2 the tabs/DnD,
-// card 3 chat multi-instance, card 4 the contract for sidebar+inspector;
-// card 5 (t_35b5594a) closes the list: settings swaps the overlay drawer
-// for a dock-tab singleton - the menubar gear OPENS the tab (or FOCUSES
-// the live instance per the singleton policy).
+// THE pinned identity (card t_4ae27e0d): sidebar = the sessions pane
+// (singleton, pinned left, unclosable); the inspector group = sidebar-
+// pinned right with every view tab unclosable; chat + settings are the
+// closable main class.
 export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "sidebar",
-    title: "sidebar",
+    title: "sessions",
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
       paths: ["M9 3v18", "M13 9l3 3-3 3"],
     },
     policy: "singleton",
+    area: "left",
+    closable: false,
   },
   {
     id: "chat",
     title: "chat",
     icon: { paths: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"] },
     policy: "multi",
-  },
-  {
-    id: "inspector",
-    title: "inspector",
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M15 3v18", "M8 9l3 3-3 3"],
-    },
-    policy: "singleton",
+    area: "main",
+    closable: true,
   },
   {
     id: "settings",
@@ -87,6 +110,65 @@ export const DOCKABLES: readonly DockableComponent[] = [
       ],
     },
     policy: "singleton",
+    area: "main",
+    closable: true,
+  },
+  {
+    id: "files",
+    title: "Files",
+    icon: {
+      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
+      paths: ["M15 3v18", "M8 9l3 3-3 3"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    id: "cron",
+    title: "cron",
+    icon: {
+      paths: [
+        "M10.5 10.5a2 2 0 1 0 3 0a2 2 0 1 0 -3 0",
+        "M12 3v3m0 12v3M3 12h3m12 0h3",
+      ],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    id: "http_channel",
+    title: "http_channel",
+    icon: {
+      rect: { x: 3, y: 5, width: 18, height: 14, rx: 2 },
+      paths: ["M7 9h10", "M7 13h10", "M7 16h4"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    id: "skills",
+    title: "skills",
+    icon: {
+      rect: { x: 2, y: 2, width: 20, height: 20, rx: 2 },
+      paths: ["M12 6l6 6-6 6-6-6z"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    id: "tools",
+    title: "tools",
+    icon: {
+      rect: { x: 2, y: 3, width: 20, height: 18, rx: 2 },
+      paths: ["M6 9h12", "M9 13h6"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
   },
 ];
 
@@ -96,19 +178,50 @@ export function dockableOf(id: DockComponentName): DockableComponent {
   if (!d) throw new Error(`dockable registry: unknown component "${id}"`);
   return d;
 }
+/** lenient lookup for RUNTIME data (persisted trees can carry pre-reset
+    ids like "inspector" until the modernizer runs): unknown ids get the
+    safe identity - pinned + unclosable, so no engine op manipulates them */
+function safeEntry(id: string): DockableComponent | null {
+  if (!(DOCK_COMPONENTS as readonly string[]).includes(id)) return null;
+  return dockableOf(id as DockComponentName);
+}
+
+/** card t_4ae27e0d: the sidebar-pinned class - a component whose tab may
+    never close and whose pane may never be removed. left/right panels.
+    Unknown ids count as pinned (the safe refusal). */
+export function isPinnedTab(id: DockComponentName): boolean {
+  const d = safeEntry(id);
+  return d === null ? true : d.area !== "main";
+}
+
+/** tab-bar X policy: closable components only (chat, settings). Unknown
+    ids get no X. */
+export function isClosableTab(id: DockComponentName): boolean {
+  const d = safeEntry(id);
+  return d !== null && d.closable;
+}
 
 /** tab-title fallback (card 2's COMPONENT_TITLES, now derived from the
-    registry - the chat session label overrides it at runtime) */
+    registry - the chat session label and the module dockable.json titles
+    override it at runtime) */
 export const COMPONENT_TITLES: Record<DockComponentName, string> =
   Object.fromEntries(DOCKABLES.map((d) => [d.id, d.title])) as Record<
     DockComponentName,
     string
   >;
 
-/** the tab-bar '+' menu inventory: the whole (openable) registry. Card 2
-    shipped chat only; card 4's contract opens the full migrated list. */
-export const PLUS_TAB_COMPONENTS: readonly DockComponentName[] =
-  DOCKABLES.map((d) => d.id);
+/** card t_4ae27e0d: the tab-bar '+' / empty-pane menu inventory - the
+    MAIN-area dockables only. The pinned sidebars are fixed chrome (they
+    live because the shell puts them there, not because a menu opened
+    them), so no menu may mint them in an arbitrary pane. */
+export const MAIN_DOCKABLES: readonly DockComponentName[] =
+  DOCKABLES.filter((d) => d.area === "main").map((d) => d.id);
+
+/** the pinned-area singleton set (the inspector pane's five tabs): the
+    load-time modernizer and the default-shell builder both read this
+    list, so a new inspector view joins it in ONE place. */
+export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =
+  DOCKABLES.filter((d) => d.area === "right").map((d) => d.id);
 
 // --- the composition-manifest side (module-owned components) -----------------
 
@@ -129,7 +242,7 @@ const MODULE_ICON: DockIcon = {
 
 export interface DockableComponentLike {
   // module name - NOT a DockComponentName: module dockables gain the
-  // openable union when their outlet slot ships (card 5)
+  // openable union when their outlet slot ships
   id: string;
   title: string;
   icon: DockIcon;
