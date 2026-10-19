@@ -69,6 +69,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
+	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)

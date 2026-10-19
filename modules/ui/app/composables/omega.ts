@@ -79,37 +79,160 @@ export interface LastRunStats {
   chunks_per_second?: number;
 }
 
-export interface SessionDetail {
+// TranscriptDetail is the GET /sessions/{id}/transcript payload: the
+// session row (telemetry, active flag) plus the server-rendered
+// transcript items - restore's single fetch, no client-side
+// reconstruction.
+export interface TranscriptDetail {
   session: Session;
-  // live-run flag (GET /sessions/{id}): true while a detached /chat run
-  // streams this session - openSession auto-subscribes to the live
-  // events stream when it sees this, instead of only showing history.
+  // live-run flag: true while a detached /chat run streams this session -
+  // openSession auto-subscribes to the live events stream when it sees
+  // this, instead of only showing history.
   active?: boolean;
-  messages:
-    | {
-        role?: string;
-        content?: string;
-        thinking?: string;
-        is_error?: boolean;
-        tool_call_id?: string;
-        // server-measured generation durations (persisted with the
-        // message; absent on history written before timing existed)
-        timing?: {
-          thinking_ms?: number;
-          response_ms?: number;
-          elapsed_ms?: number;
+  items: TranscriptWireItem[];
+}
+
+// --- the transcript component contract (shared by restore AND live) ---
+//
+// The chat renderer speaks exactly these item shapes. Live, they are
+// built incrementally by the stream handlers; on restore they arrive
+// ready-made from GET /sessions/{id}/transcript and are rendered as-is
+// (renderTranscriptItems). One contract, two sources, no reload-side
+// reconstruction - the reconstruction loop this replaced was the origin
+// of the reload-order / thinking-merge / lost-duration bug class.
+export interface MessageItem {
+  kind: "message";
+  role: "user" | "assistant";
+  content: string;
+  streaming?: boolean;
+  // client-side timestamp for live messages, backend created_at for
+  // restored history (ChatMessage renders it as a hover title)
+  time?: string;
+  // server-measured response duration (restored history)
+  finalMs?: number;
+}
+export interface ThinkingItem {
+  kind: "thinking";
+  content: string;
+  streaming?: boolean;
+  // server-measured thinking duration (restored history)
+  finalMs?: number;
+}
+export interface ToolItem {
+  kind: "tool";
+  name: string;
+  status: string;
+  // a dead stream never delivers the tool result - flagged so the
+  // elapsed meter in ToolCallLine freezes instead of ticking forever
+  interrupted?: boolean;
+  output?: string;
+  result?: string;
+  // server-measured duration from the matched result (restored)
+  finalMs?: number;
+}
+// inline "stream interrupted" marker: appears only when the SSE
+// transport died mid-run (never on a clean end). Carries the resume
+// affordance - see retryStream.
+export interface InterruptedItem {
+  kind: "interrupted";
+}
+export type TranscriptItem =
+  | MessageItem
+  | ThinkingItem
+  | ToolItem
+  | InterruptedItem;
+
+// TranscriptWireItem is one server-rendered transcript item, in the
+// wire order history produced it. The shapes mirror what the live SSE
+// path delivers per item kind (thinking text, response text, the
+// tool_call frame's nested meta, the tool_result frame's outcome), so
+// restore and live converge on the component contract above.
+export type TranscriptWireItem =
+  | { kind: "user"; content: string; time?: string }
+  | { kind: "message"; content: string; time?: string; response_ms?: number }
+  | { kind: "thinking"; content: string; thinking_ms?: number }
+  | { kind: "tool_call"; tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> } }
+  | {
+      kind: "tool_result";
+      tool_call_id?: string;
+      content?: string;
+      is_error?: boolean;
+      elapsed_ms?: number;
+    };
+
+// renderTranscriptItems maps a transcript payload into the components'
+// item shapes. user/message/thinking become bubbles; a tool_call opens
+// a tool line keyed by its id and the matching tool_result (matched by
+// tool_call_id, exactly like a live tool_result frame) fills the
+// result, error state and elapsed onto it. Thin items (empty content)
+// render nothing. Pure.
+export function renderTranscriptItems(
+  items: TranscriptWireItem[] | null | undefined,
+): TranscriptItem[] {
+  const out: TranscriptItem[] = [];
+  if (!items) return out;
+  const toolById = new Map<string, ToolItem>();
+  for (const it of items) {
+    switch (it.kind) {
+      case "user":
+        if (it.content)
+          out.push({
+            kind: "message",
+            role: "user",
+            content: it.content,
+            time: it.time,
+          });
+        break;
+      case "message":
+        if (it.content)
+          out.push({
+            kind: "message",
+            role: "assistant",
+            content: it.content,
+            time: it.time,
+            finalMs: it.response_ms,
+          });
+        break;
+      case "thinking":
+        if (it.content)
+          out.push({
+            kind: "thinking",
+            content: it.content,
+            finalMs: it.thinking_ms,
+          });
+        break;
+      case "tool_call": {
+        const t: ToolItem = {
+          kind: "tool",
+          name: it.tool_call?.name || "tool",
+          status: "done",
+          output:
+            it.tool_call?.arguments ?
+              JSON.stringify(it.tool_call.arguments, null, 2)
+            : undefined,
         };
-        // store-level write time injected by the history endpoint; falls
-        // back to the payload timestamp for anything older that lacks it
-        created_at?: string;
-        timestamp?: string;
-        tool_calls?: {
-          id?: string;
-          name?: string;
-          arguments?: Record<string, unknown>;
-        }[];
-      }[]
-    | null;
+        if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
+        out.push(t);
+        break;
+      }
+      case "tool_result": {
+        if (!it.tool_call_id) continue;
+        const t = toolById.get(it.tool_call_id);
+        if (!t) continue;
+        t.result = it.content || "";
+        t.status = it.is_error ? "error" : "done";
+        t.finalMs = it.elapsed_ms;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/transcript`);
+  if (!r.ok) throw new Error(`transcript: ${r.status}`);
+  return r.json();
 }
 
 export interface ModelsInfo {
@@ -830,12 +953,6 @@ export async function fetchSessions(includeArchived = false): Promise<Session[]>
   const url = includeArchived ? "/sessions?archived=include" : "/sessions";
   const r = await fetch(url);
   if (!r.ok) throw new Error(`sessions: ${r.status}`);
-  return r.json();
-}
-
-export async function fetchSession(id: string): Promise<SessionDetail> {
-  const r = await fetch(`/sessions/${encodeURIComponent(id)}`);
-  if (!r.ok) throw new Error(`session: ${r.status}`);
   return r.json();
 }
 
