@@ -40,9 +40,17 @@ hljs.registerLanguage("diff", diff);
 // SSE events: agent_start, turn_start, response_chunk, thinking_chunk,
 // tool_call, stream_end, assistant_message, turn_end, agent_end, error.
 
+export interface OmegaImage {
+  media_type: string;
+  base64: string;
+}
+
 export interface OmegaMessage {
   role: "user" | "assistant";
   content: string;
+  // image attachments (paste / picker / drag-drop / server-fetched URL),
+  // the same shape ai.User.Images round-trips through the backend
+  images?: OmegaImage[];
 }
 
 export interface Session {
@@ -89,6 +97,8 @@ export interface SessionDetail {
         thinking?: string;
         is_error?: boolean;
         tool_call_id?: string;
+        // persisted image attachments on user messages (ai.User.Images)
+        images?: OmegaImage[];
         // server-measured generation durations (persisted with the
         // message; absent on history written before timing existed)
         timing?: {
@@ -1027,6 +1037,23 @@ export async function pinSession(id: string, pinned: boolean): Promise<void> {
   if (!r.ok) throw new Error(`pin: ${r.status}`);
 }
 
+// attachImageUrl asks the SERVER to fetch a remote image URL (POST
+// /attach-image) and answer the ai.ImageContent shape - the browser
+// never fetches cross-origin image bytes itself. Throws with the
+// server's rejection text (oversize, non-image, HTTP failure).
+export async function attachImageUrl(url: string): Promise<OmegaImage> {
+  const r = await fetch("/attach-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`attach-url: ${r.status}${text ? `: ${text}` : ""}`);
+  }
+  return (await r.json()) as OmegaImage;
+}
+
 // markSessionRead stamps the session's last-read time (PATCH {"read":
 // true}). It touches nothing else: reading is not activity, updated_at
 // must not move.
@@ -1047,6 +1074,7 @@ export interface TranscriptItemLike {
   kind: string;
   role?: string;
   content?: string;
+  images?: OmegaImage[];
 }
 
 // lastCompleteUserIndex finds the transcript item a RESEND kicks off from:
@@ -1067,6 +1095,47 @@ export function lastUserText(items: TranscriptItemLike[]): string | null {
   const idx = lastCompleteUserIndex(items);
   if (idx === -1) return null;
   return items[idx]?.content ?? null;
+}
+
+// lastUserImages is the image set of that same retry resend target -
+// the user message's attachments ride again on the retry.
+export function lastUserImages(items: TranscriptItemLike[]): OmegaImage[] {
+  const idx = lastCompleteUserIndex(items);
+  if (idx === -1) return [];
+  return items[idx]?.images ?? [];
+}
+
+// dataUrl turns an image attachment into an img/click-open src.
+export function dataUrl(img: OmegaImage): string {
+  return `data:${img.media_type};base64,${img.base64}`;
+}
+
+// MEDIA_MAGIC mirrors the ai/image.go magic signatures so the
+// composer-side validation matches what the backend accepts. Order
+// matters visually but not logically: first hit wins, and webp needs
+// its RIFF marker confirmed at offset 8.
+export function mediaTypeFromBase64(base64: string): string | null {
+  try {
+    const head = atob(base64.slice(0, 16));
+    const bytes = Array.from(head, (c) => c.charCodeAt(0));
+    const starts = (sig: number[]) =>
+      sig.every((b, i) => bytes[i] === b);
+    const sigs: [string, number[]][] = [
+      ["image/png", [0x89, 0x50, 0x4e, 0x47]],
+      ["image/jpeg", [0xff, 0xd8, 0xff]],
+      ["image/gif", [0x47, 0x49, 0x46, 0x38]],
+      ["image/bmp", [0x42, 0x4d]],
+    ];
+    for (const [mediaType, sig] of sigs) {
+      if (starts(sig)) return mediaType;
+    }
+    if (starts([0x52, 0x49, 0x46, 0x46]) && head.slice(8, 12) === "WEBP") {
+      return "image/webp";
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // dropLastExchange drops the last exchange FROM its opening user message:

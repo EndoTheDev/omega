@@ -64,6 +64,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
+	mux.HandleFunc("/attach-image", s.handleAttachImage)
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
@@ -309,6 +310,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	messages, err := decodeMessages(req.Messages)
 	if err != nil {
 		http.Error(w, "invalid messages: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := checkImageSizes(messages); err != nil {
+		http.Error(w, "image too large: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

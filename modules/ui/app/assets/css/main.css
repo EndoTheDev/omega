@@ -618,6 +618,13 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   position: relative;
 }
 
+/* drag & drop attach affordance: the drop surface highlights */
+.messages-wrap.drop-target {
+  outline: 2px dashed rgba(232, 131, 58, 0.6);
+  outline-offset: -4px;
+  border-radius: var(--r-card);
+}
+
 .jump-live {
   position: absolute;
   bottom: 12px;
@@ -656,6 +663,25 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   white-space: pre-wrap;
   word-break: break-word;
   animation: fade-in 0.18s ease-out;
+}
+
+/* image attachments in a transcript bubble: inline thumbnails,
+   click opens the full-size data URL in a new tab */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.msg-images:empty { display: none; }
+.msg-image {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--stroke);
+  cursor: zoom-in;
+  display: block;
 }
 
 @keyframes fade-in {
@@ -1009,6 +1035,54 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   overflow-y: auto;
   outline: none;
 }
+
+/* pending attachment thumbnails above the textarea - removable */
+.attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+.attach-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  overflow: hidden;
+}
+.attach-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.attach-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--text);
+  background: var(--z2);
+  border: none;
+  border-radius: 0 0 0 var(--r-chip);
+  cursor: pointer;
+}
+.attach-remove:hover { color: var(--accent); }
+.pick-btn {
+  background: transparent;
+  border: 1px solid var(--stroke);
+  color: var(--text-dim);
+  border-radius: var(--r-chip);
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.pick-btn:hover { color: var(--text); border-color: var(--text-dim); }
 
 .toolbar {
   display: flex;

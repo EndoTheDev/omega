@@ -88,6 +88,9 @@ func (p *Provider) Stream(ctx context.Context, messages []ai.Message, tools []ai
 		// looks like object..."); Anthropic's input blocks want one
 		// too.
 		msgJSON := messagesToJSON(messages, p.typ == "openai")
+		if p.typ == "ollama" {
+			imagesToOllamaWire(msgJSON)
+		}
 		toolJSON := toolSchemasToJSON(tools)
 		var end ai.StreamEnd
 		switch p.typ {
@@ -202,6 +205,36 @@ func messagesToJSON(messages []ai.Message, stringArgs bool) []map[string]any {
 		msgJSON[i] = m
 	}
 	return msgJSON
+}
+
+// imagesToOllamaWire rewrites user-message images from the generic
+// object shape ai.User marshals ({media_type, base64}) to the raw
+// base64-string array ollama's /api/chat expects. In place over the
+// message maps: an object list sent to ollama 400s with "cannot
+// unmarshal object into Alias.images.0" - verified live 2026-10-20.
+func imagesToOllamaWire(messages []map[string]any) {
+	for _, m := range messages {
+		if m["role"] != "user" {
+			continue
+		}
+		imgs, ok := m["images"].([]any)
+		if !ok || len(imgs) == 0 {
+			continue
+		}
+		raw := make([]string, 0, len(imgs))
+		for _, im := range imgs {
+			ic, ok := im.(map[string]any)
+			if !ok {
+				continue
+			}
+			if b, ok := ic["base64"].(string); ok && b != "" {
+				raw = append(raw, b)
+			}
+		}
+		if len(raw) == len(imgs) {
+			m["images"] = raw
+		}
+	}
 }
 
 // toolSchemasToJSON converts ToolSchema values to the generic map

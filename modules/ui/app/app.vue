@@ -54,7 +54,12 @@
         <!-- wrap owns the pill's absolute placement: the scroll container
              itself scrolls its content (an absolutely positioned child of
              it would scroll away with it) -->
-        <div class="messages-wrap">
+        <div
+          class="messages-wrap"
+          :class="{ 'drop-target': draggingOver }"
+          @dragover.prevent="draggingOver = true"
+          @dragleave.self="draggingOver = false"
+          @drop.prevent="onDrop">
           <div
             class="messages"
             ref="messagesEl">
@@ -71,6 +76,7 @@
                 v-if="item.kind === 'message'"
                 :role="item.role"
                 :content="item.content"
+                :images="item.images"
                 :time="item.time"
                 :final-ms="item.finalMs"
                 :streaming="item.streaming" />
@@ -112,6 +118,10 @@
           v-model:draft="draft"
           v-model:model="selectedModel"
           :models="models"
+          :attachments="pendingAttachments"
+          @attach-files="pendingAttachments.push(...$event)"
+          @remove-attachment="pendingAttachments.splice($event, 1)"
+          @attach-url="onAttachUrl"
           @send="send" />
       </main>
 
@@ -201,15 +211,58 @@
     fetchHealthInfo,
     persistedTelemetry,
     formatDurationMs,
+    dataUrl,
+    lastUserImages,
+    mediaTypeFromBase64,
+    attachImageUrl,
     StreamInterruptedError,
   } from "./composables/omega";
-  import type { BusyMap } from "./composables/omega";
+  import type { BusyMap, OmegaImage } from "./composables/omega";
+
+  // MAX_ATTACH_BYTES mirrors the composer/backend 10MB decoded cap.
+  const MAX_ATTACH_BYTES = 10 * 1024 * 1024;
+
+  // filesToImages reads dropped/pasted File objects into the
+  // ai.ImageContent shape (magic-sniffed, size-capped) - the shared
+  // path behind drag & drop and the composer's paste/picker.
+  async function filesToImages(
+    files: FileList | File[],
+  ): Promise<OmegaImage[]> {
+    const images: OmegaImage[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_ATTACH_BYTES) {
+        window.alert(
+          `${file.name || "dropped image"} too large: ${(file.size / 1048576).toFixed(1)} MB (max 10 MB)`,
+        );
+        continue;
+      }
+      const text = await new Promise<string>((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => resolve("");
+        r.readAsDataURL(file);
+      });
+      const base64 = text.slice(text.indexOf(",") + 1);
+      if (!base64) continue;
+      const magic = mediaTypeFromBase64(base64);
+      if (!magic) {
+        window.alert(
+          `${file.name || "dropped file"} is not a supported image (png, jpeg, gif, webp, bmp)`,
+        );
+        continue;
+      }
+      images.push({ media_type: magic, base64 });
+    }
+    return images;
+  }
 
   interface MessageItem {
     kind: "message";
     role: "user" | "assistant";
     content: string;
     streaming?: boolean;
+    // image attachments on user messages (the retry path re-sends them)
+    images?: OmegaImage[];
     // client-side timestamp for live messages, backend created_at for
     // restored history (ChatMessage renders it as a hover title)
     time?: string;
@@ -259,6 +312,33 @@
   const sessions = ref<Session[]>([]);
   const activeId = ref<string | null>(null);
   const draft = ref("");
+  // pending image attachments for the active composer (single draft
+  // model: one composer, one pending set; cleared at send)
+  const pendingAttachments = ref<OmegaImage[]>([]);
+  const draggingOver = ref(false);
+
+  // onDrop is the drag & drop attach route: dropped image files ride
+  // the same validation as paste/picker, then join the pending set.
+  async function onDrop(e: DragEvent) {
+    draggingOver.value = false;
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    const images = await filesToImages(files);
+    if (images.length) pendingAttachments.value.push(...images);
+  }
+
+  // onAttachUrl is the pasted-URL route: confirm, then the SERVER
+  // fetches the bytes (POST /attach-image) - the browser never
+  // cross-origin fetches them itself. A rejection surfaces as an alert.
+  async function onAttachUrl(url: string) {
+    if (!window.confirm(`Attach ${url} as an image?`)) return;
+    try {
+      const img = await attachImageUrl(url);
+      pendingAttachments.value.push(img);
+    } catch (err) {
+      window.alert(String(err));
+    }
+  }
   const messagesEl = ref<HTMLElement | null>(null);
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
@@ -501,7 +581,7 @@
         const toolById = new Map<string, ToolItem>();
         for (const m of detail.messages) {
           if (m.role === "tool") continue; // consumed by the result pass below
-          if (!m.content && !m.thinking && !m.tool_calls?.length) continue;
+          if (!m.content && !m.thinking && !m.tool_calls?.length && !m.images?.length) continue;
           const role = m.role === "assistant" ? "assistant" : "user";
           if (role === "assistant" && m.thinking) {
             items.push({
@@ -510,11 +590,12 @@
               finalMs: m.timing?.thinking_ms,
             });
           }
-          if (m.content) {
+          if (m.content || (role === "user" && m.images?.length)) {
             items.push({
               kind: "message",
               role,
               content: m.content,
+              images: role === "user" ? m.images : undefined,
               time: m.created_at || m.timestamp || undefined,
               finalMs: m.timing?.response_ms,
             });
@@ -959,15 +1040,17 @@
 
   async function send() {
     const text = draft.value.trim();
-    if (!text) return;
+    const images = pendingAttachments.value;
+    if (!text && !images.length) return;
     draft.value = "";
-    submitText(text);
+    pendingAttachments.value = [];
+    submitText(text, images);
   }
 
   // submitText is the ONE send path - the composer and the interrupted
   // retry both land here. Everything keys off THIS session's state and
   // busy entry, so retrying session A never touches session B.
-  async function submitText(text: string) {
+  async function submitText(text: string, images: OmegaImage[] = []) {
     const startKey = activeKey.value;
     // per-session guard: only THIS session's live stream blocks a send
     if (busyAll.value.has(startKey)) return;
@@ -981,6 +1064,7 @@
       kind: "message",
       role: "user",
       content: text,
+      images: images.length ? images : undefined,
       time: new Date().toISOString(),
     });
     scrollDown(true);
@@ -1025,7 +1109,9 @@
     }
     await runStream(key, st, (drv) =>
       streamChat(
-        [{ role: "user", content: text }],
+        images.length ?
+          [{ role: "user", content: text, images }]
+        : [{ role: "user", content: text }],
         key,
         drv.handlers,
         selectedModel.value || undefined,
@@ -1058,9 +1144,10 @@
     const st = ensureState(key);
     if (busyAll.value.has(key)) return;
     const text = lastUserText(st.transcript);
+    const images = lastUserImages(st.transcript);
     if (text === null) return;
     st.transcript = dropLastExchange(st.transcript);
-    submitText(text);
+    submitText(text, images);
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so

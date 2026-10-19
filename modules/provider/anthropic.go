@@ -215,6 +215,37 @@ type anthropicUsage struct {
 
 // --- Anthropic message conversion ---
 
+// userImageBlocks lifts a user message's images key (the object shape
+// ai.User marshals: [{"media_type","base64"}]) into Anthropic image
+// source blocks. Messages without images yield nil.
+func userImageBlocks(msg map[string]any) []any {
+	imgs, ok := msg["images"].([]any)
+	if !ok || len(imgs) == 0 {
+		return nil
+	}
+	blocks := make([]any, 0, len(imgs))
+	for _, im := range imgs {
+		ic, ok := im.(map[string]any)
+		if !ok {
+			continue
+		}
+		mediaType, _ := ic["media_type"].(string)
+		base64Data, _ := ic["base64"].(string)
+		if mediaType == "" || base64Data == "" {
+			continue
+		}
+		blocks = append(blocks, map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": mediaType,
+				"data":       base64Data,
+			},
+		})
+	}
+	return blocks
+}
+
 // anthropicConvertMessages converts generic message maps to Anthropic
 // format: system prompt lifted to top-level, tool results folded into
 // user messages.
@@ -226,9 +257,19 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 			content, _ := messages[i]["content"].(string)
 			system += content + "\n"
 		case "user":
-			// Check for images (content as array of blocks).
+			// Images ride alongside the text as image source blocks;
+			// content stays a plain string when there are none.
+			imgs := userImageBlocks(messages[i])
 			if content, ok := messages[i]["content"].([]any); ok {
-				result = append(result, map[string]any{"role": "user", "content": content})
+				blocks := append([]any(nil), imgs...)
+				result = append(result, map[string]any{"role": "user", "content": append(blocks, content...)})
+			} else if len(imgs) > 0 {
+				content, _ := messages[i]["content"].(string)
+				blocks := append([]any(nil), imgs...)
+				if content != "" {
+					blocks = append(blocks, map[string]any{"type": "text", "text": content})
+				}
+				result = append(result, map[string]any{"role": "user", "content": blocks})
 			} else {
 				content, _ := messages[i]["content"].(string)
 				result = append(result, map[string]any{"role": "user", "content": content})

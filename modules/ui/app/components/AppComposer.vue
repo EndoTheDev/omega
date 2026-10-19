@@ -2,6 +2,22 @@
   <div
     class="composer"
     :class="{ expanded: expanded }">
+    <div
+      v-if="attachments.length"
+      class="attach-strip">
+      <div
+        v-for="(img, i) in attachments"
+        :key="i"
+        class="attach-thumb"
+        :title="'attached image ' + (i + 1)">
+        <img :src="dataUrl(img)" alt="" />
+        <button
+          class="attach-remove"
+          type="button"
+          title="remove attachment"
+          @click="$emit('remove-attachment', i)">&times;</button>
+      </div>
+    </div>
     <textarea
       ref="ta"
       :value="draft"
@@ -11,7 +27,15 @@
         $emit('update:draft', ($event.target as HTMLTextAreaElement).value);
         resize();
       "
-      @keydown.enter.exact.prevent="$emit('send')" />
+      @keydown.enter.exact.prevent="$emit('send')"
+      @paste="onPaste" />
+    <input
+      ref="fileInput"
+      type="file"
+      accept="image/*"
+      multiple
+      style="display: none"
+      @change="onFilesPicked" />
     <button
       v-if="overflowing"
       class="expand-btn"
@@ -26,8 +50,15 @@
         :models="models"
         @update:model="$emit('update:model', $event)" />
       <button
+        class="pick-btn"
+        type="button"
+        title="attach images"
+        @click="fileInput?.click()">
+        📎
+      </button>
+      <button
         class="send"
-        :disabled="!draft.trim()"
+        :disabled="!canSend"
         @click="$emit('send')">
         send
       </button>
@@ -36,17 +67,28 @@
 </template>
 
 <script setup lang="ts">
+  import { dataUrl, mediaTypeFromBase64, type OmegaImage } from "../composables/omega";
+
   const props = defineProps<{
     draft: string;
     model: string;
     models: string[];
+    // pending image attachments - owned by the app: the transcript
+    // bubble and the interrupted retry both need them
+    attachments: OmegaImage[];
   }>();
 
-  defineEmits<{
+  const emit = defineEmits<{
     (e: "update:draft", value: string): void;
     (e: "update:model", value: string): void;
     (e: "send"): void;
+    (e: "attach-files", images: OmegaImage[]): void;
+    (e: "remove-attachment", index: number): void;
+    (e: "attach-url", url: string): void;
   }>();
+
+  // send needs text OR an attachment - image-only messages are valid
+  const canSend = computed(() => !!props.draft.trim() || props.attachments.length > 0);
 
   // grow with content: 1 row at rest, up to 4 rows (COMPOSER_MAX), then the
   // textarea scrolls. Past the cap an expand button appears (top right) to
@@ -55,7 +97,10 @@
   // 4 rows = 84px of content height.
   const COMPOSER_MAX = 84;
 
+  const MAX_ATTACH_BYTES = 10 * 1024 * 1024; // mirrors the backend's cap
+
   const ta = ref<HTMLTextAreaElement | null>(null);
+  const fileInput = ref<HTMLInputElement | null>(null);
   const expanded = ref(false);
   const overflowing = ref(false);
 
@@ -84,4 +129,69 @@
     () => props.draft,
     () => nextTick(resize),
   );
+
+  // fileToImage reads one File into the ai.ImageContent shape: base64
+  // (data: prefix stripped) plus a magic-sniffed media type. Returns
+  // {img: null, reason} for oversize or non-image files - handleFiles
+  // reports the first reason instead of silently dropping.
+  async function fileToImage(
+    file: File,
+  ): Promise<{ img: OmegaImage | null; reason?: string }> {
+    if (file.size > MAX_ATTACH_BYTES) {
+      return {
+        img: null,
+        reason: `${file.name || "pasted image"} too large: ${(file.size / 1048576).toFixed(1)} MB (max 10 MB)`,
+      };
+    }
+    const text = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("read failed"));
+      r.readAsDataURL(file);
+    });
+    const base64 = text.slice(text.indexOf(",") + 1);
+    if (!base64) return { img: null, reason: "unreadable image data" };
+    const magic = mediaTypeFromBase64(base64);
+    if (!magic) {
+      return {
+        img: null,
+        reason: `${file.name || "file"} is not a supported image (png, jpeg, gif, webp, bmp)`,
+      };
+    }
+    return { img: { media_type: magic, base64 } };
+  }
+
+  async function handleFiles(files: FileList | File[]) {
+    const images: OmegaImage[] = [];
+    let firstReason = "";
+    for (const file of Array.from(files)) {
+      const { img, reason } = await fileToImage(file);
+      if (img) images.push(img);
+      else if (!firstReason && reason) firstReason = reason;
+    }
+    if (images.length) emit("attach-files", images);
+    if (firstReason) window.alert(firstReason);
+  }
+
+  function onFilesPicked(e: Event) {
+    const files = (e.target as HTMLInputElement).files;
+    if (files?.length) void handleFiles(files);
+    if (fileInput.value) fileInput.value.value = "";
+  }
+
+  function onPaste(e: ClipboardEvent) {
+    // Clipboard image files win: paste attaches them
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (files.length) {
+      void handleFiles(files);
+      return;
+    }
+    // A lone plain-text URL offers attach-as-image - the SERVER fetches
+    // the bytes (never cross-origin from the browser). Normal text
+    // paste falls through untouched.
+    const text = (e.clipboardData?.getData("text/plain") ?? "").trim();
+    if (/^https?:\/\/\S+$/i.test(text)) {
+      emit("attach-url", text);
+    }
+  }
 </script>
