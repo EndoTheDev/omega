@@ -743,6 +743,15 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   cursor: default;
 }
 
+/* the module panel body (cron / skills / tools / logs tabs, card
+   t_db430fea): one scroll region, same voice as the files tree */
+.module-panels {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* the scrolling body: entry tree (same voice as the session list rows -
    raised chip hover, mono meta on the edge) */
 .inspector-files {

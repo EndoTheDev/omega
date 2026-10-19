@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -28,6 +29,20 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
 		dir = sp.Dir
 	}
 	return scanSkills(dir)
+}
+
+// ListSkills is the read-only inspector snapshot (agent.SkillsLister,
+// card t_db430fea): a fresh scan of the configured directory, sorted by
+// name. The directory is the live source of truth - a re-scan on every
+// listing is the point; there is no cached loader state to invalidate.
+// A missing directory is an empty inventory, not an error.
+func (sp *SkillsProvider) ListSkills() ([]agent.Skill, error) {
+	skills, err := sp.LoadSkills("")
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	return skills, nil
 }
 
 // promptSectionOrder places the Available Skills section behind the

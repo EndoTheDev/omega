@@ -9,7 +9,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { scanModuleUIs } from "../app/composables/compose.ts";
+import { inspectorPanelTabs, scanModuleUIs } from "../app/composables/compose.ts";
+import { mainViewModules } from "../app/composables/omega.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
@@ -133,17 +134,45 @@ test("the canary component lives in the tools module, not the shell", () => {
   );
 });
 
-test("the inspector mounts the generated module panels", () => {
+test("the inspector mounts the active tab's module panel", () => {
   const sidebar = readFileSync(
     `${root}/app/components/files/RightSidebar.vue`,
     "utf8",
   );
   assert.ok(sidebar.includes("module-panels.generated"), "imports the generated list");
   assert.ok(sidebar.includes('class="module-panels"'), "has the mount section");
-  // main-pane views are a switcher destination, not inspector content -
-  // the mount v-fors the PANEL subset (omega.ts owns mainViewModules)
-  assert.ok(sidebar.includes('v-if="mountedPanels.length"'), "renders nothing when no module ships a panel");
-  assert.ok(sidebar.includes("!mainViewModules.has(p.module)"), "main-view modules stay out of the inspector");
+  // the tab card (t_db430fea): the tab model comes from compose, only
+  // the ACTIVE panel renders (lazy: fetch/poll while the tab is up)
+  assert.ok(sidebar.includes("inspectorPanelTabs("), "tab model is the compose helper");
+  assert.ok(sidebar.includes('v-if="activePanel"'), "renders the active panel only");
+});
+
+test("inspectorPanelTabs: labels, main-view filter, stable order", () => {
+  const panels = [
+    { module: "cron", dockable: { title: "Cron" } },
+    { module: "http_channel", dockable: { title: "Logs" } },
+    { module: "kanban", dockable: { title: "Board" } },
+    { module: "tools", dockable: null },
+  ];
+  const tabs = inspectorPanelTabs(panels, mainViewModules);
+  // main-view modules stay out of the inspector (card 084664b ruling)
+  assert.deepEqual(
+    tabs.map((t) => t.module),
+    ["cron", "http_channel", "tools"],
+  );
+  // a dockable.json title wins, the module name is the fallback
+  assert.deepEqual(
+    tabs.map((t) => t.title),
+    ["Cron", "Logs", "tools"],
+  );
+});
+
+test("inspectorPanelTabs: empty module list, missing dockables", () => {
+  assert.deepEqual(inspectorPanelTabs([], mainViewModules), []);
+  assert.deepEqual(
+    inspectorPanelTabs([{ module: "cron" }], mainViewModules),
+    [{ module: "cron", title: "cron" }],
+  );
 });
 
 test("nuxt.config wires the composition in", () => {

@@ -36,6 +36,13 @@ type Server struct {
 	// Kanban is the optional board seam (modules/kanban). A nil value
 	// answers 501 on the /tasks endpoints - the board is optional.
 	Kanban agent.KanbanProvider
+	// Inspector seams (card t_db430fea, read-only v1). All optional:
+	// a nil Skills serves an empty list on /skills, a nil Cron an
+	// empty list on /cron/jobs, and a nil logger (or one without a
+	// path) 404s on /logs.
+	Skills agent.SkillsProvider
+	Cron   agent.CronProvider
+	logger agent.LoggerProvider
 	httpSrv  *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -80,6 +87,9 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/tools", s.handleTools)
+	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
+	mux.HandleFunc("/skills", s.handleSkills)
+	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/settings", s.handleSettings)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep

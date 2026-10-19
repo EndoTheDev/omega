@@ -18,6 +18,7 @@ import (
 // FileLogger implements agent.LoggerProvider with a file backend.
 type FileLogger struct {
 	mu   sync.Mutex
+	path string
 	file *os.File
 	log  *log.Logger
 }
@@ -30,9 +31,20 @@ func NewFileLogger(path string) (*FileLogger, error) {
 		return nil, fmt.Errorf("open log file: %w", err)
 	}
 	return &FileLogger{
+		path: path,
 		file: f,
 		log:  log.New(f, "", log.LstdFlags),
 	}, nil
+}
+
+// Path returns the file this logger writes to. The inspector log tail
+// (GET /logs, card t_db430fea) reads the same path the logger holds
+// open, so a /logs read and the log writes can never disagree about
+// what "the server's log" is.
+func (l *FileLogger) Path() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.path
 }
 
 // Printf writes an info-level log entry.
