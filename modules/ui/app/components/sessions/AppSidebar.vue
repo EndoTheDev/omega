@@ -80,7 +80,8 @@
               v-if="meta(s)"
               class="session-meta">{{ meta(s) }}</span>
             <!-- hover action cluster: archive (box) + delete (trash),
-                 same right-edge slot the age text vacates on hover -->
+                 inset LEFT of the time slot - the age text's slot stays
+                 empty during hover (the row's 34px right padding band) -->
             <span
               class="row-actions"
               @mouseenter="hoveredId = s.id">
@@ -96,7 +97,7 @@
                   viewBox="0 0 16 16"
                   aria-hidden="true">
                   <path
-                    d="M2 4.5h12M5.5 4.5V3h5v1.5M4 4.5l.8 8h6.4l.8-8M8 8v3.5"
+                    d="M2 4.5h12v3H2zM3.5 7.5v5h9v-5M6.25 10h3.5"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="1.2" />
@@ -108,7 +109,7 @@
                   viewBox="0 0 16 16"
                   aria-hidden="true">
                   <path
-                    d="M2 4.5h12M5.5 4.5V3h5v1.5M4 4.5l.8 8h6.4l.8-8M8 7.5v4M6 9.5h4"
+                    d="M2 4.5h12v3H2zM3.5 7.5v5h9v-5M6.25 10h3.5M8 10V6.5"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="1.2" />
