@@ -134,6 +134,31 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
 	INSERT INTO messages_fts(messages_fts, rowid, session_id, payload) VALUES ('delete', old.id, old.session_id, old.payload);
 	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
 END;
+
+-- FTS5 index over session labels, the title half of the unified
+-- /sessions/search. Standalone (no external content): one row per
+-- session, kept in sync by these triggers on INSERT, label UPDATE and
+-- DELETE. Labels change in three places (manual rename, auto-title,
+-- creation) - trigger coverage beats a hook at each call site.
+CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
+	session_id UNINDEXED,
+	label
+);
+CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
+	INSERT INTO sessions_fts(session_id, label) VALUES (new.id, new.label);
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_au AFTER UPDATE OF label ON sessions BEGIN
+	DELETE FROM sessions_fts WHERE session_id = old.id;
+	INSERT INTO sessions_fts(session_id, label) VALUES (new.id, new.label);
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_ad AFTER DELETE ON sessions BEGIN
+	DELETE FROM sessions_fts WHERE session_id = old.id;
+END;
+-- Plain DELETE FROM (not the fts5 'delete' special command): as of
+-- SQLite 3.53 that command errors on regular tables - it only works
+-- for contentless/external-content indexes (messages_fts uses it there
+-- because its content table backs the index). A regular fts5 row
+-- deletes through SQL like any table.
 `)
 	if err != nil {
 		return err
@@ -141,6 +166,12 @@ END;
 	// Rebuild FTS index to pick up any messages that existed before
 	// the FTS table was created (triggers only fire on new writes).
 	s.db.Exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
+	// Same catch-up for the label index: standalone tables have no
+	// 'rebuild', so a full delete-and-reload picks up labels that
+	// predate the index (and heals any drift). One row per session,
+	// runs once per open - trivially cheap.
+	s.db.Exec(`DELETE FROM sessions_fts;
+INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 	// Add columns that may be missing from older databases. SQLite
 	// does not support IF NOT EXISTS on ALTER TABLE, so we catch
 	// the "duplicate column" error and ignore it.
@@ -595,6 +626,71 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.Searc
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// SearchSessions performs the unified search behind /sessions/search:
+// one phrase-quoted term (quoteFTS, `"term"*`) queries BOTH the
+// session-label index (sessions_fts) and the message-content index
+// (messages_fts), merged to ONE hit per session. A label match
+// outranks any content match for the same session; label-matching
+// sessions lead, content-only sessions follow in their best rank.
+// Progressive typing is preserved end to end: "fib", "fibo",
+// "fibonacci" each still hit (quoteFTS trailing star, in-app comment
+// 5 2026-10-18).
+func (s *Store) SearchSessions(ctx context.Context, query string) ([]agent.SearchResult, error) {
+	fts := quoteFTS(query)
+	out := []agent.SearchResult{}
+	seen := make(map[string]bool)
+
+	// Label hits first. The snippet is the label itself - there is no
+	// content context to bracket-mark.
+	trows, err := s.db.QueryContext(ctx,
+		`SELECT session_id, label FROM sessions_fts
+		 WHERE sessions_fts MATCH ? ORDER BY rank`, fts)
+	if err != nil {
+		return nil, err
+	}
+	for trows.Next() {
+		var id, label string
+		if err := trows.Scan(&id, &label); err != nil {
+			trows.Close()
+			return nil, err
+		}
+		// The label index holds one row per session, but belt-and-
+		// braces on scans keeps the one-hit-per-session contract
+		// local to this method.
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, agent.SearchResult{SessionID: id, Snippet: label, Title: true})
+	}
+	if err := trows.Err(); err != nil {
+		trows.Close()
+		return nil, err
+	}
+	trows.Close()
+
+	// Content hits, best rank first; label-matched sessions skip.
+	crows, err := s.db.QueryContext(ctx,
+		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
+		 FROM messages_fts WHERE messages_fts MATCH ? ORDER BY rank`, fts)
+	if err != nil {
+		return nil, err
+	}
+	defer crows.Close()
+	for crows.Next() {
+		var id, snippet string
+		if err := crows.Scan(&id, &snippet); err != nil {
+			return nil, err
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, agent.SearchResult{SessionID: id, Snippet: snippet})
+	}
+	return out, crows.Err()
 }
 
 // sessionStats accumulates per-session counters that feed into Insights.

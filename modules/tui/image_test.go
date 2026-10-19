@@ -45,6 +45,9 @@ func (m *mockStore) GetAncestorMessages(context.Context, string) ([]ai.Message, 
 func (m *mockStore) SearchMessages(context.Context, string) ([]agent.SearchResult, error) {
 	return nil, nil
 }
+func (m *mockStore) SearchSessions(context.Context, string) ([]agent.SearchResult, error) {
+	return nil, nil
+}
 func (m *mockStore) ComputeInsights(context.Context, int) (*agent.Insights, error) {
 	return nil, nil
 }
