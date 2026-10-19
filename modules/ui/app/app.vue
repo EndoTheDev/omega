@@ -241,54 +241,22 @@
     streamChat,
     attachSession,
     stopSession,
+    fetchTranscript,
+    renderTranscriptItems,
     fetchHealthInfo,
     persistedTelemetry,
     formatDurationMs,
     StreamInterruptedError,
   } from "./composables/omega";
-  import type { BusyMap } from "./composables/omega";
-
-  interface MessageItem {
-    kind: "message";
-    role: "user" | "assistant";
-    content: string;
-    streaming?: boolean;
-    // client-side timestamp for live messages, backend created_at for
-    // restored history (ChatMessage renders it as a hover title)
-    time?: string;
-    // server-measured response duration (restored history)
-    finalMs?: number;
-  }
-  interface ThinkingItem {
-    kind: "thinking";
-    content: string;
-    streaming?: boolean;
-    // server-measured thinking duration (restored history)
-    finalMs?: number;
-  }
-  interface ToolItem {
-    kind: "tool";
-    name: string;
-    status: string;
-    // a dead stream never delivers the tool result - flagged so the
-    // elapsed meter in ToolCallLine freezes instead of ticking forever
-    interrupted?: boolean;
-    output?: string;
-    result?: string;
-    // server-measured duration from the matched result (restored)
-    finalMs?: number;
-  }
-  // inline "stream interrupted" marker: appears only when the SSE
-  // transport died mid-run (never on a clean end). Carries the resume
-  // affordance - see retryStream.
-  interface InterruptedItem {
-    kind: "interrupted";
-  }
-  type TranscriptItem =
-    | MessageItem
-    | ThinkingItem
-    | ToolItem
-    | InterruptedItem;
+  import type {
+    BusyMap,
+    TranscriptDetail,
+    TranscriptItem,
+    MessageItem,
+    ThinkingItem,
+    ToolItem,
+    InterruptedItem,
+  } from "./composables/omega";
 
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
@@ -507,9 +475,9 @@
   );
 
   // transcript models the live stream: user message, thinking blocks (one per
-  // reasoning run), tool-call lines, assistant message. Restored sessions map
-  // the persisted Assistant{Thinking, ToolCalls, Content} back into the same
-  // three shapes so a reload renders everything that happened.
+  // reasoning run), tool-call lines, assistant message. Restored sessions get
+  // the SAME items from the server's GET /sessions/{id}/transcript - no
+  // reload-side mapping, one contract (renderTranscriptItems) for both.
   // Read-marking: opening a session IS reading it - live-watched
   // content never unreads itself. The row's unread clears locally so
   // the status element goes grey instantly; the PATCH {"read": true}
@@ -522,7 +490,7 @@
     markSessionRead(id).catch(() => refreshSessions());
   }
 
-  async function openSession(id: string) {
+  async function openSession(id: string, preloaded?: TranscriptDetail) {
     if (!fromHistory) syncURL(id, true);
     activeId.value = id;
     drawerOpen.value = false;
@@ -531,9 +499,9 @@
     const st = ensureState(id);
     // A LOCALLY live stream IS the content - refetching now would clobber
     // the stream state with a mid-flight persisted snapshot. A server-
-    // reported active run (busyAll via serverBusy, e.g. right after a page
-    // refresh) must NOT skip this: there is no local transcript to
-    // clobber, the fetch below renders persisted history and the attach
+    // reported active run (serverBusy, e.g. right after a page refresh)
+    // must NOT skip this: there is no local transcript to clobber, the
+    // transcript fetch below renders persisted history and the attach
     // lands in the live stream.
     if (busySet.value.has(id)) {
       scrollDown(true);
@@ -546,7 +514,7 @@
     // pure view change, retry stays per-session)
     const hadInterrupted = hasInterruptedMarker(st.transcript);
     try {
-      const detail = await fetchSession(id);
+      const detail = preloaded ?? (await fetchTranscript(id));
       // durable telemetry straight from the persisted row: the token
       // total and the last-run rates land in the status bar before any
       // stream runs - reload shows what the session actually has
@@ -555,61 +523,16 @@
       st.tokens = durable.tokens;
       st.tokensPerSecond = durable.tps;
       st.lastChunksPerSecond = durable.cps;
-      if (detail.messages) {
-        const items: TranscriptItem[] = [];
-        const toolById = new Map<string, ToolItem>();
-        for (const m of detail.messages) {
-          if (m.role === "tool") continue; // consumed by the result pass below
-          if (!m.content && !m.thinking && !m.tool_calls?.length) continue;
-          const role = m.role === "assistant" ? "assistant" : "user";
-          if (role === "assistant" && m.thinking) {
-            items.push({
-              kind: "thinking",
-              content: m.thinking,
-              finalMs: m.timing?.thinking_ms,
-            });
-          }
-          if (m.content) {
-            items.push({
-              kind: "message",
-              role,
-              content: m.content,
-              time: m.created_at || m.timestamp || undefined,
-              finalMs: m.timing?.response_ms,
-            });
-          }
-          if (role === "assistant" && m.tool_calls?.length) {
-            for (const tc of m.tool_calls) {
-              const t: ToolItem = {
-                kind: "tool",
-                name: tc.name || "tool",
-                status: "done",
-                output:
-                  tc.arguments ?
-                    JSON.stringify(tc.arguments, null, 2)
-                  : undefined,
-              };
-              if (tc.id) toolById.set(tc.id, t);
-              items.push(t);
-            }
-          }
-        }
-        // second pass: tool-role messages carry the persisted results,
-        // matched to their call by tool_call_id
-        for (const m of detail.messages) {
-          if (m.role !== "tool" || !m.tool_call_id) continue;
-          const t = toolById.get(m.tool_call_id);
-          if (!t) continue;
-          t.result = m.content || "";
-          t.status = m.is_error ? "error" : "done";
-          t.finalMs = m.timing?.elapsed_ms;
-        }
-        st.transcript = items;
-        if (hadInterrupted) st.transcript.push({ kind: "interrupted" });
-      }
+      // restore IS rendering now: the server hands over wire-order
+      // transcript items (thinking/text/calls/results with their timing)
+      // and renderTranscriptItems maps them straight onto the component
+      // contract the live stream paints - no reload-side reconstruction
+      // loop to get wrong (reload order, thinking merge, lost durations).
+      st.transcript = renderTranscriptItems(detail.items);
+      if (hadInterrupted) st.transcript.push({ kind: "interrupted" });
       // Reattach: the run is server-side now (card t_2f9b6110), so a
-      // session mid-generation reports active=true on its detail - the
-      // refreshed page renders the persisted history (the user message
+      // session mid-generation reports active=true on its transcript -
+      // the refreshed page renders the persisted history (the user message
       // persisted pre-run, nothing after it yet) and then auto-subscribes
       // to the live events stream. Re-check LOCAL busy only: serverBusy
       // holds this session right now (the run IS active) and must not
@@ -1356,9 +1279,9 @@
     const initial = parseSessionPath(window.location.pathname);
     if (initial) {
       try {
-        await fetchSession(initial);
+        const detail = await fetchTranscript(initial);
         fromHistory = true;
-        await openSession(initial);
+        await openSession(initial, detail);
         fromHistory = false;
       } catch {
         history.replaceState({}, "", "/");
