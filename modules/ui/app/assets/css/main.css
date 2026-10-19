@@ -994,6 +994,14 @@ labels stopped short of the right edge. */
 .messages.stacked .toolcall { max-width: 100%; }
 .messages.stacked .thinking { max-width: 100%; }
 
+/* the live turn rides to the TOP of the column (Endo 2026-10-20:
+   "push everything else up and then stick to the top") - not a scroll
+   jump (impossible when nothing is scrollable below) but a render-order
+   flip: while busy the newest block renders first, older blocks move
+   under it; when the run ends the class drops and the block settles
+   back into chronological flow */
+.messages.stacked .msg-block.live { order: -1; }
+
 .messages.stacked .msg.assistant .bubble {
   width: 100%;
   max-width: 100%;
