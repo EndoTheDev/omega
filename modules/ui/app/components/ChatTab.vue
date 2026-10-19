@@ -63,7 +63,9 @@
       :models="models"
       :busy="busy"
       :can-retry="canRetry"
+      :thinking="thinking"
       @update:model="emit('update:model', $event)"
+      @update:thinking="emit('update:thinking', $event)"
       @send="onSend"
       @cancel="host.cancel(stateKey)"
       @retry="onRetry" />
@@ -82,7 +84,7 @@
     CHAT_HOST_KEY,
     type ChatState,
   } from "../composables/chat";
-  import { createItemKeySource, isAtBottom, pillVisible, lastUserText } from "../composables/omega";
+  import { createItemKeySource, isAtBottom, pillVisible, lastUserText, thinkingLevelWire } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatMessage from "./chat/ChatMessage.vue";
@@ -96,10 +98,13 @@
     showThinking: boolean;
     model: string;
     models: string[];
+    /** reasoning-effort chip selection ("default" = no field sent) */
+    thinking: string;
   }>();
 
   const emit = defineEmits<{
     (e: "update:model", value: string): void;
+    (e: "update:thinking", value: string): void;
   }>();
 
   const host = inject(CHAT_HOST_KEY)!;
@@ -181,10 +186,10 @@
     const text = draft.value.trim();
     if (!text) return;
     draft.value = "";
-    host.submit(stateKey, text, props.model);
+    host.submit(stateKey, text, props.model, thinkingLevelWire(props.thinking));
   }
   function onRetry() {
-    host.retry(stateKey, props.model);
+    host.retry(stateKey, props.model, thinkingLevelWire(props.thinking));
   }
 
   // --- mount: the tab's restore + live-attach entry ---

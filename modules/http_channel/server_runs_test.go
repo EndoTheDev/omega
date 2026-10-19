@@ -39,6 +39,11 @@ func (p *stepProvider) ModelName() string { return p.modelName }
 
 func (p *stepProvider) SetThinkingLevel(level string) {}
 
+func (p *stepProvider) WithThinkingLevel(level string) ai.Provider {
+	cp := *p
+	return &cp
+}
+
 func (p *stepProvider) WithModel(model string) ai.Provider {
 	cp := *p
 	cp.modelName = model

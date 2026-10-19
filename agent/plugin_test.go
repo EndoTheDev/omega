@@ -22,6 +22,9 @@ func (s *stubProvider) WithModel(model string) ai.Provider {
 	return &cp
 }
 func (s *stubProvider) SetThinkingLevel(level string)    {}
+func (s *stubProvider) WithThinkingLevel(string) ai.Provider {
+	return s
+}
 func (s *stubProvider) ListModels() ([]string, error)    { return nil, nil }
 func (s *stubProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}, nil }
 
