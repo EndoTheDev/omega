@@ -26,6 +26,11 @@ type Context struct {
 	Memory        MemoryProvider
 	PromptBuilder PromptBuilder
 
+	// Captioner is optional (vision_model knob): the host builds it
+	// once config and store are resolved, before NewFromContext, and
+	// every agent from this Context captions images through it.
+	Captioner Captioner
+
 	// Tool providers (additive — multiple plugins contribute).
 	ToolProviders []ToolProvider
 

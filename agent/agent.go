@@ -32,6 +32,7 @@ type Agent struct {
 	promptContext  string
 	promptBuilder  PromptBuilder
 	extensionInfos []ExtensionInfo
+	captioner      Captioner
 	userInput      chan string
 	injectedMsgs   <-chan InjectedMessage
 	pendingDeleg   func() int
@@ -131,6 +132,13 @@ func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
 	a.extensionInfos = infos
 }
 
+// SetCaptioner installs the image captioner (agent/caption.go). When
+// set, image-carrying user messages are described once before the loop
+// and the loop-visible text carries the caption. Nil = images untouched.
+func (a *Agent) SetCaptioner(c Captioner) {
+	a.captioner = c
+}
+
 // SetLoopProvider installs a custom agent loop. A nil value clears
 // the loop; Run will return an error if called without a loop set.
 func (a *Agent) SetLoopProvider(loop LoopProvider) {
@@ -199,6 +207,9 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	if ctx.PendingDelegations != nil {
 		ag.SetPendingDelegations(ctx.PendingDelegations)
 	}
+	if ctx.Captioner != nil {
+		ag.SetCaptioner(ctx.Captioner)
+	}
 	return ag
 }
 
@@ -250,6 +261,15 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider ai.Provider, messa
 		defer close(events)
 		if a.loop == nil {
 			events <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
+			return
+		}
+		// Image captioning (vision_model knob): captioned copies go to
+		// the loop, the caller's messages stay original. A captioning
+		// failure ends the run before any streaming - loud, not a
+		// provider 400 about unseen pixels.
+		messages, err := a.applyCaptions(ctx, messages)
+		if err != nil {
+			events <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
 			return
 		}
 		runTools := tools
