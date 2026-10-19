@@ -4,7 +4,24 @@
     class="dock-split"
     :class="[node.direction, cellStyle ? 'dock-cell' : 'dock-root']"
     :style="cellStyle">
+    <!-- root-pane case (the dock-blank fix): removePane's hoist collapses
+         split[last] into a bare pane as the TREE root - DockSplit is the
+         unconditional root renderer, so it must also render a pane-rooted
+         tree: one cell filling the whole area, no dividers, same slots. -->
+    <DockPane
+      v-if="node.kind === 'pane'"
+      :node="node"
+      :cell-style="{ width: '100%', height: '100%' }">
+      <template
+        v-for="(_, name) in $slots"
+        #[name]="slotProps">
+        <slot
+          :name="name"
+          v-bind="slotProps ?? {}" />
+      </template>
+    </DockPane>
     <template
+      v-else
       v-for="(child, idx) in node.children"
       :key="child.id">
       <DockSplit
@@ -62,7 +79,7 @@
   import DockDivider from "./DockDivider.vue";
 
   const props = defineProps<{
-    node: DockSplit;
+    node: DockSplit | DockPaneNode;
     /** set on nested cells by the PARENT split; the ROOT gets dock-root CSS */
     cellStyle?: Record<string, string>;
   }>();
@@ -77,16 +94,17 @@
   // only among the flexible ones - a sum < 1 leaves free space
   // UNDISTRIBUTED (flex spec), so grow renormalizes among flexible cells.
   function cellStyleFor(child: DockNode, idx: number): Record<string, string> {
-    const axis = props.node.direction === "row" ? "width" : "height";
+    const node = props.node as DockSplit; // root may be a bare pane; this runs for splits only
+    const axis = node.direction === "row" ? "width" : "height";
     if (child.kind === "pane" && child.fixed !== null)
       return { [axis]: child.fixed + "px", flex: "0 0 auto" };
-    const n = props.node.children.length;
-    const totalFlex = props.node.children.reduce(
+    const n = node.children.length;
+    const totalFlex = node.children.reduce(
       (a, c, k) =>
-        (c.kind !== "pane" || c.fixed === null) ? a + (props.node.sizes[k] ?? 1 / n) : a,
+        (c.kind !== "pane" || c.fixed === null) ? a + (node.sizes[k] ?? 1 / n) : a,
       0,
     );
-    const grow = (props.node.sizes[idx] ?? 1 / n) / Math.max(totalFlex, 0.000001);
+    const grow = (node.sizes[idx] ?? 1 / n) / Math.max(totalFlex, 0.000001);
     return { [axis]: "auto", flex: `${grow} 1 0` };
   }
 
@@ -100,11 +118,12 @@
   const snappedIdx = ref<number | null>(null);
 
   function measure(): number[] {
+    const node = props.node as DockSplit;
     const cells = [...(rootEl.value?.children ?? [])].filter((el) =>
       (el as HTMLElement).classList.contains("dock-cell"),
     ) as HTMLElement[];
-    const axis = props.node.direction === "row" ? "offsetWidth" : "offsetHeight";
-    return props.node.children.map((_, i) => cells[i]?.[axis] ?? 0);
+    const axis = node.direction === "row" ? "offsetWidth" : "offsetHeight";
+    return node.children.map((_, i) => cells[i]?.[axis] ?? 0);
   }
 
   function onDrag(dividerIndex: number, delta: number) {
@@ -116,15 +135,16 @@
     // content box for the pure math: the split's client px minus the
     // gutters its dividers occupy = the sum of the measured cells
     const contentPx = startPx.reduce((a, p) => a + p, 0);
-    api.drag(props.node.id, dividerIndex, startPx, delta, contentPx);
+    api.drag((props.node as DockSplit).id, dividerIndex, startPx, delta, contentPx);
     // the controlled pane is left (fixed) or, when it flexes, the fixed
     // right one - mirror the pure fn's read to light the snap guide
+    const node = props.node as DockSplit;
     const li = dividerIndex - 1;
     const i = dividerIndex;
     const px =
-      (props.node.children[li] as DockPaneNode).fixed !== null
+      (node.children[li] as DockPaneNode).fixed !== null
         ? startPx[li] + delta
-        : (props.node.children[i] as DockPaneNode).fixed !== null
+        : (node.children[i] as DockPaneNode).fixed !== null
           ? startPx[i] - delta
           : startPx[li] + delta;
     snappedIdx.value = snapCandidate(px) !== null ? dividerIndex : null;
