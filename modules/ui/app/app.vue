@@ -175,7 +175,6 @@
     createItemKeySource,
     streamChat,
     attachSession,
-    fetchHealthInfo,
     persistedTelemetry,
     formatDurationMs,
     StreamInterruptedError,
