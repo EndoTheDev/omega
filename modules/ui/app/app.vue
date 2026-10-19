@@ -58,6 +58,7 @@
               :model="selectedModel"
               :models="models"
               :thinking="selectedThinking"
+              :appearance="appearance"
               @update:model="selectedModel = $event"
               @update:thinking="selectedThinking = $event" />
           </div>
@@ -94,6 +95,7 @@
           <SettingsTab
             class="pane"
             v-model:show-thinking="showThinking"
+            v-model:appearance="appearance"
             :theme-mode="themeMode"
             @set-theme="setTheme" />
         </template>
@@ -161,8 +163,10 @@
     parseSessionPath,
     sessionPath,
     pinSession,
+    parseAppearance,
+    APPEARANCE_KEY,
   } from "./composables/omega";
-  import type { Session } from "./composables/omega";
+  import type { Session, Appearance } from "./composables/omega";
   import {
     allNodes,
     createDock,
@@ -224,6 +228,15 @@
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
   const showThinking = ref(true);
+  // chat appearance (card t_84e4653c): 'chat' chronolog | 'stacked'
+  // blocks. Persisted like the theme - last choice wins across reloads,
+  // garbage restores the default.
+  const appearance = ref<Appearance>("chat");
+  // the knob flip re-renders instantly; the change persists for the
+  // next reload (last choice wins, same pattern as the theme)
+  watch(appearance, (a) => {
+    localStorage.setItem(APPEARANCE_KEY, a);
+  });
   const contextSize = ref(0);
 
   // --- dock store (card t_63253264): the layout tree is the single
@@ -681,6 +694,10 @@
     const saved = localStorage.getItem("omega.theme-mode") as ThemeMode | null;
     if (saved === "light" || saved === "dark" || saved === "auto")
       themeMode.value = saved;
+
+    // restore the chat appearance (chat | stacked) - parseAppearance
+    // falls back to the default on a missing/tampered value
+    appearance.value = parseAppearance(localStorage.getItem(APPEARANCE_KEY));
 
     // auto mode: follow prefers-color-scheme reactively
     mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

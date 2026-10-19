@@ -148,16 +148,19 @@
     type SettingGroup,
     type SettingKnob,
     type SettingsPayload,
+    type Appearance,
   } from "~/composables/omega";
 
   const props = defineProps<{
     showThinking: boolean;
     themeMode: "auto" | "light" | "dark";
+    appearance: Appearance;
   }>();
 
   const emit = defineEmits<{
     (e: "update:showThinking", value: boolean): void;
     (e: "set-theme", mode: "auto" | "light" | "dark"): void;
+    (e: "update:appearance", value: Appearance): void;
   }>();
 
   // --- server payload state ---
@@ -225,6 +228,16 @@
         options: ["auto", "light", "dark"],
         help: "interface colour theme; auto follows the system",
       },
+      {
+        key: "chat.appearance",
+        label: "chat appearance",
+        type: "select",
+        value: props.appearance,
+        options: ["chat", "stacked"],
+        help:
+          "stacked renders each turn as one block and pins it to the top " +
+          "of the pane while the answer streams; chat is the flat chronolog",
+      },
     ],
   }));
 
@@ -271,8 +284,11 @@
 
   // --- value plumbing ---
 
-  const clientValue = (knob: SettingKnob): unknown =>
-    knob.key === "chat.show_thinking" ? props.showThinking : props.themeMode;
+  const clientValue = (knob: SettingKnob): unknown => {
+    if (knob.key === "chat.show_thinking") return props.showThinking;
+    if (knob.key === "chat.appearance") return props.appearance;
+    return props.themeMode;
+  };
 
   // serverValue reads draft-first: a knob the user edited (dirty or not)
   // always displays what will be saved.
@@ -309,6 +325,8 @@
     if (isClient(group)) {
       if (knob.key === "chat.theme")
         emit("set-theme", value as "auto" | "light" | "dark");
+      else if (knob.key === "chat.appearance")
+        emit("update:appearance", value as Appearance);
       return;
     }
     draft.value = { ...draft.value, [knob.key]: value };
