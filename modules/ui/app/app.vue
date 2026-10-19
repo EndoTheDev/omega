@@ -226,6 +226,7 @@
   import {
     anyBusy,
     withBusy,
+    runningIds,
     pinSession,
     markSessionRead,
     archiveSession,
@@ -265,6 +266,22 @@
   const upSeconds = ref(0);
   const HEALTH_POLL_MS = 30000;
   let healthTimer: ReturnType<typeof setInterval> | null = null;
+  // running-state poll: the /sessions row's running flag is the single
+  // truth for "is this session streaming", so the webui polls it - that
+  // is what lets a tab that never held the SSE (every other tab, every
+  // future tab) reconcile its pulse instead of owning stream state.
+  // A hidden tab skips its ticks; an in-flight poll never overlaps.
+  const RUNNING_POLL_MS = 2000;
+  let runningTimer: ReturnType<typeof setInterval> | null = null;
+  let runningPollInFlight = false;
+  function tickRunningPoll() {
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (runningPollInFlight) return;
+    runningPollInFlight = true;
+    refreshSessions().finally(() => {
+      runningPollInFlight = false;
+    });
+  }
   const models = ref<string[]>([]);
   const selectedModel = ref("");
   const sessions = ref<Session[]>([]);
@@ -537,7 +554,7 @@
       // to the live events stream. Re-check LOCAL busy only: serverBusy
       // holds this session right now (the run IS active) and must not
       // block the attach - only a double-call within this page does.
-      if (detail.active && !busySet.value.has(id)) {
+      if (detail.running && !busySet.value.has(id)) {
         await runStream(id, st, async (drv) => {
           await attachSession(id, drv.handlers);
         });
@@ -740,7 +757,7 @@
     let thinking: ThinkingItem | null = null;
     // anything at all arrived (chunks, tool lines, status) - the finalize
     // no-ghost-bubble rule needs this: a reattach to an ALREADY finished
-    // run (detail.active raced the finish, the 404 path) pushes nothing
+    // run (detail.running raced the finish, the 404 path) pushes nothing
     let sawActivity = false;
     const sentAt = Date.now();
     // a fresh stream takes the meters over: the last-known idle values
@@ -1029,7 +1046,7 @@
       // server-reported live runs replace (not union into) the last
       // snapshot: these are the sessions a JUST-refreshed page sees as
       // pulsing - local streams carry their own busy entries in busySet.
-      serverBusy.value = new Set(list.filter((s) => s.active).map((s) => s.id));
+      serverBusy.value = runningIds(list);
     } catch {
       // sidebar refresh is best-effort
     }
@@ -1273,6 +1290,8 @@
       // models are decoration until a chat runs
     }
     refreshSessions();
+    // running-state poller: every tab reconciles against the rows
+    runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
 
     // restore the session named by the URL, if it exists - an unknown or
     // deleted id routes home (and the URL comes with it)
@@ -1294,6 +1313,7 @@
   onUnmounted(() => {
     window.removeEventListener("popstate", onPop);
     if (healthTimer) clearInterval(healthTimer);
+    if (runningTimer) clearInterval(runningTimer);
     messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
     window.removeEventListener("resize", squeezeCheck);
     if (spinnerTimer) clearInterval(spinnerTimer);

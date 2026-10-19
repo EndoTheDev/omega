@@ -65,9 +65,10 @@ export interface Session {
   // server-side read stamp + read-time unread (updated_at > last_read_at)
   last_read_at?: string;
   unread?: boolean;
-  // live-run flag from the server: a detached /chat run is streaming
-  // this session (drives the post-refresh streaming pulse)
-  active?: boolean;
+  // live-run flag from the server (always present, true/false): the
+  // runHub, not the client, owns "is this session streaming" - every
+  // tab reconciles its pulse against the row
+  running?: boolean;
 }
 
 // LastRunStats is one completed run's average rates, stored on the
@@ -85,10 +86,11 @@ export interface LastRunStats {
 // reconstruction.
 export interface TranscriptDetail {
   session: Session;
-  // live-run flag: true while a detached /chat run streams this session -
-  // openSession auto-subscribes to the live events stream when it sees
-  // this, instead of only showing history.
-  active?: boolean;
+  // live-run flag (GET /sessions/{id}, always present true/false): true
+  // while a detached /chat run streams this session - openSession
+  // auto-subscribes to the live events stream when it sees this,
+  // instead of only showing history.
+  running?: boolean;
   items: TranscriptWireItem[];
 }
 
@@ -364,6 +366,16 @@ export function isBusy(b: BusyMap, id: string): boolean {
 // stream from the map - they never gate a session.
 export function anyBusy(b: BusyMap): boolean {
   return b.size > 0;
+}
+
+// runningIds projects the /sessions rows into the busy set the pulse
+// reads: the row's server-owned running flag IS the stream state, so a
+// tab that never held the SSE reconciles against it. Pure, so polling
+// refreshes stay unit-testable without a component framework.
+export function runningIds(list: Pick<Session, "id" | "running">[]): Set<string> {
+  const ids = new Set<string>();
+  for (const s of list) if (s.running) ids.add(s.id);
+  return ids;
 }
 
 // --- URL <-> session routing (hand-rolled History wiring) ---

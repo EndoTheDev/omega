@@ -759,14 +759,18 @@ func truncate(s string, n int) string {
 // last-read stamp) plus the read-time counts, the last recorded model,
 // the read-time unread state, and whether the session has a live run
 // right now (the sidebar's streaming pulse after a page refresh - the
-// in-memory busy map no longer survives the reload).
+// in-memory busy map no longer survives the reload). The running flag
+// is the backend's single truth for "is this session streaming" (it
+// derives from the runHub, never from a client's memory of its own
+// stream), so it is ALWAYS present on the row - true and false alike -
+// and every tab reconciles its pulse against it.
 type sessionPayload struct {
 	agent.Session
 	MessageCount int    `json:"message_count"`
 	ToolCount    int    `json:"tool_count"`
 	Model        string `json:"model,omitempty"`
 	Unread       bool   `json:"unread"`
-	Active       bool   `json:"active,omitempty"`
+	Running      bool   `json:"running"`
 }
 
 // handleSessions serves GET /sessions (list) and POST /sessions (create).
@@ -813,7 +817,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			// computed at read time from the row itself - no counters,
 			// no schema writes (same pattern as the counts)
 			payload.Unread = agent.SessionUnread(sess)
-			payload.Active = s.runs.active(sess.ID)
+			payload.Running = s.runs.active(sess.ID)
 			out = append(out, payload)
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -959,10 +963,11 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			"session":  sess,
 			"messages": msgs,
 			"unread":   agent.SessionUnread(sess),
-			// live-run flag: true while a detached /chat run is streaming
-			// this session - the webui open-session flow auto-subscribes
-			// to /sessions/{id}/events when it sees this
-			"active": s.runs.active(id),
+			// live-run flag (always present, running:true/false): true while
+			// a detached /chat run is streaming this session - the webui
+			// open-session flow auto-subscribes to /sessions/{id}/events
+			// when it sees this
+			"running": s.runs.active(id),
 		})
 	case http.MethodDelete:
 		if err := s.store.DeleteSession(r.Context(), id); err != nil {

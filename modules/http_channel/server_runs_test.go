@@ -399,12 +399,21 @@ func TestDetachedRunConflict(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
-// TestSessionsListActiveFlag: the list and detail surfaces report the
-// live-run flag the webui's post-refresh pulse reattach reads.
-func TestSessionsListActiveFlag(t *testing.T) {
+// TestSessionsListRunningFlag: the list and detail surfaces report the
+// server-owned running flag the webui pulse reconciles against - and
+// the list row carries it ALWAYS (running:false too, not omitted), so
+// a false absence can never be read as "unknown".
+func TestSessionsListRunningFlag(t *testing.T) {
 	s, prov, st4, ts := newStepServer(t)
 	createSession(t, ts, "s4")
 	muteTitles(t, st4, "s4")
+
+	// Before any run: the row explicitly reports running:false.
+	rows := fetchList(t, ts.URL+"/sessions")
+	assertRunning(t, rows, "s4", false, "list idle")
+	if _, ok := rows[0]["running"]; !ok {
+		t.Fatal("list idle: running key absent - the row must carry it explicitly")
+	}
 
 	resp, cancel, sc := postChatStream(t, ts, "s4")
 	defer cancel()
@@ -412,13 +421,13 @@ func TestSessionsListActiveFlag(t *testing.T) {
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s4") })
 
-	// List row active == true mid-run.
-	rows := fetchList(t, ts.URL+"/sessions")
-	assertActive(t, rows, "s4", true, "list mid-run")
-	// Detail active == true mid-run.
+	// List row running == true mid-run.
+	rows = fetchList(t, ts.URL+"/sessions")
+	assertRunning(t, rows, "s4", true, "list mid-run")
+	// Detail running == true mid-run.
 	detail := fetchDetail(t, ts.URL+"/sessions/s4")
-	if !detail["active"].(bool) {
-		t.Fatal("detail mid-run: active = false, want true")
+	if !detail["running"].(bool) {
+		t.Fatal("detail mid-run: running = false, want true")
 	}
 
 	prov.send(finalStep("done")...)
@@ -426,10 +435,10 @@ func TestSessionsListActiveFlag(t *testing.T) {
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s4") })
 
 	rows = fetchList(t, ts.URL+"/sessions")
-	assertActive(t, rows, "s4", false, "list after finish")
+	assertRunning(t, rows, "s4", false, "list after finish")
 	detail = fetchDetail(t, ts.URL+"/sessions/s4")
-	if detail["active"].(bool) {
-		t.Fatal("detail after finish: active = true, want false")
+	if detail["running"].(bool) {
+		t.Fatal("detail after finish: running = true, want false")
 	}
 	_ = resp.Body.Close()
 }
@@ -448,13 +457,13 @@ func fetchList(t *testing.T, url string) []map[string]any {
 	return rows
 }
 
-func assertActive(t *testing.T, rows []map[string]any, id string, want bool, where string) {
+func assertRunning(t *testing.T, rows []map[string]any, id string, want bool, where string) {
 	t.Helper()
 	for _, row := range rows {
 		if row["id"] == id {
-			got, _ := row["active"].(bool)
+			got, _ := row["running"].(bool)
 			if got != want {
-				t.Fatalf("%s: active = %v, want %v", where, got, want)
+				t.Fatalf("%s: running = %v, want %v", where, got, want)
 			}
 			return
 		}
