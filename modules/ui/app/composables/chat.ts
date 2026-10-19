@@ -21,7 +21,6 @@ import {
   type Session,
   StreamInterruptedError,
   SessionBusyError,
-  createSession,
   fetchTranscript,
   renderTranscriptItems,
   persistedTelemetry,
@@ -90,7 +89,8 @@ export type TranscriptItem =
 export interface ChatState {
   key: string;
   // the bound session id; null while the tab's chat is unsaved
-  // (composer-first) - the FIRST send creates it via POST /sessions
+  // (composer-first) - bare /chat auto-creates it and the id arrives
+  // on the response's leading `session` SSE frame
   sessionId: string | null;
   transcript: TranscriptItem[];
   // the composer draft lives per state: switching tabs (unmount) keeps
@@ -437,10 +437,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     busyKeys.value = withBusy(busyKeys.value, st.key, true);
     // the stop affordance is SESSION-keyed: either tab's cancel stops
     // the one server-side run. Harmless after the run already ended
-    // (a benign 404/409 race).
-    const sessionId = st.sessionId ?? "";
+    // (a benign 404/409 race). The id may ARRIVE after the stream
+    // opened (auto-create sent no session_id): read it at call time,
+    // never closure-frozen.
     st.cancelRun = () => {
-      stopSession(sessionId).catch(() => {});
+      if (st.sessionId) stopSession(st.sessionId).catch(() => {});
     };
     st.statusLine = "reasoning";
     let interrupted = false;
@@ -579,32 +580,26 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     });
     st.notify?.(true);
 
-    // A session must exist before the first /chat or the backend 404s.
-    // An unsaved tab creates it here and writes the binding back onto
-    // its tab (the dock tree owns the sessionRef) - no rekey: the
-    // state keeps its tab key, only the binding moves.
-    if (!st.sessionId) {
-      try {
-        const s = await createSession();
-        st.sessionId = s.id;
-        deps.setTabSessionRef(key, s.id);
-        deps.refreshSessions();
-      } catch (e) {
-        st.transcript.push({
-          kind: "message",
-          role: "assistant",
-          content: `[error: ${e}]`,
-        });
-        return false;
-      }
-    }
+    // The create-then-send dance is GONE (Endo 2026-10-18: /chat is
+    // always durable): a null sessionId POSTs /chat bare and the
+    // server auto-creates the session - the leading `session` SSE
+    // frame carries the id, the onSession write-back binds it onto
+    // the state and the dock tree (URL /chat/<id>, sidebar row) while
+    // the run streams.
     const images = st.attachments.slice();
     st.attachments = [];
     await runStream(st, (drv) =>
       streamChat(
         [{ role: "user", content: text, images: images.length ? images : undefined }],
-        st.sessionId!,
-        drv.handlers,
+        st.sessionId,
+        {
+          ...drv.handlers,
+          onSession: (id) => {
+            st.sessionId = id;
+            deps.setTabSessionRef(key, id);
+            deps.refreshSessions();
+          },
+        },
         model,
         thinking,
       ),
