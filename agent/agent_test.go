@@ -829,8 +829,11 @@ func (p *modelRecorder) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSch
 	return events
 }
 
-func (p *modelRecorder) ModelName() string                { return p.modelName }
-func (p *modelRecorder) SetThinkingLevel(string)          {}
+func (p *modelRecorder) ModelName() string       { return p.modelName }
+func (p *modelRecorder) SetThinkingLevel(string) {}
+func (p *modelRecorder) WithThinkingLevel(string) ai.Provider {
+	return p
+}
 func (p *modelRecorder) ListModels() ([]string, error)    { return nil, nil }
 func (p *modelRecorder) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}, nil }
 

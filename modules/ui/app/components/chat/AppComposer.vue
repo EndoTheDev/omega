@@ -25,9 +25,17 @@
         :model="model"
         :models="models"
         @update:model="$emit('update:model', $event)" />
+      <ThinkingSelect
+        :level="thinking"
+        @update:level="$emit('update:thinking', $event)" />
       <!-- while this session's run streams, send becomes CANCEL (stop
            icon); idle, a retry affordance re-sends the last user message
            when there is one - next to the plain send button -->
+=======
+      <ThinkingSelect
+        :level="thinking"
+        @update:level="$emit('update:thinking', $event)" />
+>>>>>>> Stashed changes:modules/ui/app/components/AppComposer.vue
       <button
         v-if="canRetry && !busy"
         class="retry"
@@ -56,6 +64,9 @@
 </template>
 
 <script setup lang="ts">
+  import ModelSelect from "./ModelSelect.vue";
+  import ThinkingSelect from "./ThinkingSelect.vue";
+
   const props = defineProps<{
     draft: string;
     model: string;
@@ -64,11 +75,13 @@
     busy: boolean;
     // idle with a last user message in the transcript: retry shows
     canRetry: boolean;
+    thinking: string;
   }>();
 
   defineEmits<{
     (e: "update:draft", value: string): void;
     (e: "update:model", value: string): void;
+    (e: "update:thinking", value: string): void;
     (e: "send"): void;
     (e: "cancel"): void;
     (e: "retry"): void;

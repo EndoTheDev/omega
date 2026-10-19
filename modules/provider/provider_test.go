@@ -75,6 +75,27 @@ func TestSetThinkingLevel(t *testing.T) {
 	}
 }
 
+// TestWithThinkingLevel verifies WithThinkingLevel threads the level
+// through a copy (composed with the WithModel copy) and leaves the
+// original untouched - the per-run derivation the http_channel uses.
+func TestWithThinkingLevel(t *testing.T) {
+	p := NewProvider("ollama", "m", "", "")
+	p.SetThinkingLevel("medium")
+	cp, ok := p.WithModel("other").WithThinkingLevel("ultra").(*Provider)
+	if !ok {
+		t.Fatal("WithThinkingLevel did not return *Provider")
+	}
+	if cp.thinkingLevel != "ultra" {
+		t.Fatalf("copy thinkingLevel = %q, want ultra", cp.thinkingLevel)
+	}
+	if cp.modelName != "other" {
+		t.Fatalf("copy model = %q, want other", cp.modelName)
+	}
+	if p.thinkingLevel != "medium" || p.modelName != "m" {
+		t.Fatalf("base mutated: level %q model %q", p.thinkingLevel, p.modelName)
+	}
+}
+
 // TestUnknownProviderStreamError verifies Stream returns an error
 // StreamEnd for an unknown provider type without panicking.
 func TestUnknownProviderStreamError(t *testing.T) {
