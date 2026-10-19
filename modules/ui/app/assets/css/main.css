@@ -971,7 +971,18 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    right-aligned 70% pills and render as full-width rows like every
    other item - one column of stacked blocks, no messenger sides. */
 .messages.stacked .msg.user { justify-content: flex-start; }
-.messages.stacked .msg.user .bubble { max-width: 100%; }
+.messages.stacked .msg.user .bubble { width: 100%; max-width: 100%; }
+/* assistant messages print on the pane background (Endo 2026-10-20):
+   no card fill, no stroke, no padding - the raised bubble treatment
+   belongs to classic chat; stacked reads like a document where only
+   the user rows carry a surface */
+.messages.stacked .msg.assistant .bubble {
+  width: 100%;
+  max-width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+}
 /* The LIVE block (the turn currently responding) sticks to the top of
    the scroll pane while its answer streams below it; `busy` drives the
    class, so agent_end drops it and the block settles back in order.
