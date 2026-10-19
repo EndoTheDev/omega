@@ -45,6 +45,10 @@ rule a security contract, not a preference.
   the sidebar search unions it with the in-memory title filter. GET
   `/sessions/{id}/events` is the reattach surface: SSE subscribe to a
   session's live run (404 when not active, live-only frames for v1).
+  POST `/sessions/{id}/stop` cancels the session's live run through
+  its own WithTimeout ctx (the loop unwinds through its normal path -
+  partial output persists, agent_end carries finish_reason cancelled):
+  404 when idle, 409 pre-launch, repeat stop = no-op 200.
   GET/PUT `/settings` serve the Settings seam (typed:
   agent.SettingsSchema): GET returns the knob schema + values (no-store;
   a host without the seam answers 501; the surface filter drops knobs
