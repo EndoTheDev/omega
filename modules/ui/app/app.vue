@@ -57,7 +57,9 @@
               :show-thinking="showThinking"
               :model="selectedModel"
               :models="models"
-              @update:model="selectedModel = $event" />
+              :thinking="selectedThinking"
+              @update:model="selectedModel = $event"
+              @update:thinking="selectedThinking = $event" />
           </div>
           <div
             v-if="mainView === 'board' && pane === boardHostPane"
@@ -204,6 +206,16 @@
   }
   const models = ref<string[]>([]);
   const selectedModel = ref("");
+  // reasoning effort: one app-level selection shared by every chat tab.
+  // Persisted in localStorage (last choice wins across reloads, card
+  // t_2b474945); "default" = no thinking_level field on the wire.
+  const selectedThinking = ref(
+    localStorage.getItem("omega.thinking-level") ?? "default",
+  );
+  watch(selectedThinking, (v) => {
+    if (v === "default") localStorage.removeItem("omega.thinking-level");
+    else localStorage.setItem("omega.thinking-level", v);
+  });
   const sessions = ref<Session[]>([]);
   // archived filter: off (default) lists live sessions only; on fetches
   // with archived=include and shows only - muted - archived rows

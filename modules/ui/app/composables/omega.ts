@@ -1371,6 +1371,37 @@ async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<voi
   if (!state.sawEnd) throw new StreamInterruptedError();
 }
 
+// THINKING_LEVELS mirrors ai.ThinkingLevels (ai/provider.go): the
+// /chat thinking_level field is the index into this array, 0 = "none"
+// = no thinking parameter sent (provider default).
+export const THINKING_LEVELS = [
+  "none",
+  "off",
+  "on",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "extra high",
+  "max",
+  "ultra",
+] as const;
+
+// UI options for the effort chip: "default" replaces "none" - same
+// wire value (field omitted), one label in the dropdown. "off" is
+// real: it disables thinking explicitly (providers that take a
+// thinking parameter get think=false), not a fallback to default.
+export const THINKING_UI_LEVELS = ["default", "off", ...THINKING_LEVELS.slice(2)];
+
+// thinkingLevelWire maps a UI selection to the outgoing /chat value:
+// "default" stays unset (the field is omitted), everything else is
+// its index into THINKING_LEVELS.
+export function thinkingLevelWire(selection: string): number | undefined {
+  if (selection === "default") return undefined;
+  const idx = THINKING_LEVELS.indexOf(selection);
+  return idx === -1 ? undefined : idx;
+}
+
 // streamChat POSTs messages to /chat and drives the handler callbacks from
 // the SSE stream. Error payloads throw - the caller surfaces them.
 export async function streamChat(
@@ -1378,10 +1409,12 @@ export async function streamChat(
   sessionId: string | null,
   handlers: StreamHandlers,
   model?: string,
+  thinkingLevel?: number,
 ): Promise<void> {
   const body: Record<string, unknown> = { messages };
   if (sessionId) body.session_id = sessionId;
   if (model) body.model = model;
+  if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;
   const resp = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

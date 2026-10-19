@@ -220,12 +220,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 // to enable for this run; empty enables the full server registry.
 // session_id, when set, persists the conversation to that session.
 // model, when set, serves this run on that model - the default stays
-// untouched, so concurrent chats keep their own model.
+// untouched, so concurrent chats keep their own model. thinking_level
+// indexes the shared ai.ThinkingLevels ladder (0 = none = no thinking
+// parameter sent = provider default); unset means provider default.
 type chatRequest struct {
-	Messages  []json.RawMessage `json:"messages"`
-	Tools     []string          `json:"tools,omitempty"`
-	SessionID string            `json:"session_id,omitempty"`
-	Model     string            `json:"model,omitempty"`
+	Messages      []json.RawMessage `json:"messages"`
+	Tools         []string          `json:"tools,omitempty"`
+	SessionID     string            `json:"session_id,omitempty"`
+	Model         string            `json:"model,omitempty"`
+	ThinkingLevel int               `json:"thinking_level,omitempty"`
 }
 
 // assistantRecord accumulates one response segment of an assistant turn
@@ -359,10 +362,21 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Per-run provider: base copy with a model override when the request
-	// carries one. The copy rides LoopOptions - no shared state mutated.
+	// carries one, plus a thinking level from the shared ladder.
+	// thinking_level 0 ("none") is skipped: no parameter sent, the
+	// provider keeps its default. The copy rides LoopOptions - no
+	// shared state mutated.
 	prov := s.agent.Provider()
 	if req.Model != "" {
 		prov = prov.WithModel(req.Model)
+	}
+	if req.ThinkingLevel != 0 {
+		if req.ThinkingLevel < 0 || req.ThinkingLevel >= len(ai.ThinkingLevels) {
+			http.Error(w, fmt.Sprintf("invalid thinking_level: %d (0..%d)",
+				req.ThinkingLevel, len(ai.ThinkingLevels)-1), http.StatusBadRequest)
+			return
+		}
+		prov = prov.WithThinkingLevel(ai.ThinkingLevels[req.ThinkingLevel])
 	}
 
 	// Provisional title: one cheap GetSession at request start, and the

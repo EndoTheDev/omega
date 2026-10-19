@@ -170,10 +170,10 @@ export interface ChatHost {
   attach(key: string): Promise<void>;
   /** the ONE send path (composer submit + retry). Returns false when
       the per-session gate refused (double send, never double run). */
-  submit(key: string, text: string, model?: string): Promise<boolean>;
+  submit(key: string, text: string, model?: string, thinking?: number): Promise<boolean>;
   /** re-send this tab's last complete user message (interrupted/rebusy
       affordance); no-op while the session's run slot is taken */
-  retry(key: string, model?: string): Promise<boolean>;
+  retry(key: string, model?: string, thinking?: number): Promise<boolean>;
   /** stop THIS tab's bound session's live run */
   cancel(key: string): void;
   /** the composer's busy bit for one tab: the per-session run slot
@@ -529,7 +529,12 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     st.notify?.(true);
   }
 
-  async function submit(key: string, text: string, model?: string): Promise<boolean> {
+  async function submit(
+    key: string,
+    text: string,
+    model?: string,
+    thinking?: number,
+  ): Promise<boolean> {
     const st = ensureState(key);
     if (!text) return false;
     // per-session gate: the run slot is per session - a live run on the
@@ -576,6 +581,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         st.sessionId!,
         drv.handlers,
         model,
+        thinking,
       ),
     );
     return true;
@@ -585,12 +591,12 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   // turn: the interrupted exchange stays in the transcript - its partial
   // output and marker are the honest record - and submit appends a NEW
   // user bubble; history is never rewritten.
-  async function retry(key: string, model?: string): Promise<boolean> {
+  async function retry(key: string, model?: string, thinking?: number): Promise<boolean> {
     const st = ensureState(key);
     if (composerBusy(key)) return false;
     const text = lastUserText(st.transcript);
     if (text === null) return false;
-    submit(key, text, model);
+    submit(key, text, model, thinking);
     return true;
   }
 
