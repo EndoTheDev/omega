@@ -399,3 +399,41 @@ func TestPromptSections(t *testing.T) {
 func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
 	var _ agent.PromptSectioner = (*SkillsProvider)(nil)
 }
+
+// --- inspector snapshot (card t_db430fea) ---
+
+func TestListSkillsSortedAndLive(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"bb", "aa"} {
+		skillDir := filepath.Join(dir, name)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\nname: " + name + "\ndescription: the " + name + " skill\n---\nbody\n"
+		if err := os.WriteFile(filepath.Join(skillDir, name+".md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sp := NewSkillsProvider(dir)
+	skills, err := sp.ListSkills()
+	if err != nil {
+		t.Fatalf("ListSkills: %v", err)
+	}
+	if len(skills) != 2 || skills[0].Name != "aa" || skills[1].Name != "bb" {
+		t.Fatalf("skills = %+v, want sorted [aa bb]", skills)
+	}
+}
+
+func TestListSkillsMissingDirIsEmpty(t *testing.T) {
+	sp := NewSkillsProvider(t.TempDir())
+	skills, err := sp.ListSkills()
+	if err != nil || len(skills) != 0 {
+		t.Fatalf("ListSkills missing dir = (%v, %v), want empty, nil", skills, err)
+	}
+}
+
+// Compile-time proof that the provider satisfies the read-only
+// inspector seam the http_channel asserts.
+func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
+	var _ agent.SkillsLister = (*SkillsProvider)(nil)
+}

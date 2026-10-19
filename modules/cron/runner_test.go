@@ -491,3 +491,53 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 func mustAssistant(content string) ai.Message {
 	return ai.NewAssistant(content)
 }
+// --- inspector snapshot (card t_db430fea) ---
+
+// enabledOff returns the disabled flag a crons.yaml `enabled: false`
+// decodes to.
+func enabledOff() *bool {
+	b := false
+	return &b
+}
+
+// Compile-time proof that the Runner satisfies the read-only inspector
+// seam the http_channel asserts.
+var _ agent.CronLister = (*Runner)(nil)
+
+func TestJobsInspectorSnapshot(t *testing.T) {
+	r := newTestRunner(t, t.TempDir(),
+		Job{Name: "zz-daily", Schedule: "0 8 * * *", Prompt: "p"},
+		Job{Name: "aa-minute", Schedule: "*/5 * * * *", Prompt: "p", Enabled: enabledOff()},
+	)
+	jobs := r.Jobs()
+	if len(jobs) != 2 {
+		t.Fatalf("jobs = %d, want 2", len(jobs))
+	}
+	// sorted by name regardless of config order
+	if jobs[0].Name != "aa-minute" || jobs[1].Name != "zz-daily" {
+		t.Fatalf("order = %s,%s, want aa-minute,zz-daily", jobs[0].Name, jobs[1].Name)
+	}
+	// disabled job: Enabled false, no next fire promised
+	if jobs[0].Enabled || jobs[0].Next != "" {
+		t.Fatalf("disabled job = %+v", jobs[0])
+	}
+	// enabled job: next fire parses as RFC3339 and is after now
+	if !jobs[1].Enabled {
+		t.Fatalf("enabled job flag missing: %+v", jobs[1])
+	}
+	next, err := time.Parse(time.RFC3339, jobs[1].Next)
+	if err != nil {
+		t.Fatalf("next not RFC3339: %q", jobs[1].Next)
+	}
+	if !next.After(mustLocal(2026, 10, 17, 10, 0)) {
+		t.Fatalf("next %s not after now", jobs[1].Next)
+	}
+}
+
+func TestJobsInspectorEmptyConfig(t *testing.T) {
+	r := newTestRunner(t, t.TempDir())
+	jobs := r.Jobs()
+	if len(jobs) != 0 {
+		t.Fatalf("jobs = %+v, want empty", jobs)
+	}
+}
