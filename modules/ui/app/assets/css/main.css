@@ -107,7 +107,7 @@ body {
   height: 35px;
   padding: 0 12px;
   background: var(--z0);
-  /* chrome stays above all overlays: drawers (12), scrim (10), settings (11),
+  /* chrome stays above all overlays: drawers (12), scrim (10),
      model dropdown (30). Coupling: mobile drawer insets use this height. */
   position: relative;
   z-index: 40;
@@ -115,6 +115,32 @@ body {
 
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
+/* main-view switcher: chat | board pill, matches .icon-btn chrome */
+.view-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--z1-raised);
+  border-radius: 7px;
+}
+.view-tab {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text);
+  opacity: 0.55;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.view-tab:hover { opacity: 0.85; }
+.view-tab.on {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--z1-raised);
+}
 
 /* ---- layer 1: pane area — floating rounded panes on the canvas ---- */
 .pane-area {
@@ -132,8 +158,190 @@ body {
   background: var(--z0);
 }
 
-/* panes adjacent: every pane keeps its full border on all sides - the
+/* panes adjacent: every pane keeps its full border on all four sides - the
    divider sits in the 4px gap between the two 1px strokes. */
+
+/* ---- dock (card t_63253264): the recursive layout tree ---- */
+.dock-split {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-split.row { flex-direction: row; }
+.dock-split.column { flex-direction: column; }
+/* the ROOT split fills the pane-area (its padding 0 4px 3px unchanged) */
+.pane-area > .dock-root { flex: 1; }
+.dock-cell { min-width: 0; min-height: 0; }
+
+.dock-divider {
+  width: 4px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  border-radius: 2px;
+  background: transparent;
+}
+.dock-split.column > .dock-divider {
+  width: auto;
+  height: 4px;
+  cursor: row-resize;
+}
+.dock-divider:hover, .dock-divider.active { background: var(--stroke); }
+/* magnetic snap attract: subtle accent guide while the pointer sits inside
+   a snap zone (320/640) - the pane keeps tracking the pointer; releasing
+   inside the zone sticks it to the exact snap size (dock-design constants) */
+.dock-divider.snap { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+.dock-pane {
+  display: flex;
+  flex-direction: column; /* tab bar header (card 2) above the content */
+  position: relative;
+}
+.dock-content {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-content > .pane { flex: 1; }
+
+/* card 2: the TAB BAR is the pane's header. Height = the MenuBar contract
+   (35px); VS Code editor-group look: component-title tabs, '+' new-tab,
+   ⋯ pane-actions. Drop affordances here are layout-inert by design: the
+   drop highlight is an outline, the insertion caret an absolute bar - a
+   dragging gesture reflows nothing (card verify (d)). */
+.dock-tabbar {
+  flex: 0 0 auto;
+  height: 35px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding-right: 4px;
+  background: var(--z1);
+  border-bottom: 1px solid var(--stroke);
+  user-select: none;
+  min-width: 0;
+}
+.dock-tabs { display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
+.dock-tabs.empty { flex: 1; } /* spacer: the empty pane's × hugs the right */
+.dock-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  min-width: 72px;
+  max-width: 160px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.dock-tab:hover { color: var(--text); background: var(--z1-raised); }
+/* active tab: the existing accent, as an inset top bar (zero layout churn) */
+.dock-tab.active {
+  color: var(--text);
+  background: var(--z1-raised);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.dock-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-tab-close {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  font-size: 13px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.dock-tab:hover .dock-tab-close,
+.dock-tab.active .dock-tab-close,
+.dock-tab-close:focus-visible { opacity: 1; }
+.dock-tab-close:hover { background: var(--z2); color: var(--text); }
+.dock-tab-new, .dock-tab-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  cursor: pointer;
+}
+.dock-tab-new { position: relative; }
+.dock-tab-btn { margin-left: auto; }
+.dock-tab-new:hover, .dock-tab-btn:hover { background: var(--z1-raised); color: var(--text); }
+/* insertion caret: 2px accent bar between tabs - 'caret-before' also rides
+   the '+' button's left edge for the after-the-last-tab position */
+.dock-tab.caret-before::after,
+.dock-tab-new.caret-before::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+/* hovered drop target: outline only, never a size change */
+.dock-pane.drop-hover {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -3px;
+}
+
+/* empty pane: the '+' component menu (VS Code empty editor-group style) */
+.dock-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--stroke);
+  border-radius: var(--r-pane);
+  min-height: 64px;
+}
+.dock-empty-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+
+.dock-menu {
+  position: absolute;
+  top: 36px;
+  right: 8px;
+  z-index: 6;
+  min-width: 130px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--z1-raised);
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  box-shadow: var(--shadow-1);
+}
+.dock-menu-btn, .dock-empty-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* card t_30ee04fb: the dockable registry's inventory glyphs (14px, muted
+   until hover so the label leads) */
+.dock-item-icon { flex: none; opacity: 0.75; }
+.dock-menu-btn:hover .dock-item-icon, .dock-empty-btn:hover .dock-item-icon { opacity: 1; }
+.dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
+.dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
+
 
 .pane {
   background: var(--z1);
@@ -167,7 +375,7 @@ body {
 }
 
 /* sidebar search: filters the in-memory list client-side; the input look
-   lives in the shared .search-input rules below (SettingsDrawer's filter
+   lives in the shared .search-input rules below (SettingsTab's filter
    search consumes the same component) */
 .session-search {
   padding: 0 12px 8px;
@@ -387,9 +595,109 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   align-self: stretch;
 }
 
-.sessions-foot {
-  display: none;
+/* hover action cluster: archive + delete, inset LEFT of the time slot -
+   on hover the age text fades but its slot (the row's 34px right
+   padding band) stays empty: title ... [box][bin] [empty time band].
+   .stop on the buttons keeps a click from opening the row. */
+.row-actions {
+  position: absolute;
+  right: 34px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background: var(--z1-raised);
 }
+.row-act { width: 20px; height: 20px; }
+.row-act:hover { color: var(--text); background: var(--accent-dim, var(--z2)); }
+.row-delete:hover { color: var(--err); }
+.session-list li:hover .row-actions,
+.row-actions:focus-within { opacity: 1; }
+/* the time slot is reserved on hover: opacity/visibility only, never
+   display:none - the number fades back into its exact position */
+.session-list li:hover .session-time { opacity: 0; }
+
+/* muted archived rows: the archived toggle reveals them at reduced
+   contrast - title, meta and age all dim, the hover action cluster
+   (unarchive / delete) still reads normally */
+.session-list li.archived .session-title,
+.session-list li.archived .session-meta,
+.session-list li.archived .session-time {
+  color: var(--text-faint, var(--text-dim));
+  opacity: 0.55;
+  font-style: italic;
+}
+.session-list li.archived .session-title { white-space: normal; }
+
+/* sidebar foot: the archived filter toggle sits below the list */
+.sessions-foot {
+  flex-shrink: 0;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--stroke);
+  display: block;
+}
+.archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.archived-toggle:hover { color: var(--text); }
+.archived-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+/* destructive confirm scrim + dialog: same frosted language as the
+   mobile scrim, centered box */
+.confirm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-dialog {
+  background: var(--z0);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  padding: 16px 18px;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.confirm-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.confirm-body {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirm-danger {
+  background: var(--err);
+  border: none;
+  color: var(--text-on-accent, #fff);
+  border-radius: var(--r-chip);
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.confirm-danger:hover { filter: brightness(1.1); }
 
 .health {
   font-size: 12px;
@@ -433,6 +741,15 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   color: var(--text);
   background: var(--z1-raised);
   cursor: default;
+}
+
+/* the module panel body (cron / skills / tools / logs tabs, card
+   t_db430fea): one scroll region, same voice as the files tree */
+.module-panels {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* the scrolling body: entry tree (same voice as the session list rows -
@@ -600,6 +917,17 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   min-height: 320px;
 }
 
+/* board view (module-owned UI from modules/kanban/ui): the component's
+   root fills this holder; the holder is the only shell-side CSS the
+   board gets - column/card chrome is the module's own */
+.board-pane {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -617,6 +945,88 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   display: flex;
   position: relative;
 }
+
+/* drag & drop attach affordance: the drop surface highlights */
+.messages-wrap.drop-target {
+  outline: 2px dashed rgba(232, 131, 58, 0.6);
+  outline-offset: -4px;
+  border-radius: var(--r-card);
+}
+
+/* ---- stacked chat appearance (card t_84e4653c) ----
+   One turn = one block: the user message plus everything its run
+   produced. Blocks repeat the pane's internal rhythm (flex column,
+   12px gap) so the items render exactly as they did flat; the block
+   boundary is the pane gap - spacing only, no chrome. */
+.msg-block { display: flex; flex-direction: column; gap: 12px; }
+
+/* stacked mode (card t_84e4653c, visual fix): the BETWEEN-turn gap must
+   outweigh the within-turn gap or the block grouping is invisible - 12px
+   inside a turn (above), 28px between turns (here). Flat 'chat' keeps
+   the uniform 12px chronology. */
+.messages.stacked { gap: 28px; }
+
+/* stacked = the document language (Endo 2026-10-20: "each block should
+   be full width - thats what stacked means"): user messages stop being
+   right-aligned 70% pills and render as full-width rows like every
+   other item - one column of stacked blocks, no messenger sides. */
+.messages.stacked .msg.user { justify-content: flex-start; }
+.messages.stacked .msg.user .bubble { width: 100%; max-width: 100%; }
+/* assistant messages print on the pane background (Endo 2026-10-20):
+   no card fill, no stroke, no padding - the raised bubble treatment
+   belongs to classic chat; stacked reads like a document where only
+   the user rows carry a surface */
+/* stacked: thinking strips print on the pane background too (Endo
+   2026-10-20) - same document language as assistant text; the raised
+   bordered card stays classic-chat-only */
+.messages.stacked .thinking {
+  background: none;
+  border: none;
+}
+
+/* hover affordance matches the tool-call rows (Endo 2026-10-20) */
+.messages.stacked .thinking summary:hover { background: var(--z1-raised); }
+
+/* full-width sweep (Endo 2026-10-20: "make the bubbles full width -
+the duration timer isn't fully right"): the last classic-mode cap in
+the stacked column - tool rows were still 70% wide, so their elapsed
+labels stopped short of the right edge. */
+.messages.stacked .toolcall { max-width: 100%; }
+.messages.stacked .thinking { max-width: 100%; }
+
+/* the live turn rides to the TOP of the column (Endo 2026-10-20:
+   "push everything else up and then stick to the top") - not a scroll
+   jump (impossible when nothing is scrollable below) but a render-order
+   flip: while busy the newest block renders first, older blocks move
+   under it; when the run ends the class drops and the block settles
+   back into chronological flow */
+.messages.stacked .msg-block.live { order: -1; }
+
+.messages.stacked .msg.assistant .bubble {
+  width: 100%;
+  max-width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+}
+/* The LIVE block (the turn currently responding) sticks to the top of
+   the scroll pane while its answer streams below it; `busy` drives the
+   class, so agent_end drops it and the block settles back in order.
+   The pane surface + cover padding keep scrolled content from showing
+   through the block's internal gaps - the negative margins absorb the
+   padding, so the sticky state never changes the layout, only the
+   paint. Blocks sit above non-positioned siblings while stuck. */
+.msg-block.live {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--z1);
+  padding: 8px 0 14px;
+  margin: -8px 0 0;
+  border-radius: var(--r-pane);
+}
+/* the status line under a live block keeps breathing room from it */
+.msg-block.live + .status-line { margin-top: 4px; }
 
 .jump-live {
   position: absolute;
@@ -656,6 +1066,25 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   white-space: pre-wrap;
   word-break: break-word;
   animation: fade-in 0.18s ease-out;
+}
+
+/* image attachments in a transcript bubble: inline thumbnails,
+   click opens the full-size data URL in a new tab */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.msg-images:empty { display: none; }
+.msg-image {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--stroke);
+  cursor: zoom-in;
+  display: block;
 }
 
 @keyframes fade-in {
@@ -841,6 +1270,11 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
+  /* codeblock treatment (60vh sweep): long reasoning gets the same 60vh
+     cap + internal scroll as a fenced code block - the summary toggle
+     owns collapse/expand, the answer bubble below is never capped. */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 /* tool call line */
@@ -902,6 +1336,12 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   max-height: 240px;
   overflow-y: auto;
 }
+/* codeblock treatment (60vh sweep): RESULT blocks get the full 60vh cap
+   + internal scroll instead of the short 240px window - collapse rides
+   the details summary toggle. The command INPUT block keeps the short
+   cap; tool-call command lines stay one-liners, unchanged. The
+   assistant answer bubble (.bubble) is never capped. */
+.tool-output.tool-result { max-height: 60vh; }
 .tool-output.is-error { color: var(--err); }
 
 /* status line under the streaming message */
@@ -1010,6 +1450,54 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   outline: none;
 }
 
+/* pending attachment thumbnails above the textarea - removable */
+.attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+.attach-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  overflow: hidden;
+}
+.attach-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.attach-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--text);
+  background: var(--z2);
+  border: none;
+  border-radius: 0 0 0 var(--r-chip);
+  cursor: pointer;
+}
+.attach-remove:hover { color: var(--accent); }
+.pick-btn {
+  background: transparent;
+  border: 1px solid var(--stroke);
+  color: var(--text-dim);
+  border-radius: var(--r-chip);
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.pick-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -1098,7 +1586,29 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .send:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ---- layer 2: overlays (settings drawer, scrims) ---- */
+/* cancel: the send button's slot while the session's run streams - the
+   same shape, a muted fill so it reads as "stop", not "answer" */
+.send.cancel { background: var(--text-dim); }
+
+/* retry: outline-accent affordance left of send - re-sends the last
+   user message as a fresh turn (interrupted stream or not). Carries
+   the send button's auto-margin; the real send sits flush after. */
+.retry {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+  border-radius: var(--r-chip);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  min-height: 32px;
+}
+.retry:disabled { opacity: 0.4; cursor: not-allowed; }
+.retry + .send { margin-left: 8px; }
+
+/* ---- layer 2: overlays (mobile drawer scrims) ---- */
 .scrim {
   position: fixed;
   inset: 0;
@@ -1110,58 +1620,14 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   z-index: 10;
 }
 
-/* ---- pane groups: always-mounted, closed state slides via negative
-   margin (clipped by pane-area's overflow) - one motion language for
-   every pane on desktop; mobile overlays slide via their own transforms.
-   The hard-wall max-width lives HERE: percentages resolve against the
-   pane-area (the group's parent), keeping the chat's 320px floor. */
-.pane-group {
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-  /* groups never flex-shrink: their content (pane + divider) defines the
-     width, so rendered width always equals the ref - if the group could
-     squeeze, the JS dragCap (computed from refs) would desync from the
-     rendered layout and freeze drags; mutual space handling belongs to
-     the squeeze chain instead */
-  flex: 0 0 auto;
-  max-width: calc(100% - 320px - 4px); /* chat floor + divider */
-  transition: margin 0.2s ease-out;
-}
-
-/* ---- right slot (desktop only): both panes stacked, one visible -
-   toggling settings vs inspector slides one in over the other (no v-if
-   flash). The slot is the fixed-width flex item; panes absolute inside.
-   Scoped to >=769px so the mobile fixed-overlay drawers never see these
-   transforms. */
-@media (min-width: 769px) {
-  .pane-slot {
-    position: relative;
-    flex: 0 0 auto;
-    min-width: 0;
-    overflow: hidden; /* clip the sliding panes */
-  }
-  .slot-pane {
-    position: absolute;
-    inset: 0;
-    transform: translateX(100%);
-    transition:
-      transform 0.2s ease-out,
-      visibility 0s linear 0.2s;
-    visibility: hidden; /* closed: inert under the active pane */
-  }
-  .slot-pane.active {
-    transform: translateX(0);
-    visibility: visible;
-    z-index: 1; /* incoming slides in OVER the outgoing */
-    transition: transform 0.2s ease-out;
-  }
-}
+/* card 5 (t_35b5594a): the settings overlay drawer is gone - settings now
+   docks as a singleton TAB in a main pane, rendered in-pane by the dock
+   outlet. The rounded-panel look carries over verbatim; no transforms,
+   no visibility tricks, no z-index. */
 
 .settings {
-  /* a real pane inside the right pane-group on desktop - pushes the chat
-     left exactly like the inspector, same width from the same binding.
-     (fixed-overlay geometry for mobile lives in the media block below) */
+  /* a real pane in the dock: the outlet wraps it in .dock-content (flex),
+     so `flex: 1` fills the pane below the tab bar */
   background: var(--z1);
   border: 1px solid var(--stroke);
   border-radius: var(--r-pane);
@@ -1171,13 +1637,7 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   flex-direction: column;
   gap: 20px;
   min-height: 0;
-}
-
-.settings.active {
-  transform: translateX(0);
-  visibility: visible;
-  /* no visibility delay on open - appear-then-slide instantly */
-  transition: transform 0.2s ease-out;
+  flex: 1;
 }
 
 /* group headers: full-row clickable, same interaction feel as the sidebar
@@ -1404,6 +1864,19 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 
   .pane-area { padding: 0; gap: 0; }
 
+  /* dock cells: sidebar/inspector panes host the slide-in overlays - the
+     CELL must not take flex space while their content floats fixed.
+     !important beats the tree's inline sizes. */
+  .dock-cell.kind-sidebar, .dock-cell.kind-inspector {
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+    position: static;
+    overflow: visible; /* the fixed overlays escape the zero cell */
+  }
+  .dock-split { flex-wrap: nowrap; }
+
   .sessions {
     position: fixed;
     top: 35px; /* menubar height - slides under the chrome */
@@ -1420,6 +1893,8 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .sessions.open { transform: translateX(0); }
 
   .divider { display: none; }
+  .dock-divider { display: none; }
+  .dock-menu, .dock-tabbar { display: none; }
 
   /* inspector: mirrored overlay from the right */
   .aside {
@@ -1435,23 +1910,6 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
     transition: transform 0.2s ease-out;
   }
   .aside.open { transform: translateX(0); }
-
-  /* settings drawer: on mobile adopt the drawer geometry - same 70% width,
-     edge-flush right, docked between the bars - so it reads as a sibling
-     of the sidebars instead of a floating card */
-  .settings {
-    position: fixed;
-    top: 35px;
-    right: 0;
-    bottom: 29px;
-    width: calc(100% - 30%);
-    z-index: 12;
-    transform: translateX(100%);
-    transition:
-      transform 0.2s ease-out,
-      visibility 0s linear 0.2s;
-    visibility: hidden; /* closed: not focusable off-screen */
-  }
 
   /* ponytail: a push-slide variant (240%-wide sliding grid row) was tried
      here and reverted - vw units, innerWidth and transform % all misbehave

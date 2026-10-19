@@ -29,6 +29,13 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 	}
 	ag := agent.NewFromContext(deps.Ctx, agent.AgentOptions{})
 	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
+	c.srv.Kanban = deps.Ctx.Kanban
+	// Inspector seams (card t_db430fea): read-only views for the
+	// /cron/jobs, /skills and /logs endpoints. All optional - the
+	// handlers degrade to empty lists / 404 when a module is absent.
+	c.srv.Skills = deps.Ctx.Skills
+	c.srv.Cron = deps.Ctx.Cron
+	c.srv.logger = deps.Ctx.Logger
 	c.srv.runTimeout = c.runTimeout
 	c.srv.version = deps.Version
 	return c.srv.Serve(ctx, c.addr)

@@ -288,10 +288,12 @@ func TestBuildConfigs(t *testing.T) {
 
 	configs := buildConfigs(cfg)
 
-	// All 9 expected keys must be present.
+	// All 10 expected keys must be present (kanban joined with the
+	// board module card t_33487fb6).
 	wantKeys := []string{
 		"store", "provider", "http_channel", "skills",
 		"memory", "logging", "compactor", "web", "trust",
+		"kanban",
 	}
 	for _, k := range wantKeys {
 		if _, ok := configs[k]; !ok {

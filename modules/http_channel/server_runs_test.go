@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,11 @@ func newStepProvider(modelName string) *stepProvider {
 func (p *stepProvider) ModelName() string { return p.modelName }
 
 func (p *stepProvider) SetThinkingLevel(level string) {}
+
+func (p *stepProvider) WithThinkingLevel(level string) ai.Provider {
+	cp := *p
+	return &cp
+}
 
 func (p *stepProvider) WithModel(model string) ai.Provider {
 	cp := *p
@@ -379,18 +385,40 @@ func TestDetachedRunConflict(t *testing.T) {
 		t.Fatalf("double chat status = %d, want 409", resp2.StatusCode)
 	}
 
+	// The 409 must not persist anything: the slot gate runs BEFORE
+	// loadSessionMessages, so the rejected user message never lands -
+	// the next successful send would otherwise double it.
+	rows := fetchList(t, ts.URL+"/sessions")
+	for _, row := range rows {
+		if row["id"] == "s3" {
+			if row["message_count"] != float64(1) {
+				t.Fatalf("409'd chat leaked a message: message_count = %v, want 1", row["message_count"])
+			}
+			break
+		}
+	}
+
 	// unwind
 	prov.done()
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s3") })
 	_ = resp.Body.Close()
 }
 
-// TestSessionsListActiveFlag: the list and detail surfaces report the
-// live-run flag the webui's post-refresh pulse reattach reads.
-func TestSessionsListActiveFlag(t *testing.T) {
+// TestSessionsListRunningFlag: the list and detail surfaces report the
+// server-owned running flag the webui pulse reconciles against - and
+// the list row carries it ALWAYS (running:false too, not omitted), so
+// a false absence can never be read as "unknown".
+func TestSessionsListRunningFlag(t *testing.T) {
 	s, prov, st4, ts := newStepServer(t)
 	createSession(t, ts, "s4")
 	muteTitles(t, st4, "s4")
+
+	// Before any run: the row explicitly reports running:false.
+	rows := fetchList(t, ts.URL+"/sessions")
+	assertRunning(t, rows, "s4", false, "list idle")
+	if _, ok := rows[0]["running"]; !ok {
+		t.Fatal("list idle: running key absent - the row must carry it explicitly")
+	}
 
 	resp, cancel, sc := postChatStream(t, ts, "s4")
 	defer cancel()
@@ -398,13 +426,13 @@ func TestSessionsListActiveFlag(t *testing.T) {
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s4") })
 
-	// List row active == true mid-run.
-	rows := fetchList(t, ts.URL+"/sessions")
-	assertActive(t, rows, "s4", true, "list mid-run")
-	// Detail active == true mid-run.
+	// List row running == true mid-run.
+	rows = fetchList(t, ts.URL+"/sessions")
+	assertRunning(t, rows, "s4", true, "list mid-run")
+	// Detail running == true mid-run.
 	detail := fetchDetail(t, ts.URL+"/sessions/s4")
-	if !detail["active"].(bool) {
-		t.Fatal("detail mid-run: active = false, want true")
+	if !detail["running"].(bool) {
+		t.Fatal("detail mid-run: running = false, want true")
 	}
 
 	prov.send(finalStep("done")...)
@@ -412,10 +440,10 @@ func TestSessionsListActiveFlag(t *testing.T) {
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s4") })
 
 	rows = fetchList(t, ts.URL+"/sessions")
-	assertActive(t, rows, "s4", false, "list after finish")
+	assertRunning(t, rows, "s4", false, "list after finish")
 	detail = fetchDetail(t, ts.URL+"/sessions/s4")
-	if detail["active"].(bool) {
-		t.Fatal("detail after finish: active = true, want false")
+	if detail["running"].(bool) {
+		t.Fatal("detail after finish: running = true, want false")
 	}
 	_ = resp.Body.Close()
 }
@@ -434,13 +462,13 @@ func fetchList(t *testing.T, url string) []map[string]any {
 	return rows
 }
 
-func assertActive(t *testing.T, rows []map[string]any, id string, want bool, where string) {
+func assertRunning(t *testing.T, rows []map[string]any, id string, want bool, where string) {
 	t.Helper()
 	for _, row := range rows {
 		if row["id"] == id {
-			got, _ := row["active"].(bool)
+			got, _ := row["running"].(bool)
 			if got != want {
-				t.Fatalf("%s: active = %v, want %v", where, got, want)
+				t.Fatalf("%s: running = %v, want %v", where, got, want)
 			}
 			return
 		}
@@ -570,6 +598,198 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 
 	// The replacement run also runs under the cap and lets go again.
 	waitFor(t, "replacement run deregistered", func() bool { return !s.runs.active("t1") })
+}
+
+// stopHangTool is the hang tool the stop tests block in: it fires
+// started() on entry (the "tool is running" signal), then parks until
+// its context ends - the exact shape a cancelled long shell call takes.
+func stopHangTool(started func()) agent.Tool {
+	return agent.Tool{
+		Description: "blocks until its context ends",
+		Run: func(ctx context.Context, _ map[string]any) (string, error) {
+			if started != nil {
+				started()
+			}
+			<-ctx.Done()
+			return "", ctx.Err()
+		},
+	}
+}
+
+// scriptedStopLoop mirrors the real loop's parked-tool shape: turn one
+// streams partial content, calls the hang tool (executed with the RUN
+// ctx - the loop's own convention), and the turn-boundary ctx check
+// produces the cancelled agent_end. The cancel parks in the tool.
+type scriptedStopLoop struct{ started func() }
+
+func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+	opts.Events <- agent.AgentStart{Type: "agent_start"}
+	opts.Events <- agent.TurnStart{Type: "turn_start", Turn: 1}
+	opts.Events <- agent.StreamEvent{Event: ai.ResponseChunk{Type: "response_chunk", Content: "par"}}
+	opts.Events <- agent.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "hang"}}}
+	opts.Events <- agent.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+	if l.started != nil {
+		l.started()
+	}
+	result, err := opts.Tools["hang"].Run(ctx, nil)
+	if err != nil {
+		opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), "c1", true)}
+	} else {
+		opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, "c1", false)}
+	}
+	opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
+	if ctx.Err() != nil {
+		opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "cancelled", Error: ctx.Err().Error()}
+		return nil
+	}
+	opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}
+	return nil
+}
+
+// TestDetachedRunStopCancelsLiveRun is the cancel scenario card
+// t_6c97a95a settles: a run streaming its first partial content, parked
+// in a blocked tool, receives POST /sessions/{id}/stop - the run's own
+// ctx cancels, the loop unwinds through its NORMAL path (agent_end with
+// finish_reason "cancelled", no extra error frame), the partial output
+// persists, the hub slot frees, and the session takes a new /chat.
+func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
+	toolStarted := make(chan struct{})
+	prov := newStepProvider("step")
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(scriptedStopLoop{started: sync.OnceFunc(func() { close(toolStarted) })})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := NewServer(a, map[string]agent.Tool{"hang": stopHangTool(nil)}, st, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	createSession(t, ts, "t2")
+	muteTitles(t, st, "t2")
+
+	resp, cancel, sc := postChatStream(t, ts, "t2")
+	defer cancel()
+	defer resp.Body.Close()
+
+	readFrames(t, sc, "response_chunk", 1)
+	waitFor(t, "run registered active", func() bool { return s.runs.active("t2") })
+
+	// The loop parks in the hang tool; the started signal proves it.
+	// A stop before it lands ends the run at the turn boundary
+	// instead - same unwind either way.
+	<-toolStarted
+
+	// Cancel.
+	stopResp, err := http.Post(ts.URL+"/sessions/t2/stop", "application/json", nil)
+	if err != nil {
+		t.Fatalf("stop request: %v", err)
+	}
+	stopResp.Body.Close()
+	if stopResp.StatusCode != http.StatusOK {
+		t.Fatalf("stop status = %d, want 200", stopResp.StatusCode)
+	}
+
+	// The unwind is the normal one: agent_end with finish_reason
+	// "cancelled", carrying "context canceled" - NOT the deadline error.
+	lines := readFrames(t, sc, "agent_end", 1)
+	// readFrames returns at the "event: agent_end" line; the frame's
+	// data line is the next scan - grab it for the assertions below.
+	if sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	if !containsFrame(lines, "agent_end", `"cancelled"`) {
+		t.Fatalf("no cancelled agent_end; frames: %v", lines)
+	}
+	if containsFrame(lines, "agent_end", "context deadline exceeded") {
+		t.Fatalf("agent_end claims a deadline; frames: %v", lines)
+	}
+	if containsFrame(lines, "error", "run timeout") {
+		t.Fatalf("cancel must not ride the timeout error frame; frames: %v", lines)
+	}
+
+	// What streamed before the cancel persists: the partial chunk. The
+	// errored tool call persists with it (same as a timeout unwind).
+	msgs := sessionMessages(t, ts, "t2")
+	if len(msgs) < 1 || msgs[0] != "par" {
+		t.Fatalf("persisted assistant = %q, want [par] first", msgs)
+	}
+
+	// The hub lets go: the freed slot proves the unwinding deregistered.
+	waitFor(t, "run deregistered after stop", func() bool { return !s.runs.active("t2") })
+
+	// The freed slot takes a new run - no stale 409. The replacement
+	// run parks in the same hang tool, so the cap is tightened first:
+	// it self-completes through the normal timeout unwind and frees the
+	// slot again on its own.
+	s.runTimeout = 400 * time.Millisecond
+	resp2, cancel2, _ := postChatStream(t, ts, "t2")
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("second chat status = %d, want 200", resp2.StatusCode)
+	}
+	_ = resp2.Body.Close()
+	cancel2()
+	waitFor(t, "replacement run deregistered", func() bool { return !s.runs.active("t2") })
+
+	// A stop after everything calms down: 404, the run is gone.
+	stop2, err := http.Post(ts.URL+"/sessions/t2/stop", "application/json", nil)
+	if err != nil {
+		t.Fatalf("post-unwind stop: %v", err)
+	}
+	defer stop2.Body.Close()
+	if stop2.StatusCode != http.StatusNotFound {
+		t.Fatalf("post-unwind stop status = %d, want 404", stop2.StatusCode)
+	}
+}
+
+// TestDetachedRunStopIdleNotFound: stop on an idle session is a clean
+// 404, and non-POST is a 405.
+func TestDetachedRunStopIdleNotFound(t *testing.T) {
+	_, _, st5, ts := newStepServer(t)
+	createSession(t, ts, "t5")
+	muteTitles(t, st5, "t5")
+
+	resp, err := http.Post(ts.URL+"/sessions/t5/stop", "application/json", nil)
+	if err != nil {
+		t.Fatalf("stop request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("stop on idle session status = %d, want 404", resp.StatusCode)
+	}
+
+	get, err := http.Get(ts.URL + "/sessions/t5/stop")
+	if err != nil {
+		t.Fatalf("get stop: %v", err)
+	}
+	defer get.Body.Close()
+	if get.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET stop status = %d, want 405", get.StatusCode)
+	}
+}
+
+// TestRunHubStopNotStartedConflict: a run registered in the hub but not
+// yet launched (the start->launchRun window) exists without a cancel
+// func - the stop endpoint must say 409, not silently no-op.
+func TestRunHubStopNotStartedConflict(t *testing.T) {
+	s, _, st6, ts := newStepServer(t)
+	createSession(t, ts, "t6")
+	muteTitles(t, st6, "t6")
+
+	run, ok := s.runs.start("t6")
+	if !ok {
+		t.Fatal("hub start")
+	}
+	resp, err := http.Post(ts.URL+"/sessions/t6/stop", "application/json", nil)
+	if err != nil {
+		t.Fatalf("stop request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("stop on unlaunched run status = %d, want 409", resp.StatusCode)
+	}
+	s.runs.finish(run)
 }
 
 // TestRunHubCutSlowSubscriber: a subscriber that stops reading fills its

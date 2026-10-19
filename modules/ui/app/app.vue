@@ -1,169 +1,140 @@
 <template>
   <div class="shell">
     <MenuBar
-      :sidebar-open="isMobile ? drawerOpen : sidebarVisible"
-      :inspector-open="isMobile ? inspectorOpen : rightVisible"
+      :sidebar-open="sidebarPaneOpen"
+      :inspector-open="inspectorPaneOpen"
+      :view="mainView"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
-      @settings="openSettings" />
+      @settings="openSettings"
+      @view="switchMainView" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
-         backdrop-filter frost needs the same backdrop root as the settings
-         scrim to render identically -->
+         backdrop-filter frost renders against the shell's root, so the
+         mobile drawers slide under identical frost -->
     <div
       v-if="isMobile && (drawerOpen || inspectorOpen)"
       class="scrim"
       @click="closeOverlays" />
 
     <div class="pane-area">
-      <!-- always-mounted pane groups: closed state slides via negative
-           margin (clipped by pane-area overflow) instead of v-if unmount,
-           so every pane animates on both desktop and mobile -->
-      <div
-        class="pane-group"
-        :style="{
-          marginLeft:
-            sidebarVisible || isMobile
-              ? '0'
-              : -(sidebarWidth + 6) + 'px',
-        }">
-        <AppSidebar
-          class="pane"
-          :style="
-            isMobile ? { width: 'calc(100% - 30%)' } : { width: sidebarWidth + 'px' }
-          "
-          :sessions="sessions"
-          :active-id="activeId"
-          :streaming-ids="busyAll"
-          :open="drawerOpen"
-          @open="openSession"
-          @new="newChat"
-          @pin="togglePin" />
+      <!-- dock: THE layout tree (card t_63253264). Recursive split/pane
+           components render omega.dock-layout; the named region templates
+           below flow down and surface inside whichever pane hosts them.
+           The chat region is MULTI-INSTANCE (card t_4f0e88f2): every chat
+           tab binds a session and renders its own ChatTab keyed by the
+           tab's instance key; the same session may live in two tabs
+           (settled ruling) and both subscribe to the run's events. -->
+      <DockSplit :node="dock.tree.value">
+        <template #pane-sidebar>
+          <AppSidebar
+            class="pane"
+            :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
+            :sessions="sessions"
+            :active-id="focusedSessionId"
+            :streaming-ids="busyAll"
+            :open="drawerOpen"
+            :show-archived="showArchived"
+            @open="openChatTab"
+            @new="openChatTab(null)"
+            @pin="togglePin"
+            @archive="toggleArchive"
+            @remove="askDelete"
+            @toggle-archived="showArchived = $event" />
+        </template>
 
-        <PaneDivider
-          v-if="!isMobile && sidebarVisible"
-          ref="dividerEl"
-          :width="sidebarWidth"
-          :min="128"
-          storage-key="omega.sidebar-width"
-          @update:width="onResize"
-          @collapsed="sidebarVisible = false" />
-      </div>
-
-      <main class="chat pane">
-        <!-- wrap owns the pill's absolute placement: the scroll container
-             itself scrolls its content (an absolutely positioned child of
-             it would scroll away with it) -->
-        <div class="messages-wrap">
-          <div
-            class="messages"
-            ref="messagesEl">
-            <p
-              v-if="transcript.length === 0"
-              class="empty">
-              say something to
-              <span class="brand">Ωmega</span>
-            </p>
-            <template
-              v-for="(item, i) in transcript"
-              :key="itemKey(item)">
-              <ChatMessage
-                v-if="item.kind === 'message'"
-                :role="item.role"
-                :content="item.content"
-                :time="item.time"
-                :final-ms="item.finalMs"
-                :streaming="item.streaming" />
-              <ThinkingBlock
-                v-else-if="item.kind === 'thinking' && showThinking"
-                :content="item.content"
-                :final-ms="item.finalMs"
-                :streaming="item.streaming" />
-              <ToolCallLine
-                v-else-if="item.kind === 'tool'"
-                :name="item.name"
-                :status="item.status"
-                :interrupted="item.interrupted"
-                :final-ms="item.finalMs"
-                :output="item.output"
-                :result="item.result" />
-              <div
-                v-else-if="item.kind === 'interrupted'"
-                class="interrupted-line">
-                <span>stream interrupted</span>
-                <button class="resume" @click="retryStream">resume</button>
-              </div>
-            </template>
-            <div
-              v-if="statusLine"
-              class="status-line">
-              {{ statusLine }}…
-            </div>
+        <!-- one ChatTab per chat tab; keyed by the tab's instance key so
+             a DnD move (same pane reorder / cross-pane) remounts cleanly
+             and tab switching never renders another tab's transcript.
+             The module-owned board main-view (kanban) folds into the
+             chat pane template per the dock 1/5 merge ruling: chat
+             hides, the board shows, in the ACTIVE chat pane only -->
+        <template #pane-chat="{ pane, tab }">
+          <div :style="{ display: mainView === 'chat' ? 'contents' : 'none' }">
+            <ChatTab
+              :key="tab.key ?? pane"
+              :tab="tab"
+              :show-thinking="showThinking"
+              :model="selectedModel"
+              :models="models"
+              :thinking="selectedThinking"
+              :appearance="appearance"
+              @update:model="selectedModel = $event"
+              @update:thinking="selectedThinking = $event" />
           </div>
-          <button
-            v-if="jumpPill"
-            class="jump-live"
-            @click="jumpToLive">
-            ⌄ live
-          </button>
-        </div>
+          <div
+            v-if="mainView === 'board' && pane === boardHostPane"
+            class="board-pane">
+            <component
+              :is="boardComponent"
+              v-if="boardComponent"
+              @open-session="openBoardSession" />
+            <p
+              v-else
+              class="empty">
+              board module not loaded
+            </p>
+          </div>
+        </template>
 
-        <AppComposer
-          v-model:draft="draft"
-          v-model:model="selectedModel"
-          :models="models"
-          @send="send" />
-      </main>
-
-      <div
-        class="pane-group"
-        :style="{
-          marginRight:
-            rightVisible || settingsOpen || isMobile
-              ? '0'
-              : -(rightWidth + 6) + 'px',
-        }">
-        <PaneDivider
-          v-if="!isMobile && (rightVisible || settingsOpen)"
-          ref="rightDividerEl"
-          :width="rightWidth"
-          :min="128"
-          :invert="true"
-          storage-key="omega.inspector-width"
-          @update:width="onRightResize"
-          @collapsed="onRightCollapsed" />
-
-        <!-- both right panes always mounted, stacked in one slot: toggling
-             slides one in over the other instead of a v-if content flash -->
-        <div
-          class="pane-slot"
-          :style="isMobile ? undefined : { width: rightWidth + 'px' }">
+        <template #pane-inspector>
+          <!-- mobile: the slide-in overlay; desktop: a real dock pane.
+               `visible` stays the root-listing fetch trigger (drawer flag
+               on mobile, always true in the dock tab). -->
           <RightSidebar
-            class="slot-pane"
-            :class="{ active: !settingsOpen }"
-            :style="
-              isMobile ? { width: 'calc(100% - 30%)' } : { flexBasis: rightWidth + 'px' }
-            "
+            class="pane"
+            :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
             :open="inspectorOpen"
-            :visible="isMobile ? inspectorOpen : rightVisible && !settingsOpen" />
+            :visible="isMobile ? inspectorOpen : true" />
+        </template>
 
-          <SettingsDrawer
-            class="slot-pane"
-            :class="{ active: settingsOpen }"
-            :open="settingsOpen"
+        <!-- card 5 (t_35b5594a): settings is a dock-tab singleton - the
+             menubar gear opens it into the focused main pane; the overlay
+             drawer shape is gone. Same component, in-pane. -->
+        <template #pane-settings>
+          <SettingsTab
+            class="pane"
             v-model:show-thinking="showThinking"
+            v-model:appearance="appearance"
             :theme-mode="themeMode"
+            :user-themes="userThemes"
             @set-theme="setTheme" />
+        </template>
+      </DockSplit>
+    </div>
+
+    <!-- destructive confirm: delete walks the store cascade server-side,
+         so there is no undo - the dialog names the session -->
+    <div
+      v-if="deleteId"
+      class="confirm-scrim"
+      @click.self="cancelDelete">
+      <div
+        class="confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-delete-title">
+        <p
+          id="confirm-delete-title"
+          class="confirm-title">Delete session?</p>
+        <p class="confirm-body">
+          "{{ deleteLabel }}" and its full history are removed
+          permanently. There is no undo.
+        </p>
+        <div class="confirm-actions">
+          <button
+            class="new-btn"
+            @click="cancelDelete">
+            cancel
+          </button>
+          <button
+            class="confirm-danger"
+            @click="confirmDelete">
+            delete
+          </button>
         </div>
       </div>
     </div>
-
-    <!-- frosted backdrop only on mobile - on desktop the settings drawer
-         is the right sidebar swapped for settings content, no overlay -->
-    <div
-      v-if="isMobile && settingsOpen"
-      class="scrim"
-      @click="settingsOpen = false" />
 
     <StatusBar
       :healthy="healthy"
@@ -180,15 +151,21 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, reactive, ref, watch, type Ref } from "vue";
-  import { openClamp } from "./composables/panes";
+  import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
+  import { modulePanels } from "./composables/module-panels.generated";
   import {
-    anyBusy,
-    withBusy,
-    pinSession,
+    archiveSession,
+    deleteSession,
+    fetchHealthInfo,
+    fetchModels,
+    fetchTranscript,
+    fetchSessions,
     markSessionRead,
     parseSessionPath,
     sessionPath,
+    pinSession,
+    parseAppearance,
+    APPEARANCE_KEY,
     isAtBottom,
     pillVisible,
     lastUserText,
@@ -198,55 +175,35 @@
     createItemKeySource,
     streamChat,
     attachSession,
-    fetchHealthInfo,
     persistedTelemetry,
     formatDurationMs,
     StreamInterruptedError,
+    fetchThemes,
+    applyThemeTokens,
+    clearThemeTokens,
+    parseThemeSelect,
+    type UserTheme,
+    type ThemeMode,
   } from "./composables/omega";
-  import type { BusyMap } from "./composables/omega";
-
-  interface MessageItem {
-    kind: "message";
-    role: "user" | "assistant";
-    content: string;
-    streaming?: boolean;
-    // client-side timestamp for live messages, backend created_at for
-    // restored history (ChatMessage renders it as a hover title)
-    time?: string;
-    // server-measured response duration (restored history)
-    finalMs?: number;
-  }
-  interface ThinkingItem {
-    kind: "thinking";
-    content: string;
-    streaming?: boolean;
-    // server-measured thinking duration (restored history)
-    finalMs?: number;
-  }
-  interface ToolItem {
-    kind: "tool";
-    name: string;
-    status: string;
-    // a dead stream never delivers the tool result - flagged so the
-    // elapsed meter in ToolCallLine freezes instead of ticking forever
-    interrupted?: boolean;
-    output?: string;
-    result?: string;
-    // server-measured duration from the matched result (restored)
-    finalMs?: number;
-  }
-  // inline "stream interrupted" marker: appears only when the SSE
-  // transport died mid-run (never on a clean end). Carries the resume
-  // affordance - see retryStream.
-  interface InterruptedItem {
-    kind: "interrupted";
-  }
-  type TranscriptItem =
-    | MessageItem
-    | ThinkingItem
-    | ToolItem
-    | InterruptedItem;
-
+  import type { Session, Appearance } from "./composables/omega";
+  import {
+    allNodes,
+    createDock,
+    findPane,
+    isPane,
+    DOCK_API_KEY,
+    DOCK_CHAT_OPEN_KEY,
+    DOCK_TAB_TITLE_KEY,
+    nextTabKey,
+  } from "./composables/dock";
+  import {
+    CHAT_HOST_KEY,
+    DEFAULT_CHAT_STATE,
+    createChatHost,
+    type ChatState,
+  } from "./composables/chat";
+  import ChatTab from "./components/ChatTab.vue";
+  import SettingsTab from "./components/settings/SettingsTab.vue";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
@@ -254,208 +211,300 @@
   const upSeconds = ref(0);
   const HEALTH_POLL_MS = 30000;
   let healthTimer: ReturnType<typeof setInterval> | null = null;
+  // running-state poll: the /sessions row's running flag is the single
+  // truth for "is this session streaming", so the webui polls it - that
+  // is what lets a tab that never held the SSE (every other tab, every
+  // future tab) reconcile its pulse instead of owning stream state.
+  // A hidden tab skips its ticks; an in-flight poll never overlaps.
+  const RUNNING_POLL_MS = 2000;
+  let runningTimer: ReturnType<typeof setInterval> | null = null;
+  let runningPollInFlight = false;
+  function tickRunningPoll() {
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (runningPollInFlight) return;
+    runningPollInFlight = true;
+    refreshSessions().finally(() => {
+      runningPollInFlight = false;
+    });
+  }
   const models = ref<string[]>([]);
   const selectedModel = ref("");
+  // reasoning effort: one app-level selection shared by every chat tab.
+  // Persisted in localStorage (last choice wins across reloads, card
+  // t_2b474945); "default" = no thinking_level field on the wire.
+  const selectedThinking = ref(
+    localStorage.getItem("omega.thinking-level") ?? "default",
+  );
+  watch(selectedThinking, (v) => {
+    if (v === "default") localStorage.removeItem("omega.thinking-level");
+    else localStorage.setItem("omega.thinking-level", v);
+  });
   const sessions = ref<Session[]>([]);
-  const activeId = ref<string | null>(null);
-  const draft = ref("");
-  const messagesEl = ref<HTMLElement | null>(null);
+  // archived filter: off (default) lists live sessions only; on fetches
+  // with archived=include and shows only - muted - archived rows
+  const showArchived = ref(false);
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
-
-  // --- per-session stream state (Lvl 2) ---
-  // Every session, including the unsaved new chat, owns its transcript and
-  // telemetry. A stream writes ONLY its own state, so any session can
-  // stream while the view sits anywhere else. NEW_KEY holds the state of
-  // an unsaved chat until /sessions returns the real id.
-  const NEW_KEY = "new";
-  interface SessionState {
-    transcript: TranscriptItem[];
-    statusLine: string;
-    tokens: number;
-    tokensPerSecond: number;
-    liveChunksPerSecond: number;
-    // last-known chunks/s, from the session row's last_run block (or
-    // the run that just ended) - the idle state bar's rate display
-    lastChunksPerSecond: number;
-  }
-  const EMPTY_STATE: SessionState = {
-    transcript: [],
-    statusLine: "",
-    tokens: 0,
-    tokensPerSecond: 0,
-    liveChunksPerSecond: 0,
-    lastChunksPerSecond: 0,
-  };
-  const streams = reactive(new Map<string, SessionState>());
-
-  function ensureState(key: string): SessionState {
-    let st = streams.get(key);
-    if (!st) {
-      st = {
-        transcript: [],
-        statusLine: "",
-        tokens: 0,
-        tokensPerSecond: 0,
-        liveChunksPerSecond: 0,
-        lastChunksPerSecond: 0,
-      };
-      streams.set(key, st);
-      // reactive(Map) wraps values on READ - keep the wrapped handle, not
-      // the raw object, or state writes stop triggering the view
-      st = streams.get(key) as SessionState;
-    }
-    return st;
-  }
-
-  const activeKey = computed(() => activeId.value ?? NEW_KEY);
-  const view = computed<SessionState>(
-    () => streams.get(activeKey.value) ?? EMPTY_STATE,
-  );
-
-  // --- URL reflects the session: hand-rolled History wiring. Every open
-  // session is a history entry so back/forward and reload work; switching
-  // stays a pure view change (no stream is interrupted). fromHistory is
-  // set while a navigation ORIGINATES in the history API - the URL is
-  // already correct then, so no sync runs (and one is not appended).
-  let fromHistory = false;
-
-  function syncURL(id: string | null, push: boolean) {
-    if (typeof window === "undefined") return;
-    const url = id ? sessionPath(id) : "/";
-    if (push) history.pushState({}, "", url);
-    else history.replaceState({}, "", url);
-  }
-
-  // back/forward walk session entries; switching on popstate is a pure
-  // view change, so it never interrupts a stream
-  function onPop() {
-    fromHistory = true;
-    const id = parseSessionPath(window.location.pathname);
-    if (id) openSession(id);
-    else newChat();
-    fromHistory = false;
-  }
-
-  // per-session busy set: a session is busy iff its own stream is live.
-  // Swapped value-semantically (withBusy) so set changes are reactive.
-  // busySet holds LOCALLY initiated streams; serverBusy holds the
-  // sessions the BACKEND reports as running (the detached-run active
-  // flag on /sessions rows - survives a page refresh, the in-memory map
-  // does not). busyAll is the union every read goes through.
-  const busySet = ref<BusyMap>(new Set());
-  const serverBusy = ref<BusyMap>(new Set());
-  const busyAll = computed<BusyMap>(() => {
-    const all = new Set(busySet.value);
-    for (const id of serverBusy.value) all.add(id);
-    return all;
-  });
-  // global view concerns: read-only over the union, never a lock
-  const anyBusyNow = computed(() => anyBusy(busyAll.value));
-
-  // the view reads its own session's state
-  const transcript = computed(() => view.value.transcript);
-  const statusLine = computed(() => view.value.statusLine);
-  const tokens = computed(() => view.value.tokens);
-  const tokensPerSecond = computed(() => view.value.tokensPerSecond);
-  const liveChunksPerSecond = computed(() => view.value.liveChunksPerSecond);
-  const lastChunksPerSecond = computed(() => view.value.lastChunksPerSecond);
-
-  // keyed v-for: identity, not index (createItemKeySource) - see omega.ts
-  const itemKey = createItemKeySource();
-
-  // mobile: sidebars are overlays (slide from their side over a scrim);
-  // desktop: same toggles mount/unmount the panes inline + squeeze chain
-  // mobile: one drawer at a time - opening any pane closes the other two
-  function toggleSidebar() {
-    if (isMobile.value) {
-      inspectorOpen.value = false;
-      settingsOpen.value = false;
-      drawerOpen.value = !drawerOpen.value;
-    } else {
-      sidebarVisible.value = !sidebarVisible.value;
-      // open-clamp: a stale sub-floor persisted width (manual resize below
-      // 320, then collapse) reopens AT 320; manual resize below still works
-      if (sidebarVisible.value) reopenClip(sidebarWidth, "omega.sidebar-width");
-    }
-  }
-
-  // reopen-floor helper, applied when a pane group un-collapses: lift the
-  // width ref to PANE_OPEN_MIN and rewrite the divider's storage key so the
-  // remounting divider restores the clamped value (the ref is already
-  // correct - the key is what the divider's onMounted reads back)
-  function reopenClip(width: Ref<number>, storageKey: string) {
-    const clamped = openClamp(width.value);
-    if (clamped === width.value) return;
-    width.value = clamped;
-    if (typeof window !== "undefined") localStorage.setItem(storageKey, String(clamped));
-  }
-
-  function closeOverlays() {
-    drawerOpen.value = false;
-    inspectorOpen.value = false;
-    settingsOpen.value = false;
-  }
-  const settingsOpen = ref(false);
   const showThinking = ref(true);
-
-  const sidebarWidth = ref(240);
-  const rightWidth = ref(240);
-  const dividerEl = ref<{ persist: (w: number) => void } | null>(null);
-  const rightDividerEl = ref<{ persist: (w: number) => void } | null>(null);
-
-  // desktop pane open-state persists across reloads (omega.sidebar-open /
-  // omega.inspector-open, boolean strings, defaults true / false). Mobile
-  // is deliberately NOT persisted: the drawers stay closed every load -
-  // these flags are desktop-layout state only, guarded at the same 768px
-  // breakpoint the overlay mode uses. The gear/settings drawer is a
-  // headless toggle and stays non-persisted.
-  function loadPaneFlag(key: string, fallback: boolean): boolean {
-    if (typeof window === "undefined") return fallback;
-    const raw = localStorage.getItem(key);
-    if (raw === "true") return true;
-    if (raw === "false") return false;
-    return fallback;
-  }
-  const sidebarVisible = ref(loadPaneFlag("omega.sidebar-open", true));
-  // first visit: the inspector starts closed (the pane width IS persisted,
-  // via the divider's storage key)
-  const rightVisible = ref(loadPaneFlag("omega.inspector-open", false));
-
-  // persisted writes happen on toggle only, desktop only - the mobile
-  // overlay toggles flip drawerOpen/inspectorOpen, these refs move on
-  // desktop toggles and squeeze collapse (dividers are desktop-only).
-  // The guard reads the LIVE matchMedia, not the isMobile ref: at a
-  // breakpoint cross the squeeze chain can fire before the media-query
-  // listener updates the ref, and by-ref would then persist a mobile
-  // squeeze closure over the desktop flag.
-  const MOBILE_MEDIA = "(max-width: 768px)";
-  function isDesktopNow(): boolean {
-    if (typeof window === "undefined") return false;
-    return !window.matchMedia(MOBILE_MEDIA).matches;
-  }
-  watch(sidebarVisible, (v) => {
-    if (isDesktopNow()) localStorage.setItem("omega.sidebar-open", String(v));
-  });
-  watch(rightVisible, (v) => {
-    if (isDesktopNow()) localStorage.setItem("omega.inspector-open", String(v));
+  // chat appearance (card t_84e4653c): 'chat' chronolog | 'stacked'
+  // blocks. Persisted like the theme - last choice wins across reloads,
+  // garbage restores the default.
+  const appearance = ref<Appearance>("chat");
+  // the knob flip re-renders instantly; the change persists for the
+  // next reload (last choice wins, same pattern as the theme)
+  watch(appearance, (a) => {
+    localStorage.setItem(APPEARANCE_KEY, a);
   });
   const contextSize = ref(0);
 
+  // --- dock store (card t_63253264): the layout tree is the single
+  // source of layout truth. Loading seeds from omega.dock-layout or
+  // migrates the pre-dock pane keys once; every mutation persists the
+  // whole tree. The components resolve it via injection. ---
+  const dock = createDock(window.localStorage);
+  provide(DOCK_API_KEY, dock);
+  // MenuBar flags: the drawers (mobile) and the tree (desktop). The
+  // gear is not a toggle flag (card 5): it OPENS the settings singleton
+  // tab, and a second click FOCUSES the live instance wherever it sits.
+  const sidebarPaneOpen = computed(() =>
+    isMobile.value ? drawerOpen.value : dock.has("sidebar"),
+  );
+  const inspectorPaneOpen = computed(() =>
+    isMobile.value ? inspectorOpen.value : dock.has("inspector"),
+  );
+
+  // --- the chat host (card t_4f0e88f2): every chat tab gets its own
+  // stream state keyed by the tab's instance key; the gate stays per
+  // session (the runHub run slot is per session). ---
+  const host = createChatHost({
+    setTabSessionRef: (key, sessionId) => dock.setSessionRef(key, sessionId),
+    refreshSessions: () => refreshSessions(),
+    sessionRow: (id) => sessions.value.find((s) => s.id === id),
+    markRead: (id) => markRead(id),
+    isFocused: (key) => focusedKey.value === key,
+  });
+
+  // --- main-view: chat vs the module-owned board (kanban). Ported
+  // from the pre-dock shell per the dock 1/5 merge ruling: the board
+  // main-view folds into the chat pane template. Under the dock-era
+  // URL ruling (replaceState only, the URL owns the focused chat),
+  // /board is a replaceState overlay - the urlPath watcher skips while
+  // the board is up and chat reclaims the URL on the way back.
+  // ponytail: board renders in ONE pane (the active chat pane); the
+  // dockable-contract card gives board its own component slot later.
+  const mainView = ref<"chat" | "board">("chat");
+  const boardComponent = computed(
+    () => modulePanels.find((p) => p.module === "kanban")?.component,
+  );
+  const boardHostPane = ref<string>("");
+
+  function switchMainView(v: "chat" | "board") {
+    if (mainView.value === v) return;
+    mainView.value = v;
+    if (v === "board") {
+      boardHostPane.value = resolveActivePaneId();
+      history.replaceState({}, "", "/board");
+    } else {
+      history.replaceState({}, "", urlPath.value);
+    }
+  }
+
+  // a board card's transcript chip lands the user in that conversation
+  function openBoardSession(id: string) {
+    mainView.value = "chat";
+    openChatTab(id);
+  }
+  provide(CHAT_HOST_KEY, host);
+
+  // chat tab titles read the session labels; the sidebar highlight
+  // follows the FOCUSED tab - the bar label has to show it
+  provide(DOCK_TAB_TITLE_KEY, (tab) => {
+    if (tab.component !== "chat") return null;
+    if (!tab.sessionRef) return "new chat";
+    const s = sessions.value.find((x) => x.id === tab.sessionRef);
+    return s?.label || "chat";
+  });
+
+  // chat is multi-instance: the '+' / empty-pane "new chat" MUST go
+  // through the opener (a minted key + openTab), never the raw
+  // setComponent - a keyless chat tab would share one state across
+  // every keyless tab in the page
+  provide(DOCK_CHAT_OPEN_KEY, (paneId, sessionId) => openChatTab(sessionId, paneId));
+
+  // --- focus + URL (card t_4f0e88f2 rulings) ---
+  // The URL owns ONLY the focused chat session: focusing a chat tab
+  // replaceStates /chat/<id> (unsaved = /); focus moving to a non-chat
+  // tab or pane leaves the URL at the last focused chat session; layout
+  // and tab state NEVER enter the URL. No pushState - the app never
+  // grows the history stack (the settled ruling), so popstate only
+  // fires for entries outside the SPA and re-targets via the URL's id.
+  const focusedKey = ref<string | null>(null);
+  // the pane a NEW chat tab opens into: the last pane whose active tab
+  // was focused as a chat (a sidebar/bucket click never steals opens -
+  // it is not a chat focus)
+  const activeChatPaneId = ref<string | null>(null);
+
+  const focusedChatState = computed<ChatState>(() =>
+    focusedKey.value ? host.states.get(focusedKey.value) ?? DEFAULT_CHAT_STATE : DEFAULT_CHAT_STATE,
+  );
+  // the sidebar's active-session highlight follows the focused chat tab
+  const focusedSessionId = computed(() => focusedChatState.value.sessionId);
+
+  // status bar telemetry reads the focused chat's state (zeros until a
+  // session carries numbers - DEFAULT_CHAT_STATE fallback)
+  const transcript = computed(() => focusedChatState.value.transcript);
+  const tokens = computed(() => focusedChatState.value.tokens);
+  const tokensPerSecond = computed(() => focusedChatState.value.tokensPerSecond);
+  const liveChunksPerSecond = computed(() => focusedChatState.value.liveChunksPerSecond);
+  const lastChunksPerSecond = computed(() => focusedChatState.value.lastChunksPerSecond);
   const messageCount = computed(
     () => transcript.value.filter((i) => i.kind === "message").length,
   );
+  const anyBusyNow = host.anyBusyNow;
+  const busyAll = host.busyAll;
 
-  // transcript models the live stream: user message, thinking blocks (one per
-  // reasoning run), tool-call lines, assistant message. Restored sessions map
-  // the persisted Assistant{Thinking, ToolCalls, Content} back into the same
-  // three shapes so a reload renders everything that happened.
-  // Read-marking: opening a session IS reading it - live-watched
-  // content never unreads itself. The row's unread clears locally so
-  // the status element goes grey instantly; the PATCH {"read": true}
-  // confirms the server-side stamp (updated_at untouched - reading is
-  // not activity). A failed PATCH defers to the next list refresh.
+  function refocusFrom(paneId: string | null) {
+    const tree = dock.tree.value;
+    if (paneId) {
+      const pane = findPane(tree, paneId);
+      const tab = pane?.tabs[pane.active];
+      if (tab?.component === "chat" && tab.key) {
+        activeChatPaneId.value = paneId;
+        focusedKey.value = tab.key;
+        return;
+      }
+    }
+    // no chat focus in this gesture: keep a still-valid focus, else the
+    // first chat tab in the tree, else none (URL home)
+    if (focusedKey.value && dock.findChatTab(focusedKey.value)) return;
+    const first = dock.firstChatTab();
+    focusedKey.value = first?.tab.key ?? null;
+  }
+
+  // clicks carry the pane focus: the document-level listener reads the
+  // dock-pane id (DnD moves, menus and composer clicks all bubble here)
+  // and remembers the LAST FOCUSED pane - the gear's settings tab opens
+  // into that pane (card 5's "focused main pane" target).
+  const lastPaneId = ref<string | null>(null);
+  function onDocClick(e: MouseEvent) {
+    const el = e.target instanceof Element ?
+      e.target.closest("[data-pane-id]") :
+      null;
+    const paneId = el?.getAttribute("data-pane-id") ?? null;
+    if (paneId) lastPaneId.value = paneId;
+    refocusFrom(paneId);
+  }
+
+  // the pane a singleton open targets when no click has landed yet: the
+  // first pane in the tree (depth-first, same walk openSingleton uses)
+  function resolveFocusedPaneId(): string {
+    const tree = dock.tree.value;
+    const focused = lastPaneId.value ?
+      findPane(tree, lastPaneId.value) :
+      null;
+    if (focused) return focused.id;
+    for (const n of allNodes(tree)) {
+      if (isPane(n)) return n.id;
+    }
+    return ""; // unreachable: the tree always contains at least one pane
+  }
+
+  function resolveActivePaneId(): string {
+    const tree = dock.tree.value;
+    const focused = activeChatPaneId.value ?
+      findPane(tree, activeChatPaneId.value) :
+      null;
+    if (focused && focused.tabs.some((t) => t.component === "chat")) return focused.id;
+    // not focused on a chat-hosting pane: the first pane that hosts one,
+    // else the first pane in the tree (never auto-splits for the user)
+    for (const n of allNodes(tree)) {
+      if (isPane(n) && n.tabs.some((t) => t.component === "chat")) return n.id;
+    }
+    for (const n of allNodes(tree)) {
+      if (isPane(n)) return n.id;
+    }
+    return ""; // unreachable: the tree always contains at least one pane
+  }
+
+  // openChatTab is THE tab-opener: the sidebar's row click (session id)
+  // and the '+' flows (null = unsaved composer-first) go through it.
+  // Always a NEW tab - the settled ruling allows the same session in
+  // two tabs; the sidebar's highlight follows the focused tab.
+  function openChatTab(sessionId: string | null, paneId?: string) {
+    const pane = paneId ?? resolveActivePaneId();
+    if (!pane) return;
+    const key = nextTabKey();
+    dock.openTab(pane, {
+      component: "chat",
+      ...(sessionId ? { sessionRef: sessionId } : {}),
+      key,
+    });
+    focusedKey.value = key;
+    if (isMobile.value) drawerOpen.value = false;
+    // open == read is owned by the ChatTab mount's load(); a newly
+    // opened tab mounts and restores immediately
+  }
+
+  // popstate re-targets to the URL's session: an open-by-session tab is
+  // focused (and read), otherwise a new chat tab opens in the active
+  // pane - the same flow a reload of /chat/<id> takes
+  async function onPop() {
+    // /board re-enters the kanban view without touching chat focus
+    if (/^\/board\/?$/.test(window.location.pathname)) {
+      mainView.value = "board";
+      boardHostPane.value = resolveActivePaneId();
+      return;
+    }
+    mainView.value = "chat";
+    const id = parseSessionPath(window.location.pathname);
+    if (id) {
+      const found = dock.firstChatTab(id);
+      if (found?.tab.key) {
+        dock.focus(found.paneId, found.index);
+        focusedKey.value = found.tab.key;
+        markRead(id);
+        return;
+      }
+      if (await sessionExists(id)) {
+        openChatTab(id);
+        markRead(id);
+      } else {
+        history.replaceState({}, "", "/");
+      }
+      return;
+    }
+    // home: an existing chat tab takes the focus; with none open,
+    // composer-first in the active pane (today's no-session behavior)
+    const first = dock.firstChatTab();
+    if (first?.tab.key) {
+      dock.focus(first.paneId, first.index);
+      focusedKey.value = first.tab.key;
+    } else {
+      openChatTab(null);
+    }
+  }
+
+  // URL follows focus by derivation: the focused tab's bound session
+  // (unsaved = /). The states map re-fires this when the unsaved tab's
+  // first send lands its real id.
+  const urlPath = computed(() => {
+    const id = focusedChatState.value.sessionId;
+    return id ? sessionPath(id) : "/";
+  });
+  watch(urlPath, (p) => {
+    // /board is an overlay the URL owns while it is up - the focused
+    // chat's path reclaims the URL on the way back to chat
+    if (mainView.value === "board") return;
+    history.replaceState({}, "", p);
+  });
+  // structural changes never steal focus, but a gone focus re-resolves
+  // (closeTab's neighbor-focus, DnD moves, toggle remove)
+  watch(dock.tree, () => refocusFrom(null));
+
+  // per-session stream busy set: a session is busy iff its own stream
+  // is live (host.busyAll). Swapped value-semantically so set changes
+  // are reactive.
   function markRead(id: string) {
     sessions.value = sessions.value.map((s) =>
       s.id === id ? { ...s, unread: false } : s,
@@ -463,604 +512,64 @@
     markSessionRead(id).catch(() => refreshSessions());
   }
 
-  async function openSession(id: string) {
-    if (!fromHistory) syncURL(id, true);
-    activeId.value = id;
-    drawerOpen.value = false;
-    inspectorOpen.value = false;
-    markRead(id);
-    const st = ensureState(id);
-    // A LOCALLY live stream IS the content - refetching now would clobber
-    // the stream state with a mid-flight persisted snapshot. A server-
-    // reported active run (busyAll via serverBusy, e.g. right after a page
-    // refresh) must NOT skip this: there is no local transcript to
-    // clobber, the fetch below renders persisted history and the attach
-    // lands in the live stream.
-    if (busySet.value.has(id)) {
-      scrollDown(true);
-      return;
-    }
-    st.statusLine = "";
-    // an interrupted-stream marker is per-session live state: the refetch
-    // below restores PERSISTED history, not the marker - re-append it so
-    // the resume affordance survives a view switch (card: switching is a
-    // pure view change, retry stays per-session)
-    const hadInterrupted = hasInterruptedMarker(st.transcript);
-    try {
-      const detail = await fetchSession(id);
-      // durable telemetry straight from the persisted row: the token
-      // total and the last-run rates land in the status bar before any
-      // stream runs - reload shows what the session actually has
-      const row = detail.session;
-      const durable = persistedTelemetry(row);
-      st.tokens = durable.tokens;
-      st.tokensPerSecond = durable.tps;
-      st.lastChunksPerSecond = durable.cps;
-      if (detail.messages) {
-        const items: TranscriptItem[] = [];
-        const toolById = new Map<string, ToolItem>();
-        for (const m of detail.messages) {
-          if (m.role === "tool") continue; // consumed by the result pass below
-          if (!m.content && !m.thinking && !m.tool_calls?.length) continue;
-          const role = m.role === "assistant" ? "assistant" : "user";
-          if (role === "assistant" && m.thinking) {
-            items.push({
-              kind: "thinking",
-              content: m.thinking,
-              finalMs: m.timing?.thinking_ms,
-            });
-          }
-          if (m.content) {
-            items.push({
-              kind: "message",
-              role,
-              content: m.content,
-              time: m.created_at || m.timestamp || undefined,
-              finalMs: m.timing?.response_ms,
-            });
-          }
-          if (role === "assistant" && m.tool_calls?.length) {
-            for (const tc of m.tool_calls) {
-              const t: ToolItem = {
-                kind: "tool",
-                name: tc.name || "tool",
-                status: "done",
-                output:
-                  tc.arguments ?
-                    JSON.stringify(tc.arguments, null, 2)
-                  : undefined,
-              };
-              if (tc.id) toolById.set(tc.id, t);
-              items.push(t);
-            }
-          }
-        }
-        // second pass: tool-role messages carry the persisted results,
-        // matched to their call by tool_call_id
-        for (const m of detail.messages) {
-          if (m.role !== "tool" || !m.tool_call_id) continue;
-          const t = toolById.get(m.tool_call_id);
-          if (!t) continue;
-          t.result = m.content || "";
-          t.status = m.is_error ? "error" : "done";
-          t.finalMs = m.timing?.elapsed_ms;
-        }
-        st.transcript = items;
-        if (hadInterrupted) st.transcript.push({ kind: "interrupted" });
-      }
-      // Reattach: the run is server-side now (card t_2f9b6110), so a
-      // session mid-generation reports active=true on its detail - the
-      // refreshed page renders the persisted history (the user message
-      // persisted pre-run, nothing after it yet) and then auto-subscribes
-      // to the live events stream. Re-check LOCAL busy only: serverBusy
-      // holds this session right now (the run IS active) and must not
-      // block the attach - only a double-call within this page does.
-      if (detail.active && !busySet.value.has(id)) {
-        await runStream(id, st, async (drv) => {
-          await attachSession(id, drv.handlers);
-        });
-      }
-    } catch {
-      // empty or missing session: keep the previous view rather than
-      // dropping it on a transient fetch failure
-    }
-    scrollDown(true);
-  }
-
-  function newChat() {
-    if (!fromHistory) syncURL(null, true);
-    activeId.value = null;
-    // fresh unsaved-chat state - UNLESS an unsaved stream is live, in
-    // which case +new returns to the view watching it (no global lock)
-    if (!busyAll.value.has(NEW_KEY)) streams.delete(NEW_KEY);
-    ensureState(NEW_KEY);
-    drawerOpen.value = false;
-  }
-
-  // opening the inspector is the ONE moment the right sidebar may push back:
-  // if the left sidebar grew so wide the inspector auto-collapsed, reopening
-  // shrinks the left sidebar just enough to fit inspector + chat floor.
-  function toggleInspector() {
-    // mobile: same slot rule - free it first
-    if (isMobile.value) {
-      if (settingsOpen.value) settingsOpen.value = false;
-      drawerOpen.value = false;
-      inspectorOpen.value = !inspectorOpen.value;
-      return;
-    }
-    // desktop: the right group hosts one pane - if settings is open, the
-    // inspector toggle CLOSES settings and explicitly OPENS the inspector
-    if (settingsOpen.value) {
-      settingsOpen.value = false;
-      rightVisible.value = true;
-      return;
-    }
-    if (rightVisible.value) {
-      rightVisible.value = false;
-      return;
-    }
-    pushBackLeft();
-    // open-clamp: stale sub-floor width reopens at the floor (dock constants)
-    reopenClip(rightWidth, "omega.inspector-width");
-    rightVisible.value = true;
-  }
-
-  // shared by the inspector reopen and openSettings: shrink the left
-  // sidebar to its floor when it grew too wide for the right group to fit
-  function pushBackLeft() {
-    if (typeof window === "undefined") return;
-    const area = document.querySelector(".pane-area");
-    if (!area) return;
-    const available = area.clientWidth - 8;
-    const needed = sidebarWidth.value + 320 + 128 + 8;
-    if (available < needed) {
-      sidebarWidth.value = Math.max(128, available - 320 - 128 - 8);
-      dividerEl.value?.persist(sidebarWidth.value);
-    }
-  }
-
-  // gear is a toggle; the right group hosts one pane - opening settings
-  // first closes the inspector if open, then opens settings (and vice
-  // versa in toggleInspector). No interaction with the left sidebar.
-  function openSettings() {
-    if (settingsOpen.value) {
-      settingsOpen.value = false;
-      return;
-    }
-    if (isMobile.value) {
-      // mobile: one drawer at a time - close both other drawers
-      inspectorOpen.value = false;
-      drawerOpen.value = false;
-    } else {
-      // desktop: same push-back as the inspector reopen - shrink the left
-      // sidebar if it grew too wide for the right group to fit
-      rightVisible.value = false;
-      pushBackLeft();
-    }
-    settingsOpen.value = true;
-  }
-
-  function onResize(w: number) {
-    w = Math.max(128, w); // floor: sub-min values (incl. stale localStorage) dead-lock the divider
-    sidebarWidth.value = w;
-    // squeeze the RIGHT first (shrink/close), then cap against the
-    // post-squeeze room - mirrors onRightResize so both dividers behave
-    // identically
-    squeezeCheck();
-    const cap = dragCap(
-      rightVisible.value || settingsOpen.value ? rightWidth.value : 0,
-    );
-    if (cap >= 128 && sidebarWidth.value > cap) sidebarWidth.value = cap;
-    dividerEl.value?.persist(sidebarWidth.value);
-  }
-
-  // JS width-wall: the CSS group cap alone lets an oversized inline width
-  // overflow the group (content sliding out of bounds). Clamping the ref
-  // here means the stored/dragged width can never exceed the chat floor.
-  function dragCap(otherWidth: number): number {
-    if (typeof window === "undefined") return Infinity;
-    const area = document.querySelector(".pane-area");
-    if (!area) return Infinity;
-    return area.clientWidth - 8 - otherWidth - 320 - 8; // dividers + chat floor
-  }
-
-  function onRightResize(w: number) {
-    w = Math.max(128, w); // floor: sub-min values (incl. stale localStorage) dead-lock the divider
-    rightWidth.value = w;
-    // squeeze the LEFT first - it shrinks and eventually closes, freeing
-    // space; only THEN cap against the post-squeeze room so the chain
-    // stays draggable (drag wide -> left closes -> right grows to the wall)
-    squeezeCheckLeft();
-    const cap = dragCap(sidebarVisible.value ? sidebarWidth.value : 0);
-    if (cap >= 128 && rightWidth.value > cap) rightWidth.value = cap;
-    rightDividerEl.value?.persist(rightWidth.value);
-  }
-
-  // squeeze below the min floor closes whichever pane is visible in the
-  // right slot - settings or the inspector
-  function onRightCollapsed() {
-    if (settingsOpen.value) settingsOpen.value = false;
-    else rightVisible.value = false;
-  }
-
-  // mirrored squeeze: dragging the right divider wide starves the left
-  // sidebar first - it shrinks to fit, and closes below its floor, exactly
-  // like the right sidebar does when the left divider over-drags it.
-  function squeezeCheckLeft() {
-    if (!sidebarVisible.value || typeof window === "undefined") return;
-    const area = document.querySelector(".pane-area");
-    if (!area) return;
-    const available = area.clientWidth - 8;
-    const room = available - 320 - rightWidth.value - 8; // chat floor + dividers
-    if (room < 128) {
-      sidebarVisible.value = false;
-      return;
-    }
-    if (sidebarWidth.value > room) {
-      sidebarWidth.value = room;
-      dividerEl.value?.persist(room);
-    }
-  }
-
-  // squeeze chain (mirror of squeezeCheckLeft): dragging the left sidebar
-  // wide starves the right first - it SHRINKS to the remaining room, and
-  // closes below its floor. Runs on left-drag and window resize.
-  function squeezeCheck() {
-    const rightActive = rightVisible.value || settingsOpen.value;
-    if (!rightActive || typeof window === "undefined") return;
-    const area = document.querySelector(".pane-area");
-    if (!area) return;
-    const available = area.clientWidth - 8;
-    const room = available - 320 - sidebarWidth.value - 8; // chat floor + dividers
-    if (room < 128) {
-      // close whichever pane is visible in the right slot
-      if (settingsOpen.value) settingsOpen.value = false;
-      else rightVisible.value = false;
-      return;
-    }
-    if (rightWidth.value > room) {
-      rightWidth.value = room;
-      rightDividerEl.value?.persist(room);
-    }
-  }
-
-  // makeStreamDriver builds the per-run stream state over ONE session
-  // state: the SSE handler set plus the finalization that freezes meters
-  // and bubbles when the stream ends. Shared by BOTH transports - the
-  // send stream (POST /chat) and the reattach stream (GET /sessions/<id>/
-  // events, the refresh-mid-generation landing path) - so a reattached
-  // page renders the run's remaining events exactly like the original
-  // sender did. All mutable state (thinking block, current assistant
-  // bubble, segment tracking) lives in this closure.
-  function makeStreamDriver(st: SessionState) {
-    let assistant: MessageItem = {
-      kind: "message",
-      role: "assistant",
-      content: "",
-      streaming: true,
-    };
-    // Lazy push: the assistant bubble enters the transcript at the first
-    // response chunk so thinking blocks and tool lines (which arrive earlier
-    // in the stream) render BEFORE the reply, matching the event order.
-    let assistantPushed = false;
-    const pushAssistant = () => {
-      if (!assistantPushed) {
-        // stamped once, at first appearance - it stays the receive time
-        assistant.time = assistant.time ?? new Date().toISOString();
-        st.transcript.push(assistant);
-        assistantPushed = true;
-      }
-    };
-    // Tool phases split the turn into response segments: each text after a
-    // tool phase is its own bubble, so the timeline reads chronologically
-    // (preamble -> tools -> final answer).
-    let segmentBreak = false;
-    let thinking: ThinkingItem | null = null;
-    // anything at all arrived (chunks, tool lines, status) - the finalize
-    // no-ghost-bubble rule needs this: a reattach to an ALREADY finished
-    // run (detail.active raced the finish, the 404 path) pushes nothing
-    let sawActivity = false;
-    const sentAt = Date.now();
-    // a fresh stream takes the meters over: the last-known idle values
-    // step aside until this run's own numbers arrive
-    st.tokens = 0;
-    st.tokensPerSecond = 0;
-    st.liveChunksPerSecond = 0;
-    st.lastChunksPerSecond = 0;
-    // live stream telemetry: per-chunk arrivals make the statusbar a
-    // visible proof that the frontend receives chunks as they come - a
-    // ticking counter means streaming, a frozen-then-jumping one means
-    // something buffers between omega and the page.
-    const chunkTimes: number[] = [];
-    const onChunk = (len: number) => {
-      const now = Date.now();
-      chunkTimes.push(now);
-      // [0] cannot be undefined while length > 0; the fallback keeps
-      // the narrowing honest without an assertion
-      while (chunkTimes.length && now - (chunkTimes[0] ?? now) > 1000) chunkTimes.shift();
-      st.liveChunksPerSecond = chunkTimes.length;
-      // ponytail: chars/4 token estimate - corrected by real usage at end
-      st.tokens += Math.ceil(len / 4);
-    };
-    // the stream writes only its own session's state; auto-scroll follows
-    // it only while the view is actually watching this stream - a stream
-    // running in the background never yanks an open session's scrollbar
-    const isViewed = () => streams.get(activeKey.value) === st;
-
-    const handlers: StreamHandlers = {
-      onThinking: (content) => {
-        sawActivity = true;
-        if (!thinking) {
-          thinking = { kind: "thinking", content: "", streaming: true };
-          st.transcript.push(thinking);
-        }
-        thinking.content += content;
-        onChunk(content.length);
-        if (isViewed()) scrollDown();
-      },
-      onResponse: (content) => {
-        sawActivity = true;
-        if (thinking?.streaming) thinking.streaming = false;
-        if (segmentBreak) {
-          // a tool phase closed the previous segment - start a fresh
-          // bubble so the final answer renders after the tool lines
-          assistant.streaming = false;
-          assistant = {
-            kind: "message",
-            role: "assistant",
-            content: "",
-            streaming: true,
-          };
-          assistantPushed = false;
-          segmentBreak = false;
-        }
-        pushAssistant();
-        assistant.content += content;
-        onChunk(content.length);
-        if (isViewed()) scrollDown();
-      },
-      onToolCall: (tool) => {
-        sawActivity = true;
-        segmentBreak = true;
-        // the tool phase closes the thinking block too: turn 2's
-        // thinking must mount as a FRESH item after the tool
-        // lines, not append to the pre-tool block above them
-        if (thinking) {
-          thinking.streaming = false;
-          thinking = null;
-        }
-        // the segment's text is over - the tool lines carry the
-        // activity now. Killing the flag here hides the streaming
-        // cursor during the whole tool phase (in-app comment 5);
-        // the next onResponse builds a fresh streaming bubble.
-        assistant.streaming = false;
-        st.transcript.push({
-          kind: "tool",
-          name: tool.name,
-          status: "running",
-          output: tool.output,
-        });
-        if (isViewed()) scrollDown();
-      },
-      onToolResult: (result) => {
-        sawActivity = true;
-        // attach the result to the most recent tool line (status -> done)
-        for (let i = st.transcript.length - 1; i >= 0; i--) {
-          const item = st.transcript[i];
-          // strict mode: indexing can yield undefined - skip before narrowing
-          if (item?.kind !== "tool") continue;
-          if (item.status !== "running") continue;
-          item.status = result.isError ? "error" : "done";
-          item.result = result.content;
-          break;
-        }
-        if (isViewed()) scrollDown();
-      },
-      onStatus: (s) => {
-        sawActivity = true;
-        st.statusLine = s;
-      },
-      onUsage: (usage) => {
-        st.tokens = usage.promptTokens + usage.completionTokens;
-        const seconds = (Date.now() - sentAt) / 1000;
-        st.tokensPerSecond =
-          seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
-      },
-    };
-
-    return {
-      handlers,
-      // appendError folds a transport-independent failure (agent error
-      // payload, non-2xx /chat) into the current assistant bubble - the
-      // finalize push guarantees it lands in the transcript.
-      appendError(e: unknown) {
-        assistant.content += assistant.content ? `\n[error: ${e}]` : `[error: ${e}]`;
-      },
-      // finalize mirrors the pre-detach finally block: freeze the chunk
-      // meter, freeze running tools (results never coming - ToolCallLine
-      // stops ticking), close thinking and bubbles.
-      finalize(interrupted: boolean) {
-        // the run's final live chunk rate becomes the last-known one -
-        // the idle bar keeps showing the rate the user just watched
-        st.lastChunksPerSecond = st.liveChunksPerSecond;
-        st.liveChunksPerSecond = 0;
-        for (const item of st.transcript) {
-          if (item.kind === "tool" && item.status === "running")
-            item.interrupted = true;
-        }
-        // thinking is assigned inside stream callbacks the type system can't
-        // track across the closure - cast to the item type it is at runtime
-        const liveThinking = thinking as ThinkingItem | null;
-        if (liveThinking?.streaming) liveThinking.streaming = false;
-        // interrupted with no output keeps only the marker, no empty
-        // ghost bubble; a run with zero events (404 reattach race) also
-        // pushes nothing.
-        if ((!interrupted || assistant.content) && (sawActivity || assistant.content))
-          pushAssistant();
-        assistant.streaming = false;
-      },
-    };
-  }
-  type StreamDriver = ReturnType<typeof makeStreamDriver>;
-
-  // runStream drives one interaction over a transport: start() performs
-  // the POST /chat (send path) or the GET /sessions/<id>/events attach
-  // (reattach path) and consumes the SSE with the driver's handlers.
-  // Owns the busy entry for the session key, error rendering (interrupted
-  // marker vs error text), read-marking and the refresh follow-ups - so
-  // both transports end in the SAME session state.
-  async function runStream(key: string, st: SessionState, start: (drv: StreamDriver) => Promise<void>) {
-    const drv = makeStreamDriver(st);
-    busySet.value = withBusy(busySet.value, key, true);
-    st.statusLine = "reasoning";
-    let interrupted = false;
-    try {
-      await start(drv);
-    } catch (e) {
-      if (e instanceof StreamInterruptedError) {
-        // transport death mid-stream: the partial bubble stays exactly as
-        // it is (finalize freezes its streaming flag) - the marker carries
-        // the resume affordance instead of appending error text to it
-        interrupted = true;
-        st.transcript.push({ kind: "interrupted" });
-      } else {
-        drv.appendError(e);
-      }
-    } finally {
-      drv.finalize(interrupted);
-      busySet.value = withBusy(busySet.value, key, false);
-      st.statusLine = "";
-      // A stream ending on the VIEWED session never unreads itself -
-      // the user watched the content live, so it is marked read. A
-      // background stream (session B while viewing A) leaves its row
-      // unread: that is the feature.
-      if (activeId.value === key) markRead(key);
-      // refresh once the row carries the run's persisted numbers, then
-      // re-seed the idle telemetry from it - the bar's last-known values
-      // and the post-reload display come from the SAME source (the row),
-      // not from the live meter's instantaneous last-second tick
-      await refreshSessions();
-      const row = sessions.value.find((s) => s.id === key);
-      if (row && streams.get(activeKey.value) === st) {
-        const durable = persistedTelemetry(row);
-        st.tokens = durable.tokens;
-        st.tokensPerSecond = durable.tps;
-        st.lastChunksPerSecond = durable.cps;
-      }
-      // the title goroutine writes the session label seconds AFTER the
-      // first exchange ends - the refresh above runs too early to see
-      // it. One delayed refresh picks it up without a manual reload.
-      if (!row || !row.label) {
-        setTimeout(() => { refreshSessions(); }, 10000);
-      }
-      if (streams.get(activeKey.value) === st) scrollDown();
-    }
-  }
-
-  async function send() {
-    const text = draft.value.trim();
-    if (!text) return;
-    draft.value = "";
-    submitText(text);
-  }
-
-  // submitText is the ONE send path - the composer and the interrupted
-  // retry both land here. Everything keys off THIS session's state and
-  // busy entry, so retrying session A never touches session B.
-  async function submitText(text: string) {
-    const startKey = activeKey.value;
-    // per-session guard: only THIS session's live stream blocks a send
-    if (busyAll.value.has(startKey)) return;
-    const st = ensureState(startKey);
-    // a fresh send retires a stale resume affordance - after a later
-    // exchange the marker no longer describes the transcript state
-    if (hasInterruptedMarker(st.transcript))
-      st.transcript = withoutMarkers(st.transcript);
-    let key = startKey;
-    st.transcript.push({
-      kind: "message",
-      role: "user",
-      content: text,
-      time: new Date().toISOString(),
-    });
-    scrollDown(true);
-
-    // A session must exist before the first /chat or the backend 404s.
-    // Unsaved chats live under NEW_KEY until /sessions returns the real
-    // id; the state AND the busy entry re-key right after creation.
-    if (startKey === NEW_KEY) {
-      busySet.value = withBusy(busySet.value, NEW_KEY, true);
-      st.statusLine = "reasoning";
-      try {
-        const r = await fetch("/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        });
-        if (!r.ok) throw new Error(`create session: ${r.status}`);
-        const s = await r.json();
-        streams.delete(NEW_KEY);
-        streams.set(s.id, st);
-        busySet.value = withBusy(busySet.value, NEW_KEY, false);
-        key = s.id;
-        // the row (and its pulse) exists once the sidebar refreshes; the
-        // view moves to the session only if the user stayed on this chat
-        refreshSessions();
-        if (activeKey.value === NEW_KEY) {
-          activeId.value = s.id;
-          // the temp id never lands in history: the entry it replaces is
-          // home, so back from the real session returns home
-          syncURL(s.id, false);
-        }
-      } catch (e) {
-        busySet.value = withBusy(busySet.value, NEW_KEY, false);
-        st.statusLine = "";
-        st.transcript.push({
-          kind: "message",
-          role: "assistant",
-          content: `[error: ${e}]`,
-        });
-        return;
-      }
-    }
-    await runStream(key, st, (drv) =>
-      streamChat(
-        [{ role: "user", content: text }],
-        key,
-        drv.handlers,
-        selectedModel.value || undefined,
-      ),
-    );
-  }
-
   async function refreshSessions() {
     try {
-      const list = await fetchSessions();
+      const list = await fetchSessions(showArchived.value);
       sessions.value = list;
-      // server-reported live runs replace (not union into) the last
-      // snapshot: these are the sessions a JUST-refreshed page sees as
-      // pulsing - local streams carry their own busy entries in busySet.
-      serverBusy.value = new Set(list.filter((s) => s.active).map((s) => s.id));
+      // server-reported live runs feed the host: they REPLACE (not
+      // union into) the snapshot - the sessions a JUST-refreshed page
+      // sees as pulsing; local streams carry their own busy entries
+      host.noteServerActive(list.filter((s) => s.running).map((s) => s.id));
     } catch {
       // sidebar refresh is best-effort
     }
   }
 
-  // resume replays the interrupted run: the transcript tail the failed
-  // run produced (partial bubble, thinking, tool lines, marker) is
-  // dropped, and the message that kicked it off goes out again through
-  // the normal send path - a clean replacement response, NOT a
-  // continuation of the severed stream. Reads and writes only THIS
-  // session's state, so other sessions' transcripts and busy flags are
-  // untouched.
-  function retryStream() {
-    const key = activeKey.value;
-    const st = ensureState(key);
-    if (busyAll.value.has(key)) return;
-    const text = lastUserText(st.transcript);
-    if (text === null) return;
-    st.transcript = dropLastExchange(st.transcript);
-    submitText(text);
+  // mobile: one drawer at a time - opening any pane closes the other
+  function toggleSidebar() {
+    if (isMobile.value) {
+      // the drawer needs its pane rendered (empty panes are hidden by CSS):
+      // absent -> insert it first, then flip the overlay open
+      dock.ensureEdge("sidebar", "before");
+      inspectorOpen.value = false;
+      drawerOpen.value = !drawerOpen.value;
+    } else {
+      // desktop: the TREE owns presence - remove/re-insert the edge pane
+      // (the store remembers the width and applies the reopen-clamp)
+      dock.toggleEdge("sidebar", "before");
+    }
+  }
+
+  function closeOverlays() {
+    drawerOpen.value = false;
+    inspectorOpen.value = false;
+  }
+
+  // mobile: one drawer at a time
+  function toggleInspector() {
+    if (isMobile.value) {
+      dock.ensureEdge("inspector", "after"); // overlay needs its pane present
+      drawerOpen.value = false;
+      inspectorOpen.value = !inspectorOpen.value;
+      return;
+    }
+    // desktop: the TREE owns presence - the store remembers the width and
+    // reopen-clamps
+    dock.toggleEdge("inspector", "after");
+  }
+
+  // card 5 (t_35b5594a): the menubar gear is the settings singleton's
+  // opener - NOT a toggle. First click OPENS a settings tab in the
+  // focused main pane (the last pane clicked, else the tree's first
+  // pane); every later click FOCUSES the existing instance wherever it
+  // was dragged to (openSingleton's contract). Closing is the tab's ×.
+  function openSettings() {
+    dock.openSingleton(resolveFocusedPaneId(), "settings");
+    // the picker refetches on every settings open: a theme dropped into
+    // the folder while the app runs shows up (and a broken file
+    // disappears) without a restart - the dock-tab replacement for the
+    // old drawer's settingsOpen watch
+    void loadUserThemes();
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so
@@ -1079,52 +588,98 @@
     }
   }
 
-  // scrollDown keeps the view pinned to the newest content. "pinned" tracks
-  // the USER's intent: it only changes on actual scroll events, not when
-  // new content lands (post-append bottom-measurement misreads fresh
-  // content bursts >40px as "user scrolled up" and kills the follow).
-  const pinned = ref(true);
-
-  // jump-to-live pill: a scroll-position affordance - visible whenever the
-  // transcript is scrolled up, stream or not. Derived on scroll events only.
-  const jumpPill = ref(false);
-
-  function nearBottom(): boolean {
-    const el = messagesEl.value;
-    if (!el) return true;
-    return isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
+  // toggleArchive flips the archive flag. Instant + reversible: the row
+  // leaves the list the moment the flag lands locally (the server list
+  // already carries only the visible archive side, so the patched row
+  // is gated exactly like refreshSessions - on in archived view, off in
+  // the live view). A failed PATCH reverts and re-syncs.
+  async function toggleArchive(id: string, target: boolean) {
+    const updateList = (list: Session[]) =>
+      list
+        .map((s) => (s.id === id ? { ...s, archived: target } : s))
+        .filter((s) => (showArchived.value ? s.archived : !s.archived));
+    const before = sessions.value;
+    sessions.value = updateList(sessions.value);
+    try {
+      await archiveSession(id, target);
+    } catch {
+      sessions.value = before;
+      refreshSessions();
+    }
   }
 
-  function onMessagesScroll() {
-    pinned.value = nearBottom();
-    const el = messagesEl.value;
-    if (!el) return;
-    jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+  // delete flow: the sidebar only signals intent; the confirm dialog is
+  // the only door to the API call. Deleting a session closes EVERY chat
+  // tab bound to it (docked anywhere) and their stream states.
+  const deleteId = ref<string | null>(null);
+  const deleteLabel = ref("");
+  function askDelete(id: string) {
+    const s = sessions.value.find((x) => x.id === id);
+    deleteId.value = s ? s.id : "";
+    deleteLabel.value = (s?.label || s?.id || "").slice(0, 80);
+  }
+  function cancelDelete() {
+    deleteId.value = null;
+  }
+  async function confirmDelete() {
+    const id = deleteId.value;
+    deleteId.value = null;
+    if (!id) return;
+    try {
+      await deleteSession(id);
+    } catch {
+      // a failed DELETE leaves the row in place - the refresh shows the
+      // truth
+      refreshSessions();
+      return;
+    }
+    dock.closeSession(id);
+    host.closeSession(id);
+    refreshSessions();
   }
 
-  function jumpToLive() {
-    jumpPill.value = false;
-    scrollDown(true);
+  // sessionExists gates the boot/popstate restore: an unknown or deleted
+  // id routes home instead of opening a tab on it (the transcript
+  // endpoint doubles as the existence probe - restore is transcript-owned)
+  async function sessionExists(id: string): Promise<boolean> {
+    try {
+      await fetchTranscript(id);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
-  function scrollDown(force = false) {
-    if (force) pinned.value = true;
-    requestAnimationFrame(() => {
-      const el = messagesEl.value;
-      if (!el) return;
-      if (!force && !pinned.value) return;
-      el.scrollTop = el.scrollHeight;
-    });
-  }
+  // toggling the archived filter refetches through the include filter -
+  // the two archive sides never mix in one list
+  watch(showArchived, () => refreshSessions());
 
-  // --- theme: light / dark / auto, persisted, auto follows the OS live ---
-  type ThemeMode = "auto" | "light" | "dark";
+  // --- theme: light / dark / auto / user themes, persisted, auto
+  // follows the OS live. A user theme (theme:<id> from GET /themes)
+  // recolors live by writing its token overrides into the inline style;
+  // the built-in modes undo that (clear overrides, data-theme only). ---
   const themeMode = ref<ThemeMode>("auto");
   let systemPrefersDark = true;
   let mediaQuery: MediaQueryList | null = null;
+  const userThemes = ref<UserTheme[]>([]);
 
   function applyTheme() {
     if (typeof document === "undefined") return;
+    const userId = parseThemeSelect(themeMode.value);
+    if (userId) {
+      const theme = userThemes.value.find((t) => t.id === userId && !t.error);
+      if (theme) {
+        // overrides stack on the theme file's chosen base palette
+        document.documentElement.dataset.theme = theme.base;
+        applyThemeTokens(document.documentElement.style, theme.tokens);
+        return;
+      }
+      // the theme file vanished from the folder: fall back to auto and
+      // stop persisting the dead id
+      themeMode.value = "auto";
+      localStorage.setItem("omega.theme-mode", "auto");
+    }
+    clearThemeTokens(document.documentElement.style);
     const dark =
       themeMode.value === "auto" ?
         systemPrefersDark
@@ -1139,10 +694,41 @@
   }
 
   watch(themeMode, applyTheme);
+  // a user theme edited (or deleted) on disk re-applies live the moment
+  // the refreshed list lands - the drawer refetches on every open, so
+  // an edit reflects on the next apply without restart or reload
+  watch(
+    userThemes,
+    () => {
+      if (parseThemeSelect(themeMode.value)) applyTheme();
+    },
+    { deep: true },
+  );
+
+  // (the drawer-era settingsOpen watch died with the overlay - the
+  // dock-era openSettings below carries the refetch-on-open)
+
+  // loadUserThemes refreshes the picker's list. Fetched on mount (so a
+  // persisted theme:<id> applies) and on every settings open (so a
+  // dropped or edited file shows up without a restart). A failure just
+  // empties the list - the pane keeps its built-in modes.
+  async function loadUserThemes() {
+    try {
+      userThemes.value = await fetchThemes();
+    } catch {
+      userThemes.value = [];
+    }
+    const userId = parseThemeSelect(themeMode.value);
+    if (userId && !userThemes.value.some((t) => t.id === userId && !t.error)) {
+      themeMode.value = "auto";
+      localStorage.setItem("omega.theme-mode", "auto");
+    }
+    applyTheme();
+  }
 
   // --- tab-title spinner: a global read over the per-session busy map ---
-  // Any live stream - in any session - spins the tab title; individual
-  // sessions stay untouched (and unlocked) by it.
+  // Any live stream - in any session, any tab - spins the tab title;
+  // individual sessions stay untouched (and unlocked) by it.
   const TITLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let savedTitle: string | null = null;
@@ -1165,11 +751,9 @@
   });
 
   onMounted(async () => {
-    // stick-to-bottom: user scroll events drive the pinned flag
-    messagesEl.value?.addEventListener("scroll", onMessagesScroll);
-
-    // squeeze check on window resize (left drag checks in onResize)
-    window.addEventListener("resize", squeezeCheck);
+    // clicks carry pane focus (the tab bars, the empty panes, the
+    // composers - anything inside a dock pane)
+    document.addEventListener("click", onDocClick);
 
     // mobile detection: sidebars become slide-in overlays below 768px
     const mobileQuery = window.matchMedia("(max-width: 768px)");
@@ -1179,10 +763,20 @@
       closeOverlays(); // crossing the breakpoint resets overlay state
     });
 
-    // restore persisted mode
-    const saved = localStorage.getItem("omega.theme-mode") as ThemeMode | null;
-    if (saved === "light" || saved === "dark" || saved === "auto")
-      themeMode.value = saved;
+    // restore persisted mode: a built-in mode or theme:<id>
+    const saved = localStorage.getItem("omega.theme-mode");
+    if (
+      saved === "light" ||
+      saved === "dark" ||
+      saved === "auto" ||
+      saved?.startsWith("theme:")
+    )
+      themeMode.value = saved as ThemeMode;
+    void loadUserThemes();
+
+    // restore the chat appearance (chat | stacked) - parseAppearance
+    // falls back to the default on a missing/tampered value
+    appearance.value = parseAppearance(localStorage.getItem(APPEARANCE_KEY));
 
     // auto mode: follow prefers-color-scheme reactively
     mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1193,7 +787,7 @@
     });
     applyTheme();
 
-    // history wiring: back/forward open the session the URL describes
+    // history wiring: popstate re-targets via the URL's session id
     window.addEventListener("popstate", onPop);
 
     const h = await fetchHealthInfo();
@@ -1222,29 +816,48 @@
       // models are decoration until a chat runs
     }
     refreshSessions();
+    // running-state poller: every tab reconciles against the rows
+    runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
 
-    // restore the session named by the URL, if it exists - an unknown or
-    // deleted id routes home (and the URL comes with it)
+    // boot focus: the URL's session owns it ("reload lands on the
+    // focused session") - an existing chat tab bound to that id is
+    // focused in place, otherwise a tab opens into the active pane
+    // (unknown/deleted ids and home route through the persisted chat
+    // focus). Then the ChatTab mount restores + attaches per tab.
+    // /board boots into the kanban view (boardHostPane resolves on
+    // the first switchMainView; boot keeps the default pane).
+    if (/^\/board\/?$/.test(window.location.pathname)) {
+      mainView.value = "board";
+      boardHostPane.value = resolveActivePaneId();
+    }
     const initial = parseSessionPath(window.location.pathname);
-    if (initial) {
-      try {
-        await fetchSession(initial);
-        fromHistory = true;
-        await openSession(initial);
-        fromHistory = false;
-      } catch {
+    if (initial && dock.firstChatTab(initial)?.tab.sessionRef === initial) {
+      const own = dock.firstChatTab(initial)!;
+      if (await sessionExists(initial)) {
+        dock.focus(own.paneId, own.index);
+        focusedKey.value = own.tab.key ?? null;
+        markRead(initial);
+      } else {
         history.replaceState({}, "", "/");
-        activeId.value = null;
-        ensureState(NEW_KEY);
+        focusedKey.value = dock.firstChatTab()?.tab.key ?? null;
       }
+    } else if (initial) {
+      if (await sessionExists(initial)) openChatTab(initial);
+      else {
+        history.replaceState({}, "", "/");
+        focusedKey.value = dock.firstChatTab()?.tab.key ?? null;
+      }
+    } else {
+      // home: the persisted tree's chat focus carries over
+      focusedKey.value = dock.firstChatTab()?.tab.key ?? null;
     }
   });
 
   onUnmounted(() => {
+    document.removeEventListener("click", onDocClick);
     window.removeEventListener("popstate", onPop);
     if (healthTimer) clearInterval(healthTimer);
-    messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
-    window.removeEventListener("resize", squeezeCheck);
+    if (runningTimer) clearInterval(runningTimer);
     if (spinnerTimer) clearInterval(spinnerTimer);
     if (typeof document !== "undefined" && savedTitle !== null)
       document.title = savedTitle;

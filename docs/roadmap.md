@@ -23,7 +23,7 @@ and git history.
 - **Concurrency (v0.7.0):** per-run provider copies (`WithModel`),
   single-flight guard removed, parallel `/chat` with different models
 
-### v0.8.0 (dev lane, unreleased)
+### v0.8.0 (2026-10-18)
 
 - Hermes-style session list (search, pinned, time buckets, rich rows)
   with real token totals and per-session stream state
@@ -34,22 +34,43 @@ and git history.
 - Dual title generation (provisional at request start, final after the
   first exchange), cron module (`crons.yaml`, hot-reload, catch-up,
   `cron:<name>` sessions)
+- Settings pane with every config knob (masked secrets, gated writes),
+  codeblock UX (max height, copy, collapse), elapsed-time display with
+  millisecond precision on all bubbles
+- Content search over the session store (FTS5 with phrase + prefix
+  matching), VS Code-style file tree in the inspector
+- Web tools (search/fetch) through the provider mirror, loud non-2xx
+- Provider parity: ollama-native tool loop, anthropic Messages API,
+  openai-compat gap fixes
 - Module restructure: `extensions/` -> `modules/`, web UI at
   `modules/ui`, instance home gains `config/` for the yaml files
-  (root-first resolution keeps existing installs unchanged)
-- Session-list polish: star morphs on full row hover, dividers hidden
-  with their closed panes
 - First-run seeding removed: memory.md/user.md are agent-created on
   first use, nothing personal ships in file or binary
 
+### v0.9.0 (dev lane, unreleased)
+
+- Module-owned UI: modules ship components in `modules/<name>/ui/`,
+  composed at build time (no runtime registry)
+- Backend-owns-facts foundation: transcript endpoint (render-ready
+  items, one contract for restore + live SSE), explicit running state
+  on session rows, unified title + content search
+- Kanban module: full 9-status task board with agent task tools,
+  comments, events, session links, and a board view
+- Dock system: VS Code-style split layouts, per-pane tab bars,
+  drag-and-drop between panes, persisted layouts, dockable component
+  contract, chat tabs with same-session multi-tab streaming
+- Session archive + delete, cancel/retry in the composer
+- Store-is-the-only-door: the tool layer refuses direct database
+  writes, enforcing the agent/store boundary
+- Context compaction auto-window (provider-aware), trust + config
+  layout migration, magnetic pane snapping, process-group kill fix
+  for cancelled shell runs, status bar durability (uptime, version,
+  last-run stats)
+
 ## Planned
 
-- Web UI: codeblock UX (max height, copy button, collapse), elapsed
-  timing on thinking/tool/response bubbles, content search over the
-  session store, full settings parity with config knobs, VS Code-style
-  file tree in the inspector
-- Provider parity arc: anthropic Messages API support alongside the
-  openai-compatible and ollama-native surfaces
+- Web UI: theming system (token overrides, hot reload), stacked chat
+  appearance, image input, inspector tabs, reasoning-effort control
 - Agent self-improvement: read-only eval suite + propose-only
   reflection loop (evaluated improvements, never self-merged)
 - OpenTelemetry observability (research: traces, metrics, tool timings)
@@ -62,8 +83,8 @@ and git history.
 ## Known Limitations
 
 - `omega serve` has no authentication, TLS, or CORS - it binds loopback
-  by default; exposing it requires an explicit `server.bind` entry and an
-  authenticating reverse proxy in front
+  by default; exposing it requires an explicit `server.bind` entry and
+  an authenticating reverse proxy in front
 - The shared injected-messages channel means a delegated message drains
   into an arbitrary active run at single-user load (concurrent /chat
   runs themselves are safe since v0.7.0)

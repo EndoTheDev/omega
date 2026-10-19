@@ -2,7 +2,7 @@
 // busy logic in composables/omega.ts). Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { anyBusy, isBusy, withBusy } from "../app/composables/omega.ts";
+import { anyBusy, isBusy, withBusy, runningIds } from "../app/composables/omega.ts";
 
 describe("per-session busy map", () => {
   it("busy(A) does not affect session B", () => {
@@ -48,5 +48,34 @@ describe("per-session busy map", () => {
     withBusy(base, "B", true);
     assert.equal(isBusy(base, "B"), false);
     assert.deepEqual([...base], ["A"]);
+  });
+});
+
+describe("runningIds (server-owned running flag on /sessions rows)", () => {
+  it("projects only the rows whose running flag is true", () => {
+    const ids = runningIds([
+      { id: "run", running: true },
+      { id: "idle", running: false },
+    ]);
+    assert.deepEqual([...ids], ["run"]);
+  });
+
+  it("a missing flag is never busy: undefined reads false", () => {
+    const ids = runningIds([
+      { id: "legacy" },
+      { id: "live", running: true },
+    ]);
+    assert.deepEqual([...ids], ["live"]);
+  });
+
+  it("an all-false list projects an empty set (the post-run clear)", () => {
+    assert.equal(runningIds([{ id: "s1", running: false }]).size, 0);
+    assert.equal(runningIds([]).size, 0);
+  });
+
+  it("never mutates the caller's rows", () => {
+    const rows = [{ id: "s1", running: true }, { id: "s2", running: false }];
+    runningIds(rows);
+    assert.deepEqual(rows.map((r) => r.running), [true, false]);
   });
 });

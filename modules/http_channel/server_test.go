@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -27,21 +29,39 @@ type mockProvider struct {
 	scripts   [][]ai.StreamEvent
 	mu        *sync.Mutex
 	calls     *int
+	// thinkingLevel is the ladder value a WithThinkingLevel copy
+	// carries; tests assert per-run threading from it.
+	thinkingLevel string
+	// seenLevels records the thinkingLevel of every Stream call,
+	// shared with WithModel/WithThinkingLevel copies behind mu.
+	seenLevels *[]string
 }
 
 func newMockProvider(modelName string, scripts ...[]ai.StreamEvent) *mockProvider {
 	calls := 0
+	levels := []string{}
 	return &mockProvider{
-		modelName: modelName,
-		scripts:   scripts,
-		mu:        &sync.Mutex{},
-		calls:     &calls,
+		modelName:  modelName,
+		scripts:    scripts,
+		mu:         &sync.Mutex{},
+		calls:      &calls,
+		seenLevels: &levels,
 	}
 }
 
 func (m *mockProvider) ModelName() string { return m.modelName }
 
-func (m *mockProvider) SetThinkingLevel(level string) {}
+func (m *mockProvider) SetThinkingLevel(level string) { m.thinkingLevel = level }
+
+// WithThinkingLevel returns a copy at the given thinking level under
+// the same lock-free value-copy discipline as WithModel: the receiver
+// is untouched, so concurrent derivations stay isolated. thinkingLevel
+// is read by tests; Stream itself never touches it.
+func (m *mockProvider) WithThinkingLevel(level string) ai.Provider {
+	cp := *m
+	cp.thinkingLevel = level
+	return &cp
+}
 
 func (m *mockProvider) WithModel(model string) ai.Provider {
 	cp := *m
@@ -58,6 +78,9 @@ func (m *mockProvider) ModelInfo() (ai.ModelInfo, error) {
 }
 
 func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+	m.mu.Lock()
+	*m.seenLevels = append(*m.seenLevels, m.thinkingLevel)
+	m.mu.Unlock()
 	events := make(chan ai.StreamEvent)
 	go func() {
 		defer close(events)
@@ -111,6 +134,11 @@ func newTestServer() *Server {
 // real loop's event sequence for simple one-turn conversations.
 // The real loop lives in modules/agent_loop/.
 type testLoop struct{}
+
+// testToolProvider is a stub ToolProvider for the /tools inventory test.
+type testToolProvider struct{ tools map[string]agent.Tool }
+
+func (p testToolProvider) Tools() map[string]agent.Tool { return p.tools }
 
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
@@ -256,6 +284,109 @@ func TestChatSSE(t *testing.T) {
 	}
 	if chunk.Content != "hello" {
 		t.Fatalf("content = %q, want hello", chunk.Content)
+	}
+}
+
+// chatThinking is a /chat POST body with one user message and the
+// given thinking_level (-1 = omitted: unset on the wire).
+func chatThinking(t *testing.T, level int) []byte {
+	t.Helper()
+	msg := map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	}
+	if level != -1 {
+		msg["thinking_level"] = level
+	}
+	body, _ := json.Marshal(msg)
+	return body
+}
+
+// postChatBody runs one stateless /chat against s and returns the recorder.
+func postChatBody(s *Server, body []byte) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// TestChatThinkingLevel threads the ladder index into a per-run
+// provider copy: the Stream the loop runs sees the mapped ladder
+// level while the mounted base provider stays untouched.
+func TestChatThinkingLevel(t *testing.T) {
+	s := newTestServer()
+	base := s.agent.Provider().(*mockProvider)
+
+	rec := postChatBody(s, chatThinking(t, 6)) // "high" on the ladder
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := *base.seenLevels; len(got) != 1 || got[0] != "high" {
+		t.Fatalf("streamed levels = %v, want [high]", got)
+	}
+	if base.thinkingLevel != "" {
+		t.Fatalf("base mutated: thinkingLevel = %q, want empty", base.thinkingLevel)
+	}
+}
+
+// TestChatThinkingLevelDefault: index 0 ("none") and an omitted field
+// both leave the provider untouched - no thinking parameter sent.
+func TestChatThinkingLevelDefault(t *testing.T) {
+	s := newTestServer()
+	base := s.agent.Provider().(*mockProvider)
+
+	rec := postChatBody(s, chatThinking(t, 0))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status(0) = %d, want 200", rec.Code)
+	}
+	rec = postChatBody(s, chatThinking(t, -1))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status(omitted) = %d, want 200", rec.Code)
+	}
+	if got := *base.seenLevels; len(got) != 2 || got[0] != "" || got[1] != "" {
+		t.Fatalf("streamed levels = %v, want two empty (no override)", got)
+	}
+}
+
+// TestChatThinkingLevelInvalid: out-of-ladder indexes are a 400.
+func TestChatThinkingLevelInvalid(t *testing.T) {
+	s := newTestServer()
+	rec := postChatBody(s, chatThinking(t, len(ai.ThinkingLevels)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	rec = postChatBody(s, chatThinking(t, -3))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestChatThinkingLevelConcurrent is the concurrency law for the
+// thinking level: two /chat runs with different levels at the same
+// time each stream on their own copy, in order-indeed - and the base
+// provider keeps no level.
+func TestChatThinkingLevelConcurrent(t *testing.T) {
+	s := newTestServer()
+	base := s.agent.Provider().(*mockProvider)
+
+	var wg sync.WaitGroup
+	for _, level := range []int{2, 7} { // "on", "extra high"
+		wg.Add(1)
+		go func(level int) {
+			defer wg.Done()
+			if rec := postChatBody(s, chatThinking(t, level)); rec.Code != http.StatusOK {
+				t.Errorf("status(%d) = %d, want 200", level, rec.Code)
+			}
+		}(level)
+	}
+	wg.Wait()
+
+	levels := *base.seenLevels
+	sort.Strings(levels)
+	if !reflect.DeepEqual(levels, []string{"extra high", "on"}) {
+		t.Fatalf("streamed levels = %v, want [extra high, on]", levels)
+	}
+	if base.thinkingLevel != "" {
+		t.Fatalf("base mutated: thinkingLevel = %q", base.thinkingLevel)
 	}
 }
 
@@ -843,6 +974,11 @@ func TestSessionSearch(t *testing.T) {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
+	// s4 matches by LABEL only - the unified search must surface it as
+	// a title hit (titleMatch set, snippet = the label itself).
+	if err := st.CreateSession(ctx, "s4", "", "Harbor patrol log"); err != nil {
+		t.Fatalf("create s4: %v", err)
+	}
 	// s1 matches twice - the response must dedupe to one hit; s2 has a
 	// title-independent content match; s3 stays silent.
 	for _, m := range []struct {
@@ -872,14 +1008,43 @@ func TestSessionSearch(t *testing.T) {
 		t.Fatalf("decode hits: %v", err)
 	}
 	ids := map[string]string{}
+	titled := map[string]bool{}
 	for _, ht := range hits {
 		if _, dup := ids[ht.ID]; dup {
 			t.Fatalf("duplicate hit for %s", ht.ID)
 		}
 		ids[ht.ID] = ht.Snippet
+		titled[ht.ID] = ht.TitleMatch
 	}
-	if len(ids) != 2 || ids["s1"] == "" || ids["s2"] == "" {
-		t.Fatalf("hits = %+v, want one snippet each for s1 and s2", hits)
+	if len(ids) != 3 || ids["s1"] == "" || ids["s2"] == "" {
+		t.Fatalf("hits = %+v, want one snippet each for s1, s2 and s4", hits)
+	}
+	// s4 hit by label: titleMatch set, snippet is the label itself, and
+	// it leads (title hits rank ahead of content hits).
+	if !titled["s4"] || hits[0].ID != "s4" || hits[0].Snippet != "Harbor patrol log" {
+		t.Fatalf("s4 must be the first, title-marked hit; got %+v", hits)
+	}
+
+	// Renaming s4's label away from the term drops its title hit; s4
+	// has no harbor content, so any leftover s4 row must not be
+	// title-marked (the fresh label never contains 'harbor').
+	if err := st.UpdateSession(ctx, "s4", "Fishing journal"); err != nil {
+		t.Fatalf("rename s4: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post-rename: status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	hits = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
+		t.Fatalf("decode post-rename hits: %v", err)
+	}
+	for _, ht := range hits {
+		if ht.ID == "s4" && ht.TitleMatch {
+			t.Fatalf("stale label must not be a title hit after rename: %+v", hits)
+		}
 	}
 
 	// empty q searches nothing, 200 []
@@ -1008,6 +1173,133 @@ func TestSessionPatchPinned(t *testing.T) {
 	rec = patch(t, `{}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing pinned status = %d, want 400", rec.Code)
+	}
+}
+
+// TestSessionPatchArchived covers the archive round-trip through the
+// API: PATCH {"archived": true} persists the flag, the default GET
+// /sessions excludes the row, archived=include returns it, unarchive
+// brings it back, and updated_at never moves.
+func TestSessionPatchArchived(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "labeled"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	patch := func(t *testing.T, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/sessions/s1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := patch(t, `{"archived": true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var sess agent.Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !sess.Archived {
+		t.Fatalf("patch response archived = false, want true")
+	}
+	updatedAt := sess.UpdatedAt
+
+	// default list excludes archived; include brings it back
+	listDec := func(t *testing.T, url string) []sessionPayload {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		listRec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(listRec, req)
+		if listRec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", url, listRec.Code)
+		}
+		var list []sessionPayload
+		if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		return list
+	}
+	if list := listDec(t, "/sessions"); len(list) != 0 {
+		t.Fatalf("default list = %+v, want archived session excluded", list)
+	}
+	if list := listDec(t, "/sessions?archived=include"); len(list) != 1 || !list[0].Archived {
+		t.Fatalf("include list = %+v, want one archived session", list)
+	}
+
+	// the PATCH is not activity: updated_at untouched
+	if got, _ := st.GetSession(ctx, "s1"); got.UpdatedAt != updatedAt {
+		t.Fatalf("archive moved updated_at: %q -> %q", updatedAt, got.UpdatedAt)
+	}
+
+	rec = patch(t, `{"archived": false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unarchive status = %d, want 200", rec.Code)
+	}
+	if after, _ := st.GetSession(ctx, "s1"); after.Archived {
+		t.Fatalf("archived = true after unarchive, want false")
+	}
+	if list := listDec(t, "/sessions"); len(list) != 1 {
+		t.Fatalf("default list after unarchive = %+v, want the session back", list)
+	}
+
+	rec = patch(t, `not json`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body status = %d, want 400", rec.Code)
+	}
+	rec = patch(t, `{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing archived status = %d, want 400", rec.Code)
+	}
+}
+
+// TestSessionSearchArchivedFilter covers the search-side archived
+// filter: hits whose session is archived are excluded by default and
+// restored by archived=include.
+func TestSessionSearchArchivedFilter(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2"} {
+		if err := st.CreateSession(ctx, id, "", ""); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+		if err := st.AppendMessage(ctx, id, ai.NewUser("quiet harbor town")); err != nil {
+			t.Fatalf("append %s: %v", id, err)
+		}
+	}
+	if err := st.SetSessionArchived(ctx, "s1", true); err != nil {
+		t.Fatalf("archive s1: %v", err)
+	}
+
+	searchDec := func(t *testing.T, url string) map[string]string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d; body=%s", url, rec.Code, rec.Body.String())
+		}
+		var hits []sessionSearchHit
+		if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		out := map[string]string{}
+		for _, h := range hits {
+			out[h.ID] = h.Snippet
+		}
+		return out
+	}
+
+	if hits := searchDec(t, "/sessions/search?q=harbor"); len(hits) != 1 || hits["s2"] == "" {
+		t.Fatalf("default hits = %+v, want only the unarchived s2", hits)
+	}
+	hits := searchDec(t, "/sessions/search?q=harbor&archived=include")
+	if len(hits) != 2 || hits["s1"] == "" || hits["s2"] == "" {
+		t.Fatalf("include hits = %+v, want s1 and s2", hits)
 	}
 }
 
@@ -1142,8 +1434,8 @@ func TestSessionByIDNotFound(t *testing.T) {
 // to every Stream call, so the title prompt shape is directly checked.
 type captureProvider struct {
 	mockProvider
-	mu       sync.Mutex
-	prompts  []string
+	mu      sync.Mutex
+	prompts []string
 }
 
 func newCaptureProvider(scripts ...[]ai.StreamEvent) *captureProvider {
@@ -1341,5 +1633,74 @@ func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != label || sess.TitleState != 2 {
 		t.Fatalf("second exchange retitled: %+v (was label %q)", sess, label)
+	}
+}
+
+// TestTools: GET /tools lists the registry as {name, description}, sorted
+// by name; a bare server (nil registry) answers []; any other method is
+// 405. The webui's module-owned tools panel renders this inventory.
+func TestTools(t *testing.T) {
+	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, map[string]agent.Tool{
+		"shell.run":   {Description: "run a shell command"},
+		"files.read":  {Description: "read a file"},
+		"files.write": {Description: "write a file"},
+	}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/tools", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []toolListing
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("tools = %+v, want 3 rows", got)
+	}
+	if got[0].Name != "files.read" || got[1].Name != "files.write" || got[2].Name != "shell.run" {
+		t.Fatalf("tools = %+v, want sorted by name", got)
+	}
+	if got[0].Description != "read a file" {
+		t.Fatalf("description = %q, want 'read a file'", got[0].Description)
+	}
+
+	// the real registry comes from the agent's ToolProviders (the loop
+	// merges those with the server set) - /tools must show them too
+	a.SetToolProviders([]agent.ToolProvider{testToolProvider{tools: map[string]agent.Tool{
+		"web.search": {Description: "search the web"},
+	}}})
+	rec4 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec4, httptest.NewRequest(http.MethodGet, "/tools", nil))
+	var got4 []toolListing
+	if err := json.Unmarshal(rec4.Body.Bytes(), &got4); err != nil {
+		t.Fatalf("decode provider body: %v", err)
+	}
+	if len(got4) != 4 {
+		t.Fatalf("tools = %+v, want 4 rows (server set + provider set)", got4)
+	}
+	if got4[0].Name != "files.read" || got4[3].Name != "web.search" {
+		t.Fatalf("tools = %+v, want provider tools in the sorted union", got4)
+	}
+
+	// empty registry: [] on the wire, never null
+	bare := newTestServer()
+	rec2 := httptest.NewRecorder()
+	bare.Handler().ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/tools", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("bare status = %d, want 200", rec2.Code)
+	}
+	if body := rec2.Body.String(); body != "[]\n" {
+		t.Fatalf("bare body = %q, want []", body)
+	}
+
+	// method gate
+	rec3 := httptest.NewRecorder()
+	bare.Handler().ServeHTTP(rec3, httptest.NewRequest(http.MethodPost, "/tools", nil))
+	if rec3.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d, want 405", rec3.Code)
 	}
 }

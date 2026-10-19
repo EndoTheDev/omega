@@ -14,6 +14,10 @@ type FakeProvider struct {
 	scripts   [][]StreamEvent // per-call scripts; the last repeats
 	delay     time.Duration
 	calls     int
+	// lastRequestedLevel records the thinking level this provider
+	// carries - set by SetThinkingLevel (mutations) and threaded
+	// through WithThinkingLevel copies - so tests can assert it.
+	lastRequestedLevel string
 	// LastMessages records the messages passed to the most recent Stream
 	// call, so tests can assert on the history the agent built up.
 	LastMessages []Message
@@ -52,14 +56,29 @@ func (p *FakeProvider) ModelName() string {
 	return p.modelName
 }
 
-// SetThinkingLevel is a no-op for the fake provider.
-func (p *FakeProvider) SetThinkingLevel(level string) {}
+// SetThinkingLevel is a mutating setter for the TUI; per-run
+// derivations go through WithThinkingLevel instead.
+func (p *FakeProvider) SetThinkingLevel(level string) { p.lastRequestedLevel = level }
+
+// ThinkingLevel returns the level this provider (or the copy it came
+// from) carries. WithThinkingLevel threads the level through the copy
+// so tests can assert per-run derivation.
+func (p *FakeProvider) ThinkingLevel() string { return p.lastRequestedLevel }
 
 // WithModel returns a copy of the provider serving model. The copy
 // shares the scripts so it streams the same sequence.
 func (p *FakeProvider) WithModel(model string) Provider {
 	cp := *p
 	cp.modelName = model
+	return &cp
+}
+
+// WithThinkingLevel returns a copy of the provider at the given
+// thinking level. Same copy discipline as WithModel: shares the
+// scripts, leaves the receiver unchanged.
+func (p *FakeProvider) WithThinkingLevel(level string) Provider {
+	cp := *p
+	cp.lastRequestedLevel = level
 	return &cp
 }
 

@@ -40,9 +40,17 @@ hljs.registerLanguage("diff", diff);
 // SSE events: agent_start, turn_start, response_chunk, thinking_chunk,
 // tool_call, stream_end, assistant_message, turn_end, agent_end, error.
 
+export interface OmegaImage {
+  media_type: string;
+  base64: string;
+}
+
 export interface OmegaMessage {
   role: "user" | "assistant";
   content: string;
+  // image attachments (paste / picker / drag-drop / server-fetched URL),
+  // the same shape ai.User.Images round-trips through the backend
+  images?: OmegaImage[];
 }
 
 export interface Session {
@@ -59,12 +67,16 @@ export interface Session {
   last_run?: LastRunStats;
   model?: string;
   pinned?: boolean;
+  // server-side archive flag: hidden from the default list, revealed
+  // by the sidebar's archived toggle (muted rows), still searchable
+  archived?: boolean;
   // server-side read stamp + read-time unread (updated_at > last_read_at)
   last_read_at?: string;
   unread?: boolean;
-  // live-run flag from the server: a detached /chat run is streaming
-  // this session (drives the post-refresh streaming pulse)
-  active?: boolean;
+  // live-run flag from the server (always present, true/false): the
+  // runHub, not the client, owns "is this session streaming" - every
+  // tab reconciles its pulse against the row
+  running?: boolean;
 }
 
 // LastRunStats is one completed run's average rates, stored on the
@@ -76,37 +88,207 @@ export interface LastRunStats {
   chunks_per_second?: number;
 }
 
-export interface SessionDetail {
+// TranscriptDetail is the GET /sessions/{id}/transcript payload: the
+// session row (telemetry, running flag) plus the server-rendered
+// transcript items - restore's single fetch, no client-side
+// reconstruction.
+export interface TranscriptDetail {
   session: Session;
-  // live-run flag (GET /sessions/{id}): true while a detached /chat run
-  // streams this session - openSession auto-subscribes to the live
-  // events stream when it sees this, instead of only showing history.
-  active?: boolean;
-  messages:
-    | {
-        role?: string;
-        content?: string;
-        thinking?: string;
-        is_error?: boolean;
-        tool_call_id?: string;
-        // server-measured generation durations (persisted with the
-        // message; absent on history written before timing existed)
-        timing?: {
-          thinking_ms?: number;
-          response_ms?: number;
-          elapsed_ms?: number;
+  // live-run flag (always present, true/false): true while a detached
+  // /chat run streams this session - openSession auto-subscribes to the
+  // live events stream when it sees this, instead of only showing
+  // history. The runHub, not the client, owns "is this session
+  // streaming" - every tab reconciles against the row.
+  running?: boolean;
+  items: TranscriptWireItem[];
+}
+
+// --- the transcript component contract (shared by restore AND live) ---
+//
+// The chat renderer speaks exactly these item shapes. Live, they are
+// built incrementally by the stream handlers; on restore they arrive
+// ready-made from GET /sessions/{id}/transcript and are rendered as-is
+// (renderTranscriptItems). One contract, two sources, no reload-side
+// reconstruction - the reconstruction loop this replaced was the origin
+// of the reload-order / thinking-merge / lost-duration bug class.
+export interface MessageItem {
+  kind: "message";
+  role: "user" | "assistant";
+  content: string;
+  streaming?: boolean;
+  // image attachments on user messages (ai.User.Images) - rendered as
+  // thumbnails inside the bubble, click opens the raw data URL
+  images?: OmegaImage[];
+  // client-side timestamp for live messages, backend created_at for
+  // restored history (ChatMessage renders it as a hover title)
+  time?: string;
+  // server-measured response duration (restored history)
+  finalMs?: number;
+}
+export interface ThinkingItem {
+  kind: "thinking";
+  content: string;
+  streaming?: boolean;
+  // server-measured thinking duration (restored history)
+  finalMs?: number;
+}
+export interface ToolItem {
+  kind: "tool";
+  name: string;
+  status: string;
+  // a dead stream never delivers the tool result - flagged so the
+  // elapsed meter in ToolCallLine freezes instead of ticking forever
+  interrupted?: boolean;
+  output?: string;
+  result?: string;
+  // server-measured duration from the matched result (restored)
+  finalMs?: number;
+}
+// inline "stream interrupted" marker: appears only when the SSE
+// transport died mid-run (never on a clean end). Carries the resume
+// affordance - see retryStream.
+export interface InterruptedItem {
+  kind: "interrupted";
+}
+export type TranscriptItem =
+  | MessageItem
+  | ThinkingItem
+  | ToolItem
+  | InterruptedItem;
+
+// TranscriptWireItem is one server-rendered transcript item, in the
+// wire order history produced it. The shapes mirror what the live SSE
+// path delivers per item kind (thinking text, response text, the
+// tool_call frame's nested meta, the tool_result frame's outcome), so
+// restore and live converge on the component contract above.
+export type TranscriptWireItem =
+  | { kind: "user"; content: string; time?: string; images?: OmegaImage[] }
+  | { kind: "message"; content: string; time?: string; response_ms?: number }
+  | { kind: "thinking"; content: string; thinking_ms?: number }
+  | { kind: "tool_call"; tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> } }
+  | {
+      kind: "tool_result";
+      tool_call_id?: string;
+      content?: string;
+      is_error?: boolean;
+      elapsed_ms?: number;
+    };
+
+// renderTranscriptItems maps a transcript payload into the components'
+// item shapes. user/message/thinking become bubbles; a tool_call opens
+// a tool line keyed by its id and the matching tool_result (matched by
+// tool_call_id, exactly like a live tool_result frame) fills the
+// result, error state and elapsed onto it. Thin items (empty content)
+// render nothing. Pure.
+export function renderTranscriptItems(
+  items: TranscriptWireItem[] | null | undefined,
+): TranscriptItem[] {
+  const out: TranscriptItem[] = [];
+  if (!items) return out;
+  const toolById = new Map<string, ToolItem>();
+  for (const it of items) {
+    switch (it.kind) {
+      case "user":
+        if (it.content)
+          out.push({
+            kind: "message",
+            role: "user",
+            content: it.content,
+            time: it.time,
+            images: it.images,
+          });
+        break;
+      case "message":
+        if (it.content)
+          out.push({
+            kind: "message",
+            role: "assistant",
+            content: it.content,
+            time: it.time,
+            finalMs: it.response_ms,
+          });
+        break;
+      case "thinking":
+        if (it.content)
+          out.push({
+            kind: "thinking",
+            content: it.content,
+            finalMs: it.thinking_ms,
+          });
+        break;
+      case "tool_call": {
+        const t: ToolItem = {
+          kind: "tool",
+          name: it.tool_call?.name || "tool",
+          status: "done",
+          output:
+            it.tool_call?.arguments ?
+              JSON.stringify(it.tool_call.arguments, null, 2)
+            : undefined,
         };
-        // store-level write time injected by the history endpoint; falls
-        // back to the payload timestamp for anything older that lacks it
-        created_at?: string;
-        timestamp?: string;
-        tool_calls?: {
-          id?: string;
-          name?: string;
-          arguments?: Record<string, unknown>;
-        }[];
-      }[]
-    | null;
+        if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
+        out.push(t);
+        break;
+      }
+      case "tool_result": {
+        if (!it.tool_call_id) continue;
+        const t = toolById.get(it.tool_call_id);
+        if (!t) continue;
+        t.result = it.content || "";
+        t.status = it.is_error ? "error" : "done";
+        t.finalMs = it.elapsed_ms;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+// --- chat appearance (card t_84e4653c) ---
+//
+// 'chat' is the chronological transcript (the pre-stacked appearance,
+// default); 'stacked' renders each turn as a self-contained block - the
+// user message plus everything the run produced in response. The
+// choice persists in localStorage under APPEARANCE_KEY (same pattern
+// as omega.theme-mode / omega.thinking-level).
+
+export type Appearance = "chat" | "stacked";
+
+export const APPEARANCE_KEY = "omega.appearance";
+
+// parseAppearance guards the localStorage round-trip: anything but the
+// exact "stacked" string (missing key, older build, tampered value)
+// falls back to the default appearance.
+export function parseAppearance(v: unknown): Appearance {
+  return v === "stacked" ? "stacked" : "chat";
+}
+
+// splitBlocks cuts the transcript where the backend's segmented
+// persistence does: every user message opens a block and everything
+// after it belongs to that block; non-user items BEFORE the first user
+// message (an orphaned error bubble from a failed session create) form
+// their own block, and an assistant-only tail stays in the block it
+// follows. Live streams append into the CURRENT block (the stream
+// never opens one), so while a run is producing, the block that holds
+// its user message also holds the answer underneath it. Pure.
+export function splitBlocks(items: TranscriptItem[]): TranscriptItem[][] {
+  const blocks: TranscriptItem[][] = [];
+  for (const item of items) {
+    if (item.kind === "message" && item.role === "user") {
+      blocks.push([item]);
+    } else if (blocks.length === 0) {
+      blocks.push([item]);
+    } else {
+      blocks[blocks.length - 1]!.push(item);
+    }
+  }
+  return blocks;
+}
+
+export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/transcript`);
+  if (!r.ok) throw new Error(`transcript: ${r.status}`);
+  return r.json();
 }
 
 export interface ModelsInfo {
@@ -193,12 +375,25 @@ export function handlePayload(
         });
       }
       break;
-    case "agent_end":
+    case "agent_end": {
       // the terminal event: only its arrival makes the stream end CLEAN.
       // A reader that finishes without it means the connection dropped
       // mid-run (server death, proxy cut) - streamChat flags that.
       state.sawEnd = true;
+      // A run cancelled through the stop affordance unwinds through the
+      // loop's NORMAL ctx path and lands HERE with finish_reason
+      // "cancelled" and error "context canceled" - for EVERY subscriber,
+      // not just the tab that cancelled. Throwing the transport error
+      // routes the ending through the interrupt-marker path (partial
+      // output kept, no error text splattered in the bubble), the same
+      // semantics an SSE drop already had. The wall-clock timeout lands
+      // with "context deadline exceeded" and keeps its own error-frame
+      // path, so only the exact cancel string fires here.
+      if (p.finish_reason === "cancelled" && p.error === "context canceled") {
+        throw new StreamInterruptedError("run cancelled");
+      }
       break;
+    }
     case "error":
       throw new Error(String(p.error || "agent error"));
   }
@@ -227,6 +422,16 @@ export function anyBusy(b: BusyMap): boolean {
   return b.size > 0;
 }
 
+// runningIds projects the /sessions rows into the busy set the pulse
+// reads: the row's server-owned running flag IS the stream state, so a
+// tab that never held the SSE reconciles against it. Pure, so polling
+// refreshes stay unit-testable without a component framework.
+export function runningIds(list: Pick<Session, "id" | "running">[]): Set<string> {
+  const ids = new Set<string>();
+  for (const s of list) if (s.running) ids.add(s.id);
+  return ids;
+}
+
 // --- URL <-> session routing (hand-rolled History wiring) ---
 
 // parseSessionPath extracts the session id from a client route path.
@@ -243,6 +448,12 @@ export function parseSessionPath(p: string): string | null {
 export function sessionPath(id: string): string {
   return `/chat/${id}`;
 }
+
+// Modules that ship a MAIN-pane view (a switcher destination, not an
+// inspector panel) claim it through the composition: the shell mounts
+// them by module name (app.vue looks the panel up) and the inspector's
+// module-panels mount skips them here. One fact, one home.
+export const mainViewModules = new Set<string>(["kanban"]);
 
 // --- session list: pure bucketing / filtering / formatting helpers ---
 
@@ -265,14 +476,6 @@ export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   const k = Math.floor(n / 100) / 10;
   return `${k}k`;
-}
-
-// filterSessions matches the search query as a case-insensitive substring
-// of the session label. An empty query matches everything (no filter).
-export function filterSessions(sessions: Session[], query: string): Session[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return sessions;
-  return sessions.filter((s) => (s.label ?? s.id).toLowerCase().includes(q));
 }
 
 // byNewest orders a session group by last activity, newest first. A
@@ -810,18 +1013,26 @@ export async function fetchModels(): Promise<ModelsInfo> {
   return r.json();
 }
 
-export async function fetchSessions(): Promise<Session[]> {
-  const r = await fetch("/sessions");
+export async function fetchSessions(includeArchived = false): Promise<Session[]> {
+  const url = includeArchived ? "/sessions?archived=include" : "/sessions";
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`sessions: ${r.status}`);
   return r.json();
 }
 
-export async function fetchSession(id: string): Promise<SessionDetail> {
-  const r = await fetch(`/sessions/${encodeURIComponent(id)}`);
-  if (!r.ok) throw new Error(`session: ${r.status}`);
+// createSession posts the empty session body the wire contract defines:
+// an early /sessions POST was inline in app.vue before card t_4f0e88f2.
+// (Session restore is transcript-owned - fetchTranscript - since the
+// backend-owns-facts rework; no fetchSession here.)
+export async function createSession(): Promise<Session> {
+  const r = await fetch("/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!r.ok) throw new Error(`create session: ${r.status}`);
   return r.json();
 }
-
 // --- settings pane: config knobs behind /settings ---
 
 // SettingKnob is one exposed config field. Type drives the control:
@@ -833,7 +1044,10 @@ export interface SettingKnob {
   label: string;
   type: "toggle" | "number" | "text" | "secret" | "select" | "textarea" | "bindlist";
   value: unknown;
-  options?: string[];
+  // options drive select knobs: plain strings are value+label; the
+  // object form splits them (user themes label their names, value
+  // theme:<id>). Server knobs only ever send plain strings.
+  options?: (string | { value: string; label: string })[];
   min?: number;
   max?: number;
   step?: number;
@@ -930,6 +1144,124 @@ export async function saveSettings(values: Record<string, unknown>): Promise<Set
   return normalizeSettingsPayload(await r.json());
 }
 
+// --- themes: user token themes behind /themes ---
+
+// ThemeMode is the theme select's value space: the three built-in
+// modes, or a user theme applied by id (theme:<id> from GET /themes).
+export type ThemeMode = "auto" | "light" | "dark" | `theme:${string}`;
+
+export interface UserTheme {
+  id: string;
+  name: string;
+  base: "dark" | "light";
+  tokens: Record<string, string>;
+  error?: string;
+}
+
+// THEME_TOKEN_KEYS mirrors the server's token allowlist (the color set
+// main.css defines, plus the two layer shadows). It exists to CLEAR
+// overrides when a user theme is switched off (built-in modes must
+// restore :root / [data-theme=light] values untouched); the server
+// validates what may be set.
+export const THEME_TOKEN_KEYS = [
+  "accent",
+  "unread",
+  "z0",
+  "z1",
+  "z1-raised",
+  "z2",
+  "stroke",
+  "text",
+  "text-dim",
+  "ok",
+  "err",
+  "shadow-1",
+  "shadow-2",
+] as const;
+
+// themeSelectValue / parseThemeSelect: the wire value of a user theme
+// in the theme select.
+const THEME_SELECT_PREFIX = "theme:";
+export const themeSelectValue = (id: string) =>
+  `${THEME_SELECT_PREFIX}${id}`;
+export const parseThemeSelect = (value: string): string | null =>
+  value.startsWith(THEME_SELECT_PREFIX)
+    ? value.slice(THEME_SELECT_PREFIX.length)
+    : null;
+
+// usableThemes: the picker lists only themes that parsed and validated.
+export function usableThemes(themes: UserTheme[]): UserTheme[] {
+  return themes.filter((t) => !t.error);
+}
+
+// normalizeThemesPayload sanitizes a /themes response: malformed
+// entries drop out; error-flagged entries survive so the server's loud
+// failure stays inspectable. Pure.
+export function normalizeThemesPayload(raw: unknown): UserTheme[] {
+  const list =
+    raw && typeof raw === "object" && "themes" in (raw as Record<string, unknown>)
+      ? (raw as Record<string, unknown>).themes
+      : raw;
+  if (!Array.isArray(list)) return [];
+  const out: UserTheme[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.id !== "string") continue;
+    const base = v.base === "light" ? "light" : "dark";
+    const error = typeof v.error === "string" && v.error ? v.error : undefined;
+    const tokens: Record<string, string> = {};
+    if (v.tokens && typeof v.tokens === "object") {
+      for (const [k, tok] of Object.entries(v.tokens as Record<string, unknown>)) {
+        if (typeof tok === "string") tokens[k] = tok;
+      }
+    }
+    out.push({
+      id: v.id,
+      name: typeof v.name === "string" && v.name ? v.name : v.id,
+      base,
+      tokens,
+      error,
+    });
+  }
+  return out;
+}
+
+// fetchThemes loads the user theme list. Throws on non-2xx with the
+// server's message; the pane survives a failure (list just goes empty).
+export async function fetchThemes(): Promise<UserTheme[]> {
+  const r = await fetch("/themes");
+  if (!r.ok) {
+    let msg = `themes: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.error === "string") msg = body.error;
+    } catch {
+      // non-JSON failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+  return normalizeThemesPayload(await r.json());
+}
+
+// clearThemeTokens removes every token override the inline style
+// carries - the undo half of applying a user theme.
+export function clearThemeTokens(style: CSSStyleDeclaration): void {
+  for (const k of THEME_TOKEN_KEYS) style.removeProperty(`--${k}`);
+}
+
+// applyThemeTokens writes a user theme's overrides into the element's
+// inline style. Inline style beats both :root and [data-theme=light],
+// so overrides stack cleanly on the theme file's chosen base; clearing
+// first makes a re-apply (a file edited on disk) replace, not mix.
+export function applyThemeTokens(
+  style: CSSStyleDeclaration,
+  tokens: Record<string, string>,
+): void {
+  clearThemeTokens(style);
+  for (const [k, v] of Object.entries(tokens)) style.setProperty(`--${k}`, v);
+}
+
 // filterSettingGroups narrows the settings list live: a group survives
 // when any of its knobs matches the case-insensitive query as a
 // substring of the label or help text; groups with no matching knobs
@@ -969,52 +1301,56 @@ export function settingsDiff(
   return out;
 }
 
-// --- content search: FTS5 over message content, behind /sessions/search ---
+// --- session search: one endpoint owns title AND content hits ---
 
-// SessionContentHit is one backend search row. The snippet comes back
-// from the store but is not rendered yet - matching context is later
-// polish; today only the id feeds the sidebar union.
-export interface SessionContentHit {
+// SessionSearchHit is one /sessions/search row. The backend ranks
+// label matches ahead of content matches and dedups to one hit per
+// session; the snippet is context for later polish - today only the
+// id feeds the sidebar, titleMatch marks label hits.
+export interface SessionSearchHit {
   id: string;
   snippet: string;
+  titleMatch?: boolean;
 }
 
-// searchSessionContent queries the store's FTS5 index through the
-// server. Throws on non-2xx (400 = FTS rejected the query syntax).
-export async function searchSessionContent(query: string): Promise<SessionContentHit[]> {
-  const r = await fetch(`/sessions/search?q=${encodeURIComponent(query)}`);
+// searchSessions queries the unified endpoint - one query owns BOTH
+// title and content hits. includeArchived toggles the backend's
+// archived filter - with the sidebar's archived toggle off the hits
+// stay off (default), with it on archived sessions are searched too.
+// Throws on non-2xx (400 = FTS rejected the query syntax).
+export async function searchSessions(
+  query: string,
+  includeArchived = false,
+): Promise<SessionSearchHit[]> {
+  const suffix = includeArchived ? "&archived=include" : "";
+  const r = await fetch(
+    `/sessions/search?q=${encodeURIComponent(query)}${suffix}`,
+  );
   if (!r.ok) throw new Error(`session search: ${r.status}`);
   return r.json();
 }
 
-// Debounce for the sidebar's content search - slow enough not to fire
+// Debounce for the sidebar's session search - slow enough not to fire
 // per keystroke, fast enough to feel live.
-export const CONTENT_SEARCH_DEBOUNCE_MS = 300;
+export const SESSION_SEARCH_DEBOUNCE_MS = 300;
 
-// withContentMatches unions the title-filtered row with the sessions
-// that matched by CONTENT (ids from the backend, null before the first
-// response arrives). A content-only match surfaces even though its
-// title never contained the query; ids the session list no longer holds
-// (deleted since the search) are dropped. Title matches come first,
-// then the backend-ranked content hits - bucketing re-sorts groups.
-export function withContentMatches(
-  filtered: Session[],
-  sessions: Session[],
-  contentIds: string[] | null,
-): Session[] {
-  if (!contentIds || contentIds.length === 0) return filtered;
+// withSearchHits maps the backend's ranked ids onto the session list:
+// the ONE source of truth for what a query matches, titles and content
+// alike - no in-memory filter runs alongside it. hitIds null means no
+// query or the first response has not landed yet: the full list stands.
+// Ids the list no longer holds (deleted since the search) are dropped.
+export function withSearchHits(sessions: Session[], hitIds: string[] | null): Session[] {
+  if (!hitIds) return sessions;
   const byId = new Map(sessions.map((s) => [s.id, s] as const));
-  const present = new Set(filtered.map((s) => s.id));
-  const extra: Session[] = [];
-  for (const id of contentIds) {
-    if (present.has(id)) continue;
+  const out: Session[] = [];
+  const seen = new Set<string>();
+  for (const id of hitIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
     const s = byId.get(id);
-    if (s) {
-      extra.push(s);
-      present.add(id);
-    }
+    if (s) out.push(s);
   }
-  return filtered.concat(extra);
+  return out;
 }
 
 // pinSession PATCHes the pinned flag directly on the session row.
@@ -1025,6 +1361,23 @@ export async function pinSession(id: string, pinned: boolean): Promise<void> {
     body: JSON.stringify({ pinned }),
   });
   if (!r.ok) throw new Error(`pin: ${r.status}`);
+}
+
+// attachImageUrl asks the SERVER to fetch a remote image URL (POST
+// /attach-image) and answer the ai.ImageContent shape - the browser
+// never fetches cross-origin image bytes itself. Throws with the
+// server's rejection text (oversize, non-image, HTTP failure).
+export async function attachImageUrl(url: string): Promise<OmegaImage> {
+  const r = await fetch("/attach-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`attach-url: ${r.status}${text ? `: ${text}` : ""}`);
+  }
+  return (await r.json()) as OmegaImage;
 }
 
 // markSessionRead stamps the session's last-read time (PATCH {"read":
@@ -1039,14 +1392,47 @@ export async function markSessionRead(id: string): Promise<void> {
   if (!r.ok) throw new Error(`read: ${r.status}`);
 }
 
+// archiveSession PATCHes the archived flag directly on the session row.
+// Same contract as pin: a list concern, updated_at never moves.
+export async function archiveSession(id: string, archived: boolean): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived }),
+  });
+  if (!r.ok) throw new Error(`archive: ${r.status}`);
+}
+
+// deleteSession removes a session PERMANENTLY (messages cascade
+// server-side). There is no undo - the caller must confirm first.
+export async function deleteSession(id: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!r.ok) throw new Error(`delete: ${r.status}`);
+}
+
+// filterArchived keeps one side of the archive flag: the archived rows
+// (toggle on) or the live ones (toggle off). The server already filters
+// the fetched list to match - this is the client-side gate for the rows
+// left in state after a patch (archive drops the row instantly, before
+// the refresh lands).
+export function filterArchived(
+  sessions: Session[],
+  includeArchived: boolean,
+): Session[] {
+  return sessions.filter((s) => (includeArchived ? s.archived : !s.archived));
+}
+
 // Minimal structural view of a transcript item for the retry helpers -
-// only the fields lastCompleteUserIndex/lastUserText/dropLastExchange/
+// only the fields lastCompleteUserIndex/lastUserText/
 // hasInterruptedMarker read; the app's TranscriptItem union satisfies
 // it (all member shapes carry kind, and role/content when applicable).
 export interface TranscriptItemLike {
   kind: string;
   role?: string;
   content?: string;
+  images?: OmegaImage[];
 }
 
 // lastCompleteUserIndex finds the transcript item a RESEND kicks off from:
@@ -1061,12 +1447,53 @@ export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
   return -1;
 }
 
-// lastUserText is the text the interrupted retry re-sends through the
-// normal send path (null when there is nothing to resend from).
+// lastUserText is the text the retry re-sends through the normal send
+// path (null when there is nothing to resend from).
 export function lastUserText(items: TranscriptItemLike[]): string | null {
   const idx = lastCompleteUserIndex(items);
   if (idx === -1) return null;
   return items[idx]?.content ?? null;
+}
+
+// lastUserImages is the image set of that same retry resend target -
+// the user message's attachments ride again on the retry.
+export function lastUserImages(items: TranscriptItemLike[]): OmegaImage[] {
+  const idx = lastCompleteUserIndex(items);
+  if (idx === -1) return [];
+  return items[idx]?.images ?? [];
+}
+
+// dataUrl turns an image attachment into an img/click-open src.
+export function dataUrl(img: OmegaImage): string {
+  return `data:${img.media_type};base64,${img.base64}`;
+}
+
+// MEDIA_MAGIC mirrors the ai/image.go magic signatures so the
+// composer-side validation matches what the backend accepts. Order
+// matters visually but not logically: first hit wins, and webp needs
+// its RIFF marker confirmed at offset 8.
+export function mediaTypeFromBase64(base64: string): string | null {
+  try {
+    const head = atob(base64.slice(0, 16));
+    const bytes = Array.from(head, (c) => c.charCodeAt(0));
+    const starts = (sig: number[]) =>
+      sig.every((b, i) => bytes[i] === b);
+    const sigs: [string, number[]][] = [
+      ["image/png", [0x89, 0x50, 0x4e, 0x47]],
+      ["image/jpeg", [0xff, 0xd8, 0xff]],
+      ["image/gif", [0x47, 0x49, 0x46, 0x38]],
+      ["image/bmp", [0x42, 0x4d]],
+    ];
+    for (const [mediaType, sig] of sigs) {
+      if (starts(sig)) return mediaType;
+    }
+    if (starts([0x52, 0x49, 0x46, 0x46]) && head.slice(8, 12) === "WEBP") {
+      return "image/webp";
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // dropLastExchange drops the last exchange FROM its opening user message:
@@ -1102,8 +1529,9 @@ export function withoutMarkers<T extends TranscriptItemLike>(
 // createItemKeySource gives transcript items a stable key surviving the
 // two identity-breaking operations the transcript goes through (card
 // t_bc62c9ba round 1): `st.transcript = items` swaps in a rebuilt history
-// array, and `dropLastExchange + push` replaces a retried exchange while
-// re-indexing everything after it. Index-keyed v-fors reuse the bubble
+// array, and `withoutMarkers + push` strips a stale marker while a retry
+// appends its fresh turn and re-indexes everything after it. Index-keyed
+// v-fors reuse the bubble
 // COMPONENT across those swaps, so a restored-history message inherited
 // the previous session's frozen elapsed label and a retried tool call
 // resumed the dead attempt's timer. Keying on object identity fixes both:
@@ -1132,6 +1560,17 @@ export class StreamInterruptedError extends Error {
   constructor(message = "stream interrupted") {
     super(message);
     this.name = "StreamInterruptedError";
+  }
+}
+
+// SessionBusyError: POST /chat answered 409 - the runHub already holds a
+// live run for the session (detached-run slot, server.go) so nothing was
+// persisted. The caller renders the busy affordance; retrying once the
+// run ends re-sends through the normal path.
+export class SessionBusyError extends Error {
+  constructor(message = "session already running") {
+    super(message);
+    this.name = "SessionBusyError";
   }
 }
 
@@ -1181,6 +1620,37 @@ async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<voi
   if (!state.sawEnd) throw new StreamInterruptedError();
 }
 
+// THINKING_LEVELS mirrors ai.ThinkingLevels (ai/provider.go): the
+// /chat thinking_level field is the index into this array, 0 = "none"
+// = no thinking parameter sent (provider default).
+export const THINKING_LEVELS = [
+  "none",
+  "off",
+  "on",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "extra high",
+  "max",
+  "ultra",
+] as const;
+
+// UI options for the effort chip: "default" replaces "none" - same
+// wire value (field omitted), one label in the dropdown. "off" is
+// real: it disables thinking explicitly (providers that take a
+// thinking parameter get think=false), not a fallback to default.
+export const THINKING_UI_LEVELS = ["default", "off", ...THINKING_LEVELS.slice(2)];
+
+// thinkingLevelWire maps a UI selection to the outgoing /chat value:
+// "default" stays unset (the field is omitted), everything else is
+// its index into THINKING_LEVELS.
+export function thinkingLevelWire(selection: string): number | undefined {
+  if (selection === "default") return undefined;
+  const idx = THINKING_LEVELS.indexOf(selection);
+  return idx === -1 ? undefined : idx;
+}
+
 // streamChat POSTs messages to /chat and drives the handler callbacks from
 // the SSE stream. Error payloads throw - the caller surfaces them.
 export async function streamChat(
@@ -1188,17 +1658,34 @@ export async function streamChat(
   sessionId: string | null,
   handlers: StreamHandlers,
   model?: string,
+  thinkingLevel?: number,
 ): Promise<void> {
   const body: Record<string, unknown> = { messages };
   if (sessionId) body.session_id = sessionId;
   if (model) body.model = model;
+  if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;
   const resp = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (resp.status === 409) throw new SessionBusyError();
   if (!resp.ok || !resp.body) throw new Error(`chat: ${resp.status}`);
   await consumeSSE(resp, handlers);
+}
+
+// stopSession asks the server to cancel the session's live run
+// (POST /sessions/<id>/stop). The run unwinds through its normal loop
+// path - partial output persists, the cancelled agent_end goes out over
+// every subscriber's wire. A miss is a benign race, not an error: 404
+// means the run already ended, 409 that it has not started yet.
+export async function stopSession(id: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/stop`, {
+    method: "POST",
+  });
+  if (!r.ok && r.status !== 404 && r.status !== 409) {
+    throw new Error(`stop: ${r.status}`);
+  }
 }
 
 // attachSession subscribes to a session's LIVE server-side run and

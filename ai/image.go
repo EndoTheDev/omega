@@ -19,7 +19,8 @@ var imageMagic = []struct {
 	{"image/bmp", []byte{'B', 'M'}},                      // BM
 }
 
-// MaxImageBytes is the maximum image file size accepted by DetectImage.
+// MaxImageBytes is the maximum image file size accepted by DetectImage
+// and DetectImageBytes.
 const MaxImageBytes = 20 * 1024 * 1024 // 20 MB
 
 // DetectImage reads a file and returns ImageContent if it's a supported
@@ -30,8 +31,21 @@ func DetectImage(path string) (*ImageContent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
+	img, err := DetectImageBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return img, nil
+}
+
+// DetectImageBytes sniffs raw image bytes and returns ImageContent if
+// they carry a supported image format, or nil if they don't. The
+// byte-level counterpart of DetectImage - same magic checks, same
+// MaxImageBytes cap - shared by file loading and the webui's remote
+// URL attachment.
+func DetectImageBytes(data []byte) (*ImageContent, error) {
 	if len(data) > MaxImageBytes {
-		return nil, fmt.Errorf("image too large: %s (%d bytes, max %d)", path, len(data), MaxImageBytes)
+		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), MaxImageBytes)
 	}
 
 	mediaType := ""

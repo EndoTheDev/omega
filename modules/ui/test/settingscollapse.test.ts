@@ -1,7 +1,7 @@
 // omega webui: unit tests for the settings-group collapse persistence
 // helpers (parseCollapsedKeys/serializeCollapsedKeys in
 // composables/omega.ts) and the SHARED search-input contract
-// (SearchInput.vue consumed by AppSidebar AND SettingsDrawer - only the
+// (SearchInput.vue consumed by AppSidebar AND SettingsTab - only the
 // look is shared; filter/union behaviors stay with the consumers).
 // The component tests are structural (source assertions): the unit suite
 // has no DOM, so what is pinned is the wiring, not the paint.
@@ -53,11 +53,11 @@ test("defaults stay expanded: null storage parses empty", () => {
 // --- the shared SearchInput: one component, two consumers ---
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const comp = (name: string) =>
-  readFileSync(`${root}/app/components/${name}.vue`, "utf8");
+const comp = (name: string, area: string) =>
+  readFileSync(`${root}/app/components/${area}/${name}.vue`, "utf8");
 
 test("SearchInput owns exactly one input (no duplicated look)", () => {
-  const src = comp("SearchInput");
+  const src = comp("SearchInput", "shell");
   assert.equal((src.match(/<input/g) ?? []).length, 1);
   assert.ok(src.includes('class="search-clear"'), "has its clear affordance");
   assert.ok(
@@ -66,9 +66,13 @@ test("SearchInput owns exactly one input (no duplicated look)", () => {
   );
 });
 
-test("AppSidebar and SettingsDrawer both consume SearchInput via v-model", () => {
-  for (const name of ["AppSidebar", "SettingsDrawer"]) {
-    const src = comp(name);
+test("AppSidebar and SettingsTab both consume SearchInput via v-model", () => {
+  const consumers = [
+    ["AppSidebar", "sessions"],
+    ["SettingsTab", "settings"],
+  ] as const;
+  for (const [name, area] of consumers) {
+    const src = comp(name, area);
     assert.ok(
       src.includes("<SearchInput"),
       `${name} renders the shared component`,
