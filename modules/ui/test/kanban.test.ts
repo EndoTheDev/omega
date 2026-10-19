@@ -103,4 +103,14 @@ test("board view ships module-owned and the shell mounts it", () => {
   assert.match(appVue, /openBoardSession/);
   // /board anchors in history like /chat/<id>
   assert.match(appVue, /\/board/);
+
+  // the inspector does NOT get the main view: RightSidebar filters
+  // module panels through mainViewModules (omega.ts owns the fact)
+  const sidebarVue = readFileSync(
+    join(uiRoot, "app", "components", "files", "RightSidebar.vue"),
+    "utf8",
+  );
+  assert.match(sidebarVue, /mainViewModules\.has\(p\.module\)/);
+  const omegaTs = readFileSync(join(uiRoot, "app", "composables", "omega.ts"), "utf8");
+  assert.match(omegaTs, /mainViewModules = new Set<string>\(\["kanban"\]\)/);
 });

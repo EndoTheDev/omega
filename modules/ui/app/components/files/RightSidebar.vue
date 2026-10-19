@@ -74,11 +74,11 @@
          modules/<name>/ui/ renders here, self-titled. Provisional host
          for the panels; the inspector-tab card gives them real tabs. -->
     <div
-      v-if="modulePanels.length"
+      v-if="mountedPanels.length"
       class="module-panels">
       <component
         :is="p.component"
-        v-for="p in modulePanels"
+        v-for="p in mountedPanels"
         :key="p.module" />
     </div>
   </aside>
@@ -86,9 +86,14 @@
 
 <script setup lang="ts">
   import { ref, watch } from "vue";
-  import { fetchFilesBrowse, fetchFilesRead, sortFileEntries } from "../../composables/omega";
+  import { fetchFilesBrowse, fetchFilesRead, sortFileEntries, mainViewModules } from "../../composables/omega";
   import type { FileEntry } from "../../composables/omega";
+  // The inspector sees module PANELS only: modules that ship a main-pane
+  // view (kanban's board) are not inspector content (see mainViewModules).
   import { modulePanels } from "../../composables/module-panels.generated";
+  const mountedPanels = modulePanels.filter(
+    (p) => !mainViewModules.has(p.module),
+  );
 
   // Inspector pane: a tab shell with the Files tab live. Parked tabs
   // (git view, session details, SSE wire log) are future siblings in the

@@ -396,6 +396,12 @@ export function sessionPath(id: string): string {
   return `/chat/${id}`;
 }
 
+// Modules that ship a MAIN-pane view (a switcher destination, not an
+// inspector panel) claim it through the composition: the shell mounts
+// them by module name (app.vue looks the panel up) and the inspector's
+// module-panels mount skips them here. One fact, one home.
+export const mainViewModules = new Set<string>(["kanban"]);
+
 // --- session list: pure bucketing / filtering / formatting helpers ---
 
 // relativeAge renders a compact age for the row meta ("35m", "2h", "3d").

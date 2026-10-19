@@ -89,7 +89,10 @@ test("the inspector mounts the generated module panels", () => {
   );
   assert.ok(sidebar.includes("module-panels.generated"), "imports the generated list");
   assert.ok(sidebar.includes('class="module-panels"'), "has the mount section");
-  assert.ok(sidebar.includes("v-if=\"modulePanels.length\""), "renders nothing when no module ships UI");
+  // main-pane views are a switcher destination, not inspector content -
+  // the mount v-fors the PANEL subset (omega.ts owns mainViewModules)
+  assert.ok(sidebar.includes('v-if="mountedPanels.length"'), "renders nothing when no module ships a panel");
+  assert.ok(sidebar.includes("!mainViewModules.has(p.module)"), "main-view modules stay out of the inspector");
 });
 
 test("nuxt.config wires the composition in", () => {
