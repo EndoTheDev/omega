@@ -57,7 +57,7 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import { formatDurationMs } from "../composables/omega";
+  import { formatDurationMs } from "../../composables/omega";
 
   const props = defineProps<{
     healthy: boolean;

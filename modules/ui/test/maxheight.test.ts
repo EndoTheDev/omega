@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
 const toolcall = readFileSync(
-  join(here, "../app/components/ToolCallLine.vue"),
+  join(here, "../app/components/chat/ToolCallLine.vue"),
   "utf8",
 );
 

@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-  import { useElapsed } from "../composables/useElapsed";
+  import { useElapsed } from "../../composables/useElapsed";
 
   const props = defineProps<{
     name: string;

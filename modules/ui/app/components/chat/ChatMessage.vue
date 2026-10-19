@@ -23,9 +23,9 @@
 <script setup lang="ts">
   import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
-  import { decorateCodeblocks } from "../composables/codeblocks";
-  import { createRenderScheduler, formatMsgTime, renderMarkdown } from "../composables/omega";
-  import { useElapsed } from "../composables/useElapsed";
+  import { decorateCodeblocks } from "../../composables/codeblocks";
+  import { createRenderScheduler, formatMsgTime, renderMarkdown } from "../../composables/omega";
+  import { useElapsed } from "../../composables/useElapsed";
 
   const props = defineProps<{
     role: "user" | "assistant";
