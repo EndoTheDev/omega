@@ -25,7 +25,11 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
 function fixedTree(): DockNode {
-  return makeSplit("row", [makePane("sidebar", 240), makePane("chat", null), makePane("files", 300)]);
+  return makeSplit("row", [
+    makePane("sidebar", 240, "left"),
+    makePane("chat", null),
+    makePane("files", 300, "right"),
+  ]);
 }
 
 // --- gate: the never-empty invariant (last-pane close refused) --------------
@@ -87,24 +91,26 @@ describe("gate: session routing (open/focus, never a duplicate)", () => {
 // --- gate: sidebar tabs unclosable -------------------------------------------
 
 describe("gate: sidebar tabs unclosable", () => {
-  it("the sessions pane and the inspector five never carry an X", () => {
+  it("tab chrome follows the TAB, not the pane (t_d6b657a7)", () => {
     const pane = src("app/components/DockPane.vue");
-    // the close X renders behind a closable-tab check only...
+    // the close X renders behind a closable-component check only...
     assert.match(pane, /v-if="tabClosable\(t\)"/);
-    // ...and pinned panes get it hidden at the CSS layer too
-    assert.match(src("app/assets/css/main.css"), /\.dock-pane\.pinned \.dock-tab-close/);
+    // ...and the shell marker no longer hides tab chrome: a chat tab in a
+    // sidebar keeps its X
+    assert.doesNotMatch(src("app/assets/css/main.css"), /\.dock-pane\.pinned \.dock-tab-close/);
+    // every tab chip drags - the lock lives in the hit-test, not the chip
+    assert.match(pane, /draggable="true"/);
   });
-  it("pinned panes render no '+', no actions menu, and cannot be removed", () => {
+  it("edge shells: no actions menu, no remove X, but the '+' refills", () => {
     const pane = src("app/components/DockPane.vue");
+    // the actions ('...') button stays shell-guarded
     assert.match(pane, /v-if="!pinned"/);
     assert.match(pane, /v-if="api\.canRemovePane\(node\.id\)"/);
-    // the '+' / empty-pane menus list MAIN dockables only - no sidebar
-    // component can be opened into an arbitrary pane
-    assert.match(pane, /MAIN_DOCKABLES/);
-    // the menus render registry ENTRIES (title/icon/policy), not raw ids -
-    // the raw-id iteration is what killed both menus after the reset
-    assert.match(pane, /MAIN_DOCKABLES\.map\(dockableOf\)/);
+    // the menus ride the MENU inventory now - the refill source for any
+    // pane (sessions excluded: locked; settings: no entry point)
+    assert.match(pane, /MENU_DOCKABLES\.map\(dockableOf\)/);
     assert.doesNotMatch(pane, /v-for="d in DOCKABLES"/);
+    assert.doesNotMatch(pane, /MAIN_DOCKABLES/);
   });
 });
 
