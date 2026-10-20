@@ -234,3 +234,32 @@ func TestAttachImageRefusesInternal(t *testing.T) {
 		}
 	}
 }
+
+// TestAttachImageRedirectToInternalBlocked closes the redirect hole: a
+// public-looking first hop that 302s to an internal target must abort
+// mid-chain, not follow it. The guard stub lets the httptest first hop
+// (127.0.0.1) through and blocks only the redirect target - the same
+// seam production uses for every hop.
+func TestAttachImageRedirectToInternalBlocked(t *testing.T) {
+	oldGuard := internalHostGuard
+	internalHostGuard = func(host string) bool { return host == "192.0.2.9" }
+	defer func() { internalHostGuard = oldGuard }()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://192.0.2.9/secret.png", http.StatusFound)
+	}))
+	defer upstream.Close()
+
+	s := newTestServer()
+	body, _ := json.Marshal(attachImageRequest{URL: upstream.URL})
+	req := httptest.NewRequest(http.MethodPost, "/attach-image", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "refusing to fetch internal address 192.0.2.9") {
+		t.Fatalf("body = %q, want the per-hop internal-address refusal", rec.Body.String())
+	}
+}

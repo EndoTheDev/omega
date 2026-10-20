@@ -2,12 +2,13 @@ package http_channel
 
 import (
 	"encoding/json"
-	"net"
-	"net/url"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -75,12 +76,28 @@ func isInternalHost(host string) bool {
 // every internal address via isInternalHost below.
 var internalHostGuard = isInternalHost
 
+// attachClient guards EVERY redirect hop. The first-hop check in
+// handleAttachImage is not enough: a public 302 can point back into
+// loopback, the LAN, or the Tailscale ring, and a plain http.Client
+// follows up to 10 hops without looking. Each hop re-runs the same
+// internalHostGuard; an internal target aborts the fetch.
+var attachClient = &http.Client{
+	Transport: ai.HTTPClient().Transport,
+	Timeout:   60 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if host := req.URL.Hostname(); internalHostGuard(host) {
+			return fmt.Errorf("refusing to fetch internal address %s", host)
+		}
+		return nil
+	},
+}
+
 // handleAttachImage serves POST /attach-image: the SERVER fetches the
 // URL's bytes (the webui never fetches cross-origin itself), sniffs
 // the magic bytes, and answers {media_type, base64} in the ai.Image-
 // Content shape - the client then rides the normal /chat image field.
-// Transport is the same ai.RetryHTTP every provider and tool call
-// uses; the web module's mirror fetch is text-only so binary image
+// Fetches ride attachClient (per-hop internal-address guard, no
+// retry); the web module's mirror fetch is text-only so binary image
 // bytes can't ride it.
 func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -118,7 +135,7 @@ func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 	}
 	// One content-length cap: anything answering with a larger body is
 	// dropped before buffering.
-	resp, err := ai.RetryHTTP(httpReq)
+	resp, err := attachClient.Do(httpReq)
 	if err != nil {
 		http.Error(w, "fetch: "+err.Error(), http.StatusBadRequest)
 		return
