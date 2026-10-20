@@ -255,7 +255,7 @@ export function paneCount(tree: DockNode): number {
 }
 
 /** a pane is PINNED when any of its tabs is sidebar-pinned - the sessions
-    pane (one "sidebar" tab) and the inspector pane (its five view tabs).
+    pane (one "sidebar" tab) and the inspector pane (its view tabs).
     Empty panes and main-panel panes are main. */
 export function isPinnedPane(pane: DockPane): boolean {
   return pane.tabs.some((t) => isPinnedTab(t.component));
@@ -316,7 +316,7 @@ function insertRootEdge(tree: DockNode, side: "before" | "after", pane: DockPane
 }
 
 /** pre-reset trees persisted the inspector as ONE tab hosting its own
-    chip strip; card t_4ae27e0d dissolved the strip - the five views are
+    chip strip; card t_4ae27e0d dissolved the strip - the views are
     real tabs. Expands every legacy "inspector" tab into the inspector
     group (order matters: active lands on files). No-op returns the SAME
     tree. Pure. */
@@ -333,6 +333,52 @@ export function expandInspectorTabs(tree: DockNode): DockNode {
     );
     n.active = clamp(n.active, 0, Math.max(0, n.tabs.length - 1));
     done = true;
+  }
+  return done ? copy : tree;
+}
+
+/** card t_49d0b308: the inspector's tab set GREW - settings moved out of
+    the main-pane class and the kanban board joined it. Trees persisted
+    while the inspector held five tabs get them back: every pane hosting
+    a right-area tab gains the missing right-area tabs, in the registry's
+    canonical order, and a "settings" tab that survived in a MAIN pane
+    (its pre-move home) is removed - its only home is the inspector pane
+    now. No-op returns the SAME tree. Pure. */
+export function upgradeInspectorTabs(tree: DockNode): DockNode {
+  const rank = new Map(INSPECTOR_TAB_COMPONENTS.map((c, i) => [c, i]));
+  // "settings" alone does NOT make a pane the inspector pane: the
+  // pre-move shell parked it in main panes, so a real inspector pane is
+  // one hosting any OTHER right-area id
+  const isInspectorTab = (c: DockComponentName) =>
+    rank.has(c) && c !== "settings";
+  let done = false;
+  const copy = clone(tree);
+  for (const n of allNodes(copy)) {
+    if (!isPane(n)) continue;
+    const hosts = n.tabs.some((t) => isInspectorTab(t.component));
+    const next = n.tabs
+      // strip the pre-move settings tab from panes that are NOT the
+      // inspector pane; the inspector pane's own copy survives
+      .filter((t) => hosts || t.component !== "settings")
+      // missing right-area tabs join the pane (the inspector group's
+      // tab list is fixed chrome - every held pane holds them all)
+      .concat(
+        hosts
+          ? INSPECTOR_TAB_COMPONENTS
+              .filter((c) => !n.tabs.some((t) => t.component === c))
+              .map((c) => ({ component: c }))
+          : [],
+      )
+      // canonical order: the ruling's default tab strip
+      .sort((a, b) =>
+        (rank.get(a.component) ?? INSPECTOR_TAB_COMPONENTS.length) -
+        (rank.get(b.component) ?? INSPECTOR_TAB_COMPONENTS.length));
+    if (next.length !== n.tabs.length ||
+        next.some((t, i) => t !== n.tabs[i])) {
+      n.tabs = next;
+      n.active = clamp(n.active, 0, Math.max(0, n.tabs.length - 1));
+      done = true;
+    }
   }
   return done ? copy : tree;
 }
@@ -941,7 +987,7 @@ function readWidth(get: (k: string) => string | null, key: string): number | nul
 /**
  * Seeds the tree from the pre-dock persisted pane state. card t_4ae27e0d:
  * the shape is FIXED - left sessions pane, chat, right inspector pane with
- * its five view tabs - both sidebars always present (the open flags are
+ * its view tabs - both sidebars always present (the open flags are
  * dead history). A persisted width renders verbatim; unknown width ->
  * the old default 240.
  */
@@ -1075,12 +1121,14 @@ const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
 export function createDock(store: Storage): DockApi {
   const stored = deserialize(store.getItem(DOCK_LAYOUT_KEY));
   // card t_4ae27e0d: loaded trees modernize (legacy "inspector" tabs expand
-  // to the five real view tabs) and the fixed shape re-asserts itself (a
-  // pre-reset tree sidebars-toggled-closed gets its panes back). Any change
-  // persists at once - the next boot must see the modern shape even if no
-  // mutation fires this session.
+  // to the real view tabs) and the fixed shape re-asserts itself (a
+  // pre-reset tree sidebars-toggled-closed gets its panes back). card
+  // t_49d0b308: trees persisted while the inspector held five tabs gain
+  // settings + kanban, and the pre-move settings tab leaves main panes.
+  // Any change persists at once - the next boot must see the modern shape
+  // even if no mutation fires this session.
   let initial = stored
-    ? expandInspectorTabs(stored)
+    ? upgradeInspectorTabs(expandInspectorTabs(stored))
     : migrateLegacy((k) => store.getItem(k));
   initial = ensurePinnedEdges(initial);
   initial = assignChatKeys(initial);

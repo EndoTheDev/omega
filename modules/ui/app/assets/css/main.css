@@ -281,6 +281,15 @@ body {
 .dock-tab-close:focus-visible { opacity: 1; }
 .dock-pane.pinned .dock-tab-close { display: none; }
 .dock-tab-close:hover { background: var(--z2); color: var(--text); }
+/* card t_49d0b308: the inspector pane hosts SEVEN pinned tabs now - the
+   72px min-width cannot stack in the ~300px column (overflow clipped the
+   tail). Pinned tabs shrink freely and ellipsize instead. */
+.dock-pane.pinned .dock-tab {
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 0 4px 0 8px;
+  font-size: 12px;
+}
 .dock-tab-new, .dock-tab-btn {
   flex: 0 0 auto;
   width: 26px;
@@ -1844,6 +1853,22 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   color: var(--text-dim);
   margin-top: auto;
 }
+
+/* card t_49d0b308: width-driven adaptation - settings lives in the
+   inspector's ~300px column now; the measured `narrow` class (the root's
+   rendered width, composables/narrow.ts) tightens the chrome so every
+   knob stays reachable and nothing clips. Controls are already stacked
+   (labels above inputs) - only the padding/scale needs a step down. */
+.settings.narrow {
+  padding: 10px;
+  gap: 12px;
+}
+.settings.narrow .setting-item { font-size: 13px; }
+.settings.narrow .setting-input,
+.settings.narrow .theme-select { font-size: 12px; padding: 5px 8px; }
+.settings.narrow .setting-textarea { min-height: 48px; }
+.settings.narrow .settings-note,
+.settings.narrow .setting-help { font-size: 10.5px; }
 
 /* ---- layer 0: status bar (canvas-colored chrome, no rounding) ---- */
 .statusbar {

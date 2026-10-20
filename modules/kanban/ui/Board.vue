@@ -1,5 +1,8 @@
 <template>
-  <section class="board">
+  <section
+    ref="boardEl"
+    class="board"
+    :class="{ narrow: narrow }">
     <div class="board-scroll">
       <div
         v-for="(col, i) in cols"
@@ -106,12 +109,13 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref } from "vue";
   import DetailDrawer from "./board/DetailDrawer.vue";
   import {
     BOARD_STATUSES,
     age,
     columns,
+    isNarrowWidth,
     isSettled,
     step,
     type BoardComment,
@@ -147,6 +151,38 @@
   }
 
   const cols = computed(() => columns(tasks.value));
+
+  // --- narrow adaptation (card t_49d0b308): the inspector column is
+  // ~300px (card ruling); the full-width column strip only works wide,
+  // so the rendered width flips the `narrow` class - the columns stack
+  // into a read-mostly vertical list instead of scrolling sideways.
+  // The threshold is unit-covered in boardLogic.ts; this is the only
+  // DOM-measuring part. Same mechanism as the shell's
+  // composables/useNarrow (kept in-module: module UI imports no shell
+  // code).
+  const boardEl = ref<HTMLElement | null>(null);
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !boardEl.value) return;
+    // (same rAF deferral as the shell's useNarrow: the flip changes the
+    // observed layout itself, so the callback must not mutate this frame)
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(boardEl.value);
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   // --- add-task: triage and todo only (a board always has a spillway)
   const drafts = reactive<Record<string, string>>({ triage: "", todo: "" });
@@ -420,5 +456,32 @@
     cursor: pointer;
     font-size: 11px;
     padding: 0 3px;
+  }
+
+  /* narrow (card t_49d0b308): the inspector's ~300px column. The wide
+     strip flex: 0 0 236px column row only works in the main pane - under
+     the measured threshold the root scrolls and the columns stack into
+     read-mostly vertical lists, full width, no horizontal scroll. */
+  .board.narrow {
+    overflow-y: auto;
+  }
+  .board.narrow .board-scroll {
+    flex: none;
+    flex-direction: column;
+    overflow: visible;
+    padding: 8px;
+    gap: 8px;
+  }
+  .board.narrow .board-col {
+    flex: none;
+    width: 100%;
+  }
+  .board.narrow .card {
+    padding: 6px 8px;
+  }
+  /* the drawer overlays the visible column, not the scrollable content */
+  .board.narrow :deep(.drawer) {
+    position: fixed;
+    right: 0;
   }
 </style>

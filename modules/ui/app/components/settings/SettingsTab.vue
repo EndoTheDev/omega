@@ -1,7 +1,13 @@
 <template>
-  <!-- no title row: the dock tab bar carries the "settings" title; the
-       menubar gear OPENS this tab (singleton) - this is just content -->
-  <aside class="settings">
+  <!-- no title row: the dock tab bar carries the "Settings" title; the
+       tab lives pinned in the inspector (card t_49d0b308) - this is just
+       content. The aside classes carry the mobile drawer shape (mirrors
+       FilesTab); `narrow` is the width-driven adaptation class (a
+       measured on the root: the inspector's ~300px column). -->
+  <aside
+    ref="rootEl"
+    class="settings aside pane inspector-panel"
+    :class="{ open: open, narrow: narrow }">
     <!-- search: narrows every group live; Escape clears (shared look -
          SearchInput, same component as the sidebar's session search) -->
     <SearchInput
@@ -152,20 +158,29 @@
     type Appearance,
     type ThemeMode,
     type UserTheme,  } from "~/composables/omega";
+  import { useNarrow } from "~/composables/narrow";
 
   const props = defineProps<{
     showThinking: boolean;
-    themeMode: "auto" | "light" | "dark";
     appearance: Appearance;
     themeMode: ThemeMode;
     userThemes: UserTheme[];
-    open: boolean;  }>();
+    /** the mobile drawer's overlay state (desktop tabs never pass it
+        as toggled; mirrors FilesTab's prop) */
+    open?: boolean;
+  }>();
+
+  // width-driven adaptation (card t_49d0b308): the inspector column
+  // measures ~240-320px - the class flips and the knobs stack (rules in
+  // main.css, .settings.narrow)
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = useNarrow(rootEl);
 
   const emit = defineEmits<{
     (e: "update:showThinking", value: boolean): void;
-    (e: "set-theme", mode: "auto" | "light" | "dark"): void;
     (e: "update:appearance", value: Appearance): void;
-    (e: "set-theme", mode: ThemeMode): void;  }>();
+    (e: "set-theme", mode: ThemeMode): void;
+  }>();
 
   // --- server payload state ---
 
@@ -346,11 +361,10 @@
 
   function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
     if (isClient(group)) {
-      if (knob.key === "chat.theme")
-        emit("set-theme", value as "auto" | "light" | "dark");
+      if (knob.key === "chat.theme") emit("set-theme", value as ThemeMode);
       else if (knob.key === "chat.appearance")
         emit("update:appearance", value as Appearance);
-      if (knob.key === "chat.theme") emit("set-theme", value as ThemeMode);      return;
+      return;
     }
     draft.value = { ...draft.value, [knob.key]: value };
   }
