@@ -67,8 +67,8 @@ export interface Session {
   last_run?: LastRunStats;
   model?: string;
   pinned?: boolean;
-  // server-side archive flag: hidden from the default list, revealed
-  // by the sidebar's archived toggle (muted rows), still searchable
+  // server-side archive flag: the row renders in the archived group at
+  // the BOTTOM of the sidebar (muted), still searchable
   archived?: boolean;
   // server-side read stamp + read-time unread (updated_at > last_read_at)
   last_read_at?: string;
@@ -498,13 +498,15 @@ function byNewest(a: Session, b: Session): number {
 
 // SessionBuckets is the grouped sidebar list: pinned sessions first (the
 // keep-at-top section), then the Today / Yesterday / Earlier time
-// buckets by local calendar day of updated_at. Every group is sorted by
-// last activity within itself.
+// buckets by local calendar day of updated_at, then archived sessions
+// (always the LAST group). Every group is sorted by last activity
+// within itself.
 export interface SessionBuckets {
   pinned: Session[];
   today: Session[];
   yesterday: Session[];
   earlier: Session[];
+  archived: Session[];
 }
 
 // bucketSessions groups sessions into the sidebar sections. Bucketing is
@@ -523,8 +525,15 @@ export function bucketSessions(
     today: [],
     yesterday: [],
     earlier: [],
+    archived: [],
   };
   for (const s of sessions) {
+    // the archived group owns the row: archived beats pinned AND the
+    // day buckets, so the section is always the last one, whole
+    if (s.archived) {
+      out.archived.push(s);
+      continue;
+    }
     if (s.pinned) {
       // the pinned section owns the row - no day-bucket duplicate
       out.pinned.push(s);
@@ -582,7 +591,7 @@ export function serializeCollapsedKeys(set: Iterable<string>): string {
 
 // the only labels a sidebar section can take - anything else in the
 // persisted value is stale (renamed bucket) or corrupt and gets dropped
-export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier"];
+export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier", "archived"];
 
 // parseCollapsedLabels is parseCollapsedKeys narrowed to the bucket
 // allowlist.
@@ -1021,9 +1030,10 @@ export async function fetchModels(): Promise<ModelsInfo> {
   return r.json();
 }
 
-export async function fetchSessions(includeArchived = false): Promise<Session[]> {
-  const url = includeArchived ? "/sessions?archived=include" : "/sessions";
-  const r = await fetch(url);
+// the list ALWAYS carries both archive sides (the archived sessions
+// render in their own bottom group, card t_e527b3e8) - one fetch
+export async function fetchSessions(): Promise<Session[]> {
+  const r = await fetch("/sessions?archived=include");
   if (!r.ok) throw new Error(`sessions: ${r.status}`);
   return r.json();
 }
@@ -1309,17 +1319,14 @@ export interface SessionSearchHit {
 }
 
 // searchSessions queries the unified endpoint - one query owns BOTH
-// title and content hits. includeArchived toggles the backend's
-// archived filter - with the sidebar's archived toggle off the hits
-// stay off (default), with it on archived sessions are searched too.
-// Throws on non-2xx (400 = FTS rejected the query syntax).
+// title and content hits. archived=include rides every query: the
+// archived hits land in the sidebar's archived group like any other
+// archived row. Throws on non-2xx (400 = FTS rejected the query syntax).
 export async function searchSessions(
   query: string,
-  includeArchived = false,
 ): Promise<SessionSearchHit[]> {
-  const suffix = includeArchived ? "&archived=include" : "";
   const r = await fetch(
-    `/sessions/search?q=${encodeURIComponent(query)}${suffix}`,
+    `/sessions/search?q=${encodeURIComponent(query)}&archived=include`,
   );
   if (!r.ok) throw new Error(`session search: ${r.status}`);
   return r.json();
@@ -1405,18 +1412,6 @@ export async function deleteSession(id: string): Promise<void> {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(`delete: ${r.status}`);
-}
-
-// filterArchived keeps one side of the archive flag: the archived rows
-// (toggle on) or the live ones (toggle off). The server already filters
-// the fetched list to match - this is the client-side gate for the rows
-// left in state after a patch (archive drops the row instantly, before
-// the refresh lands).
-export function filterArchived(
-  sessions: Session[],
-  includeArchived: boolean,
-): Session[] {
-  return sessions.filter((s) => (includeArchived ? s.archived : !s.archived));
 }
 
 // Minimal structural view of a transcript item for the retry helpers -

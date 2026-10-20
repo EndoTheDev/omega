@@ -195,7 +195,10 @@ describe("collapsed labels (omega.sidebar-collapsed)", () => {
       parseCollapsedLabels('["today","banana",42,null,["earlier"]]'),
       new Set(["today"]),
     );
-    assert.deepEqual([...SIDEBAR_BUCKETS], ["pinned", "today", "yesterday", "earlier"]);
+    assert.deepEqual(
+      [...SIDEBAR_BUCKETS],
+      ["pinned", "today", "yesterday", "earlier", "archived"],
+    );
   });
 
   it("round-trips serialize -> parse and ignores duplicate-free order", () => {
