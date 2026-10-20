@@ -121,6 +121,7 @@
             class="pane"
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
+            v-model:tool-display="toolDisplay"
             :theme-mode="themeMode"
             :user-themes="userThemes"
             :open="inspectorOpen"
@@ -221,6 +222,11 @@
   } from "./composables/omega";
   import type { Session, Appearance } from "./composables/omega";
   import {
+    useToolDisplay,
+    TOOL_DISPLAY_KEY,
+    type ToolDisplay,
+  } from "./composables/toolDisplay";
+  import {
     createDock,
     findPane,
     findEdgePane,
@@ -287,6 +293,15 @@
   // blocks. Persisted like the theme - last choice wins across reloads,
   // garbage restores the default.
   const appearance = ref<Appearance>("chat");
+  // tool result display (card t_868633b3): auto | expanded | collapsed -
+  // v-model binds the SHARED ref (composables/toolDisplay.ts) so the
+  // settings knob writes the same signal the tool rows read, wherever
+  // they render. The ref restores from localStorage at module load;
+  // this watch keeps the choice persisted (same pattern as appearance).
+  const toolDisplay = useToolDisplay();
+  watch(toolDisplay, (mode) => {
+    localStorage.setItem(TOOL_DISPLAY_KEY, mode);
+  });
   // the knob flip re-renders instantly; the change persists for the
   // next reload (last choice wins, same pattern as the theme)
   watch(appearance, (a) => {

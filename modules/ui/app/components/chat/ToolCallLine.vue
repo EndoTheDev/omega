@@ -1,6 +1,8 @@
 <template>
-  <details class="toolcall">
-    <summary>
+  <details
+    ref="el"
+    class="toolcall">
+    <summary @click="onSummaryClick">
       <span
         class="tool-dot"
         :class="status" />
@@ -30,6 +32,9 @@
 </template>
 
 <script setup lang="ts">
+  import { nextTick, onMounted, ref, watch } from "vue";
+
+  import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
   import { useElapsed } from "../../composables/useElapsed";
 
   const props = defineProps<{
@@ -58,4 +63,37 @@
     // elapsed-so-far (live-run merge) - not from the mount moment
     () => props.elapsedMs,
   );
+
+  // --- auto open/close (/tools auto parity, card t_868633b3) ---
+  // The settings knob (auto | expanded | collapsed) decides what a row
+  // does on its own: auto expands a running call and collapses it once
+  // it settles. A manual summary click PINS the row - its open state is
+  // the user's for the session, and mode flips and status transitions
+  // recompute around it, never over it. The details element stays
+  // uncontrolled (no :open binding): the browser owns the toggle, this
+  // side applies the mode on mount and on status/mode change only.
+  const el = ref<HTMLDetailsElement | null>(null);
+  const display = useToolDisplay();
+  const pinned = ref<boolean | null>(null);
+
+  function applyAuto() {
+    if (pinned.value !== null || !el.value) return;
+    el.value.open = toolRowWantOpen(props.status, display.value, props.interrupted);
+  }
+
+  // nextTick: the status flip and the result's v-if land in the same
+  // render pass - apply after the DOM settles.
+  watch(
+    [() => props.status, () => props.interrupted, display],
+    () => void nextTick(applyAuto),
+  );
+  onMounted(applyAuto);
+
+  // Click fires BEFORE the browser's toggle default action, so !open is
+  // the state the click is about to produce - pin that, and auto mode
+  // never touches this row again this session.
+  function onSummaryClick() {
+    if (!el.value) return;
+    pinned.value = !el.value.open;
+  }
 </script>
