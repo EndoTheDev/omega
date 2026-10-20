@@ -486,6 +486,15 @@ export function formatTokens(n: number): string {
   return `${k}k`;
 }
 
+// shortVersion shortens the statusbar build string for DISPLAY only
+// ("v0.8.1-0.20261019172201-fe5b0106e0f7" -> "v0.8.1 fe5b010"; the full
+// string keeps living in /health and in the segment's tooltip). A plain
+// tag ("v0.8.1") and anything unparsable pass through unchanged.
+export function shortVersion(v: string): string {
+  const m = /^(v[^-\s]+)-0\.\d+-([0-9a-f]+)/.exec(v);
+  return m ? `${m[1]} ${m[2].slice(0, 7)}` : v;
+}
+
 // byNewest orders a session group by last activity, newest first. A
 // missing or malformed updated_at sorts last ("now" beats the unknown).
 function byNewest(a: Session, b: Session): number {

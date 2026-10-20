@@ -210,6 +210,12 @@ body {
    ⋯ pane-actions. Drop affordances here are layout-inert by design: the
    drop highlight is an outline, the insertion caret an absolute bar - a
    dragging gesture reflows nothing (card verify (d)). */
+/* t_f6c1b5fe corner seam: the strip is the TOP half of one continuous
+   card - it carries the outline + the rounded top corners, and its
+   bottom stays square. The card below tucks its rounded top corners
+   under it (negative margin), so the pane's curve never shows at the
+   seam - no pinched notch at either top corner. Layout-neutral overall:
+   the -radius margin gives the height back as pane height. */
 .dock-tabbar {
   flex: 0 0 auto;
   height: 35px;
@@ -218,10 +224,18 @@ body {
   gap: 2px;
   padding-right: 4px;
   background: var(--z1);
-  border-bottom: 1px solid var(--stroke);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pane) var(--r-pane) 0 0; /* square bottom corners */
+  /* paint above the tucked pane card so its hidden top curve never bleeds */
+  position: relative;
+  z-index: 1;
   user-select: none;
   min-width: 0;
 }
+/* the tucked card: the pane keeps its full rounding (mobile overlay /
+   standalone contexts see it untucked); the desktop strip covers the top */
+.dock-pane > .dock-content,
+.dock-pane > .dock-empty { margin-top: calc(-1 * var(--r-pane)); }
 .dock-tabs { display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
 .dock-tabs.empty { flex: 1; } /* spacer: the empty pane's × hugs the right */
 .dock-tab {
@@ -1883,6 +1897,8 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .divider { display: none; }
   .dock-divider { display: none; }
   .dock-menu, .dock-tabbar { display: none; }
+  /* the desktop seam tuck: card floats with its full rounding again */
+  .dock-pane > .dock-content, .dock-pane > .dock-empty { margin-top: 0; }
 
   /* inspector: mirrored overlay from the right */
   .aside {
