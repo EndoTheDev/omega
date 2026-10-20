@@ -1561,7 +1561,10 @@ labels stopped short of the right edge. */
 }
 .plus-btn {
   flex: none;
-  margin: 4px 0 0 8px;
+  /* centered on the textarea's first line: line center is 10px padding +
+     21/2 = 20.5px; button box (2px pad + 21px line = 25px) centers at
+     margin-top + 12.5px -> 8px. Stays pinned there as the textarea grows. */
+  margin: 8px 0 0 8px;
   padding: 2px 4px;
   font-size: 18px;
   line-height: 21px;
