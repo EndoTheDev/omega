@@ -325,7 +325,10 @@ func toolSchemas(tools map[string]agent.Tool) []ai.ToolSchema {
 		result = append(result, ai.ToolSchema{
 			Name:        name,
 			Description: tool.Description,
-			Parameters:  tool.Parameters,
+			// The action enum derives from the tool's Actions metadata,
+			// not from a hand-maintained schema value - one source of
+			// truth, no drift possible.
+			Parameters: tool.SchemaParameters(),
 		})
 	}
 	return result

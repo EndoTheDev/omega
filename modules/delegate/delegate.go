@@ -59,34 +59,68 @@ func NewDelegate() *Delegate {
 	}
 }
 
-// Tools returns the delegate.task and delegate.status tools.
+// delegateActions is the structured sub-action metadata for the
+// consolidated delegate tool: one source of truth for the schema enum,
+// the prompt, and the /tools inventory.
+var delegateActions = []agent.ToolAction{
+	{Name: "task", Description: "Spawn a subagent to work on a task in the background."},
+	{Name: "status", Description: "Check the status of running and completed subagent tasks."},
+}
+
+// Tools returns the delegate domain tool. The two dotted verbs fold
+// into one action protocol; the legacy names stay registered as alias
+// shims for one release.
 func (d *Delegate) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
-		"delegate.task": {
-			Description: "Spawn a subagent to work on a task in the background. The subagent runs as a separate omega process with a fresh context. Returns immediately with a task ID. The result is automatically injected when the subagent finishes. Do not end the conversation until all delegated tasks complete.",
+	tools := map[string]agent.Tool{
+		"delegate": {
+			Description: "Spawn subagents that run as separate omega processes with a fresh context. Results are injected automatically when a subagent finishes - do not end the conversation until all delegated tasks complete.",
+			Actions:     delegateActions,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"action": map[string]any{
+						"type":        "string",
+						"description": "task (spawn a subagent) or status (check running/completed).",
+					},
 					"prompt": map[string]any{
 						"type":        "string",
-						"description": "Self-contained task prompt for the subagent",
+						"description": "Self-contained task prompt for the subagent (required for action task).",
 					},
 					"timeout": map[string]any{
 						"type":        "integer",
-						"description": "Max seconds to wait (default 300)",
+						"description": "Max seconds to wait (action task, default 300).",
 					},
 				},
-				"required": []string{"prompt"},
+				"required": []string{"action"},
 			},
-			Run: d.runDelegateTask,
+			Run: d.runDelegate,
 		},
-		"delegate.status": {
-			Description: "Check the status of running and completed subagent tasks. Returns running count and task list with IDs, prompts, and status.",
-			Parameters: map[string]any{
-				"type": "object",
+	}
+	for _, a := range delegateActions {
+		legacy := map[string]string{"task": "delegate.task", "status": "delegate.status"}[a.Name]
+		action := a.Name
+		tools[legacy] = agent.Tool{
+			Description: fmt.Sprintf("%s (alias for delegate with action %q)", a.Description, action),
+			AliasOf:     "delegate",
+			Run: func(ctx context.Context, args map[string]any) (string, error) {
+				args["action"] = action
+				return d.runDelegate(ctx, args)
 			},
-			Run: d.runDelegateStatus,
-		},
+		}
+	}
+	return tools
+}
+
+// runDelegate dispatches the consolidated delegate tool.
+func (d *Delegate) runDelegate(ctx context.Context, args map[string]any) (string, error) {
+	action, _ := args["action"].(string)
+	switch action {
+	case "task":
+		return d.runDelegateTask(ctx, args)
+	case "status":
+		return d.runDelegateStatus(ctx, args)
+	default:
+		return "", fmt.Errorf("action is required: one of task, status")
 	}
 }
 

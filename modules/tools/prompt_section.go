@@ -12,10 +12,14 @@ import (
 const promptSectionOrder = 30
 
 // PromptSections renders the "## Tools" section: one "### <extension>"
-// block per extension that has tools. Owned here because the
-// firstLine policy for tool descriptions is tools-seam knowledge - the
-// full descriptions already reach the LLM via the provider's JSON
-// tool schemas.
+// block per extension that has tools. Each tool renders as a domain
+// line; a tool with structured Actions renders the split - the domain
+// context once, then each action labeled with its one-liner. The old
+// blob-style multi-sentence description is gone in both renderers
+// (prompt + webui) because both draw from the same metadata. Owned
+// here because the firstLine policy for tool descriptions is
+// tools-seam knowledge - the full descriptions already reach the LLM
+// via the provider's JSON tool schemas.
 func (p *Plugin) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
 	var sb strings.Builder
 	for _, ext := range opts.Extensions {
@@ -25,6 +29,9 @@ func (p *Plugin) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSec
 		fmt.Fprintf(&sb, "### %s\n", ext.Name)
 		for _, t := range ext.ToolList {
 			fmt.Fprintf(&sb, "- %s: %s\n", t.Name, firstLine(t.Description))
+			for _, a := range t.Actions {
+				fmt.Fprintf(&sb, "  .%s: %s\n", a.Name, a.Description)
+			}
 		}
 		sb.WriteString("\n")
 	}

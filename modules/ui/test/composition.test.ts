@@ -121,6 +121,11 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
 test("the canary component lives in the tools module, not the shell", () => {
   const src = readFileSync(`${root}/../tools/ui/ToolsList.vue`, "utf8");
   assert.ok(src.includes('fetch("/tools")'), "self-contained GET /tools fetch");
+  // card t_73994e55: a domain tool's actions[] renders as dotted
+  // sub-rows, each action with its own description (memory.add,
+  // files.write, task.create, ...)
+  assert.ok(src.includes("tools-actions"), "sub-row list present");
+  assert.ok(src.includes("t.name }}.{{ a.name"), "dotted sub-row naming");
   assert.ok(
     !src.includes("composables/omega"),
     "no shell client dependency - module UI carries its own wiring",

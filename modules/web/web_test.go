@@ -284,18 +284,66 @@ func TestExtensionImplementsToolProvider(t *testing.T) {
 	var _ agent.ToolProvider = (*Extension)(nil)
 }
 
-// TestToolsShape checks both tools are registered with correct names.
+// TestToolsShape checks the folded domain tool plus its alias shims
+// are registered with correct names.
 func TestToolsShape(t *testing.T) {
 	ext := New(Default()) // no API key, tools still registered
 	tools := ext.Tools()
-	if _, ok := tools["web.search"]; !ok {
-		t.Error("missing web.search tool")
+	for _, name := range []string{"web", "web.search", "web.fetch"} {
+		if _, ok := tools[name]; !ok {
+			t.Errorf("missing %s tool", name)
+		}
 	}
-	if _, ok := tools["web.fetch"]; !ok {
-		t.Error("missing web.fetch tool")
+	if len(tools) != 3 {
+		t.Errorf("expected 3 tools, got %d", len(tools))
 	}
-	if len(tools) != 2 {
-		t.Errorf("expected 2 tools, got %d", len(tools))
+	// Aliases route through the folded dispatcher and are marked.
+	for _, legacy := range []string{"web.search", "web.fetch"} {
+		if tools[legacy].AliasOf != "web" {
+			t.Errorf("%s not marked AliasOf=web", legacy)
+		}
+	}
+	// The domain tool's enum covers both verbs via the metadata.
+	names := webActionNames(t)
+	if names[0] != "search" || names[1] != "fetch" {
+		t.Fatalf("actions metadata = %+v", ext.Tools()["web"].Actions)
+	}
+}
+
+// webActionNames reads the action names off the registered web tool.
+func webActionNames(t *testing.T) []string {
+	t.Helper()
+	ext := New(Default())
+	tools := ext.Tools()
+	names := make([]string, len(tools["web"].Actions))
+	for i, a := range tools["web"].Actions {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// TestRunWebRoutesBothActions is the fold gate: both verbs are
+// reachable through the folded dispatcher's action enum (validation
+// errors, no HTTP calls).
+func TestRunWebRoutesBothActions(t *testing.T) {
+	ext := New(Default())
+	// search routes
+	result, err := ext.runWeb(context.Background(), map[string]any{"action": "search"})
+	if err != nil || result != "error: query is required" {
+		t.Fatalf("search route: %q %v", result, err)
+	}
+	// fetch routes
+	result, err = ext.runWeb(context.Background(), map[string]any{"action": "fetch"})
+	if err != nil || result != "error: url is required" {
+		t.Fatalf("fetch route: %q %v", result, err)
+	}
+	// alias routes through the same dispatcher
+	if out, err := ext.Tools()["web.search"].Run(context.Background(), map[string]any{}); err != nil || out != "error: query is required" {
+		t.Fatalf("web.search alias: %q %v", out, err)
+	}
+	// unknown action
+	if _, err := ext.runWeb(context.Background(), map[string]any{}); err == nil {
+		t.Fatal("empty action accepted")
 	}
 }
 

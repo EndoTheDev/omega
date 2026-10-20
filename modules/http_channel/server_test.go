@@ -1731,6 +1731,37 @@ func TestTools(t *testing.T) {
 		t.Fatalf("tools = %+v, want provider tools in the sorted union", got4)
 	}
 
+	// domain tool with actions + alias: the folded row carries the
+	// actions metadata; the alias shim is hidden from the inventory.
+	a.SetToolProviders([]agent.ToolProvider{testToolProvider{tools: map[string]agent.Tool{
+		"memory": {
+			Description: "domain tool",
+			Actions:     []agent.ToolAction{{Name: "add", Description: "append"}, {Name: "remove", Description: "delete"}},
+		},
+		"files.read": {Description: "legacy shim", AliasOf: "files"},
+	}}})
+	rec6 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec6, httptest.NewRequest(http.MethodGet, "/tools", nil))
+	var got6 []toolListing
+	if err := json.Unmarshal(rec6.Body.Bytes(), &got6); err != nil {
+		t.Fatalf("decode actions body: %v", err)
+	}
+	var mem, legacyFound *toolListing
+	for i := range got6 {
+		switch got6[i].Name {
+		case "memory":
+			mem = &got6[i]
+		case "files.read":
+			legacyFound = &got6[i]
+		}
+	}
+	if legacyFound != nil {
+		t.Fatalf("alias shim leaked into the inventory: %+v", got6)
+	}
+	if mem == nil || len(mem.Actions) != 2 || mem.Actions[0].Name != "add" || mem.Actions[0].Description != "append" {
+		t.Fatalf("memory row missing actions metadata: %+v", mem)
+	}
+
 	// empty registry: [] on the wire, never null
 	bare := newTestServer()
 	rec2 := httptest.NewRecorder()

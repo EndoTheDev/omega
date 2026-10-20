@@ -6,11 +6,79 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
+// ToolAction is one named sub-action of a domain tool. A tool that
+// packs several verbs behind one name declares them here so the JSON
+// schema enum, the system prompt, and the /tools inventory all derive
+// from this one source of truth - enum drift becomes impossible.
+type ToolAction struct {
+	Name        string
+	Description string // one-liner, labeled under the tool in the prompt
+}
+
 // Tool is a callable the model may invoke. The map key is the tool name.
 type Tool struct {
 	Description string
 	Parameters  map[string]any
 	Run         func(ctx context.Context, args map[string]any) (string, error)
+
+	// Actions optionally lists the sub-actions of a domain tool. When
+	// set, the "action" property's enum in the JSON schema derives from
+	// these names (see SchemaParameters), and the prompt + /tools
+	// render the split (domain line, then labeled sub-actions).
+	Actions []ToolAction
+
+	// AliasOf marks a backward-compatibility shim: an old tool name
+	// that maps onto a folded domain tool. Aliases stay callable by
+	// the model for one release but are hidden from the prompt and
+	// the /tools inventory, which show the folded tool only.
+	AliasOf string
+}
+
+// ActionNames returns the action names in declaration order.
+func (t Tool) ActionNames() []string {
+	if len(t.Actions) == 0 {
+		return nil
+	}
+	names := make([]string, len(t.Actions))
+	for i, a := range t.Actions {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// SchemaParameters returns the tool's parameter schema with the
+// "action" property's enum derived from Actions. Tools without
+// Actions are returned untouched. The derivation replaces only the
+// enum (and injects the property if the tool forgot to declare it);
+// any property description survives.
+func (t Tool) SchemaParameters() map[string]any {
+	if len(t.Actions) == 0 {
+		return t.Parameters
+	}
+	out := make(map[string]any, len(t.Parameters)+1)
+	for k, v := range t.Parameters {
+		out[k] = v
+	}
+	propsRaw, _ := out["properties"]
+	props, _ := propsRaw.(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+	}
+	newProps := make(map[string]any, len(props)+1)
+	for k, v := range props {
+		newProps[k] = v
+	}
+	actionRaw := props["action"]
+	action, _ := actionRaw.(map[string]any)
+	newAction := make(map[string]any, len(action)+1)
+	for k, v := range action {
+		newAction[k] = v
+	}
+	newAction["type"] = "string"
+	newAction["enum"] = t.ActionNames()
+	newProps["action"] = newAction
+	out["properties"] = newProps
+	return out
 }
 
 // Agent runs the multi-turn conversation loop between a provider and a
