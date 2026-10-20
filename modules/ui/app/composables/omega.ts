@@ -939,6 +939,17 @@ export function pillVisible(
   return !isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
 }
 
+// scrollFlushTick picks how a notify-driven scroll reaches the layout.
+// requestAnimationFrame is frozen for the lifetime of a hidden document
+// (send -> switch tab/window: the run's body would never follow the tail
+// again until the tab came back). A timer flush queues behind the same
+// microtask render flush rAF was covering, so the DOM the callback
+// measures is current in both cases.
+export type ScrollFlushTick = "raf" | "timer";
+export function scrollFlushTick(hidden: boolean): ScrollFlushTick {
+  return hidden ? "timer" : "raf";
+}
+
 // --- markdown rendering (assistant bubbles) ---
 
 // html:false stays - the sanitizer contract from above: the highlighter
