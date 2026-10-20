@@ -205,6 +205,27 @@ export interface ChatHost {
 
 export const CHAT_HOST_KEY: InjectionKey<ChatHost> = Symbol("omega-chat-host");
 
+// --- the ONE composer button's face (t_357cbe9c) ---
+//
+// retry and send merge into a single morphing affordance: while this
+// session's run streams the button is the stop control; idle, a typed
+// draft or a pending attachment means send (the button disables when
+// there is nothing to send), and an empty composer with an exchange in
+// the transcript means retry. Draft beats retry: typed input is a new
+// message, never a replay. Pure so the morph states stay testable.
+
+export type ComposerFace = "stop" | "retry" | "send";
+
+export function composerFace(
+  busy: boolean,
+  canRetry: boolean,
+  canSend: boolean,
+): ComposerFace {
+  if (busy) return "stop";
+  if (!canSend && canRetry) return "retry";
+  return "send";
+}
+
 /** the title goroutine writes the session label seconds AFTER the first
     exchange ends - one delayed refresh picks the label up without a
     manual reload (the pre-card rule carried over from app.vue). */
@@ -607,16 +628,34 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     return true;
   }
 
-  // retry re-sends the session's last COMPLETE user message as a FRESH
-  // turn: the interrupted exchange stays in the transcript - its partial
-  // output and marker are the honest record - and submit appends a NEW
-  // user bubble; history is never rewritten.
+  // retry re-runs the session's last user message through the SERVER
+  // (t_357cbe9c): the /chat retry flag replays the persisted last user
+  // turn - no duplicate user bubble is stored, the previous (partial or
+  // complete) response stays put and the fresh one appends BELOW it.
+  // No client transcript surgery, reload-safe; the run slot, the 409
+  // gate and the cancel semantics are the normal send's. The old
+  // client-side resend path (submit-the-old-text) is retired.
   async function retry(key: string, model?: string, thinking?: number): Promise<boolean> {
     const st = ensureState(key);
     if (composerBusy(key)) return false;
-    const text = lastUserText(st.transcript);
-    if (text === null) return false;
-    submit(key, text, model, thinking);
+    // a retry has to land in an EXISTING session - an unsaved tab has
+    // nothing persisted to replay
+    const sessionId = st.sessionId;
+    if (!sessionId) return false;
+    // the transcript's last user message is the retry target: the
+    // affordance exists only when an exchange sits there, and the
+    // server re-validates against the persisted history (trailing
+    // assistant partials never reach the wire - the server replays
+    // up to the last user turn it stored)
+    if (lastUserText(st.transcript) === null) return false;
+    // a stale resume affordance retires when its retry fires - the
+    // fresh stream appends its own marker if it dies the same way
+    if (hasInterruptedMarker(st.transcript))
+      st.transcript = withoutMarkers(st.transcript);
+    await runStream(st, (drv) =>
+      // messages stay empty: the body is the retry flag alone
+      streamChat([], sessionId, drv.handlers, model, thinking, true),
+    );
     return true;
   }
 

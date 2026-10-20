@@ -220,11 +220,12 @@ describe("last complete user message", () => {
   });
 });
 
-describe("retry transcript transitions (fresh-turn semantics)", () => {
-  // the retry re-sends the last user message as a NEW turn: the
-  // interrupted exchange stays, a fresh user bubble is appended,
-  // history is never rewritten
-  it("retry keeps the exchange and appends a fresh user message", () => {
+describe("retry transcript transitions (server replay semantics, t_357cbe9c)", () => {
+  // the retry is SERVER-side now: POST /chat {"retry": true} re-runs
+  // the PERSISTED last user turn - the client pushes NO user bubble,
+  // performs no transcript surgery, and only retires its stale marker
+  // (the fresh response appends on its own as the stream runs)
+  it("retry keeps one user bubble - the client only strips the marker", () => {
     const st: TranscriptItemLike[] = [
       { kind: "message", role: "user", content: "old q" },
       { kind: "message", role: "assistant", content: "old a" },
@@ -234,14 +235,11 @@ describe("retry transcript transitions (fresh-turn semantics)", () => {
       { kind: "message", role: "assistant", content: "partial" },
       { kind: "interrupted" },
     ];
-    // what the app's retryStream does: read the text, re-send through
-    // submitText (which strips markers on a fresh send and pushes a new
-    // user bubble)
-    const text = lastUserText(st);
-    assert.equal(text, "kick off");
+    // lastUserText is the presence check behind the affordance: text
+    // exists to replay, the text itself never re-rides the wire
+    assert.equal(lastUserText(st), "kick off");
     const after = withoutMarkers(st);
-    after.push({ kind: "message", role: "user", content: text! });
-    // every pre-retry item survives, in order
+    // every pre-retry item survives untouched, in order, NOTHING pushed
     assert.deepEqual(
       after.map((i) => [i.kind, i.role, i.content]),
       [
@@ -251,31 +249,27 @@ describe("retry transcript transitions (fresh-turn semantics)", () => {
         ["thinking", undefined, "hm"],
         ["tool", undefined, undefined],
         ["message", "assistant", "partial"],
-        ["message", "user", "kick off"],
       ],
     );
     assert.equal(hasInterruptedMarker(after), false);
   });
 
-  it("retry of a CLEAN last exchange is the same append (no history rewrite)", () => {
+  it("retry of a clean exchange touches nothing (no marker to retire)", () => {
     const st: TranscriptItemLike[] = [
       { kind: "message", role: "user", content: "q" },
       { kind: "message", role: "assistant", content: "a" },
     ];
-    const text = lastUserText(st);
-    assert.equal(text, "q");
-    st.push({ kind: "message", role: "user", content: text! });
-    assert.equal(st.length, 3);
+    assert.equal(lastUserText(st), "q");
+    assert.equal(withoutMarkers(st).length, 2);
     assert.equal(hasInterruptedMarker(st), false);
   });
 
-  it("retry without a user message does nothing (composer hides the button)", () => {
+  it("retry without a user message does nothing (composer hides the affordance)", () => {
     const st: TranscriptItemLike[] = [
       { kind: "message", role: "assistant", content: "x" },
       { kind: "interrupted" },
     ];
     assert.equal(lastUserText(st), null);
-    // append-side has nothing to base a transcript rewrite on
     assert.equal(hasInterruptedMarker(st), true);
   });
 
@@ -326,8 +320,9 @@ describe("createItemKeySource", () => {
       { kind: "tool", name: "sh", status: "done" },
     ];
     const headKeys = head.map(keyOf);
-    // retryStream drops the dead tail and the retried exchange pushes
-    // NEW objects - each must mount as a new bubble, not reuse head keys
+    // a retry's APPENDED stream (and stripped-stale-marker rebuilds)
+    // push NEW objects - each must mount as a new bubble, not reuse
+    // head keys
     const retried: TranscriptItemLike = {
       kind: "tool",
       name: "sh",

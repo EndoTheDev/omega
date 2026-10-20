@@ -1,11 +1,10 @@
 // omega webui: image input support - the pure helpers (magic sniff,
-// data URLs, retry image carry). Run: node --test modules/ui/test/
+// data URLs). Run: node --test modules/ui/test/
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
   dataUrl,
-  lastUserImages,
   lastUserText,
   mediaTypeFromBase64,
   type OmegaImage,
@@ -49,24 +48,20 @@ describe("dataUrl", () => {
   });
 });
 
-describe("lastUserImages", () => {
-  const png: OmegaImage = { media_type: "image/png", base64: "iVBORw0KGgo=" };
-  it("returns the last user message's images", () => {
+describe("lastUserText (the retry affordance's presence check)", () => {
+  it("finds the last user message's text", () => {
     const items: TranscriptItemLike[] = [
-      { kind: "message", role: "user", content: "with", images: [png] },
+      { kind: "message", role: "user", content: "with" },
       { kind: "message", role: "assistant", content: "here" },
-      { kind: "message", role: "user", content: "again", images: [png] },
+      { kind: "message", role: "user", content: "again" },
     ];
-    assert.deepEqual(lastUserImages(items), [png]);
+    assert.equal(lastUserText(items), "again");
+    assert.equal(lastUserText([{ kind: "thinking", content: "..." }]), null);
   });
-  it("returns [] when no user message or no images", () => {
-    assert.deepEqual(lastUserImages([]), []);
-    assert.deepEqual(lastUserImages([{ kind: "message", role: "user", content: "plain" }]), []);
-    assert.deepEqual(lastUserImages([{ kind: "thinking", content: "..." }]), []);
-  });
-  it("lastUserText still works alongside", () => {
-    const items: TranscriptItemLike[] = [{ kind: "message", role: "user", content: "hi", images: [] }];
+  it("images on the user bubble are irrelevant now - the server replays the persisted turn", () => {
+    const items: TranscriptItemLike[] = [
+      { kind: "message", role: "user", content: "hi" },
+    ];
     assert.equal(lastUserText(items), "hi");
-    assert.deepEqual(lastUserImages(items), []);
   });
 });
