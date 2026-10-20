@@ -6,6 +6,7 @@
 // Run: node --test test/
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { ref } from "vue";
 
 import {
   COMPOSER_FOCUS_KEY,
@@ -131,11 +132,12 @@ describe("composer focus signal", () => {
   it("focusDelivers only to the matching, keyed tab", () => {
     const s = createComposerFocusSignal();
     s.request("c1");
-    const req = { focusKey: s.focusKey.value };
-    assert.equal(focusDelivers(req, "c1"), true);
-    assert.equal(focusDelivers(req, "c2"), false, "hidden/other tabs never receive");
-    assert.equal(focusDelivers({ focusKey: "c9" }, ""), false, "a keyless tab receives nothing");
-    assert.equal(focusDelivers({ focusKey: null }, "c1"), false);
+    // production passes the SIGNAL: focusKey is a Ref. Tests that
+    // unwrap .value here validate a shape the app never sends.
+    assert.equal(focusDelivers(s, "c1"), true);
+    assert.equal(focusDelivers(s, "c2"), false, "hidden/other tabs never receive");
+    assert.equal(focusDelivers({ focusKey: ref("c9") }, ""), false, "a keyless tab receives nothing");
+    assert.equal(focusDelivers({ focusKey: ref(null) }, "c1"), false);
   });
 
   it("the injection key exists (app provides, ChatTab injects)", () => {
