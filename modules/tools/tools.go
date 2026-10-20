@@ -7,6 +7,7 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -219,6 +220,7 @@ func parseFileOperations(raw any) ([]fileOp, error) {
 func (p *ToolProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, error) {
 	snap := make(map[string][]byte, len(ops)) // abs path -> bytes; absent from map = file did not exist
 	existed := make(map[string]bool, len(ops))
+	modes := make(map[string]os.FileMode, len(ops)) // abs path -> original mode, for rollback
 	for _, op := range ops {
 		abs, err := filepath.Abs(op.Path)
 		if err != nil {
@@ -230,6 +232,11 @@ func (p *ToolProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, 
 		data, err := os.ReadFile(abs)
 		existed[abs] = err == nil
 		snap[abs] = data
+		if fi, statErr := os.Stat(abs); statErr == nil {
+			modes[abs] = fi.Mode().Perm()
+		} else {
+			modes[abs] = 0o644
+		}
 	}
 
 	var out strings.Builder
@@ -247,7 +254,7 @@ func (p *ToolProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, 
 			continue
 		}
 		// Roll back everything touched.
-		restoreFiles(snap, existed)
+		restoreFiles(snap, existed, modes)
 		return "", fmt.Errorf("batch failed at operations[%d] (%s %s): %v (rolled back)", i, op.Action, op.Path, err)
 	}
 	out.WriteString(fmt.Sprintf("%d operations applied atomically", len(ops)))
@@ -268,14 +275,20 @@ func opArgs(op fileOp) map[string]any {
 }
 
 // restoreFiles writes every snapshot back and removes files that did
-// not exist before the batch.
-func restoreFiles(snap map[string][]byte, existed map[string]bool) {
+// not exist before the batch. Writes are atomic (temp + rename) with
+// each file's ORIGINAL mode - a rollback must not truncate a
+// half-written file in place or chmod a 0600 file world-readable.
+func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[string]os.FileMode) {
 	for abs, data := range snap {
 		if !existed[abs] {
 			os.Remove(abs) //nolint:errcheck // rollback is best effort
 			continue
 		}
-		if err := os.WriteFile(abs, data, 0o644); err != nil {
+		mode, ok := modes[abs]
+		if !ok {
+			mode = 0o644
+		}
+		if err := agent.WriteFileAtomic(abs, data, mode); err != nil {
 			// Keep going: restoring the remaining files matters more
 			// than failing loudly on one.
 			continue
@@ -306,10 +319,40 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
+// shellOutputCap bounds how much of a command's combined output
+// buffers in memory: CombinedOutput buffered EVERYTHING before the
+// agent loop's MaxToolOutput truncation ever ran, so 'cat 500MB' or a
+// forever-streaming command ballooned omega's RSS into an OOM that
+// killed the server holding the store.
+const shellOutputCap = 1 << 20 // 1 MB
+
+// cappedBuffer accepts all writes but keeps at most shellOutputCap
+// bytes, counting the overflow for an honest truncation note.
+type cappedBuffer struct {
+	mu   sync.Mutex
+	buf  bytes.Buffer
+	over int64
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if room := shellOutputCap - b.buf.Len(); room > 0 {
+		if len(p) <= room {
+			b.buf.Write(p) //nolint:errcheck // bytes.Buffer never errors
+		} else {
+			b.buf.Write(p[:room]) //nolint:errcheck // bytes.Buffer never errors
+		}
+	}
+	b.over += int64(len(p))
+	return len(p), nil
+}
+
 // RunShell executes a shell command and returns combined output. The
 // command runs under the call ctx: a cancelled ctx (the detached run's
 // wall-clock cap) kills the process - without this, a command that
-// never returns hangs the tool loop past any run timeout.
+// never returns hangs the tool loop past any run timeout. Output is
+// capped at shellOutputCap bytes (cappedBuffer), not buffered whole.
 func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (string, error) {
 	command, err := argString(args, "command")
 	if err != nil {
@@ -329,11 +372,26 @@ func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (strin
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
 		shellKillSetup(cmd)
 	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("command failed: %w", err)
+	outBuf := &cappedBuffer{}
+	cmd.Stdout = outBuf
+	cmd.Stderr = outBuf
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("command failed: %w", err)
 	}
-	return string(out), nil
+	if err := cmd.Wait(); err != nil {
+		return shellOutput(outBuf), fmt.Errorf("command failed: %w", err)
+	}
+	return shellOutput(outBuf), nil
+}
+
+// shellOutput renders a capped buffer: the kept bytes plus an honest
+// total-count note when output was dropped.
+func shellOutput(b *cappedBuffer) string {
+	out := b.buf.String()
+	if b.over > 0 {
+		out += fmt.Sprintf("\n... [output truncated, %d bytes total]", b.over+int64(b.buf.Len()))
+	}
+	return out
 }
 
 // RunReadFile reads a file with line numbers, honoring offset/limit.
@@ -429,7 +487,7 @@ func (p *ToolProvider) RunWriteFile(_ context.Context, args map[string]any) (str
 			return "", fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := agent.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
 	return fmt.Sprintf("wrote %d bytes to %s", len(content), path), nil
@@ -478,7 +536,7 @@ func (p *ToolProvider) RunEdit(_ context.Context, args map[string]any) (string, 
 	}
 
 	patched := strings.Replace(text, oldString, newString, 1)
-	if err := os.WriteFile(path, []byte(patched), 0o644); err != nil {
+	if err := agent.WriteFileAtomic(path, []byte(patched), 0o644); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
 

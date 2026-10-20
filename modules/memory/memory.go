@@ -244,12 +244,14 @@ func (fm *FileMemory) load(target string) string {
 }
 
 // loadEntries reads the file and splits into §-delimited entries.
+// The split matches the writer EXACTLY ("\\n§\\n"): a bare-§ split
+// tore any entry containing a § into phantom entries on next load.
 func (fm *FileMemory) loadEntries(target string) []string {
 	raw := fm.load(target)
 	if raw == "" {
 		return nil
 	}
-	parts := strings.Split(raw, entrySep)
+	parts := strings.Split(raw, "\n"+entrySep+"\n")
 	var entries []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -261,13 +263,15 @@ func (fm *FileMemory) loadEntries(target string) []string {
 }
 
 // saveEntries writes entries back to the file with § delimiters.
+// Atomic (temp + rename): a crash mid-save must not truncate
+// accumulated memory in place.
 func (fm *FileMemory) saveEntries(target string, entries []string) error {
 	path := fm.targetFile(target)
 	content := strings.Join(entries, "\n"+entrySep+"\n")
 	if content != "" {
 		content += "\n"
 	}
-	return os.WriteFile(path, []byte(content), 0644)
+	return agent.WriteFileAtomic(path, []byte(content), 0o644)
 }
 
 // findEntry finds the index of the entry containing oldText as a substring.

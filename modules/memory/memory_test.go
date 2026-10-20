@@ -705,3 +705,31 @@ func TestPromptSections(t *testing.T) {
 func TestFileMemoryImplementsPromptSectioner(t *testing.T) {
 	var _ agent.PromptSectioner = (*FileMemory)(nil)
 }
+
+// TestFileMemoryEntrySepRoundTrip pins the delimiter contract: an
+// entry CONTAINING a § must survive a save/load round-trip as one
+// entry. The old loader split on bare §, tearing such entries into
+// phantom pieces on the next load.
+func TestFileMemoryEntrySepRoundTrip(t *testing.T) {
+	fm := newTestMemory(t)
+
+	plain := "Budget runs out in March."
+	spicy := "Budget § 500 - the section sign stays inside the entry."
+	if _, err := fm.Add(targetMemory, plain); err != nil {
+		t.Fatalf("Add plain: %v", err)
+	}
+	if _, err := fm.Add(targetMemory, spicy); err != nil {
+		t.Fatalf("Add spicy: %v", err)
+	}
+
+	entries, err := fm.List(targetMemory)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d (%q), want 2", len(entries), entries)
+	}
+	if entries[1] != spicy {
+		t.Fatalf("entry 1 = %q, want the § entry intact", entries[1])
+	}
+}
