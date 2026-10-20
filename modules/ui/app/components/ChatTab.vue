@@ -35,7 +35,8 @@
         v-else
         class="messages"
         :class="{ stacked: appearance === 'stacked' }"
-        ref="messagesEl">
+        ref="messagesEl"
+        @scroll="onScroll">
         <p
           v-if="transcript.length === 0"
           class="empty">
@@ -135,6 +136,7 @@
     pillVisible,
     lastUserText,
     liveRunSlice,
+    scrollFlushTick,
     splitBlocks,
     thinkingLevelWire,
     type Appearance,
@@ -313,7 +315,13 @@
 
   function scrollDown(force = false) {
     if (force) pinned.value = true;
-    requestAnimationFrame(() => {
+    // rAF only while the document can paint; a hidden document never
+    // fires rAF callbacks, which stalled the tail-follow for every run
+    // the user wasn't watching. scrollFlushTick documents the trade.
+    const tick = scrollFlushTick(document.hidden);
+    (
+      tick === "raf" ? requestAnimationFrame : (fn: () => void) => setTimeout(fn, 0)
+    )(() => {
       const el = scrollEl();
       if (!el) return;
       if (!force && !pinned.value) return;
@@ -362,7 +370,10 @@
 
   // --- mount: the tab's restore + live-attach entry ---
   onMounted(async () => {
-    messagesEl.value?.addEventListener("scroll", onScroll);
+    // scroll wiring is the template's @scroll on both containers - it
+    // re-binds on every branch swap (the live-run v-if/v-else replaces
+    // the settled column element; an onMounted-bound listener would die
+    // with the first swap and leave the settled column deaf)
     // pending selection focus for a tab minted after the request (the
     // new-chat / fresh-session open path)
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
@@ -402,7 +413,6 @@
   );
 
   onBeforeUnmount(() => {
-    messagesEl.value?.removeEventListener("scroll", onScroll);
     if (state.value) state.value.notify = undefined;
   });
 </script>

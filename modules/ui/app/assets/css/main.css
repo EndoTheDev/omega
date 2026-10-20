@@ -882,6 +882,23 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .files-tree .chev.file { border-left-color: transparent; }
 .files-tree .chev.open { transform: rotate(90deg); }
 
+/* row glyphs (card t_467a0386): the inline-SVG box sits where the name
+   used to start; currentColor-only strokes/fills, so the row's dim text
+   color and hover surface carry them - no icon colors of their own.
+   Sizes stay right-aligned (the .size row rule is untouched) and the
+   depth indent math is unchanged. */
+.files-tree .glyph {
+  flex-shrink: 0;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+}
+.files-tree .glyph svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .tree-error {
   margin: 0;
   padding-block: 3px 5px;

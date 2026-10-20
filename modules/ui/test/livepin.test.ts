@@ -10,6 +10,7 @@ import {
   splitBlocks,
   isAtBottom,
   pillVisible,
+  scrollFlushTick,
 } from "../app/composables/omega.ts";
 
 import type { TranscriptItem } from "../app/composables/chat.ts";
@@ -130,5 +131,19 @@ describe("live body tail-follow (long body)", () => {
 
   it("a body that does not fill the pane counts as at bottom (nothing to follow)", () => {
     assert.equal(isAtBottom(0, 400, 300), true);
+  });
+});
+
+describe("scrollFlushTick (hidden-document tail-follow, card t_467a0386)", () => {
+  // the observed repro shape: a run streamed with the document hidden
+  // (user alt-tabbed away) never followed the tail - rAF callbacks are
+  // frozen for a hidden document's whole lifetime. The tick planner
+  // picks the flush that works in each state.
+  it("a visible document keeps the rAF flush", () => {
+    assert.equal(scrollFlushTick(false), "raf");
+  });
+
+  it("a hidden document flushes on a timer instead (rAF is frozen there)", () => {
+    assert.equal(scrollFlushTick(true), "timer");
   });
 });
