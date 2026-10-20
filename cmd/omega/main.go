@@ -426,6 +426,13 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// non-disruptive knobs (http timeout, compaction) when config.yaml
 	// changes on disk — hand edits and pane saves take the same path.
 	configFile := resolveConfigPath(configPath)
+	if configFile == "" {
+		// Fresh install, no config.yaml anywhere: pane saves need a
+		// real target - writing "" would drop a litter file in the
+		// server's CWD and 400 every save. Default to the config/
+		// layout; writeConfigFile creates parents.
+		configFile = omegaHome() + "/config/config.yaml"
+	}
 	WatchConfig(configFile, func(newCfg Config) {
 		hotApply(newCfg, pctx)
 	})

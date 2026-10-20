@@ -242,7 +242,6 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 // provider default.
 type chatRequest struct {
 	Messages      []json.RawMessage `json:"messages"`
-	Tools         []string          `json:"tools,omitempty"`
 	SessionID     string            `json:"session_id,omitempty"`
 	Model         string            `json:"model,omitempty"`
 	ThinkingLevel int               `json:"thinking_level,omitempty"`
@@ -472,7 +471,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	tools := s.selectTools(req.Tools)
+	tools := s.tools
 
 	// No store: the legacy ephemeral path. The stream still rides this
 	// request, client presence still gates the run.
@@ -1254,21 +1253,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
-}
-
-// selectTools filters the server registry to the requested tool names.
-// An empty list returns the full registry.
-func (s *Server) selectTools(names []string) map[string]agent.Tool {
-	if len(names) == 0 {
-		return s.tools
-	}
-	selected := make(map[string]agent.Tool, len(names))
-	for _, name := range names {
-		if tool, ok := s.tools[name]; ok {
-			selected[name] = tool
-		}
-	}
-	return selected
 }
 
 // decodeMessages decodes polymorphic ai.Message values from JSON using a
