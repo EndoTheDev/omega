@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -299,4 +300,169 @@ func kindsOf(items []transcriptItem) []string {
 		out[i] = it.Kind
 	}
 	return out
+}
+
+// TestLiveTranscriptItemsWireOrderShapesRunState: the accumulator's
+// closed segments + the open record flatten to wire items in the order
+// the live stream produced them, with the running hints on the
+// in-flight parts only (card t_692254f7 fix A).
+func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
+	// closed segment: thinking + preamble + a call the results answered
+	closed := assistantRecord{
+		thinking: "check first",
+		content:  "running the check",
+		toolCalls: []ai.ToolCall{
+			{ID: "tc1", Name: "go_test", Arguments: map[string]any{"pkg": "./..."}},
+		},
+		results:  []ai.ToolResult{ai.NewToolResult("PASS", "tc1", false)},
+		thinkDur: 1500 * time.Millisecond,
+		respDur:  200 * time.Millisecond,
+	}
+	// open record: thinking streaming, one already-resulted call plus
+	// one still-running (started 2s ago), no trailing chunk yet
+	start := time.Now().Add(-2 * time.Second)
+	open := assistantRecord{
+		thinking: "and again",
+		toolCalls: []ai.ToolCall{
+			{ID: "tc2", Name: "go_test", Arguments: map[string]any{"pkg": "./modules/ui"}},
+			{ID: "tc3", Name: "shell.run"},
+		},
+		results:    []ai.ToolResult{ai.NewToolResult("OK", "tc2", false)},
+		callStarts: map[string]time.Time{"tc2": start, "tc3": start},
+	}
+	items := liveTranscriptItems([]assistantRecord{closed}, open, time.Now())
+
+	want := []string{"thinking", "message", "tool_call", "tool_result",
+		"thinking", "tool_call", "tool_call", "tool_result"}
+	got := kindsOf(items)
+	if len(got) != len(want) {
+		t.Fatalf("items = %v, want %v", got, want)
+	}
+	for i, k := range want {
+		if items[i].Kind != k {
+			t.Fatalf("items[%d].kind = %q, want %q (order: %v)", i, items[i].Kind, k, got)
+		}
+	}
+	// closed segment: complete spans measured, nothing running
+	if items[0].Running || items[0].ThinkingMs != 1500 {
+		t.Fatalf("closed thinking = %+v", items[0])
+	}
+	if items[1].Running || items[1].ResponseMs != 200 {
+		t.Fatalf("closed message = %+v", items[1])
+	}
+	if items[2].Running {
+		t.Fatalf("resulted call must not be running: %+v", items[2])
+	}
+	if items[3].ToolCallID != "tc1" || items[3].Content != "PASS" || items[3].Running {
+		t.Fatalf("closed result = %+v", items[3])
+	}
+	// open record: in-flight parts carry running, completed ones do not
+	if !items[4].Running || items[4].ThinkingMs != 0 {
+		t.Fatalf("open thinking must stream with no final span: %+v", items[4])
+	}
+	// tc2 already resulted: plain call, no running flag
+	if items[5].Running || items[5].ToolCall == nil || items[5].ToolCall.ID != "tc2" {
+		t.Fatalf("resulted call in open record = %+v", items[5])
+	}
+	// tc3 still running: the hint + elapsed-since-call-start
+	if !items[6].Running || items[6].ToolCall == nil || items[6].ToolCall.ID != "tc3" {
+		t.Fatalf("running call = %+v", items[6])
+	}
+	if items[6].ElapsedMs < 1500 {
+		t.Fatalf("running call elapsed = %d, want ~2000", items[6].ElapsedMs)
+	}
+	// the answered call's result rides as a plain result item - never
+	// running (terminal), matched client-side by tool_call_id
+	if items[7].Running || items[7].ToolCallID != "tc2" || items[7].Content != "OK" {
+		t.Fatalf("open record result = %+v", items[7])
+	}
+}
+
+// TestLiveTranscriptItemsEmptyOpenRecord: a bare open record (no chunks,
+// no calls - a run sitting between turns) contributes nothing.
+func TestLiveTranscriptItemsEmptyOpenRecord(t *testing.T) {
+	items := liveTranscriptItems(nil, assistantRecord{}, time.Now())
+	if items != nil {
+		t.Fatalf("empty state must yield nil, got %v", kindsOf(items))
+	}
+}
+
+// TestSessionTranscriptMergesLiveRun (fix A): persisted history + the
+// run's live tail in wire order when a run holds the session's slot.
+func TestSessionTranscriptMergesLiveRun(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "Live run"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "s1", ai.NewUser("count to 30")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	run, ok := s.runs.start("s1")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	// what launchRun snaps after each event: the open thinking block and
+	// the running tool call
+	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
+		toolCalls:  []ai.ToolCall{{ID: "tcl", Name: "shell.run"}},
+		callStarts: map[string]time.Time{"tcl": time.Now().Add(-5 * time.Second)},
+	}, time.Now()))
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items   []transcriptItem `json:"items"`
+		Running bool             `json:"running"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !body.Running {
+		t.Fatalf("the runHub holds the slot - running must be true")
+	}
+	if got, want := kindsOf(body.Items), []string{"user", "tool_call"}; len(got) != 2 {
+		t.Fatalf("items = %v, want %v (persisted user, then the live call)", got, want)
+	}
+	if body.Items[0].Kind != "user" || body.Items[0].Content != "count to 30" {
+		t.Fatalf("persisted head lost: %+v", body.Items[0])
+	}
+	tc := body.Items[1]
+	if !tc.Running || tc.ToolCall == nil || tc.ToolCall.Name != "shell.run" {
+		t.Fatalf("live tool item = %+v, want running shell.run", tc)
+	}
+	if tc.ElapsedMs < 4000 {
+		t.Fatalf("live tool item elapsed = %d, want ~5000", tc.ElapsedMs)
+	}
+}
+
+// TestTranscriptItemsUserImages (scope add 2026-10-20): persisted user
+// images ride the restore - thumbnails survive a reload.
+func TestTranscriptItemsUserImages(t *testing.T) {
+	imgs := []ai.ImageContent{{MediaType: "image/png", Base64: "aGk="}}
+	msgs := []agent.StoredMessage{
+		{Message: ai.NewUserWithImages("what is this", imgs), CreatedAt: "t0"},
+		{Message: ai.NewUser("text only"), CreatedAt: "t1"},
+	}
+	items := buildTranscriptItems(msgs)
+	if len(items) != 2 {
+		t.Fatalf("items = %v", kindsOf(items))
+	}
+	if len(items[0].Images) != 1 || items[0].Images[0].MediaType != "image/png" || items[0].Images[0].Base64 != "aGk=" {
+		t.Fatalf("images lost: %+v", items[0])
+	}
+	if items[1].Images != nil {
+		t.Fatalf("text-only user must not carry images: %+v", items[1])
+	}
+	// image-only user messages persist too (empty content, images set)
+	items = buildTranscriptItems([]agent.StoredMessage{
+		{Message: ai.NewUserWithImages("", imgs)},
+	})
+	if len(items) != 1 || len(items[0].Images) != 1 {
+		t.Fatalf("image-only user dropped: %+v", items)
+	}
 }

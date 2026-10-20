@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -35,6 +36,13 @@ type activeRun struct {
 	// its normal path, exactly like the timeout does. nil only in the
 	// start->launchRun window - a stop landing there is a 409.
 	cancel context.CancelFunc
+	// tail is the run's live transcript tail: the items rebuilt from the
+	// accumulator after each event (liveTranscriptItems) that GET
+	// /sessions/{id}/transcript merges behind the persisted history on a
+	// reattach. Guarded by h.mu and stored by REPLACE (each rebuild mints
+	// a fresh slice, never mutated in place), so a reader racing the next
+	// rebuild sees either the old or the new complete slice.
+	tail []transcriptItem
 }
 
 // runHub tracks detached runs by session id. It is the reattach
@@ -99,6 +107,33 @@ func (h *runHub) active(id string) bool {
 	defer h.mu.Unlock()
 	_, ok := h.runs[id]
 	return ok
+}
+
+// setTail stores the run's live transcript tail (the accumulator's
+// snapshot after the current event). The cur == run guard makes a late
+// setTail a no-op once another run re-registered the same session id.
+// Called from the run's own goroutine; the build happened OUTSIDE the
+// lock (liveTranscriptItems reads callStarts, which only that goroutine
+// mutates).
+func (h *runHub) setTail(run *activeRun, items []transcriptItem) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cur, ok := h.runs[run.id]; ok && cur == run {
+		run.tail = items
+	}
+}
+
+// tailItems returns the session's live run's transcript tail, for the
+// transcript endpoint's reattach merge. ok is false when no run holds
+// the session's slot - the endpoint then serves persisted history only.
+func (h *runHub) tailItems(id string) ([]transcriptItem, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	run, ok := h.runs[id]
+	if !ok {
+		return nil, false
+	}
+	return run.tail, true
 }
 
 // get returns the session's live run, for subscribing.
@@ -200,6 +235,13 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
 			meter.tick(event)
+			// Live-tail snapshot (card t_692254f7): the accumulator's state
+			// right after this event becomes the transcript endpoint's
+			// reattach merge - a refresh mid-run restores the open thinking
+			// block, the running tool call (elapsed ticking from the call's
+			// own start) and the segments not persisted yet. Built on this
+			// goroutine after accumulate; the hub only swaps the slice.
+			s.runs.setTail(run, liveTranscriptItems(recs, rec, time.Now()))
 			// Usage arrives on each stream_end; sum every turn of the run.
 			if se, ok := event.(agent.StreamEvent); ok {
 				if end, ok := se.Event.(ai.StreamEnd); ok {

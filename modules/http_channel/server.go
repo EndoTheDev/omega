@@ -40,10 +40,10 @@ type Server struct {
 	// a nil Skills serves an empty list on /skills, a nil Cron an
 	// empty list on /cron/jobs, and a nil logger (or one without a
 	// path) 404s on /logs.
-	Skills agent.SkillsProvider
-	Cron   agent.CronProvider
-	logger agent.LoggerProvider
-	httpSrv  *http.Server
+	Skills  agent.SkillsProvider
+	Cron    agent.CronProvider
+	logger  agent.LoggerProvider
+	httpSrv *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
 	// otherwise run forever and hold the session's run slot until

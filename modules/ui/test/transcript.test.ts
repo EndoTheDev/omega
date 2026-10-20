@@ -104,4 +104,47 @@ describe("renderTranscriptItems", () => {
     if (items[0].kind !== "tool") return;
     assert.equal(items[0].name, "mystery");
   });
+
+  // the live-run merge (card t_692254f7 fix A): the run's in-flight
+  // items carry `running` and render as the shapes the live stream
+  // paints - one contract, two sources.
+  it("a running tool_call renders the live line with its elapsed offset", () => {
+    const items = renderTranscriptItems([
+      {
+        kind: "tool_call",
+        tool_call: { id: "tc1", name: "shell.run", arguments: { cmd: "sleep 30" } },
+        running: true,
+        elapsed_ms: 7000,
+      },
+    ]);
+    assert.deepEqual(items.map((i) => i.kind), ["tool"]);
+    if (items[0].kind !== "tool") return;
+    assert.equal(items[0].status, "running");
+    assert.equal(items[0].elapsedMs, 7000);
+    assert.equal(items[0].finalMs, undefined, "no final duration while the call runs");
+    // a set result flag flips the line terminal even without the hint
+    const settled = renderTranscriptItems([
+      { kind: "tool_call", tool_call: { id: "tc2", name: "sh" }, running: true },
+      { kind: "tool_result", tool_call_id: "tc2", content: "out" },
+    ]);
+    if (settled[0].kind !== "tool") return;
+    assert.equal(settled[0].status, "done");
+    assert.equal(settled[0].elapsedMs, undefined);
+  });
+
+  it("running thinking and message blocks render streaming (the attach adopts them)", () => {
+    const items = renderTranscriptItems([
+      { kind: "message", content: "pre", time: "t0", response_ms: 100 },
+      { kind: "thinking", content: "still going", running: true },
+      { kind: "message", content: "partial answer", running: true },
+    ]);
+    if (items[0].kind !== "message") return;
+    assert.equal(items[0].streaming, undefined, "a persisted segment mounts final");
+    const think = items[1];
+    if (think.kind !== "thinking") return assert.fail("items[1] not thinking");
+    assert.equal(think.streaming, true, "open thinking streams from the restored item");
+    const bubble = items[2];
+    if (bubble.kind !== "message") return assert.fail("items[2] not message");
+    assert.equal(bubble.streaming, true, "open response block streams from the restored item");
+  });
 });

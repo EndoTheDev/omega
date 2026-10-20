@@ -143,6 +143,9 @@ export interface ToolItem {
   result?: string;
   // server-measured duration from the matched result (restored)
   finalMs?: number;
+  // elapsed already consumed by a STILL-RUNNING restored call (the
+  // transcript's live-run merge): the meter counts on from here
+  elapsedMs?: number;
 }
 // inline "stream interrupted" marker: appears only when the SSE
 // transport died mid-run (never on a clean end). Carries the resume
@@ -161,11 +164,20 @@ export type TranscriptItem =
 // path delivers per item kind (thinking text, response text, the
 // tool_call frame's nested meta, the tool_result frame's outcome), so
 // restore and live converge on the component contract above.
+// `running` marks the live tail's in-flight items the reattach merge
+// serves behind the persisted history (card t_692254f7): the open
+// thinking/response block streams from the restored item, and the
+// running tool line carries its elapsed-so-far in elapsed_ms.
 export type TranscriptWireItem =
   | { kind: "user"; content: string; time?: string; images?: OmegaImage[] }
-  | { kind: "message"; content: string; time?: string; response_ms?: number }
-  | { kind: "thinking"; content: string; thinking_ms?: number }
-  | { kind: "tool_call"; tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> } }
+  | { kind: "message"; content: string; time?: string; response_ms?: number; running?: boolean }
+  | { kind: "thinking"; content: string; thinking_ms?: number; running?: boolean }
+  | {
+      kind: "tool_call";
+      tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> };
+      running?: boolean;
+      elapsed_ms?: number;
+    }
   | {
       kind: "tool_result";
       tool_call_id?: string;
@@ -206,6 +218,9 @@ export function renderTranscriptItems(
             content: it.content,
             time: it.time,
             finalMs: it.response_ms,
+            // only the merge's live tail streams from restore - persisted
+            // items mount final (the driver adopts the streaming ones)
+            streaming: it.running ? true : undefined,
           });
         break;
       case "thinking":
@@ -214,17 +229,23 @@ export function renderTranscriptItems(
             kind: "thinking",
             content: it.content,
             finalMs: it.thinking_ms,
+            streaming: it.running ? true : undefined,
           });
         break;
       case "tool_call": {
         const t: ToolItem = {
           kind: "tool",
           name: it.tool_call?.name || "tool",
-          status: "done",
+          // running = the call the results have not answered yet (the
+          // live-run merge): renders as the running line with its
+          // elapsed meter counting on from elapsed_ms, result attaches
+          // when the stream delivers it
+          status: it.running ? "running" : "done",
           output:
             it.tool_call?.arguments ?
               JSON.stringify(it.tool_call.arguments, null, 2)
             : undefined,
+          elapsedMs: it.running ? (it.elapsed_ms ?? 0) : undefined,
         };
         if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
         out.push(t);
@@ -237,6 +258,8 @@ export function renderTranscriptItems(
         t.result = it.content || "";
         t.status = it.is_error ? "error" : "done";
         t.finalMs = it.elapsed_ms;
+        // the call settled: the running meter's offset is spent
+        t.elapsedMs = undefined;
         break;
       }
     }
@@ -322,8 +345,10 @@ export interface ModelsInfo {
 export interface StreamHandlers {
   onThinking: (content: string) => void;
   onResponse: (content: string) => void;
-  onToolCall: (tool: { name: string; status: string; output?: string }) => void;
-  onToolResult: (result: { content: string; isError: boolean }) => void;
+  onToolCall: (tool: { id?: string; name: string; status: string; output?: string }) => void;
+  // toolCallId is the result's call id - the materialize path reads it
+  // when no running tool line exists (orphaned result, reattach race)
+  onToolResult: (result: { content: string; isError: boolean; toolCallId?: string }) => void;
   onStatus: (status: "reasoning" | "responding" | "tools") => void;
   onUsage: (usage: {
     promptTokens: number;
@@ -375,6 +400,7 @@ export function handlePayload(
       // wire shape: {"type":"tool_call","tool_call":{"id","name","arguments"}}
       const tc = (p.tool_call || {}) as Record<string, unknown>;
       handlers.onToolCall({
+        id: tc.id as string | undefined,
         name: (tc.name as string) || (p.name as string) || "tool",
         status: "running",
         output: JSON.stringify(tc.arguments, null, 2),
@@ -387,6 +413,7 @@ export function handlePayload(
       handlers.onToolResult({
         content: (tr.content as string) || "",
         isError: tr.is_error === true,
+        toolCallId: tr.tool_call_id as string | undefined,
       });
       break;
     }
@@ -843,6 +870,9 @@ export interface ElapsedMeter {
 
 // createElapsedMeter takes the tick callback and optional clock parts -
 // a fake clock in tests, setInterval/clearTimeout in the component.
+// initialMs is the elapsed ALREADY CONSUMED when the meter starts (the
+// reattach merge's restored running tool counts on from the server's
+// elapsed-so-far instead of restarting the call's clock at zero).
 export function createElapsedMeter(
   onElapsed: (label: string) => void,
   now: () => number = () => Date.now(),
@@ -853,6 +883,7 @@ export function createElapsedMeter(
     set: (fn, ms) => setTimeout(fn, ms),
     clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
   },
+  initialMs = 0,
 ): ElapsedMeter {
   let startedAt: number | null = null;
   let handle: unknown = null;
@@ -865,8 +896,8 @@ export function createElapsedMeter(
   return {
     start() {
       if (startedAt !== null) return;
-      startedAt = now();
-      onElapsed(formatElapsed(startedAt, startedAt));
+      startedAt = now() - initialMs;
+      onElapsed(formatElapsed(startedAt, now()));
       if (handle === null) handle = timers.set(fire, ELAPSED_TICK_MS);
     },
     stop() {

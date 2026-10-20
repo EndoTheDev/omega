@@ -54,5 +54,8 @@
   const elapsedLabel = useElapsed(
     () => props.finalMs,
     () => props.status === "running" && !props.interrupted,
+    // a restored STILL-RUNNING call counts on from the server's
+    // elapsed-so-far (live-run merge) - not from the mount moment
+    () => props.elapsedMs,
   );
 </script>

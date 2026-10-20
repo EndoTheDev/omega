@@ -88,6 +88,45 @@ describe("handlePayload", () => {
     assert.deepEqual(calls, ["result:err:boom"]);
   });
 
+  // card t_692254f7 fix B: the materialize path needs the call ids -
+  // tool_call frames carry their id, tool_result frames their
+  // tool_call_id, both ride the same normalized callbacks
+  it("tool_call and tool_result ids reach the handlers", () => {
+    const got: { callId?: string; resultId?: string } = {};
+    handlePayload(
+      { type: "tool_call", tool_call: { id: "tc9", name: "shell.run", arguments: {} } },
+      {
+        onThinking: () => {},
+        onResponse: () => {},
+        onToolCall: (t) => {
+          got.callId = t.id;
+        },
+        onToolResult: (r) => {
+          got.resultId = r.toolCallId;
+        },
+        onStatus: () => {},
+        onUsage: () => {},
+      },
+      { seenResponse: true },
+    );
+    assert.equal(got.callId, "tc9");
+    handlePayload(
+      { type: "tool_result", message: { content: "out", tool_call_id: "tc9" } },
+      {
+        onThinking: () => {},
+        onResponse: () => {},
+        onToolCall: () => {},
+        onToolResult: (r) => {
+          got.resultId = r.toolCallId;
+        },
+        onStatus: () => {},
+        onUsage: () => {},
+      },
+      { seenResponse: true },
+    );
+    assert.equal(got.resultId, "tc9");
+  });
+
   it("stream_end with usage fires onUsage", () => {
     const { handlers, calls } = recording();
     handlePayload(
@@ -125,6 +164,7 @@ import {
   THINKING_LEVELS,
   THINKING_UI_LEVELS,
   thinkingLevelWire,
+  createElapsedMeter,
 } from "../app/composables/omega.ts";
 
 describe("thinkingLevelWire", () => {
@@ -147,5 +187,51 @@ describe("thinkingLevelWire", () => {
   it("unknown selections fall back to unset (provider default)", () => {
     assert.equal(thinkingLevelWire(""), undefined);
     assert.equal(thinkingLevelWire("bogus"), undefined);
+  });
+});
+
+// the reattach merge's restored running tool counts on from the
+// server's elapsed-so-far instead of restarting the call's clock
+// (card t_692254f7). Manual fake clock: one stored tick callback.
+describe("createElapsedMeter initialMs (restored running call offset)", () => {
+  function fakeMeter(offset: number) {
+    const labels: string[] = [];
+    let now = 0;
+    let fire: (() => void) | null = null;
+    const meter = createElapsedMeter(
+      (l) => labels.push(l),
+      () => now,
+      { set: (fn) => { fire = fn; return 0; }, clear: () => { fire = null; } },
+      offset,
+    );
+    return {
+      meter,
+      labels,
+      tick(ms: number) {
+        now += ms;
+        const f = fire;
+        fire = null;
+        f?.();
+      },
+    };
+  }
+
+  it("starts the label at the consumed span and ticks on from it", () => {
+    // wall clock at 0, call started 7s ago: the restored tool has
+    // already burned 7s before this meter ever mounted
+    const t = fakeMeter(7000);
+    t.meter.start();
+    assert.deepEqual(t.labels, ["7s"], "first emit is the consumed span");
+    t.tick(1000);
+    t.tick(1000);
+    assert.deepEqual(t.labels, ["7s", "8s", "9s"]);
+  });
+
+  it("zero offset keeps the plain meter contract", () => {
+    const t = fakeMeter(0);
+    t.meter.start();
+    assert.deepEqual(t.labels, ["0ms"]);
+    t.tick(1000);
+    assert.deepEqual(t.labels, ["0ms", "1s"]);
   });
 });
