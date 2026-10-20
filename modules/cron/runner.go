@@ -202,7 +202,15 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		}
 	}
 
-	final, runErr := r.runTurn(ctx, sessionID, job)
+	// Wall-clock cap on the turn itself: without it, one hung tool
+	// call (shell sleep, wedged provider) never returns, every later
+	// fire logs "skipped, previous fire still running", and the job's
+	// journal/memory delivery stops until a process restart. Same
+	// 1800s default as the /chat run_timeout.
+	turnCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+
+	final, runErr := r.runTurn(turnCtx, sessionID, job)
 	if runErr != nil {
 		r.errorf("job %s: run failed after %s: %v", job.Name, sinceStart(start, r.now()), runErr)
 	} else {
