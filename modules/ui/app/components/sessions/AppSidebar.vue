@@ -1,6 +1,7 @@
 <template>
   <aside
     class="sessions"
+    data-lane-proof="B"
     :class="{ open: open }">
     <div class="sessions-head">
       <span class="head-actions">
