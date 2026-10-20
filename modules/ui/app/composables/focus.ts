@@ -43,12 +43,15 @@ export function createComposerFocusSignal(): ComposerFocusSignal {
 export const COMPOSER_FOCUS_KEY: InjectionKey<ComposerFocusSignal> =
   Symbol("composer-focus");
 
-// does a request deliver to the chat tab bound to stateKey?
+// does a request deliver to the chat tab bound to stateKey? Takes the
+// SIGNAL itself (focusKey is a Ref - compare .value, never the ref
+// object: a ref === string comparison is always false and the feature
+// ships dead, which no gate catches because vue builds strip types).
 export function focusDelivers(
-  req: { focusKey: string | null },
+  req: { focusKey: Ref<string | null> },
   stateKey: string,
 ): boolean {
-  return stateKey !== "" && req.focusKey === stateKey;
+  return stateKey !== "" && req.focusKey.value === stateKey;
 }
 
 // --- the selectors ----------------------------------------------------------
