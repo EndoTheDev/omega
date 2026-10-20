@@ -26,7 +26,8 @@
     :result="item.result" />
   <div
     v-else-if="item.kind === 'interrupted'"
-    class="interrupted-line">
+    class="interrupted-line"
+    data-lane-proof="A">
     <span>{{ item.label ?? "stream interrupted" }}</span>
     <button
       class="resume"
