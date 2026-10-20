@@ -101,6 +101,9 @@ describe("gate: sidebar tabs unclosable", () => {
     // the '+' / empty-pane menus list MAIN dockables only - no sidebar
     // component can be opened into an arbitrary pane
     assert.match(pane, /MAIN_DOCKABLES/);
+    // the menus render registry ENTRIES (title/icon/policy), not raw ids -
+    // the raw-id iteration is what killed both menus after the reset
+    assert.match(pane, /MAIN_DOCKABLES\.map\(dockableOf\)/);
     assert.doesNotMatch(pane, /v-for="d in DOCKABLES"/);
   });
 });
@@ -123,19 +126,30 @@ describe("gate: hover-X on main panes only", () => {
 // --- gate: the fixed-shape chrome ---------------------------------------------
 
 describe("gate: fixed shape chrome", () => {
-  it("MenuBar keeps only the mobile drawer handles, no desktop toggles", () => {
+  it("MenuBar: the desktop toggles are BACK, the gear is GONE (t_47b776ad)", () => {
     const bar = src("app/components/shell/MenuBar.vue");
+    // the toggle pair re-asserts the toggleEdge contract: state-aware
+    // titles, hidden desktop-side only via the edge-toggle class
+    assert.match(bar, /aria-label="Toggle left sidebar"/);
+    assert.match(bar, /aria-label="Toggle right sidebar"/);
+    assert.match(bar, /class="icon-btn edge-toggle"/);
+    // the mobile drawer handles survive unchanged
     assert.match(bar, /drawer-btn/);
-    assert.ok(
-      !bar.includes("Toggle left sidebar") && !bar.includes("Toggle right sidebar"),
-      "the toggle voice is gone",
-    );
+    assert.match(bar, /aria-label="Open the sessions drawer"/);
+    assert.match(bar, /aria-label="Open the inspector drawer"/);
+    // the settings gear died: settings opens from the pane '+' menu
+    assert.doesNotMatch(bar, /aria-label="Settings"/);
+    assert.doesNotMatch(bar, /\$emit\("settings"\)/);
   });
-  it("app.vue wires the reset: no edge toggles, main-pane routing, five outlets", () => {
+  it("app.vue wires the reset: desktop toggles drive toggleEdge, the gear's opener is gone", () => {
     const appVue = src("app/app.vue");
-    assert.doesNotMatch(appVue, /toggleEdge/);
-    assert.doesNotMatch(appVue, /ensureEdge/);
+    // the toggles route through the dock's toggleEdge
+    assert.match(appVue, /toggleEdge/);
+    // ensureMainPane still guards the main-pane routing
     assert.match(appVue, /ensureMainPane/);
+    // openSettings died with the gear; the '+'-menu path is untouched
+    assert.doesNotMatch(appVue, /openSettings/);
+    assert.doesNotMatch(appVue, /@settings/);
     // the inspector chip strip dissolved into real dock tabs
     assert.match(appVue, /#pane-files/);
     assert.match(appVue, /#pane-http_channel/);

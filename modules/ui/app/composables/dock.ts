@@ -295,14 +295,7 @@ export function ensurePinnedEdges(tree: DockNode): DockNode {
     result = insertRootEdge(result, "before", makePane("sidebar", 240));
   }
   if (!INSPECTOR_TAB_COMPONENTS.some((c) => findComponentTab(result, c) !== null)) {
-    const pane: DockPane = {
-      kind: "pane",
-      id: nextNodeId(),
-      tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
-      active: 0,
-      fixed: 240,
-    };
-    result = insertRootEdge(result, "after", pane);
+    result = insertRootEdge(result, "after", makeInspectorPane(240));
   }
   return result;
 }
@@ -430,6 +423,12 @@ export function insertPane(
 export function removePane(tree: DockNode, paneId: string): DockNode {
   const pane = findPane(tree, paneId);
   if (!pane || isPinnedPane(pane)) return tree;
+  return prunePane(tree, pane.id);
+}
+
+/** the shared prune body: cut `paneId`, hoist a lone survivor, repair
+    sizes. Callers enforce the WHO-MAY-GO policy; this is only mechanics. */
+function prunePane(tree: DockNode, paneId: string): DockNode {
   if (paneCount(tree) <= 1) return tree; // the never-empty invariant
   const hoist = (n: DockNode): DockNode => {
     if (isSplit(n)) {
@@ -459,6 +458,77 @@ export function removePane(tree: DockNode, paneId: string): DockNode {
   };
   repair(result);
   return result;
+}
+
+// --- the edge toggle (card t_47b776ad) ---------------------------------------
+// the pane reset made the pinned panes untouchable via the generic
+// removePane/closeTab refusals; the menubar toggles get a dedicated,
+// tightly-guarded route so hide/reopen survives the reset's invariants.
+
+/** the tab set that identifies each edge pane (the sessions pane holds
+    exactly one pinned "sidebar" tab; the inspector pane exactly the
+    pinned right-area tabs) */
+function edgePaneTabs(component: "sidebar" | "inspector"): readonly DockComponentName[] {
+  return component === "sidebar" ? ["sidebar"] : INSPECTOR_TAB_COMPONENTS;
+}
+
+/** the dedicated pinned pane hosting exactly `component`'s edge tab set.
+    Pinned tabs never leave their pane and no tab moves in, so the pane
+    is found by its exact tab fingerprint. */
+export function findEdgePane(
+  tree: DockNode,
+  component: "sidebar" | "inspector",
+): DockPane | null {
+  const wanted = edgePaneTabs(component);
+  for (const n of allNodes(tree)) {
+    if (
+      isPane(n) &&
+      isPinnedPane(n) &&
+      n.tabs.length === wanted.length &&
+      wanted.every((c) => n.tabs.some((t) => t.component === c))
+    ) {
+      return n;
+    }
+  }
+  return null;
+}
+
+/** the toggle's hide half: the edge pane goes as a whole (it is dedicated
+    chrome - no tab may live in it that isn't its own). Guards mirror the
+    fixed shape: exact pane fingerprint found, never-empty held. */
+export function hideEdgePane(
+  tree: DockNode,
+  component: "sidebar" | "inspector",
+): DockNode {
+  const pane = findEdgePane(tree, component);
+  if (!pane) return tree;
+  return prunePane(tree, pane.id);
+}
+
+/** the toggle's reopen half: the fixed-shape pane comes back at the root's
+    edge - same builders ensurePinnedEdges uses, so reopen and boot-repair
+    mint IDENTICAL panes. */
+export function revealEdgePane(
+  tree: DockNode,
+  component: "sidebar" | "inspector",
+  side: "before" | "after",
+): DockNode {
+  const fixed = Math.max(PANE_OPEN_MIN, EDGE_DEFAULT_PX[component]);
+  const pane =
+    component === "sidebar"
+      ? makePane("sidebar", fixed)
+      : makeInspectorPane(fixed);
+  return insertRootEdge(tree, side, pane);
+}
+
+function makeInspectorPane(fixed: number): DockPane {
+  return {
+    kind: "pane",
+    id: nextNodeId(),
+    tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+    active: 0,
+    fixed,
+  };
 }
 
 /** move a pane next to a target pane (card 2's DnD will call this). Pure
@@ -962,6 +1032,12 @@ export interface DockApi {
   firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
+  /** card t_47b776ad: the menubar's desktop toggles are back. Hides the
+      pinned edge pane (or reopens it at its edge, at the reopen-clamp
+      width) - the sanctioned chrome route around removePane/closeTab's
+      pinned refusals. The hide is page-lifetime: the next load runs
+      ensurePinnedEdges, which re-asserts the fixed shape. */
+  toggleEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
   /** card t_4ae27e0d: the id of the FIRST main pane - the only place a
       session tab may open. The pinned sidebars are skipped; when the tree
       holds no main pane (the user removed the last one) a fresh flexible
@@ -1094,12 +1170,20 @@ export function createDock(store: Storage): DockApi {
     if (replacement !== node) tree.value = graftSplit(tree.value, replacement);
   };
 
+  const toggleEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
+    const present = findEdgePane(tree.value, component) !== null;
+    // reopen-clamp: a stale sub-floor remembered width reopens AT 320
+    tree.value = present
+      ? hideEdgePane(tree.value, component)
+      : revealEdgePane(tree.value, component, side);
+  };
+
   return {
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
     openSingleton: openSingletonIn,
     setSessionRef, closeSession,
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
-    split, remove, ensureMainPane, canRemovePane, drag,
+    split, remove, toggleEdge, ensureMainPane, canRemovePane, drag,
   };
 }
