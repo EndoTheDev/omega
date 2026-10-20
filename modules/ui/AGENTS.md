@@ -151,7 +151,11 @@ and the two never touch each other.
 - ReferenceError in a setup script passes every gate including the
   health check - only a render catches it (the NUXT_E1005 lesson:
   `go test` and `node --test` never see it, vue strips types and no
-  template check runs).
+  template check runs). Same family, different face: signal-shape
+  mismatches (a `Ref` compared against its `.value` string) pass every
+  gate too, and a unit test that unwraps the ref itself proves
+  nothing - tests must receive the shape production actually sends
+  (auto-focus lesson, 2026-10-20: shipped 100% dead, all gates green).
 
 ## Verification
 
