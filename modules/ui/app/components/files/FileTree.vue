@@ -18,6 +18,14 @@
           v-else
           class="chev file"
           role="presentation" />
+        <!-- VS Code-style row glyph (card t_467a0386): folder filled when
+             open / outlined collapsed, files by extension, unknown =
+             generic. Static inline SVG from a kind table - currentColor
+             only, the row's dim/hover state carries the color. -->
+        <span
+          class="glyph"
+          v-html="rowGlyphSvg(entry)"
+          role="presentation" />
         <span class="name"
           >{{ entry.name
           }}<span
@@ -63,6 +71,7 @@
     serializeExpandedPaths,
   } from "../../composables/omega";
   import type { FileEntry } from "../../composables/omega";
+  import { folderSvg, glyphKindFor, glyphSvg } from "./rowicon";
 
   // Inspector file tree (VS Code-style): one row per entry, chevron rows
   // expand in place, and expanding a directory lazy-loads exactly one
@@ -167,6 +176,12 @@
 
   function entryPath(entry: FileEntry): string {
     return joinRelPath(props.base, entry.name);
+  }
+
+  // the row's inline SVG: folders by open state, files by extension
+  function rowGlyphSvg(entry: FileEntry): string {
+    if (entry.is_dir) return folderSvg(isOpen(entryPath(entry)));
+    return glyphSvg(glyphKindFor(entry.name));
   }
 
   function childrenOf(path: string): FileEntry[] {
