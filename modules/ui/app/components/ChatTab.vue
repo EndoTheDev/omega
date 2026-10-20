@@ -29,11 +29,6 @@
             :item="item"
             :show-thinking="showThinking"
             @retry="onRetry" />
-          <div
-            v-if="statusLine"
-            class="status-line">
-            {{ statusLine }}…
-          </div>
         </div>
       </template>
       <div
@@ -73,12 +68,18 @@
             :show-thinking="showThinking"
             @retry="onRetry" />
         </template>
-        <div
-          v-if="statusLine"
-          class="status-line">
-          {{ statusLine }}…
-        </div>
       </div>
+      <!-- the activity line (card t_e9baac4b): phase-aware narration
+           above the composer, mode-independent, hidden when idle. The
+           old in-column status line was the always-on "reasoning…"
+           label; statusLine now carries only non-phase leftovers
+           (the attach-failed error) and renders in its place. -->
+      <div
+        v-if="activityText"
+        class="activity-line">{{ activityText }}</div>
+      <div
+        v-else-if="statusLine"
+        class="status-line">{{ statusLine }}</div>
       <button
         v-if="jumpPill"
         class="jump-live"
@@ -117,6 +118,7 @@
   import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
+    activityPhase,
     type ChatState,
     type TranscriptItem,
   } from "../composables/chat";
@@ -126,6 +128,8 @@
     type ComposerFocusSignal,
   } from "../composables/focus";
   import {
+    createElapsedMeter,
+    type ElapsedMeter,
     createItemKeySource,
     isAtBottom,
     pillVisible,
@@ -216,6 +220,44 @@
       busy.value &&
       liveRun.value.user !== null,
   );
+
+  // --- the activity line (card t_e9baac4b): the phase is a pure
+  // derivation of the transcript + the session's busy gate (no new
+  // state, chat.ts owns it). One elapsed meter per phase stretch -
+  // recreated on the phase swap, so the counter restarts exactly on
+  // the event that ended one phase and started the next (and a
+  // restored still-running tool counts on from the server's
+  // elapsed-so-far through initialMs, like the ToolCallLine meter).
+  // Idle: the key is "" and the meter stops - the line is hidden.
+  const activity = computed(() => activityPhase(transcript.value, busy.value));
+  const tickLabel = ref("");
+  const activityText = computed(() => {
+    const a = activity.value;
+    if (!a) return "";
+    return tickLabel.value ? `${a.label} · ${tickLabel.value}` : a.label;
+  });
+  let tick: ElapsedMeter | null = null;
+  watch(
+    () => activity.value?.key ?? "",
+    () => {
+      if (tick) {
+        tick.stop();
+        tick = null;
+      }
+      tickLabel.value = "";
+      const a = activity.value;
+      if (!a) return;
+      tick = createElapsedMeter(
+        (label) => (tickLabel.value = label),
+        undefined,
+        undefined,
+        a.initialMs ?? 0,
+      );
+      tick.start();
+    },
+    { immediate: true },
+  );
+  onBeforeUnmount(() => tick?.stop());
 
   // --- scroll pinning + jump-to-live pill: PER INSTANCE now - multiple
   // panes may render the same component, each owns its scrollbar ---

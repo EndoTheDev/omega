@@ -229,6 +229,77 @@ export function composerFace(
   return "send";
 }
 
+// --- the activity line (card t_e9baac4b) ---
+//
+// Phase-aware narration for the line above the composer, derived PURELY
+// from the transcript + the session's busy gate - no new state. The
+// run's phases ARE the transcript: a call still open (its result has
+// not landed yet) is the run's activity, else the last streaming item's
+// kind narrates the stream. "thinking" is also what a run shows before
+// anything lands in the transcript (the send beat the first delta) and
+// in the gap between a landed tool result and the model's next move.
+
+export interface ActivityPhase {
+  /** stable identity - the component restarts its elapsed meter ONLY
+      when this changes (content deltas recompute but never move it) */
+  key: string;
+  /** the narration: "thinking", "running web.search", "responding" */
+  label: string;
+  /** elapsed ALREADY CONSUMED at observation: a restored still-running
+      tool counts on from the server's elapsed-so-far (live-run merge),
+      the same initialMs contract the ToolCallLine meter runs on */
+  initialMs?: number;
+}
+
+export function activityPhase(
+  items: TranscriptItem[],
+  busy: boolean,
+): ActivityPhase | null {
+  if (!busy) return null;
+  // newest open tool call + newest streaming item. interrupted is NOT
+  // open: a dead stream's result is never coming - narrating that call
+  // as running would tick forever over a run that cannot finish.
+  let tool: ToolItem | null = null;
+  let streaming: ThinkingItem | MessageItem | null = null;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!;
+    if (
+      tool === null &&
+      item.kind === "tool" &&
+      item.status === "running" &&
+      !item.interrupted
+    ) {
+      tool = item;
+    } else if (
+      streaming === null &&
+      (item.kind === "thinking" || item.kind === "message") &&
+      item.streaming
+    ) {
+      streaming = item;
+    }
+  }
+  // a running tool outranks the streaming items: the model's preamble
+  // already streamed - the tool call is what the run is DOING now
+  if (tool) {
+    const name = tool.name || "tool";
+    return {
+      key: `tool:${name}`,
+      label: `running ${name}`,
+      initialMs: tool.elapsedMs || undefined,
+    };
+  }
+  if (streaming?.kind === "thinking") {
+    return { key: "thinking", label: "thinking" };
+  }
+  if (streaming) {
+    return { key: "responding", label: "responding" };
+  }
+  // busy with nothing narrated yet: the run just started (or is between
+  // its tool result and the model's next move) - waiting on the model
+  // IS thinking
+  return { key: "thinking", label: "thinking" };
+}
+
 /** the title goroutine writes the session label seconds AFTER the first
     exchange ends - one delayed refresh picks the label up without a
     manual reload (the pre-card rule carried over from app.vue). */
@@ -514,7 +585,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     st.cancelRun = () => {
       if (st.sessionId) stopSession(st.sessionId).catch(() => {});
     };
-    st.statusLine = "reasoning";
     try {
       await start(drv);
     } catch (e) {
