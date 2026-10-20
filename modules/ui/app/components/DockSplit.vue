@@ -52,7 +52,7 @@
         v-if="idx < node.children.length - 1"
         :column="node.direction === 'column'"
         :snapped="dragging === idx + 1 && snappedIdx === idx + 1"
-        @drag="onDrag(idx + 1, $event)"
+        @drag="(d, r) => onDrag(idx + 1, d, r)"
         @end="onEnd" />
     </template>
   </div>
@@ -63,10 +63,10 @@
   // rendering splits (rows/columns of cells sized by the tree's fixed/sizes
   // data) and panes. Named slots flow down so app.vue's region templates
   // surface inside whichever pane hosts their component. Resize: the
-  // divider reports raw pointer deltas; THIS component measures the
+  // divider reports raw pointer positions; THIS component measures the
   // rendered cells at gesture start and hands everything to the store,
   // whose pure math owns floors (128 drag / 320 chat) and the snap
-  // attractor (320/640).
+  // ladder (+320, panes.ts).
   import { inject, ref } from "vue";
   import { snapCandidate } from "../composables/panes";
   import {
@@ -112,9 +112,15 @@
   // dragging = divider index during a gesture; the cells are measured ONCE
   // per gesture and frozen (the old divider's startWidth rule: deltas
   // rebase from the rendered layout at gesture start, and every move event
-  // recomputes the whole split from that frozen baseline)
+  // recomputes the whole split from that frozen baseline). Positionally
+  // tracked: each move's delta = raw pointer - the last seen position, so
+  // a mid-gesture rebase is just "startPx = measure(); lastRaw = raw" with
+  // the pointer still down (the squeeze push-back's close re-measures the
+  // layout that the closed pane freed - card t_f6d5a771).
   const dragging = ref<number | null>(null);
   let startPx: number[] | null = null;
+  let lastRaw: number | null = null;
+  let rebase = false;
   const snappedIdx = ref<number | null>(null);
 
   function measure(): number[] {
@@ -126,16 +132,45 @@
     return node.children.map((_, i) => cells[i]?.[axis] ?? 0);
   }
 
-  function onDrag(dividerIndex: number, delta: number) {
-    if (dragging.value === null) {
+  function dropGesture() {
+    dragging.value = null;
+    startPx = null;
+    lastRaw = null;
+    snappedIdx.value = null;
+  }
+
+  function onDrag(dividerIndex: number, _delta: number, raw: number) {
+    if (dragging.value !== dividerIndex) {
+      if (dragging.value !== null) return; // another divider's gesture owns this pointer
       dragging.value = dividerIndex;
       startPx = measure();
+    } else if (rebase) {
+      // the previous event's push closed a pane: the layout is different
+      // NOW - the new baseline is the re-rendered geometry, and deltas
+      // resume from the current pointer position
+      startPx = measure();
+      rebase = false;
+      lastRaw = raw;
+      return;
     }
     if (!startPx) return;
+    if (lastRaw === null) {
+      lastRaw = raw;
+      return; // the gesture's first event has nothing to move
+    }
+    const delta = raw - lastRaw;
+    lastRaw = raw;
     // content box for the pure math: the split's client px minus the
     // gutters its dividers occupy = the sum of the measured cells
     const contentPx = startPx.reduce((a, p) => a + p, 0);
-    api.drag((props.node as DockSplit).id, dividerIndex, startPx, delta, contentPx);
+    const res = api.drag((props.node as DockSplit).id, dividerIndex, startPx, delta, contentPx);
+    if (res.pushedPaneId) rebase = true; // freed px becomes layout: re-measure next event
+    if (res.collapsedPaneId) {
+      // the controlled pane (and this divider with it) is gone - the
+      // gesture ends; the menubar toggle reopens the hidden sidebar
+      dropGesture();
+      return;
+    }
     // the controlled pane is left (fixed) or, when it flexes, the fixed
     // right one - mirror the pure fn's read to light the snap guide
     const node = props.node as DockSplit;
@@ -151,8 +186,6 @@
   }
 
   function onEnd() {
-    dragging.value = null;
-    startPx = null;
-    snappedIdx.value = null;
+    dropGesture();
   }
 </script>

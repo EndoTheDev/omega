@@ -16,7 +16,7 @@
 // for fixed panes (snap attractor 320/640 applies, 128px floor stands) and
 // fractions for flexible pairs.
 
-import { PANE_OPEN_MIN, snapCandidate } from "./panes.ts";
+import { PANE_OPEN_MIN, openClamp, snapCandidate } from "./panes.ts";
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
@@ -551,6 +551,59 @@ export function hideEdgePane(
   return prunePane(tree, pane.id);
 }
 
+// card t_f6d5a771: a hidden edge pane keeps its width. Hiding remembers the
+// pane's last fixed px; reopening restores it - the pre-reset drag-close's
+// "reopens at its width". Storage is the same store the tree lives in, so
+// the memory survives reloads too. Reads clamp through openClamp: a stale
+// sub-floor remembered width reopens AT 320.
+const EDGE_PX_KEY = "omega.dock-edge-px";
+const EDGE_COMPONENTS = ["sidebar", "inspector"] as const;
+type EdgeComponent = (typeof EDGE_COMPONENTS)[number];
+
+export function rememberEdgePx(
+  store: Storage,
+  component: EdgeComponent,
+  px: number,
+): void {
+  let mem: Partial<Record<EdgeComponent, number>> = {};
+  try {
+    mem = JSON.parse(store.getItem(EDGE_PX_KEY) ?? "{}") ?? {};
+  } catch {
+    mem = {};
+  }
+  mem[component] = Math.round(Math.max(0, px));
+  store.setItem(EDGE_PX_KEY, JSON.stringify(mem));
+}
+
+export function recalledEdgePx(
+  store: Storage,
+  component: EdgeComponent,
+): number | null {
+  let mem: Partial<Record<EdgeComponent, number>> = {};
+  try {
+    mem = JSON.parse(store.getItem(EDGE_PX_KEY) ?? "{}") ?? {};
+  } catch {
+    return null;
+  }
+  const px = mem[component];
+  return typeof px === "number" && Number.isFinite(px) ? openClamp(px) : null;
+}
+
+/** which edge component a pane's tab fingerprint matches (null: not an
+    edge pane) - the divider intents remember widths only for edge panes */
+export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
+  for (const c of EDGE_COMPONENTS) {
+    const wanted = edgePaneTabs(c);
+    if (
+      pane.tabs.length === wanted.length &&
+      wanted.every((tc) => pane.tabs.some((t) => t.component === tc))
+    ) {
+      return c;
+    }
+  }
+  return null;
+}
+
 /** the toggle's reopen half: the fixed-shape pane comes back at the root's
     edge - same builders ensurePinnedEdges uses, so reopen and boot-repair
     mint IDENTICAL panes. */
@@ -558,8 +611,11 @@ export function revealEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
   side: "before" | "after",
+  /** card t_f6d5a771: reopen at the remembered width (the drag-close's
+      reopen-at-its-width); absent/invalid falls back to the default */
+  fixedPx?: number | null,
 ): DockNode {
-  const fixed = Math.max(PANE_OPEN_MIN, EDGE_DEFAULT_PX[component]);
+  const fixed = Math.max(PANE_OPEN_MIN, fixedPx ?? EDGE_DEFAULT_PX[component]);
   const pane =
     component === "sidebar"
       ? makePane("sidebar", fixed)
@@ -814,32 +870,44 @@ export function closeSessionTabs(tree: DockNode, sessionId: string): DockNode {
 
 export interface DividerDragResult {
   split: DockSplit;
-  /** index of the child whose fixed px changed (or null for pure fractions) */
-  fixedIndex: number | null;
+  /** the controlled pane dragged PAST its min at this divider - a hide
+      intent (the pane model's close: prune + the menubar toggle reopens
+      it). The pure math cannot prune (it only sees the split); the store
+      applies the intent against the tree. */
+  collapsedPaneId: string | null;
+  /** a fixed pane the squeeze chain starved PAST its 128 floor - close
+      intent (push-back restored, card t_f6d5a771). Applied by the store. */
+  pushedPaneId: string | null;
 }
 
 /** pure divider drag: between children [i-1, i] of `split`. startPx carries
     the RENDERED px of every child at drag start (measurement is the
     component's job). deltaPx + means right/down. Applies the 128px drag
-    floor, the 320px floor against the absorbing neighbor, and the 320/640
-    snap attractor on the controlled pane.
+    floor, the 320px floor against the absorbing neighbor, and the +320
+    snap ladder (snapCandidate) on the controlled pane.
     - left child fixed: drag controls the LEFT pane (grows/shrinks over the
       right neighbor, which flexes/floors as measured).
     - left flexible, right fixed: invert - the RIGHT pane is controlled
       (mirrors the old invert=true divider), so the magnet reads right px.
-    - both flexible: fractions shift relative to the content px box. */
+    - both flexible: fractions shift relative to the content px box.
+    Squeeze chain (push-back): when the drag wants more room than the
+    floors leave, the nearest FIXED pane beyond the absorbing neighbor
+    gives it up - shrinking to its 128 floor, then (starved past it)
+    reported as a close intent. Flexible children are walls: the chat
+    keeps its 320 floor and never closes by push. */
 export function dragSplitDivider(
   split: DockSplit,
   dividerIndex: number,
   startPx: number[],
   deltaPx: number,
   contentPx: number,
-): DockSplit {
+): DividerDragResult {
+  const none = { split, collapsedPaneId: null, pushedPaneId: null };
   const i = dividerIndex; // divider sits left of child i
   const li = i - 1;
   const left = split.children[li];
   const right = split.children[i];
-  if (!left || !right || li < 0) return split;
+  if (!left || !right || li < 0) return none;
 
   const next = structuredClone(split);
 
@@ -854,32 +922,68 @@ export function dragSplitDivider(
     const snapped = snapCandidate(px);
     return clamp(snapped ?? px, lo, hi);
   };
+  const pxOf = (k: number): number => startPx[k]!;
+  const isPaneNode = (k: number): boolean =>
+    isPane(next.children[k]!);
+
+  // the squeeze chain's helper: the FIRST fixed pane beyond the absorbing
+  // neighbor (scan toward the far edge of the split; the first non-fixed
+  // child is a wall - the chain stops there)
+  const nearestFixedBeyond = (from: number, step: 1 | -1): number | null => {
+    for (let k = from; k >= 0 && k < next.children.length; k += step) {
+      const c = next.children[k]!;
+      if (isPane(c) && c.fixed !== null) return k;
+      return null;
+    }
+    return null;
+  };
+
+  // push-back: px wants more than cap allows. The nearest fixed pane beyond
+  // the neighbor gives up `over`: first shrinking toward its 128 floor (the
+  // effective cap grows by what it gave up), and - starved past the floor -
+  // reported as a CLOSE intent (the freed px re-enters as real layout on
+  // the gesture's next re-measured step). */
+  const squeeze = (px: number, cap: number, from: number, step: 1 | -1) => {
+    if (px <= cap) return { px, cap, pushed: null as string | null };
+    const over = px - cap;
+    const j = nearestFixedBeyond(from, step);
+    if (j === null || !isPaneNode(j)) return { px: Math.min(px, cap), cap, pushed: null };
+    const pane = next.children[j] as DockPane;
+    const slack = pxOf(j) - MIN_PANE_PX; // room before its own floor closes it
+    if (over <= slack) {
+      pane.fixed = pxOf(j) - over; // shrinks live, stays open
+      return { px, cap: cap + over, pushed: null };
+    }
+    return { px: Math.min(px, cap), pushed: pane.id, cap };
+  };
 
   const lp = left as DockPane;
   const rp = right as DockPane;
   if (isPane(lp) && lp.fixed !== null) {
+    const req = pxOf(li) + deltaPx;
+    // drag-past-min: the controlled pane closes - a hide, not an unpin
+    // (the menubar toggle reopens it); the old pre-dock divider behavior
+    if (req < MIN_PANE_PX) {
+      return { split: next, collapsedPaneId: lp.id, pushedPaneId: null };
+    }
     // drag controls the LEFT pane; right absorbs: its floor is 128 if fixed,
     // 320 if flexible (the chat)
-    const rightFloor = isPane(rp) && rp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX;
-    const hi = capFor(rightFloor);
-    (next.children[li] as DockPane).fixed = applySnap(
-      clamp(startPx[li] + deltaPx, MIN_PANE_PX, hi),
-      MIN_PANE_PX,
-      hi,
-    );
-    return next;
+    const hi = capFor(isPane(rp) && rp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX);
+    const s = squeeze(req, hi, i + 1, 1);
+    (next.children[li] as DockPane).fixed = applySnap(s.px, MIN_PANE_PX, s.cap);
+    return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
   }
   if (isPane(rp) && rp.fixed !== null) {
+    const req = pxOf(i) - deltaPx;
+    if (req < MIN_PANE_PX) {
+      return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
+    }
     // mirror (the old invert=true divider): dragging left widens the fixed
     // right pane; the flexible left flexes at its 320 floor
-    const leftFloor = CHAT_FLOOR_PX;
-    const hi = capFor(leftFloor);
-    (next.children[i] as DockPane).fixed = applySnap(
-      clamp(startPx[i] - deltaPx, MIN_PANE_PX, hi),
-      MIN_PANE_PX,
-      hi,
-    );
-    return next;
+    const hi = capFor(isPane(lp) && lp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX);
+    const s = squeeze(req, hi, li - 1, -1);
+    (next.children[i] as DockPane).fixed = applySnap(s.px, MIN_PANE_PX, s.cap);
+    return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
   }
 
   // both flexible: shift BOTH fractions against the content box (renormalizing
@@ -888,12 +992,12 @@ export function dragSplitDivider(
   const content = Math.max(1, room);
   const pxLo = MIN_PANE_PX;
   const pxHi = Math.max(MIN_PANE_PX, room - CHAT_FLOOR_PX);
-  const finalLeft = applySnap(clamp(startPx[li] + deltaPx, pxLo, pxHi), pxLo, pxHi);
-  const shift = (finalLeft - startPx[li]) / content;
+  const finalLeft = applySnap(clamp(pxOf(li) + deltaPx, pxLo, pxHi), pxLo, pxHi);
+  const shift = (finalLeft - pxOf(li)) / content;
   next.sizes = next.sizes.map((s, k) =>
     k === li ? s + shift : k === i ? s - shift : s,
   );
-  return next;
+  return { split: next, collapsedPaneId: null, pushedPaneId: null };
 }
 
 export function clamp(v: number, lo: number, hi: number): number {
@@ -1109,8 +1213,16 @@ export interface DockApi {
       unclosable tabs) and the last remaining pane never (the dock never
       empties). The UI hides the X instead of offering a refused click. */
   canRemovePane: (paneId: string) => boolean;
-  /** divider drag: measured start widths flow in on the first move event */
-  drag: (splitId: string, dividerIndex: number, startPx: number[], deltaPx: number, contentPx: number) => void;
+  /** divider drag: measured start widths flow in on the first move event.
+      Returns the drag's close intents for the caller to react to (the
+      store itself already applies them to the tree). */
+  drag: (
+    splitId: string,
+    dividerIndex: number,
+    startPx: number[],
+    deltaPx: number,
+    contentPx: number,
+  ) => { collapsedPaneId: string | null; pushedPaneId: string | null };
 }
 
 export const DOCK_API_KEY: InjectionKey<DockApi> = Symbol("omega-dock-api");
@@ -1146,9 +1258,15 @@ export function createDock(store: Storage): DockApi {
   let initial = stored
     ? upgradeInspectorTabs(expandInspectorTabs(stored))
     : migrateLegacy((k) => store.getItem(k));
+  // card t_f6d5a771: sync the id seed BEFORE boot repair mints panes. The
+  // seed is per-page (0 at boot): repair first + sync after let
+  // ensurePinnedEdges mint a fresh "n1" while the loaded tree still holds
+  // its own old "n1" - duplicate ids, and every later id-keyed op (the
+  // divider intents' prunePane, canRemovePane, focus lookups) acts on BOTH
+  // panes. Syncing first keeps every minted id above the loaded tree's max.
+  syncIdSeed(initial);
   initial = ensurePinnedEdges(initial);
   initial = assignChatKeys(initial);
-  syncIdSeed(initial);
   // a modernized/fixed-shape-repaired load persists at once so the next
   // boot sees the modern tree even if no mutation fires this session
   if (stored) store.setItem(DOCK_LAYOUT_KEY, serialize(initial));
@@ -1229,17 +1347,38 @@ export function createDock(store: Storage): DockApi {
     contentPx: number,
   ) => {
     const node = findSplit(tree.value, splitId);
-    if (!node) return;
-    const replacement = dragSplitDivider(node, dividerIndex, startPx, deltaPx, contentPx);
-    if (replacement !== node) tree.value = graftSplit(tree.value, replacement);
+    if (!node) return { collapsedPaneId: null, pushedPaneId: null };
+    const d = dragSplitDivider(node, dividerIndex, startPx, deltaPx, contentPx);
+    // card t_f6d5a771: divider close + squeeze push-back are back - the
+    // intents prune the tree directly (prunePane is the same body
+    // hideEdgePane runs; a pinned pane hides, it is never unpinned). The
+    // next page load re-asserts the fixed shape via ensurePinnedEdges, so
+    // the hide is page-lifetime exactly like the menubar toggle's. Edge
+    // panes remember their width first - the menubar toggle reopens them
+    // at it (the reopen-at-its-width mechanic).
+    if (d.split !== node) tree.value = graftSplit(tree.value, d.split);
+    for (const id of [d.collapsedPaneId, d.pushedPaneId]) {
+      if (!id) continue;
+      const gone = findPane(tree.value, id);
+      if (gone) {
+        const comp = edgeComponentOf(gone);
+        if (comp && gone.fixed !== null) rememberEdgePx(store, comp, gone.fixed);
+      }
+      tree.value = prunePane(tree.value, id);
+    }
+    return { collapsedPaneId: d.collapsedPaneId, pushedPaneId: d.pushedPaneId };
   };
 
   const toggleEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
-    const present = findEdgePane(tree.value, component) !== null;
-    // reopen-clamp: a stale sub-floor remembered width reopens AT 320
-    tree.value = present
-      ? hideEdgePane(tree.value, component)
-      : revealEdgePane(tree.value, component, side);
+    const pane = findEdgePane(tree.value, component);
+    if (pane) {
+      // hide remembers the pane's width - the reopen restores it
+      if (pane.fixed !== null) rememberEdgePx(store, component, pane.fixed);
+      tree.value = hideEdgePane(tree.value, component);
+    } else {
+      // reopen-clamp: a stale sub-floor remembered width reopens AT 320
+      tree.value = revealEdgePane(tree.value, component, side, recalledEdgePx(store, component));
+    }
   };
 
   return {

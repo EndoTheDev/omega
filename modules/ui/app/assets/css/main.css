@@ -210,12 +210,17 @@ body {
    ⋯ pane-actions. Drop affordances here are layout-inert by design: the
    drop highlight is an outline, the insertion caret an absolute bar - a
    dragging gesture reflows nothing (card verify (d)). */
-/* t_f6c1b5fe corner seam: the strip is the TOP half of one continuous
-   card - it carries the outline + the rounded top corners, and its
-   bottom stays square. The card below tucks its rounded top corners
-   under it (negative margin), so the pane's curve never shows at the
-   seam - no pinched notch at either top corner. Layout-neutral overall:
-   the -radius margin gives the height back as pane height. */
+/* t_f6c1b5fe corner seam → t_f6d5a771 browser-tab fillets: the strip is
+   still the TOP half of one continuous card (outline + rounded top
+   corners, square bottom, the pane's card tucked under), but the chrome
+   now RAISES one step off the surface (--z1-raised) and the ACTIVE tab is
+   the surface itself (--z1 = the card's color): its shape is the tab
+   rectangle + two concave fillets (radius = the panel's 8px) sweeping
+   into the card below - tab + panel read as one continuous surface,
+   browser-tab style. The seam line is the strip's inset shadow (not a
+   border) so opaque children break it: it runs only where chrome shows.
+   Inactive tabs stay flat and blend into the strip. Both themes via vars.
+   Layout-neutral: widths and offsets change not. */
 .dock-tabbar {
   flex: 0 0 auto;
   height: 35px;
@@ -223,12 +228,20 @@ body {
   align-items: stretch;
   gap: 2px;
   padding-right: 4px;
-  background: var(--z1);
+  background: var(--z1-raised);
+  /* outline the top half only; the bottom seam is the inset shadow so the
+     active tab's surface breaks it without fighting a real border */
   border: 1px solid var(--stroke);
-  border-radius: var(--r-pane) var(--r-pane) 0 0; /* square bottom corners */
+  border-bottom: none;
+  border-radius: var(--r-pane) var(--r-pane) 0 0;
+  box-shadow: inset 0 -1px 0 var(--stroke);
   /* paint above the tucked pane card so its hidden top curve never bleeds */
   position: relative;
   z-index: 1;
+  /* children clip to the rounded rect: a flush-first ACTIVE tab's square
+     corner cannot overhang the panel's 8px corner arc (that square patch
+     was the notch); the fillet pseudos live inside the box, unclipped */
+  overflow: hidden;
   user-select: none;
   min-width: 0;
 }
@@ -250,13 +263,53 @@ body {
   color: var(--text-dim);
   cursor: pointer;
 }
-.dock-tab:hover { color: var(--text); background: var(--z1-raised); }
+/* inactive tabs blend into the raised strip; hover lifts a step (z2, the
+   layer above chrome - on the strip it reads as the hover lift) */
+.dock-tab:hover { color: var(--text); background: var(--z2); }
 /* active tab: the existing accent, as an inset top bar (zero layout churn) */
 .dock-tab.active {
   color: var(--text);
-  background: var(--z1-raised);
+  background: var(--z1);
   box-shadow: inset 0 2px 0 var(--accent);
 }
+/* t_f6d5a771: the active tab IS the panel surface - two concave fillets
+   (radius = the panel's 8px exactly) sweep its bottom corners into the
+   card below; the quarter-disk cutout lets the raised show through, the
+   rest is painted the surface color, so nothing squares off at the seam.
+   No fillet where the tab is flush with a strip edge (first / last tab:
+   the panel's own corner curve serves there - a fillet would bleed past
+   the card). */
+.dock-tab.active {
+  position: relative;
+  z-index: 1;
+}
+.dock-tab.active::before,
+.dock-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: var(--r-pane);
+  height: var(--r-pane);
+  pointer-events: none;
+}
+.dock-tab.active::before {
+  left: calc(-1 * var(--r-pane));
+  background: radial-gradient(
+    circle at 0 0,
+    transparent var(--r-pane),
+    var(--z1) calc(var(--r-pane) + 0.4px)
+  );
+}
+.dock-tab.active::after {
+  right: calc(-1 * var(--r-pane));
+  background: radial-gradient(
+    circle at 0 0,
+    transparent var(--r-pane),
+    var(--z1) calc(var(--r-pane) + 0.4px)
+  );
+}
+.dock-tab.active:first-child::before,
+.dock-tab.active:last-child::after { content: none; }
 .dock-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dock-tab-close {
   flex: 0 0 auto;
