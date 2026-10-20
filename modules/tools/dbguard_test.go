@@ -118,15 +118,16 @@ func TestDBGuardSymlinkLeaf(t *testing.T) {
 }
 
 // TestDBGuardHomelessInstall: the fallback guard against the standard
-// install layout (~/.omega/omega.db or OMEGA_HOME) still denies.
+// install layout (<home>/data/omega.db, data/ under OMEGA_HOME or
+// ~/.omega) still denies.
 func TestDBGuardHomelessInstall(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	g := newDBGuard("") // store config absent — standard layout fallback
-	if !g.denyShell("sqlite3 " + home + "/omega.db 'select 1'") {
-		t.Error("OMEGA_HOME fallback guard missed the db path")
+	if !g.denyShell("sqlite3 " + home + "/data/omega.db 'select 1'") {
+		t.Error("OMEGA_HOME fallback guard missed the data db path")
 	}
-	if !g.denyFile(home + "/omega.db-wal") {
+	if !g.denyFile(home + "/data/omega.db-wal") {
 		t.Error("OMEGA_HOME fallback guard missed the WAL sibling")
 	}
 	if g.denyShell("ls " + home) {

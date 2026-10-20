@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // ENDO'S LAW 2026-10-18: omega must never touch its database through the
@@ -44,18 +46,14 @@ func dbSuffixed(dbPath string) []string {
 // file may not exist yet (fresh home, created lazily by the store),
 // so resolution falls back to the real parent directory like the
 // files endpoints do. If path is empty, the standard install layout
-// (OMEGA_HOME or ~/.omega/omega.db) is used.
+// (data db under OMEGA_HOME or ~/.omega, via modules/datadir) is used.
 func newDBGuard(dbPath string) *dbGuard {
 	if strings.TrimSpace(dbPath) == "" {
-		home := os.Getenv("OMEGA_HOME")
-		if home == "" {
-			if u, err := os.UserHomeDir(); err == nil {
-				home = filepath.Join(u, ".omega")
-			} else {
-				return nil
-			}
+		datadirHome := datadir.Home()
+		if datadirHome == "" {
+			return nil
 		}
-		dbPath = filepath.Join(home, "omega.db")
+		dbPath = datadir.DBPath(datadirHome, "omega.db")
 	}
 	g := &dbGuard{reals: map[string]bool{}}
 	for _, cand := range dbSuffixed(dbPath) {

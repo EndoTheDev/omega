@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // Plugin adapts the kanban Store into omega's plugin system. It owns
@@ -32,17 +31,25 @@ func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount opens the board db and mounts the provider plus the tools.
-// The db path is config db_path; the relative default resolves against
-// OMEGA_HOME. A mount failure (bad dsn, unreadable path) is a startup
-// error - a board that silently does not exist is worse than a crash.
+// The db path is config db_path; the relative default resolves to
+// <home>/data/kanban.db (see modules/datadir). A mount failure (bad
+// dsn, unreadable path) is a startup error - a board that silently
+// does not exist is worse than a crash.
 func (p *Plugin) Mount(ctx *agent.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["kanban"].(Config); ok {
 		cfg = c
 	}
+	// The relative default resolves against the datadir home fallback:
+	// <home>/data/kanban.db - the host (cmd/omega resolveHomePaths)
+	// passes an absolute path for the exe-dir home case.
 	dsn := cfg.DBPath
-	if dsn == "kanban.db" {
-		dsn = filepath.Join(kanbanHome(), "kanban.db")
+	if dsn == "" || dsn == "kanban.db" {
+		if home := datadir.Home(); home != "" {
+			dsn = datadir.DBPath(home, "kanban.db")
+		} else {
+			dsn = "kanban.db"
+		}
 	}
 	s, err := Open(dsn)
 	if err != nil {
@@ -52,15 +59,6 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	ctx.Kanban = s
 	ctx.ToolProviders = append(ctx.ToolProviders, &ToolProvider{board: s})
 	return nil
-}
-
-// kanbanHome resolves OMEGA_HOME (mirrors cron's home logic).
-func kanbanHome() string {
-	home := os.Getenv("OMEGA_HOME")
-	if home == "" {
-		home = filepath.Join(os.Getenv("HOME"), ".omega")
-	}
-	return home
 }
 
 // ToolProvider exposes the board as agent tools. The tools take the

@@ -230,8 +230,8 @@ func TestResolveHomePaths(t *testing.T) {
 	cfg := DefaultConfig()
 	resolveHomePaths(&cfg)
 
-	if cfg.Store.DBPath != home+"/omega.db" {
-		t.Errorf("DBPath = %q, want %q", cfg.Store.DBPath, home+"/omega.db")
+	if cfg.Store.DBPath != home+"/data/omega.db" {
+		t.Errorf("DBPath = %q, want %q", cfg.Store.DBPath, home+"/data/omega.db")
 	}
 	if cfg.Skills.Dir != home+"/skills" {
 		t.Errorf("Skills.Dir = %q, want %q", cfg.Skills.Dir, home+"/skills")

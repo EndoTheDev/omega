@@ -14,6 +14,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // ErrNotFound is returned when a session does not exist.
@@ -29,7 +30,9 @@ type Store struct {
 }
 
 // Open opens (creating if needed) the SQLite database at dsn and ensures
-// the schema exists. Use ":memory:" for tests.
+// the schema exists. Use ":memory:" for tests. A dsn inside a data/
+// directory gets the boot-time data-dir migration first (legacy
+// home-root databases move into data/ before the handle is opened).
 func Open(dsn string) (*Store, error) {
 	return openStore(dsn)
 }
@@ -44,6 +47,13 @@ func (s *Store) Open(dsn string) error {
 }
 
 func openStore(dsn string) (*Store, error) {
+	// Data-dir migration runs before the handle opens: a legacy
+	// home-root db (with its -wal/-shm sidecars) is moved into data/
+	// first - never copy-and-leave (Endo 2026-10-20). ":memory:" and
+	// non-data dsns pass through untouched.
+	if err := datadir.Migrate(dsn); err != nil {
+		return nil, err
+	}
 	// WAL mode allows concurrent readers + one writer across multiple
 	// processes (e.g. parent + subagents). busy_timeout retries on lock
 	// instead of returning SQLITE_BUSY immediately.
