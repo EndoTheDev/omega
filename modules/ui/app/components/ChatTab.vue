@@ -56,6 +56,7 @@
     </div>
 
     <AppComposer
+      ref="composerEl"
       v-model:draft="draft"
       :model="model"
       :models="models"
@@ -87,6 +88,11 @@
     type ChatState,
     type TranscriptItem,
   } from "../composables/chat";
+  import {
+    COMPOSER_FOCUS_KEY,
+    focusDelivers,
+    type ComposerFocusSignal,
+  } from "../composables/focus";
   import {
     createItemKeySource,
     isAtBottom,
@@ -233,9 +239,35 @@
     host.retry(stateKey, props.model, thinkingLevelWire(props.thinking));
   }
 
+  // --- composer auto-focus (card t_b40131ac): the app signals chat
+  // selections and type-to-capture keystrokes through the focus signal;
+  // each pane renders only its ACTIVE tab, so the instance whose state
+  // key matches the request is by construction the visible one - the
+  // focused tab's composer receives, hidden tabs never match. sync
+  // flush keeps type-to-capture inside the keydown's task, so the
+  // character lands in the newly focused textarea (the insertion event
+  // targets whatever owns focus after keydown). The mount check covers
+  // a freshly minted tab: openChatTab sets focusedKey before this
+  // instance exists, so the pending signal delivers on mount instead.
+  const composerEl = ref<{ focus: () => void } | null>(null);
+  const focusSignal = inject<ComposerFocusSignal | null>(COMPOSER_FOCUS_KEY, null);
+  function deliverFocus() {
+    if (focusDelivers(focusSignal!, stateKey)) composerEl.value?.focus();
+  }
+  if (focusSignal) {
+    watch(
+      () => [focusSignal.focusKey.value, focusSignal.seq.value] as const,
+      deliverFocus,
+      { flush: "sync" },
+    );
+  }
+
   // --- mount: the tab's restore + live-attach entry ---
   onMounted(async () => {
     messagesEl.value?.addEventListener("scroll", onMessagesScroll);
+    // pending selection focus for a tab minted after the request (the
+    // new-chat / fresh-session open path)
+    if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
     // the driver-notified follower: stream writes reach a mounted tab
     state.value!.notify = scrollDown;
     if (sessionId.value) host.load(stateKey, sessionId.value);
