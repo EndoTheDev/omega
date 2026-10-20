@@ -210,6 +210,67 @@ func TestFileMemoryBatch(t *testing.T) {
 	}
 }
 
+// TestFileMemoryBatchRollback is the atomicity gate: a failing
+// [remove, add] batch must leave the remove rolled back, not applied.
+// The pre-fix runBatch was sequential fail-forward; now the whole batch
+// rolls back on any failure.
+func TestFileMemoryBatchRollback(t *testing.T) {
+	fm := newTestMemory(t)
+	if _, err := fm.Add(targetMemory, "Keep me"); err != nil {
+		t.Fatalf("seed add: %v", err)
+	}
+	tp := &memoryToolProvider{mem: fm}
+
+	// remove succeeds, then the add fails on its own terms (empty
+	// content). The remove must be rolled back.
+	result := tp.runBatch([]memoryOp{
+		{Action: "remove", Target: targetMemory, OldText: "Keep me"},
+		// Empty content fails the add on its own terms.
+		{Action: "add", Target: targetMemory, Content: ""},
+	})
+
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Fatalf("batch unexpectedly succeeded: %s", result)
+	}
+	if !strings.Contains(res.Error, "rolled back") {
+		t.Errorf("error should report rollback: %s", res.Error)
+	}
+	// The gate: the remove is undone - the entry is still there.
+	entries, _ := fm.List(targetMemory)
+	if len(entries) != 1 || entries[0] != "Keep me" {
+		t.Fatalf("remove not rolled back, entries = %v", entries)
+	}
+}
+
+// TestFileMemoryBatchRollbackCharLimit covers the subtler failure:
+// [add, add oversized] - the second add trips the char limit and the
+// first add must vanish too.
+func TestFileMemoryBatchRollbackCharLimit(t *testing.T) {
+	fm := newTestMemory(t)
+	tp := &memoryToolProvider{mem: fm}
+
+	result := tp.runBatch([]memoryOp{
+		{Action: "add", Target: targetMemory, Content: "small entry"},
+		{Action: "add", Target: targetMemory, Content: strings.Repeat("x", fm.targetLimit(targetMemory)+10)},
+	})
+
+	var res memoryResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Success {
+		t.Fatalf("batch unexpectedly succeeded: %s", result)
+	}
+	entries, _ := fm.List(targetMemory)
+	if len(entries) != 0 {
+		t.Fatalf("first add not rolled back, entries = %v", entries)
+	}
+}
+
 func TestFileMemorySnapshot(t *testing.T) {
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Test fact one")

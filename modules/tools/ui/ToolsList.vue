@@ -20,6 +20,19 @@
         class="tools-row">
         <span class="tools-name">{{ t.name }}</span>
         <span class="tools-desc">{{ t.description }}</span>
+        <!-- Domain tool: dotted sub-rows, each action with its own
+             one-liner (memory.add / files.write / task.create, ...) -->
+        <ul
+          v-if="t.actions && t.actions.length"
+          class="tools-actions">
+          <li
+            v-for="a in t.actions"
+            :key="a.name"
+            class="tools-action">
+            <span class="tools-action-name">{{ t.name }}.{{ a.name }}</span>
+            <span class="tools-desc">{{ a.description }}</span>
+          </li>
+        </ul>
       </li>
     </ul>
     <p
@@ -36,13 +49,22 @@
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
   // content (card t_db430fea): the tool inventory, sourced from
   // GET /tools and shipped by the tools module itself
-  // (modules/tools/ui/) through the module-UI composition.
+  // (modules/tools/ui/) through the module-UI composition. A tool with
+  // an actions[] array is a domain tool: its row is the domain context,
+  // and each action renders as a dotted sub-row (t_73994e55 action
+  // protocol) with its own description - one metadata source feeds
+  // both this panel and the system prompt.
   // The fetch is deliberately self-contained - the shell's API client
   // is shell code; a module's UI carries its own wiring so it can ride
   // the desktop / VS Code builds alone.
+  interface ToolAction {
+    name: string;
+    description: string;
+  }
   interface ToolInfo {
     name: string;
     description: string;
+    actions?: ToolAction[];
   }
   const tools = ref<ToolInfo[]>([]);
   const loaded = ref(false);
@@ -102,5 +124,26 @@
   .tools-desc {
     font-size: 11px;
     opacity: 0.6;
+  }
+  .tools-actions {
+    list-style: none;
+    margin: 2px 0 0 10px;
+    padding: 0;
+  }
+  .tools-action {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 0;
+  }
+  .tools-action-name {
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.85;
+  }
+  .tools-action-name::before {
+    content: "\00b7\2002";
+    font-weight: 400;
+    opacity: 0.4;
   }
 </style>

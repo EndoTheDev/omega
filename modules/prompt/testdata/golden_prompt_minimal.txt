@@ -27,15 +27,19 @@ Call the skills.read tool with a skill name to read its full content.
 
 ## Tools
 ### memory
-- memory: Save durable facts to persistent memory that survives across sessions. Memory is injected into the system prompt every session — use it for user preferences, environment facts, conventions, and lessons learned. Two targets: 'memory' (agent notes) and 'user' (user profile). Actions: 'add' (append), 'replace' (find by old_text substring, replace with content), 'remove' (find by old_text substring, delete). Batch: pass 'operations' array for atomic multi-change.
+- memory: Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.
+  .add: Append a new entry (content required).
+  .replace: Find the entry matching old_text (unique substring) and replace it with content.
+  .remove: Find the entry matching old_text (unique substring) and delete it.
 
 ### skills
 - skills.read: Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.
 
 ### tools
-- files.edit: Apply a targeted find-and-replace patch to a file.
-- files.read: Read a file, returning its contents with line numbers.
-- files.write: Write content to a file, creating parent directories as needed.
+- files: Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.
+  .read: Read a file, returning its contents with line numbers.
+  .write: Write content to a file, creating parent directories as needed.
+  .edit: Apply a targeted find-and-replace patch to a file.
 - shell.run: Run a shell command and return its stdout and stderr.
 
 

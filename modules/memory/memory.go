@@ -186,6 +186,44 @@ func (fm *FileMemory) Remove(target, oldText string) (string, error) {
 	return fm.usage(target, entries), nil
 }
 
+// snapshotFiles reads the current bytes of both store files and
+// returns a restore closure writing them back. Files that did not
+// exist at snapshot time are removed on restore - a batch that created
+// a store from scratch rolls the creation back too.
+func (fm *FileMemory) snapshotFiles() func() {
+	type fileSnap struct {
+		path string
+		data []byte
+	}
+	var pre []fileSnap
+	for _, t := range []string{targetMemory, targetUser} {
+		path := fm.targetFile(t)
+		if data, err := os.ReadFile(path); err == nil {
+			pre = append(pre, fileSnap{path: path, data: data})
+		}
+	}
+	return func() {
+		for _, s := range pre {
+			if err := os.WriteFile(s.path, s.data, 0644); err != nil {
+				return // best effort; leave the first write visible
+			}
+		}
+		for _, t := range []string{targetMemory, targetUser} {
+			path := fm.targetFile(t)
+			existed := false
+			for _, s := range pre {
+				if s.path == path {
+					existed = true
+					break
+				}
+			}
+			if !existed {
+				os.Remove(path) //nolint:errcheck // snapshot semantics
+			}
+		}
+	}
+}
+
 // List returns all entries for the target.
 func (fm *FileMemory) List(target string) ([]string, error) {
 	fm.mu.Lock()
@@ -343,51 +381,77 @@ type memoryToolProvider struct {
 	mem *FileMemory
 }
 
+// memoryActions is the structured sub-action metadata: the one source
+// of truth the schema enum, the prompt, and /tools all derive from.
+var memoryActions = []agent.ToolAction{
+	{Name: "add", Description: "Append a new entry (content required)."},
+	{Name: "replace", Description: "Find the entry matching old_text (unique substring) and replace it with content."},
+	{Name: "remove", Description: "Find the entry matching old_text (unique substring) and delete it."},
+}
+
+// memoryActionNames returns the action names from the metadata.
+func memoryActionNames() []string {
+	names := make([]string, len(memoryActions))
+	for i, a := range memoryActions {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// buildMemoryTool assembles the single memory domain tool: the
+// description is the domain context (targets, batch contract); actions
+// carry the verbs. The top-level action enum derives via
+// Tool.SchemaParameters from Actions; the operations array's per-item
+// enum shares the same names list. Stateless - called per Tools().
+func (p *memoryToolProvider) buildMemoryTool() agent.Tool {
+	return agent.Tool{
+		Description: "Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.",
+		Actions:     memoryActions,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action": map[string]any{
+					"type":        "string",
+					"description": "What to do: add, replace, or remove an entry.",
+				},
+				"target": map[string]any{
+					"type":        "string",
+					"enum":        []string{"memory", "user"},
+					"description": "Which store: 'memory' (agent notes) or 'user' (user profile).",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "The entry text (required for add and replace).",
+				},
+				"old_text": map[string]any{
+					"type":        "string",
+					"description": "Unique substring identifying the entry to replace or remove (required for replace and remove).",
+				},
+				"operations": map[string]any{
+					"type":        "array",
+					"description": "Batch operations: array of {action, target, content?, old_text?}. Applied atomically - char limit checked on final result only, any failure rolls the whole batch back.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"action":   map[string]any{"type": "string", "enum": memoryActionNames()},
+							"target":   map[string]any{"type": "string", "enum": []string{"memory", "user"}},
+							"content":  map[string]any{"type": "string"},
+							"old_text": map[string]any{"type": "string"},
+						},
+						"required": []string{"action", "target"},
+					},
+				},
+			},
+			"required": []string{"action", "target"},
+		},
+		Run: p.runMemory,
+	}
+}
+
 // Tools returns the memory tool definition.
 func (p *memoryToolProvider) Tools() map[string]agent.Tool {
 	return map[string]agent.Tool{
-		"memory": {
-			Description: "Save durable facts to persistent memory that survives across sessions. Memory is injected into the system prompt every session — use it for user preferences, environment facts, conventions, and lessons learned. Two targets: 'memory' (agent notes) and 'user' (user profile). Actions: 'add' (append), 'replace' (find by old_text substring, replace with content), 'remove' (find by old_text substring, delete). Batch: pass 'operations' array for atomic multi-change.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"action": map[string]any{
-						"type":        "string",
-						"enum":        []string{"add", "replace", "remove"},
-						"description": "What to do: add, replace, or remove an entry.",
-					},
-					"target": map[string]any{
-						"type":        "string",
-						"enum":        []string{"memory", "user"},
-						"description": "Which store: 'memory' (agent notes) or 'user' (user profile).",
-					},
-					"content": map[string]any{
-						"type":        "string",
-						"description": "The entry text (required for add and replace).",
-					},
-					"old_text": map[string]any{
-						"type":        "string",
-						"description": "Unique substring identifying the entry to replace or remove (required for replace and remove).",
-					},
-					"operations": map[string]any{
-						"type":        "array",
-						"description": "Batch operations: array of {action, target, content?, old_text?}. Applied atomically — char limit checked on final result only.",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"action":   map[string]any{"type": "string", "enum": []string{"add", "replace", "remove"}},
-								"target":   map[string]any{"type": "string", "enum": []string{"memory", "user"}},
-								"content":  map[string]any{"type": "string"},
-								"old_text": map[string]any{"type": "string"},
-							},
-							"required": []string{"action", "target"},
-						},
-					},
-				},
-				"required": []string{"action", "target"},
-			},
-			Run: p.runMemory,
-		},
+		"memory": p.buildMemoryTool(),
 	}
 }
 
@@ -475,22 +539,32 @@ func (p *memoryToolProvider) execOp(op memoryOp) (string, error) {
 	return "", fmt.Errorf("unknown action: %s", op.Action)
 }
 
-// runBatch executes a batch of operations.
-// ponytail: no rollback on partial failure — the char limit is checked
-// on the final result only, so if the batch fits, all operations apply.
-// If an individual operation fails (e.g. ambiguous substring), the
-// batch stops at that point and returns the error. Upgrade path:
-// snapshot-and-revert for full transactional semantics.
+// runBatch executes a batch of operations atomically: file-backed
+// stores are snapshotted up front and restored if any operation fails,
+// so a mid-batch failure (e.g. a failed [remove, add]) leaves the
+// earlier operations rolled back - the "applied atomically" promise in
+// the schema description is true, not aspirational.
+// ponytail: the snapshot is per-file bytes, not per-op undo; a store
+// file is at most a few KB, so full-restore is both simpler and safer
+// than reverse-applying ops. (Upgrade path removed: this IS the
+// snapshot-and-revert upgrade the old fail-forward loop was waiting
+// for.)
 func (p *memoryToolProvider) runBatch(ops []memoryOp) string {
+	restore := p.mem.snapshotFiles()
 	var lastUsage string
 	var lastTarget string
 	for _, op := range ops {
 		usage, err := p.execOp(op)
 		if err != nil {
+			restore()
+			// After rollback the failing target holds its pre-batch
+			// contents - report them so the model can retry informed.
 			entries, _ := p.mem.List(op.Target)
 			return marshalResult(memoryResult{
-				Success:        false,
-				Error:          fmt.Sprintf("batch failed at %s: %s", op.Action, err.Error()),
+				Success: false,
+				Error:   fmt.Sprintf("batch failed at %s: %s (rolled back)", op.Action, err.Error()),
+				// Current entries of the failed target: the batch is
+				// rolled back, so these are the pre-batch contents.
 				CurrentEntries: entries,
 				Usage:          usage,
 			})

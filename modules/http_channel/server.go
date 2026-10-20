@@ -1187,20 +1187,32 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// toolListing is one /tools row: the registry entry's name and
-// short description (the inventory, not the schemas - parameter maps
-// would only bloat the listing the UI shows).
-type toolListing struct {
+// toolActionListing is one sub-action of a domain tool: name and its
+// own one-liner (the webui's dotted sub-rows).
+type toolActionListing struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// handleTools serves GET /tools: the agent's executable tool registry as
-// a name+description array, sorted by name. The inventory is the union
-// the chat loop actually runs with - the agent's ToolProviders plus the
-// server registry (agent.Tools() copies defensively; the server's own
-// set overlays on top, matching the loop's merge precedent where
-// existing entries win). The webui's module-owned tools panel
+// toolListing is one /tools row: the registry entry's name, short
+// description, and the sub-action metadata of a domain tool (the
+// inventory, not the schemas - parameter maps would only bloat the
+// listing the UI shows).
+type toolListing struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Actions     []toolActionListing `json:"actions,omitempty"`
+}
+
+// handleTools serves GET /tools: the agent's executable tool registry
+// as a name+description array, sorted by name. Extension-provided
+// alias shims (Tool.AliasOf) are hidden: they stay callable by the
+// model for one release but the inventory shows the folded tool with
+// its sub-actions. The inventory is the union the chat loop actually
+// runs with - the agent's ToolProviders plus the server registry
+// (agent.Tools() copies defensively; the server's own set overlays on
+// top, matching the loop's merge precedent where existing entries
+// win). The webui's module-owned tools panel
 // (modules/tools/ui/ToolsList.vue) renders this. Descriptions only -
 // parameter maps would only bloat the listing the UI shows.
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
@@ -1224,7 +1236,15 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	slices.Sort(names)
 	out := make([]toolListing, 0, len(names))
 	for _, name := range names {
-		out = append(out, toolListing{Name: name, Description: inventory[name].Description})
+		t := inventory[name]
+		row := toolListing{Name: name, Description: t.Description}
+		for _, a := range t.Actions {
+			row.Actions = append(row.Actions, toolActionListing{Name: a.Name, Description: a.Description})
+		}
+		if t.AliasOf != "" {
+			continue // compat shim, not inventory
+		}
+		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

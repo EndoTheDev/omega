@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,85 +69,167 @@ type ToolProvider struct {
 	board agent.KanbanProvider
 }
 
-// Tools returns the six board tools.
+// taskActions is the structured sub-action metadata for the
+// consolidated task tool: one source of truth for the schema enum, the
+// prompt, and the /tools inventory.
+var taskActions = []agent.ToolAction{
+	{Name: "create", Description: "Create a board task (title is the short name, body carries the full spec)."},
+	{Name: "list", Description: "List board tasks, optionally filtered by status."},
+	{Name: "update", Description: "Update a task: move status (any legal transition), set assignee, retitle, or rewrite the body."},
+	{Name: "complete", Description: "Mark a task done (moves it to the done column and stamps completion)."},
+	{Name: "comment", Description: "Add a comment to a task's thread."},
+	{Name: "link_session", Description: "Link a task to the conversation it belongs to (defaults to the current session)."},
+}
+
+// taskActionNames returns the action names from the metadata.
+func taskActionNames() []string {
+	names := make([]string, len(taskActions))
+	for i, a := range taskActions {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// legacyTaskNames maps folded actions back to the pre-fold dotted tool
+// names (the alias shim set).
+var legacyTaskNames = map[string]string{
+	"create":       "task.create",
+	"list":         "task.list",
+	"update":       "task.update",
+	"complete":     "task.complete",
+	"comment":      "task.comment",
+	"link_session": "task.link_session",
+}
+
+// Tools returns the board tools. The six dotted verbs are consolidated
+// into one "task" domain tool with an action enum (derived from
+// taskActions) plus a batch operations array; the legacy task.* names
+// stay registered as alias shims for one release.
 func (p *ToolProvider) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
-		"task.create": {
-			Description: "Create a board task (title is the short name, body carries the full spec).",
+	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
+	tools := map[string]agent.Tool{
+		"task": {
+			Description: "One tool for the kanban board: create, list, update, complete, comment on, and link tasks. Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
+			Actions:     taskActions,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"title":    map[string]any{"type": "string", "description": "Short title (required)."},
-					"body":     map[string]any{"type": "string", "description": "Full spec / body (optional)."},
-					"assignee": map[string]any{"type": "string", "description": "Who the task is for (optional)."},
-					"status":   map[string]any{"type": "string", "description": "Initial status (optional, default triage). One of triage todo scheduled ready running blocked review done archived."},
-					"source":   map[string]any{"type": "string", "description": "Provenance tag, e.g. an automator's name (optional)."},
+					"action": map[string]any{
+						"type":        "string",
+						"description": "Which board operation to run.",
+					},
+					"id":         map[string]any{"type": "string", "description": "Task id (update, complete, comment, link_session; batch ops carry their own)."},
+					"title":      map[string]any{"type": "string", "description": "Short title (create); new title (update)."},
+					"body":       map[string]any{"type": "string", "description": "Full spec / body (create); new body (update); comment body (comment, required)."},
+					"assignee":   map[string]any{"type": "string", "description": "Who the task is for (create); new assignee, empty string unassigns (update)."},
+					"status":     map[string]any{"type": "string", "description": statusDesc},
+					"source":     map[string]any{"type": "string", "description": "Provenance tag, e.g. an automator's name (create)."},
+					"author":     map[string]any{"type": "string", "description": "Comment author (comment, default agent)."},
+					"session_id": map[string]any{"type": "string", "description": "Session id (link_session, default current session)."},
+					"operations": map[string]any{
+						"type":        "array",
+						"description": "Batch: array of {action, ...args} operations, applied in order. If one fails, later operations are not attempted.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"action": map[string]any{"type": "string", "enum": taskActionNames()},
+							},
+							"required": []string{"action"},
+						},
+					},
 				},
-				"required": []string{"title"},
+				"required": []string{"action"},
 			},
-			Run: p.runCreate,
+			Run: p.runTask,
 		},
-		"task.list": {
-			Description: "List board tasks, optionally filtered by status.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"status": map[string]any{"type": "string", "description": "Filter by status (optional). Omit for every task."},
-				},
+	}
+	for _, a := range taskActions {
+		legacy := legacyTaskNames[a.Name]
+		if legacy == "" {
+			continue
+		}
+		action := a.Name
+		tools[legacy] = agent.Tool{
+			Description: fmt.Sprintf("%s (alias for task with action %q)", a.Description, action),
+			AliasOf:     "task",
+			Run: func(ctx context.Context, args map[string]any) (string, error) {
+				args["action"] = action
+				return p.runTask(ctx, args)
 			},
-			Run: p.runList,
-		},
-		"task.update": {
-			Description: "Update a task: move status (any legal transition), set assignee, retitle, or rewrite the body.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":       map[string]any{"type": "string", "description": "Task id (required)."},
-					"status":   map[string]any{"type": "string", "description": "New status (optional)."},
-					"assignee": map[string]any{"type": "string", "description": "New assignee, empty string unassigns (optional)."},
-					"title":    map[string]any{"type": "string", "description": "New title (optional)."},
-					"body":     map[string]any{"type": "string", "description": "New body (optional)."},
-				},
-				"required": []string{"id"},
-			},
-			Run: p.runUpdate,
-		},
-		"task.comment": {
-			Description: "Add a comment to a task's thread.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":    map[string]any{"type": "string", "description": "Task id (required)."},
-					"body":  map[string]any{"type": "string", "description": "Comment body (required)."},
-					"author": map[string]any{"type": "string", "description": "Comment author (optional, default agent)."},
-				},
-				"required": []string{"id", "body"},
-			},
-			Run: p.runComment,
-		},
-		"task.complete": {
-			Description: "Mark a task done (moves it to the done column and stamps completion).",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id": map[string]any{"type": "string", "description": "Task id (required)."},
-				},
-				"required": []string{"id"},
-			},
-			Run: p.runComplete,
-		},
-		"task.link_session": {
-			Description: "Link a task to the conversation it belongs to (defaults to the current session).",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":         map[string]any{"type": "string", "description": "Task id (required)."},
-					"session_id": map[string]any{"type": "string", "description": "Session id (optional, default current session)."},
-				},
-				"required": []string{"id"},
-			},
-			Run: p.runLink,
-		},
+		}
+	}
+	return tools
+}
+
+// parseTaskOperations converts the raw interface{} from tool args into
+// ordered single-op arg maps, validating the action enum.
+func parseTaskOperations(raw any) ([]map[string]any, error) {
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid operations: %v", err)
+	}
+	var ops []map[string]any
+	if err := json.Unmarshal(data, &ops); err != nil {
+		return nil, fmt.Errorf("invalid operations: %v", err)
+	}
+	if len(ops) == 0 {
+		return nil, fmt.Errorf("operations array is empty")
+	}
+	legal := make(map[string]bool, len(taskActions))
+	for _, a := range taskActions {
+		legal[a.Name] = true
+	}
+	for i, op := range ops {
+		act, _ := op["action"].(string)
+		if !legal[act] {
+			return nil, fmt.Errorf("operations[%d]: action must be one of %v, got %q", i, taskActionNames(), act)
+		}
+	}
+	return ops, nil
+}
+
+// runTask dispatches the consolidated task tool: a single operation or
+// a batch. The batch is fail-forward (the board is a DB, not a file
+// store - there is no snapshot to restore; ops stop at the first
+// failure and the result reports which ops already applied).
+func (p *ToolProvider) runTask(ctx context.Context, args map[string]any) (string, error) {
+	if opsRaw, ok := args["operations"]; ok && opsRaw != nil {
+		ops, err := parseTaskOperations(opsRaw)
+		if err != nil {
+			return "", err
+		}
+		var sb strings.Builder
+		for i, op := range ops {
+			res, err := p.runTaskOp(ctx, op)
+			if err != nil {
+				return sb.String() + fmt.Sprintf("failed at operations[%d]: %v", i, err), nil
+			}
+			fmt.Fprintf(&sb, "%d: %s\n", i+1, res)
+		}
+		fmt.Fprintf(&sb, "%d operations applied", len(ops))
+		return sb.String(), nil
+	}
+	return p.runTaskOp(ctx, args)
+}
+
+// runTaskOp executes one task operation by its action.
+func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (string, error) {
+	action, _ := args["action"].(string)
+	switch action {
+	case "create":
+		return p.runCreate(ctx, args)
+	case "list":
+		return p.runList(ctx, args)
+	case "update":
+		return p.runUpdate(ctx, args)
+	case "complete":
+		return p.runComplete(ctx, args)
+	case "comment":
+		return p.runComment(ctx, args)
+	case "link_session":
+		return p.runLink(ctx, args)
+	default:
+		return "", fmt.Errorf("action is required: one of %v, or pass operations for a batch", taskActionNames())
 	}
 }
 

@@ -142,3 +142,149 @@ func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
 		t.Errorf("assignee = %q, want empty", task.Assignee)
 	}
 }
+
+// TestRunTaskActionEnumCoversAllVerbs is the consolidation gate: every
+// pre-fold verb's behavior is reachable through the folded task tool's
+// action enum.
+func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
+	p, board := toolProvider(t)
+	ctx := withSession(context.Background(), "sess_fold")
+
+	// create
+	out, err := p.runTask(ctx, map[string]any{"action": "create", "title": "folded flow", "body": "spec"})
+	if err != nil || !strings.Contains(out, "created t_") {
+		t.Fatalf("create: %q %v", out, err)
+	}
+	id := strings.Fields(out)[1]
+
+	// list
+	out, err = p.runTask(ctx, map[string]any{"action": "list"})
+	if err != nil || !strings.Contains(out, "folded flow") {
+		t.Fatalf("list: %q %v", out, err)
+	}
+
+	// update
+	out, err = p.runTask(ctx, map[string]any{"action": "update", "id": id, "status": StatusRunning})
+	if err != nil || !strings.Contains(out, id) {
+		t.Fatalf("update: %q %v", out, err)
+	}
+
+	// comment
+	out, err = p.runTask(ctx, map[string]any{"action": "comment", "id": id, "body": "hello"})
+	if err != nil || !strings.Contains(out, "commented on") {
+		t.Fatalf("comment: %q %v", out, err)
+	}
+	comments, _ := board.GetTaskComments(context.Background(), id)
+	if len(comments) != 1 {
+		t.Fatalf("comments = %+v", comments)
+	}
+
+	// link_session
+	out, err = p.runTask(ctx, map[string]any{"action": "link_session", "id": id, "session_id": "sess_x"})
+	if err != nil || !strings.Contains(out, "linked") {
+		t.Fatalf("link_session: %q %v", out, err)
+	}
+
+	// complete
+	out, err = p.runTask(ctx, map[string]any{"action": "complete", "id": id})
+	if err != nil || !strings.Contains(out, "done") {
+		t.Fatalf("complete: %q %v", out, err)
+	}
+	task, _ := board.GetTask(context.Background(), id)
+	if task.Status != StatusDone || task.CompletedAt == "" {
+		t.Fatalf("task = %+v", task)
+	}
+
+	// unknown / empty action
+	if _, err := p.runTask(ctx, map[string]any{}); err == nil || !strings.Contains(err.Error(), "action is required") {
+		t.Fatalf("empty action: %v", err)
+	}
+}
+
+// TestRunTaskBatch covers the batch surface: create several in one
+// call, and update+comment together.
+func TestRunTaskBatch(t *testing.T) {
+	p, board := toolProvider(t)
+	ctx := withSession(context.Background(), "sess_batch")
+
+	out, err := p.runTask(ctx, map[string]any{"operations": []map[string]any{
+		{"action": "create", "title": "batch one"},
+		{"action": "create", "title": "batch two"},
+	}})
+	if err != nil || !strings.Contains(out, "2 operations applied") {
+		t.Fatalf("create batch: %q %v", out, err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %q", len(lines), out)
+	}
+	id1 := strings.Fields(strings.TrimPrefix(lines[0], "1: "))[1]
+
+	out, err = p.runTask(ctx, map[string]any{"operations": []map[string]any{
+		{"action": "update", "id": id1, "status": StatusBlocked},
+		{"action": "comment", "id": id1, "body": "blocked for a reason"},
+	}})
+	if err != nil || !strings.Contains(out, "2 operations applied") {
+		t.Fatalf("update+comment batch: %q %v", out, err)
+	}
+	task, _ := board.GetTask(context.Background(), id1)
+	if task.Status != StatusBlocked {
+		t.Fatalf("status = %s", task.Status)
+	}
+	comments, _ := board.GetTaskComments(context.Background(), id1)
+	if len(comments) != 1 {
+		t.Fatalf("comments = %+v", comments)
+	}
+}
+
+// TestRunTaskBatchFailForward pins the DB-surface batch semantics: the
+// batch stops at the first failure, reporting what already applied.
+func TestRunTaskBatchFailForward(t *testing.T) {
+	p, _ := toolProvider(t)
+	ctx := context.Background()
+
+	out, _ := p.runTask(ctx, map[string]any{"operations": []map[string]any{
+		{"action": "create", "title": "kept"},
+		{"action": "update", "id": "t_missing", "status": StatusDone},
+		{"action": "create", "title": "never created"},
+	}})
+	if !strings.Contains(out, "failed at operations[1]") {
+		t.Fatalf("expected fail-forward report, got %q", out)
+	}
+	if strings.Contains(out, "never created") && !strings.Contains(out, "kept") {
+		t.Fatalf("partial results lost: %q", out)
+	}
+	tasks, _ := p.board.ListTasks(ctx, "")
+	if len(tasks) != 1 || tasks[0].Title != "kept" {
+		t.Fatalf("task after failed batch = %+v", tasks)
+	}
+}
+
+// TestTaskAliasesRouteThroughFoldedTool is the compat gate: the old
+// dotted names still work, routed through the folded dispatcher, and
+// are marked AliasOf so they stay out of the prompt and /tools.
+func TestTaskAliasesRouteThroughFoldedTool(t *testing.T) {
+	p, board := toolProvider(t)
+	ctx := withSession(context.Background(), "sess_alias")
+	tools := p.Tools()
+
+	out, err := tools["task.create"].Run(ctx, map[string]any{"title": "via alias"})
+	if err != nil || !strings.Contains(out, "created t_") {
+		t.Fatalf("task.create alias: %q %v", out, err)
+	}
+	id := strings.Fields(out)[1]
+	if _, err := tools["task.comment"].Run(ctx, map[string]any{"id": id, "body": "note"}); err != nil {
+		t.Fatalf("task.comment alias: %v", err)
+	}
+	if comments, _ := board.GetTaskComments(context.Background(), id); len(comments) != 1 {
+		t.Fatalf("comments = %+v", comments)
+	}
+	for name, tool := range tools {
+		if name == "task" || name == "task.create" || name == "task.comment" {
+			continue
+		}
+		if tool.AliasOf != "task" {
+			t.Fatalf("%s not marked AliasOf=task: %q", name, tool.AliasOf)
+		}
+	}
+}

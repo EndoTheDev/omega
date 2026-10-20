@@ -198,10 +198,13 @@ type CmdAction struct {
 }
 
 // ToolInfo is a tool name and description pair, for display in the
-// system prompt and /tools listing.
+// system prompt and /tools listing. Actions carries the sub-action
+// metadata of a domain tool so renderers can show the split
+// (domain line + labeled sub-actions) without re-parsing schemas.
 type ToolInfo struct {
 	Name        string
 	Description string
+	Actions     []ToolAction
 }
 
 // ExtensionInfo is metadata about a loaded extension, for display.

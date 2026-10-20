@@ -205,10 +205,16 @@ func mountPlugins(ordered []Plugin, ctx *Context) error {
 				continue
 			}
 			for name, t := range tp.Tools() {
+				// Alias entries are model-facing compat shims, not inventory:
+				// they stay callable while hidden from the display counts.
+				if t.AliasOf != "" {
+					continue
+				}
 				info.Tools++
 				info.ToolList = append(info.ToolList, ToolInfo{
 					Name:        name,
 					Description: t.Description,
+					Actions:     t.Actions,
 				})
 			}
 		}

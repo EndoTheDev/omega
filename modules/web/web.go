@@ -39,41 +39,72 @@ func New(cfg Config) *Extension {
 	return &Extension{apiKey: cfg.APIKey, baseURL: base}
 }
 
-// Tools returns the web.search and web.fetch tools.
+// webActions is the structured sub-action metadata for the
+// consolidated web tool: one source of truth for the schema enum, the
+// prompt, and the /tools inventory.
+var webActions = []agent.ToolAction{
+	{Name: "search", Description: "Search the web for the given query and return relevant results with titles, URLs, and content snippets."},
+	{Name: "fetch", Description: "Fetch a single web page by URL and return its title, main content, and links found on the page."},
+}
+
+// Tools returns the web domain tool. The two dotted verbs fold into one
+// action protocol; the legacy names stay registered as alias shims for
+// one release.
 func (e *Extension) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
-		"web.search": {
-			Description: "Search the web for the given query and return relevant results with titles, URLs, and content snippets.",
+	tools := map[string]agent.Tool{
+		"web": {
+			Description: "Search the web and fetch pages.",
+			Actions:     webActions,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"action": map[string]any{
+						"type":        "string",
+						"description": "search or fetch.",
+					},
 					"query": map[string]any{
 						"type":        "string",
-						"description": "The search query string.",
+						"description": "The search query string (required for action search).",
 					},
 					"max_results": map[string]any{
 						"type":        "integer",
-						"description": "Maximum results to return (default 5, max 10).",
+						"description": "Maximum results to return (action search, default 5, max 10).",
 					},
-				},
-				"required": []string{"query"},
-			},
-			Run: e.runSearch,
-		},
-		"web.fetch": {
-			Description: "Fetch a single web page by URL and return its title, main content, and links found on the page.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
 					"url": map[string]any{
 						"type":        "string",
-						"description": "The URL to fetch.",
+						"description": "The URL to fetch (required for action fetch).",
 					},
 				},
-				"required": []string{"url"},
+				"required": []string{"action"},
 			},
-			Run: e.runFetch,
+			Run: e.runWeb,
 		},
+	}
+	for _, a := range webActions {
+		legacy := map[string]string{"search": "web.search", "fetch": "web.fetch"}[a.Name]
+		action := a.Name
+		tools[legacy] = agent.Tool{
+			Description: fmt.Sprintf("%s (alias for web with action %q)", a.Description, action),
+			AliasOf:     "web",
+			Run: func(ctx context.Context, args map[string]any) (string, error) {
+				args["action"] = action
+				return e.runWeb(ctx, args)
+			},
+		}
+	}
+	return tools
+}
+
+// runWeb dispatches the consolidated web tool.
+func (e *Extension) runWeb(ctx context.Context, args map[string]any) (string, error) {
+	action, _ := args["action"].(string)
+	switch action {
+	case "search":
+		return e.runSearch(ctx, args)
+	case "fetch":
+		return e.runFetch(ctx, args)
+	default:
+		return "", fmt.Errorf("action is required: one of search, fetch")
 	}
 }
 
