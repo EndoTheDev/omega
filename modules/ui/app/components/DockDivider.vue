@@ -12,11 +12,14 @@
 
 <script setup lang="ts">
   // Dumb resize handle between a split's children: reports RAW pointer
-  // deltas (x for row splits, y for columns). ALL geometry lives in the
-  // dock tree (dock.ts dragSplitDivider: 128px floor, 320px chat floor,
-  // 320/640 snap attractor) - measurement and math belong to the owner
-  // DockSplit; the divider only streams deltas and mirrors the snap state
-  // it is told about.
+  // positions (x for row splits, y for columns) as `raw` deltas. ALL
+  // geometry lives in the dock tree (dock.ts dragSplitDivider: 128px floor,
+  // 320px chat floor, +320 snap ladder) - measurement and math belong to
+  // the owner DockSplit; the divider only streams positions and mirrors
+  // the snap state it is told about. The event carries BOTH the per-gesture
+  // delta (compat) and the raw pointer position - the delta lets DockSplit
+  // rebase mid-gesture (squeeze push-back re-measures without breaking the
+  // drag).
   import { ref } from "vue";
 
   const props = defineProps<{
@@ -27,7 +30,7 @@
   }>();
 
   const emit = defineEmits<{
-    (e: "drag", delta: number): void;
+    (e: "drag", delta: number, raw: number): void;
     (e: "end"): void;
   }>();
 
@@ -42,8 +45,8 @@
   }
   function move(e: PointerEvent) {
     if (!dragging.value) return;
-    const delta = props.column ? e.clientY - origin : e.clientX - origin;
-    emit("drag", delta);
+    const raw = props.column ? e.clientY : e.clientX;
+    emit("drag", raw - origin, raw);
   }
   function stop() {
     if (!dragging.value) return;

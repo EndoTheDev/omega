@@ -23,11 +23,15 @@ import {
   deserialize,
   migrateLegacy,
   nextNodeId,
+  syncIdSeed,
   findPane,
   findComponentPane,
   findEdgePane,
   hideEdgePane,
   revealEdgePane,
+  rememberEdgePx,
+  recalledEdgePx,
+  edgeComponentOf,
   allNodes,
   isPinnedPane,
   paneCount,
@@ -625,6 +629,30 @@ describe("pane-model reset", () => {
     const t = defaultTree();
     assert.equal(ensurePinnedEdges(t), t);
   });
+  it("boot repair never mints an id the loaded tree already owns (n1 collision, t_f6d5a771)", () => {
+    // reload after a divider hide: the sidebar is gone, the stored tree
+    // still holds its old ids - chat "n3", files "n1". The boot repair
+    // re-inserts the sidebar; with the per-page seed at 0 that mint would
+    // be "n1" TOO unless the seed synced first - duplicate ids, and every
+    // id-keyed op (the divider intents' prunePane, canRemovePane) acts on
+    // BOTH panes at once.
+    const stored = asSplit({
+      kind: "split",
+      id: "n2",
+      direction: "row",
+      children: [
+        { kind: "pane", id: "n3", tabs: [{ component: "chat", key: "c1" }], active: 0, fixed: null },
+        { kind: "pane", id: "n1", tabs: [{ component: "files" }], active: 0, fixed: 240 },
+      ],
+      sizes: [0.8, 0.2],
+    });
+    syncIdSeed(stored);
+    const out = asSplit(ensurePinnedEdges(stored));
+    const ids = [...allNodes(out)].map((n) => n.id);
+    assert.equal(new Set(ids).size, ids.length, "no duplicate ids after repair");
+    assert.equal(asPane(out.children[0]).tabs[0].component, "sidebar");
+    assert.notEqual(asPane(out.children[0]).id, "n1");
+  });
   it("firstMainPaneId skips the pinned sidebars", () => {
     const t = defaultTree();
     assert.equal(firstMainPaneId(t), paneByComponent(t, "chat").id);
@@ -709,6 +737,71 @@ describe("edge toggle (card t_47b776ad)", () => {
   });
 });
 
+describe("edge width memory (card t_f6d5a771)", () => {
+  // minimal Storage stub: the memory lives beside the tree key
+  const stubStore = () => {
+    const mem: Record<string, string> = {};
+    return {
+      store: {
+        getItem: (k: string) => (k in mem ? mem[k] : null),
+        setItem: (k: string, v: string) => {
+          mem[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete mem[k];
+        },
+        clear: () => {
+          for (const k of Object.keys(mem)) delete mem[k];
+        },
+        key: () => null,
+        length: 0,
+      } as Storage,
+      mem,
+    };
+  };
+
+  it("hide remembers the edge pane's width; reveal restores it", () => {
+    const { store } = stubStore();
+    const t = defaultTree();
+    const sidebar = findEdgePane(t, "sidebar")!;
+    sidebar.fixed = 704;
+    rememberEdgePx(store, "sidebar", 704);
+    assert.equal(recalledEdgePx(store, "sidebar"), 704);
+    assert.equal(recalledEdgePx(store, "inspector"), null);
+    const hidden = hideEdgePane(t, "sidebar");
+    assert.equal(findEdgePane(hidden, "sidebar"), null);
+    const back = asSplit(
+      revealEdgePane(hidden, "sidebar", "before", recalledEdgePx(store, "sidebar")),
+    );
+    assert.equal(asPane(back.children[0]).fixed, 704);
+    assert.equal(asPane(back.children[0]).tabs[0]?.component, "sidebar");
+  });
+
+  it("a stale sub-floor remembered width reopens AT the 320 floor", () => {
+    const { store } = stubStore();
+    rememberEdgePx(store, "inspector", 100);
+    assert.equal(recalledEdgePx(store, "inspector"), PANE_OPEN_MIN);
+  });
+
+  it("corrupt storage reads back null (defaults win)", () => {
+    const { store, mem } = stubStore();
+    rememberEdgePx(store, "sidebar", 640);
+    mem["omega.dock-edge-px"] = "{oops";
+    assert.equal(recalledEdgePx(store, "sidebar"), null);
+  });
+
+  it("edgeComponentOf fingerprints the edge panes; main panes are null", () => {
+    const t = defaultTree();
+    const sidebar = findEdgePane(t, "sidebar")!;
+    const inspector = findEdgePane(t, "inspector")!;
+    assert.equal(edgeComponentOf(sidebar), "sidebar");
+    assert.equal(edgeComponentOf(inspector), "inspector");
+    const mainPaneId = firstMainPaneId(t)!;
+    const chat = findPane(t, mainPaneId)!;
+    assert.equal(edgeComponentOf(chat), null);
+  });
+});
+
 describe("dragSplitDivider", () => {
   // shell: row [sidebar(fixed 240), chat(flex), inspector pane(fixed 300)],
   // split content box 1000px. Rendered start widths sum to the content box
@@ -718,51 +811,111 @@ describe("dragSplitDivider", () => {
   it("left fixed: grows over the flexible chat", () => {
     const t = defaultTree();
     const out = dragSplitDivider(t, 1, [240, 460, 300], 100, CONTENT);
-    assert.equal(asPane(out.children[0]).fixed, 340);
-    assert.equal(asPane(out.children[1]).fixed, null, "chat stays flexible");
+    assert.equal(asPane(out.split.children[0]).fixed, 340);
+    assert.equal(asPane(out.split.children[1]).fixed, null, "chat stays flexible");
+    assert.equal(out.collapsedPaneId, null);
+    assert.equal(out.pushedPaneId, null);
   });
   it("left fixed: caps against the flexible chat floor (320)", () => {
     const t = defaultTree();
     const out = dragSplitDivider(t, 1, [240, 460, 300], 900, CONTENT);
     // room = 1000 - 300(inspector) = 700; max = 700 - 320 = 380
-    assert.equal(asPane(out.children[0]).fixed, 380);
+    assert.equal(asPane(out.split.children[0]).fixed, 380);
   });
-  it("left fixed: honors the 128px drag floor", () => {
+  it("left fixed: honors the 128px drag floor without collapsing", () => {
     const t = defaultTree();
-    const out = dragSplitDivider(t, 1, [240, 460, 300], -500, CONTENT);
-    assert.equal(asPane(out.children[0]).fixed, MIN_PANE_PX);
+    // req 240 - 112 = 128: ON the floor, still alive
+    const out = dragSplitDivider(t, 1, [240, 460, 300], -112, CONTENT);
+    assert.equal(asPane(out.split.children[0]).fixed, MIN_PANE_PX);
+    assert.equal(out.collapsedPaneId, null);
   });
   it("left fixed: snap attractor sticks the 320+-15 zone to 320", () => {
     const t = defaultTree();
     // zone is 305..335: 304 stays free, 318/322 snap, 336 stays free
-    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 64, CONTENT).children[0]).fixed, 304);
-    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 78, CONTENT).children[0]).fixed, 320);
-    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 82, CONTENT).children[0]).fixed, 320);
-    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 96, CONTENT).children[0]).fixed, 336);
+    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 64, CONTENT).split.children[0]).fixed, 304);
+    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 78, CONTENT).split.children[0]).fixed, 320);
+    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 82, CONTENT).split.children[0]).fixed, 320);
+    assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 96, CONTENT).split.children[0]).fixed, 336);
   });
   it("snap never crosses the cap (clamped after snapping)", () => {
     const t = defaultTree();
     // room = 1000 - 300; max 380: dragging toward 640 snaps to 640 but clamps
     // to 380
     const out = dragSplitDivider(t, 1, [240, 460, 300], 700, CONTENT);
-    assert.equal(asPane(out.children[0]).fixed, 380);
+    assert.equal(asPane(out.split.children[0]).fixed, 380);
   });
   it("right fixed (inspector): drag inverts - dragging left widens it", () => {
     const t = defaultTree();
     const out = dragSplitDivider(t, 2, [240, 460, 300], -60, CONTENT);
-    assert.equal(asPane(out.children[2]).fixed, 360);
+    assert.equal(asPane(out.split.children[2]).fixed, 360);
   });
   it("right fixed: caps against the flexible chat floor and floors at 128", () => {
     const t = defaultTree();
     // room = 1000 - 240 = 760; inspector max = 760 - 320 = 440 (drag LEFT)
-    assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], -900, CONTENT).children[2]).fixed, 440);
-    // drag RIGHT narrows it below the floor
-    assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], 600, CONTENT).children[2]).fixed, MIN_PANE_PX);
+    assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], -900, CONTENT).split.children[2]).fixed, 440);
+    // drag right narrows it to exactly the floor: still alive
+    const narrowed = dragSplitDivider(t, 2, [240, 460, 300], 172, CONTENT);
+    assert.equal(asPane(narrowed.split.children[2]).fixed, MIN_PANE_PX);
+    assert.equal(narrowed.collapsedPaneId, null);
   });
   it("right fixed: snap reads the inspector's px", () => {
     const t = defaultTree();
     // widening (drag left) by 25: 325 -> inside 320's zone -> snaps to 320
-    assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], -25, CONTENT).children[2]).fixed, 320);
+    assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], -25, CONTENT).split.children[2]).fixed, 320);
+  });
+
+  // --- card t_f6d5a771: divider close (drag-past-min) + squeeze push-back ---
+  const sidebarIdOf = (t: DockSplit) => asPane(t.children[0]).id;
+  const inspectorIdOf = (t: DockSplit) => asPane(t.children[2]).id;
+
+  it("drag-past-min CLOSES the sidebar: the left divider reports a hide intent", () => {
+    const t = defaultTree();
+    // req 240 - 113 = 127 < 128: the pane goes
+    const out = dragSplitDivider(t, 1, [240, 460, 300], -113, CONTENT);
+    assert.equal(out.collapsedPaneId, sidebarIdOf(t));
+    assert.equal(out.pushedPaneId, null);
+  });
+  it("drag-past-min CLOSES the inspector: the right divider mirrors it", () => {
+    const t = defaultTree();
+    // req 300 - 173 = 127 < 128 (delta +173): the pane goes
+    const out = dragSplitDivider(t, 2, [240, 460, 300], 173, CONTENT);
+    assert.equal(out.collapsedPaneId, inspectorIdOf(t));
+    assert.equal(out.pushedPaneId, null);
+  });
+  it("push-back: over-cap drag SHRINKS the nearest fixed pane beyond first", () => {
+    const t = defaultTree();
+    // widening the sidebar: req 480, cap = 700 - 320 = 380, over 100 <=
+    // inspector's slack (300 - 128): the inspector shrinks 300 -> 200
+    const out = dragSplitDivider(t, 1, [240, 460, 300], 240, CONTENT);
+    assert.equal(asPane(out.split.children[0]).fixed, 480);
+    assert.equal(asPane(out.split.children[2]).fixed, 200);
+    assert.equal(out.pushedPaneId, null);
+  });
+  it("push-back: starved past its floor, the beyond pane CLOSES instead", () => {
+    const t = defaultTree();
+    // req 1140; cap 380; over 760 > inspector slack 172 -> the inspector
+    // reports as closed (the store prunes; the split here comes back as-is)
+    const out = dragSplitDivider(t, 1, [240, 460, 300], 900, CONTENT);
+    assert.equal(out.pushedPaneId, inspectorIdOf(t));
+    assert.equal(out.collapsedPaneId, null);
+    assert.equal(out.split.children.length, 3, "the pure math reports; the store prunes");
+    assert.equal(asPane(out.split.children[0]).fixed, 380);
+  });
+  it("push-back (inspector divider): the starved LEFT sidebar closes", () => {
+    const t = defaultTree();
+    // widening the inspector: req 1200, cap = 760 - 320 = 440, over 760 >
+    // sidebar slack 112 -> the sidebar reports closed
+    const out = dragSplitDivider(t, 2, [240, 460, 300], -900, CONTENT);
+    assert.equal(out.pushedPaneId, sidebarIdOf(t));
+    assert.equal(asPane(out.split.children[2]).fixed, 440);
+  });
+  it("push-back with no fixed pane beyond: plain cap (no close intent)", () => {
+    const t = hideEdgePane(defaultTree(), "inspector");
+    // [sidebar(fixed 240), chat(flex)]: nothing beyond the chat to give
+    const out = dragSplitDivider(t, 1, [240, 460], 900, 700);
+    assert.equal(asPane(out.split.children[0]).fixed, 380);
+    assert.equal(out.pushedPaneId, null);
+    assert.equal(out.collapsedPaneId, null);
   });
   it("both flexible: fractions shift in tandem against the content box", () => {
     const t = defaultTree();
@@ -770,9 +923,9 @@ describe("dragSplitDivider", () => {
     // inner: [chat(flex), empty(flex)], fractions 0.5/0.5; content box 996px
     // (1000 split width - one 4px gutter) splits 498/498 at drag start
     const out = dragSplitDivider(inner, 1, [498, 498], 100, 996);
-    assert.ok(Math.abs(out.sizes[0] * 996 - 598) < 1e-6, `left got ${out.sizes[0] * 996}`);
-    assert.ok(Math.abs(out.sizes[1] * 996 - 398) < 1e-6);
-    const sum = out.sizes.reduce((a, s) => a + s, 0);
+    assert.ok(Math.abs(out.split.sizes[0] * 996 - 598) < 1e-6, `left got ${out.split.sizes[0] * 996}`);
+    assert.ok(Math.abs(out.split.sizes[1] * 996 - 398) < 1e-6);
+    const sum = out.split.sizes.reduce((a, s) => a + s, 0);
     assert.ok(Math.abs(sum - 1) < 1e-9);
   });
   it("both flexible: 320 floor between them, cap clamps the fraction", () => {
@@ -780,12 +933,15 @@ describe("dragSplitDivider", () => {
     const inner = asSplit(splitPane(t, paneByComponent(t, "chat").id, "row", "after").children[1]);
     const out = dragSplitDivider(inner, 1, [498, 498], 900, 996);
     // room 996, max left 996 - 320 = 676 -> fraction 676/996; right keeps >=320
-    assert.ok(Math.abs(out.sizes[0] * 996 - 676) < 1e-9);
-    assert.ok(out.sizes[1] * 996 >= 320 - 0.001);
+    assert.ok(Math.abs(out.split.sizes[0] * 996 - 676) < 1e-9);
+    assert.ok(out.split.sizes[1] * 996 >= 320 - 0.001);
   });
   it("no-op on out-of-range divider index", () => {
     const t = defaultTree();
-    assert.equal(dragSplitDivider(t, 0, [240, 460, 300], 10, CONTENT), t);
+    const out = dragSplitDivider(t, 0, [240, 460, 300], 10, CONTENT);
+    assert.deepEqual(out.split, t);
+    assert.equal(out.collapsedPaneId, null);
+    assert.equal(out.pushedPaneId, null);
   });
 });
 describe("graftSplit", () => {
@@ -795,9 +951,9 @@ describe("graftSplit", () => {
     const t2 = asSplit(splitPane(t, chat.id, "row", "after"));
     const inner = asSplit(t2.children[1]);
     const replaced = dragSplitDivider(inner, 1, [498, 498], 50, 996);
-    const out = graftSplit(t2, replaced);
+    const out = graftSplit(t2, replaced.split);
     assert.equal(asSplit(out).children[1].id, inner.id);
-    assert.equal(asSplit(asSplit(out).children[1]).sizes[0], replaced.sizes[0]);
+    assert.equal(asSplit(asSplit(out).children[1]).sizes[0], replaced.split.sizes[0]);
     // ids elsewhere untouched
     assert.equal(asPane(asSplit(out).children[0]).fixed, 240);
   });
@@ -806,7 +962,7 @@ describe("graftSplit", () => {
     // dragging the ROOT's divider produces a replacement split with t's id
     const dragged = dragSplitDivider(t, 1, [240, 460, 300], 50, 1000);
     // root id == replacement id -> the replacement IS the new root
-    assert.equal(graftSplit(t, dragged), dragged);
+    assert.equal(graftSplit(t, dragged.split), dragged.split);
     // no such split inside -> original reference returned
     const fresh = defaultTree();
     const missing = asSplit(splitPane(fresh, paneByComponent(fresh, "chat").id, "row", "after").children[1]);
