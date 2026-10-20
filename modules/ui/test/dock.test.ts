@@ -21,12 +21,17 @@ import {
   dragSplitDivider,
   serialize,
   deserialize,
+  deserializeLayout,
   migrateLegacy,
   nextNodeId,
   syncIdSeed,
   findPane,
   findComponentPane,
+  findComponentTab,
   findEdgePane,
+  openSingleton,
+  createDock,
+  DOCK_LAYOUT_KEY,
   hideEdgePane,
   revealEdgePane,
   rememberEdgePx,
@@ -39,6 +44,9 @@ import {
   insertMainPane,
   expandInspectorTabs,
   ensurePinnedEdges,
+  forceSessionsLeft,
+  restoreInspectorSet,
+  deriveEdgeMarkers,
   normalizeSizes,
   PANE_OPEN_MIN,
   LEGACY_WIDTH_KEYS,
@@ -48,6 +56,7 @@ import {
   type DockSplit,
 } from "../app/composables/dock.ts";
 import { registerScratchSingleton } from "./scratchDockable.ts";
+import { dropAllowedFor } from "../app/composables/dockdnd.ts";
 
 // card t_49d0b308: the tab-op fixtures below need a MAIN-area OPENABLE
 // component; settings left that class for the inspector. The synthetic
@@ -74,11 +83,13 @@ function asSplit(n: DockNode): DockSplit {
   return n as DockSplit;
 }
 /**
- * default shell shape (card t_4ae27e0d): row
- * [sidebar(fixed 240), chat(flex), inspector-pane(fixed 300: the five
- * real view tabs, files active)].
+ * default shell shape (card t_4ae27e0d, markers t_d6b657a7): row
+ * [sidebar(fixed 240), chat(flex), inspector-pane(fixed 300: the seven
+ * real view tabs, files active)]. The content shell is passed through
+ * ensurePinnedEdges so the edge markers ride on it (the modern trees'
+ * shape).
  */
-function defaultTree(): DockSplit {
+function contentTree(): DockSplit {
   const inspector: DockPane = {
     kind: "pane",
     id: nextNodeId(),
@@ -93,6 +104,9 @@ function defaultTree(): DockSplit {
       inspector,
     ]),
   );
+}
+function defaultTree(): DockSplit {
+  return asSplit(ensurePinnedEdges(contentTree()));
 }
 function panes(t: DockNode): DockPane[] {
   return [...allNodes(t)].filter((n) => n.kind === "pane") as DockPane[];
@@ -110,12 +124,20 @@ function comps(t: DockNode): (string | undefined)[] {
   return walk(root);
 }
 function paneByComponent(t: DockNode, c: "sidebar" | "chat" | "files"): DockPane {
-  const p = findComponentPane(t, c);
-  assert.ok(p, `expected a pane hosting ${c}`);
-  return p;
+  // ANY tab hosting, not active-only: cross-pane DnD parks singletons as
+  // inactive tabs all the time now (free content).
+  const loc = findComponentTab(t, c);
+  assert.ok(loc, `expected a pane hosting ${c}`);
+  return findPane(t, loc.paneId)!;
 }
 function splits(t: DockNode): DockSplit[] {
   return [...allNodes(t)].filter((n) => n.kind === "split") as DockSplit[];
+}
+/** every tab component hosted by the pane `id`, in order */
+function tabCompsIn(t: DockNode, id: string): (string | undefined)[] {
+  const p = findPane(t, id);
+  assert.ok(p, `expected pane ${id}`);
+  return p!.tabs.map((x) => x.component);
 }
 
 describe("tree construction", () => {
@@ -408,18 +430,29 @@ describe("tab ops", () => {
       assert.equal(l.active, 0, "neighbor takes over the focus");
     });
 
-    it("PINNED tab refuses to move; PINNED target refuses a drop", () => {
+    it("LOCKED sessions refuses every drop outside the left shell; everything else moves free", () => {
       const t = defaultTree();
       const side = paneByComponent(t, "sidebar");
       const files = paneByComponent(t, "files");
       const chat = paneByComponent(t, "chat");
-      // a pinned tab never leaves its pane...
-      assert.equal(moveTab(t, side.id, 0, chat.id, 0), t);
-      assert.equal(moveTab(t, files.id, 0, chat.id, 0), t);
-      // ...and no tab may move INTO a pinned pane
-      assert.equal(moveTab(t, chat.id, 0, side.id, 0), t);
-      assert.equal(moveTab(t, chat.id, 0, files.id, 0), t);
-      assert.deepEqual(tabComps(t, chat.id), ["chat"]);
+      // ruling 1: the sessions tab never leaves the left shell's own bar
+      assert.equal(moveTab(t, side.id, 0, chat.id, 0), t, "sessions does not drag right");
+      assert.equal(moveTab(t, side.id, 0, files.id, 0), t, "sessions does not drag into the right shell");
+      // ruling 2: EVERYTHING ELSE drags everywhere...
+      const movedOut = moveTab(t, files.id, 0, chat.id, 0);
+      assert.deepEqual(
+        tabComps(movedOut, chat.id),
+        ["files", "chat"],
+        "a right-shell tab becomes a main-pane tab",
+      );
+      // ...and back again (bidirectional into the pinned shell)
+      const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
+      assert.deepEqual(
+        tabComps(movedBack, files.id),
+        ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+        "the moved tab rejoins the inspector bar at the caret",
+      );
+      assert.deepEqual(tabComps(t, chat.id), ["chat"], "refusals leave the tree untouched");
     });
 
     it("guards: unknown panes, bad index return the original tree", () => {
@@ -502,7 +535,7 @@ describe("serialize / deserialize", () => {
     assert.equal(
       deserialize(
         JSON.stringify({
-          v: 1,
+          v: 2,
           tree: { kind: "pane", id: "n1", tabs: [{ component: "future" }], active: 0, fixed: 100 },
         }),
       ),
@@ -511,13 +544,41 @@ describe("serialize / deserialize", () => {
     assert.equal(
       deserialize(
         JSON.stringify({
-          v: 2,
+          v: 3,
           tree: { kind: "pane", id: "n1", tabs: [], active: 0, fixed: null },
         }),
       ),
       null,
       "future version forces migration instead of crashing",
     );
+  });
+  it("v2 round-trips the edge markers and the free tab arrangement", () => {
+    let t: DockNode = defaultTree();
+    // free content: files in the main pane, an empty right shell
+    const files = paneByComponent(t, "files");
+    const chat = paneByComponent(t, "chat");
+    t = moveTab(t, files.id, 0, chat.id, 0);
+    const insp = asSplit(t).children[2];
+    (insp as DockPane).tabs = [];
+    const back = deserialize(serialize(t))!;
+    assert.ok(back);
+    // which tab lives in which pane survives the round-trip verbatim
+    assert.deepEqual(tabCompsIn(back, chat.id), ["files", "chat"]);
+    assert.equal(paneCount(back), 3, "the emptied shell survives as a pane");
+    assert.equal(isPinnedPane(findPane(back, asPane(insp).id)!), true, "the shell keeps its marker");
+    assert.deepEqual([...allNodes(back)].filter((n) => n.kind === "pane")
+      .flatMap((n) => (n as DockPane).edge ? [n.edge] : []), ["left", "right"]);
+  });
+  it("marker-bearing v2 trees deserialize; bogus markers fall back to main", () => {
+    const t = defaultTree();
+    const back = deserializeLayout(serialize(t))!;
+    assert.equal(back.version, 2);
+    assert.equal(findPane(back.tree, asSplit(t).children[0].id)!.edge, "left");
+    assert.equal(findPane(back.tree, asSplit(t).children[2].id)!.edge, "right");
+    const bogus = JSON.parse(serialize(t));
+    bogus.tree.children[0].edge = "up";
+    const fixed = deserialize(JSON.stringify(bogus))!;
+    assert.equal(findPane(fixed, asSplit(t).children[0].id)!.edge, undefined);
   });
   it("ACCEPTS the legacy inspector tab (pre-reset trees deserialize)", () => {
     const back = deserialize(
@@ -970,3 +1031,265 @@ describe("graftSplit", () => {
     assert.equal(graftSplit(other, missing), other); // no such split inside
   });
 });
+
+// --- t_d6b657a7: locked sessions, free content, pinned shells -----------------
+
+describe("tab DnD everywhere (t_d6b657a7)", () => {
+  it("dropAllowedFor: locked drags only into the left shell; others everywhere", () => {
+    const locked = { paneId: "n1", index: 0, component: "sidebar" as const };
+    const free = { paneId: "n1", index: 0, component: "files" as const };
+    const none: typeof free | null = null;
+    assert.equal(dropAllowedFor("left", locked), true, "sessions stays in its own bar");
+    assert.equal(dropAllowedFor(null, locked), false, "sessions refuses main panes");
+    assert.equal(dropAllowedFor("right", locked), false, "sessions refuses the right shell");
+    assert.equal(dropAllowedFor(null, free), true, "files drops into main");
+    assert.equal(dropAllowedFor("left", free), true, "files drops into the left shell");
+    assert.equal(dropAllowedFor("right", free), true, "files drops into the right shell");
+    assert.equal(dropAllowedFor(null, none), false, "no gesture - no drop");
+  });
+
+  it("drag sim: reorder WITHIN the sidebar bar keeps everything in place", () => {
+    let t: DockNode = defaultTree();
+    const side = paneByComponent(t, "sidebar");
+    // files joins the sessions bar first (free content into the left shell)
+    const insp = paneByComponent(t, "files");
+    t = moveTab(t, insp.id, 0, side.id, 1);
+    // bar: [sessions, files]; drag files' caret to before tab 0
+    t = moveTab(t, side.id, 1, side.id, 0);
+    assert.deepEqual(
+      paneByComponent(t, "sidebar").tabs.map((x) => x.component),
+      ["files", "sidebar"],
+    );
+    assert.equal(paneByComponent(t, "sidebar").id, side.id, "no new pane minted");
+  });
+  it("drag sim: sessions reorder within its bar is the ONLY locked move", () => {
+    let t: DockNode = defaultTree();
+    const side = paneByComponent(t, "sidebar");
+    const insp = paneByComponent(t, "files");
+    t = moveTab(t, insp.id, 0, side.id, 1);
+    // the bar is [sessions, files]: dragging sessions to the end (caret 2)
+    // is a LEGAL reorder inside the shell's own bar
+    const reordered = moveTab(t, side.id, 0, side.id, 2);
+    assert.deepEqual(
+      paneByComponent(reordered, "sidebar").tabs.map((x) => x.component),
+      ["files", "sidebar"],
+    );
+  });
+
+  it("empty shells are refillable: openSingleton / setPaneComponent target them", () => {
+    let t: DockNode = defaultTree();
+    // drain the right shell into the main pane (free content), one at a
+    // time; the shell stays pinned + empty
+    const insp = paneByComponent(t, "files");
+    const chat = paneByComponent(t, "chat");
+    for (let i = 0; i < 7; i++) {
+      t = moveTab(t, insp.id, 0, chat.id, findPane(t, chat.id)!.tabs.length);
+    }
+    const shell = findPane(t, insp.id)!;
+    assert.equal(shell.tabs.length, 0, "the shell sits empty");
+    assert.equal(isPinnedPane(shell), true, "still a shell");
+    // the '+' menu path fills the empty shell again: drain the tabs into
+    // the main pane, then remove that pane so the singletons truly died
+    t = removePane(t, chat.id);
+    const res = openSingleton(t, insp.id, "files");
+    assert.equal(res.action, "created");
+    assert.deepEqual(
+      findPane(res.tree, insp.id)!.tabs.map((x) => x.component),
+      ["files"],
+    );
+    // and the direct setComponent path works too
+    const filled = setPaneComponent(t, insp.id, "kanban");
+    assert.deepEqual(
+      findPane(filled, insp.id)!.tabs.map((x) => x.component),
+      ["kanban"],
+    );
+  });
+
+  it("the loader forces sessions into the left shell (forceSessionsLeft)", () => {
+    // a (corrupt) tree whose sessions tab landed in a MAIN pane: relocated
+    const t: DockNode = {
+      kind: "split",
+      id: "n1",
+      direction: "row",
+      children: [
+        { kind: "pane", id: "n2", tabs: [], active: 0, fixed: 240, edge: "left" },
+        { kind: "pane", id: "n3", tabs: [{ component: "sidebar" }, { component: "chat" }], active: 1, fixed: null },
+        {
+          kind: "pane",
+          id: "n4",
+          tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+          active: 0,
+          fixed: 300,
+          edge: "right",
+        },
+      ],
+      sizes: [1 / 3, 1 / 3, 1 / 3],
+    };
+    const out = forceSessionsLeft(t)!;
+    const left = findPane(out, "n2")!;
+    assert.deepEqual(
+      left.tabs.map((x) => x.component),
+      ["sidebar"],
+    );
+    const main = findPane(out, "n3")!;
+    assert.deepEqual(
+      main.tabs.map((x) => x.component),
+      ["chat"],
+      "the stray copy left the main pane",
+    );
+    assert.equal(main.active, 0, "the focused chat tab takes the vacated index");
+  });
+
+  it("a left shell WITHOUT sessions gets sessions injected at index 0", () => {
+    const t: DockNode = {
+      kind: "split",
+      id: "n1",
+      direction: "row",
+      children: [
+        { kind: "pane", id: "n2", tabs: [{ component: "chat" }], active: 0, fixed: 240, edge: "left" },
+        {
+          kind: "pane",
+          id: "n4",
+          tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+          active: 0,
+          fixed: 300,
+          edge: "right",
+        },
+      ],
+      sizes: [1 / 2, 1 / 2],
+    };
+    const out = forceSessionsLeft(t)!;
+    const left = findPane(out, "n2")!;
+    assert.deepEqual(
+      left.tabs.map((x) => x.component),
+      ["sidebar", "chat"],
+      "sessions rides at the head of its shell's bar",
+    );
+    assert.equal(left.active, 1, "the focused chat tab keeps focus");
+    assert.equal(out !== t, true);
+  });
+
+  it("restoreInspectorSet re-adds an inspector singleton that died with its pane", () => {
+    let t: DockNode = defaultTree();
+    // settings can only die via a pane prune: move it to the main pane,
+    // then close the main pane
+    const insp = paneByComponent(t, "files");
+    t = moveTab(t, insp.id, 5, paneByComponent(t, "chat").id, 0); // settings out
+    const settingsPane = findComponentPane(t, "settings")!;
+    t = removePane(t, settingsPane.id);
+    assert.equal(findComponentTab(t, "settings"), null, "settings is gone");
+    const out = restoreInspectorSet(t);
+    const loc = findComponentTab(out, "settings")!;
+    assert.equal(loc.paneId, paneByComponent(out, "files").id, "settings returns to the right shell");
+    // idempotent once everything is present
+    assert.equal(restoreInspectorSet(out), out);
+  });
+
+  it("deriveEdgeMarkers fingerprints pre-marker trees and never grabs marked sides", () => {
+    const modern = defaultTree(); // both markers present
+    assert.equal(deriveEdgeMarkers(modern), modern, "no derivation on a marked tree");
+    const legacy = contentTree(); // no markers: content fingerprints decide
+    const derived = deriveEdgeMarkers(legacy)!;
+    assert.equal(findPane(derived, paneByComponent(legacy, "sidebar").id)!.edge, "left");
+    assert.equal(findPane(derived, paneByComponent(legacy, "files").id)!.edge, "right");
+    assert.equal(isPinnedPane(paneByComponent(derived, "chat")), false);
+  });
+
+  it("the loader pipeline (ensurePinnedEdges) repairs a v1-era tree end to end", () => {
+    // pre-marker era: sidebars toggled away, chat only
+    const out = ensurePinnedEdges(makePane("chat"));
+    const root = asSplit(out);
+    assert.deepEqual(
+      root.children.map((c) => (c.kind === "pane" ? c.edge : undefined)),
+      ["left", undefined, "right"],
+      "shells at both edges, main in the middle",
+    );
+    assert.equal(asPane(root.children[0]).tabs[0]?.component, "sidebar");
+    assert.deepEqual(
+      (root.children[2] as DockPane).tabs.map((x) => x.component),
+      INSPECTOR_TAB_COMPONENTS,
+      "the default arrangement comes back with the shell",
+    );
+    // a fully-satisfied modern tree is untouched
+    const t = defaultTree();
+    assert.equal(ensurePinnedEdges(t), t);
+  });
+});
+
+describe("v1 layout migration (t_d6b657a7)", () => {
+  it("createDock upgrades a v1 tree to v2 with markers and persists it", async () => {
+    const legacy: DockNode = {
+      kind: "split",
+      id: "n1",
+      direction: "row",
+      children: [
+        { kind: "pane", id: "n2", tabs: [{ component: "sidebar" }], active: 0, fixed: 240 },
+        { kind: "pane", id: "n3", tabs: [{ component: "chat" }], active: 0, fixed: null },
+        {
+          kind: "pane",
+          id: "n4",
+          tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+          active: 0,
+          fixed: 300,
+        },
+      ],
+      sizes: [1 / 3, 1 / 3, 1 / 3],
+    };
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, JSON.stringify({ v: 1, tree: legacy }));
+    const dock = createDock(mem as unknown as Storage);
+    await flush();
+    const loaded = deserializeLayout(mem.getItem(DOCK_LAYOUT_KEY))!;
+    assert.equal(loaded.version, 2, "the migrated tree persisted as v2");
+    assert.equal(findPane(loaded.tree, "n2")!.edge, "left");
+    assert.equal(findPane(loaded.tree, "n4")!.edge, "right");
+  });
+
+  it("a v2 arrangement reloads verbatim: shells empty stay empty", async () => {
+    let t: DockNode = defaultTree();
+    // empty the right shell into the main pane, then persist
+    const insp = paneByComponent(t, "files");
+    let chatPane = paneByComponent(t, "chat");
+    for (let i = 0; i < 7; i++) {
+      chatPane = paneByComponent(t, "chat");
+      t = moveTab(t, insp.id, 0, chatPane.id, findPane(t, chatPane.id)!.tabs.length);
+    }
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
+    const dock = createDock(mem as unknown as Storage);
+    await flush();
+    const tree = dock.tree.value;
+    const shell = findEdgePane(tree, "inspector")!;
+    assert.equal(shell.tabs.length, 0, "the bar stays empty");
+    assert.equal(isPinnedPane(shell), true, "the marker survived");
+    const loc = findComponentTab(tree, "settings")!;
+    assert.equal(loc.tab.component, "settings");
+    assert.equal(findPane(tree, loc.paneId)!.id, chatPane.id, "settings still lives in the main pane");
+  });
+});
+
+// tiny Storage stand-in shared by the loader tests above
+class MemoryStorage {
+  private m = new Map<string, string>();
+  getItem(k: string): string | null {
+    return this.m.get(k) ?? null;
+  }
+  setItem(k: string, v: string): void {
+    this.m.set(k, String(v));
+  }
+  removeItem(k: string): void {
+    this.m.delete(k);
+  }
+  get length(): number {
+    return this.m.size;
+  }
+  key(): string | null {
+    return null;
+  }
+  clear(): void {
+    this.m.clear();
+  }
+}
+function flush(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}

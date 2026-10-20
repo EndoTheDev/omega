@@ -1,16 +1,25 @@
 <template>
   <div
     class="dock-pane dock-cell"
-    :class="[kindClass, { 'drop-hover': dropHover, pinned }]"
+    :class="[
+      kindClass,
+      {
+        'drop-hover': dropHover,
+        'drop-refused': refusedIdx !== null,
+        pinned,
+      },
+    ]"
     :style="cellStyle"
     :data-pane-id="node.id"
     @dragover="onPaneDragOver"
     @dragleave="onPaneDragLeave"
     @drop="onPaneDrop">
     <!-- the pane's tab bar IS the header (35px, MenuBar contract).
-         card t_4ae27e0d: pinned panes (sessions / inspector) host
-         unclosable tabs - no X on any tab, no '+', no actions menu; main
-         panes' tabs show the X on hover only. -->
+         card t_d6b657a7: edge shells (sessions / inspector homes) are
+         unclosable as panes - no remove X, no actions menu - but host
+         FREE tabs: every tab drags (sessions only inside "left"), the
+         '+' refills from the menu inventory, chat's X works wherever
+         it drops. -->
     <div
       ref="tabsEl"
       class="dock-tabbar">
@@ -23,19 +32,24 @@
             v-for="(t, i) in node.tabs"
             :key="i"
             class="dock-tab"
-            :class="{ active: i === node.active, 'caret-before': dropIdx === i }"
+            :class="{
+              active: i === node.active,
+              'caret-before': dropIdx === i,
+              'drop-refused': refusedIdx === i,
+            }"
             :data-index="i"
             role="tab"
             :aria-selected="i === node.active"
             :title="tabTitle(t)"
-            :draggable="tabClosable(t) ? 'true' : 'false'"
+            draggable="true"
             @click="api.focus(node.id, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
             <span class="dock-tab-title">{{ tabTitle(t) }}</span>
-            <!-- the close X: closable tabs of MAIN panes only, and it
-                 surfaces on hover (CSS); pinned sidebars never render one -->
+            <!-- the close X: closable components only (chat today); it
+                 surfaces on hover (CSS) wherever the tab lives - pane
+                 identity no longer decides tab chrome (t_d6b657a7) -->
             <button
               v-if="tabClosable(t)"
               class="dock-tab-close"
@@ -47,13 +61,12 @@
           </div>
           <!-- insertion caret "after the last tab" rides the '+' button's
                left edge (absolute pseudo-element, no reflow) -->
-          <button
-            v-if="!pinned"
-            class="dock-tab-new"
-            :class="{ 'caret-before': dropIdx === node.tabs.length }"
-            aria-label="new tab"
-            title="new tab"
-            @click.stop="newTabMenu = !newTabMenu">
+        <button
+          class="dock-tab-new"
+          :class="{ 'caret-before': dropIdx === node.tabs.length }"
+          aria-label="new tab"
+          title="new tab"
+          @click.stop="newTabMenu = !newTabMenu">
             +
           </button>
         </div>
@@ -94,10 +107,10 @@
     </div>
 
     <!-- empty pane: the '+' component menu IS the pane's content (VS Code
-         empty editor-group watermark); the bar above carries the close-X
-         (hidden when the remove would be refused - card t_4ae27e0d).
-         Card 4: the dockable registry drives it - MAIN-area dockables
-         only now: the pinned sidebars have no menu-open path. -->
+         empty editor-group watermark); the bar above carries the remove
+         X (hidden when the remove would be refused - edge shells). The
+         MENU inventory (t_d6b657a7) is the refill source for ANY pane,
+         pinned or main: the empty shell renders this same '+' panel. -->
     <div
       v-else
       class="dock-empty">
@@ -106,7 +119,7 @@
         role="menu"
         aria-label="pane components">
         <button
-          v-for="d in mainDockables"
+          v-for="d in menuDockables"
           :key="d.id"
           class="dock-menu-btn"
           role="menuitem"
@@ -179,23 +192,22 @@
   } from "../composables/dock";
   import {
     COMPONENT_TITLES,
-    MAIN_DOCKABLES,
+    MENU_DOCKABLES,
     dockableOf,
     isClosableTab,
-    isPinnedTab,
     type DockIcon,
     type DockableComponent,
     type DockComponentName,
   } from "../composables/dockables";
+  import { tabDrag, dropAllowedFor } from "../composables/dockdnd";
   // the re-export path keeps one import surface for engine-side consumers;
   // dockables.ts is the registry's true source (card t_30ee04fb)
 
-  // MAIN_DOCKABLES is the MAIN-AREA ID list (card t_4ae27e0d); the menus
-  // need the full registry entries (title/icon/policy). The pane-reset
-  // card left the templates iterating the ids raw - d.icon undefined,
-  // openSingleton(pane, undefined) no-ops, BOTH menus went dead (found
-  // live while restoring the menubar toggles, card t_47b776ad).
-  const mainDockables = MAIN_DOCKABLES.map(dockableOf);
+  // MENU_DOCKABLES is the refill inventory (card t_d6b657a7): any pane,
+  // edge shell or main, is refilled from it - sessions is excluded (the
+  // loader owns it) and settings has no menu entry by ruling. The menus
+  // need the full registry entries (title/icon/policy).
+  const menuDockables = MENU_DOCKABLES.map(dockableOf);
 
   const props = defineProps<{
     node: DockPaneNode;
@@ -216,10 +228,12 @@
     return tabTitleFor?.(tab) ?? COMPONENT_TITLES[tab.component];
   }
 
-  // card t_4ae27e0d: the pinned identity. A pane hosting any sidebar-
-  // pinned tab (sessions / the inspector's five views) is fixed chrome -
-  // no X, no '+', no actions, and no tab may drag into it.
-  const pinned = computed(() => props.node.tabs.some((t) => isPinnedTab(t.component)));
+  // card t_d6b657a7: the pinned identity is the EDGE MARKER. A shell pane
+  // (left = sessions home, right = inspector home) is fixed chrome as a
+  // whole - no remove X, no actions menu - but its TABS are free: any tab
+  // may live here or leave (drop into / out of this bar freely), the only
+  // lock is sessions leaving "left".
+  const pinned = computed(() => props.node.edge !== undefined);
   function tabClosable(t: DockTab): boolean {
     return isClosableTab(t.component);
   }
@@ -283,15 +297,19 @@
       ],
     );
 
-  // --- tab DnD (card 2): within-pane reorder + between-pane moves. Drop
-  // targets only highlight (outline) and the caret is an absolute bar - no
-  // reflow during the gesture (verify (d)). Edge-drops that split a pane
-  // on a border are card 3's; v1 drops onto a pane / tab bar only.
+  // --- tab DnD (card 2, generalized t_d6b657a7): EVERY tab bar is a drop
+  // target - reorder within a bar, cross-pane moves, sidebars <-> main
+  // pane, bidirectional. The ONLY refusals: a LOCKED sessions drag may
+  // not leave the left shell's own bar (the hit-test refuses, the chip
+  // under the cursor renders the no-drop affordance). Drop targets only
+  // highlight (outline) and the caret is an absolute bar - no reflow
+  // during the gesture (verify (d)).
   const TAB_MIME = "application/x-omega-dock-tab";
 
   interface DragPayload {
     p: string; // pane id
     t: number; // tab index in the source pane
+    c?: string; // component id (drop-time re-check belt for the lock)
   }
   function payloadOf(e: DragEvent): DragPayload | null {
     const raw = e.dataTransfer?.getData(TAB_MIME);
@@ -309,19 +327,34 @@
   }
 
   function onTabDragStart(e: DragEvent, index: number) {
-    // card t_4ae27e0d: pinned tabs never leave their sidebar pane
-    if (pinned.value) return;
-    e.dataTransfer?.setData(TAB_MIME, JSON.stringify({ p: props.node.id, t: index }));
+    // EVERY tab drags now - sessions too (it may reorder inside its own
+    // bar); the hit-test refuses its drops elsewhere, not the gesture
+    const tab = props.node.tabs[index]!;
+    e.dataTransfer?.setData(
+      TAB_MIME,
+      JSON.stringify({ p: props.node.id, t: index, c: tab.component }),
+    );
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    // identity for the LIVE hit-test (data is protected until drop):
+    tabDrag.start({ paneId: props.node.id, index, component: tab.component });
   }
 
   // one caret per pane: the index BEFORE which to insert (tabs.length = after
   // the last tab). dragover recomputes it live; drop consumes it.
   const dropIdx = ref<number | null>(null);
+  // the refused-drag affordance: while a locked drag hovers THIS bar (e.g.
+  // sessions over the chat pane), the chip under the cursor lights refuse
+  const refusedIdx = ref<number | null>(null);
   const dropHover = ref(false);
   const newTabMenu = ref(false);
   const menuOpen = ref(false); // the pane-actions (split / remove) menu
   const tabsEl = ref<HTMLElement | null>(null);
+
+  // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
+  // (the window dragend/drop cleanup clears the gesture record)
+  function dropAllowed(): boolean {
+    return dropAllowedFor(props.node.edge ?? null, tabDrag.current());
+  }
 
   function caretIndexFor(e: DragEvent): number {
     const tabs = tabsEl.value?.querySelectorAll<HTMLElement>(".dock-tab") ?? [];
@@ -341,22 +374,32 @@
     return fromIndex < idx ? idx - 1 : idx;
   }
 
+  function refuse(e: DragEvent): void {
+    // no highlight, no caret: the browser's no-drop cursor plus the
+    // chip-level refused outline carry the affordance
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
+    refusedIdx.value = caretIndexFor(e);
+    dropHover.value = false;
+    dropIdx.value = null;
+  }
+
   function onTabbarDragOver(e: DragEvent) {
-    if (pinned.value) return; // a pinned pane is never a drop target
     if (!isTabDrag(e)) return;
+    if (!dropAllowed()) return refuse(e); // locked drag, wrong shell
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     dropHover.value = true;
+    refusedIdx.value = null;
     dropIdx.value = caretIndexFor(e);
   }
 
   // tab drops bubble here from the bar; the pane-level handler skips them
   function onTabbarDrop(e: DragEvent) {
-    if (pinned.value) return; // engine refuses anyway; no highlight was shown
     e.preventDefault();
     e.stopPropagation();
     const d = payloadOf(e);
-    if (d) {
+    if (d && dropAllowed()) {
       const idx = dropIdx.value ?? caretIndexFor(e);
       const adj = d.p === props.node.id ? postRemoval(idx, d.t) : idx;
       api.moveTab(d.p, d.t, props.node.id, adj);
@@ -365,11 +408,12 @@
   }
 
   function onPaneDragOver(e: DragEvent) {
-    if (pinned.value) return; // a pinned pane is never a drop target
     if (!isTabDrag(e)) return;
+    if (!dropAllowed()) return refuse(e); // locked drag, wrong shell
     e.preventDefault(); // a drop anywhere in the pane lands
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     dropHover.value = true;
+    refusedIdx.value = null;
   }
 
   function onPaneDragLeave(e: DragEvent) {
@@ -382,7 +426,7 @@
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
     const d = payloadOf(e);
-    if (d) {
+    if (d && dropAllowed()) {
       if (d.p === props.node.id) api.focus(props.node.id, d.t);
       else api.moveTab(d.p, d.t, props.node.id, props.node.tabs.length);
     }
@@ -392,6 +436,8 @@
   function clearDrop() {
     dropHover.value = false;
     dropIdx.value = null;
+    refusedIdx.value = null;
+    tabDrag.end();
   }
   // any drag ending anywhere clears the local highlight (dropped elsewhere,
   // Esc, or a lost pointer); drop on THIS pane already cleared explicitly
