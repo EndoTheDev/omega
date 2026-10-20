@@ -22,8 +22,12 @@ set -euo pipefail
 #   - change gate: if <base>..HEAD touches no webui source (modules/ui/
 #     or modules/*/ui/), skip regeneration entirely - Go-only merges
 #     pay nothing.
-#   - hash gate: after the build, an unchanged static/ tree is not
-#     committed - the lane never writes no-op commits.
+#   - hash gate: after the build, a bundle that is CONTENT-identical to
+#     the committed one is not committed - the lane never writes no-op
+#     commits. Nuxt's volatile build metadata (buildId uuid, epoch
+#     timestamps in the html + builds/meta jsons) is stripped before
+#     comparing, so regenerating unchanged source skips instead of
+#     churning build ids into history.
 #   - fail-loud: any build failure aborts the merge pass loudly.
 #     static/ is NEVER hand-resolved; it is regenerated, or the merge
 #     fails. (The root build.sh conflict-marker gate stays as belt
@@ -41,6 +45,38 @@ LANE_PREFIX="embed-lane: rebuild webui bundle for"
 # component changes the bundle too).
 ui_changed() {
 	git diff --name-only "$1" "$2" -- "modules/ui" ":(glob)modules/*/ui/**"
+}
+
+# strip_volatile: nuxt build ids (uuids) and epoch-millisecond build
+# timestamps are metadata, not bundle content - they differ on every
+# real generate even when the source is unchanged.
+strip_volatile() {
+	sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/BUILDID/g; s/17[0-9]{11}/EPOCHMS/g'
+}
+
+# canonical_hash_disk: content hash of $STATIC on disk with volatile
+# build metadata (in paths and in contents) stripped.
+canonical_hash_disk() {
+	local path norm
+	while IFS= read -r -d '' path; do
+		norm="$(strip_volatile <<<"${path#"$STATIC"/}")"
+		printf '%s\n' "$norm"
+		strip_volatile <"$path" | sha256sum
+	done < <(find "$STATIC" -type f -print0 | sort -z) | sha256sum
+}
+
+# canonical_hash_head: the same hash over the committed $STATIC tree
+# (what HEAD already owns, i.e. the last lane commit's bundle).
+canonical_hash_head() {
+	local rec sha_part sha path norm
+	while IFS= read -r -d '' rec; do
+		sha_part="${rec%%$'	'*}"
+		path="${rec#*$'	'}"
+		sha="${sha_part##* }"
+		norm="$(strip_volatile <<<"${path#"$STATIC"/}")"
+		printf '%s\n' "$norm"
+		git cat-file blob "$sha" | strip_volatile | sha256sum
+	done < <(git ls-tree -r -z HEAD -- "$STATIC") | sha256sum
 }
 
 lint_static() {
@@ -77,11 +113,11 @@ regen_bundle() {
 }
 
 lane_commit() {
-	git add -A -- "$STATIC"
-	if git diff --cached --quiet HEAD -- "$STATIC"; then
-		echo "==> embed-lane: hash gate: bundle unchanged since the last lane commit - skip"
+	if [ "$(canonical_hash_disk)" = "$(canonical_hash_head)" ]; then
+		echo "==> embed-lane: hash gate: bundle content unchanged since the last lane commit - skip"
 		return 1
 	fi
+	git add -A -- "$STATIC"
 	if ! git commit --only "$STATIC" -m "$LANE_PREFIX $1"; then
 		echo "FATAL: embed-lane: failed to commit the regenerated $STATIC - the merge pass aborts here." >&2
 		exit 1

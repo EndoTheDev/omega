@@ -66,13 +66,17 @@ if [ "${MOCK_FAIL:-0}" = "1" ]; then
 fi
 d="$(pwd)/modules/http_channel/static"
 rm -rf "$d"
-mkdir -p "$d/_nuxt"
-echo "bundle-stamp=${MOCK_STAMP:-s0}" >"$d/index.html"
+bid="${MOCK_BUILDID:-11111111-1111-1111-1111-111111111111}"
+mkdir -p "$d/_nuxt/builds/meta"
+echo "bundle-stamp=${MOCK_STAMP:-s0} buildId=$bid" >"$d/index.html"
 poison=""
 if [ "${MOCK_POISON:-0}" = "1" ]; then
 	poison="<<<<<<< poison"
 fi
 echo "$poison" >"$d/_nuxt/chunk.js"
+ts=$((1792531190000 + RANDOM))
+echo "{\"id\":\"$bid\",\"timestamp\":$ts,\"prerendered\":[]}" >"$d/_nuxt/builds/meta/$bid.json"
+echo "{\"id\":\"$bid\",\"timestamp\":$(date +%s%3N)}" >"$d/_nuxt/builds/latest.json"
 EOF
 	chmod +x "$MOCK"
 }
@@ -121,6 +125,13 @@ check "hash gate: exit 0 on skip" test "$rc" -eq 0
 check "hash gate: build ran" test -f "$TMP.mock/canary-mock-ran"
 check "hash gate: no extra commit" test "$(git -C "$TMP" rev-parse HEAD)" = "$lane_sha"
 check "hash gate: skip logged" contains "hash gate" "$TMP/run.out"
+
+# nuxt-volatile-only regen (new buildId uuid + fresh timestamps, same
+# content) must also skip - metadata churn is not a bundle change
+MOCK_BUILDID=22222222-2222-2222-2222-222222222222 run --base "$BASE" "card t_test1 volatile"
+check "volatile-only regen: exit 0 on skip" test "$rc" -eq 0
+check "volatile-only regen: no extra commit" test "$(git -C "$TMP" rev-parse HEAD)" = "$lane_sha"
+check "volatile-only regen: skip logged" contains "hash gate" "$TMP/run.out"
 
 # modules/*/ui (module-shipped UI) also counts as webui source
 STAMP="s2"
