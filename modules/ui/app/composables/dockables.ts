@@ -201,12 +201,14 @@ function safeEntry(id: string): DockableComponent | null {
   return dockableOf(id as DockComponentName);
 }
 
-/** card t_4ae27e0d: the sidebar-pinned class - a component whose tab may
-    never close and whose pane may never be removed. left/right panels.
-    Unknown ids count as pinned (the safe refusal). */
-export function isPinnedTab(id: DockComponentName): boolean {
+/** card t_d6b657a7: THE LOCKED TAB - sessions is the one component whose
+    chip may never leave the left sidebar's own bar (draggable inside it,
+    refused everywhere else). Everything else moves freely now: the
+    sidebars are pinned LOCATIONS with free CONTENT. Unknown ids count as
+    locked (the safe refusal). */
+export function isLockedTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
-  return d === null ? true : d.area !== "main";
+  return d === null ? true : d.id === "sidebar";
 }
 
 /** tab-bar X policy: closable components only (chat, settings). Unknown
@@ -225,12 +227,20 @@ export const COMPONENT_TITLES: Record<DockComponentName, string> =
     string
   >;
 
-/** card t_4ae27e0d: the tab-bar '+' / empty-pane menu inventory - the
-    MAIN-area dockables only. The pinned sidebars are fixed chrome (they
-    live because the shell puts them there, not because a menu opened
-    them), so no menu may mint them in an arbitrary pane. */
+/** card t_4ae27e0d: the MAIN-area dockables (openable into the main pane
+    class; chat's multi policy reads "new chat"). Kept for engine-side
+    consumers - the MENUS use MENU_DOCKABLES below since t_d6b657a7. */
 export const MAIN_DOCKABLES: readonly DockComponentName[] =
   DOCKABLES.filter((d) => d.area === "main").map((d) => d.id);
+
+/** card t_d6b657a7: the '+' / empty-pane MENU inventory - the refill
+    source for ANY pane, pinned or main (free content). Sessions is
+    excluded: locked (the loader owns it, it can never be menu-opened).
+    Settings is excluded by ruling - it has NO entry point; persistence
+    and the default arrangement fallback are its only paths. */
+export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
+  .filter((d) => d.id !== "sidebar" && d.id !== "settings")
+  .map((d) => d.id);
 
 /** the pinned-area singleton set (the inspector pane's view tabs): the
     load-time modernizer and the default-shell builder both read this
