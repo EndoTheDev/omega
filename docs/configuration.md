@@ -4,13 +4,16 @@ All values can be set in `config.yaml` or overridden by environment
 variables. omega looks for its configuration - `config.yaml`, `mcp.yaml`,
 `crons.yaml` - in its home: the binary's directory for release-folder
 installs, `~/.omega` when the binary lives in a PATH bin directory
-(`~/go/bin`, `~/.local/bin`), or `OMEGA_HOME` when set. `omega.db`,
-`memory.md`, `user.md`, `skills/`, and log files live at the home root;
-the three infrastructure yaml files live in a `config/` subdirectory of
-the home (Endo 2026-10-18 layout). On first run omega writes the example
-configs into `<home>/config/`. **Existing installs keep working
-unchanged** - the home root is checked first, then `config/`, so a live
-root `config.yaml` keeps being used. The working directory is used only
+(`~/go/bin`, `~/.local/bin`), or `OMEGA_HOME` when set. `memory.md`,
+`user.md`, `skills/`, `themes/`, and log files live at the home root;
+the databases (`omega.db`, `kanban.db`, plus their SQLite `-wal`/`-shm`
+sidecars) live in a `data/` subdirectory of the home (Endo 2026-10-20
+layout), where the three infrastructure yaml files live in a `config/`
+subdirectory (Endo 2026-10-18 layout). On first run omega writes the
+example configs into `<home>/config/`. **Existing installs keep working
+unchanged** - a legacy home-root database is moved (renamed, never
+copied) into `data/` automatically on the first boot of the new
+version. The working directory is used only
 for AGENTS.md project context and tool file operations.
 
 ## config.yaml
@@ -39,7 +42,7 @@ provider:
 | `server.port`                 | `OMEGA_PORT`                       | `8099`                   | HTTP listen port                                                                                                                                                                                                                                          |
 | `server.bind`                 | -                                  | `127.0.0.1`              | Addresses to listen on (one channel each). Loopback only by default - the API is unauthenticated; extra addresses (e.g. a Tailscale IP) are an explicit opt-in for reverse-proxy routing                                                                  |     |
 | `server.run_timeout`          | -                                  | `1800`                   | Wall-clock cap per detached chat run, in seconds. A hung tool call ends the run instead of holding the session's run slot until restart; applies on restart                                                                                               |     |
-| `store.db_path`               | `OMEGA_DB_PATH`                    | `<home>/omega.db`        | SQLite database path                                                                                                                                                                                                                                      |
+| `store.db_path`               | `OMEGA_DB_PATH`                    | `<home>/data/omega.db`   | SQLite session database path; relative defaults resolve to `<home>/data/` and a legacy home-root db is migrated there on boot                                                                                                                            |
 | `compaction.enabled`          | `OMEGA_COMPACTION_ENABLED`         | `true`                   | Enable context compaction                                                                                                                                                                                                                                 |
 | `compaction.threshold`        | `OMEGA_COMPACTION_THRESHOLD`       | `0.6`                    | Fraction of context window that triggers compaction                                                                                                                                                                                                       |
 | `compaction.context_window`   | `OMEGA_COMPACTION_CONTEXT_WINDOW`  | `32768`                  | Model context window in tokens. Fallback when the provider doesn't auto-discover it (Ollama auto-discovers via `/api/show`)                                                                                                                               |

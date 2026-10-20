@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // Plugin implements agent.Plugin for the store seam. It opens the
@@ -28,8 +29,14 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		cfg = c
 	}
 	dsn := cfg.DBPath
-	if dsn == "" {
-		dsn = "omega.db"
+	if dsn == "" || dsn == "omega.db" {
+		// <home>/data/omega.db - the host (cmd/omega resolveHomePaths)
+		// passes an absolute path for the exe-dir home case.
+		if home := datadir.Home(); home != "" {
+			dsn = datadir.DBPath(home, "omega.db")
+		} else {
+			dsn = "omega.db"
+		}
 	}
 	s, err := Open(dsn)
 	if err != nil {

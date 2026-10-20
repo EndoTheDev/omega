@@ -18,6 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/cron"
+	"github.com/EndoTheDev/omega/modules/datadir"
 	"github.com/EndoTheDev/omega/modules/delegate"
 	httpchannel "github.com/EndoTheDev/omega/modules/http_channel"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
@@ -238,10 +239,10 @@ func resolveConfigPath(flagPath string) string {
 func resolveHomePaths(cfg *Config) error {
 	home := omegaHome()
 	if cfg.Store.DBPath == "omega.db" {
-		cfg.Store.DBPath = home + "/omega.db"
+		cfg.Store.DBPath = datadir.DBPath(home, "omega.db")
 	}
 	if cfg.Kanban.DBPath == "kanban.db" {
-		cfg.Kanban.DBPath = home + "/kanban.db"
+		cfg.Kanban.DBPath = datadir.DBPath(home, "kanban.db")
 	}
 	if cfg.Skills.Dir == "skills" {
 		cfg.Skills.Dir = home + "/skills"

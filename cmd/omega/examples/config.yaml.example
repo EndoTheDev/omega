@@ -21,7 +21,8 @@ server:
   port: 8099
 
 store:
-  # SQLite database path for the session store. Default: omega.db
+  # SQLite database path for the session store.
+  # Default: <home>/data/omega.db (legacy home-root dbs migrate there on boot)
   db_path: omega.db
 
 compaction:
