@@ -223,8 +223,8 @@
   import {
     createDock,
     findPane,
+    findEdgePane,
     isPinnedPane,
-    INSPECTOR_TAB_COMPONENTS,
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
@@ -608,11 +608,10 @@
   // shape via ensurePinnedEdges). On mobile the same emits keep flipping
   // the overlay drawers (one at a time) - the toggles render only above
   // the 768px breakpoint, the drawer handles only below it.
-  const sidebarDocked = computed(() => dock.has("sidebar"));
-  // the inspector's presence reads the pinned right-area tab set (the
-  // pane holds files + the module panels; any of them = pane lives)
-  const inspectorDocked = computed(() =>
-    INSPECTOR_TAB_COMPONENTS.some((c) => dock.has(c)));
+  const sidebarDocked = computed(() => findEdgePane(dock.tree.value, "sidebar") !== null);
+  // the right shell lives while its marker exists - even empty (free
+  // content: tabs come and go, the shell stays)
+  const inspectorDocked = computed(() => findEdgePane(dock.tree.value, "inspector") !== null);
 
   function toggleSidebar() {
     if (!isMobile.value) {

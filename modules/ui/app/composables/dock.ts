@@ -23,24 +23,27 @@ import {
   INSPECTOR_TAB_COMPONENTS,
   LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
+  MENU_DOCKABLES,
   COMPONENT_TITLES,
   isClosableTab,
-  isPinnedTab,
+  isLockedTab,
   type DockableComponentLike,
   type DockComponentName,
 } from "./dockables.ts";
-// the openable component universe, the '+' inventory and the tab-title
-// fallback live in THE dockable registry (dockables.ts, card t_30ee04fb);
-// re-exported here so engine-side consumers keep one import surface
+// the openable component universe, the menus' refill inventory and the
+// tab-title fallback live in THE dockable registry (dockables.ts, card
+// t_30ee04fb); re-exported here so engine-side consumers keep one import
+// surface
 export {
   DOCK_COMPONENTS,
   DOCKABLES,
   INSPECTOR_TAB_COMPONENTS,
   LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
+  MENU_DOCKABLES,
   COMPONENT_TITLES,
   isClosableTab,
-  isPinnedTab,
+  isLockedTab,
 };
 export type { DockComponentName, DockableComponentLike };
 // re-export for consumers that think in dock terms (tests, toggle helpers)
@@ -84,6 +87,11 @@ export interface DockPane {
   active: number;
   /** fixed px size (sidebars); null = flexible (shares remainder) */
   fixed: number | null;
+  /** card t_d6b657a7: the pinned shell identity - "left" = sessions home,
+      "right" = inspector home; undefined = main pane. "Fixed" is pane
+      IDENTITY now, not content: a shell pane unclosable as a whole, but
+      its TABS are free (everything drags everywhere except sessions). */
+  edge?: "left" | "right";
 }
 export interface DockSplit {
   kind: "split";
@@ -152,13 +160,18 @@ export function assignChatKeys(tree: DockNode): DockNode {
 
 // --- small building blocks ---------------------------------------------------
 
-export function makePane(component: DockComponentName | null, fixed: number | null = null): DockPane {
+export function makePane(
+  component: DockComponentName | null,
+  fixed: number | null = null,
+  edge?: "left" | "right",
+): DockPane {
   return {
     kind: "pane",
     id: nextNodeId(),
     tabs: component ? [{ component }] : [],
     active: 0,
     fixed,
+    ...(edge ? { edge } : {}),
   };
 }
 
@@ -239,14 +252,19 @@ export function findComponentTab(
   return null;
 }
 
-// --- the pane-model reset (card t_4ae27e0d) ---------------------------------
+// --- the pane-model reset (card t_4ae27e0d, generalized t_d6b657a7) ----------
 // three identities the whole engine enforces:
-//   pinned pane   hosts at least one sidebar-pinned tab (left/right):
-//                 never closable, never removable, never a tab target.
-//   main pane     everything else (chat / settings / empty) - the closable
-//                 class, hover-X tabs.
+//   pinned pane   an EDGE SHELL (left = sessions home, right = inspector
+//                 home) carrying the `edge` marker: never closable, never
+//                 removable, never movable. Its CONTENT is free - any tab
+//                 may live in it or leave it (t_d6b657a7 rulings), except
+//                 the locked sessions tab, which lives ONLY in "left".
+//   main pane     everything else - the closable class, hover-X pans, the
+//                 '+' menus.
 //   never-empty   the dock always holds at least one pane; refusals are
-//                 no-ops (the tree comes back untouched).
+//                 no-ops (the tree comes back untouched). The law extends
+//                 to tabs: a pinned shell CAN sit empty (it renders the
+//                 empty '+' affordance) - it never disappears.
 
 export function paneCount(tree: DockNode): number {
   let n = 0;
@@ -254,16 +272,16 @@ export function paneCount(tree: DockNode): number {
   return n;
 }
 
-/** a pane is PINNED when any of its tabs is sidebar-pinned - the sessions
-    pane (one "sidebar" tab) and the inspector pane (its view tabs).
-    Empty panes and main-panel panes are main. */
+/** a pane is PINNED when it carries an edge marker - the sessions/inspector
+    shells (card t_d6b657a7: identity, not content). Empty panes and
+    main-panel panes are main. */
 export function isPinnedPane(pane: DockPane): boolean {
-  return pane.tabs.some((t) => isPinnedTab(t.component));
+  return pane.edge !== undefined;
 }
 
 /** the first main pane, depth-first - where session opens land. The pinned
-    sidebars never host chat, so the walk skips them. Null = no main pane
-    in the tree (all sidebars): the opener must insert one. */
+    edge shells (marked panes) are skipped even when they host chat tabs:
+    sessions and '+' opens go to the main class. */
 export function firstMainPaneId(tree: DockNode): string | null {
   for (const n of allNodes(tree)) {
     if (isPane(n) && !isPinnedPane(n)) return n.id;
@@ -286,18 +304,95 @@ export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string
   return { tree: copy, paneId: pane.id };
 }
 
-/** the sidebar-pinned panes are fixed chrome: a loaded tree that somehow
-    lost one of the two (a pre-reset tree that was toggled closed) gets it
-    re-inserted at its edge. Pure; no-op returns the SAME tree. */
+/** the pinned shells are fixed chrome: a loaded tree that somehow lost one
+    of the two (a pre-marker tree, or a pane toggled closed) gets it
+    re-inserted at its edge, and the loader's rulings are re-asserted:
+    sessions ALWAYS sits in the left shell's bar, and inspector-area
+    singletons missing from the whole tree return to the right shell (the
+    default arrangement fallback - settings has no menu path). Pure;
+    fully-satisfied tree returns unchanged. */
 export function ensurePinnedEdges(tree: DockNode): DockNode {
-  let result = tree;
-  if (!findComponentTab(tree, "sidebar")) {
-    result = insertRootEdge(result, "before", makePane("sidebar", 240));
+  let result = deriveEdgeMarkers(tree);
+  if (!findEdgePane(result, "sidebar")) {
+    result = insertRootEdge(result, "before", makePane("sidebar", 240, "left"));
   }
-  if (!INSPECTOR_TAB_COMPONENTS.some((c) => findComponentTab(result, c) !== null)) {
-    result = insertRootEdge(result, "after", makeInspectorPane(240));
+  if (!findEdgePane(result, "inspector")) {
+    result = insertRootEdge(result, "after", defaultInspectorPane(result, 240));
   }
-  return result;
+  result = forceSessionsLeft(result);
+  return restoreInspectorSet(result);
+}
+
+/** pre-marker trees were identified by content fingerprint; mint `edge`
+    markers from it when one side is unclaimed. Only fires for the FIRST
+    content match of an unclaimed side, so a legit main pane hosting
+    relocated inspector tabs is never grabbed. Idempotent; no-op returns
+    the SAME tree. */
+export function deriveEdgeMarkers(tree: DockNode): DockNode {
+  const claimed: Record<"left" | "right", boolean> = { left: false, right: false };
+  for (const n of allNodes(tree)) {
+    if (isPane(n) && n.edge) claimed[n.edge] = true;
+  }
+  if (claimed.left && claimed.right) return tree;
+  const copy = clone(tree);
+  let changed = false;
+  for (const n of allNodes(copy)) {
+    if (!isPane(n) || n.edge) continue;
+    if (!claimed.left && n.tabs.some((t) => t.component === "sidebar")) {
+      n.edge = "left";
+      claimed.left = true;
+      changed = true;
+    } else if (
+      !claimed.right &&
+      n.tabs.some((t) => (INSPECTOR_TAB_COMPONENTS as readonly string[]).includes(t.component))
+    ) {
+      n.edge = "right";
+      claimed.right = true;
+      changed = true;
+    }
+  }
+  return changed ? copy : tree;
+}
+
+/** the loader's lock enforcement (t_d6b657a7 ruling 1): the sessions tab
+    ALWAYS restores into the left shell's bar - even if persistence somehow
+    says otherwise. Inserted at index 0 when absent, relocated when it
+    landed elsewhere. Pure. */
+export function forceSessionsLeft(tree: DockNode): DockNode {
+  const left = findEdgePane(tree, "sidebar");
+  if (!left) return tree; // repair mints it above - no shell, nothing to force
+  if (left.tabs.some((t) => t.component === "sidebar")) return tree;
+  const stray = findComponentTab(tree, "sidebar");
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n)) return;
+    if (n.id === left.id) {
+      n.tabs = [{ component: "sidebar" }, ...n.tabs];
+      n.active = clamp(n.active + 1, 0, n.tabs.length - 1);
+    } else if (stray && n.id === stray.paneId) {
+      const idx = n.tabs.findIndex((t) => t.component === "sidebar");
+      if (idx >= 0) {
+        n.tabs = n.tabs.filter((_, i) => i !== idx);
+        n.active = clamp(idx < n.active ? n.active - 1 : n.active, 0, n.tabs.length - 1);
+      }
+    }
+  });
+}
+
+/** the default-arrangement fallback (t_d6b657a7): any inspector-area
+    singleton absent from the WHOLE tree (settings has no menu entry;
+    unclosable tabs only die with their pane) is restored INTO the right
+    shell, appended in the registry's canonical order. Pure. */
+export function restoreInspectorSet(tree: DockNode): DockNode {
+  const right = findEdgePane(tree, "inspector");
+  if (!right) return tree;
+  const missing = INSPECTOR_TAB_COMPONENTS.filter((c) => !findComponentTab(tree, c));
+  if (missing.length === 0) return tree;
+  return cloneTreeWith(tree, (n) => {
+    if (isPane(n) && n.id === right.id) {
+      n.tabs = [...n.tabs, ...missing.map((c) => ({ component: c }))];
+      n.active = clamp(n.active, 0, n.tabs.length - 1);
+    }
+  });
 }
 
 /** insert `pane` at the root's edge of a row (a pane root or a column
@@ -397,10 +492,9 @@ export function openSingleton(
   paneId: string,
   component: DockComponentName,
 ): { tree: DockNode; action: OpenSingletonAction } {
-  // pinned components have no open path (card t_4ae27e0d): the sidebars
-  // live because the shell puts them there, never because a menu opened
-  // them into an arbitrary pane
-  if (isPinnedTab(component)) return { tree, action: "noop" };
+  // locked components have no open path (t_d6b657a7 ruling 1): sessions
+  // lives because the loader puts it there, never because a menu opened it
+  if (isLockedTab(component)) return { tree, action: "noop" };
   const found = findComponentTab(tree, component);
   if (found) {
     // focus it in place - even when the target pane is this one (a
@@ -410,7 +504,8 @@ export function openSingleton(
   }
   const pane = findPane(tree, paneId);
   if (!pane) return { tree, action: "noop" }; // target vanished - no-op
-  if (isPinnedPane(pane)) return { tree, action: "noop" }; // pinned - no tab hosts
+  // t_d6b657a7: edge shells ACCEPT content now - refilling an empty
+  // sidebar through the '+' menu is the ruling's refill path
   const next = pane.tabs.length === 0
     ? setPaneComponent(tree, paneId, component)
     : openTab(tree, paneId, { component });
@@ -510,38 +605,26 @@ function prunePane(tree: DockNode, paneId: string): DockNode {
 // the pane reset made the pinned panes untouchable via the generic
 // removePane/closeTab refusals; the menubar toggles get a dedicated,
 // tightly-guarded route so hide/reopen survives the reset's invariants.
+// card t_d6b657a7: shells are identified by their `edge` MARKER now -
+// content is free, so the old tab fingerprint cannot survive.
 
-/** the tab set that identifies each edge pane (the sessions pane holds
-    exactly one pinned "sidebar" tab; the inspector pane exactly the
-    pinned right-area tabs) */
-function edgePaneTabs(component: "sidebar" | "inspector"): readonly DockComponentName[] {
-  return component === "sidebar" ? ["sidebar"] : INSPECTOR_TAB_COMPONENTS;
-}
-
-/** the dedicated pinned pane hosting exactly `component`'s edge tab set.
-    Pinned tabs never leave their pane and no tab moves in, so the pane
-    is found by its exact tab fingerprint. */
+/** the dedicated pinned shell for `component`: the pane carrying the
+    matching edge marker (sessions = "left", inspector = "right"). */
 export function findEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
 ): DockPane | null {
-  const wanted = edgePaneTabs(component);
+  const want = component === "sidebar" ? "left" : "right";
   for (const n of allNodes(tree)) {
-    if (
-      isPane(n) &&
-      isPinnedPane(n) &&
-      n.tabs.length === wanted.length &&
-      wanted.every((c) => n.tabs.some((t) => t.component === c))
-    ) {
-      return n;
-    }
+    if (isPane(n) && n.edge === want) return n;
   }
   return null;
 }
 
-/** the toggle's hide half: the edge pane goes as a whole (it is dedicated
-    chrome - no tab may live in it that isn't its own). Guards mirror the
-    fixed shape: exact pane fingerprint found, never-empty held. */
+/** the toggle's hide half: the marked shell goes as a whole (whatever
+    tabs it hosted are lost with it - unclosable singletons return via the
+    loader's default-arrangement fallback on the next boot). Guards mirror
+    the fixed shape: the marker found, never-empty held. */
 export function hideEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
@@ -589,24 +672,17 @@ export function recalledEdgePx(
   return typeof px === "number" && Number.isFinite(px) ? openClamp(px) : null;
 }
 
-/** which edge component a pane's tab fingerprint matches (null: not an
-    edge pane) - the divider intents remember widths only for edge panes */
+/** which edge component a pane's marker matches (null: not an edge pane)
+    - the divider intents remember widths only for edge panes */
 export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
-  for (const c of EDGE_COMPONENTS) {
-    const wanted = edgePaneTabs(c);
-    if (
-      pane.tabs.length === wanted.length &&
-      wanted.every((tc) => pane.tabs.some((t) => t.component === tc))
-    ) {
-      return c;
-    }
-  }
-  return null;
+  return pane.edge === "left" ? "sidebar" : pane.edge === "right" ? "inspector" : null;
 }
 
-/** the toggle's reopen half: the fixed-shape pane comes back at the root's
-    edge - same builders ensurePinnedEdges uses, so reopen and boot-repair
-    mint IDENTICAL panes. */
+/** the toggle's reopen half: the shell comes back at the root's edge -
+    same builders ensurePinnedEdges uses, so reopen and boot-repair mint
+    IDENTICAL panes. card t_d6b657a7: the reopened right shell mints only
+    the inspector tabs NOT already living elsewhere - a relocated
+    singleton is never duplicated by a reopen. */
 export function revealEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
@@ -618,18 +694,24 @@ export function revealEdgePane(
   const fixed = Math.max(PANE_OPEN_MIN, fixedPx ?? EDGE_DEFAULT_PX[component]);
   const pane =
     component === "sidebar"
-      ? makePane("sidebar", fixed)
-      : makeInspectorPane(fixed);
+      ? makePane("sidebar", fixed, "left")
+      : defaultInspectorPane(tree, fixed);
   return insertRootEdge(tree, side, pane);
 }
 
-function makeInspectorPane(fixed: number): DockPane {
+/** the fresh right shell: every inspector tab NOT already living somewhere
+    else in the tree (t_d6b657a7 - free content never gets duplicated by a
+    repair/re-reveal) */
+function defaultInspectorPane(tree: DockNode, fixed: number): DockPane {
   return {
     kind: "pane",
     id: nextNodeId(),
-    tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
+    tabs: INSPECTOR_TAB_COMPONENTS
+      .filter((c) => !findComponentTab(tree, c))
+      .map((c) => ({ component: c })),
     active: 0,
     fixed,
+    edge: "right",
   };
 }
 
@@ -663,15 +745,16 @@ export function focusTab(tree: DockNode, paneId: string, index: number): DockNod
 
 /** give an EMPTY pane its first component (the '+' menu path), replacing
     tabs wholesale. Emptying back is closeTab's job (card 2). card
-    t_4ae27e0d: pinned panes and pinned components are off-limits - the
-    sidebars' tab lists are fixed. */
+    t_d6b657a7: edge shells accept content (the empty-shell refill); the
+    only refusal left is the LOCKED sessions tab - it never enters a pane
+    this way, and unknown ids refuse (the safe class). */
 export function setPaneComponent(
   tree: DockNode,
   paneId: string,
   component: DockComponentName,
 ): DockNode {
   const pane = findPane(tree, paneId);
-  if (!pane || isPinnedPane(pane) || isPinnedTab(component)) return tree;
+  if (!pane || isLockedTab(component)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       n.tabs = [{ component }];
@@ -682,12 +765,12 @@ export function setPaneComponent(
 
 /** open a new tab in a pane, appending at the end and activating it
     (the tab-bar '+' menu path; works on an empty pane too - the first
-    tab revives it). Refusals (card t_4ae27e0d): a PINNED pane takes no
-    tabs, and pinned components open nowhere - a main pane may only host
-    the closable class. */
+    tab revives it). Refusal (card t_d6b657a7): the LOCKED sessions tab
+    opens nowhere - the loader owns it. Any pane hosts any other tab:
+    sidebars are free content now. */
 export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode {
   const pane = findPane(tree, paneId);
-  if (!pane || isPinnedPane(pane) || isPinnedTab(tab.component)) return tree;
+  if (!pane || isLockedTab(tab.component)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       n.tabs = [...n.tabs, tab];
@@ -718,7 +801,11 @@ export function closeTab(tree: DockNode, paneId: string, index: number): DockNod
     the post-removal index - clamped to the remaining range). Both panes
     survive: emptying the source leaves it showing the '+' menu (settled
     ruling), never a removal. VS Code semantics: the moved tab FOCUSES in
-    the target pane; the source focuses whatever neighbor remains. */
+    the target pane; the source focuses whatever neighbor remains.
+    card t_d6b657a7: ANY tab moves between ANY bars (sidebars <-> main,
+    bidirectional) except the LOCKED sessions tab, which may only drop
+    inside the left shell's own bar (reorder there, refuse everywhere
+    else). */
 export function moveTab(
   tree: DockNode,
   fromPaneId: string,
@@ -731,9 +818,9 @@ export function moveTab(
   const to = findPane(tree, toPaneId);
   if (!to) return tree;
   const tab = from.tabs[fromIndex];
-  // card t_4ae27e0d: pinned tabs never leave their sidebar pane, and no
-  // tab may move INTO a pinned pane (the sidebars' tab lists are fixed)
-  if (isPinnedTab(tab.component) || isPinnedPane(to)) return tree;
+  // the locked tab's hit-test: sessions refuses every drop target that is
+  // not the left shell itself (unknown components refuse as the safe class)
+  if (isLockedTab(tab.component) && to.edge !== "left") return tree;
   if (fromPaneId === toPaneId) {
     // reorder: lift the tab out, then insert within what remains
     const target = clamp(toIndex, 0, from.tabs.length - 1);
@@ -1009,15 +1096,25 @@ export function clamp(v: number, lo: number, hi: number): number {
 
 // --- persistence ---------------------------------------------------------------
 
-const LAYOUT_VERSION = 1;
+// card t_d6b657a7: v2 - shell panes carry the `edge` marker; the layout
+// stores WHICH TABS live in WHICH pane (free content, restored verbatim
+// on reload). v1 (= pre-card, content-fingerprint sidebars) deserializes
+// and migrates in the loader.
+const LAYOUT_VERSION = 2;
 
 export function serialize(tree: DockNode): string {
   return JSON.stringify({ v: LAYOUT_VERSION, tree });
 }
 
+export interface LoadedLayout {
+  tree: DockNode;
+  /** the persisted version: 1 needs the era migration, 2 loads as-is */
+  version: 1 | 2;
+}
+
 /** validates + parses a persisted layout. Returns null for anything the
     engine cannot safely render (old/foreign/corrupt) so callers migrate. */
-export function deserialize(raw: string | null): DockNode | null {
+export function deserializeLayout(raw: string | null): LoadedLayout | null {
   if (!raw) return null;
   let parsed: unknown;
   try {
@@ -1027,10 +1124,16 @@ export function deserialize(raw: string | null): DockNode | null {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const rec = parsed as { v?: unknown; tree?: unknown };
-  if (rec.v !== LAYOUT_VERSION) return null;
+  if (rec.v !== 1 && rec.v !== 2) return null;
   const tree = validateNode(rec.tree);
   if (!tree) return null;
-  return tree;
+  return { tree, version: rec.v };
+}
+
+/** the plain tree-only read (every caller that does not care about the
+    persisted version) */
+export function deserialize(raw: string | null): DockNode | null {
+  return deserializeLayout(raw)?.tree ?? null;
 }
 
 function validateNode(raw: unknown): DockNode | null {
@@ -1086,10 +1189,13 @@ function validateNode(raw: unknown): DockNode | null {
   const fixed = typeof n.fixed === "number" && Number.isFinite(n.fixed) && n.fixed >= 0
     ? n.fixed
     : null;
+  // card t_d6b657a7: the shell identity persists (v2); anything else is a
+  // main pane
+  const edge = n.edge === "left" || n.edge === "right" ? n.edge : undefined;
   const active = typeof n.active === "number" && Number.isFinite(n.active)
     ? clamp(Math.trunc(n.active), 0, Math.max(0, tabs.length - 1))
     : 0;
-  return { kind: "pane", id: n.id, tabs, active, fixed };
+  return { kind: "pane", id: n.id, tabs, active, fixed, ...(edge ? { edge } : {}) };
 }
 
 // --- migration (first boot without a dock key) ---------------------------------
@@ -1124,8 +1230,13 @@ export function migrateLegacy(
     tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
     active: 0,
     fixed: iw,
+    edge: "right",
   };
-  const children: DockNode[] = [makePane("sidebar", sw), makePane("chat", null), inspector];
+  const children: DockNode[] = [
+    makePane("sidebar", sw, "left"),
+    makePane("chat", null),
+    inspector,
+  ];
 
   // fractions across the flexible chat: fixed panes ignore theirs, the
   // chat absorbs - equal fractions keep deserialize()/normalize honest
@@ -1247,17 +1358,23 @@ const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
 };
 
 export function createDock(store: Storage): DockApi {
-  const stored = deserialize(store.getItem(DOCK_LAYOUT_KEY));
-  // card t_4ae27e0d: loaded trees modernize (legacy "inspector" tabs expand
-  // to the real view tabs) and the fixed shape re-asserts itself (a
-  // pre-reset tree sidebars-toggled-closed gets its panes back). card
-  // t_49d0b308: trees persisted while the inspector held five tabs gain
-  // settings + kanban, and the pre-move settings tab leaves main panes.
-  // Any change persists at once - the next boot must see the modern shape
-  // even if no mutation fires this session.
-  let initial = stored
-    ? upgradeInspectorTabs(expandInspectorTabs(stored))
+  // card t_d6b657a7: the persisted VERSION rides the load - v1 trees go
+  // through the era migration (legacy "inspector" ids expand, the
+  // five-tab-era inspector regains settings+kanban), then all loads pass
+  // the same modernization: markers derived, shells re-asserted, sessions
+  // forced into the left bar, missing inspector singletons restored.
+  const stored = store.getItem(DOCK_LAYOUT_KEY);
+  const loaded = stored ? deserializeLayout(stored) : null;
+  let initial = loaded
+    ? loaded.tree
     : migrateLegacy((k) => store.getItem(k));
+  if (loaded?.version === 1) {
+    // v1-era semantics only: the inspector group's tab list was fixed
+    // chrome then - every era tree gains its missing right-area tabs
+    initial = upgradeInspectorTabs(expandInspectorTabs(initial));
+  } else {
+    initial = expandInspectorTabs(initial);
+  }
   // card t_f6d5a771: sync the id seed BEFORE boot repair mints panes. The
   // seed is per-page (0 at boot): repair first + sync after let
   // ensurePinnedEdges mint a fresh "n1" while the loaded tree still holds
@@ -1267,8 +1384,8 @@ export function createDock(store: Storage): DockApi {
   syncIdSeed(initial);
   initial = ensurePinnedEdges(initial);
   initial = assignChatKeys(initial);
-  // a modernized/fixed-shape-repaired load persists at once so the next
-  // boot sees the modern tree even if no mutation fires this session
+  // a modernized/fixed-shape-repaired load persists at once (now as v2) so
+  // the next boot sees the modern tree even if no mutation fires this session
   if (stored) store.setItem(DOCK_LAYOUT_KEY, serialize(initial));
   // shallowRef: the tree stays PLAIN data (structuredClone rejects proxies);
   // every op swaps the root, so reactivity rides the ref change alone

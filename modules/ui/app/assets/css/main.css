@@ -327,12 +327,11 @@ body {
   transition: opacity 0.15s ease-out;
 }
 /* card t_4ae27e0d: the X shows on HOVER ONLY (never the resting active
-   tab); keyboard users still get the focus-visible reveal. Pinned panes
-   (sessions / inspector) never render one at all - belt and braces for
-   the template's v-if. */
+   tab); keyboard users still get the focus-visible reveal. The template's
+   v-if owns WHO gets one at all (closable components only - chat today,
+   wherever the tab lives). */
 .dock-tab:hover .dock-tab-close,
 .dock-tab-close:focus-visible { opacity: 1; }
-.dock-pane.pinned .dock-tab-close { display: none; }
 .dock-tab-close:hover { background: var(--z2); color: var(--text); }
 /* card t_49d0b308: the inspector pane hosts SEVEN pinned tabs now - the
    72px min-width cannot stack in the ~300px column (overflow clipped the
@@ -371,6 +370,14 @@ body {
 /* hovered drop target: outline only, never a size change */
 .dock-pane.drop-hover {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -3px;
+}
+/* card t_d6b657a7: the no-drop affordance - a LOCKED drag (sessions)
+   hovering a refused target dashes the chip (or the empty pane body) in
+   the error ink; no caret, no highlight, dropEffect none */
+.dock-tab.drop-refused,
+.dock-pane.drop-refused {
+  outline: 2px dashed var(--err);
   outline-offset: -3px;
 }
 

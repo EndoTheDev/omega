@@ -14,8 +14,9 @@ import {
   INSPECTOR_TAB_COMPONENTS,
   LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
+  MENU_DOCKABLES,
   isClosableTab,
-  isPinnedTab,
+  isLockedTab,
   dockableOf,
   dockablesFromPanels,
   type DockableComponent,
@@ -31,6 +32,7 @@ import {
   makeSplit,
   nextNodeId,
   openSingleton,
+  moveTab,
   serialize,
   splitPane,
   allNodes,
@@ -76,10 +78,11 @@ function defaultTree(): DockSplit {
     tabs: INSPECTOR_TAB_COMPONENTS.map((c) => ({ component: c })),
     active: 0,
     fixed: 300,
+    edge: "right",
   };
   return asSplit(
     makeSplit("row", [
-      makePane("sidebar", 240),
+      makePane("sidebar", 240, "left"),
       makePane("chat", null),
       inspector,
     ]),
@@ -143,8 +146,10 @@ describe("the dockable registry", () => {
         `${d.id}: area is one of the three`,
       );
       assert.equal(typeof d.closable, "boolean", `${d.id}: closable flag`);
-      // the pinned identity is the whole invariant: pin <-> unclosable
-      assert.equal(!isClosableTab(d.id), isPinnedTab(d.id), `${d.id}: pin/unclosable agree`);
+      // the lock is narrow now (t_d6b657a7): only sessions is locked;
+      // unclosable is the wider property (everything except chat)
+      assert.equal(isLockedTab(d.id), d.id === 'sidebar', `${d.id}: lock == sessions`);
+      assert.equal(!isClosableTab(d.id), d.id !== 'chat', `${d.id}: unclosable == not chat`);
     }
   });
 
@@ -178,13 +183,14 @@ describe("the dockable registry", () => {
   });
 
   it("settings has NO other entry point (t_49d0b308): the '+' inventory excludes it", () => {
-    // settings is pinned right now - it can only be reached by its
-    // inspector tab. MAIN_DOCKABLES (both '+' menus' inventory) holds
-    // the main-area dockables only
-    assert.ok(isPinnedTab("settings"), "settings is pinned chrome");
+    // settings has no menu path (ruling, t_d6b657a7): persistence and the
+    // default-arrangement fallback are its only entry. MAIN_DOCKABLES (the
+    // main-area list) and MENU_DOCKABLES (the refill inventory) both
+    // exclude it
     assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
-    assert.ok(!MAIN_DOCKABLES.includes("settings"));
-    assert.ok(!MAIN_DOCKABLES.includes("kanban"));
+    assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
+    assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
+    assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
   });
 
   it("legacy ids: pre-reset trees deserialize but nothing may open one", () => {
@@ -192,14 +198,28 @@ describe("the dockable registry", () => {
     assert.ok(!(DOCK_COMPONENTS as readonly string[]).includes("inspector"));
   });
 
-  it("settings + kanban are pinned: openSingleton refuses every open path", async () => {
-    for (const id of ["settings", "kanban"] as const) {
-      assert.equal(isPinnedTab(id), true, `${id} pinned`);
+  it("Sessions is locked: openSingleton refuses its only open path (t_d6b657a7)", async () => {
+    assert.equal(isLockedTab("sidebar"), true, "sessions is the locked component");
+    for (const id of ["sidebar"] as const) {
       const t: DockNode = chatOnlyTree();
       const res = openSingleton(t, panes(t)[0]!.id, id);
       assert.equal(res.action, "noop", `${id} opens nowhere`);
       assert.equal(res.tree, t);
     }
+  });
+
+  it("free content: singletons open INTO an empty edge shell (t_d6b657a7)", async () => {
+    await withScratchSingleton(async (scratch) => {
+      const t = defaultTree();
+      const side = paneById(t, asSplit(t).children[0].id);
+      const res = openSingleton(t, side.id, scratch);
+      assert.equal(res.action, "created", "an edge shell takes tabs now");
+      assert.equal(instanceCount(res.tree, scratch), 1);
+      assert.deepEqual(
+        paneById(res.tree, side.id).tabs.map((x) => x.component),
+        ["sidebar", scratch],
+      );
+    });
   });
 
   it("dockableOf resolves every openable component, throws outside the union", () => {
@@ -321,19 +341,19 @@ describe("openSingleton", () => {
     });
   });
 
-  it("refuses PINNED components and PINNED panes (no open path into the sidebars)", async () => {
+  it("the locked component refuses every open path; free singletons open anywhere", async () => {
     const t = defaultTree();
-    for (const c of INSPECTOR_TAB_COMPONENTS) {
+    // sessions has NO open path (the loader owns it)...
+    for (const c of ["sidebar"] as const) {
       const res = openSingleton(t, firstMainPaneId(t)!, c);
       assert.equal(res.action, "noop", `${c} opens nowhere`);
       assert.equal(res.tree, t);
     }
-    await withScratchSingleton(async (scratch) => {
-      const side = paneById(t, asSplit(t).children[0].id);
-      const res = openSingleton(t, side.id, scratch);
-      assert.equal(res.action, "noop", "a pinned target pane takes no tabs");
-      assert.equal(res.tree, t);
-    });
+    // ...but settings/kanban/files DO (they open wherever the user aims)
+    for (const c of ["settings", "kanban"] as const) {
+      const res = openSingleton(t, firstMainPaneId(t)!, c);
+      assert.equal(res.action, "focused", `${c} already lives - focus wins`);
+    }
   });
 });
 
@@ -417,10 +437,10 @@ describe("dock store: the pane-model reset", () => {
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
 
-  it("a pre-move settings tab parked in a MAIN pane is stripped on boot (t_49d0b308)", async () => {
-    // the old shell allowed settings as a main-pane tab; build the tree
-    // persisting EXACTLY that (openTab would refuse a pinned component
-    // today, so the literal is constructed by hand)
+  it("a v1-era tree with settings parked in a MAIN pane strips it back to the era law", async () => {
+    // the t_49d0b308 era: settings lived in the inspector only. A v1
+    // persisted literal still gets that migration (openTab would refuse
+    // building it today, so the literal is constructed by hand)
     const t0: DockNode = {
       kind: "split",
       id: "n1",
@@ -447,7 +467,7 @@ describe("dock store: the pane-model reset", () => {
       sizes: [1 / 3, 1 / 3, 1 / 3],
     };
     const mem = new MemoryStorage();
-    mem.setItem(DOCK_LAYOUT_KEY, serialize(t0));
+    mem.setItem(DOCK_LAYOUT_KEY, JSON.stringify({ v: 1, tree: t0 }));
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
@@ -468,6 +488,31 @@ describe("dock store: the pane-model reset", () => {
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
       ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+    );
+  });
+
+  it("a v2 tree with settings dragged into a main pane KEEPS it (free content)", async () => {
+    let t: DockNode = defaultTree();
+    // settings is tab 5 of the inspector bar: drag it into the main pane
+    t = moveTab(t, asSplit(t).children[2].id, 5, asSplit(t).children[1].id, 0);
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
+    const dock = createDock(mem as unknown as Storage);
+    await flush();
+    const tree = dock.tree.value;
+    const main = paneById(tree, asSplit(tree).children[1].id);
+    assert.deepEqual(
+      main.tabs.slice(0, 2).map((x) => x.component),
+      ["settings", "chat"],
+      "the user's drag survives the reload verbatim",
+    );
+    // no second settings: the fallback only re-adds MISSING singletons
+    assert.equal(
+      [...allNodes(tree)].reduce(
+        (n, p) => n + (p.kind === "pane" ? p.tabs.filter((x) => x.component === "settings").length : 0),
+        0,
+      ),
+      1,
     );
   });
 
