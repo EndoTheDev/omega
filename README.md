@@ -2,7 +2,7 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-v0.6.4-blue)
+![Status](https://img.shields.io/badge/status-v0.9.0-blue)
 [![Sponsor](https://img.shields.io/badge/sponsor-ko--fi-FF5E5B)](https://ko-fi.com/endothedev)
 [![Sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/EndoTheDev)
 
@@ -11,6 +11,12 @@ commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
 Anthropic) and streams responses in real time. Single binary, full-
 screen TUI, persistent session tree, context compaction, and a
 in-process module system.
+
+The same binary also serves a VS Code-style web interface: a dock
+with draggable panes, live-streaming chat with retry and image
+attachments, sessions with search and pinning, settings, cron, logs,
+skills and a kanban board — all embedded, no separate frontend to
+run (`omega serve`).
 
 > **Warning:** The shell tool executes commands the LLM generates with
 > no sandboxing. Use Ollama for sensitive work — cloud providers
