@@ -41,7 +41,7 @@
         v-if="version"
         class="seg hide-sm"
         :title="`server build and uptime - ${version}`">
-        {{ version }} · up {{ formatUp }}
+        {{ shortVersion(version) }} · up {{ formatUp }}
       </span>
       <span class="seg">
         <span
@@ -57,7 +57,10 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import { formatDurationMs } from "../../composables/omega";
+  import {
+    formatDurationMs,
+    shortVersion,
+  } from "../../composables/omega";
 
   const props = defineProps<{
     healthy: boolean;
