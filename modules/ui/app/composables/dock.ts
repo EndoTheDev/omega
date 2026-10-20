@@ -63,10 +63,6 @@ export const LEGACY_WIDTH_KEYS = {
 export const MIN_PANE_PX = 128;
 export const CHAT_FLOOR_PX = 320;
 
-// gutter between a split's children: the 4px divider each child of the old
-// shell carried (pane-area padding contributes the outer 4px on the root).
-export const SPLIT_GUTTER_PX = 4;
-
 // component names panes may host: the dockable registry is the single
 // source (see the re-exports above)
 

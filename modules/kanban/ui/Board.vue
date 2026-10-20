@@ -100,7 +100,6 @@
       v-if="selected"
       :task="selected"
       :comments="detailComments"
-      :loading="detailLoading"
       @move="moveSelected"
       @comment="submitComment"
       @open-session="(id: string) => $emit('open-session', id)"
@@ -223,7 +222,6 @@
   // --- detail drawer
   const selected = ref<BoardTask | null>(null);
   const detailComments = ref<BoardComment[]>([]);
-  const detailLoading = ref(false);
 
   function openDetail(t: BoardTask) {
     selected.value = { ...t, body: t.body };
@@ -232,7 +230,6 @@
   }
 
   async function loadDetail(id: string) {
-    detailLoading.value = true;
     try {
       const res = await fetch(`/tasks/${encodeURIComponent(id)}`);
       if (!res.ok) throw new Error(`GET /tasks/${id}: ${res.status}`);
@@ -246,7 +243,6 @@
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
-    detailLoading.value = false;
   }
 
   // poll-time drawer refresh: pull the drawn task's detail without
@@ -293,7 +289,6 @@
     if (expanded.has(status)) expanded.delete(status);
     else expanded.add(status);
     // reactive(Set) delete/add both trigger - no reassignment needed
-    expanded.has(status); // touch: keeps reactivity read honest
   }
 
   onMounted(() => {

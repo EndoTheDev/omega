@@ -110,7 +110,6 @@
   const props = defineProps<{
     task: BoardTask;
     comments: BoardComment[];
-    loading?: boolean;
   }>();
 
   defineEmits<{

@@ -195,16 +195,5 @@ func tailLines(path string, n int) ([]string, error) {
 
 // splitLines splits on '\n' with no empty trailing entry.
 func splitLines(s string) []string {
-	out := []string{}
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		out = append(out, s[start:])
-	}
-	return out
+	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 }

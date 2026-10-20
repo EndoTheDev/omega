@@ -20,15 +20,16 @@ and the two never touch each other.
   bug, not a state.
 - **Pane model (Endo's reset spec, landed)**: left sidebar = sessions
   pane (pinned singleton, no X); right sidebar = inspector pane with
-  five fixed tabs (Files, Cron, Logs, Skills, Tools - no X); middle =
+  seven fixed tabs (Files, Cron, Logs, Skills, Tools, Settings, Kanban
+  - no X); middle =
   main pane. The main pane is the last-unclosable pane (the AWE always
   keeps >= 1 pane; the X on main only shows on hover, and only when
   more than one pane exists). Opening a session or hitting 'new' opens
   in the MAIN pane and focuses the existing tab instead of reopening.
 - **Dockables** (`composables/dockables.ts`): the registry of openable
   domains (sidebar, inspector, chat, settings). Settings is a dock-tab
-  singleton since the dock arc - it opens from the pane '+' menu, not
-  a menubar gear (the gear's removal is carded).
+  singleton since the dock arc - it opens as the pinned inspector
+  Settings tab; the menubar gear and the '+'-menu entry are gone.
 - **Module-owned UI (build-time composition)**: modules ship UI in
   `modules/<name>/ui/`; `nuxt.config.ts` composes them by array -
   `app/composables/module-panels.generated.ts` is generated at build
