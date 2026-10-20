@@ -993,24 +993,37 @@ labels stopped short of the right edge. */
   border: none;
   padding: 0;
 }
-/* The LIVE block (the turn currently responding) sticks to the top of
-   the scroll pane while its answer streams below it; `busy` drives the
-   class, so agent_end drops it and the block settles back in order.
-   The pane surface + cover padding keep scrolled content from showing
-   through the block's internal gaps - the negative margins absorb the
-   padding, so the sticky state never changes the layout, only the
-   paint. Blocks sit above non-positioned siblings while stuck. */
-.msg-block.live {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+/* The LIVE-RUN two-region layout (card t_c40164cf): while a stacked run
+   streams, the pane stops being one scrolling list - the last user
+   message pins as a header row (always visible for the whole run) and
+   the run's thinking/tool/response items scroll in their own body
+   region underneath, auto-following the tail. Older history rides out
+   of view for the run's duration; agent_end unmounts the branch and the
+   settled chronological column returns with the block in flow. */
+.live-pin {
+  flex: none;
+  padding: 14px 20px 12px;
   background: var(--z1);
-  padding: 8px 0 14px;
-  margin: -8px 0 0;
-  border-radius: var(--r-pane);
+  border-bottom: 1px solid var(--stroke);
 }
-/* the status line under a live block keeps breathing room from it */
-.msg-block.live + .status-line { margin-top: 4px; }
+/* the pinned header speaks the stacked document language too: the user
+   row renders full width like every stacked block (the .messages.stacked
+   selectors above don't reach this region) */
+.live-pin .msg.user { justify-content: flex-start; }
+.live-pin .msg.user .bubble { width: 100%; max-width: 100%; }
+
+/* the wrap goes vertical for the run: pinned question ABOVE, agent body
+   BELOW (the row direction was tuned for the single settled column) */
+.messages-wrap:has(.live-body) { flex-direction: column; }
+
+/* the body reuses .messages (flex:1, overflow-y:auto, full-width
+   column) - its own scroll container with the tail-follow. Its items
+   are ONE turn: the within-block 12px rhythm, not the 28px between-turn
+   gap; the pin's border stands in for the turn separation. min-height:0
+   lets the flex item shrink so the body scrolls instead of pushing the
+   composer out. */
+.messages.stacked.live-body { gap: 12px; padding-top: 12px; min-height: 0; }
+.messages.live-body .status-line { margin-top: 4px; flex: none; }
 
 .jump-live {
   position: absolute;
