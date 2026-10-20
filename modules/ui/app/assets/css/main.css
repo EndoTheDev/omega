@@ -477,9 +477,13 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .icon-btn svg { display: block; }
 .icon-btn:hover { color: var(--text); background: var(--z1-raised); }
-/* card t_4ae27e0d: the sidebar toggles are gone - desktop has fixed
-   panes. The two remaining drawer buttons exist ONLY as the mobile
-   drawers' handles (the media query below re-shows them under 768px). */
+/* card t_47b776ad: the desktop sidebar toggles (hide/reopen the pinned
+   edge panes via dock.toggleEdge) - desktop chrome only, the mobile
+   media query below hides them under the breakpoint where the drawer
+   handles take over. */
+.icon-btn.edge-toggle { display: inline-flex; }
+/* the two remaining drawer buttons exist ONLY as the mobile drawers'
+   handles (the media query below re-shows them under 768px). */
 .icon-btn.drawer-btn { display: none; }
 
 .new-btn {
@@ -1901,8 +1905,10 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .dock-split { flex-wrap: nowrap; }
 
   /* the drawer handles come back under the breakpoint (fixed panes are
-     desktop chrome; on a phone they are drawers) */
+     desktop chrome; on a phone they are drawers) - and the desktop
+     edge toggles drop out (the drawers own the same emits there) */
   .icon-btn.drawer-btn { display: inline-flex; }
+  .icon-btn.edge-toggle { display: none; }
 
   .sessions {
     position: fixed;

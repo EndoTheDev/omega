@@ -25,6 +25,9 @@ import {
   nextNodeId,
   findPane,
   findComponentPane,
+  findEdgePane,
+  hideEdgePane,
+  revealEdgePane,
   allNodes,
   isPinnedPane,
   paneCount,
@@ -33,6 +36,7 @@ import {
   expandInspectorTabs,
   ensurePinnedEdges,
   normalizeSizes,
+  PANE_OPEN_MIN,
   LEGACY_WIDTH_KEYS,
   MIN_PANE_PX,
   type DockNode,
@@ -628,6 +632,65 @@ describe("pane-model reset", () => {
     assert.equal(isPinnedPane(paneByComponent(t, "sidebar")), true);
     assert.equal(isPinnedPane(paneByComponent(t, "files")), true);
     assert.equal(isPinnedPane(paneByComponent(t, "chat")), false);
+  });
+});
+
+// --- gate: the edge toggle (card t_47b776ad) -----------------------------------
+
+describe("edge toggle (card t_47b776ad)", () => {
+  it("findEdgePane fingerprints the two dedicated pinned panes", () => {
+    const t = defaultTree();
+    const sidebar = findEdgePane(t, "sidebar");
+    const inspector = findEdgePane(t, "inspector");
+    assert.equal(sidebar?.tabs[0]?.component, "sidebar");
+    assert.deepEqual(
+      inspector?.tabs.map((x) => x.component),
+      INSPECTOR_TAB_COMPONENTS,
+    );
+    // absent -> null
+    assert.equal(findEdgePane(hideEdgePane(t, "sidebar"), "sidebar"), null);
+  });
+
+  it("hideEdgePane removes the edge pane as a whole; a main pane untouched", () => {
+    const t = defaultTree();
+    const sidebarId = findEdgePane(t, "sidebar")!.id;
+    const hidden = hideEdgePane(t, "sidebar");
+    assert.deepEqual(
+      paneIds(hidden),
+      paneIds(t).filter((id) => id !== sidebarId),
+    );
+    assert.equal(findEdgePane(hidden, "sidebar"), null);
+    // the inspector pane is untouched by a sidebar hide
+    assert.notEqual(findEdgePane(hidden, "inspector"), null);
+  });
+
+  it("revealEdgePane reopens the pane at its edge with the clamp width", () => {
+    const hidden = hideEdgePane(defaultTree(), "sidebar");
+    const reopened = asSplit(revealEdgePane(hidden, "sidebar", "before")).children[0];
+    assert.equal(asPane(reopened).tabs[0]?.component, "sidebar");
+    assert.equal(asPane(reopened).fixed, Math.max(PANE_OPEN_MIN, 240));
+    // identical fingerprint to the boot-repair pane
+    assert.equal(isPinnedPane(asPane(reopened)), true);
+    const insp = asPane(
+      asSplit(revealEdgePane(hideEdgePane(defaultTree(), "inspector"), "inspector", "after")).children[2],
+    );
+    assert.deepEqual(
+      insp.tabs.map((x): string => x.component),
+      ["files", "cron", "http_channel", "skills", "tools"],
+    );
+  });
+
+  it("hide is reversible round-trip; the toggle converges after hide+reveal", () => {
+    const t = defaultTree();
+    const round = revealEdgePane(hideEdgePane(t, "sidebar"), "sidebar", "before");
+    assert.notEqual(findEdgePane(round, "sidebar"), null);
+    assert.equal(paneCount(round), paneCount(t));
+    // never-empty: a lone edge pane refuses to go
+    const lone = makePane("sidebar", 240);
+    assert.equal(hideEdgePane(lone, "sidebar"), lone);
+    // a main-only tree has no edge pane - hide is a no-op
+    const main = makePane("chat");
+    assert.equal(hideEdgePane(main, "inspector"), main);
   });
 });
 

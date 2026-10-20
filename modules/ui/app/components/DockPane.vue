@@ -106,7 +106,7 @@
         role="menu"
         aria-label="pane components">
         <button
-          v-for="d in MAIN_DOCKABLES"
+          v-for="d in mainDockables"
           :key="d.id"
           class="dock-menu-btn"
           role="menuitem"
@@ -128,7 +128,7 @@
       aria-label="new tab components"
       @click.stop>
       <button
-        v-for="d in MAIN_DOCKABLES"
+        v-for="d in mainDockables"
         :key="d.id"
         class="dock-menu-btn"
         role="menuitem"
@@ -180,6 +180,7 @@
   import {
     COMPONENT_TITLES,
     MAIN_DOCKABLES,
+    dockableOf,
     isClosableTab,
     isPinnedTab,
     type DockIcon,
@@ -188,6 +189,13 @@
   } from "../composables/dockables";
   // the re-export path keeps one import surface for engine-side consumers;
   // dockables.ts is the registry's true source (card t_30ee04fb)
+
+  // MAIN_DOCKABLES is the MAIN-AREA ID list (card t_4ae27e0d); the menus
+  // need the full registry entries (title/icon/policy). The pane-reset
+  // card left the templates iterating the ids raw - d.icon undefined,
+  // openSingleton(pane, undefined) no-ops, BOTH menus went dead (found
+  // live while restoring the menubar toggles, card t_47b776ad).
+  const mainDockables = MAIN_DOCKABLES.map(dockableOf);
 
   const props = defineProps<{
     node: DockPaneNode;

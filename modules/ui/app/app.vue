@@ -2,9 +2,10 @@
   <div class="shell">
     <MenuBar
       :view="mainView"
+      :sidebar-open="sidebarDocked"
+      :inspector-open="inspectorDocked"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
-      @settings="openSettings"
       @view="switchMainView" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
@@ -211,6 +212,7 @@
     createDock,
     findPane,
     isPinnedPane,
+    INSPECTOR_TAB_COMPONENTS,
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
@@ -423,19 +425,6 @@
     refocusFrom(paneId);
   }
 
-  // the pane a singleton open targets when no click has landed yet: the
-  // LAST-CLICKED pane when it is a main pane, else the first main pane.
-  // card t_4ae27e0d: pinned sidebars never host singleton opens - a chat/
-  // settings tab must never land in them.
-  function resolveFocusedPaneId(): string {
-    const tree = dock.tree.value;
-    const focused = lastPaneId.value ?
-      findPane(tree, lastPaneId.value) :
-      null;
-    if (focused && !isPinnedPane(focused)) return focused.id;
-    return dock.ensureMainPane();
-  }
-
   // the pane the BOARD view hosts into (and chat opens fall back to): an
   // actually chat-hosting pane first, else the first main pane (never the
   // pinned sidebars). The dock's ensureMainPane re-inserts a flexible pane
@@ -589,11 +578,23 @@
     }
   }
 
-  // mobile: one drawer at a time. The sidebars are FIXED (card
-  // t_4ae27e0d): the desktop tree never gains or loses them; the
-  // MenuBar's drawer buttons surface only under the 768px breakpoint,
-  // so these are pure overlay flips of the always-present panes.
+  // card t_47b776ad: the menubar toggles are BACK - on desktop they
+  // drive dock.toggleEdge (hide/reopen the pinned edge panes at their
+  // edge, reopen at the clamp width; a reload re-asserts the fixed
+  // shape via ensurePinnedEdges). On mobile the same emits keep flipping
+  // the overlay drawers (one at a time) - the toggles render only above
+  // the 768px breakpoint, the drawer handles only below it.
+  const sidebarDocked = computed(() => dock.has("sidebar"));
+  // the inspector's presence reads the pinned right-area tab set (the
+  // pane holds files + the module panels; any of them = pane lives)
+  const inspectorDocked = computed(() =>
+    INSPECTOR_TAB_COMPONENTS.some((c) => dock.has(c)));
+
   function toggleSidebar() {
+    if (!isMobile.value) {
+      dock.toggleEdge("sidebar", "before");
+      return;
+    }
     inspectorOpen.value = false;
     drawerOpen.value = !drawerOpen.value;
   }
@@ -605,23 +606,12 @@
 
   // mobile: one drawer at a time
   function toggleInspector() {
+    if (!isMobile.value) {
+      dock.toggleEdge("inspector", "after");
+      return;
+    }
     drawerOpen.value = false;
     inspectorOpen.value = !inspectorOpen.value;
-  }
-
-  // card 5 (t_35b5594a): the menubar gear is the settings singleton's
-  // opener - NOT a toggle. First click OPENS a settings tab in the
-  // focused MAIN pane (the last pane clicked, else the first main pane
-  // - card t_4ae27e0d: never a pinned sidebar); every later click
-  // FOCUSES the existing instance wherever it was dragged to
-  // (openSingleton's contract). Closing is the tab's ×.
-  function openSettings() {
-    dock.openSingleton(resolveFocusedPaneId(), "settings");
-    // the picker refetches on every settings open: a theme dropped into
-    // the folder while the app runs shows up (and a broken file
-    // disappears) without a restart - the dock-tab replacement for the
-    // old drawer's settingsOpen watch
-    void loadUserThemes();
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so
@@ -750,8 +740,17 @@
     { deep: true },
   );
 
-  // (the drawer-era settingsOpen watch died with the overlay - the
-  // dock-era openSettings below carries the refetch-on-open)
+  // the gear is gone (card t_47b776ad): settings now opens from the
+  // pane '+' menu / the dock. The refetch-on-open survives the gear's
+  // death - this watch catches every absent -> present transition of
+  // the settings singleton, however it was opened (the drawer-era
+  // settingsOpen watch got the same job in the dock era).
+  watch(
+    () => dock.has("settings"),
+    (present, was) => {
+      if (present && !was) void loadUserThemes();
+    },
+  );
 
   // loadUserThemes refreshes the picker's list. Fetched on mount (so a
   // persisted theme:<id> applies) and on every settings open (so a
