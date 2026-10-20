@@ -1,7 +1,6 @@
 package http_channel
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -12,68 +11,9 @@ import (
 	"github.com/EndoTheDev/omega/ai"
 )
 
-// newTestServerWithTools returns a Server whose tool registry contains a
-// fixed set of mock tools, used for selectTools coverage.
-func newTestServerWithTools() *Server {
-	s := newTestServer()
-	s.tools = map[string]agent.Tool{
-		"shell.run":   {Description: "run shell", Parameters: nil, Run: func(context.Context, map[string]any) (string, error) { return "", nil }},
-		"files.read":  {Description: "read file", Parameters: nil, Run: func(context.Context, map[string]any) (string, error) { return "", nil }},
-		"files.write": {Description: "write file", Parameters: nil, Run: func(context.Context, map[string]any) (string, error) { return "", nil }},
-	}
-	return s
-}
-
-func TestSelectToolsEmpty(t *testing.T) {
-	s := newTestServerWithTools()
-	got := s.selectTools(nil)
-	if len(got) != len(s.tools) {
-		t.Fatalf("expected %d tools, got %d", len(s.tools), len(got))
-	}
-	for name := range s.tools {
-		if _, ok := got[name]; !ok {
-			t.Errorf("expected tool %q in result", name)
-		}
-	}
-}
-
-func TestSelectToolsAllMatch(t *testing.T) {
-	s := newTestServerWithTools()
-	names := []string{"shell.run", "files.read", "files.write"}
-	got := s.selectTools(names)
-	if len(got) != len(names) {
-		t.Fatalf("expected %d tools, got %d", len(names), len(got))
-	}
-	for _, name := range names {
-		if _, ok := got[name]; !ok {
-			t.Errorf("expected tool %q in result", name)
-		}
-	}
-}
-
-func TestSelectToolsPartialMatch(t *testing.T) {
-	s := newTestServerWithTools()
-	names := []string{"shell.run", "does.not.exist"}
-	got := s.selectTools(names)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 tool (missing skipped), got %d", len(got))
-	}
-	if _, ok := got["shell.run"]; !ok {
-		t.Errorf("expected shell.run in result")
-	}
-	if _, ok := got["does.not.exist"]; ok {
-		t.Errorf("non-existent tool should not be present")
-	}
-}
-
-func TestSelectToolsNoneMatch(t *testing.T) {
-	s := newTestServerWithTools()
-	names := []string{"nope.a", "nope.b"}
-	got := s.selectTools(names)
-	if len(got) != 0 {
-		t.Fatalf("expected empty map, got %d", len(got))
-	}
-}
+// selectTools and its request field were deleted: the serve host never
+// mounted a tool registry, so the documented restriction was never
+// enforced (an unenforced restriction is worse than none).
 
 func TestDecodeMessagesAllRoles(t *testing.T) {
 	raw := []json.RawMessage{
