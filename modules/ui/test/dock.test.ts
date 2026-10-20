@@ -1,7 +1,7 @@
 // omega webui: unit tests for the dock engine (app/composables/dock.ts) -
 // layout tree pure functions, divider drag math, persistence round-trip and
 // legacy migration. Render-free; node's built-in test runner.
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   makePane,
@@ -43,6 +43,21 @@ import {
   type DockPane,
   type DockSplit,
 } from "../app/composables/dock.ts";
+import { registerScratchSingleton } from "./scratchDockable.ts";
+
+// card t_49d0b308: the tab-op fixtures below need a MAIN-area OPENABLE
+// component; settings left that class for the inspector. The synthetic
+// "scratch" singleton registers for this file's whole run (node --test
+// gives every file its own process). Cast note: the engine ops take
+// DockComponentName and node strips types before running - the string
+// "scratch" flows through fine.
+let restoreScratch: (() => void) | null = null;
+before(() => {
+  restoreScratch = registerScratchSingleton();
+});
+after(() => {
+  restoreScratch?.();
+});
 
 // helpers ------------------------------------------------------------------
 
@@ -123,7 +138,7 @@ describe("tree construction", () => {
     const insp = asSplit(t).children[2];
     assert.deepEqual(
       asPane(insp).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
     );
     assert.equal(asPane(insp).active, 0);
   });
@@ -277,7 +292,7 @@ describe("tab ops", () => {
   it("openTab appends and focuses; closeTab removes and shifts focus", () => {
     const t0 = asPane(makePane("chat"));
     const id = t0.id;
-    let t: DockNode = openTab(t0, id, { component: "settings" });
+    let t: DockNode = openTab(t0, id, { component: "scratch" });
     let p = findPane(t, id)!;
     assert.equal(p.tabs.length, 2);
     assert.equal(p.active, 1);
@@ -307,7 +322,7 @@ describe("tab ops", () => {
     /** split shell: left pane main tabs, right pane chat */
     function twoPaneTree(): { t: DockNode; left: DockPane; right: DockPane } {
       const root = makePane("chat");
-      const left = asPane(openTab(root, root.id, { component: "settings" }));
+      const left = asPane(openTab(root, root.id, { component: "scratch" }));
       const right = makePane("chat", null);
       const t = makeSplit("row", [left, right]);
       return { t, left: findPane(t, left.id)!, right: findPane(t, right.id)! };
@@ -316,14 +331,14 @@ describe("tab ops", () => {
     it("reorders within a pane, keeping the moved tab focused", () => {
       let t: DockNode = makePane("chat");
       const id = t.id;
-      t = openTab(t, id, { component: "settings" });
-      assert.deepEqual(tabComps(t, id), ["chat", "settings"]);
+      t = openTab(t, id, { component: "scratch" });
+      assert.deepEqual(tabComps(t, id), ["chat", "scratch"]);
       // [chat, settings]; chat is NOT the focused tab (openTab focused
       // settings) - dragging chat right moves it after settings, and the
       // parked active tab TRACKS its component (settings shifts left)
       t = moveTab(t, id, 0, id, 1);
       let p = findPane(t, id)!;
-      assert.deepEqual(tabComps(t, id), ["settings", "chat"]);
+      assert.deepEqual(tabComps(t, id), ["scratch", "chat"]);
       assert.equal(p.active, 0, "the parked active tab tracks its component");
       // drag the focused tab (settings, now at 0) left of chat: no-op
       t = moveTab(t, id, 0, id, 0);
@@ -333,7 +348,7 @@ describe("tab ops", () => {
       t = focusTab(t, id, 1);
       t = moveTab(t, id, 1, id, 0);
       p = findPane(t, id)!;
-      assert.deepEqual(tabComps(t, id), ["chat", "settings"]);
+      assert.deepEqual(tabComps(t, id), ["chat", "scratch"]);
       assert.equal(p.active, 0, "the moved tab stays focused");
     });
 
@@ -349,7 +364,7 @@ describe("tab ops", () => {
       const l = findPane(out, left.id)!;
       const r = findPane(out, right.id)!;
       assert.equal(l.tabs.length, 1);
-      assert.deepEqual(tabComps(out, left.id), ["settings"]);
+      assert.deepEqual(tabComps(out, left.id), ["scratch"]);
       assert.deepEqual(tabComps(out, right.id), ["chat", "chat"]);
       assert.equal(r.active, 1, "dropped tab focuses in the target");
       assert.equal(l.active, 0, "survivor keeps the focus");
@@ -373,9 +388,9 @@ describe("tab ops", () => {
       const l = findPane(cur, left.id)!;
       assert.equal(l.tabs.length, 0, "source pane empty");
       assert.equal(panes(cur).length, 2, "empty source pane survives (menu ruling)");
-      assert.deepEqual(tabComps(cur, right.id), ["chat", "chat", "settings"]);
+      assert.deepEqual(tabComps(cur, right.id), ["chat", "chat", "scratch"]);
       assert.ok(
-        findPane(cur, right.id)!.tabs.some((x) => x.component === "settings"),
+        findPane(cur, right.id)!.tabs.some((x) => x.component === "scratch"),
         "the drained tab landed in the right pane",
       );
     });
@@ -415,13 +430,13 @@ describe("tab ops", () => {
       const { t, left, right } = twoPaneTree();
       const moved = moveTab(t, left.id, 0, right.id, 0);
       const back = deserialize(serialize(moved))!;
-      assert.deepEqual(tabComps(back, left.id), ["settings"]);
+      assert.deepEqual(tabComps(back, left.id), ["scratch"]);
       assert.deepEqual(tabComps(back, right.id), ["chat", "chat"]);
     });
   });
 
-  it("MAIN_DOCKABLES: the MAIN-area inventory only (card t_4ae27e0d)", () => {
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "settings"]);
+  it("MAIN_DOCKABLES: the MAIN-area inventory only (card t_4ae27e0d; settings left for the inspector, t_49d0b308)", () => {
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
   });
 });
 
@@ -535,7 +550,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(asPane(root.children[2]).fixed, 240);
     assert.deepEqual(
       asPane(root.children[2]).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
     );
   });
   it("persisted widths render verbatim, open flags are dead history", () => {
@@ -578,7 +593,7 @@ describe("pane-model reset", () => {
     const out = expandInspectorTabs(legacy);
     assert.deepEqual(
       (out as DockPane).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
     );
     assert.equal((out as DockPane).active, 0);
   });
@@ -602,7 +617,7 @@ describe("pane-model reset", () => {
     const right = asPane(out.children[2]); // [sidebar, chat, inspector]
     assert.deepEqual(
       right.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
     );
     assert.equal(right.fixed, 240);
   });
@@ -676,7 +691,7 @@ describe("edge toggle (card t_47b776ad)", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x): string => x.component),
-      ["files", "cron", "http_channel", "skills", "tools"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
     );
   });
 

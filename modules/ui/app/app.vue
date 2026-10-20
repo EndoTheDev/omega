@@ -111,9 +111,11 @@
             :open="isMobile ? inspectorOpen : false" />
         </template>
 
-        <!-- card 5 (t_35b5594a): settings is a dock-tab singleton - the
-             menubar gear opens it into the focused main pane; the overlay
-             drawer shape is gone. Same component, in-pane. -->
+        <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry
+             point exists (the '+' menu no longer lists it); the tab lives
+             pinned in the inspector pane. The mount loads on activation
+             (the component's onMounted), the mobile drawer shares the
+             same open flag as the module panels. -->
         <template #pane-settings>
           <SettingsTab
             class="pane"
@@ -121,7 +123,17 @@
             v-model:appearance="appearance"
             :theme-mode="themeMode"
             :user-themes="userThemes"
+            :open="inspectorOpen"
             @set-theme="setTheme" />
+        </template>
+        <!-- card t_49d0b308: the kanban board joins the inspector - the
+             composition panel renders the compact/narrow-adaptive board
+             in the ~300px sidebar column -->
+        <template #pane-kanban>
+          <InspectorPanel
+            class="pane"
+            module="kanban"
+            :open="isMobile ? inspectorOpen : false" />
         </template>
       </DockSplit>
     </div>
