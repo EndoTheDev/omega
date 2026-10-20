@@ -27,8 +27,8 @@ func TestToolsRegistryComplete(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()
 	for _, name := range []string{
-		"task_create", "task_list", "task_update",
-		"task_comment", "task_complete", "task_link_session",
+		"task.create", "task.list", "task.update",
+		"task.comment", "task.complete", "task.link_session",
 	} {
 		tool, ok := tools[name]
 		if !ok {
