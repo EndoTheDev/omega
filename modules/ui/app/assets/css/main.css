@@ -1419,6 +1419,8 @@ labels stopped short of the right edge. */
 }
 
 .composer textarea {
+  flex: 1 1 auto; /* the row's content: shrink-able, scrollable */
+  min-width: 0;
   resize: none;
   background: transparent;
   border: none;
@@ -1430,6 +1432,28 @@ labels stopped short of the right edge. */
   overflow-y: auto;
   outline: none;
 }
+
+/* the attach affordance lives in the input (t_357cbe9c): a "+" in front
+   of the "message omega" placeholder opens the file picker - the
+   toolbar's paperclip button is gone */
+.composer-row {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+.plus-btn {
+  flex: none;
+  margin: 4px 0 0 8px;
+  padding: 2px 4px;
+  font-size: 18px;
+  line-height: 21px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-chip);
+  cursor: pointer;
+}
+.plus-btn:hover { color: var(--accent); }
 
 /* pending attachment thumbnails above the textarea - removable */
 .attach-strip {
@@ -1468,16 +1492,6 @@ labels stopped short of the right edge. */
   cursor: pointer;
 }
 .attach-remove:hover { color: var(--accent); }
-.pick-btn {
-  background: transparent;
-  border: 1px solid var(--stroke);
-  color: var(--text-dim);
-  border-radius: var(--r-chip);
-  padding: 5px 10px;
-  cursor: pointer;
-  font-size: 14px;
-}
-.pick-btn:hover { color: var(--text); border-color: var(--text-dim); }
 
 .toolbar {
   display: flex;
@@ -1567,27 +1581,20 @@ labels stopped short of the right edge. */
 }
 .send:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* cancel: the send button's slot while the session's run streams - the
-   same shape, a muted fill so it reads as "stop", not "answer" */
+/* cancel: the morphing button's stop face while the session's run
+   streams - the same shape, a muted fill so it reads as "stop", not
+   "answer" */
 .send.cancel { background: var(--text-dim); }
 
-/* retry: outline-accent affordance left of send - re-sends the last
-   user message as a fresh turn (interrupted stream or not). Carries
-   the send button's auto-margin; the real send sits flush after. */
-.retry {
-  margin-left: auto;
+/* retry: the morphing button's replay face (t_357cbe9c) - outline-accent
+   so it does not read as "forward something new". The server re-runs
+   the persisted last user turn; the fresh response appends below it. */
+.send.retry {
+  /* override the accent fill: this face is not the aggressive one */
   background: none;
   border: 1px solid var(--accent);
   color: var(--accent);
-  font-weight: 700;
-  border-radius: var(--r-chip);
-  padding: 6px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  min-height: 32px;
 }
-.retry:disabled { opacity: 0.4; cursor: not-allowed; }
-.retry + .send { margin-left: 8px; }
 
 /* ---- layer 2: overlays (mobile drawer scrims) ---- */
 .scrim {
@@ -1914,6 +1921,19 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .composer { margin: 0 8px 8px; }
   .model-chip { max-width: 140px; }
   .send { padding: 6px 14px; }
+
+  /* the squeeze (t_357cbe9c): one button + two chips survive the 320px
+     hard floor on one row - the model chip gives up width first
+     (ellipsis on .chip-name), and only the name text ever wraps */
+  .model-chip {
+    max-width: 96px;
+    min-width: 0;
+  }
+  .model-chip .chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   .statusbar { font-size: 11px; gap: 8px; }
   .statusbar .hide-sm { display: none; }
