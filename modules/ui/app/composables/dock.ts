@@ -756,6 +756,19 @@ export function firstChatTab(
   return null;
 }
 
+/** the first DRAFT chat tab (no session binding - the untitled new-chat
+    state) in the tree, depth-first. A tab whose first send landed its
+    real session id (setTabSessionRef) has sessionRef set and is no
+    longer draft. */
+export function firstDraftChatTab(tree: DockNode): ChatTabLocation | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    const index = n.tabs.findIndex((t) => t.component === "chat" && !t.sessionRef);
+    if (index >= 0) return { paneId: n.id, index, tab: n.tabs[index]! };
+  }
+  return null;
+}
+
 /** write the session id back onto the chat tab that owns `key` - the
     unsaved ('+' / sidebar-new) tab's first send mints its real id and the
     tab's binding lands IN THE TREE, not in some side variable. */
@@ -1076,6 +1089,9 @@ export interface DockApi {
   /** card 3: chat tab lookups (focus helpers; read-only over the live tree) */
   findChatTab: (key: string) => ChatTabLocation | null;
   firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
+  /** t_311838e4: the first DRAFT chat tab (no session binding) - the
+      '+' new flow focuses it instead of minting a duplicate. */
+  firstDraftChatTab: () => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
   /** card t_47b776ad: the menubar's desktop toggles are back. Hides the
@@ -1232,6 +1248,7 @@ export function createDock(store: Storage): DockApi {
     setSessionRef, closeSession,
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
+    firstDraftChatTab: () => firstDraftChatTab(tree.value),
     split, remove, toggleEdge, ensureMainPane, canRemovePane, drag,
   };
 }

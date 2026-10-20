@@ -13,6 +13,7 @@ import {
   closeSessionTabs,
   findChatTab,
   firstChatTab,
+  firstDraftChatTab,
   makePane,
   makeSplit,
   nextTabKey,
@@ -152,6 +153,32 @@ describe("chat tab lookups", () => {
     assert.equal(loc.index, 0);
     assert.equal(firstChatTab(tree, "missing"), null);
     assert.equal(findChatTab(tree, "c_nope"), null);
+  });
+});
+
+// card t_311838e4: the '+' new flow reuses an open DRAFT chat tab
+// (no session binding = the untitled new-chat state) instead of
+// minting a duplicate.
+describe("firstDraftChatTab", () => {
+  it("finds the unbound chat tab; a bound one is not draft", () => {
+    const draft = seededTree(); // no binding
+    assert.equal(paneAt(draft, 1).tabs[0]!.sessionRef, undefined);
+    const loc = firstDraftChatTab(draft);
+    assert.equal(loc?.paneId, paneAt(draft, 1).id);
+    assert.equal(loc?.index, 0);
+    // the first send bound a session: no draft remains
+    const bound = seededTree("s1");
+    assert.equal(firstDraftChatTab(bound), null);
+  });
+
+  it("picks the draft across panes, depth-first, past bound siblings", () => {
+    const base = assignChatKeys(split([makePane("chat"), makePane("chat")]));
+    let tree = setTabSessionRef(base, paneAt(base, 0).tabs[0]!.key!, "s1");
+    tree = openTab(tree, paneAt(tree, 0).id, { component: "chat", key: nextTabKey() });
+    const loc = firstDraftChatTab(tree)!;
+    assert.equal(loc.paneId, paneAt(tree, 0).id);
+    assert.equal(loc.index, 1, "the second tab of pane 0 is the draft");
+    assert.equal(loc.tab.sessionRef, undefined);
   });
 });
 
