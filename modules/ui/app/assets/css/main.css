@@ -1023,7 +1023,6 @@ labels stopped short of the right edge. */
    lets the flex item shrink so the body scrolls instead of pushing the
    composer out. */
 .messages.stacked.live-body { gap: 12px; padding-top: 12px; min-height: 0; }
-.messages.live-body .status-line { margin-top: 4px; flex: none; }
 
 .jump-live {
   position: absolute;
@@ -1392,6 +1391,19 @@ labels stopped short of the right edge. */
 @keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
+}
+
+/* ---- activity line above the composer (card t_e9baac4b) ---- */
+/* phase-aware narration ("thinking · 12s", "running web.search · 4s",
+   "responding · 2s"), derived from the transcript, hidden when idle.
+   Same dim-mono voice as the old in-column status line; aligns with
+   the composer card's side margins. */
+.activity-line {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 12px 6px;
+  padding-left: 4px;
 }
 
 /* ---- composer: floating card inside the chat pane ---- */
@@ -1937,6 +1949,7 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .bubble, .thinking, .toolcall { max-width: 88%; }
 
   .composer { margin: 0 8px 8px; }
+  .activity-line { margin: 0 8px 4px; }
   .model-chip { max-width: 140px; }
   .send { padding: 6px 14px; }
 
