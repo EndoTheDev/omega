@@ -627,9 +627,9 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    display:none - the number fades back into its exact position */
 .session-list li:hover .session-time { opacity: 0; }
 
-/* muted archived rows: the archived toggle reveals them at reduced
-   contrast - title, meta and age all dim, the hover action cluster
-   (unarchive / delete) still reads normally */
+/* muted archived rows: archived sessions render in their own bottom
+   group at reduced contrast - title, meta and age all dim, the hover
+   action cluster (unarchive / delete) still reads normally */
 .session-list li.archived .session-title,
 .session-list li.archived .session-meta,
 .session-list li.archived .session-time {
@@ -638,25 +638,14 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   font-style: italic;
 }
 .session-list li.archived .session-title { white-space: normal; }
-
-/* sidebar foot: the archived filter toggle sits below the list */
-.sessions-foot {
-  flex-shrink: 0;
-  padding: 6px 12px 8px;
-  border-top: 1px solid var(--stroke);
-  display: block;
+/* the muted treatment extends to the archived group's header - the
+   class rides the bucket-row li, the header is its button */
+.session-list li.bucket-archived button.bucket-label {
+  color: var(--text-faint, var(--text-dim));
+  opacity: 0.55;
+  font-style: italic;
 }
-.archived-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--text-dim);
-  cursor: pointer;
-  user-select: none;
-}
-.archived-toggle:hover { color: var(--text); }
-.archived-toggle input { accent-color: var(--accent); cursor: pointer; }
+.session-list li.bucket-archived button.bucket-label:hover { color: var(--text); }
 
 /* destructive confirm scrim + dialog: same frosted language as the
    mobile scrim, centered box */
