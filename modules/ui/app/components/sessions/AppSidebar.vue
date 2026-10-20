@@ -28,7 +28,9 @@
       <template
         v-for="section in visibleSections"
         :key="section.label">
-        <li class="bucket-row">
+        <li
+          class="bucket-row"
+          :class="{ 'bucket-archived': section.archived }">
           <button
             class="bucket-label"
             :aria-expanded="!collapsed.has(section.label)"
@@ -145,18 +147,6 @@
         no matching sessions
       </li>
     </ul>
-    <div class="sessions-foot">
-      <!-- archived filter toggle: off (default) hides archived rows;
-           on reveals them, muted, still searchable, unarchive from the
-           same hover affordance -->
-      <label class="archived-toggle">
-        <input
-          type="checkbox"
-          :checked="showArchived"
-          @change="$emit('toggle-archived', !showArchived)" />
-        archived
-      </label>
-    </div>
   </aside>
 </template>
 
@@ -182,19 +172,19 @@
     // ids of sessions whose stream is live - the pulse edge renders per row
     streamingIds: ReadonlySet<string>;
     open: boolean;
-    // archived filter: on = the list holds (only) archived rows, muted
-    showArchived: boolean;
   }>();
 
   defineEmits<{
     (e: "open", id: string): void;
     (e: "new"): void;
     (e: "pin", id: string, pinned: boolean): void;
+    // archive/unarchive: the row moves to (or out of) the archived group
+    // at the list bottom instantly - the optimistic patch flips the flag
+    // on the row the list already holds
     (e: "archive", id: string, archived: boolean): void;
     // delete is destructive and unconfirmed here - app.vue owns the
     // confirm dialog and only then calls the API
     (e: "remove", id: string): void;
-    (e: "toggle-archived", on: boolean): void;
   }>();
 
   const query = ref("");
@@ -221,7 +211,7 @@
   async function runSearch(q: string) {
     const seq = ++searchSeq;
     try {
-      const hits = await searchSessions(q, props.showArchived);
+      const hits = await searchSessions(q);
       if (seq === searchSeq) hitIds.value = hits.map((h) => h.id);
     } catch {
       if (seq === searchSeq) hitIds.value = null;
@@ -238,16 +228,6 @@
     }
     searchScheduler.schedule(term);
   });
-  // the toggle changes the backend's hit set (archived=include) - a
-  // query live when it flips re-runs the content search
-  watch(
-    () => props.showArchived,
-    () => {
-      const term = query.value.trim();
-      if (!term) return;
-      searchScheduler.schedule(term);
-    },
-  );
   onUnmounted(() => searchScheduler.cancel());
 
   // --- collapsible sections ---
@@ -274,15 +254,23 @@
   }
   restoreCollapsed();
 
-  // non-empty sections in render order; empty groups render no header
+  // non-empty sections in render order; empty groups render no header.
+  // archived is LAST - after the newest time bucket, dimmed (the
+  // bucket-archived class on the header).
   const visibleSections = computed(() => {
     const b = buckets.value;
-    return [
+    const sections: {
+      label: string;
+      rows: Session[];
+      archived?: boolean;
+    }[] = [
       { label: "pinned", rows: b.pinned },
       { label: "today", rows: b.today },
       { label: "yesterday", rows: b.yesterday },
       { label: "earlier", rows: b.earlier },
+      { label: "archived", rows: b.archived, archived: true },
     ].filter((section) => section.rows.length > 0);
+    return sections;
   });
   const allEmpty = computed(() => visibleSections.value.length === 0);
 

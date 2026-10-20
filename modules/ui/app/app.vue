@@ -32,13 +32,12 @@
             :active-id="focusedSessionId"
             :streaming-ids="busyAll"
             :open="drawerOpen"
-            :show-archived="showArchived"
             @open="openChatTab"
             @new="openChatTab(null)"
             @pin="togglePin"
             @archive="toggleArchive"
             @remove="askDelete"
-            @toggle-archived="showArchived = $event" />
+          />
         </template>
 
         <!-- one ChatTab per chat tab; keyed by the tab's instance key so
@@ -261,9 +260,6 @@
     else localStorage.setItem("omega.thinking-level", v);
   });
   const sessions = ref<Session[]>([]);
-  // archived filter: off (default) lists live sessions only; on fetches
-  // with archived=include and shows only - muted - archived rows
-  const showArchived = ref(false);
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
@@ -540,7 +536,7 @@
 
   async function refreshSessions() {
     try {
-      const list = await fetchSessions(showArchived.value);
+      const list = await fetchSessions();
       sessions.value = list;
       // server-reported live runs feed the host: they REPLACE (not
       // union into) the snapshot - the sessions a JUST-refreshed page
@@ -603,15 +599,12 @@
   }
 
   // toggleArchive flips the archive flag. Instant + reversible: the row
-  // leaves the list the moment the flag lands locally (the server list
-  // already carries only the visible archive side, so the patched row
-  // is gated exactly like refreshSessions - on in archived view, off in
-  // the live view). A failed PATCH reverts and re-syncs.
+  // the list already holds flips its flag locally and re-buckets on the
+  // next render - into the archived group at the bottom, or back into
+  // its time bucket. A failed PATCH reverts and re-syncs.
   async function toggleArchive(id: string, target: boolean) {
     const updateList = (list: Session[]) =>
-      list
-        .map((s) => (s.id === id ? { ...s, archived: target } : s))
-        .filter((s) => (showArchived.value ? s.archived : !s.archived));
+      list.map((s) => (s.id === id ? { ...s, archived: target } : s));
     const before = sessions.value;
     sessions.value = updateList(sessions.value);
     try {
@@ -663,10 +656,6 @@
       return false;
     }
   }
-
-  // toggling the archived filter refetches through the include filter -
-  // the two archive sides never mix in one list
-  watch(showArchived, () => refreshSessions());
 
   // --- theme: light / dark / auto / user themes, persisted, auto
   // follows the OS live. A user theme (theme:<id> from GET /themes)
