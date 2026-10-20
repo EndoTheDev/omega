@@ -246,6 +246,14 @@ type chatRequest struct {
 	SessionID     string            `json:"session_id,omitempty"`
 	Model         string            `json:"model,omitempty"`
 	ThinkingLevel int               `json:"thinking_level,omitempty"`
+	// retry re-runs the session's LAST user message without persisting a
+	// duplicate user bubble (t_357cbe9c). No messages are accepted on
+	// the wire: the persisted history itself is the replayed turn, so a
+	// reload shows the same truth the live run produced. The prior
+	// (cancelled/partial or complete) response stays put - the fresh
+	// response appends below it - and the run slot's 409 gate plus the
+	// cancel semantics are exactly the normal send's.
+	Retry bool `json:"retry,omitempty"`
 }
 
 // assistantRecord accumulates one response segment of an assistant turn
@@ -353,6 +361,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := checkImageSizes(messages); err != nil {
 		http.Error(w, "image too large: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Retry guards run BEFORE auto-create: retry only ever re-plays an
+	// EXISTING session's persisted last user turn - a sessionless retry
+	// has nothing to replay (auto-creating an empty session to 400 into
+	// would be noise), and messages alongside retry are a client bug.
+	if req.Retry && (s.store == nil || req.SessionID == "") {
+		http.Error(w, "retry requires a session", http.StatusBadRequest)
+		return
+	}
+	if req.Retry && len(messages) > 0 {
+		http.Error(w, "retry takes no messages", http.StatusBadRequest)
 		return
 	}
 
@@ -519,6 +540,13 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 // incoming messages, and persists each appended message. When no session
 // is configured (nil store or empty ID), messages are returned unchanged.
 // On failure an HTTP error is written to w and ok is false.
+// A retry request takes the other branch (t_357cbe9c): NOTHING is
+// appended or persisted - history up to and including the session's last
+// user message is the replayed context. Truncating AT the user message
+// (not the raw history) keeps the prior cancelled/partial response out
+// of the provider's context while it stays alive in the stored
+// transcript: the fresh response appends below it, no duplicate user
+// bubble, providers never receive an assistant-tail they didn't ask for.
 func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req chatRequest, messages []ai.Message) ([]ai.Message, bool) {
 	if s.store == nil || req.SessionID == "" {
 		return messages, true
@@ -531,6 +559,20 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 	if err != nil {
 		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
 		return nil, false
+	}
+	if req.Retry {
+		end := -1
+		for i := len(history) - 1; i >= 0; i-- {
+			if _, ok := history[i].(ai.User); ok {
+				end = i
+				break
+			}
+		}
+		if end == -1 {
+			http.Error(w, "nothing to retry: session has no user message", http.StatusBadRequest)
+			return nil, false
+		}
+		return history[:end+1], true
 	}
 	messages = append(history, messages...)
 	for _, m := range messages[len(history):] {

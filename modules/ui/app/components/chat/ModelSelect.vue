@@ -11,7 +11,9 @@
       :aria-expanded="open"
       @click="open ? close() : openNow()"
       @keydown.down.prevent="openNow()">
-      {{ model }}
+      <!-- ellipsis container: at narrow widths the chip gives up width
+           BEFORE the toolbar wraps (t_357cbe9c squeeze, 320px floor) -->
+      <span class="chip-name">{{ model }}</span>
       <span
         class="chev"
         aria-hidden="true"

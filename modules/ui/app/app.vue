@@ -192,7 +192,6 @@
     isAtBottom,
     pillVisible,
     lastUserText,
-    dropLastExchange,
     hasInterruptedMarker,
     withoutMarkers,
     createItemKeySource,
