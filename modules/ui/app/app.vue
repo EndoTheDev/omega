@@ -455,6 +455,10 @@
   // card t_4ae27e0d routing: a session ALWAYS opens in the main pane, and
   // a tab already bound to that session is FOCUSED wherever it lives -
   // never a duplicate. Only "new" (or an unbound session) mints a tab.
+  // card t_311838e4: a DRAFT tab (no session binding yet) already open?
+  // Focus it wherever it sits - no duplicate new-chat tab. Mirrors the
+  // focus-existing rule above for opened sessions; only when no draft
+  // tab lives anywhere does '+' mint a fresh one.
   function openChatTab(sessionId: string | null, paneId?: string) {
     if (sessionId) {
       const found = dock.firstChatTab(sessionId);
@@ -462,6 +466,14 @@
         dock.focus(found.paneId, found.index);
         focusedKey.value = found.tab.key;
         markRead(sessionId);
+        if (isMobile.value) drawerOpen.value = false;
+        return;
+      }
+    } else {
+      const draft = dock.firstDraftChatTab();
+      if (draft?.tab.key) {
+        dock.focus(draft.paneId, draft.index);
+        focusedKey.value = draft.tab.key;
         if (isMobile.value) drawerOpen.value = false;
         return;
       }
