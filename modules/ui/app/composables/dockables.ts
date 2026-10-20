@@ -21,26 +21,28 @@
 // below IS this list (dock.ts re-exports for engine-side consumers).
 //
 // card t_4ae27e0d (the pane-model reset): "inspector" is no longer a
-// component - the right sidebar's five views (files + the four module
-// panels) became REAL dock tabs living in one sidebar-pinned pane. The
-// four module ids mirror the shipped module names verbatim
-// (cron / http_channel / skills / tools) so the app's outlet templates
-// and the composition lookup agree without an alias map.
+// component - the right sidebar's views are REAL dock tabs living in one
+// sidebar-pinned pane. The module ids mirror the shipped module names
+// verbatim (cron / http_channel / skills / tools / kanban) so the app's
+// outlet templates and the composition lookup agree without an alias map.
+// card t_49d0b308: settings left the main-pane tab class for the
+// inspector, and the kanban board joined it as the seventh tab.
 export const DOCK_COMPONENTS = [
   "sidebar",
   "chat",
-  "settings",
   "files",
   "cron",
   "http_channel",
   "skills",
   "tools",
+  "settings",
+  "kanban",
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
 // pre-reset trees persist tabs {component: "inspector"}; deserialize
-// still accepts the legacy id (createDock modernizes it to the five
-// inspector tabs on load) but nothing may open one again.
+// still accepts the legacy id (createDock modernizes it to the inspector
+// group on load) but nothing may open one again.
 export const LEGACY_DOCK_COMPONENTS = ["inspector"] as const;
 
 export type DockInstancePolicy = "singleton" | "multi";
@@ -76,8 +78,9 @@ export interface DockableComponent {
 
 // THE pinned identity (card t_4ae27e0d): sidebar = the sessions pane
 // (singleton, pinned left, unclosable); the inspector group = sidebar-
-// pinned right with every view tab unclosable; chat + settings are the
-// closable main class.
+// pinned right with every view tab unclosable. card t_49d0b308: chat is
+// the only closable component left - settings moved into the inspector
+// group and the kanban board is born there.
 export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "sidebar",
@@ -95,21 +98,6 @@ export const DOCKABLES: readonly DockableComponent[] = [
     title: "chat",
     icon: { paths: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"] },
     policy: "multi",
-    area: "main",
-    closable: true,
-  },
-  {
-    id: "settings",
-    title: "settings",
-    icon: {
-      // cog: hub circle + eight teeth, same 2px round-join stroke style
-      paths: [
-        "M12 9a3 3 0 1 0 .0001 0",
-        "M12 2v3", "M12 19v3", "M2 12h3", "M19 12h3",
-        "M4.9 4.9L7 7", "M17 17l2.1 2.1", "M19.1 4.9L17 7", "M7 17l-2.1 2.1",
-      ],
-    },
-    policy: "singleton",
     area: "main",
     closable: true,
   },
@@ -170,6 +158,33 @@ export const DOCKABLES: readonly DockableComponent[] = [
     area: "right",
     closable: false,
   },
+  {
+    id: "settings",
+    title: "Settings",
+    icon: {
+      // cog: hub circle + eight teeth, same 2px round-join stroke style
+      paths: [
+        "M12 9a3 3 0 1 0 .0001 0",
+        "M12 2v3", "M12 19v3", "M2 12h3", "M19 12h3",
+        "M4.9 4.9L7 7", "M17 17l2.1 2.1", "M19.1 4.9L17 7", "M7 17l-2.1 2.1",
+      ],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    id: "kanban",
+    title: "kanban",
+    // the board: three columns in one frame
+    icon: {
+      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
+      paths: ["M9 3v18", "M15 3v18"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
 ];
 
 /** registry entry for an openable component (panes only host these) */
@@ -217,7 +232,7 @@ export const COMPONENT_TITLES: Record<DockComponentName, string> =
 export const MAIN_DOCKABLES: readonly DockComponentName[] =
   DOCKABLES.filter((d) => d.area === "main").map((d) => d.id);
 
-/** the pinned-area singleton set (the inspector pane's five tabs): the
+/** the pinned-area singleton set (the inspector pane's view tabs): the
     load-time modernizer and the default-shell builder both read this
     list, so a new inspector view joins it in ONE place. */
 export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =

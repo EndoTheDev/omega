@@ -5,6 +5,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
+import { withScratchSingleton } from "./scratchDockable.ts";
+
 import {
   openTab,
   assignChatKeys,
@@ -106,21 +108,23 @@ describe("setTabSessionRef", () => {
 });
 
 describe("closeSessionTabs", () => {
-  it("closes every tab bound to a session across panes; others stay", () => {
+  it("closes every tab bound to a session across panes; others stay", async () => {
     // two panes, two chat tabs: pane1 keeps an extra unbound tab
-    const base = assignChatKeys(split([makePane("chat"), makePane("chat")]));
-    const k1 = paneAt(base, 0).tabs[0]!.key!;
-    const k2 = paneAt(base, 1).tabs[0]!.key!;
-    let tree = setTabSessionRef(base, k1, "gone");
-    tree = setTabSessionRef(tree, k2, "kept");
-    tree = openTab(tree, paneAt(tree, 0).id, { component: "settings" });
-    // pane1: [gone, settings] -> [settings]; pane2 keeps "kept"
-    const next = closeSessionTabs(tree, "gone");
-    const p1 = paneAt(next, 0);
-    const p2 = paneAt(next, 1);
-    assert.deepEqual(p1.tabs.map((t) => t.component), ["settings"]);
-    assert.equal(p1.tabs.length, 1);
-    assert.equal(p2.tabs[0]!.sessionRef, "kept");
+    await withScratchSingleton(async (scratch) => {
+      const base = assignChatKeys(split([makePane("chat"), makePane("chat")]));
+      const k1 = paneAt(base, 0).tabs[0]!.key!;
+      const k2 = paneAt(base, 1).tabs[0]!.key!;
+      let tree = setTabSessionRef(base, k1, "gone");
+      tree = setTabSessionRef(tree, k2, "kept");
+      tree = openTab(tree, paneAt(tree, 0).id, { component: scratch });
+      // pane1: [gone, scratch] -> [scratch]; pane2 keeps "kept"
+      const next = closeSessionTabs(tree, "gone");
+      const p1 = paneAt(next, 0);
+      const p2 = paneAt(next, 1);
+      assert.deepEqual(p1.tabs.map((t) => t.component), [scratch]);
+      assert.equal(p1.tabs.length, 1);
+      assert.equal(p2.tabs[0]!.sessionRef, "kept");
+    });
   });
 
   it("closing the last tab empties the pane (it survives showing the menu)", () => {

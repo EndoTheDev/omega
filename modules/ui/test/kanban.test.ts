@@ -104,16 +104,24 @@ test("board view ships module-owned and the shell mounts it", () => {
   // /board anchors in history like /chat/<id>
   assert.match(appVue, /\/board/);
 
-  // the inspector does NOT get the main view: card t_4ae27e0d fixed the
-  // inspector's tab list (files + cron + http_channel + skills + tools)
-  // in the dockable registry - the board is a MAIN-view module, and no
-  // registry id may carry the kanban module name
+  // card t_49d0b308: the board JOINED the inspector - "kanban" is a real
+  // dock tab now (pinned right, unclosable), rendered through the
+  // composition mount. The main-pane board view keeps its URL anchor.
   const registry = readFileSync(
     join(uiRoot, "app", "composables", "dockables.ts"),
     "utf8",
   );
-  assert.ok(!registry.includes('"kanban"'), "kanban is a main view, not a dock tab");
-  assert.ok(registry.includes("http_channel"), "the logs module owns an inspector tab");
+  assert.match(registry, /"kanban"/, "kanban is a dock tab now");
+  assert.match(appVue, /#pane-kanban/, "the inspector outlet exists");
+  assert.match(
+    appVue,
+    /module="kanban"/,
+    "the outlet hosts the composition panel",
+  );
+  // the module declares its dockable title (the DOCK_TAB_TITLE resolver)
+  const kanbanDockable = join(uiRoot, "..", "kanban", "ui", "dockable.json");
+  assert.ok(existsSync(kanbanDockable), "modules/kanban/ui/dockable.json missing");
+  assert.deepEqual(JSON.parse(readFileSync(kanbanDockable, "utf8")), { title: "Kanban" });
   assert.match(
     readFileSync(join(uiRoot, "app", "composables", "omega.ts"), "utf8"),
     /mainViewModules = new Set<string>\(\["kanban"\]\)/,

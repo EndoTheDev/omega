@@ -31,6 +31,18 @@ export function isSettled(status: string): boolean {
   return status === "done" || status === "archived";
 }
 
+// Narrow-board adaptation (card t_49d0b308): the inspector's ~300px
+// column cannot host the wide column strip, so the rendered width flips
+// the `narrow` class and the columns stack instead of scrolling
+// sideways. The threshold sits above the sidebar's default 240-300 and
+// under every snap point's slack: a drag past 320 widens back.
+export const NARROW_MAX_PX = 360;
+
+/** narrow below this rendered width; zero (unmounted measure noise) never is */
+export function isNarrowWidth(px: number): boolean {
+  return px > 0 && px < NARROW_MAX_PX;
+}
+
 // One task row, exactly what GET /tasks returns.
 export interface BoardTask {
   id: string;
