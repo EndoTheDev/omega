@@ -222,6 +222,11 @@
     createChatHost,
     type ChatState,
   } from "./composables/chat";
+  import {
+    COMPOSER_FOCUS_KEY,
+    createComposerFocusSignal,
+    shouldCaptureTyping,
+  } from "./composables/focus";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
   const healthy = ref(false);
@@ -327,6 +332,11 @@
     openChatTab(id);
   }
   provide(CHAT_HOST_KEY, host);
+
+  // --- composer auto-focus (card t_b40131ac): the signal every chat
+  // tab listens on; the gating rules live in composables/focus.ts ---
+  const composerFocus = createComposerFocusSignal();
+  provide(COMPOSER_FOCUS_KEY, composerFocus);
 
   // chat tab titles read the session labels; the sidebar highlight
   // follows the FOCUSED tab - the bar label has to show it. Non-chat
@@ -523,6 +533,38 @@
   // structural changes never steal focus, but a gone focus re-resolves
   // (closeTab's neighbor-focus, DnD moves, toggle remove)
   watch(dock.tree, () => refocusFrom(null));
+
+  // --- composer auto-focus (card t_b40131ac) ---
+  // focus-on-select: a chat selection is a focusedKey TRANSITION while
+  // the chat view is up - sidebar row, dock tab click (onDocClick ->
+  // refocusFrom), new chat, board chip. A transition to null never
+  // requests; moving to board/settings never changes focusedKey, so
+  // those views never steal. A freshly minted tab mounts after this
+  // request (openChatTab sets focusedKey synchronously) - its mount
+  // re-checks the pending signal and delivers there.
+  watch(focusedKey, (key) => {
+    if (key && mainView.value === "chat") composerFocus.request(key);
+  });
+
+  // type-to-capture: with the omega window focused, the first printable
+  // key without modifiers jumps into the focused chat's composer - the
+  // character goes along (the signal's sync watcher focuses during the
+  // keydown, so the insertion event targets the textarea). A hidden
+  // chat tab never renders a matching instance, so a focused key that
+  // is nowhere on screen simply does not capture. The predicates (no
+  // steal from a focused input, no modifier combos, no modals) live in
+  // composables/focus.ts.
+  function onKeyCapture(e: KeyboardEvent) {
+    if (
+      !shouldCaptureTyping(e, {
+        mainView: mainView.value,
+        modalOpen: !!deleteId.value,
+      })
+    )
+      return;
+    const key = focusedKey.value;
+    if (key) composerFocus.request(key);
+  }
 
   // per-session stream busy set: a session is busy iff its own stream
   // is live (host.busyAll). Swapped value-semantically so set changes
@@ -757,6 +799,9 @@
     // clicks carry pane focus (the tab bars, the empty panes, the
     // composers - anything inside a dock pane)
     document.addEventListener("click", onDocClick);
+    // type-to-capture: window-level keydown (any printable key jumps
+    // into the focused chat's composer when no text field holds focus)
+    window.addEventListener("keydown", onKeyCapture);
 
     // mobile detection: sidebars become slide-in overlays below 768px
     const mobileQuery = window.matchMedia("(max-width: 768px)");
@@ -858,6 +903,7 @@
 
   onUnmounted(() => {
     document.removeEventListener("click", onDocClick);
+    window.removeEventListener("keydown", onKeyCapture);
     window.removeEventListener("popstate", onPop);
     if (healthTimer) clearInterval(healthTimer);
     if (runningTimer) clearInterval(runningTimer);

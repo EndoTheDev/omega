@@ -239,4 +239,15 @@
       emit("attach-url", text);
     }
   }
+
+  // composer auto-focus (card t_b40131ac): the ChatTab parent delivers
+  // focus-on-select and type-to-capture through this handle - focusing
+  // the textarea IS the feature, the character then lands via the input
+  // event (focus moves during keydown, insertion targets the focused
+  // element, no synthetic draft injection)
+  defineExpose({
+    focus: () => {
+      ta.value?.focus();
+    },
+  });
 </script>
