@@ -1427,13 +1427,11 @@ export interface TranscriptItemLike {
   kind: string;
   role?: string;
   content?: string;
-  images?: OmegaImage[];
 }
 
-// lastCompleteUserIndex finds the transcript item a RESEND kicks off from:
-// the last complete user message (kind "message", role "user"). A partial
-// assistant bubble and any trailing marker sit after it; -1 when the
-// transcript has no user message at all.
+// lastCompleteUserIndex finds the transcript's last complete user
+// message (kind "message", role "user"). A partial assistant bubble and
+// any trailing marker sit after it; -1 when there is no user message.
 export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
@@ -1442,20 +1440,14 @@ export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
   return -1;
 }
 
-// lastUserText is the text the retry re-sends through the normal send
-// path (null when there is nothing to resend from).
+// lastUserText is the transcript check behind the composer's retry
+// affordance (t_357cbe9c): an exchange exists to replay when a user
+// message is present. The SERVER re-runs the persisted last user turn -
+// no helper needs the text itself any more.
 export function lastUserText(items: TranscriptItemLike[]): string | null {
   const idx = lastCompleteUserIndex(items);
   if (idx === -1) return null;
   return items[idx]?.content ?? null;
-}
-
-// lastUserImages is the image set of that same retry resend target -
-// the user message's attachments ride again on the retry.
-export function lastUserImages(items: TranscriptItemLike[]): OmegaImage[] {
-  const idx = lastCompleteUserIndex(items);
-  if (idx === -1) return [];
-  return items[idx]?.images ?? [];
 }
 
 // dataUrl turns an image attachment into an img/click-open src.
@@ -1489,22 +1481,6 @@ export function mediaTypeFromBase64(base64: string): string | null {
   } catch {
     return null;
   }
-}
-
-// dropLastExchange drops the last exchange FROM its opening user message:
-// the run's user text, any tool lines / thinking, the partial assistant
-// bubble, and the marker all leave the transcript, so the retry's send
-// path can push the user message back and stream a clean replacement
-// response (no duplicate user bubble). No user message means nothing to
-// drop: the transcript is returned unchanged. Generic so the caller's
-// literal-kind item type flows through (a widened TranscriptItemLike[]
-// return would not satisfy the transcript's TranscriptItem[]).
-export function dropLastExchange<T extends TranscriptItemLike>(
-  items: T[],
-): T[] {
-  const idx = lastCompleteUserIndex(items);
-  if (idx === -1) return items;
-  return items.slice(0, idx);
 }
 
 // hasInterruptedMarker reports whether an interrupted-stream marker is
@@ -1658,14 +1634,18 @@ export function thinkingLevelWire(selection: string): number | undefined {
 
 // streamChat POSTs messages to /chat and drives the handler callbacks from
 // the SSE stream. Error payloads throw - the caller surfaces them.
+// retry swaps the body for the server's replay flag (t_357cbe9c): no
+// messages ride the wire, the server re-runs the session's persisted
+// last user turn and the fresh response appends below the prior one.
 export async function streamChat(
   messages: OmegaMessage[],
   sessionId: string | null,
   handlers: StreamHandlers,
   model?: string,
   thinkingLevel?: number,
+  retry?: boolean,
 ): Promise<void> {
-  const body: Record<string, unknown> = { messages };
+  const body: Record<string, unknown> = retry ? { retry: true } : { messages };
   if (sessionId) body.session_id = sessionId;
   if (model) body.model = model;
   if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;

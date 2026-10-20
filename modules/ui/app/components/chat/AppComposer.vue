@@ -18,17 +18,25 @@
           @click="$emit('remove-attachment', i)">&times;</button>
       </div>
     </div>
-    <textarea
-      ref="ta"
-      :value="draft"
-      placeholder="message omega"
-      rows="1"
-      @input="
-        $emit('update:draft', ($event.target as HTMLTextAreaElement).value);
-        resize();
-      "
-      @keydown.enter.exact.prevent="$emit('send')"
-      @paste="onPaste" />
+    <div class="composer-row">
+      <button
+        class="plus-btn"
+        type="button"
+        title="attach images"
+        aria-label="attach images"
+        @click="fileInput?.click()">+</button>
+      <textarea
+        ref="ta"
+        :value="draft"
+        placeholder="message omega"
+        rows="1"
+        @input="
+          $emit('update:draft', ($event.target as HTMLTextAreaElement).value);
+          resize();
+        "
+        @keydown.enter.exact.prevent="$emit('send')"
+        @paste="onPaste" />
+    </div>
     <input
       ref="fileInput"
       type="file"
@@ -52,38 +60,21 @@
       <ThinkingSelect
         :level="thinking"
         @update:level="$emit('update:thinking', $event)" />
-      <!-- while this session's run streams, send becomes CANCEL (stop
-           icon); idle, a retry affordance re-sends the last user message
-           when there is one - next to the plain send button -->
+      <!-- ONE morphing button (t_357cbe9c): while a run streams this is
+           the stop control; idle, a typed draft or a pending attachment
+           means send (disabled when there is nothing to send), and an
+           exchange to replay with an empty composer means retry. Draft
+           beats retry: typed input is a new message, never a replay.
+           The separate paperclip + retry buttons died - the attach
+           affordance lives in the composer row's "+" now. -->
       <button
-        class="pick-btn"
-        type="button"
-        title="attach images"
-        @click="fileInput?.click()">
-        📎
-      </button>
-      <button
-        v-if="canRetry && !busy"
-        class="retry"
-        type="button"
-        title="re-send the last user message as a fresh turn"
-        @click="$emit('retry')">
-        ↻ retry
-      </button>
-      <button
-        v-if="busy"
-        class="send cancel"
-        type="button"
-        title="cancel the running response (what streamed stays)"
-        @click="$emit('cancel')">
-        ■ stop
-      </button>
-      <button
-        v-else
         class="send"
-        :disabled="!canSend"
-        @click="$emit('send')">
-        send
+        :class="{ cancel: face === 'stop', retry: face === 'retry' }"
+        type="button"
+        :title="faceTitle"
+        :disabled="face === 'send' && !canSend"
+        @click="onButton">
+        {{ faceLabel }}
       </button>
     </div>
   </div>
@@ -93,6 +84,7 @@
   import ModelSelect from "./ModelSelect.vue";
   import ThinkingSelect from "./ThinkingSelect.vue";
   import { dataUrl, mediaTypeFromBase64, type OmegaImage } from "../../composables/omega";
+  import { composerFace } from "../../composables/chat";
 
   const props = defineProps<{
     draft: string;
@@ -122,6 +114,26 @@
 
   // send needs text OR an attachment - image-only messages are valid
   const canSend = computed(() => !!props.draft.trim() || props.attachments.length > 0);
+
+  // the morph (t_357cbe9c): busy -> stop, empty composer + exchange ->
+  // retry, else send. retry-face when the transcript has an exchange to
+  // replay and the composer carries nothing to send.
+  const face = computed(() => composerFace(props.busy, props.canRetry, canSend.value));
+  const faceLabel = computed(() =>
+    face.value === "stop" ? "■ stop" : face.value === "retry" ? "↻ retry" : "send",
+  );
+  const faceTitle = computed(() =>
+    face.value === "stop" ?
+      "cancel the running response (what streamed stays)"
+      : face.value === "retry" ?
+        "re-run the last user message - the fresh response appends below it"
+        : "send",
+  );
+  function onButton() {
+    if (face.value === "stop") emit("cancel");
+    else if (face.value === "retry") emit("retry");
+    else emit("send");
+  }
 
   // grow with content: 1 row at rest, up to 4 rows (COMPOSER_MAX), then the
   // textarea scrolls. Past the cap an expand button appears (top right) to
