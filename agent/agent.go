@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"maps"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -55,24 +56,21 @@ func (t Tool) SchemaParameters() map[string]any {
 	if len(t.Actions) == 0 {
 		return t.Parameters
 	}
-	out := make(map[string]any, len(t.Parameters)+1)
-	for k, v := range t.Parameters {
-		out[k] = v
+	out := maps.Clone(t.Parameters)
+	if out == nil {
+		out = map[string]any{}
 	}
 	propsRaw, _ := out["properties"]
 	props, _ := propsRaw.(map[string]any)
 	if props == nil {
 		props = map[string]any{}
 	}
-	newProps := make(map[string]any, len(props)+1)
-	for k, v := range props {
-		newProps[k] = v
-	}
+	newProps := maps.Clone(props)
 	actionRaw := props["action"]
 	action, _ := actionRaw.(map[string]any)
-	newAction := make(map[string]any, len(action)+1)
-	for k, v := range action {
-		newAction[k] = v
+	newAction := maps.Clone(action)
+	if newAction == nil {
+		newAction = map[string]any{}
 	}
 	newAction["type"] = "string"
 	newAction["enum"] = t.ActionNames()
@@ -240,12 +238,12 @@ func (a *Agent) SetLogger(l LoggerProvider) {
 // AgentOptions carries the host-level settings NewFromContext cannot
 // get from the Context itself. All fields are optional zero-values.
 type AgentOptions struct {
-	MaxTurns       int
-	MaxToolOutput  int
-	PromptCustom   string
-	PromptAppend   []string
-	PromptContext  string
-	CWD            string
+	MaxTurns      int
+	MaxToolOutput int
+	PromptCustom  string
+	PromptAppend  []string
+	PromptContext string
+	CWD           string
 }
 
 // NewFromContext creates a fully-wired Agent from a mounted Context.

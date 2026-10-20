@@ -15,10 +15,6 @@ import (
 // kanban seam is not mounted - the board is optional, the API
 // degrades to a clear message instead of a panic.
 
-func (s *Server) board() agent.KanbanProvider {
-	return s.Kanban
-}
-
 // boardUnavailable is the shared 501 guard for unmounted kanban.
 func boardUnavailable(w http.ResponseWriter) bool {
 	http.Error(w, "kanban board not configured", http.StatusNotImplemented)
@@ -27,7 +23,7 @@ func boardUnavailable(w http.ResponseWriter) bool {
 
 // taskDetail is the GET /tasks/{id} payload: the task plus its thread.
 type taskDetail struct {
-	Task     agent.KanbanTask    `json:"task"`
+	Task     agent.KanbanTask      `json:"task"`
 	Comments []agent.KanbanComment `json:"comments"`
 	Events   []agent.KanbanEvent   `json:"events"`
 }

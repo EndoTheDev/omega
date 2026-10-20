@@ -117,7 +117,7 @@ AGENTS.md (root - this file)
 │   ├── tui/                   # terminal frontend (Frontend seam, Bubble Tea TUI, themes, @file input)
 │   ├── trust/                 # project trust gate (TrustProvider seam, trust.yaml, AGENTS.md context loading)
 │   ├── prompt/                # system prompt builder + guidelines
-│   ├── tools/                 # shell and file tools (shell.run, files.read, files.write, files.edit)
+│   ├── tools/                 # shell, file, web, delegate, task tools - one tool per domain with dotted actions (legacy names aliased)
 │   ├── mcp/                   # MCP bridge (stdio + HTTP MCP servers)
 │   ├── delegate/              # subagent delegation (delegate.task, delegate.status, InjectedMessages)
 │   ├── cron/                  # scheduled prompts (CronProvider seam, crons.yaml)

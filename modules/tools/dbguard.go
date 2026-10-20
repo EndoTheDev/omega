@@ -126,10 +126,8 @@ func (g *dbGuard) denyShell(command string) bool {
 	if u, err := os.UserHomeDir(); err == nil {
 		home = u
 	}
-	for _, tok := range strings.FieldsFunc(command, func(r rune) bool {
-		return r == ' ' || r == '\t' || r == '\n' || r == '\r'
-	}) {
-		if !strings.ContainsAny(tok, `~/\`) && !strings.Contains(tok, "/") {
+	for _, tok := range strings.Fields(command) {
+		if !strings.ContainsAny(tok, `~/\`) {
 			continue
 		}
 		path := strings.Trim(tok, `"'`)

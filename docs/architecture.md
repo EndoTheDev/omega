@@ -9,7 +9,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Agent    | `agent`     | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)                                       |
 | Provider | `ai`        | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                                                    |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | 15 in-process Go packages: agent_loop, provider, store, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust |
+| Modules  | `modules/`  | 17 in-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -38,7 +38,9 @@ bin/              Build output + local runtime (gitignored; skills/ templates tr
   config/         Config + trust state (config.yaml, trust.yaml, *.example seeds; legacy root trust.yaml still wins)
     config.yaml   Personal configuration (gitignored)
     trust.yaml    Trust state (gitignored)
-  omega.db        Session database (gitignored)
+  data/           Databases (boot migration moves legacy home-root dbs here)
+    omega.db      Session database (gitignored)
+    kanban.db      Task board database (gitignored)
   skills/         Skill files
 ```
 

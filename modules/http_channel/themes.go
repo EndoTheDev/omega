@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -271,15 +272,7 @@ func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 
 // fingerprintEqual compares two mtime maps.
 func fingerprintEqual(a, b map[string]int64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if bv, ok := b[k]; !ok || bv != v {
-			return false
-		}
-	}
-	return true
+	return maps.Equal(a, b)
 }
 
 // themeFingerprint maps file name -> mtime (unix nanos) for every

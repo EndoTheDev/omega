@@ -30,8 +30,9 @@ into a shared `Context` via `MountAll` at startup.
   summarize); registers `/compact` command
 - `logging/` - operational logging (file logger, LoggerProvider seam)
 - `prompt/` - system prompt builder + guidelines
-- `tools/` - shell and file tools (`shell.run`, `files.read`,
-  `files.write`, `files.edit`); file tools are per-path locked via
+- `tools/` - shell, file, web, delegate, and task tools: one tool per
+  domain with dotted actions (files.write, delegate.task; legacy
+  pre-fold names stay aliased); file writes are per-path locked via
   `sync.Mutex` keyed by absolute path; registers `/tools` command
 - `mcp/` - MCP bridge (stdio + HTTP MCP servers)
 - `delegate/` - subagent delegation (`delegate.task`, `delegate.status`,

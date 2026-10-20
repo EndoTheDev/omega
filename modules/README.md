@@ -65,6 +65,8 @@ sections between Project Context and Environment.
 | `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
 | `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
+| `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
+| `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
 | `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
 | `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading)   |

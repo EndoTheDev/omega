@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -11,15 +12,15 @@ import (
 // move to any other (one agent, no dispatch races to armor); unknown
 // statuses are rejected at the door.
 const (
-	StatusTriage   = "triage"
-	StatusTodo     = "todo"
+	StatusTriage    = "triage"
+	StatusTodo      = "todo"
 	StatusScheduled = "scheduled"
-	StatusReady    = "ready"
-	StatusRunning  = "running"
-	StatusBlocked  = "blocked"
-	StatusReview   = "review"
-	StatusDone     = "done"
-	StatusArchived = "archived"
+	StatusReady     = "ready"
+	StatusRunning   = "running"
+	StatusBlocked   = "blocked"
+	StatusReview    = "review"
+	StatusDone      = "done"
+	StatusArchived  = "archived"
 )
 
 // statuses is the canonical ordered list (board column order).
@@ -30,20 +31,13 @@ var statuses = []string{
 
 // Statuses returns the ordered status list.
 func Statuses() []string {
-	out := make([]string, len(statuses))
-	copy(out, statuses)
-	return out
+	return slices.Clone(statuses)
 }
 
 // IsStatus reports whether s is a legal board status. The empty string
 // is NOT a status: callers mean "no change" separately.
 func IsStatus(s string) bool {
-	for _, legal := range statuses {
-		if s == legal {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(statuses, s)
 }
 
 // IsSettled reports whether the status is a terminal resting state
