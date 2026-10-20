@@ -2,6 +2,7 @@ package http_channel
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -13,7 +14,7 @@ import (
 // reconstruction (order, thinking merge, durations were three bug classes
 // that reconstruction produced). kinds:
 //
-//	user        - a user turn: content + time
+//	user        - a user turn: content + images + time
 //	message     - an assistant text segment: content + time + response_ms
 //	thinking    - an assistant reasoning segment: content + thinking_ms
 //	tool_call   - tool meta (tool_call: {id, name, arguments}) - the same
@@ -26,15 +27,22 @@ import (
 // The shape is the client transcript's component contract: items restore
 // and live stream render through the same components.
 type transcriptItem struct {
-	Kind       string       `json:"kind"`
-	Content    string       `json:"content,omitempty"`
-	Time       string       `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
-	ResponseMs int64        `json:"response_ms,omitempty"`
-	ThinkingMs int64        `json:"thinking_ms,omitempty"`
-	ToolCall   *ai.ToolCall `json:"tool_call,omitempty"`
-	ToolCallID string       `json:"tool_call_id,omitempty"`
-	IsError    bool         `json:"is_error,omitempty"`
-	ElapsedMs  int64        `json:"elapsed_ms,omitempty"`
+	Kind       string            `json:"kind"`
+	Content    string            `json:"content,omitempty"`
+	Time       string            `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
+	ResponseMs int64             `json:"response_ms,omitempty"`
+	ThinkingMs int64             `json:"thinking_ms,omitempty"`
+	ToolCall   *ai.ToolCall      `json:"tool_call,omitempty"`
+	ToolCallID string            `json:"tool_call_id,omitempty"`
+	IsError    bool              `json:"is_error,omitempty"`
+	ElapsedMs  int64             `json:"elapsed_ms,omitempty"`
+	Images     []ai.ImageContent `json:"images,omitempty"` // user: ai.User.Images rides the restore
+	// running marks the LIVE tail's in-flight items (the transcript-refs
+	// merge): an open thinking/response block streams from the restored
+	// item, and a tool call without its result yet renders as the
+	// running line with elapsed-so-far - the same shapes the live SSE
+	// path paints. Persisted items never carry it.
+	Running bool `json:"running,omitempty"`
 }
 
 // handleSessionTranscript serves GET /sessions/{id}/transcript: the
@@ -72,9 +80,21 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "get messages: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	items := buildTranscriptItems(bare)
+	// Reattach completeness (card t_692254f7): a session with a live run
+	// owns items the store has not seen yet - the run persists only at
+	// its end, so its segments (open thinking, running tool call, the
+	// answer so far) live in the runHub's accumulator. The live tail
+	// merges BEHIND the persisted history in wire order: the restored
+	// view shows the in-flight tool row with its elapsed meter and the
+	// attached result lands on it, instead of the refresh dropping the
+	// run - the "transcript is gone, but it says streaming" report.
+	if tail, live := s.runs.tailItems(id); live {
+		items = append(items, tail...)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": sess,
-		"items":   buildTranscriptItems(bare),
+		"items":   items,
 		// live-run flag (always present, running:true/false): the runHub,
 		// not the client, owns "is this session streaming" - the webui
 		// reattach flow reads this on session open
@@ -95,13 +115,18 @@ func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
 	for _, sm := range msgs {
 		switch m := sm.Message.(type) {
 		case ai.User:
-			if m.Content == "" {
+			if m.Content == "" && len(m.Images) == 0 {
 				continue
 			}
 			items = append(items, transcriptItem{
 				Kind:    "user",
 				Content: m.Content,
 				Time:    transcriptTime(sm.CreatedAt, m.Timestamp),
+				// images ride the restore (scope add 2026-10-20): the
+				// persisted payload carries ai.User.Images, the client
+				// renders the thumbnails - without this the attach
+				// pipeline's image messages come back as text-only
+				Images: m.Images,
 			})
 		case ai.Assistant:
 			if m.Thinking != nil && *m.Thinking != "" {
@@ -158,4 +183,86 @@ func transcriptTime(createdAt, stamp string) string {
 		return createdAt
 	}
 	return stamp
+}
+
+// liveTranscriptItems maps a detached run's accumulated state into
+// transcript wire items - the runHub's live truth that GET
+// /sessions/{id}/transcript merges behind the persisted history while
+// the run holds the session's slot. closed segments already left the
+// accumulator (a chunk after tool results opened the next segment);
+// open is the record still taking events. Completed spans carry their
+// measured durations; the open record's in-flight parts carry the
+// running hint instead (no final durations on the wire - the client
+// renders them streaming), and a call without its result yet renders as
+// the running tool line with elapsed-so-far in ElapsedMs.
+//
+// Pure and race-free: the run's own goroutine builds the slice just
+// after accumulateAssistant advanced the records, so callStarts reads
+// (and clears) race nothing; the hub stores the finished slice by
+// replace, never mutation.
+func liveTranscriptItems(closed []assistantRecord, open assistantRecord, now time.Time) []transcriptItem {
+	var items []transcriptItem
+	for _, rec := range closed {
+		items = appendRecordItems(items, rec, false, now)
+	}
+	return appendRecordItems(items, open, true, now)
+}
+
+// appendRecordItems flattens one accumulator record into wire items:
+// thinking, then content, then the calls, then the results - the order
+// the live stream produced them and persisted history replays.
+// Running is true only on the open record's still-in-flight parts: its
+// thinking streams while no content has started, its content streams,
+// and every call the results have not answered is the running tool
+// line. Pure.
+func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, now time.Time) []transcriptItem {
+	if rec.thinking != "" {
+		it := transcriptItem{Kind: "thinking", Content: rec.thinking}
+		if open {
+			// the reasoning phase is over once content started - running
+			// is the in-flight hint, not the record's life story
+			if rec.content == "" {
+				it.Running = true
+			}
+		} else {
+			it.ThinkingMs = rec.thinkDur.Milliseconds()
+		}
+		items = append(items, it)
+	}
+	if rec.content != "" {
+		it := transcriptItem{Kind: "message", Content: rec.content}
+		it.Running = open
+		if !open {
+			it.ResponseMs = rec.respDur.Milliseconds()
+		}
+		items = append(items, it)
+	}
+	resulted := make(map[string]bool, len(rec.results))
+	for _, r := range rec.results {
+		resulted[r.ToolCallID] = true
+	}
+	for i := range rec.toolCalls {
+		tc := rec.toolCalls[i]
+		it := transcriptItem{Kind: "tool_call", ToolCall: &tc}
+		if !resulted[tc.ID] {
+			it.Running = true
+			if start, ok := rec.callStarts[tc.ID]; ok && !start.IsZero() {
+				it.ElapsedMs = now.Sub(start).Milliseconds()
+			}
+		}
+		items = append(items, it)
+	}
+	for _, r := range rec.results {
+		it := transcriptItem{
+			Kind:       "tool_result",
+			ToolCallID: r.ToolCallID,
+			Content:    r.Content,
+			IsError:    r.IsError,
+		}
+		if r.Timing != nil {
+			it.ElapsedMs = r.Timing.ElapsedMs
+		}
+		items = append(items, it)
+	}
+	return items
 }

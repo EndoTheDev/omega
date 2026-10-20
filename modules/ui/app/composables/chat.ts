@@ -69,6 +69,9 @@ export interface ToolItem {
   result?: string;
   // server-measured duration from the matched result (restored)
   finalMs?: number;
+  // elapsed already consumed by a STILL-RUNNING restored call (the
+  // transcript's live-run merge): the meter counts on from here
+  elapsedMs?: number;
 }
 // inline "stream interrupted" line: the SSE transport died mid-run, or
 // the send was refused because the session's run slot was taken (409 -
@@ -309,14 +312,28 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         assistantPushed = true;
       }
     };
+    // the server-restored tail stream helper: the reattach merge serves
+    // the run's open thinking/response items with streaming set (card
+    // t_692254f7). Returns the LAST transcript item when it is that
+    // kind and still streaming - a stream that starts after the refresh
+    // appends into that block (restore plus attach read as ONE
+    // continuous run) instead of opening a duplicate one. The driver's
+    // own live items never qualify: they are claimed through its
+    // thinking/assistant vars, not looked up here.
+    function restoredTail(kind: "thinking" | "message"): ThinkingItem | MessageItem | null {
+      const last = st.transcript[st.transcript.length - 1];
+      if (!last || last.kind !== kind) return null;
+      const item = last as ThinkingItem | MessageItem;
+      return item.streaming ? item : null;
+    }
     // Tool phases split the turn into response segments: each text after
     // a tool phase is its own bubble, so the timeline reads
     // chronologically (preamble -> tools -> final answer).
     let segmentBreak = false;
     let thinking: ThinkingItem | null = null;
-    // anything at all arrived - the finalize no-ghost-bubble rule needs
-    // this: a reattach to an ALREADY finished run (404 path) pushes nothing
-    let sawActivity = false;
+    // tool call ids seen live in THIS stream: the materialize path
+    // resolves an orphaned result's row name from its tool_call_id
+    const toolNames = new Map<string, string>();
     const sentAt = Date.now();
     // a fresh stream takes the meters over: the last-known idle values
     // step aside until this run's own numbers arrive
@@ -338,19 +355,22 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 
     const handlers: StreamHandlers = {
       onThinking: (content) => {
-        sawActivity = true;
         if (!thinking) {
-          thinking = { kind: "thinking", content: "", streaming: true };
-          st.transcript.push(thinking);
-          // reactivity: same proxy re-capture as pushAssistant
-          thinking = st.transcript[st.transcript.length - 1] as ThinkingItem;
+          // adopt the merge's open thinking block when the restored
+          // item is still streaming (no duplicate block on reattach)
+          thinking = (restoredTail("thinking") as ThinkingItem | null) ?? null;
+          if (!thinking) {
+            thinking = { kind: "thinking", content: "", streaming: true };
+            st.transcript.push(thinking);
+            // reactivity: same proxy re-capture as pushAssistant
+            thinking = st.transcript[st.transcript.length - 1] as ThinkingItem;
+          }
         }
         thinking.content += content;
         onChunk(content.length);
         st.notify?.();
       },
       onResponse: (content) => {
-        sawActivity = true;
         if (thinking?.streaming) thinking.streaming = false;
         if (segmentBreak) {
           // a tool phase closed the previous segment - start a fresh
@@ -365,14 +385,23 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
           assistantPushed = false;
           segmentBreak = false;
         }
+        // adopt the merge's open response block (streaming restored
+        // assistant bubble): the run's text continues into it
+        if (!assistantPushed) {
+          const tail = restoredTail("message") as MessageItem | null;
+          if (tail) {
+            assistant = tail;
+            assistantPushed = true;
+          }
+        }
         pushAssistant();
         assistant.content += content;
         onChunk(content.length);
         st.notify?.();
       },
       onToolCall: (tool) => {
-        sawActivity = true;
         segmentBreak = true;
+        if (tool.id) toolNames.set(tool.id, tool.name);
         if (thinking) {
           thinking.streaming = false;
           thinking = null;
@@ -389,7 +418,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         st.notify?.();
       },
       onToolResult: (result) => {
-        sawActivity = true;
         // attach the result to the most recent tool line (status -> done)
         for (let i = st.transcript.length - 1; i >= 0; i--) {
           const item = st.transcript[i];
@@ -397,8 +425,22 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
           if (item.status !== "running") continue;
           item.status = result.isError ? "error" : "done";
           item.result = result.content;
-          break;
+          st.notify?.();
+          return;
         }
+        // No running tool line exists: the result's call happened on the
+        // OTHER side of the refresh boundary (the call frame was
+        // broadcast between the transcript snapshot and the attach
+        // subscribe, or the call predates a mid-phase refresh). Drop is
+        // not an option - it would erase the tool's work from the view
+        // entirely. Materialize the row retroactively, named by the
+        // call id when this stream saw the call, result attached.
+        st.transcript.push({
+          kind: "tool",
+          name: (result.toolCallId ? toolNames.get(result.toolCallId) : undefined) ?? "tool",
+          status: result.isError ? "error" : "done",
+          result: result.content,
+        });
         st.notify?.();
       },
       onStatus: (s) => {
@@ -422,12 +464,18 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // finalize freezes the chunk meter, freezes running tools (results
       // never coming - ToolCallLine stops ticking), closes thinking and
       // bubbles, and carries the state's end-of-run bookkeeping.
-      finalize(interrupted: boolean) {
+      finalize() {
         st.lastChunksPerSecond = st.liveChunksPerSecond;
         st.liveChunksPerSecond = 0;
+        // the sweep covers OWNED items (the driver's running tools,
+        // its thinking, its assistant) AND adopted ones the merge
+        // restored streaming but this stream never continued (the run
+        // moved to another phase before the first post-refresh frame)
         for (const item of st.transcript) {
           if (item.kind === "tool" && item.status === "running")
             item.interrupted = true;
+          if ((item.kind === "thinking" || item.kind === "message") && item.streaming)
+            item.streaming = false;
         }
         // thinking is assigned inside stream callbacks the type system
         // can't track across the closure - cast to the runtime type
@@ -435,9 +483,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         if (liveThinking?.streaming) liveThinking.streaming = false;
         // interrupted with no output keeps only the marker, no empty
         // ghost bubble; a run with zero events (404 reattach race) also
-        // pushes nothing.
-        if ((!interrupted || assistant.content) && (sawActivity || assistant.content))
-          pushAssistant();
+        // pushes nothing. The no-ghost rule is about CONTENT: thinking
+        // blocks and tool lines render through their own items - a run
+        // with tool activity but zero text pushes no empty bubble
+        // (the orphan-result materialize ends exactly like that).
+        if (assistant.content) pushAssistant();
         assistant.streaming = false;
         // the live transcript IS the session's content now: a remount
         // may refetch, but a stream that just ended never needs to
@@ -465,7 +515,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       if (st.sessionId) stopSession(st.sessionId).catch(() => {});
     };
     st.statusLine = "reasoning";
-    let interrupted = false;
     try {
       await start(drv);
     } catch (e) {
@@ -473,7 +522,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         // transport death mid-stream: the partial bubble stays exactly
         // as it is - the marker carries the resume affordance instead
         // of appending error text to it
-        interrupted = true;
         st.transcript.push({ kind: "interrupted" });
       } else if (e instanceof SessionBusyError) {
         // the runHub 409: nothing was run, nothing persisted - show the
@@ -486,7 +534,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         drv.appendError(e);
       }
     } finally {
-      drv.finalize(interrupted);
+      drv.finalize();
       busyKeys.value = withBusy(busyKeys.value, st.key, false);
       st.attached = false;
       st.cancelRun = undefined;
@@ -553,7 +601,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // same component contract the live stream paints (the
       // backend-owns-facts rework) - no reload-side reconstruction loop
       st.transcript = renderTranscriptItems(detail.items);
-      if (hadInterrupted) st.transcript.push({ kind: "interrupted" });
+      // a stale resume affordance retires when its premise died: a
+      // session with a live run proves the stream did NOT end - the
+      // merge below is now the content, and the fresh attach appends
+      // its own marker only if ITS transport actually dies
+      if (hadInterrupted && !detail.running) st.transcript.push({ kind: "interrupted" });
       st.loaded = true;
       // Reattach: the run is server-side now, so a session
       // mid-generation reports running=true on its transcript - the

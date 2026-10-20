@@ -14,14 +14,22 @@ import { createElapsedMeter, formatDurationMs } from "./omega";
 // Returns the display label: "" until the first tick or while the item
 // was never live, so the template's v-if renders nothing. Must be
 // called from component setup (it owns a watch and an unmount hook).
+// initialMs is the elapsed already consumed at start (a restored
+// running tool counts on from the server's elapsed-so-far).
 export function useElapsed(
   finalMs: () => number | null | undefined,
   live: () => boolean,
+  initialMs: () => number = () => 0,
 ): ComputedRef<string> {
   const elapsed = ref("");
-  const meter = createElapsedMeter((label) => {
-    elapsed.value = label;
-  });
+  const meter = createElapsedMeter(
+    (label) => {
+      elapsed.value = label;
+    },
+    undefined,
+    undefined,
+    initialMs(),
+  );
   const label = computed(() => {
     const ms = finalMs();
     return ms != null ? formatDurationMs(ms) : elapsed.value;
