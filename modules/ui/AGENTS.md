@@ -90,8 +90,8 @@ and the two never touch each other.
 - `assets/css/main.css` - design tokens, light/dark themes, shell
   geometry constants, stacked-mode rules (full-width rows; thinking on
   background).
-- `test/` - 28 files, 374 unit tests (node's built-in runner;
-  node --test "test/*.test.ts"). Notable: `interrupted.test.ts`
+- `test/` - node's built-in runner (`node --test "test/*.test.ts"`),
+  492 tests at v0.9.0. Notable: `interrupted.test.ts`
   (transport-death detection + transcript transitions - NO
   dropLastExchange anymore), `composer-retry.test.ts` (the morphing
   button + retry flow), `panemodel.test.ts` (the reset spec's
@@ -101,8 +101,9 @@ and the two never touch each other.
   `reattach.test.ts` (stream reattach via runHub events).
 - `scripts/build.sh` - `nuxt generate` (NOT `nuxt build` - ssr:false
   build emits a nitro server, generate emits the static SPA) + sync to
-  `../http_channel/static/`. Run before `go build`; the synced output
-  is committed with webui changes. The build gate refuses to ship a
+  `../http_channel/static/`. Run before `go build`; static/ commits
+  come from the embed lane (scripts/embed-lane.sh), not from webui
+  cards. The build gate refuses to ship a
   SPA built from conflicted/stash-poisoned source.
 - `scripts/stream_check.py` - transport probe: POSTs a reasoning
   prompt, asserts incremental chunk arrival. Exit 0 healthy, 1
@@ -128,9 +129,9 @@ and the two never touch each other.
   `ponytail:` comment); live chunks/s comes from real arrival times.
 - **The built SPA is committed.** `modules/http_channel/static/` is
   tracked; `go install` and plain `go build` must produce the complete
-  product. After webui changes: run `scripts/build.sh` and commit the
-  synced output with the change. Never hand-resolve static/ conflicts
-  - regenerate.
+  product. Webui cards commit SOURCE ONLY. The merge pass runs
+  `scripts/embed-lane.sh`, which owns every static/ commit. Never
+  hand-resolve static/ conflicts - regenerate.
 - **Design tokens live in main.css.** Accent #E8833A (the single
   accent); `--unread` is an unread-ONLY semantic color; radii 8px
   (panes) / 6px (cards) / 4px (chips). Type: Public Sans + JetBrains
