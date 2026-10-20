@@ -1,9 +1,12 @@
 #!/bin/sh
 # build the webui and sync it into the go embed dir. Run `go build` after
 # this to bake the SPA into the binary (go:embed captures static/ at
-# compile time). static/ is tracked in git: after webui changes, run this
-# and commit the synced output with your change so go install / go build
-# users always get the complete product.
+# compile time). static/ is tracked in git, but commits to it come ONLY
+# from scripts/embed-lane.sh (the embed lane) after a source merge lands
+# - webui cards and branches commit SOURCE ONLY and never touch static/,
+# so parallel webui cards can never collide on it. go install / go build
+# users always get the complete product because the lane keeps static/
+# true before the next build.
 #
 # Works from a clean clone: deps are installed when node_modules is
 # missing, and the module-UI composition (nuxt.config.ts eval time)
