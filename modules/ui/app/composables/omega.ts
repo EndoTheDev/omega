@@ -285,6 +285,24 @@ export function splitBlocks(items: TranscriptItem[]): TranscriptItem[][] {
   return blocks;
 }
 
+// liveRunSlice derives the stacked live-run layout (card t_c40164cf):
+// the LAST user message is the pinned question header, everything after
+// it is the run's agent body, and older history rides out of view -
+// a layout state, not a scroll position. No new state: both regions cut
+// from the same transcript the settled column renders. Pure.
+export function liveRunSlice(items: TranscriptItem[]): {
+  user: TranscriptItem | null;
+  body: TranscriptItem[];
+} {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!;
+    if (item.kind === "message" && item.role === "user") {
+      return { user: item, body: items.slice(i + 1) };
+    }
+  }
+  return { user: null, body: [] };
+}
+
 export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}/transcript`);
   if (!r.ok) throw new Error(`transcript: ${r.status}`);

@@ -4,7 +4,40 @@
          itself scrolls its content (an absolutely positioned child of
          it would scroll away with it) -->
     <div class="messages-wrap">
+      <!-- live-run branch (card t_c40164cf): while a stacked run streams
+           the pane stops being one scrolling list and becomes TWO regions
+           - the last user message pinned as the header, the run's items
+           scrolling in their own body underneath, auto-following the tail.
+           Older history rides out of view for the run's duration (a layout
+           state, not a scroll position); agent_end unmounts the branch and
+           the settled column returns with the run's block in flow. -->
+      <template v-if="liveLayout">
+        <div class="live-pin">
+          <ChatItem
+            :key="itemKey(liveRun.user!)"
+            :item="liveRun.user!"
+            :show-thinking="showThinking"
+            @retry="onRetry" />
+        </div>
+        <div
+          class="messages live-body stacked"
+          ref="liveBodyEl"
+          @scroll="onScroll">
+          <ChatItem
+            v-for="item in liveRun.body"
+            :key="itemKey(item)"
+            :item="item"
+            :show-thinking="showThinking"
+            @retry="onRetry" />
+          <div
+            v-if="statusLine"
+            class="status-line">
+            {{ statusLine }}…
+          </div>
+        </div>
+      </template>
       <div
+        v-else
         class="messages"
         :class="{ stacked: appearance === 'stacked' }"
         ref="messagesEl">
@@ -21,10 +54,9 @@
              full response subtree, separated by the block gap. -->
         <template v-if="appearance === 'stacked'">
           <div
-            v-for="(block, bi) in blocks"
+            v-for="block in blocks"
             :key="blockKey(block)"
-            class="msg-block"
-            :class="{ live: bi === blocks.length - 1 && busy }">
+            class="msg-block">
             <ChatItem
               v-for="item in block"
               :key="itemKey(item)"
@@ -82,7 +114,7 @@
   // stream keeps feeding an inactive/unmounted tab and two tabs on one
   // session each hold their own transcript while the busy gate stays
   // per session (the runHub run slot).
-  import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
     type ChatState,
@@ -98,6 +130,7 @@
     isAtBottom,
     pillVisible,
     lastUserText,
+    liveRunSlice,
     splitBlocks,
     thinkingLevelWire,
     type Appearance,
@@ -172,53 +205,76 @@
     () => !busy.value && lastUserText(transcript.value) !== null,
   );
 
+  // --- stacked live-run layout (card t_c40164cf): derived, no new
+  // state - the last user message is the pinned header, the items after
+  // it are the run's agent body; the branch mounts for the run's
+  // lifetime and the settled column renders the same transcript in flow
+  const liveRun = computed(() => liveRunSlice(transcript.value));
+  const liveLayout = computed(
+    () =>
+      props.appearance === "stacked" &&
+      busy.value &&
+      liveRun.value.user !== null,
+  );
+
   // --- scroll pinning + jump-to-live pill: PER INSTANCE now - multiple
   // panes may render the same component, each owns its scrollbar ---
   const messagesEl = ref<HTMLElement | null>(null);
+  const liveBodyEl = ref<HTMLElement | null>(null);
   const pinned = ref(true);
   const jumpPill = ref(false);
 
+  // the ACTIVE scroll container: the live-run body owns scrolling while
+  // the live layout is mounted (.messages listeners suspend for the
+  // branch's lifetime - both containers carry the same scroll wiring);
+  // otherwise the settled column scrolls as always
+  function scrollEl(): HTMLElement | null {
+    return liveBodyEl.value ?? messagesEl.value;
+  }
+
   function nearBottom(): boolean {
-    const el = messagesEl.value;
+    const el = scrollEl();
     if (!el) return true;
     return isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
-  function onMessagesScroll() {
+  function onScroll() {
     pinned.value = nearBottom();
-    const el = messagesEl.value;
+    const el = scrollEl();
     if (!el) return;
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
-  // stacked live turn (Endo 2026-10-20): the USER MESSAGE pins to the
-  // top of the pane while its answer streams below - so the follow
-  // logic targets the live block's top, not the content tail. Pushing
-  // the block top to the pane top on send is what "pushes everything
-  // else up"; the sticky CSS holds it there while the run is busy.
-  function liveBlockGap(el: HTMLElement): number | null {
-    if (props.appearance !== "stacked") return null;
-    const live = el.querySelector<HTMLElement>(".msg-block.live");
-    if (!live) return null;
-    return live.getBoundingClientRect().top - el.getBoundingClientRect().top;
-  }
+  // live-run branch transitions (card t_c40164cf): mounting the layout
+  // starts tail-follow from zero; unmounting it (agent_end) lands the
+  // settled column at the run's block - the same post-run feel as the
+  // tail-follow the branch just held. Post-flush: the scroll reads the
+  // freshly patched settled element (the v-else column remounts on the
+  // swap), not the pre-patch world.
+  watch(
+    liveLayout,
+    (live, was) => {
+      if (live && !was) {
+        pinned.value = true;
+        jumpPill.value = false;
+      } else if (!live && was) {
+        pinned.value = true;
+        jumpPill.value = false;
+        nextTick(() => {
+          const el = messagesEl.value;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      }
+    },
+    { flush: "post" },
+  );
 
   function scrollDown(force = false) {
     if (force) pinned.value = true;
     requestAnimationFrame(() => {
-      const el = messagesEl.value;
+      const el = scrollEl();
       if (!el) return;
       if (!force && !pinned.value) return;
-      const gap = liveBlockGap(el);
-      // pinned-then-follow (Endo 2026-10-20): the FIRST appearance of
-      // the live block (gap > 1, its top still below the viewport top)
-      // scrolls it to the pane top - older content rides up; once the
-      // sticky CSS holds it there (gap 0), the follow returns to the
-      // streaming tail so the newest agent output shows underneath
-      if (gap !== null && gap > 1) {
-        el.scrollTop += gap;
-        return;
-      }
       el.scrollTop = el.scrollHeight;
     });
   }
@@ -264,7 +320,7 @@
 
   // --- mount: the tab's restore + live-attach entry ---
   onMounted(async () => {
-    messagesEl.value?.addEventListener("scroll", onMessagesScroll);
+    messagesEl.value?.addEventListener("scroll", onScroll);
     // pending selection focus for a tab minted after the request (the
     // new-chat / fresh-session open path)
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
@@ -304,7 +360,7 @@
   );
 
   onBeforeUnmount(() => {
-    messagesEl.value?.removeEventListener("scroll", onMessagesScroll);
+    messagesEl.value?.removeEventListener("scroll", onScroll);
     if (state.value) state.value.notify = undefined;
   });
 </script>
