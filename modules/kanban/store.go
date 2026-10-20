@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // ErrNotFound is returned when a task does not exist (the agent seam's
@@ -27,8 +28,14 @@ type Store struct {
 var _ agent.KanbanProvider = (*Store)(nil)
 
 // Open opens (creating if needed) the board database at dsn and
-// ensures the schema exists. ":memory:" works for tests.
+// ensures the schema exists. ":memory:" works for tests. A dsn inside
+// a data/ directory gets the boot-time data-dir migration first
+// (legacy home-root databases move into data/ before the handle is
+// opened - see modules/datadir).
 func Open(dsn string) (*Store, error) {
+	if err := datadir.Migrate(dsn); err != nil {
+		return nil, err
+	}
 	dsnParams := dsn
 	if !strings.Contains(dsn, "?") {
 		dsnParams += "?_journal_mode=WAL&_busy_timeout=5000"
