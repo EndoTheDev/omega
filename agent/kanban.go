@@ -41,7 +41,7 @@ type KanbanEvent struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// KanbanPatch is a partial task update from HTTP PATCH or task_update.
+// KanbanPatch is a partial task update from HTTP PATCH or task.update.
 // Pointer fields distinguish "change to this value (possibly empty)"
 // from "leave alone"; empty strings mean "no change" for simple fields
 // because Go zero values cannot express omission without pointers.

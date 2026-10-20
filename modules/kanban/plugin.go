@@ -71,7 +71,7 @@ type ToolProvider struct {
 // Tools returns the six board tools.
 func (p *ToolProvider) Tools() map[string]agent.Tool {
 	return map[string]agent.Tool{
-		"task_create": {
+		"task.create": {
 			Description: "Create a board task (title is the short name, body carries the full spec).",
 			Parameters: map[string]any{
 				"type": "object",
@@ -86,7 +86,7 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			},
 			Run: p.runCreate,
 		},
-		"task_list": {
+		"task.list": {
 			Description: "List board tasks, optionally filtered by status.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -96,7 +96,7 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			},
 			Run: p.runList,
 		},
-		"task_update": {
+		"task.update": {
 			Description: "Update a task: move status (any legal transition), set assignee, retitle, or rewrite the body.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -111,7 +111,7 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			},
 			Run: p.runUpdate,
 		},
-		"task_comment": {
+		"task.comment": {
 			Description: "Add a comment to a task's thread.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -124,7 +124,7 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			},
 			Run: p.runComment,
 		},
-		"task_complete": {
+		"task.complete": {
 			Description: "Mark a task done (moves it to the done column and stamps completion).",
 			Parameters: map[string]any{
 				"type": "object",
@@ -135,7 +135,7 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			},
 			Run: p.runComplete,
 		},
-		"task_link_session": {
+		"task.link_session": {
 			Description: "Link a task to the conversation it belongs to (defaults to the current session).",
 			Parameters: map[string]any{
 				"type": "object",

@@ -119,7 +119,7 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		// task_update keeps a simple non-pointer Status field ("" = no
+		// task.update keeps a simple non-pointer Status field ("" = no
 		// change); wire it through directly
 		out, err := s.Kanban.UpdateTask(r.Context(), id, agent.KanbanPatch{
 			Title:     body.Title,
