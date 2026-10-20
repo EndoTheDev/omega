@@ -159,10 +159,12 @@
     type ThemeMode,
     type UserTheme,  } from "~/composables/omega";
   import { useNarrow } from "~/composables/narrow";
+  import type { ToolDisplay } from "~/composables/toolDisplay";
 
   const props = defineProps<{
     showThinking: boolean;
     appearance: Appearance;
+    toolDisplay: ToolDisplay;
     themeMode: ThemeMode;
     userThemes: UserTheme[];
     /** the mobile drawer's overlay state (desktop tabs never pass it
@@ -179,6 +181,7 @@
   const emit = defineEmits<{
     (e: "update:showThinking", value: boolean): void;
     (e: "update:appearance", value: Appearance): void;
+    (e: "update:toolDisplay", value: ToolDisplay): void;
     (e: "set-theme", mode: ThemeMode): void;
   }>();
 
@@ -276,6 +279,16 @@
           "stacked renders each turn as one block and pins it to the top " +
           "of the pane while the answer streams; chat is the flat chronolog",
       },
+      {
+        key: "chat.tool_display",
+        label: "tool result display",
+        type: "select",
+        value: props.toolDisplay,
+        options: ["auto", "expanded", "collapsed"],
+        help:
+          "auto expands tool rows while a call runs and collapses them " +
+          "once it settles; a manual toggle pins a row; expanded/collapsed force one state",
+      },
     ],
   }));
 
@@ -325,6 +338,7 @@
   const clientValue = (knob: SettingKnob): unknown => {
     if (knob.key === "chat.show_thinking") return props.showThinking;
     if (knob.key === "chat.appearance") return props.appearance;
+    if (knob.key === "chat.tool_display") return props.toolDisplay;
     return props.themeMode;
   };
 
@@ -364,6 +378,8 @@
       if (knob.key === "chat.theme") emit("set-theme", value as ThemeMode);
       else if (knob.key === "chat.appearance")
         emit("update:appearance", value as Appearance);
+      else if (knob.key === "chat.tool_display")
+        emit("update:toolDisplay", value as ToolDisplay);
       return;
     }
     draft.value = { ...draft.value, [knob.key]: value };

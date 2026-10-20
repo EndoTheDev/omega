@@ -1143,6 +1143,7 @@ labels stopped short of the right edge. */
 .msg.assistant { justify-content: flex-start; }
 
 .bubble {
+  position: relative;
   max-width: 70%;
   padding: 8px 12px;
   border-radius: var(--r-card);
@@ -1153,6 +1154,31 @@ labels stopped short of the right edge. */
   word-break: break-word;
   animation: fade-in 0.18s ease-out;
 }
+
+/* copy message (/copy parity, card t_868633b3): a small mono glyph in
+   the bubble's top-right corner, same hover-fade contract as the
+   sessions row actions. Opaque chip surface so it stays legible over
+   text underneath; hidden entirely while not hovered (no hit target). */
+.msg-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: var(--mono);
+  line-height: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.bubble:hover .msg-copy,
+.msg-copy:focus-visible { opacity: 1; pointer-events: auto; }
+.msg-copy:hover { color: var(--text); }
 
 /* image attachments in a transcript bubble: inline thumbnails,
    click opens the full-size data URL in a new tab */

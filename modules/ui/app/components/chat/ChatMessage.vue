@@ -28,6 +28,13 @@
       <span
         v-if="streaming"
         class="cursor" />
+      <!-- copy message (/copy parity): hover glyph like the sessions row
+           actions; the click carries the RAW source, never the render -->
+      <button
+        class="msg-copy"
+        type="button"
+        :title="copied ? 'copied' : 'copy message'"
+        @click.stop="copyMessage">{{ copied ? "copied" : "copy" }}</button>
     </div>
   </div>
 </template>
@@ -104,6 +111,23 @@
   // Hover timestamp: an empty ref removes the title attribute entirely
   // (malformed or absent times render nothing, not a blank tooltip).
   const timeTitle = computed(() => (props.time ? formatMsgTime(props.time) : null));
+
+  // Copy message (/copy parity, card t_868633b3): the bubble's RAW text
+  // reaches the clipboard - the markdown source for assistant bubbles,
+  // plain text for user ones - never the rendered HTML (codeblock copy
+  // already handles its own raw source). Same 1.2s copied affordance as
+  // the codeblock header button.
+  const copied = ref(false);
+  let copyTimer: number | undefined;
+  function copyMessage() {
+    void navigator.clipboard.writeText(props.content);
+    copied.value = true;
+    window.clearTimeout(copyTimer);
+    copyTimer = window.setTimeout(() => {
+      copied.value = false;
+    }, 1200);
+  }
+  onUnmounted(() => window.clearTimeout(copyTimer));
 
   // Codeblock UX (header bar, copy, collapse, 60vh cap). The markdown
   // renderer owns the <pre><code> markup; the wrapper is added after each
