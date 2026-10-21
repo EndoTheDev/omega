@@ -26,9 +26,15 @@
            (settled ruling) and both subscribe to the run's events. -->
       <DockSplit :node="dock.tree.value">
         <template #pane-sidebar>
+          <!-- card t_e76ce7b6: the dock's edge-pane content is desktop
+               chrome. Below 768px it is suppressed (the mobile drawer
+               renders the same content independently - see the
+               MobileDrawer blocks after .pane-area) so a desktop-closed
+               sidebar (the pane pruned from the tree) never blanks the
+               drawer. -->
           <AppSidebar
+            v-if="!isMobile"
             class="pane"
-            :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
             :sessions="sessions"
             :active-id="focusedSessionId"
             :streaming-ids="busyAll"
@@ -82,30 +88,34 @@
              dock tabbar hosts the tab, this outlet only hosts content. -->
         <template #pane-files>
           <FilesTab
+            v-if="!isMobile"
             class="pane"
-            :style="isMobile ? { width: 'calc(100% - 30%)' } : undefined"
             :open="inspectorOpen" />
         </template>
         <template #pane-cron>
           <InspectorPanel
+            v-if="!isMobile"
             class="pane"
             module="cron"
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <template #pane-http_channel>
           <InspectorPanel
+            v-if="!isMobile"
             class="pane"
             module="http_channel"
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <template #pane-skills>
           <InspectorPanel
+            v-if="!isMobile"
             class="pane"
             module="skills"
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <template #pane-tools>
           <InspectorPanel
+            v-if="!isMobile"
             class="pane"
             module="tools"
             :open="isMobile ? inspectorOpen : false" />
@@ -118,6 +128,7 @@
              same open flag as the module panels. -->
         <template #pane-settings>
           <SettingsTab
+            v-if="!isMobile"
             class="pane"
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
@@ -132,12 +143,90 @@
              in the ~300px sidebar column -->
         <template #pane-kanban>
           <InspectorPanel
+            v-if="!isMobile"
             class="pane"
             module="kanban"
             :open="isMobile ? inspectorOpen : false" />
         </template>
       </DockSplit>
     </div>
+
+    <!-- card t_e76ce7b6: the mobile drawers. Below 768px the dock's
+         pinned-edge panes collapse to zero-width empty cells (their slot
+         content is suppressed above); these drawers render the same
+         content with their own tab bar, independent of whether the edge
+         pane currently lives in the dock tree. REPRO 1: a desktop-closed
+         sidebar (pane pruned) no longer blanks the drawer. REPRO 2: the
+         tab bar renders inside the drawer and switches its content. The
+         scrim above covers both. -->
+    <MobileDrawer
+      v-if="isMobile"
+      side="left"
+      :open="drawerOpen"
+      :tabs="sidebarDrawerTabs"
+      aria-label="sessions"
+      v-model="mobileSidebarTab">
+      <AppSidebar
+        v-if="sidebarDrawerActiveId === 'sidebar'"
+        class="pane"
+        :sessions="sessions"
+        :active-id="focusedSessionId"
+        :streaming-ids="busyAll"
+        :open="drawerOpen"
+        @open="openChatTab"
+        @new="openChatTab(null)"
+        @pin="togglePin"
+        @archive="toggleArchive"
+        @remove="askDelete"
+      />
+      <FilesTab
+        v-else-if="sidebarDrawerActiveId === 'files'"
+        class="pane"
+        :open="drawerOpen" />
+      <SettingsTab
+        v-else-if="sidebarDrawerActiveId === 'settings'"
+        class="pane"
+        v-model:show-thinking="showThinking"
+        v-model:appearance="appearance"
+        v-model:tool-display="toolDisplay"
+        :theme-mode="themeMode"
+        :user-themes="userThemes"
+        :open="drawerOpen"
+        @set-theme="setTheme" />
+      <InspectorPanel
+        v-else-if="sidebarDrawerActiveId"
+        class="pane"
+        :module="sidebarDrawerActiveId"
+        :open="drawerOpen" />
+    </MobileDrawer>
+
+    <MobileDrawer
+      v-if="isMobile"
+      side="right"
+      :open="inspectorOpen"
+      :tabs="inspectorDrawerTabs"
+      aria-label="inspector"
+      v-model="mobileInspectorTab">
+      <FilesTab
+        v-if="inspectorDrawerActiveId === 'files'"
+        class="pane"
+        :open="inspectorOpen" />
+      <SettingsTab
+        v-else-if="inspectorDrawerActiveId === 'settings'"
+        class="pane"
+        v-model:show-thinking="showThinking"
+        v-model:appearance="appearance"
+        v-model:tool-display="toolDisplay"
+        :theme-mode="themeMode"
+        :user-themes="userThemes"
+        :open="inspectorOpen"
+        @set-theme="setTheme" />
+      <InspectorPanel
+        v-else-if="inspectorDrawerActiveId"
+        class="pane"
+        :module="inspectorDrawerActiveId"
+        :open="inspectorOpen" />
+    </MobileDrawer>
 
     <!-- destructive confirm: delete walks the store cascade server-side,
          so there is no undo - the dialog names the session -->
@@ -236,6 +325,18 @@
     DOCK_TAB_TITLE_KEY,
     nextTabKey,
   } from "./composables/dock";
+  // card t_e76ce7b6: the mobile drawer renders the pinned-edge content
+  // (sessions / inspector tabs) independently of the dock tree, so it
+  // reads the dockable registry directly for the default tab set + the
+  // tab titles (the same voice the dock tabbar uses)
+  import {
+    INSPECTOR_TAB_COMPONENTS,
+    COMPONENT_TITLES,
+    type DockComponentName,
+  } from "./composables/dockables";
+  // card t_e76ce7b6: the mobile drawer's pure tab derivation (decoupled
+  // from the dock tree - REPRO 1's fix)
+  import { drawerTabsForEdge, clampDrawerTab } from "./composables/mobileDrawer";
   import {
     CHAT_HOST_KEY,
     DEFAULT_CHAT_STATE,
@@ -627,6 +728,49 @@
   // the right shell lives while its marker exists - even empty (free
   // content: tabs come and go, the shell stays)
   const inspectorDocked = computed(() => findEdgePane(dock.tree.value, "inspector") !== null);
+
+  // card t_e76ce7b6: the mobile drawer's tab bar. The drawer renders the
+  // pinned-edge content independently of the dock tree (REPRO 1: a
+  // desktop-closed sidebar prunes the edge pane - the drawer must still
+  // open with content), so its tab set reads the live edge pane when it
+  // exists and falls back to the registry default when it does not. The
+  // active tab is the drawer's OWN state - switching it never touches the
+  // dock tree (the desktop hidden state is page-lifetime by design and
+  // must not be coupled to the mobile drawer, REPRO 1's root cause).
+  const mobileSidebarTab = ref(0);
+  const mobileInspectorTab = ref(0);
+
+  function drawerTabTitle(id: DockComponentName): string {
+    // the same voice the dock tabbar uses: a module dockable.json title
+    // wins, the registry title is the fallback (chat never reaches here)
+    const panel = modulePanels.find((p) => p.module === id);
+    return panel?.dockable?.title ?? COMPONENT_TITLES[id];
+  }
+
+  const sidebarDrawerTabs = computed(() =>
+    drawerTabsForEdge(
+      findEdgePane(dock.tree.value, "sidebar"),
+      ["sidebar"],
+      drawerTabTitle,
+    ),
+  );
+  const inspectorDrawerTabs = computed(() =>
+    drawerTabsForEdge(
+      findEdgePane(dock.tree.value, "inspector"),
+      INSPECTOR_TAB_COMPONENTS,
+      drawerTabTitle,
+    ),
+  );
+
+  // the active tab id, clamped against the live tab set (the edge pane's
+  // tabs can change under a DnD while the drawer is closed; the drawer
+  // never indexes past the end)
+  const sidebarDrawerActiveId = computed(() =>
+    clampDrawerTab(sidebarDrawerTabs.value, mobileSidebarTab.value)?.id,
+  );
+  const inspectorDrawerActiveId = computed(() =>
+    clampDrawerTab(inspectorDrawerTabs.value, mobileInspectorTab.value)?.id,
+  );
 
   function toggleSidebar() {
     if (!isMobile.value) {
