@@ -132,8 +132,10 @@
 
     <!-- '+' new-tab menu: card 4's dockable registry inventory with icons
          (replaces card 2's chat-only list). A singleton that already lives
-         FOCUSES instead of opening a second instance. Main-area inventory
-         only (card t_4ae27e0d). -->
+         FOCUSES instead of opening a second instance. t_d6b657a7: the menu
+         rides the MENU inventory - the refill source for any pane. The
+         template iterated the never-defined `mainDockables` (empty menu,
+         no new tab could open); menuDockables is the pinned inventory. -->
     <div
       v-if="newTabMenu"
       class="dock-menu"
@@ -141,7 +143,7 @@
       aria-label="new tab components"
       @click.stop>
       <button
-        v-for="d in mainDockables"
+        v-for="d in menuDockables"
         :key="d.id"
         class="dock-menu-btn"
         role="menuitem"
