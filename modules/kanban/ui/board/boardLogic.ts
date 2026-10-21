@@ -57,6 +57,46 @@ export interface BoardTask {
   completed_at: string;
 }
 
+// --- board switcher (card t_d7a7beaa): named boards + a current-board
+// pointer, Hermes-shaped. The pointer serves the default; /boards
+// lists the registry. There is no cross-board move anywhere - a card
+// lives on exactly one board.
+
+// One registry row (GET /boards payload).
+export interface BoardInfo {
+  name: string;
+  current: boolean;
+}
+
+/** true when a registry row names the current board. */
+export function isCurrentBoard(b: BoardInfo): boolean {
+  return b.current;
+}
+
+/**
+ * withBoard appends ?board=... to an API path, keeping any existing
+ * query string intact. Empty board adds nothing (the server then
+ * serves its own default - the pointer target), so pre-registry
+ * installs hit the exact same URLs as before.
+ */
+export function withBoard(path: string, board: string): string {
+  const trimmed = (board ?? "").trim();
+  if (trimmed === "") return path;
+  const join = path.includes("?") ? "&" : "?";
+  return `${path}${join}board=${encodeURIComponent(trimmed)}`;
+}
+
+/**
+ * pickBootBoard chooses the switcher's initial selection from the
+ * /boards payload: the flagged current board, else "main". An empty
+ * registry (capability absent) degrades to "" - no switcher.
+ */
+export function pickBootBoard(boards: BoardInfo[]): string {
+  if (!Array.isArray(boards) || boards.length === 0) return "";
+  const cur = boards.find((b) => b && isCurrentBoard(b));
+  return cur ? cur.name : boards[0].name;
+}
+
 // One comment row (GET /tasks/{id} payload).
 export interface BoardComment {
   id: number;

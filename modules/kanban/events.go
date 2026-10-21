@@ -20,9 +20,10 @@ func getTaskTx(ctx context.Context, tx *sql.Tx, taskID string) (agent.KanbanTask
 	return *t, nil
 }
 
-// recordEvent appends one audit-trail entry on the store's db handle.
-func (s *Store) recordEvent(ctx context.Context, taskID, kind, detail string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO task_events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)`,
+// recordEvent appends one audit-trail entry on a board's db handle
+// (every board keeps its own event tables).
+func recordEvent(ctx context.Context, db *sql.DB, taskID, kind, detail string) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO task_events (task_id, kind, detail, created_at) VALUES (?, ?, ?, ?)`,
 		taskID, kind, detail, now())
 	return err
 }
