@@ -69,6 +69,7 @@
   // ladder (+320, panes.ts).
   import { inject, ref } from "vue";
   import { snapCandidate } from "../composables/panes";
+  import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
     DOCK_API_KEY,
     type DockNode,
@@ -112,15 +113,17 @@
   // dragging = divider index during a gesture; the cells are measured ONCE
   // per gesture and frozen (the old divider's startWidth rule: deltas
   // rebase from the rendered layout at gesture start, and every move event
-  // recomputes the whole split from that frozen baseline). Positionally
-  // tracked: each move's delta = raw pointer - the last seen position, so
-  // a mid-gesture rebase is just "startPx = measure(); lastRaw = raw" with
-  // the pointer still down (the squeeze push-back's close re-measures the
-  // layout that the closed pane freed - card t_f6d5a771).
+  // recomputes the whole split from that frozen baseline). The raw->delta
+  // reduction (cumulative-from-baseline) lives in dividerGesture.ts so its
+  // contract is unit-tested - card t_38c0e960 found it silently sending
+  // per-event increments (dead-looking dividers) after the snap-ladder
+  // rework. `pending` is the squeeze push-back's re-measure flag: set when
+  // api.drag reports a pushed pane, consumed (re-measure + base reset) on
+  // the NEXT event with the layout already re-rendered (card t_f6d5a771).
   const dragging = ref<number | null>(null);
   let startPx: number[] | null = null;
-  let lastRaw: number | null = null;
-  let rebase = false;
+  const pointerState: DividerPointerState = { base: null };
+  let pending = false;
   const snappedIdx = ref<number | null>(null);
 
   function measure(): number[] {
@@ -135,36 +138,32 @@
   function dropGesture() {
     dragging.value = null;
     startPx = null;
-    lastRaw = null;
+    pointerState.base = null;
+    pending = false;
     snappedIdx.value = null;
   }
 
-  function onDrag(dividerIndex: number, _delta: number, raw: number) {
+  function onDrag(dividerIndex: number, delta: number, raw: number) {
     if (dragging.value !== dividerIndex) {
       if (dragging.value !== null) return; // another divider's gesture owns this pointer
       dragging.value = dividerIndex;
       startPx = measure();
-    } else if (rebase) {
-      // the previous event's push closed a pane: the layout is different
-      // NOW - the new baseline is the re-rendered geometry, and deltas
-      // resume from the current pointer position
-      startPx = measure();
-      rebase = false;
-      lastRaw = raw;
-      return;
+      pointerState.base = null; // fresh gesture: the reducer re-derives the base
     }
     if (!startPx) return;
-    if (lastRaw === null) {
-      lastRaw = raw;
-      return; // the gesture's first event has nothing to move
-    }
-    const delta = raw - lastRaw;
-    lastRaw = raw;
+    // the re-measure flag: the pushed pane freed px and the layout
+    // re-rendered - the new baseline is the current geometry, deltas
+    // resume from the just-seen raw (the reducer resets the base with it)
+    const wasPending = pending;
+    if (wasPending) startPx = measure();
+    const cumulative = dividerDelta(pointerState, delta, raw, wasPending);
+    pending = false;
+    if (cumulative === null) return;
     // content box for the pure math: the split's client px minus the
     // gutters its dividers occupy = the sum of the measured cells
     const contentPx = startPx.reduce((a, p) => a + p, 0);
-    const res = api.drag((props.node as DockSplit).id, dividerIndex, startPx, delta, contentPx);
-    if (res.pushedPaneId) rebase = true; // freed px becomes layout: re-measure next event
+    const res = api.drag((props.node as DockSplit).id, dividerIndex, startPx, cumulative, contentPx);
+    if (res.pushedPaneId) pending = true; // freed px becomes layout: re-measure next event
     if (res.collapsedPaneId) {
       // the controlled pane (and this divider with it) is gone - the
       // gesture ends; the menubar toggle reopens the hidden sidebar
@@ -178,10 +177,10 @@
     const i = dividerIndex;
     const px =
       (node.children[li] as DockPaneNode).fixed !== null
-        ? startPx[li] + delta
+        ? startPx[li] + cumulative
         : (node.children[i] as DockPaneNode).fixed !== null
-          ? startPx[i] - delta
-          : startPx[li] + delta;
+          ? startPx[i] - cumulative
+          : startPx[li] + cumulative;
     snappedIdx.value = snapCandidate(px) !== null ? dividerIndex : null;
   }
 
