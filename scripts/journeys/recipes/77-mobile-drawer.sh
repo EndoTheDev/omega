@@ -61,10 +61,12 @@ sleep 0.7
 open=$(jsq 'document.querySelector(".mobile-drawer.right.open")?1:0')
 assert_eq "$open" "1" "REPRO 2: inspector drawer opens (right.open)"
 tabs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).map(t=>t.textContent.trim()).join(",")')
+tabs=${tabs#\"}; tabs=${tabs%\"}  # jsq returns JSON-encoded strings; strip the quotes
 assert_eq "$tabs" "Files,Cron,Logs,Skills,Tools,Settings,Kanban" "REPRO 2: inspector drawer shows the seven-tab strip"
 
 # the active tab is Files (the file tree renders, not a module panel)
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.textContent.trim()')
+active=${active#\"}; active=${active%\"}
 assert_eq "$active" "Files" "REPRO 2: Files is the default active inspector tab"
 files=$(jsq 'document.querySelector(".mobile-drawer.right .inspector-files")?1:0')
 assert_eq "$files" "1" "REPRO 2: Files tab renders the file tree"
@@ -73,6 +75,7 @@ assert_eq "$files" "1" "REPRO 2: Files tab renders the file tree"
 js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>t.textContent.trim()==="Skills").click()' >/dev/null 2>&1
 sleep 0.6
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.textContent.trim()')
+active=${active#\"}; active=${active%\"}
 assert_eq "$active" "Skills" "REPRO 2: clicking Skills activates it"
 skills=$(jsq 'document.querySelector(".mobile-drawer.right .module-panels")?1:0')
 assert_eq "$skills" "1" "REPRO 2: Skills tab renders the module panel (content switched)"
