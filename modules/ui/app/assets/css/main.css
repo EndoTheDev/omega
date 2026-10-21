@@ -708,11 +708,35 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 .row-act { width: 20px; height: 20px; }
 .row-act:hover { color: var(--text); background: var(--accent-dim, var(--z2)); }
 .row-delete:hover { color: var(--err); }
+/* the export action is an <a> styled as an icon button: strip the link
+   chrome so it reads identical to its siblings */
+a.row-export { text-decoration: none; color: var(--text-dim); }
 .session-list li:hover .row-actions,
 .row-actions:focus-within { opacity: 1; }
 /* the time slot is reserved on hover: opacity/visibility only, never
    display:none - the number fades back into its exact position */
 .session-list li:hover .session-time { opacity: 0; }
+
+/* branch badge (t_6bf696e4): the fork lineage marker - subtle, inline,
+   dimmer than the title so root rows stay visually quiet */
+.session-branch {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.session-rename {
+  font-size: 13px;
+  color: var(--text);
+  background: var(--z1-raised);
+  border: 1px solid var(--accent-dim, var(--z2));
+  border-radius: 3px;
+  padding: 0 4px;
+  min-width: 0;
+  flex: 1 1 40px;
+  outline: none;
+}
 
 /* muted archived rows: archived sessions render in their own bottom
    group at reduced contrast - title, meta and age all dim, the hover

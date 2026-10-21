@@ -491,12 +491,13 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 // are the upgrade if a session list ever gets slow. message_count is
 // every stored message; tool_count is the tool-role subset.
 // Bookkeeping entries (model_change, thinking_level_change,
-// variant_select) are excluded from message_count, matching the
-// insights convention for non-conversation messages.
+// variant_select) and the branch summary row (role 'system') are
+// excluded from message_count, matching the insights convention for
+// non-conversation messages.
 func (s *Store) SessionCounts(ctx context.Context) (map[string]agent.SessionCounts, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id,
-		        SUM(role NOT IN ('model_change', 'thinking_level_change', 'variant_select')),
+		        SUM(role NOT IN ('model_change', 'thinking_level_change', 'variant_select', 'system')),
 		        SUM(role = 'tool')
 		 FROM messages GROUP BY session_id`)
 	if err != nil {
