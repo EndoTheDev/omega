@@ -88,7 +88,7 @@ type exportLine struct {
 // Disposition download named <session id>.jsonl); 501 without a store,
 // 404 for an unknown session, 500 on store faults.
 func (s *Server) handleSessionExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -114,6 +114,12 @@ func (s *Server) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/jsonl")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.jsonl"`, sess.ID))
 	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		// headers only - the download probe (the webui anchor, curl -I)
+		// reads Content-Disposition without the body; net/http would
+		// discard a written body for HEAD anyway
+		return
+	}
 	for _, msg := range messages {
 		line := exportLine{Role: ai.MessageRole(msg), Content: agent.MessageText(msg)}
 		if _, err := fmt.Fprintf(w, "{\"role\":%q,\"content\":%q}\n", line.Role, line.Content); err != nil {
