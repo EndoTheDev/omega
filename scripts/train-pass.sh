@@ -16,6 +16,11 @@ set -euo pipefail
 #   strike comment. Strike 2 = auto-demote (card back to ready with the
 #   conflict note; the worker rerun rebases onto the new dev tip). A third
 #   strike = reconciler agent card instead of another retry.
+# - replay anomaly: the rebase zero-replayed the branch's unique commits
+#   (fork-point fast-forward, dev already carrying the same patches) or the
+#   merge degenerated to a two-parent-less no-op. Both are LOUD: evidence
+#   comment, card demoted to ready, branch kept. The train never reports
+#   "landed" without a real merge commit with the branch's patches in it.
 # - red gate: un-land (reset to the pre-pass tip), failure evidence
 #   comment, card back to ready. The rebased branch is KEPT - the red is
 #   the work's problem against dev, not the rebase's.
@@ -48,8 +53,9 @@ set -euo pipefail
 #   TRAIN_NO_PUSH=1            same as --no-push
 #
 # Exit codes: 0 landed (or empty queue), 2 usage/precondition, 3 rebase
-# strike (card stays queued), 4 demoted to ready, 5 third strike ->
-# reconciler card, 6 red gate -> card back to ready.
+# strike (card stays queued), 4 demoted to ready (rebase strikes, replay
+# anomalies, no-op merges), 5 third strike -> reconciler card, 6 red gate
+# -> card back to ready.
 
 BASE="dev"
 PUSH=1
@@ -244,7 +250,20 @@ fi
 
 # ---- rebase + merge ----------------------------------------------------
 
+# branch_patchids <start> <exclude> -> sorted patch-id list of the commits
+# unique to <start> vs <exclude>. The replay-parity guard compares this
+# before/after the rebase: a fork-point fast-forward or an already-in-dev
+# patch that zero-replays MUST show up as a parity break, never as a
+# silent empty landing.
+branch_patchids() {
+  local sha
+  for sha in $(git rev-list --no-merges --reverse "$1" "^$2"); do
+    git show "$sha" | git patch-id | awk '{print $1}'
+  done | sort
+}
+
 pre="$(git rev-parse HEAD)"
+pre_unique="$(branch_patchids "$bra" "$pre")"
 
 conflict_step() {
   # Conflicted file list comes FIRST - the abort wipes the index state.
@@ -274,16 +293,36 @@ conflict_step() {
 }
 
 git checkout -q "$bra" 2>/dev/null || die "cannot check out $bra locally"
-if ! git rebase "$BASE" >/dev/null 2>&1; then
+if ! git rebase --no-fork-point "$BASE" >/dev/null 2>&1; then
   git checkout -q "$BASE" 2>/dev/null || true
   conflict_step
 fi
 git checkout -q "$BASE"
+
+# Replay-parity: the rebase must have replayed exactly what the branch
+# had. A zero-replay (fork-point fast-forward, patch already on dev) would
+# otherwise flow into an "already up to date" merge and land nothing.
+post_unique="$(branch_patchids "$bra" "$pre")"
+if [ "$pre_unique" != "$post_unique" ]; then
+  pre_n="$(awk 'END{print NR}' <<<"$pre_unique")"
+  post_n="$(awk 'END{print NR}' <<<"$post_unique")"
+  note "rebase replay anomaly: branch carried $pre_n unique commits, $post_n replayed - aborting"
+  board_comment "$tid" "train: rebase replay anomaly on $bra rebased onto $BASE - branch carried $pre_n unique commits, $post_n were replayed. Landing ABORTED, the branch is kept, card back to ready with this evidence."
+  demote_card "$tid" "merge train: rebase replay anomaly ($pre_n unique commits zero-replayed). On $bra - verify the branch content against dev, then rerun."
+  exit 4
+fi
 if ! git merge --no-ff -q -m "Merge card $tid: $(cut -c1-60 <<<"$title") (work by $who)" "$bra" 2>/dev/null; then
   note "conflict at the merge stage (post-rebase)"
   conflict_step
 fi
 mergesha="$(git rev-parse HEAD)"
+if [ "$mergesha" = "$pre" ] || ! git rev-parse -q --verify "$mergesha^2" >/dev/null 2>&1; then
+  git reset -q --hard "$pre" >/dev/null 2>&1 || true
+  note "landing aborted: merge of $bra produced no two-parent merge commit (mergesha was $mergesha)"
+  board_comment "$tid" "train: the merge of $bra degenerated to a no-op (mergesha = $mergesha = pre-pass tip or single-parent). Landing ABORTED, dev untouched, card back to ready with this evidence."
+  demote_card "$tid" "merge train: no-op merge detected. On $bra - a real merge commit is required to land."
+  exit 4
+fi
 note "merge commit $mergesha"
 
 # ---- gates on the merged tree -----------------------------------------
@@ -380,17 +419,20 @@ note "gates green"
 
 have_origin() { git remote 2>/dev/null | grep -q '^origin$'; }
 
-if [ "$PUSH" = "1" ] && have_origin; then
-  git push -q origin "$BASE"
-fi
-
 # marker: refs/train/<seq>-<task_id> at the merge commit. Zero-padded seq
 # keeps refname sort == chronological order, which train-bisect walks on.
-last_ref="$(git for-each-ref --format='%(refname:short)' refs/train 2>/dev/null | sort | tail -1)"
+# FULL refnames only: %(refname:short) elides refs/ -> 'train/0001-x',
+# which once made the seq parse crash and reset the chain to 0001 forever
+# (found on the 2nd real landing). The marker is written BEFORE the push
+# so a landing never reaches origin without its marker.
+last_ref="$(git for-each-ref --format='%(refname)' refs/train 2>/dev/null | sort | tail -1)"
 last_num=0
 if [ -n "$last_ref" ]; then
-  tmp="${last_ref#refs/train/}"    # 0001-t_x -> 0001
-  tmp="${tmp%%-*}"
+  tmp="${last_ref##*/}"   # refs/train/0001-t_x -> 0001-t_x
+  tmp="${tmp%%-*}"        # -> 0001
+  case "$tmp" in
+    ''|*[!0-9]*) die "latest marker '$last_ref' carries no numeric seq - the marker chain is corrupted; resolve by hand, the train never guesses" ;;
+  esac
   last_num=$((10#$tmp))
 fi
 seq=$((last_num + 1))
@@ -398,6 +440,7 @@ s="$(printf '%04d' "$seq")"
 marker="refs/train/$s-$tid"
 git update-ref "$marker" "$mergesha"
 if [ "$PUSH" = "1" ] && have_origin; then
+  git push -q origin "$BASE"
   git push -q origin "refs/train/$s-$tid:refs/train/$s-$tid" \
     || echo "    (marker push refused - the marker is local; push refs/train/* by hand later)"
 fi
