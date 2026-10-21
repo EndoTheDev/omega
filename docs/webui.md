@@ -142,6 +142,9 @@ bash scripts/build.sh               # SPA generate + sync to http_channel/static
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```
 
+`stream_check.py` exit codes: 0 healthy (incremental chunks), 1 buffered
+(no incremental arrival), 2 no stream at all.
+
 **The test law: tests receive the signal shape production sends.** A
 unit test that unwraps a ref itself proves nothing — the auto-focus
 lesson (2026-10-20): shipped 100% dead with every gate green, because

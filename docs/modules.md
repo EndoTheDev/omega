@@ -9,4 +9,4 @@ For the full list of modules and how to write new ones, see
 [modules/README.md](../modules/README.md).
 
 For the module system architecture (Context, Plugin, MountAll),
-see [agent/AGENTS.md](../agent/AGENTS.md).
+see [architecture.md](architecture.md).
