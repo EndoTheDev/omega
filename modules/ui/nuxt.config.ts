@@ -75,11 +75,21 @@ export default defineNuxtConfig({
     })),
   ],
   nitro: {
+    // OMEGA_DEV_API retargets the proxy for a private verify lane (the
+    // drawer card's override, untouched); the paths cover every
+    // endpoint the SPA + the inspector's module panels fetch in dev
+    // (the module views are same-origin in production - embedded).
     devProxy: Object.fromEntries(
-      ["/health", "/models", "/tools", "/chat", "/sessions", "/tasks"].map(
+      [
+        "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
+        "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+      ].map(
         (p) => [
           p,
-          { target: process.env.OMEGA_DEV_API ?? "http://127.0.0.1:8098" + p },
+          // NOTE the parens: `??` binds looser than `+` - without them a
+          // set OMEGA_DEV_API swallowed the path and every proxied
+          // route fetched the target's SPA root (HTML instead of API)
+          { target: (process.env.OMEGA_DEV_API ?? "http://127.0.0.1:8098") + p },
         ],
       ),
     ),

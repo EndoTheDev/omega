@@ -1,5 +1,7 @@
 <template>
-  <ul class="files-tree">
+  <ul
+    class="files-tree"
+    :class="{ narrow: narrow ?? false }">
     <li
       v-for="entry in entries"
       :key="entry.name">
@@ -49,6 +51,7 @@
         :entries="childrenOf(entryPath(entry))"
         :base="entryPath(entry)"
         :depth="depth + 1"
+        :narrow="narrow"
         @open="(p) => emit('open', p)" />
       <p
         v-else-if="entry.is_dir && isLoading(entryPath(entry))"
@@ -83,6 +86,11 @@
     // path of the directory these entries belong to ("" = the root)
     base: string;
     depth: number;
+    // the module-UI narrow flag (card t_a2fdc630): passed DOWN by the
+    // measuring host (FilesTab) - a recursive child never observes its
+    // own width (each instance would measure its indent, not the pane);
+    // one measurable root owns the flip, descendants inherit it.
+    narrow?: boolean;
   }>();
 
   const emit = defineEmits<{ open: [path: string] }>();
@@ -208,3 +216,13 @@
     } else emit("open", path);
   }
 </script>
+
+<style scoped>
+  /* narrow (card t_a2fdc630): measured by the host (FilesTab passes the
+     flag down - never a per-instance observer, see the prop comment).
+     The size column is the first thing that stops fitting: gone under
+     narrow, the name keeps the full row. */
+  .files-tree.narrow .size {
+    display: none;
+  }
+</style>
