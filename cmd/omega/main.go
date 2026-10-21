@@ -63,6 +63,7 @@ Usage:
   omega update --rollback   swap back to omega.bak + verify it runs
   omega rollback            same as omega update --rollback
   omega health          check the server at the configured port
+  omega kanban          the task board registry (see: omega kanban --help)
 
 Flags:
   --config <path>       config file (default: <home>/config.yaml, or <home>/config/config.yaml)
@@ -112,6 +113,8 @@ func run(args []string) error {
 		return cmdRun(parseConfigFlag(rest), rest, trust)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
+	case "kanban":
+		return cmdKanban(rest)
 	case "export":
 		return cmdExport(parseConfigFlag(rest), rest)
 	case "insights":
@@ -254,7 +257,13 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Store.DBPath = datadir.DBPath(home, "omega.db")
 	}
 	if cfg.Kanban.DBPath == "kanban.db" {
-		cfg.Kanban.DBPath = datadir.DBPath(home, "kanban.db")
+		// the relative default resolves through the board registry:
+		// the pointer file names the board "" means (missing = "main")
+		dsn, derr := kanbanModule.PointerDSN(home)
+		if derr != nil {
+			return fmt.Errorf("kanban board registry: %w", derr)
+		}
+		cfg.Kanban.DBPath = dsn
 	}
 	if cfg.Skills.Dir == "skills" {
 		cfg.Skills.Dir = home + "/skills"

@@ -97,6 +97,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/tasks", s.handleTasks)
 	mux.HandleFunc("/tasks/{id}/comments", s.handleTaskComments)
 	mux.HandleFunc("/tasks/{id}", s.handleTaskByID)
+	mux.HandleFunc("/boards", s.handleBoards)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/tools", s.handleTools)
@@ -105,6 +106,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/themes", s.handleThemes)
+	mux.HandleFunc("/insights", s.handleInsights)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths

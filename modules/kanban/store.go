@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite"
 
@@ -20,12 +23,31 @@ var ErrNotFound = agent.ErrTaskNotFound
 // Store implements agent.KanbanProvider over SQLite. Safe for
 // concurrent use via *sql.DB (WAL + busy_timeout, same recipe as the
 // session store).
+//
+// Multi-board: one handle per board. db is the DEFAULT board ("" calls
+// land here - the pointer target resolved at mount); every other board
+// opens lazily from boardsDir/<name>/kanban.db and caches in named.
+// ConfigureBoards wires the registry when the host knows a home.
 type Store struct {
+	// db is the default board's handle (pointer-resolved at mount).
 	db *sql.DB
+
+	// board registry wiring (all optional; empty = single-board mode
+	// where any named board errors).
+	boardsDir  string
+	defaultName string // pointer target at mount ("" = unknown)
+	legacyDSN  string  // the main board's real path
+
+	mu    sync.Mutex
+	named map[string]*sql.DB
 }
 
-// Compile-time assertion that Store implements the kanban seam.
-var _ agent.KanbanProvider = (*Store)(nil)
+// Compile-time assertions: *Store implements the kanban seam plus the
+// optional board-registry capability.
+var (
+	_ agent.KanbanProvider = (*Store)(nil)
+	_ agent.BoardLister    = (*Store)(nil)
+)
 
 // Open opens (creating if needed) the board database at dsn and
 // ensures the schema exists. ":memory:" works for tests. A dsn inside
@@ -36,29 +58,169 @@ func Open(dsn string) (*Store, error) {
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
 	}
-	dsnParams := dsn
-	if !strings.Contains(dsn, "?") {
-		dsnParams += "?_journal_mode=WAL&_busy_timeout=5000"
-	} else if !strings.Contains(dsn, "_journal_mode=") {
-		dsnParams += "&_journal_mode=WAL&_busy_timeout=5000"
-	}
-	db, err := sql.Open("sqlite", dsnParams)
+	db, err := openDB(dsn)
 	if err != nil {
 		return nil, err
 	}
 	s := &Store{db: db}
-	if err := s.migrate(); err != nil {
+	if err := s.migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-// Close releases the database handle.
-func (s *Store) Close() error { return s.db.Close() }
+// openDB is the dsn-widening + sql.Open step, shared by Open and the
+// lazy per-board open.
+func openDB(dsn string) (*sql.DB, error) {
+	dsnParams := dsn
+	if !strings.Contains(dsn, "?") {
+		dsnParams += "?_journal_mode=WAL&_busy_timeout=5000"
+	} else if !strings.Contains(dsnParams, "_journal_mode=") {
+		dsnParams += "&_journal_mode=WAL&_busy_timeout=5000"
+	}
+	db, err := sql.Open("sqlite", dsnParams)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
 
-func (s *Store) migrate() error {
-	_, err := s.db.Exec(`
+// ConfigureBoards wires the multi-board registry. Called by the plugin
+// Mount with the home-derived values; tests may call it directly. The
+// default board ("" board arg) is the handle Open made; defaultName
+// names it for Boards(), legacyDSN lets "main" resolve even when the
+// pointer points elsewhere.
+func (s *Store) ConfigureBoards(boardsDir, defaultName, legacyDSN string) {
+	s.boardsDir = boardsDir
+	s.defaultName = defaultName
+	s.legacyDSN = legacyDSN
+	s.mu.Lock()
+	s.named = map[string]*sql.DB{}
+	s.mu.Unlock()
+}
+
+// handleFor resolves a board name to its store handle. "" and the
+// mount-time pointer target land on the default handle; "main" opens
+// the legacy dsn when the pointer points elsewhere; other valid names
+// open lazily from the registry directory. Unknown or illegal boards
+// error at the door - the store never auto-creates a named board.
+func (s *Store) handleFor(board string) (*sql.DB, error) {
+	if board == "" || board == s.defaultName {
+		return s.db, nil
+	}
+	if !ValidBoardName(board) {
+		return nil, fmt.Errorf("illegal board name %q", board)
+	}
+	s.mu.Lock()
+	if s.named == nil {
+		s.named = map[string]*sql.DB{}
+	}
+	if db, ok := s.named[board]; ok {
+		s.mu.Unlock()
+		return db, nil
+	}
+	s.mu.Unlock()
+
+	var dsn string
+	switch {
+	case board == DefaultBoardName:
+		if s.legacyDSN == "" {
+			return nil, fmt.Errorf("board %q is not available", board)
+		}
+		dsn = s.legacyDSN
+	case s.boardsDir == "":
+		return nil, fmt.Errorf("named boards not configured")
+	default:
+		dsn = filepath.Join(s.boardsDir, board, "kanban.db")
+		if _, err := os.Stat(dsn); err != nil {
+			return nil, fmt.Errorf("no such board %q", board)
+		}
+	}
+
+	db, err := openDB(dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	s.mu.Lock()
+	if s.named == nil {
+		s.named = map[string]*sql.DB{}
+	}
+	if existing, ok := s.named[board]; ok { // raced to the same draw
+		s.mu.Unlock()
+		db.Close()
+		return existing, nil
+	}
+	s.named[board] = db
+	s.mu.Unlock()
+	return db, nil
+}
+
+// Boards implements agent.BoardLister: the default board first, then
+// the registry directories that hold a kanban.db.
+func (s *Store) Boards(ctx context.Context) ([]agent.BoardInfo, error) {
+	out := []agent.BoardInfo{{Name: DefaultBoardName, Current: s.currentName() == DefaultBoardName || s.defaultName == ""}}
+	if s.boardsDir == "" {
+		return out, nil
+	}
+	entries, err := os.ReadDir(s.boardsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return out, nil
+		}
+		return nil, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == DefaultBoardName {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(s.boardsDir, e.Name(), "kanban.db")); err != nil {
+			continue
+		}
+		out = append(out, agent.BoardInfo{Name: e.Name(), Current: e.Name() == s.defaultName})
+	}
+	return out, nil
+}
+
+// currentName reports the pointer name the default handle represents
+// (empty when the host never wired a registry).
+func (s *Store) currentName() string {
+	if s.defaultName == "" {
+		return DefaultBoardName
+	}
+	return s.defaultName
+}
+
+// Close releases the database handles.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	named := make([]*sql.DB, 0, len(s.named))
+	for _, db := range s.named {
+		named = append(named, db)
+	}
+	s.named = nil
+	s.mu.Unlock()
+	var firstErr error
+	for _, db := range named {
+		if err := db.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if err := s.db.Close(); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
+}
+
+// migrate ensures the schema on any board's handle. Task, comment and
+// event tables are identical on every board (isolation is by handle,
+// not by column).
+func (s *Store) migrate(db *sql.DB) error {
+	_, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS tasks (
 	id           TEXT PRIMARY KEY,
 	title        TEXT NOT NULL,
@@ -92,9 +254,10 @@ CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
 	return err
 }
 
-// CreateTask inserts a task. ID, Status (default triage) and
-// CreatedAt are filled by the store; title must be non-empty.
-func (s *Store) CreateTask(ctx context.Context, in agent.KanbanTask) (agent.KanbanTask, error) {
+// CreateTask inserts a task on the named board ("" = default). ID,
+// Status (default triage) and CreatedAt are filled by the store;
+// title must be non-empty.
+func (s *Store) CreateTask(ctx context.Context, board string, in agent.KanbanTask) (agent.KanbanTask, error) {
 	if strings.TrimSpace(in.Title) == "" {
 		return agent.KanbanTask{}, fmt.Errorf("task title is required")
 	}
@@ -105,11 +268,15 @@ func (s *Store) CreateTask(ctx context.Context, in agent.KanbanTask) (agent.Kanb
 	if !IsStatus(status) {
 		return agent.KanbanTask{}, fmt.Errorf("illegal status %q", status)
 	}
+	db, err := s.handleFor(board)
+	if err != nil {
+		return agent.KanbanTask{}, err
+	}
 	for range 5 {
 		in.ID = newTaskID()
 		in.Status = status
 		in.CreatedAt = now()
-		_, err := s.db.ExecContext(ctx, `
+		_, err := db.ExecContext(ctx, `
 INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			in.ID, in.Title, in.Body, in.Assignee, in.Status,
@@ -120,7 +287,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			}
 			return agent.KanbanTask{}, err
 		}
-		if err := s.recordEvent(ctx, in.ID, "created", describeNew(in)); err != nil {
+		if err := recordEvent(ctx, db, in.ID, "created", describeNew(in)); err != nil {
 			return agent.KanbanTask{}, err
 		}
 		return in, nil
@@ -140,8 +307,13 @@ func describeNew(t agent.KanbanTask) string {
 	return detail
 }
 
-// ListTasks returns tasks newest first. Empty status lists every task.
-func (s *Store) ListTasks(ctx context.Context, status string) ([]agent.KanbanTask, error) {
+// ListTasks returns tasks on the named board, newest first. Empty
+// status lists every task.
+func (s *Store) ListTasks(ctx context.Context, board, status string) ([]agent.KanbanTask, error) {
+	db, err := s.handleFor(board)
+	if err != nil {
+		return nil, err
+	}
 	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks`
 	args := []any{}
 	if status != "" {
@@ -152,7 +324,7 @@ func (s *Store) ListTasks(ctx context.Context, status string) ([]agent.KanbanTas
 		args = append(args, status)
 	}
 	query += " ORDER BY created_at DESC, id DESC"
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,9 +350,13 @@ func scanTask(row interface{ Scan(...any) error }) (*agent.KanbanTask, error) {
 	return &t, nil
 }
 
-// GetTask returns one task by id.
-func (s *Store) GetTask(ctx context.Context, id string) (agent.KanbanTask, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ?`, id)
+// GetTask returns one task by id on the named board.
+func (s *Store) GetTask(ctx context.Context, board, id string) (agent.KanbanTask, error) {
+	db, err := s.handleFor(board)
+	if err != nil {
+		return agent.KanbanTask{}, err
+	}
+	row := db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ?`, id)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return agent.KanbanTask{}, ErrNotFound
@@ -192,8 +368,12 @@ func (s *Store) GetTask(ctx context.Context, id string) (agent.KanbanTask, error
 }
 
 // GetTaskComments returns the comment thread, oldest first.
-func (s *Store) GetTaskComments(ctx context.Context, taskID string) ([]agent.KanbanComment, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func (s *Store) GetTaskComments(ctx context.Context, board, taskID string) ([]agent.KanbanComment, error) {
+	db, err := s.handleFor(board)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, `
 SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = ? ORDER BY id`, taskID)
 	if err != nil {
 		return nil, err
@@ -211,8 +391,12 @@ SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = 
 }
 
 // GetTaskEvents returns the audit trail, oldest first.
-func (s *Store) GetTaskEvents(ctx context.Context, taskID string) ([]agent.KanbanEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func (s *Store) GetTaskEvents(ctx context.Context, board, taskID string) ([]agent.KanbanEvent, error) {
+	db, err := s.handleFor(board)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, `
 SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? ORDER BY id`, taskID)
 	if err != nil {
 		return nil, err
@@ -230,18 +414,22 @@ SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? 
 }
 
 // AddComment appends to the thread and writes the comment event.
-func (s *Store) AddComment(ctx context.Context, taskID, author, body string) (agent.KanbanComment, error) {
+func (s *Store) AddComment(ctx context.Context, board, taskID, author, body string) (agent.KanbanComment, error) {
 	if strings.TrimSpace(body) == "" {
 		return agent.KanbanComment{}, fmt.Errorf("comment body is required")
 	}
 	if author == "" {
 		author = "user"
 	}
-	// the FK needs a live task; GetTask also answers ErrNotFound cleanly
-	if _, err := s.GetTask(ctx, taskID); err != nil {
+	db, err := s.handleFor(board)
+	if err != nil {
 		return agent.KanbanComment{}, err
 	}
-	res, err := s.db.ExecContext(ctx, `
+	// the FK needs a live task; GetTask also answers ErrNotFound cleanly
+	if _, err := s.GetTask(ctx, board, taskID); err != nil {
+		return agent.KanbanComment{}, err
+	}
+	res, err := db.ExecContext(ctx, `
 INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)`,
 		taskID, author, body, now())
 	if err != nil {
@@ -252,16 +440,21 @@ INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?
 		return agent.KanbanComment{}, err
 	}
 	c := agent.KanbanComment{ID: id, TaskID: taskID, Author: author, Body: body, CreatedAt: now()}
-	err = s.recordEvent(ctx, taskID, "comment", "author "+author)
+	err = recordEvent(ctx, db, taskID, "comment", "author "+author)
 	return c, err
 }
 
 // UpdateTask applies the patch and writes the audit events. Any status
 // may move to any other (legal) status; moving INTO done stamps
 // completed_at, moving OUT of a settled status clears it; moving INTO
-// running stamps started_at once.
-func (s *Store) UpdateTask(ctx context.Context, taskID string, patch agent.KanbanPatch) (agent.KanbanTask, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+// running stamps started_at once. The board argument selects which
+// board holds the task - patches cannot move a task across boards.
+func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch agent.KanbanPatch) (agent.KanbanTask, error) {
+	db, err := s.handleFor(board)
+	if err != nil {
+		return agent.KanbanTask{}, err
+	}
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return agent.KanbanTask{}, err
 	}

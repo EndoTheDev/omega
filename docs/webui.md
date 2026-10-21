@@ -1,0 +1,200 @@
+# Web UI Reference
+
+The omega web interface: a Nuxt 4 single-page app with a dock-based
+shell (VS Code-style: menu bar, persisted pane tree, status bar). In
+dev it runs via `nuxt dev` with a nitro devProxy to the dev omega on
+`127.0.0.1:8098`. In production the built SPA is embedded into the
+omega binary via `go:embed` and served by the HTTP channel at `/`. An
+installed instance owns port 8099; the dev tree's omega serves 8098.
+The two never touch each other.
+
+Source of truth: `modules/ui/` (contracts below), `modules/http_channel/static/`
+(the committed built bundle), and the wire contract in [api.md](api.md).
+
+## Design tokens
+
+Tokens live in `assets/css/main.css` — no component invents colors.
+
+- Accent: `#E8833A` (the single accent).
+- `--unread` is an **unread-ONLY semantic color** — never reuse it for a
+  generic highlight.
+- Radii: 8px (panes) / 6px (cards) / 4px (chips).
+- Type: Public Sans (UI) + JetBrains Mono (code).
+- Theme overrides: YAML files in `<home>/themes/` (one per theme,
+  token overrides, `base:` + `name:`). Served by the HTTP channel
+  (`GET /themes`, hot-reloaded from the folder poll), applied live from
+  the theme picker. Overrides are allowed on the color tokens + two
+  layer shadows only — radii and fonts are deliberately not
+  overridable (v1 is recoloring, not restyling, and tokens map 1:1 to
+  module components' styling, so overrides recolor modules for free).
+  New tokens must carry a sane default in main.css.
+
+## Geometry contracts
+
+Constants in `main.css`. They are contracts, not suggestions — tuned
+over many measured rounds, and changing one requires re-checking all
+the others:
+
+| Constant          | Value   |
+| ----------------- | ------- |
+| MenuBar height    | 35px    |
+| StatusBar height  | 29px    |
+| Chat floor        | 320px   |
+| Gutter (divider)  | 8px     |
+| Mobile breakpoint | 768px   |
+
+The gutter divider retains magnetic snap rebase mechanics
+(`PaneDivider`).
+
+## The dock model
+
+- **The shell is a pane tree, not fixed slots.** `composables/dock.ts`
+  owns the persisted tree (splits + panes, under the desktop
+  persistence key); `DockSplit`/`DockPane`/`DockDivider` render it. A
+  bare pane can be the tree root (all sidebars closed) — the renderer
+  has an explicit single-pane root branch. A tree with zero panes is a
+  bug, not a state.
+- **Pane model**: left sidebar = sessions pane (pinned singleton, no
+  X); right sidebar = inspector pane with the fixed module tabs (Files,
+  Cron, Logs, Skills, Tools, Settings, Kanban — no X); middle = main
+  pane. The main pane is the last-unclosable pane: the shell always
+  keeps >= 1 pane; the X on main shows on hover and only when more than
+  one pane exists.
+- **Sessions lock to the primary sidebar** — open a session or hit `new`
+  and it opens in the MAIN pane, focusing the existing tab instead of
+  reopening.
+- **Dockables** (`composables/dockables.ts`): the registry of openable
+  domains (sidebar, inspector, chat, settings). Settings is a dock-tab
+  singleton; the menubar gear and the `+`-menu entry are gone.
+- **Tab drag-and-drop** moves tabs between panes; sessions stay in the
+  sidebar.
+- **Module-owned UI (build-time composition)**: modules ship UI in
+  `modules/<name>/ui/`; `nuxt.config.ts` composes them by array —
+  `app/composables/module-panels.generated.ts` is generated at build
+  time and there is NO runtime registry. `modules/tools/ui/ToolsList.vue`
+  is the canary.
+
+## Streaming + rendering rules
+
+- Streaming renders **chronologically**. A tool phase ends the current
+  response segment; text after tools is a fresh bubble (mirrors
+  `accumulateAssistant` in the backend — same boundary, both sides).
+  Thinking blocks accumulate per reasoning run; tool results attach to
+  their calls by `tool_call_id`, not position.
+- Stack mode: every block renders full width on the background;
+  thinking strips de-card on dark. Order never changes — live-pin is
+  scroll + sticky layout, not render order.
+- Statusbar telemetry is honest: the token counter ticks per chunk
+  (chars/4 estimate, corrected by real usage at stream end); live
+  chunks/s comes from real arrival times.
+- Scroll pinning follows only the stream whose session is being
+  viewed; the `pinned` flag changes only on real scroll events — never
+  re-measure after appending.
+- Retry is regenerate-in-place via the server: `POST /chat {"retry":
+  true}` re-runs the session's LAST user message as a sibling variant
+  without persisting a duplicate user bubble; a cancelled/partial
+  response stays visible and the new response appends below. Client-side
+  `dropLastExchange` transcript surgery is RETIRED — never reintroduce it.
+- Vue reactivity trap (bit once, live-proven): after pushing an item
+  into the reactive transcript, re-capture the reactive proxy
+  (`st.transcript[len-1]`) before mutating it — raw-ref mutations
+  bypass the proxy and never re-render. This is the stuck-cursor /
+  ticking-timer bug class.
+- Error payloads in the SSE driver THROW (`composables/omega.ts`) — a
+  swallowed stream error is an invisible dead stream.
+
+## Component map
+
+- `app.vue` — orchestrator: open/create routing (open in the main pane,
+  focus-existing), URL sync (`/chat/<id>` vs `/`), scroll pinning,
+  stacked-mode layout, live telemetry, tab-title spinner.
+- `composables/chat.ts` — the stream driver (per-tab state incl. image
+  attach). `composables/omega.ts` — typed API client: SSE
+  `parseFrame`/`handlePayload`, `streamChat` (throws
+  `StreamInterruptedError` when the reader errors or ends without
+  `agent_end`), sessions CRUD + pinned/read PATCH + archive/unarchive,
+  search, transcript fetch, files browse/read, image attach,
+  `renderMarkdown` (markdown-it, `html: false` — the lib's default
+  escaping is the sanitizer), `createRenderScheduler`.
+- Shell: `MenuBar` (brand, toggles), `StatusBar` (health dot,
+  token/ctx/rate telemetry, build version + uptime), `SearchInput`,
+  `PaneDivider`.
+- Chat: `AppComposer` (auto-grow textarea, ONE morphing action button —
+  send/stop/retry, draft beats retry, `+` opens the file picker,
+  attach-strip with image thumbnails, paste + paperclip attach),
+  `ModelSelect` + `ThinkingSelect` (custom listboxes — a native
+  `<select>` popup is OS chrome that cannot be themed), `ChatMessage`,
+  `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
+  result), `ChatTab` (transcript + composer, live-pin layout),
+  `ChatItem`.
+- Sessions: `AppSidebar` (search, pinned section, day buckets, per-row
+  pin/status affordance, archive/trash hover actions, branch/rename/
+  export row actions, archived group).
+- Files: `FileTree`, `FilesTab`, `InspectorPanel` (module panels slot
+  in). Settings: `SettingsTab` (the config knobs as a dock-tab
+  singleton).
+
+## Testing
+
+```bash
+node --test "test/*.test.ts"        # from modules/ui — node's built-in runner
+bash scripts/build.sh               # SPA generate + sync to http_channel/static
+python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
+```
+
+`stream_check.py` exit codes: 0 healthy (incremental chunks), 1 buffered
+(no incremental arrival), 2 no stream at all.
+
+**The test law: tests receive the signal shape production sends.** A
+unit test that unwraps a ref itself proves nothing — the auto-focus
+lesson (2026-10-20): shipped 100% dead with every gate green, because
+the test compared a `Ref` against its `.value` string, a signal-shape
+mismatch that passes every gate including the health check. Same
+family: a ReferenceError in a setup script passes every gate and only a
+render catches it (the NUXT_E1005 lesson: `go test` and `node --test`
+never see it, vue strips types, and no template check runs). Tests bind
+at the production boundary or they do not exist.
+
+Notable suites: `interrupted.test.ts` (transport-death detection + transcript
+transitions), `composer-retry.test.ts` (the morphing button), `panemodel.test.ts`
+(the pane invariants), `dock.test.ts`/`dockables.test.ts`/`panes.test.ts`
+(tree model), `composition.test.ts` (module UI composition),
+`themes.test.ts`, `images.test.ts`, `stacked.test.ts`,
+`reattach.test.ts` (stream reattach via runHub events).
+
+## The embed lane
+
+- The built SPA is COMMITTED: `modules/http_channel/static/` is
+  tracked, so `go install` and plain `go build` always produce the
+  complete product. Webui cards commit **SOURCE ONLY**; the merge pass
+  runs `scripts/embed-lane.sh`, which owns every `static/` commit.
+- `scripts/build.sh` runs `nuxt generate` (NOT `nuxt build` — an
+  ssr:false `nuxt build` emits a nitro server; generate emits the
+  static SPA) and syncs to `../http_channel/static/`. Run it before
+  `go build`.
+- Never hand-resolve `static/` conflicts — regenerate.
+
+### Poisoned-bundle diagnosis
+
+Conflict markers appearing in the SERVED UI = the SPA was built from
+conflicted/stash-poisoned source (the build gate refuses to ship that,
+but a manual build can slip one through). Diagnosis: grep the SERVED
+content, never source strings — `grep -r` over the served CSS/module
+files (find-based, conflict-marker pattern), then regenerate via
+`scripts/build.sh`, re-serve, and verify the regenerated bundle came
+out clean. A grep against the `.vue` sources will lie to you.
+
+## Work guidance
+
+- The visual feedback loop is the user's screenshots + the in-app
+  comment system (headless-browser checks blocked on missing Chromium
+  deps on the Pi; a real browser session works). In-app comment rounds
+  keep scope narrow — never split one DOM group across changes.
+- Verify SERVED content, never source strings.
+- Vite dev-server cache ghosts are real: on mismatch, restart the dev
+  server and hard-refresh before debugging.
+
+## Related
+
+- [api.md](api.md) — the HTTP wire the webui rides
+- [tui.md](tui.md) — the TUI equivalent of this surface

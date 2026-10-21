@@ -15,7 +15,10 @@ import {
   columns,
   isBoardPath,
   isSettled,
+  pickBootBoard,
   step,
+  withBoard,
+  type BoardInfo,
   type BoardTask,
 } from "../../kanban/ui/board/boardLogic.ts";
 
@@ -126,4 +129,37 @@ test("board view ships module-owned and the shell mounts it", () => {
     readFileSync(join(uiRoot, "app", "composables", "omega.ts"), "utf8"),
     /mainViewModules = new Set<string>\(\["kanban"\]\)/,
   );
+});
+// --- board switcher (card t_d7a7beaa): named boards, pointer boot, URL wiring
+
+test("withBoard: appends the picker, keeps existing queries, passes empty through", () => {
+  assert.equal(withBoard("/tasks", "alpha"), "/tasks?board=alpha");
+  assert.equal(withBoard("/tasks?status=todo", "alpha"), "/tasks?status=todo&board=alpha");
+  assert.equal(withBoard("/tasks", ""), "/tasks"); // server default
+  assert.equal(withBoard("/tasks", "  "), "/tasks");
+  assert.equal(withBoard("/tasks/t_1/comments", "my_2nd"), "/tasks/t_1/comments?board=my_2nd");
+  // names are path-safe payloads: encoded, never raw
+  assert.equal(withBoard("/tasks", "a b"), "/tasks?board=a%20b");
+});
+
+test("pickBootBoard: current flagged row wins, first row is the fallback", () => {
+  const registry = (rows: BoardInfo[]) => rows;
+  assert.equal(pickBootBoard(registry([{ name: "main", current: false }, { name: "alpha", current: true }])), "alpha");
+  assert.equal(pickBootBoard(registry([{ name: "alpha", current: false }])), "alpha"); // no flag: first row
+  assert.equal(pickBootBoard(registry([])), ""); // empty registry: no switcher
+  assert.equal(pickBootBoard(undefined as unknown as BoardInfo[]), ""); // noisy payload
+});
+
+test("board view wires the switcher through every board call", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /id="board-switcher"/, "the dropdown exists");
+  assert.match(boardVue, /fetch\(withBoard\("\/tasks", boardName\.value\)\)/, "list calls carry ?board=");
+  assert.match(boardVue, /fetchBoards\(\)/, "boot reads the registry");
+  assert.match(boardVue, /selected\.value = null/, "the drawer resets on board switch");
+  // every task fetch goes through withBoard - no raw /task path left behind
+  const rawTaskFetches = boardVue.match(/fetch\(`?\/tasks/g) ?? [];
+  assert.equal(rawTaskFetches.length, 0, "all fetches must be withBoard-wrapped");
+  // the drawer (inspector) has no self-contained fetch: it receives props
+  const drawer = readFileSync(join(uiRoot, "..", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
+  assert.doesNotMatch(drawer, /fetch\(/, "the inspector follows the switch via props");
 });

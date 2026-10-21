@@ -886,6 +886,51 @@ export function fetchFilesRead(path: string): Promise<FilesReadPayload> {
   return filesQuery(`/files/read?path=${encodeURIComponent(path)}`);
 }
 
+// --- insights (card t_e1e61680): the webui's /insights parity ---
+// The payload mirrors the TUI's /insights report: overview counts, a
+// per-tool breakdown, and weekday activity. The wire shape is the
+// handler's insightsPayload (modules/http_channel/server_insights.go).
+export interface InsightsToolRow {
+  name: string;
+  count: number;
+}
+
+export interface InsightsDayRow {
+  day: string;
+  count: number;
+}
+
+export interface InsightsNotable {
+  value: number;
+  detail: string;
+}
+
+export interface InsightsPayload {
+  period: string;
+  period_start: string;
+  period_end: string;
+  days: number;
+  sessions: number;
+  messages: number;
+  user_messages: number;
+  tool_calls: number;
+  total_tokens: number;
+  avg_session_msgs: number;
+  tools: InsightsToolRow[];
+  daily: InsightsDayRow[];
+  notable_msgs: InsightsNotable;
+  notable_tokens: InsightsNotable;
+  notable_tools: InsightsNotable;
+}
+
+// fetchInsights reads the cross-session usage analytics. days mirrors
+// the TUI command's arg semantics: null = the server default (30),
+// 0 = all time.
+export function fetchInsights(days: number | null = null): Promise<InsightsPayload> {
+  const suffix = days === null ? "" : `?days=${days}`;
+  return filesQuery(`/insights${suffix}`);
+}
+
 // --- message hover timestamps ---
 
 const MONTHS = [

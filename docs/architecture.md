@@ -9,7 +9,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Agent    | `agent`     | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)                                       |
 | Provider | `ai`        | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                                                    |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | 17 in-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban |
+| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban (17) + `ui`, the Nuxt webui source |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -25,9 +25,11 @@ cmd/omega/        Single binary entry point (serve, run, health, chat, update)
 cmd/omega/examples/  Config templates, embedded for first-run bootstrap
 ai/               Provider abstraction, stream events, message types, retry
 agent/            Multi-turn loop, tool execution, seams, Plugin system
-modules/        In-process module packages (15 modules, compiled into omega)
+modules/         In-process module packages (17 modules, compiled into omega)
 modules/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
-modules/ui        webui - Nuxt 4 SPA (see modules/ui/AGENTS.md); built output embedded into the binary
+modules/ui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
+docs/             User documentation (cli.md, api.md, webui.md, tui.md,
+                  configuration.md, architecture.md, troubleshooting.md, roadmap.md)
 deploy/           Install artifacts (omega.service systemd unit)
 .agents/          Commit conventions (COMMIT.md)
 build.sh          Build script (Linux/macOS): vet + test + build
