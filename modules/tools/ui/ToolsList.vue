@@ -1,5 +1,8 @@
 <template>
-  <section class="tools-list">
+  <section
+    ref="rootEl"
+    class="tools-list"
+    :class="{ narrow: narrow }">
     <h3 class="panel-title">tools</h3>
     <p
       v-if="error"
@@ -44,7 +47,8 @@
 </template>
 
 <script setup lang="ts">
-  import { onMounted, ref } from "vue";
+  import { onBeforeUnmount, onMounted, ref } from "vue";
+  import { isNarrowWidth } from "./narrow";
 
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
   // content (card t_db430fea): the tool inventory, sourced from
@@ -69,6 +73,41 @@
   const tools = ref<ToolInfo[]>([]);
   const loaded = ref(false);
   const error = ref("");
+
+  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
+  // root measures its OWN rendered container and flips the class; the
+  // scoped stylesheet below condenses the domain-tool sub-row
+  // indentation too (it is the widest thing here at ~300px). Same
+  // mechanism as the shell's useNarrow - kept in-module because module
+  // UI imports no shell code (Board precedent); the threshold is
+  // unit-covered in ./narrow.ts.
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
+    // (same rAF deferral as the shell's useNarrow: the flip changes the
+    // observed layout itself, so the callback must not mutate this frame)
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(rootEl.value);
+    // mount measures NOW: a tab remount in place produces no further
+    // resize entry, so the class must not wait for the next width
+    // change (the shell's useNarrow does the same on mount)
+    narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   onMounted(async () => {
     try {
@@ -145,5 +184,18 @@
     content: "\00b7\2002";
     font-weight: 400;
     opacity: 0.4;
+  }
+  /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome:
+     the action sub-rows lose most of their indent (memory.add style
+     dotted paths keep the domain readable without it) and the title
+     drops a step. */
+  .tools-list.narrow {
+    padding: 6px 8px 10px;
+  }
+  .tools-list.narrow .tools-actions {
+    margin-left: 4px;
+  }
+  .tools-list.narrow .tools-name {
+    font-size: 11.5px;
   }
 </style>

@@ -1,5 +1,8 @@
 <template>
-  <section class="logs-list">
+  <section
+    ref="rootEl"
+    class="logs-list"
+    :class="{ narrow: narrow }">
     <p
       v-if="error"
       class="panel-status">
@@ -35,6 +38,7 @@
 
 <script setup lang="ts">
   import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { isNarrowWidth } from "./narrow";
 
   // Transport-owned UI (card t_db430fea): the tail of the omega log
   // the channel's server itself writes, from GET /logs?lines=200, and
@@ -52,6 +56,41 @@
   const loaded = ref(false);
   const error = ref("");
   const bodyEl = ref<HTMLElement | null>(null);
+
+  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
+  // root measures its OWN rendered container and flips the class; the
+  // scoped stylesheet below condenses (log lines carry long mono
+  // paths - at ~300px the padding is dead weight). Same mechanism as
+  // the shell's useNarrow - kept in-module because module UI imports
+  // no shell code (Board precedent); threshold unit-covered in
+  // ./narrow.ts.
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
+    // (same rAF deferral as the shell's useNarrow: the flip changes the
+    // observed layout itself, so the callback must not mutate this frame)
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(rootEl.value);
+    // mount measures NOW: a tab remount in place produces no further
+    // resize entry, so the class must not wait for the next width
+    // change (the shell's useNarrow does the same on mount)
+    narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -132,5 +171,18 @@
     padding: 4px 12px 8px;
     font-size: 10px;
     opacity: 0.45;
+  }
+  /* narrow: the module-UI recipe (card t_a2fdc630) - the tail's mono
+     lines are widest at the top of the file; recovering the horizontal
+     padding gives every long line less wrap, not more. */
+  .logs-list.narrow .panel-status,
+  .logs-list.narrow .logs-body {
+    padding: 6px 8px;
+  }
+  .logs-list.narrow .logs-line {
+    font-size: 10px;
+  }
+  .logs-list.narrow .logs-meta {
+    padding: 3px 8px 6px;
   }
 </style>
