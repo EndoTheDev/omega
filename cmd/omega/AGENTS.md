@@ -23,16 +23,27 @@ The TUI is now an extension at `modules/tui/` implementing the
   `resolveSessionCLI`; role mapping via `ai.MessageRole`)
 - `insights.go` - session analytics (`cmdInsights`); formatting
   via `agent.FormatInsights` / `agent.FormatNumber`
-- `update.go` - self-update (`cmdUpdate`, `githubRelease`,
-  `findAsset`, `assetNameForOS`, `findChecksumURL`, `verifyChecksum`).
-  Archive-based: downloads zip/tar.gz, verifies SHA256 checksum,
-  extracts the omega binary + extension data
-  files + config/mcp examples. Progress bar during download. Skips when already
-  up to date. Preserves user config files. Security: `safeJoin` validates
+- `update.go` - self-update (`cmdUpdate`, `cmdRollback`,
+  `githubRelease`, `findAsset`, `assetNameForOS`, `findChecksumURL`,
+  `verifyChecksum`). Archive-based: downloads zip/tar.gz, verifies
+  SHA256 checksum, extracts the omega binary + extension data
+  files + config/mcp examples. Progress bar during download. Skips
+  when already up to date. Preserves user config files. Channels:
+  stable by default (prerelease tags are invisible to it);
+  `--nightly` selects the newest prerelease tag. Semver compare
+  gates upgrades - a downgrade needs `--allow-downgrade`. Every
+  update writes `omega.bak` next to the replaced binary;
+  `rollback` swaps it back and health-checks the result.
+  Security: `safeJoin` validates
   archive entries stay within dest (CWE-22 path traversal prevention),
   `io.LimitReader` caps zip reads at 200MB and API responses at 1MB,
   checksum verification before extraction, `verifyChecksum` fetch with
   30s timeout, atomic binary replacement via temp+rename on Linux/macOS.
+- `semver.go` - semver parse + precedence for update channels
+  (prerelease sorts below its stable base; numeric compare)
+- `update_channel_test.go` + `update_rollback_test.go` +
+  `semver_test.go` - channel selection, rollback, and semver
+  precedence self-check tests
 - `checksum.go` - release checksum verification (`findChecksumURL`,
   `verifyChecksum` with SHA256 + 30s timeout)
 - `home.go` - install bootstrap and home resolution:
@@ -74,7 +85,8 @@ The TUI is now an extension at `modules/tui/` implementing the
 ## Local Contracts
 
 - **Subcommands are the only entry surface.** `omega` dispatches:
-  `serve`, `run`, `health`, `chat`, `export`, `update`, `insights`.
+  `serve`, `run`, `health`, `chat`, `export`, `update`, `insights`,
+  `rollback`.
   `--config` and `--append-system-prompt` are
   global flags, parsed before or after the subcommand.
   `--append-system-prompt` is repeatable; each value is appended to the
@@ -137,7 +149,7 @@ level}]`, level `exact` or `parent`). `--approve`/`--no-approve` are
   (self-contained subdirectory layout) + config/mcp examples to a temp
   dir, then replaces the running binary and updates extension data files. Preserves
   user config files. Progress bar during download. Skips when already
-  up to date. On Windows the running exe is renamed to `.old` first.
+  up to date. On Windows the running exe is renamed to `.bak` first.
   SHA256 checksum verification on self-update via `checksums.txt`. Security hardening:
   `safeJoin` prevents path traversal from malicious archive entries
   (CWE-22), `io.LimitReader` caps downloads and API responses to prevent
