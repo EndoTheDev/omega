@@ -28,9 +28,13 @@ var webuiFS, _ = fs.Sub(staticFS, "static")
 
 // Server exposes the agent over HTTP with SSE streaming.
 type Server struct {
-	agent    *agent.Agent
-	tools    map[string]agent.Tool
-	runs     runHub // detached /chat runs by session id (reattach surface)
+	agent *agent.Agent
+	tools map[string]agent.Tool
+	runs  runHub // detached /chat runs by session id (reattach surface)
+	// eph is the no-persist (ephemeral) session registry: `eph-` ids
+	// live here, never in the store - invisible to every store-derived
+	// surface, gone at restart (card t_d96a5cd5).
+	eph      ephRegistry
 	store    agent.StoreProvider
 	settings agent.Settings
 	// Kanban is the optional board seam (modules/kanban). A nil value
@@ -270,6 +274,13 @@ type chatRequest struct {
 	// user is the head; continuations / tool results chain off the
 	// leaf). Unexported: never part of the request wire.
 	branchParent string
+	// Ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no
+	// store row, nothing on disk; the `eph-` id (carried on the leading
+	// `session` frame) lives in the server's in-memory registry until
+	// its DELETE (close = gone) or restart. Retry/fork are refused
+	// (400): both replay the persisted tree, which ephemeral sessions
+	// never have. The memory tool never runs in an ephemeral session.
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 // assistantRecord accumulates one response segment of an assistant turn
@@ -401,6 +412,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fork and retry are mutually exclusive", http.StatusBadRequest)
 		return
 	}
+	// Replay turns need the persisted tree; an ephemeral session never
+	// has one. The webui hides both affordances on an ephemeral tab -
+	// this is the wire-level backstop.
+	if req.Ephemeral && (req.Retry || req.Fork != "") {
+		http.Error(w, "retry/fork are not available in ephemeral sessions", http.StatusBadRequest)
+		return
+	}
 
 	// Auto-create: a /chat without session_id IS a new session now
 	// (Endo 2026-10-18: /chat is always durable, the webui's
@@ -412,7 +430,23 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// incoming user messages persist through the same path as for a
 	// pre-created id.
 	autoCreated := false
-	if s.store != nil && req.SessionID == "" {
+	if req.Ephemeral && req.SessionID == "" {
+		// Ephemeral mint: an `eph-` id backed by the in-memory
+		// registry, NOT the store (card t_d96a5cd5). The id still rides
+		// the `session` frame so the webui binds the tab to it.
+		id := mintEphemeralID()
+		s.eph.create(id)
+		req.SessionID = id
+		autoCreated = true
+	} else if req.Ephemeral && req.SessionID != "" {
+		// Continue-on-id: the client reattaches to server memory - an
+		// unknown (expired/restarted) ephemeral id is a 404, never a
+		// silent resurrect.
+		if s.eph.get(req.SessionID) == nil {
+			http.Error(w, "ephemeral session not found: expired or restarted", http.StatusNotFound)
+			return
+		}
+	} else if s.store != nil && req.SessionID == "" {
 		id, err := agent.NewSessionID()
 		if err != nil {
 			// same fallback POST /sessions uses - crypto/rand never
@@ -435,7 +469,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// launchRun takes ownership (runStarted flips once it does).
 	runStarted := false
 	var run *activeRun
-	if s.store != nil && req.SessionID != "" {
+	if req.Ephemeral || (s.store != nil && req.SessionID != "") {
 		var live bool
 		run, live = s.runs.start(req.SessionID)
 		if !live {
@@ -498,10 +532,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tools := s.tools
+	if req.Ephemeral {
+		// No-persist contract: the memory tool never runs in an
+		// ephemeral session (nothing it writes outlives the session).
+		// The run context carries the deny too, so extension-merged
+		// providers cannot reintroduce it (the loop filters post-merge).
+		tools = withoutMemory(tools)
+	}
 
 	// No store: the legacy ephemeral path. The stream still rides this
 	// request, client presence still gates the run.
-	if s.store == nil {
+	if s.store == nil && !req.Ephemeral {
 		recs, usage, last := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
 		if err := s.persistAssistant(r.Context(), prov, req, recs, usage, last); err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
@@ -578,6 +619,23 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 // assistant/tool targets continue FROM them - context truncates at the
 // target inclusive and the fork's message chains onto it.
 func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req *chatRequest, messages []ai.Message) ([]ai.Message, bool) {
+	if isEphemeralID(req.SessionID) {
+		// Ephemeral context (card t_d96a5cd5): the registry's in-memory
+		// history IS the conversation - the store is never read, the
+		// incoming send is recorded there. An eph id without the flag
+		// is a client bug (the session frame the client reattaches
+		// with always accompanies the flag).
+		if !req.Ephemeral {
+			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
+			return nil, false
+		}
+		if s.eph.get(req.SessionID) == nil {
+			http.Error(w, "ephemeral session not found: expired or restarted", http.StatusNotFound)
+			return nil, false
+		}
+		s.eph.appendUser(req.SessionID, messages, time.Now())
+		return s.eph.history(req.SessionID), true
+	}
 	if s.store == nil || req.SessionID == "" {
 		return messages, true
 	}
@@ -826,6 +884,13 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 // owns the wire (the legacy request writes one error frame; the
 // detached run broadcasts one).
 func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats) error {
+	if req.Ephemeral && req.SessionID != "" {
+		// In-memory commit (card t_d96a5cd5): the run's records land in
+		// the registry (context history + transcript items + telemetry)
+		// - no store write, no title run, gone at restart.
+		s.eph.commit(req.SessionID, recs, usage, last, time.Now())
+		return nil
+	}
 	if s.store == nil || req.SessionID == "" || len(recs) == 0 {
 		return nil
 	}
@@ -1158,6 +1223,21 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 // handleSessionByID serves GET /sessions/{id} (session + messages) and
 // DELETE /sessions/{id}. It returns 501 when the server has no store.
 func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		// Rename is store-owned; an eph id has no row to name.
+		if id := r.PathValue("id"); isEphemeralID(id) {
+			http.Error(w, "ephemeral sessions cannot be renamed", http.StatusBadRequest)
+			return
+		}
+	} else {
+		// Ephemeral ids never reach the store: detail, close and the
+		// no-op read-stamp answer from the registry (card t_d96a5cd5).
+		if id := r.PathValue("id"); isEphemeralID(id) {
+			if s.serveEphemeralDetail(w, r, id) {
+				return
+			}
+		}
+	}
 	if s.store == nil {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return

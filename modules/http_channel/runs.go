@@ -312,11 +312,14 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.store == nil {
+	id := r.PathValue("id")
+	// Ephemeral reattach: the run hub is the truth, no store needed (an
+	// eph run without a store still broadcasts). Non-eph ids keep the
+	// store gate - store-less servers have no session transcript.
+	if s.store == nil && !isEphemeralID(id) {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
 	}
-	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return
