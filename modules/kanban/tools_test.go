@@ -42,7 +42,7 @@ func TestToolsRegistryComplete(t *testing.T) {
 
 func TestTaskCreateAutoLinksSession(t *testing.T) {
 	p, _ := toolProvider(t)
-	out, err := p.runCreate(withSession(context.Background(), "sess_9"), map[string]any{
+	out, err := p.runCreate(withSession(context.Background(), "sess_9"), "", map[string]any{
 		"title": "wire the seam",
 		"body":  "spec body",
 	})
@@ -50,7 +50,7 @@ func TestTaskCreateAutoLinksSession(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	id := strings.Fields(out)[1]
-	task, err := p.board.GetTask(context.Background(), id)
+	task, err := p.board.GetTask(context.Background(), "", id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,17 +61,17 @@ func TestTaskCreateAutoLinksSession(t *testing.T) {
 
 func TestTaskListFormatsAndFilters(t *testing.T) {
 	p, _ := toolProvider(t)
-	if _, err := p.runCreate(context.Background(), map[string]any{"title": "one"}); err != nil {
+	if _, err := p.runCreate(context.Background(), "", map[string]any{"title": "one"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := p.runList(context.Background(), nil)
+	out, err := p.runList(context.Background(), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "one") {
 		t.Fatalf("list = %q", out)
 	}
-	out, err = p.runList(context.Background(), map[string]any{"status": StatusDone})
+	out, err = p.runList(context.Background(), "", map[string]any{"status": StatusDone})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,48 +82,48 @@ func TestTaskListFormatsAndFilters(t *testing.T) {
 
 func TestTaskUpdateCompleteCommentLink(t *testing.T) {
 	p, _ := toolProvider(t)
-	out, _ := p.runCreate(context.Background(), map[string]any{"title": "flow"})
+	out, _ := p.runCreate(context.Background(), "", map[string]any{"title": "flow"})
 	id := strings.Fields(out)[1]
 
 	status := StatusDone
-	if _, err := p.runUpdate(context.Background(), map[string]any{"id": id, "status": status}); err != nil {
+	if _, err := p.runUpdate(context.Background(), "", map[string]any{"id": id, "status": status}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	task, _ := p.board.GetTask(context.Background(), id)
+	task, _ := p.board.GetTask(context.Background(), "", id)
 	if task.Status != StatusDone || task.CompletedAt == "" {
 		t.Fatalf("task = %+v", task)
 	}
 
-	if out, err := p.runComplete(context.Background(), map[string]any{"id": id}); err != nil || !strings.Contains(out, "done") {
+	if out, err := p.runComplete(context.Background(), "", map[string]any{"id": id}); err != nil || !strings.Contains(out, "done") {
 		t.Fatalf("complete: %q %v", out, err)
 	}
 
-	if _, err := p.runComment(context.Background(), map[string]any{"id": "t_00000000", "body": "missing"}); err != ErrNotFound {
+	if _, err := p.runComment(context.Background(), "", map[string]any{"id": "t_00000000", "body": "missing"}); err != ErrNotFound {
 		t.Fatalf("comment on missing: %v", err)
 	}
-	if _, err := p.runComment(context.Background(), map[string]any{"id": id, "body": "note", "author": "endo"}); err != nil {
+	if _, err := p.runComment(context.Background(), "", map[string]any{"id": id, "body": "note", "author": "endo"}); err != nil {
 		t.Fatalf("comment: %v", err)
 	}
-	comments, _ := p.board.GetTaskComments(context.Background(), id)
+	comments, _ := p.board.GetTaskComments(context.Background(), "", id)
 	if len(comments) != 1 || comments[0].Author != "endo" {
 		t.Fatalf("comments = %+v", comments)
 	}
 
 	// run_link with no session in ctx and no arg is an error
-	if _, err := p.runLink(context.Background(), map[string]any{"id": id}); err == nil {
+	if _, err := p.runLink(context.Background(), "", map[string]any{"id": id}); err == nil {
 		t.Fatal("link without any session succeeded")
 	}
-	if _, err := p.runLink(withSession(context.Background(), "sess_1"), map[string]any{"id": id}); err != nil {
+	if _, err := p.runLink(withSession(context.Background(), "sess_1"), "", map[string]any{"id": id}); err != nil {
 		t.Fatalf("link via ctx: %v", err)
 	}
-	task, _ = p.board.GetTask(context.Background(), id)
+	task, _ = p.board.GetTask(context.Background(), "", id)
 	if task.SessionID != "sess_1" {
 		t.Errorf("session = %q, want sess_1", task.SessionID)
 	}
-	if _, err := p.runLink(context.Background(), map[string]any{"id": id, "session_id": "sess_2"}); err != nil {
+	if _, err := p.runLink(context.Background(), "", map[string]any{"id": id, "session_id": "sess_2"}); err != nil {
 		t.Fatalf("link via arg: %v", err)
 	}
-	task, _ = p.board.GetTask(context.Background(), id)
+	task, _ = p.board.GetTask(context.Background(), "", id)
 	if task.SessionID != "sess_2" {
 		t.Errorf("session = %q, want sess_2", task.SessionID)
 	}
@@ -131,13 +131,13 @@ func TestTaskUpdateCompleteCommentLink(t *testing.T) {
 
 func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
 	p, _ := toolProvider(t)
-	out, _ := p.runCreate(context.Background(), map[string]any{"title": "assignme", "assignee": "cody"})
+	out, _ := p.runCreate(context.Background(), "", map[string]any{"title": "assignme", "assignee": "cody"})
 	id := strings.Fields(out)[1]
 	empty := ""
-	if _, err := p.runUpdate(context.Background(), map[string]any{"id": id, "assignee": empty}); err != nil {
+	if _, err := p.runUpdate(context.Background(), "", map[string]any{"id": id, "assignee": empty}); err != nil {
 		t.Fatalf("unassign: %v", err)
 	}
-	task, _ := p.board.GetTask(context.Background(), id)
+	task, _ := p.board.GetTask(context.Background(), "", id)
 	if task.Assignee != "" {
 		t.Errorf("assignee = %q, want empty", task.Assignee)
 	}
@@ -174,7 +174,7 @@ func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
 	if err != nil || !strings.Contains(out, "commented on") {
 		t.Fatalf("comment: %q %v", out, err)
 	}
-	comments, _ := board.GetTaskComments(context.Background(), id)
+	comments, _ := board.GetTaskComments(context.Background(), "", id)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %+v", comments)
 	}
@@ -190,7 +190,7 @@ func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
 	if err != nil || !strings.Contains(out, "done") {
 		t.Fatalf("complete: %q %v", out, err)
 	}
-	task, _ := board.GetTask(context.Background(), id)
+	task, _ := board.GetTask(context.Background(), "", id)
 	if task.Status != StatusDone || task.CompletedAt == "" {
 		t.Fatalf("task = %+v", task)
 	}
@@ -227,11 +227,11 @@ func TestRunTaskBatch(t *testing.T) {
 	if err != nil || !strings.Contains(out, "2 operations applied") {
 		t.Fatalf("update+comment batch: %q %v", out, err)
 	}
-	task, _ := board.GetTask(context.Background(), id1)
+	task, _ := board.GetTask(context.Background(), "", id1)
 	if task.Status != StatusBlocked {
 		t.Fatalf("status = %s", task.Status)
 	}
-	comments, _ := board.GetTaskComments(context.Background(), id1)
+	comments, _ := board.GetTaskComments(context.Background(), "", id1)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %+v", comments)
 	}
@@ -254,7 +254,7 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	if strings.Contains(out, "never created") && !strings.Contains(out, "kept") {
 		t.Fatalf("partial results lost: %q", out)
 	}
-	tasks, _ := p.board.ListTasks(ctx, "")
+	tasks, _ := p.board.ListTasks(ctx, "", "")
 	if len(tasks) != 1 || tasks[0].Title != "kept" {
 		t.Fatalf("task after failed batch = %+v", tasks)
 	}
@@ -276,7 +276,7 @@ func TestTaskAliasesRouteThroughFoldedTool(t *testing.T) {
 	if _, err := tools["task.comment"].Run(ctx, map[string]any{"id": id, "body": "note"}); err != nil {
 		t.Fatalf("task.comment alias: %v", err)
 	}
-	if comments, _ := board.GetTaskComments(context.Background(), id); len(comments) != 1 {
+	if comments, _ := board.GetTaskComments(context.Background(), "", id); len(comments) != 1 {
 		t.Fatalf("comments = %+v", comments)
 	}
 	for name, tool := range tools {
