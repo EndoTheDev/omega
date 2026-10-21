@@ -110,8 +110,8 @@ rm -f "$SURF"
 
 # -- park colliders (sentinel claim-lock: the dispatcher skips locked cards;
 #    a status flip does NOT protect - unclaimed cards are daemon food), dispatch, restore --
-park()   { local p; for p in "$@"; do [ -n "$p" ] && sqlite3 "$DB" "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p';"; done; }
-unpark() { local p; for p in "$@"; do [ -n "$p" ] && sqlite3 "$DB" "UPDATE tasks SET claim_lock='' WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
+park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p';"; done; }
+unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock='' WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
 park "${PARKED[@]:-}"
 trap 'unpark "${PARKED[@]:-}"' EXIT
 if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
