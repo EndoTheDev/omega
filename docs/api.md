@@ -41,6 +41,11 @@ Optional seams degrade with a status code, never a panic: no store ->
 `/sessions*` and `/sessions/search` answer 501; no settings seam ->
 `/settings` answers 501; no kanban mount -> `/tasks*` answer 501.
 
+Session titles generate on first exchange via a detached second agent
+run (`context.WithoutCancel`); failures are silent and rapid first
+messages resolve last-write-wins. Titles are cosmetic - a missing one
+is not an error state.
+
 ## POST /chat
 
 Body: `{"messages": [...], "session_id": "...?", "model": "...?",
