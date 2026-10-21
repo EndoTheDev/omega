@@ -10,7 +10,7 @@ import (
 func TestCompareVersions(t *testing.T) {
 	tests := []struct {
 		a, b string
-		want int  // compareVersions(a, b)
+		want int // compareVersions(a, b)
 		ok   bool
 	}{
 		// Nightly sorts BELOW stable with the same base version.
@@ -38,10 +38,10 @@ func TestCompareVersions(t *testing.T) {
 		// Unparseable inputs must not guess a direction.
 		{"dev", "v0.9.1", 0, false},
 		{"v0.9.1", "dev", 0, false},
-		{"v0.9", "v0.9.1", 0, false},    // two-field core
+		{"v0.9", "v0.9.1", 0, false},     // two-field core
 		{"v0.9.1.0", "v0.9.1", 0, false}, // four-field core
-		{"v0.9.1-", "v0.9.1", 0, false}, // empty prerelease
-		{"va.b.c", "v0.9.1", 0, false},  // non-numeric core
+		{"v0.9.1-", "v0.9.1", 0, false},  // empty prerelease
+		{"va.b.c", "v0.9.1", 0, false},   // non-numeric core
 	}
 	for _, tt := range tests {
 		got, ok := compareVersions(tt.a, tt.b)

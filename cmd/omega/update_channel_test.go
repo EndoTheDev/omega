@@ -70,11 +70,11 @@ func TestFetchNightlyPicksNewestPrerelease(t *testing.T) {
 	t.Cleanup(func() { githubAPIBase = old })
 	githubAPIBase = fixtureReleases(t, rel("v0.9.1"),
 		[]githubRelease{
-			rel("v0.9.1"),                      // stable, wrong channel
-			rel("v0.9.2-nightly.20261021"),     // older nightly
-			rel("v0.9.2-rc.1"),                 // prerelease but not nightly channel
-			rel("v0.9.10-nightly.20261022"),    // newest by numeric core (0.9.10 > 0.9.2)
-			rel("v0.9.2-nightly.20261101"),     // newer nightly by date but older core
+			rel("v0.9.1"),                   // stable, wrong channel
+			rel("v0.9.2-nightly.20261021"),  // older nightly
+			rel("v0.9.2-rc.1"),              // prerelease but not nightly channel
+			rel("v0.9.10-nightly.20261022"), // newest by numeric core (0.9.10 > 0.9.2)
+			rel("v0.9.2-nightly.20261101"),  // newer nightly by date but older core
 			rel("v0.9.2-nightly.20261022"),
 		})
 
