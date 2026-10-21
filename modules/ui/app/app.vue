@@ -758,13 +758,25 @@
       drawerTabTitle,
     ),
   );
-  const inspectorDrawerTabs = computed(() =>
-    drawerTabsForEdge(
+  const inspectorDrawerTabs = computed(() => {
+    const live = drawerTabsForEdge(
       findEdgePane(dock.tree.value, "inspector"),
       INSPECTOR_TAB_COMPONENTS,
       drawerTabTitle,
-    ),
-  );
+    );
+    // card t_67fc1905: logs is a DUAL-HOST domain now - a fresh boot seats
+    // it in the bottom panel (its defaultHome), so the inspector pane's
+    // strip no longer names it. The drawer reads the live strip, which
+    // would strand the logs view on mobile (its pane instance is
+    // zero-collapsed there). The registry's right-domain list is the
+    // drawer's floor: missing entries join the live tabs at the end.
+    const seen = new Set(live.map((t) => t.id));
+    return live.concat(
+      INSPECTOR_TAB_COMPONENTS
+        .filter((id) => !seen.has(id))
+        .map((id) => ({ id, title: drawerTabTitle(id) })),
+    );
+  });
 
   // the active tab id, clamped against the live tab set (the edge pane's
   // tabs can change under a DnD while the drawer is closed; the drawer
