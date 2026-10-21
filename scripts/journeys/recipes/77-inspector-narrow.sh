@@ -1,7 +1,7 @@
 #!/bin/bash
 # 77-inspector-narrow - the module-UI narrow recipe journey (t_a2fdc630).
 #
-# The recipe (Endo ruling, 2026-10-21): every inspector view renders a
+# The recipe (ruling, 2026-10-21): every inspector view renders a
 # desktop layout AND a narrow adaptation, measured against its OWN
 # container - not the viewport. The kanban Board is the reference
 # implementation; the sweep retrofitted cron, logs, skills, tools, the
