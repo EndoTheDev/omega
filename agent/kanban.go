@@ -59,28 +59,52 @@ type KanbanPatch struct {
 // (modules must not import each other to compare errors).
 var ErrTaskNotFound = errors.New("task not found")
 
+// BoardInfo is one row of the board registry (multi-board listing).
+type BoardInfo struct {
+	// Name is the board's registry name ("main" is the legacy default).
+	Name string `json:"name"`
+	// Current reports whether the store's default board is this one
+	// (the pointer target resolved at mount).
+	Current bool `json:"current"`
+}
+
+// BoardLister is the optional multi-board capability on the kanban
+// seam. The HTTP channel serves GET /boards only when the mounted
+// provider also implements this - single-board implementations stay
+// legal by implementing just KanbanProvider.
+type BoardLister interface {
+	// Boards lists every board the registry knows about, the current
+	// one flagged. Never includes non-existent boards.
+	Boards(ctx context.Context) ([]BoardInfo, error)
+}
+
 // KanbanProvider is the board seam: task CRUD plus the comment and
 // event threads. Implemented by the kanban module; consumed by the
 // HTTP channel (routes) and the kanban tools.
 type KanbanProvider interface {
-	// CreateTask inserts a task. The store fills ID, CreatedAt and the
-	// status default ("triage"), and writes the created event.
-	CreateTask(ctx context.Context, in KanbanTask) (KanbanTask, error)
-	// ListTasks returns tasks, newest first, filtered by status.
-	// Empty status lists every status.
-	ListTasks(ctx context.Context, status string) ([]KanbanTask, error)
-	// GetTask returns one task by id (store.ErrNotFound when missing).
-	GetTask(ctx context.Context, id string) (KanbanTask, error)
+	// CreateTask inserts a task on the named board ("" = the current
+	// board, resolved at mount from the pointer). The store fills ID,
+	// CreatedAt and the status default ("triage"), and writes the
+	// created event.
+	CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error)
+	// ListTasks returns the board's tasks, newest first, filtered by
+	// status. Empty status lists every status.
+	ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error)
+	// GetTask returns one task by id on the named board
+	// (store.ErrNotFound when missing).
+	GetTask(ctx context.Context, board, id string) (KanbanTask, error)
 	// GetTaskComments returns the task's comment thread, oldest first.
-	GetTaskComments(ctx context.Context, taskID string) ([]KanbanComment, error)
+	GetTaskComments(ctx context.Context, board, taskID string) ([]KanbanComment, error)
 	// GetTaskEvents returns the task's audit trail, oldest first.
-	GetTaskEvents(ctx context.Context, taskID string) ([]KanbanEvent, error)
-	// UpdateTask applies the patch and writes the audit events
-	// (moved/assigned/edited/linked). Returns the updated task.
-	UpdateTask(ctx context.Context, taskID string, patch KanbanPatch) (KanbanTask, error)
+	GetTaskEvents(ctx context.Context, board, taskID string) ([]KanbanEvent, error)
+	// UpdateTask applies the patch on the named board and writes the
+	// audit events (moved/assigned/edited/linked). Returns the updated
+	// task. There is deliberately no cross-board move: changing board
+	// is a pointer switch (two operations), never a task patch.
+	UpdateTask(ctx context.Context, board, taskID string, patch KanbanPatch) (KanbanTask, error)
 	// AddComment appends to the task's thread and writes the
-	// comment_added event. Author must be non-empty.
-	AddComment(ctx context.Context, taskID, author, body string) (KanbanComment, error)
+	// comment event. Author must be non-empty.
+	AddComment(ctx context.Context, board, taskID, author, body string) (KanbanComment, error)
 	// Close releases the underlying resources.
 	Close() error
 }
