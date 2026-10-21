@@ -10,75 +10,166 @@ This is a fresh implementation, not a port of agent.d. No RSI, no
 self-awareness, no evolution tracking. Just a clean event-stream agent
 in Go.
 
+This file is the single worker map. There is no other AGENTS.md:
+per-module files are consolidated into this map and into `docs/`
+(Endo ruling, 2026-10-21). A new AGENTS.md anywhere outside the root
+is a review finding; its content lands in its mapped home instead.
+
 ## Ownership
 
 - **Repository:** `github.com/EndoTheDev/omega` (development checkout: `~/dev/omega`; installed instance: `~/.omega`)
 - **Language:** Go 1.26.5
 - **Module:** `github.com/EndoTheDev/omega`
 - **Dependencies:** Added when a layer requires them, not before.
-  Prefer the standard library.
-- **Entry point:** `omega` (single binary: `serve`, `run`, `health`, `chat`,
-  `export`, `update`, `insights`, `rollback`;
-  no arg → TUI, `<path>` → chdir + TUI)
+  Prefer the standard library. Prefer a dependency already in `go.mod`.
+- **Entry point:** `omega` (single binary: `serve`, `run`, `health`,
+  `chat`, `export`, `update`, `insights`, `rollback`;
+  no arg -> TUI, `<path>` -> chdir + TUI). CLI reference and law:
+  `docs/cli.md`.
 
-## Architecture
-
-```txt
-webui (Nuxt SPA, embedded) → HTTP channel → agent (loop + tools) → ai (provider streaming)
-                                │
-                                └── modules/ (in-process plugins mounted into Context)
-```
-
-The webui is a Nuxt 4 SPA served by the HTTP channel itself (embedded
-at build time); external clients talk to the HTTP channel only.
-
-Each layer has a single responsibility. No layer skips over another.
-Events are typed structs, dispatched via type switch. The provider
-layer emits events on a channel. The agent layer consumes them and
-runs the tool loop. The HTTP channel exposes the agent over HTTP.
-Extensions are in-process Go packages that mount into a shared Context
-via the Plugin interface.
-
-## Local Contracts
+## Never-violate rules
 
 - **No layer skipping.** Each layer imports only from the layer
-  directly below it. The `chat` subcommand (TUI) imports internal
-  packages for in-process streaming. The `serve` subcommand exposes
-  everything over HTTP for external clients. External clients talk to
-  the HTTP channel only.
+  directly below it. `chat` imports internal packages for in-process
+  streaming; `serve` exposes everything over HTTP. External clients
+  talk to the HTTP channel only.
 - **No re-exports at intermediate layers.** If a type is defined in
   a layer, consumers import it from that layer.
 - **`model_name` everywhere.** Provider references use `model_name`,
   not `model` or `provider_model`.
-- **Tool errors are structured returns.** Tools do not panic into
-  the agent. They return a structured error response.
+- **Tool errors are structured returns.** Tools return `(string, error)`;
+  the error becomes an `IsError` tool result message. No panic into
+  the agent.
 - **No backwards compatibility.** Breaking changes are normal. They
   are not marked with `!` in commit messages (see `.agents/COMMIT.md`).
-- **Secrets never committed.** `.env` is gitignored. See `.gitignore`.
+- **Secrets never committed.** `.env` and the home `config/*.yaml`
+  files are gitignored.
 - **Extensions are in-process.** All extensions are Go packages under
-  `modules/`. No stdio, no IPC, no separate processes. The host
-  calls `MountAll` at startup; the agent loop reads from `Context`.
+  `modules/`. No stdio, no IPC, no runtime loading. The host calls
+  `MountAll` at startup; the agent loop reads from `Context`.
+- **The agent loop is the only place tools execute.** The HTTP channel
+  and TUI route tool calls through the agent, never directly. Each
+  run drains a fresh events channel (channel reuse panics on the
+  second write).
+- **Bind loopback only by default.** The HTTP channel is unauthenticated
+  and `/chat` reaches the shell tools. Anything beyond loopback is an
+  explicit `server.bind` opt-in behind an auth wall.
+- **One map.** A new AGENTS.md outside this root is a review finding;
+  move its content into its mapped home.
 
-## Read Before Editing
+## Module laws
+
+Terse operational rules. Layer references live in `docs/` (map below);
+`modules/README.md` is the extension authoring guide.
+
+- **Plugin contract.** Every extension implements `agent.Plugin`
+  (`Name`, `Provides`, `Requires`, `Mount`). Exclusive seams take one
+  plugin per slot (`provider`, `compactor`, `store`, `skills`, `loop`,
+  `logging`, `memory`, `prompt_builder`, `frontend`, `trust`, `cron`).
+  `tools` and `channel` are additive. Commands register via
+  `ctx.Commands` + `ctx.CommandHandler` (chain the previous handler on
+  miss); a handler returns `CommandResult` with optional `CmdAction`
+  directives - the host interprets actions, extensions declare intent.
+- **New extension recipe.** Create `modules/<name>/` with `<name>.go`,
+  `plugin.go` (Plugin adapter), `<name>_test.go`; register in
+  `buildPlugins()` in `cmd/omega/main.go`; append tools to
+  `ctx.ToolProviders` in `Mount()`. Full steps: `modules/README.md`.
+- **Tool merge.** Extension tools merge into the registry at run time;
+  built-in tools win on name conflict.
+- **http_channel.** Persistence order is provider-correct and old
+  baked sessions are never rewritten: user -> assistant(A + thinking +
+  calls) -> tool results -> assistant(B). List-row concerns
+  (pinned/read/archived) never touch `updated_at`. Runs are detached
+  from the request (runHub): a disconnect never cancels, one live run
+  per session (409), `server.run_timeout` ends hung runs, detached
+  title generation fails silently (last write wins under races). Pure
+  logic tests go in `server_pure_test.go`, handler tests in
+  `server_test.go`. SPA-affecting changes ship via
+  `modules/ui/scripts/build.sh` with the committed `static/` output in
+  the same change (`scripts/embed-lane.sh` owns `static/` commits at
+  merge time). A rebuilt `server.go` needs a serve restart - the
+  binary is a snapshot of its build time.
+- **webui.** The product reference is `docs/webui.md` (geometry
+  contracts, design tokens, dock model, test law, embed lane,
+  poisoned-bundle diagnosis). Verify served content, never source
+  strings. Module-UI narrow recipe: a module component measures
+  its OWN rendered container and flips a narrow class below
+  NARROW_MAX_PX=360; each module keeps its own copy (module UI
+  imports no shell code); modulenarrow.test.ts pins threshold
+  agreement.
+- **tui.** Slash commands run locally and never hit the agent; built-in
+  commands handle inline, extension commands dispatch via
+  `handleExtensionCommand`. Add commands to `knownCommands` +
+  `commandOptions` plus a test; most commands belong to their owning
+  extension, not the TUI. Ephemeral mode (`/new --ephemeral`) rejects
+  store-dependent commands (`/sessions`, `/resume`, `/branch`,
+  `/label`, `/tree`, `/export`, `/search`, `/insights`). Context window
+  priority: provider probe > compaction config >
+  `agent.DefaultContextWindow` (8192); `ModelInfo` runs on a
+  per-lookup `WithModel` copy. Transcript segments preserve narrative
+  order (thinking, tool, response) - never reorder; re-render covers
+  resize/theme/resume. Bracketed paste inserts file paths as text.
+- **ai.** Provider failures are stream events, not Go errors:
+  `StreamEnd` with `FinishReason="error"` and `Error` set; the channel
+  always closes. Messages and events are sealed interfaces, dispatched
+  by type switch on concrete types. HTTP goes through `RetryHTTP`
+  (429 and 5xx retry with backoff, `OMEGA_MAX_RETRIES`; other 4xx and
+  cancellation return immediately). New provider: a `streamX` function
+  plus a case in the `Stream` switch in `modules/provider/`.
+  Fragmented tool-call deltas (OpenAI, Anthropic) accumulate by index
+  and flush in order after the stream ends; consecutive Anthropic
+  `ToolResult`s fold into one user message. `FakeProvider` scripts
+  deterministic stream events for agent loop tests.
+- **cmd/omega.** Subcommands are the only entry surface;
+  `--help`/`-h`/`--version`/`-v` print globally and exit before
+  dispatch - there is no per-subcommand help. No subcommand means TUI;
+  a non-subcommand argument is a project path (chdir + TUI);
+  subcommand names beat same-named directories. `resolveHomePaths`
+  runs after `LoadConfig` and before opening the store. `/settings`
+  masks `provider.api_key` and rejects a hot PUT of
+  `provider.api_key` or `server.bind` (config.yaml is their only
+  door).
+- **trust.** The trust unit is the nearest directory (walking up from
+  cwd) containing an AGENTS.md. Decisions live in
+  `<home>/config/trust.yaml` (`exact` / `parent` levels);
+  `--approve`/`--no-approve` are CLI-only overrides (`--no-approve`
+  wins); the TUI prompts, `run`/`serve` skip untrusted context with a
+  warning.
+- **cron.** omega never writes `crons.yaml` (boot seeds only
+  `crons.yaml.example`). A fire arriving while its job still runs is
+  skipped (logged, never queued); different jobs run in parallel. A
+  failed fire still persists its session; deliver targets apply only
+  to a non-empty final assistant message. Stale `cronstate.json`
+  entries are ignored.
+
+## Wide-angle map
+
+| Area | What it is | Docs |
+| ---- | ---------- | ---- |
+| `ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
+| `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAll`), events, shared types | `docs/architecture.md` |
+| `modules/` | In-process extension packages (one `agent.Plugin` each) | `docs/architecture.md` (table), `modules/README.md` (authoring) |
+| `modules/ui/` | Nuxt 4 webui SPA, built output embedded into the binary | `docs/webui.md` |
+| `modules/http_channel/` | HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
+| `modules/tui/` | Terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
+| `modules/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
+| `modules/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
+| `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
+| `docs/` | User and worker documentation | start at `docs/architecture.md` |
+
+## Read path
+
+Read AGENTS.md, follow its pointers. One map, no hierarchy of maps.
 
 1. `.agents/COMMIT.md` - commit convention and voice.
-2. Check the Child DOX Index below for the layer you are editing.
-3. If a layer has an AGENTS.md, read it before touching its code.
+2. This map for the layer you are editing - then its docs entry.
 
-## Update After Editing
+## Update after editing
 
-1. If you add, remove, or rename a symbol referenced in any AGENTS.md,
-   update that AGENTS.md in the same change.
-2. If you add a new package directory with non-trivial code, create an
-   AGENTS.md for it and add it to the Child DOX Index.
-3. Run the relevant tests before declaring done.
-
-## Work Guidance
-
-- Voice, commit format: `.agents/COMMIT.md`.
-- Dependencies: add only when a layer requires them. Prefer the
-  standard library. Prefer a dependency already in `go.mod`.
-- Go: 1.26.5. Build with `go build`, test with `go test ./...`.
+1. Symbol renames do not carry into `docs/` automatically - sync the
+   mapped doc home in the same change when it names what you changed.
+2. Run the relevant tests before declaring done.
+3. Never create an AGENTS.md outside the root.
 
 ## Verification
 
@@ -92,88 +183,31 @@ go build ./...    # all packages compile
 go vet ./...      # no suspicious constructs
 ```
 
-## Hierarchy
+## Pointers
 
-```txt
-AGENTS.md (root - this file)
-├── build.sh                   # build script (Linux/macOS): vet + test + build to bin/
-├── gate-deps.sh               # dependency-law gate: ai/ and agent/ never import modules/
-├── build.bat                  # build script (Windows): vet + test + build to bin\
-├── .agents/                   # conventions (COMMIT.md)
-├── docs/                      # user documentation (tracked)
-├── ai/                        # provider contract (interface, messages, events), shared HTTP infra, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT)
-├── agent/                     # multi-turn loop contract (LoopProvider interface), tool execution, compaction (config + token estimation), capability seams (CompactionProvider, ToolProvider, LoopProvider, StoreProvider, SkillsProvider, LoggerProvider, MemoryProvider, PromptBuilder, Channel, Frontend + FrontendOptions, TrustProvider, CronProvider), Plugin system (Context, Plugin, MountAll); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent; shared data types (Session, SessionNode, StoredMessage, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions, Configs map)
-├── modules/                # in-process extension packages (importable Go packages)
-│   ├── README.md              # extension authoring guide
-│   ├── agent_loop/            # default conversation loop (LoopProvider implementation)
-│   ├── provider/              # LLM provider (Ollama, OpenAI, Anthropic streaming)
-│   ├── store/                 # session store (SQLite implementation, sessions.search tool)
-│   ├── datadir/               # database directory layout (data/ folder + boot-time migration of legacy home-root dbs)
-│   ├── skills/                # skill loading (skills.read tool, /skills command)
-│   ├── compactor/             # context compaction (keep-first/last + LLM summarize middle)
-│   ├── logging/               # operational logging (file logger, LoggerProvider seam)
-│   ├── memory/                # persistent memory (memory tool, two-file §-delimited store)
-│   ├── http_channel/          # HTTP/SSE channel + embedded SPA serving (see modules/http_channel/AGENTS.md)
-│   ├── tui/                   # terminal frontend (Frontend seam, Bubble Tea TUI, themes, @file input)
-│   ├── trust/                 # project trust gate (TrustProvider seam, trust.yaml, AGENTS.md context loading)
-│   ├── prompt/                # system prompt builder + guidelines
-│   ├── tools/                 # shell, file, web, delegate, task tools - one tool per domain with dotted actions (legacy names aliased)
-│   ├── mcp/                   # MCP bridge (stdio + HTTP MCP servers)
-│   ├── delegate/              # subagent delegation (delegate.task, delegate.status, InjectedMessages)
-│   ├── cron/                  # scheduled prompts (CronProvider seam, crons.yaml)
-│   └── web/                   # web search/fetch (Ollama Cloud API)
-├── modules/ui/                # Nuxt 4 SPA (see modules/ui/AGENTS.md) - built output embedded into the binary via modules/http_channel/static/
-├── deploy/                    # install artifacts (omega.service - systemd --user unit for the installed instance)
-├── bin/                       # build output + local runtime files (gitignored except skills/ templates)
-│   ├── omega                 # built binary (gitignored)
-│   ├── config/               # config.yaml (personal, gitignored), trust.yaml (trust state, gitignored), config/mcp/crons example copies; trust.yaml lives HERE - the legacy home-root copy is retired (root-first fallback in trustPath, boot Bootstrap migrates it)
-│   ├── data/                 # databases live here (boot-time migration moves them from bin/ root; move-not-copy, sidecars first)
-│   │   ├── omega.db          # session database (gitignored)
-│   │   └── kanban.db         # task board database (gitignored)
-│   └── skills/               # skill templates (tracked)
-└── cmd/
-    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name), /files, /cron, /logs (read-only browse views); config examples + memory/user seed starters in cmd/omega/examples/ (embedded for first-run bootstrap); home resolution (bin-dir installs → ~/.omega), self-update with checksum verification, release channels (stable/`--nightly`, semver gate, `omega.bak` rollback)
-```
-
-## Child Doc Shape
-
-Every child AGENTS.md must follow this section order:
-
-1. **Purpose** - what this layer does in one paragraph.
-2. **Ownership** - what files and directories it owns.
-3. **Local Contracts** - rules specific to this layer.
-4. **Work Guidance** - conventions, patterns, pitfalls.
-5. **Verification** - how to check this layer's code.
-6. **Child DOX Index** - sub-directories with AGENTS.md, if any.
-
-No child doc may weaken the root contract. A child may add local
-rules but cannot override core contracts.
+- `docs/cli.md` - subcommands, flags, home resolution, OMEGA_* env vars
+- `docs/api.md` - HTTP routes, `/chat` SSE semantics, provider quirks on the wire
+- `docs/webui.md` - webui reference: geometry, tokens, dock, test law, embed lane
+- `docs/tui.md` - TUI command registry and keybindings
+- `docs/architecture.md` - layer table and project structure
+- `docs/configuration.md` - config.yaml knobs
+- `docs/troubleshooting.md` - known failure modes
+- `docs/project-trust.md` - trust gate
+- `docs/pipeline.md` - the landing pipeline (merge train)
+- `modules/README.md` - extension authoring guide
+- `.agents/COMMIT.md` - commit convention and voice
 
 ## Style
 
 - Markdown is linted. Wrap bare URLs in angle brackets:
   `<https://example.com>`.
-- No diary entries or TODO comments in AGENTS.md. Keep docs factual
+- No diary entries or TODO comments in this file. Keep it factual
   and contract-focused.
-- No emoji in AGENTS.md.
+- No emoji, no long dashes - use normal hyphens (`-`).
 - Descriptive variable names in public APIs. Short names OK for
   local variables (Go convention).
-- No long dashes. Use normal hyphens (`-`).
 
 ## User Preferences
 
 - Commit voice: see `.agents/COMMIT.md` - the sole authority on voice.
 - Approve-then-apply: present a plan, wait for "lgtm", then act.
-
-## Child DOX Index
-
-| Path          | Status      | What it owns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.agents/`    | Reference   | Commit conventions (COMMIT.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `ai/`         | Implemented | Provider contract (interface, messages, events, tool schema), shared HTTP infra (httpClient, retryHTTP), exported HTTPClient / RetryHTTP / SSEData for extension use, ThinkingLevels, HTTP timeout (OMEGA_HTTP_TIMEOUT), `DetectImage` (magic-byte image detection)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `agent/`      | Implemented | Multi-turn loop contract (`LoopProvider` interface), tool execution, compaction (config + token estimation, overflow auto-retry, friendly error when no compactor), capability seams (`CompactionProvider`, `ToolProvider`, `LoopProvider`, `StoreProvider`, `SkillsProvider`, `LoggerProvider`, `MemoryProvider`, `PromptBuilder`, `Channel`, `Frontend`, `TrustProvider`, `CronProvider`), Plugin system (`Context`, `Plugin`, `MountAll`); events: AgentStart, TurnStart, TurnEnd, AgentEnd, StreamEvent, AssistantMessageEvent, ToolResultEvent; shared data types (Session, SessionNode, StoredMessage, Skill, Insights, SearchResult, ExtensionInfo, ExtensionCommand, InjectedMessage, PromptBuildOptions, Configs map). Loop implementation in `modules/agent_loop/` |
-| `cmd/omega/`  | Implemented | Single binary: serve, run, health, chat (Frontend dispatch), export, update, insights, rollback; project trust (--approve/--no-approve, trust.yaml); `@file` image input; config loading, plugin wiring, `omegaHome` resolution, release channels (stable/`--nightly`, semver gate, `omega.bak` rollback)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `bin/`        | Reference   | Build output, config, database, skills. Gitignored except `skills/` (templates); config examples live in `cmd/omega/examples/`. Build via `./build.sh` or `build.bat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `modules/` | Implemented | In-process extension packages: agent_loop (default conversation loop), provider (Ollama, OpenAI, Anthropic), store (SQLite + sessions.search), datadir (database data/ folder layout + boot-time migration of legacy home-root dbs), skills (skill loading + /skills command), compactor (context compaction), logging (file logger + LoggerProvider seam), memory (persistent memory + memory tool), http_channel (HTTP/SSE delivery channel), tui (terminal frontend), trust (project trust gate), prompt (system prompt builder), tools (shell, files), mcp (MCP bridge), delegate (subagent delegation), web (web search/fetch), cron (scheduled prompts, crons.yaml). Each implements the `agent.Plugin` interface.                                                                                                                                                     |
-| `modules/ui/` | Implemented | Nuxt 4 SPA: VS Code-style shell (see `modules/ui/AGENTS.md`); built output embedded into the binary; dev via nuxt dev + devProxy to the dev omega on :8098; unit tests (node --test), stream_check transport probe, build.sh sync script |
-| `deploy/`      | Reference   | Install artifacts: omega.service (systemd --user unit for the installed instance at ~/.omega) |
