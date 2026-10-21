@@ -98,7 +98,7 @@
               @keyup.esc="renamingId = null"
               @blur="commitRename(s)" />
             <span
-              v-if="!renamingId && meta(s)"
+              v-if="renamingId !== s.id && meta(s)"
               class="session-meta">{{ meta(s) }}</span>
             <!-- hover action cluster: branch (fork) + rename (pencil) +
                  export (download), then archive (box) + delete (trash),
