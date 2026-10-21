@@ -91,6 +91,7 @@ All modules are in-process Go packages under `modules/`. See
 | TUI Commands    | [docs/tui.md](docs/tui.md)                         |
 | Project Trust   | [docs/project-trust.md](docs/project-trust.md)     |
 | Architecture    | [docs/architecture.md](docs/architecture.md)       |
+| Landing pipeline | [docs/pipeline.md](docs/pipeline.md)              |
 | Roadmap         | [docs/roadmap.md](docs/roadmap.md)                 |
 | Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 
