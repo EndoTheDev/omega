@@ -147,17 +147,23 @@ describe("the dockable registry", () => {
       );
       assert.equal(typeof d.closable, "boolean", `${d.id}: closable flag`);
       // the lock is narrow now (t_d6b657a7): only sessions is locked;
-      // unclosable is the wider property (everything except chat)
+      // unclosable is the wider property (everything except chat and
+      // insights - card t_e1e61680 opens insights as a main-area tab
+      // that closes like chat's)
       assert.equal(isLockedTab(d.id), d.id === 'sidebar', `${d.id}: lock == sessions`);
-      assert.equal(!isClosableTab(d.id), d.id !== 'chat', `${d.id}: unclosable == not chat`);
+      assert.equal(
+        isClosableTab(d.id),
+        ["chat", "insights"].includes(d.id),
+        `${d.id}: closable == chat/insights`,
+      );
     }
   });
 
-  it("policy split (card t_4ae27e0d + t_49d0b308): chat the only multi AND the only closable", () => {
+  it("policy split (card t_4ae27e0d + t_49d0b308 + t_e1e61680): chat the only multi; closables are chat + insights", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
     assert.deepEqual(multi, ["chat"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
-    assert.deepEqual([...closable].sort(), ["chat"]);
+    assert.deepEqual([...closable].sort(), ["chat", "insights"]);
   });
 
   it("the fixed sidebars: sidebar pinned left, the inspector SEVEN pinned right (t_49d0b308)", () => {
@@ -186,8 +192,9 @@ describe("the dockable registry", () => {
     // settings has no menu path (ruling, t_d6b657a7): persistence and the
     // default-arrangement fallback are its only entry. MAIN_DOCKABLES (the
     // main-area list) and MENU_DOCKABLES (the refill inventory) both
-    // exclude it
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
+    // exclude it. card t_e1e61680: insights joins the main area as the
+    // second openable singleton (chat stays the only multi).
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "insights"]);
     assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
     assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
@@ -236,8 +243,9 @@ describe("the dockable registry", () => {
       { ...COMPONENT_TITLES },
     );
     // the pinned sidebars have no menu-open path (card t_4ae27e0d);
-    // settings left the main class (card t_49d0b308) - chat only
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
+    // settings left the main class (card t_49d0b308). card t_e1e61680:
+    // insights rejoins the class - singleton, closable like chat.
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "insights"]);
     const ids = DOCKABLES.map((d) => d.id);
     assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
   });
