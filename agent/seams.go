@@ -79,8 +79,20 @@ type StoreProvider interface {
 	GetMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
 
 	// GetMessagesWithTimes returns a session's messages in append
-	// order, each paired with its store-level created_at.
+	// order, each paired with its row id (the tree identity) and
+	// store-level created_at.
 	GetMessagesWithTimes(ctx context.Context, sessionID string) ([]StoredMessage, error)
+
+	// GetActiveView returns the session's tree-derived active view
+	// (t_17365247): the active path for context assembly + transcript
+	// rendering, plus the branch-point metadata the variant
+	// navigation renders from. Sessions persisted without parent
+	// pointers derive the same single linear path they always had.
+	GetActiveView(ctx context.Context, sessionID string) (ActiveView, error)
+
+	// GetActiveMessages returns the active path as plain messages -
+	// the session-load seam (TUI resume, exports).
+	GetActiveMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
 
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
 	GetAncestorMessages(ctx context.Context, sessionID string) ([]ai.Message, error)

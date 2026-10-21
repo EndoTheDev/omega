@@ -36,6 +36,16 @@ func (m *mockStore) GetMessages(_ context.Context, _ string) ([]ai.Message, erro
 func (m *mockStore) GetMessagesWithTimes(context.Context, string) ([]agent.StoredMessage, error) {
 	return nil, nil
 }
+
+var _ agent.StoreProvider = (*mockStore)(nil)
+
+func (m *mockStore) GetActiveView(context.Context, string) (agent.ActiveView, error) {
+	return agent.ActiveView{}, m.err
+}
+
+func (m *mockStore) GetActiveMessages(_ context.Context, _ string) ([]ai.Message, error) {
+	return m.messages, m.err
+}
 func (m *mockStore) GetSessionTree(context.Context) ([]*agent.SessionNode, error) {
 	return nil, nil
 }

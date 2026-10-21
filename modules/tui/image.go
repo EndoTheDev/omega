@@ -40,10 +40,12 @@ func extractImages(input string, store agent.StoreProvider, skills []agent.Skill
 			return token // skill not found, leave as-is
 		}
 
-		// @session:<id> — inject session message history.
+		// @session:<id> — inject session message history (the ACTIVE
+		// path, t_17365247: a branched session injects its selected
+		// branch, never the parked variants).
 		if strings.HasPrefix(path, "session:") && store != nil {
 			sid := path[8:]
-			msgs, sErr := store.GetMessages(context.Background(), sid)
+			msgs, sErr := store.GetActiveMessages(context.Background(), sid)
 			if sErr != nil || len(msgs) == 0 {
 				return token // session not found, leave as-is
 			}

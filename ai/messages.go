@@ -29,6 +29,8 @@ func EncodeMessage(msg Message) (string, []byte, error) {
 		role = "model_change"
 	case ThinkingLevelChange:
 		role = "thinking_level_change"
+	case VariantSelect:
+		role = "variant_select"
 	default:
 		return "", nil, fmt.Errorf("unknown message type %T", msg)
 	}
@@ -75,6 +77,12 @@ func DecodeMessage(role string, payload []byte) (Message, error) {
 		return m, nil
 	case "thinking_level_change":
 		var m ThinkingLevelChange
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "variant_select":
+		var m VariantSelect
 		if err := json.Unmarshal(payload, &m); err != nil {
 			return nil, err
 		}
@@ -132,10 +140,16 @@ type ImageContent struct {
 
 // User is a user chat message. Images is optional; when empty the
 // message is text-only and providers send content as a plain string.
+// ParentID is the message tree pointer (branching, t_17365247): the
+// store-row id of the message this one follows on the conversation
+// tree. Empty = legacy message (no pointers) or the session's first
+// message. Providers strip it from wire payloads (provider.go
+// messagesToJSON); it only ever matters to store-side tree derivation.
 type User struct {
 	Content   string         `json:"content"`
 	Images    []ImageContent `json:"images,omitempty"`
 	Timestamp string         `json:"timestamp,omitempty"`
+	ParentID  string         `json:"parent_id,omitempty"`
 }
 
 func (User) isMessage() {}
@@ -161,12 +175,14 @@ type Timing struct {
 }
 
 // Assistant is the model's response in a turn.
+// ParentID: see ai.User's field comment (message tree pointer).
 type Assistant struct {
 	Thinking  *string    `json:"thinking,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	Content   string     `json:"content"`
 	Timing    *Timing    `json:"timing,omitempty"`
 	Timestamp string     `json:"timestamp,omitempty"`
+	ParentID  string     `json:"parent_id,omitempty"`
 }
 
 func (Assistant) isMessage() {}
@@ -178,13 +194,15 @@ func NewAssistant(content string) Assistant {
 }
 
 // ToolResult is the result of a tool execution, appended to the
-// message history so the model can see the result.
+// message history so the model can see the result. ParentID chains it
+// to the message it follows within one run (see ai.User's comment).
 type ToolResult struct {
 	Content    string  `json:"content"`
 	ToolCallID string  `json:"tool_call_id"`
 	IsError    bool    `json:"is_error,omitempty"`
 	Timing     *Timing `json:"timing,omitempty"`
 	Timestamp  string  `json:"timestamp,omitempty"`
+	ParentID   string  `json:"parent_id,omitempty"`
 }
 
 func (ToolResult) isMessage() {}
@@ -225,4 +243,25 @@ func (ThinkingLevelChange) isMessage() {}
 // NewThinkingLevelChange creates a ThinkingLevelChange with timestamp set.
 func NewThinkingLevelChange(level string) ThinkingLevelChange {
 	return ThinkingLevelChange{Level: level, Timestamp: NowISO()}
+}
+
+// VariantSelect records the ACTIVE variant of one message branch point
+// (t_17365247). It is a store bookkeeping entry exactly like
+// ModelChange: appended to the linear list (no schema or payload
+// mutation of existing rows), read by tree derivation, invisible to
+// rendering and context assembly. Branch is the parent message id (the
+// branch point - a user message row id); Child is the id of the run's
+// head message (assistant row id) the selection activates. The LAST
+// entry per branch wins.
+type VariantSelect struct {
+	Branch    string `json:"branch"`
+	Child     string `json:"child"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+func (VariantSelect) isMessage() {}
+
+// NewVariantSelect creates a VariantSelect entry with timestamp set.
+func NewVariantSelect(branch, child string) VariantSelect {
+	return VariantSelect{Branch: branch, Child: child, Timestamp: NowISO()}
 }

@@ -102,8 +102,12 @@ type SessionNode struct {
 }
 
 // StoredMessage pairs a message with the store-level time it was
-// written (created_at), for consumers that surface message times.
+// written (created_at), for consumers that surface message times. ID is
+// the store row id - the message's identity on the conversation tree
+// (parent pointers reference it); the transcript wire exposes it as a
+// string so clients can address branch points.
 type StoredMessage struct {
+	ID        int64
 	Message   ai.Message
 	CreatedAt string
 }
