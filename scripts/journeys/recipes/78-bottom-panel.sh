@@ -69,8 +69,8 @@ divy=$(jsq '(() => {
 [ -n "$divx" ] && [ -n "$divy" ] || die "no bottom divider found"
 ab mouse move "$divx" "$divy" >/dev/null 2>&1
 ab mouse down >/dev/null 2>&1
-d=-30; while [ "$d" -ge -200 ]; do ab mouse move "$divx" $((divy + d)) >/dev/null 2>&1; sleep 0.03; d=$((d - 30)); done
-ab mouse move "$divx" $((divy - 200)) >/dev/null 2>&1
+d=30; while [ "$d" -le 200 ]; do ab mouse move "$divx" $((divy + d)) >/dev/null 2>&1; sleep 0.03; d=$((d + 30)); done
+ab mouse move "$divx" $((divy + 200)) >/dev/null 2>&1
 ab mouse up >/dev/null 2>&1
 sleep 0.4
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom").getBoundingClientRect().height)')
@@ -139,4 +139,13 @@ sleep 0.8
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 assert_eq "$bottom" "1" "final: the bottom panel is present at desktop"
 
+# console check via lib.sh's shared detector; JOURNEY_DEV_LANE (a
+# recipe-local shell var, unset again after) filters ONLY the nuxt DEV
+# server's vite HMR websocket noise: this verify lane serves the dev
+# bundle through the worktree proxy, which cannot ride the websocket
+# upgrade. The embedded lane (CI, :8098) asserts genuine silence.
+JOURNEY_DEV_LANE=1
 assert_no_console_errors
+# unset: run.sh SOURCES its recipes in one process - without this, the
+# dev filter would leak into any recipe running after this one
+unset JOURNEY_DEV_LANE

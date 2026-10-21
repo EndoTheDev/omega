@@ -31,7 +31,11 @@ sleep 0.3
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle right sidebar").click()' >/dev/null 2>&1
 sleep 0.3
 panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
-assert_eq "$panes" "1" "desktop-close prunes both pinned edge panes (1 pane left)"
+# card t_67fc1905: the fresh dock tree is column [main row, bottom shell]
+# - 4 panes total. The desktop-close prunes BOTH SIDEBARS, not the
+# bottom shell (it has no menubar sidebar among the toggles this journey
+# clicks): 2 panes survive (the main pane + the bottom panel).
+assert_eq "$panes" "2" "desktop-close prunes both sidebars (main + bottom left)"
 
 # --- narrow to mobile (the breakpoint crossing flips isMobile via the
 #     matchMedia change listener; NO reload - a reload would re-assert the
