@@ -1,5 +1,8 @@
 <template>
-  <section class="logs-list">
+  <section
+    ref="rootEl"
+    class="logs-list"
+    :class="{ narrow: narrow }">
     <p
       v-if="error"
       class="panel-status">
@@ -35,6 +38,7 @@
 
 <script setup lang="ts">
   import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { useNarrow } from "./narrow";
 
   // Transport-owned UI (card t_db430fea): the tail of the omega log
   // the channel's server itself writes, from GET /logs?lines=200, and
@@ -52,6 +56,14 @@
   const loaded = ref(false);
   const error = ref("");
   const bodyEl = ref<HTMLElement | null>(null);
+
+  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
+  // this root measures its OWN rendered container and flips the class;
+  // the scoped stylesheet below condenses (log lines carry long mono
+  // paths - at ~300px the padding is dead weight and the meta line
+  // needs the room back).
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = useNarrow(rootEl);
 
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -132,5 +144,18 @@
     padding: 4px 12px 8px;
     font-size: 10px;
     opacity: 0.45;
+  }
+  /* narrow: the module-UI recipe (card t_a2fdc630) - the tail's mono
+     lines are widest at the top of the file; recovering the horizontal
+     padding gives every long line less wrap, not more. */
+  .logs-list.narrow .panel-status,
+  .logs-list.narrow .logs-body {
+    padding: 6px 8px;
+  }
+  .logs-list.narrow .logs-line {
+    font-size: 10px;
+  }
+  .logs-list.narrow .logs-meta {
+    padding: 3px 8px 6px;
   }
 </style>
