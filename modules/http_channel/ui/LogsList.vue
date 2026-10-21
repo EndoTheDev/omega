@@ -38,7 +38,7 @@
 
 <script setup lang="ts">
   import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-  import { useNarrow } from "./narrow";
+  import { isNarrowWidth } from "./narrow";
 
   // Transport-owned UI (card t_db430fea): the tail of the omega log
   // the channel's server itself writes, from GET /logs?lines=200, and
@@ -57,13 +57,36 @@
   const error = ref("");
   const bodyEl = ref<HTMLElement | null>(null);
 
-  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
-  // this root measures its OWN rendered container and flips the class;
-  // the scoped stylesheet below condenses (log lines carry long mono
-  // paths - at ~300px the padding is dead weight and the meta line
-  // needs the room back).
+  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
+  // root measures its OWN rendered container and flips the class; the
+  // scoped stylesheet below condenses (log lines carry long mono
+  // paths - at ~300px the padding is dead weight). Same mechanism as
+  // the shell's useNarrow - kept in-module because module UI imports
+  // no shell code (Board precedent); threshold unit-covered in
+  // ./narrow.ts.
   const rootEl = ref<HTMLElement | null>(null);
-  const narrow = useNarrow(rootEl);
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
+    // (same rAF deferral as the shell's useNarrow: the flip changes the
+    // observed layout itself, so the callback must not mutate this frame)
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(rootEl.value);
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   let timer: ReturnType<typeof setInterval> | null = null;
 
