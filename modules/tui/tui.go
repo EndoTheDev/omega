@@ -214,7 +214,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/copy", "/extensions", "/theme", "/exit", "/help"}
+var knownCommands = []string{"/copy", "/extensions", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -290,6 +290,11 @@ type model struct {
 	lastRender           time.Time              // debounce for live glamour rendering during streaming
 	lastRenderedResponse string                 // cached glamour output for debounced frames
 	contextWindow        int                    // auto-discovered from provider; 0 = unknown, fall back to config
+	view                 agent.ActiveView       // tree view of the loaded session; /variant /fork navigation
+	forkParent           string                 // row id the next send chains onto (/fork); "" = derive leaf
+	retryParent          string                 // branch point the in-flight retry's head pins to; "" = none
+	headPinned           bool                   // retry head already parented this run
+	retryMarker          string                 // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -445,7 +450,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Width = msg.Width
 		m.resizeTextarea()
 		if len(m.history) > 0 && !m.busy {
-			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme)
+			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
 		}
 		m.refresh()
 		return m, m.textarea.Focus()
@@ -789,12 +794,17 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if imgErr != nil {
 		m.transcript += "\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n"
 	}
+	var msg ai.Message
 	if len(images) > 0 {
 		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[loaded %d image(s)]", len(images))) + "\n"
-		m.history = append(m.history, ai.NewUserWithImages(prompt, images))
+		msg = ai.NewUserWithImages(prompt, images)
 	} else {
-		m.history = append(m.history, ai.NewUser(prompt))
+		msg = ai.NewUser(prompt)
 	}
+	// A /fork pin chains this send onto the forked row id; the store's
+	// derived leaf would otherwise ignore the forked perspective.
+	msg = applyForkPin(&m, msg)
+	m.history = append(m.history, msg)
 	m.busy = true
 	m.segments = nil
 	m.err = ""
@@ -965,7 +975,25 @@ func (m *model) handleEvent(event agent.Event) {
 			if response.Content == "" {
 				response.Content = strings.TrimSuffix(responseBuf.String(), "\n")
 			}
-			m.transcript += "\n" + renderMarkdown(response.Content, m.viewport.Width, m.theme) + "\n"
+			rendered := renderMarkdown(response.Content, m.viewport.Width, m.theme)
+			if m.retryMarker != "" {
+				// The retry's fresh response carries its variant
+				// marker (computed at /retry time from the pre-run
+				// sibling count).
+				m.transcript += "\n" + m.theme.Info.Render(m.retryMarker) + " " + rendered + "\n"
+			} else {
+				m.transcript += "\n" + rendered + "\n"
+			}
+		}
+		// The run's tree state changed: refresh the view so the next
+		// /variant or /fork sees the fresh branch points.
+		m.retryParent = ""
+		m.retryMarker = ""
+		m.headPinned = false
+		if m.store != nil && m.sessionID != "" && !m.ephemeral {
+			if v, err := m.store.GetActiveView(context.Background(), m.sessionID); err == nil {
+				m.view = v
+			}
 		}
 		m.segments = nil
 	case agent.ToolResultEvent:
@@ -1006,6 +1034,13 @@ func (m *model) handleEvent(event agent.Event) {
 			m.appendSegment("tool_result", fmt.Sprintf("[tool result: %d lines]", lines))
 		}
 	case agent.AssistantMessageEvent:
+		// A /retry run pins its head to the branch-point user (the
+		// sibling-variant hop the http channel makes server-side);
+		// everything after chains off the derived leaf.
+		if m.retryParent != "" && !m.headPinned {
+			e.Message.ParentID = m.retryParent
+			m.headPinned = true
+		}
 		m.history = append(m.history, e.Message)
 		if m.store != nil && m.sessionID != "" {
 			if err := m.store.AppendMessage(context.Background(), m.sessionID, e.Message); err != nil {
@@ -1063,6 +1098,20 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 			return m.handleExtensionCommand("/tree", "")
 		}
 		return m, nil // unreachable; all cases return
+	case "/variant":
+		if m.ephemeral {
+			m.err = "no sessions in ephemeral mode"
+			return m, nil
+		}
+		return m.handleVariant(fields[1:])
+	case "/fork":
+		if m.ephemeral {
+			m.err = "no sessions in ephemeral mode"
+			return m, nil
+		}
+		return m.handleFork(fields[1:])
+	case "/retry":
+		return m.handleRetry()
 	case "/copy":
 		return m.handleCopy()
 	case "/export":
@@ -1343,6 +1392,18 @@ func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// applyForkPin chains a fresh user message onto the /fork pin and
+// clears it (one pin, one send). The store validates the pointer
+// against the session's rows on write.
+func applyForkPin(m *model, msg ai.Message) ai.Message {
+	if m.forkParent == "" {
+		return msg
+	}
+	pinned := agent.WithParentID(msg, m.forkParent)
+	m.forkParent = ""
+	return pinned
+}
+
 // resetSession clears the active session state, like /new.
 func (m *model) resetSession() {
 	m.sessionID = ""
@@ -1351,6 +1412,11 @@ func (m *model) resetSession() {
 	m.history = nil
 	m.transcript = ""
 	m.segments = nil
+	m.view = agent.ActiveView{}
+	m.forkParent = ""
+	m.retryParent = ""
+	m.headPinned = false
+	m.retryMarker = ""
 }
 
 // persistEntry appends a non-conversation entry (model change, thinking
@@ -1424,7 +1490,7 @@ func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
 		t.Name = "auto"
 		m.theme = t
 		if len(m.history) > 0 {
-			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme)
+			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
 			// Re-add the user's echo line: slash commands are not in
 			// m.history, so renderTranscript omits them.
 			m.transcript += "\n" + m.theme.User.Render("> /theme "+strings.Join(args, " ")) + "\n"
@@ -1441,7 +1507,7 @@ func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
 	}
 	m.theme = t
 	if len(m.history) > 0 {
-		m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme)
+		m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
 		m.transcript += "\n" + m.theme.User.Render("> /theme "+strings.Join(args, " ")) + "\n"
 	}
 	m.transcript += "\n" + m.theme.Info.Render("[theme: "+name+"]") + "\n"
@@ -1501,6 +1567,11 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.autoNameGen++
 			m.sessionID = ""
 			m.ephemeral = action.Value == "--ephemeral"
+			m.view = agent.ActiveView{}
+			m.forkParent = ""
+			m.retryParent = ""
+			m.headPinned = false
+			m.retryMarker = ""
 			m.refresh()
 		case "load_session":
 			id := action.Value
@@ -1522,9 +1593,16 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 				m.err = "resume: " + err.Error()
 				return m, nil
 			}
+			sessionView, err := m.store.GetActiveView(context.Background(), id)
+			if err != nil {
+				m.err = "resume: " + err.Error()
+				return m, nil
+			}
 			m.sessionID = id
 			m.history = messageList
-			m.transcript = renderTranscript(messageList, m.viewport.Width, m.theme)
+			m.view = sessionView
+			m.forkParent = "" // dead pin: nothing forked in the freshly loaded session
+			m.transcript = renderTranscript(messageList, m.viewport.Width, m.theme, pathMarkers(sessionView, len(messageList)))
 			m.segments = nil
 			m.err = ""
 			m.storeErr = ""
@@ -1558,7 +1636,8 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			}
 			m.sessionID = id
 			m.history = messages
-			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
+			m.view = agent.ActiveView{} // branch sessions render a flat ancestor chain, no live tree view
+			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme, nil)
 			m.segments = nil
 			m.err = ""
 			m.refresh()
@@ -1713,13 +1792,15 @@ func (m *model) resizeTextarea() {
 // Assistant messages render thinking, tool calls, and content in order
 // (matching the live AgentEnd path); tool results render full; compacted
 // summaries render dimmed. Other system messages (skills, injected
-// prompts) are not persisted and never appear here.
-func renderTranscript(messages []ai.Message, width int, t Theme) string {
+// prompts) are not persisted and never appear here. markers maps a
+// message index to a variant marker ("[2/3]") rendered at the head of
+// its assistant block (t_7337870a).
+func renderTranscript(messages []ai.Message, width int, t Theme, markers map[int]string) string {
 	var sb strings.Builder
 	// Track the last assistant's tool calls so we can infer the
 	// language for syntax highlighting tool results by ToolCallID.
 	toolCallsByID := make(map[string]ai.ToolCall)
-	for _, msg := range messages {
+	for i, msg := range messages {
 		switch m := msg.(type) {
 		case ai.User:
 			sb.WriteString("\n")
@@ -1731,6 +1812,9 @@ func renderTranscript(messages []ai.Message, width int, t Theme) string {
 				toolCallsByID[call.ID] = call
 			}
 			sb.WriteString("\n")
+			if markers != nil && markers[i] != "" {
+				sb.WriteString(t.Info.Render(markers[i]) + " ")
+			}
 			if m.Thinking != nil && *m.Thinking != "" {
 				sb.WriteString(t.Thinking.Render("[thinking]"))
 				sb.WriteString("\n")
@@ -2363,6 +2447,9 @@ func (m model) renderHelp() string {
 		{"/sessions", "list saved sessions"},
 		{"/resume <#|id|label>", "resume a session (line # from /sessions, id, or label)"},
 		{"/branch [id]", "branch a new session from the current (or given) one"},
+		{"/retry", "re-run the last user turn as a new response variant"},
+		{"/variant [<n>|prev|next]", "navigate response variants (no arg lists branch points)"},
+		{"/fork [<path #>]", "list the active path; <path #> pins where the next message continues"},
 		{"/label [text]", "set a label on the current session (no text clears it)"},
 		{"/tree", "show the session tree"},
 		{"/models", "list available models from the current provider"},
