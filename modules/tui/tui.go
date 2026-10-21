@@ -214,7 +214,7 @@ func themeNames() []string {
 // session lifecycle, then model control, then transcript tools, then
 // app commands. Skill names are appended at startup, so autocomplete
 // matches both built-ins and loaded skills.
-var knownCommands = []string{"/copy", "/extensions", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
+var knownCommands = []string{"/copy", "/extensions", "/theme", "/files", "/cron", "/logs", "/variant", "/fork", "/retry", "/exit", "/help"}
 
 // commandOptions maps commands with enum arguments to their valid values.
 // The autocomplete offers these as second-level completions once the
@@ -226,6 +226,7 @@ var commandOptions = map[string][]string{
 	"/tools":    {"on", "off", "auto", "list"},
 	"/theme":    {"dark", "light", "auto"},
 	"/sessions": {"delete"},
+	"/logs":     {"-f"},
 }
 
 // streamSegment is one ordered piece of a streaming turn. Segments are
@@ -295,6 +296,10 @@ type model struct {
 	retryParent          string                 // branch point the in-flight retry's head pins to; "" = none
 	headPinned           bool                   // retry head already parented this run
 	retryMarker          string                 // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
+	files                *filesBrowser          // open /files browser; nil = closed
+	logFollow            bool                   // /logs -f: appending on a one-second tick
+	logFile              string                 // log file the follow mode reads
+	logOffset            int64                  // follow read position (byte offset)
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -449,6 +454,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screenHeight = msg.Height
 		m.viewport.Width = msg.Width
 		m.resizeTextarea()
+		if m.files != nil {
+			m.layoutFiles()
+		}
 		if len(m.history) > 0 && !m.busy {
 			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
 		}
@@ -459,6 +467,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Ctrl+C always exits, even mid-run.
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		// The file browser, when open, owns every key: it is a
+		// full-screen view over the transcript.
+		if m.files != nil {
+			return m.updateFilesKeys(msg)
+		}
+		// /logs -f stops on the next keypress - following a log is a
+		// watch mode, and typing means the user wants the prompt back.
+		if m.logFollow {
+			m.stopLogFollow()
 		}
 		if m.busy {
 			// Escape cancels the in-flight run; the agent loop observes
@@ -757,6 +775,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// back to compaction config.
 		m.contextWindow = msg.contextWindow
 		return m, nil
+
+	case logFollowTickMsg:
+		// /logs -f: append what the logger wrote since the last
+		// tick and schedule the next one.
+		return m.handleLogFollowTick()
 
 	default:
 		var cmd tea.Cmd
@@ -1140,6 +1163,12 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExtensions()
 	case "/theme":
 		return m.handleTheme(fields[1:])
+	case "/files":
+		return m.handleFiles(fields[1:])
+	case "/cron":
+		return m.handleCronCommand()
+	case "/logs":
+		return m.handleLogs(fields[1:])
 	case "/help":
 		m.transcript += m.renderHelp()
 		m.refresh()
@@ -2115,6 +2144,15 @@ func renderCodeBlock(code, lang string, width int, t Theme) string {
 // the conversation is empty (fresh start or /new), a startup splash
 // replaces the viewport.
 func (m model) View() string {
+	// The file browser is a full-screen view: it replaces the
+	// transcript, autocomplete and textarea entirely.
+	if m.files != nil {
+		var sb strings.Builder
+		sb.WriteString(m.filesView())
+		sb.WriteString("\n")
+		sb.WriteString(m.theme.Status.Render(m.statusLine()))
+		return sb.String()
+	}
 	var sb strings.Builder
 	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
 		sb.WriteString(m.splashView())
@@ -2461,6 +2499,9 @@ func (m model) renderHelp() string {
 		{"/tools [on|off|auto|list]", "tool results: expanded / collapsed / auto, or list all tools"},
 		{"/extensions", "list loaded extensions"},
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
+		{"/files [path]", "browse the working directory (enter opens, esc/q closes)"},
+		{"/cron", "list cron jobs (read-only)"},
+		{"/logs [-f]", "tail omega.log (-f: keep following)"},
 		{"/help", "show this help"},
 	}
 	rows := builtin
