@@ -17,6 +17,8 @@
             :key="itemKey(liveRun.user!)"
             :item="liveRun.user!"
             :show-thinking="showThinking"
+            @select="onSelect"
+            @fork="onFork"
             @retry="onRetry" />
         </div>
         <div
@@ -27,7 +29,10 @@
             v-for="item in liveRun.body"
             :key="itemKey(item)"
             :item="item"
+            :variant="variantOfItem(item)"
             :show-thinking="showThinking"
+            @select="onSelect"
+            @fork="onFork"
             @retry="onRetry" />
         </div>
       </template>
@@ -57,7 +62,10 @@
               v-for="item in block"
               :key="itemKey(item)"
               :item="item"
+              :variant="variantOfItem(item)"
               :show-thinking="showThinking"
+              @select="onSelect"
+              @fork="onFork"
               @retry="onRetry" />
           </div>
         </template>
@@ -66,7 +74,10 @@
             v-for="item in transcript"
             :key="itemKey(item)"
             :item="item"
+            :variant="variantOfItem(item)"
             :show-thinking="showThinking"
+            @select="onSelect"
+            @fork="onFork"
             @retry="onRetry" />
         </template>
       </div>
@@ -98,6 +109,8 @@
       :can-retry="canRetry"
       :thinking="thinking"
       :attachments="state.attachments"
+      :fork-anchor="state.forkFrom ?? null"
+      @clear-fork="host.clearFork(stateKey)"
       @update:model="emit('update:model', $event)"
       @update:thinking="emit('update:thinking', $event)"
       @send="onSend"
@@ -121,8 +134,10 @@
     CHAT_HOST_KEY,
     activityPhase,
     type ChatState,
+    type MessageItem,
     type TranscriptItem,
   } from "../composables/chat";
+  import { variantOf, type VariantBlock } from "../composables/omega";
   import {
     COMPOSER_FOCUS_KEY,
     focusDelivers,
@@ -343,6 +358,24 @@
   }
   function onRetry() {
     host.retry(stateKey, props.model, thinkingLevelWire(props.thinking));
+  }
+
+  // --- variants (t_a62eeb43) ---
+  //
+  // variantOfItem resolves ONE transcript item's branch block: an
+  // assistant message whose store id is a sibling of a >=2-count branch
+  // point. The live tail (no id), user bubbles and plain sessions
+  // resolve to null - the switcher renders only there.
+  function variantOfItem(item: TranscriptItem): VariantBlock | null {
+    const st = state.value;
+    if (!item || item.kind !== "message" || item.role !== "assistant") return null;
+    return variantOf(item as MessageItem, st?.variants);
+  }
+  function onSelect(messageId: string, index: number) {
+    void host.selectVariant(stateKey, messageId, index);
+  }
+  function onFork(messageId: string) {
+    void host.fork(stateKey, messageId, props.model, thinkingLevelWire(props.thinking));
   }
 
   // --- composer auto-focus (card t_b40131ac): the app signals chat

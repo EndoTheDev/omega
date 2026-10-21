@@ -101,6 +101,21 @@ export interface TranscriptDetail {
   // streaming" - every tab reconciles against the row.
   running?: boolean;
   items: TranscriptWireItem[];
+  // variants block (t_17365247): branch points with >=2 sibling runs.
+  // ABSENT for sessions without variants - a plain session must render
+  // exactly as it always did, so no default fills it client-side.
+  variants?: VariantBlock[];
+}
+
+// VariantBlock is one wire branch point (agent.BranchInfo): message_id
+// names the PARENT message (the branch point - a user turn re-run by
+// retry/fork), siblings lists every run-head id in add order, count the
+// variant count and active the active sibling's index.
+export interface VariantBlock {
+  message_id: string;
+  siblings?: string[];
+  count: number;
+  active: number;
 }
 
 // --- the transcript component contract (shared by restore AND live) ---
@@ -115,6 +130,9 @@ export interface MessageItem {
   kind: "message";
   role: "user" | "assistant";
   content: string;
+  // store row id (restored history only) - addresses the variants
+  // surface (switcher + fork). Live-built items carry none.
+  id?: string;
   streaming?: boolean;
   // image attachments on user messages (ai.User.Images) - rendered as
   // thumbnails inside the bubble, click opens the raw data URL
@@ -169,8 +187,8 @@ export type TranscriptItem =
 // thinking/response block streams from the restored item, and the
 // running tool line carries its elapsed-so-far in elapsed_ms.
 export type TranscriptWireItem =
-  | { kind: "user"; content: string; time?: string; images?: OmegaImage[] }
-  | { kind: "message"; content: string; time?: string; response_ms?: number; running?: boolean }
+  | { kind: "user"; id?: string; content: string; time?: string; images?: OmegaImage[] }
+  | { kind: "message"; id?: string; content: string; time?: string; response_ms?: number; running?: boolean }
   | { kind: "thinking"; content: string; thinking_ms?: number; running?: boolean }
   | {
       kind: "tool_call";
@@ -208,6 +226,7 @@ export function renderTranscriptItems(
             content: it.content,
             time: it.time,
             images: it.images,
+            id: it.id,
           });
         break;
       case "message":
@@ -218,6 +237,7 @@ export function renderTranscriptItems(
             content: it.content,
             time: it.time,
             finalMs: it.response_ms,
+            id: it.id,
             // only the merge's live tail streams from restore - persisted
             // items mount final (the driver adopts the streaming ones)
             streaming: it.running ? true : undefined,
@@ -330,6 +350,66 @@ export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}/transcript`);
   if (!r.ok) throw new Error(`transcript: ${r.status}`);
   return r.json();
+}
+
+// --- variants (card t_a62eeb43): switcher + fork navigation ---
+//
+// The server derives the branch tree (t_17365247); this surface only
+// reads its wire block and posts selections. The rendered transcript IS
+// the active path, so a sibling's switcher data rides the bubble's
+// store id - live-built items carry none and render no switcher.
+
+// variantOf resolves ONE assistant bubble's branch point: an assistant
+// message whose store id sits in a branch block's siblings. A session
+// without variants (the block is absent) and live/streaming bubbles
+// resolve to null - the switcher renders ONLY when siblings exist.
+export function variantOf(
+  message: MessageItem | null | undefined,
+  variants: VariantBlock[] | null | undefined,
+): VariantBlock | null {
+  if (!variants?.length || !message || message.role !== "assistant" || !message.id) {
+    return null;
+  }
+  for (const v of variants) {
+    if (v.count >= 2 && v.siblings?.includes(message.id)) return v;
+  }
+  return null;
+}
+
+// variantLabel is the one-indexed « 2/3 » math: THIS bubble's position
+// among its siblings (its own id when listed, else the block's active
+// index), clamped into range so a stale id can never render 4/3.
+export function variantLabel(
+  v: VariantBlock,
+  id?: string,
+): { index: number; count: number } {
+  const count = Math.max(1, v.count);
+  let index = v.active;
+  if (id && v.siblings) {
+    const i = v.siblings.indexOf(id);
+    if (i >= 0) index = i;
+  }
+  return { index: Math.min(Math.max(index, 0), count - 1), count };
+}
+
+// postVariantSelect flips the active variant server-side: message_id is
+// either a branch point (select = the 0-based sibling index - the
+// switcher's arrows) or any conversation message (bare - the fork
+// anchor flow, which selects that message's own run). Persists as a
+// variant_select bookkeeping entry; the response is the session's
+// updated branch block.
+export async function postVariantSelect(
+  sessionId: string,
+  body: { message_id: string; select?: number },
+): Promise<VariantBlock[]> {
+  const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/variants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`variants: ${r.status}`);
+  const j = (await r.json()) as { variants?: VariantBlock[] };
+  return j.variants ?? [];
 }
 
 export interface ModelsInfo {
@@ -1701,6 +1781,10 @@ export function thinkingLevelWire(selection: string): number | undefined {
 // retry swaps the body for the server's replay flag (t_357cbe9c): no
 // messages ride the wire, the server re-runs the session's persisted
 // last user turn and the fresh response appends below the prior one.
+// fork (t_a62eeb43): sends chained onto a historical message - the
+// server truncates context at the target and parents the run there.
+// Fork of a user turn is replay semantics - no messages ride the wire
+// there either.
 export async function streamChat(
   messages: OmegaMessage[],
   sessionId: string | null,
@@ -1708,11 +1792,13 @@ export async function streamChat(
   model?: string,
   thinkingLevel?: number,
   retry?: boolean,
+  fork?: string,
 ): Promise<void> {
   const body: Record<string, unknown> = retry ? { retry: true } : { messages };
   if (sessionId) body.session_id = sessionId;
   if (model) body.model = model;
   if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;
+  if (fork) body.fork = fork;
   const resp = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
