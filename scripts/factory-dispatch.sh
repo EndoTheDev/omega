@@ -74,8 +74,12 @@ mapfile -t CAND < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='ready' ORD
 PARKED=(); LEGAL=0
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
-  [ "$LEGAL" -ge 2 ] && break   # enough legal candidates for this pass
-  CTOK=$(mktemp); sqlite3 "$DB" "SELECT body FROM tasks WHERE id='$c';" | tokens_of >"$CTOK"
+  # ponytail: no early break at 2 legal - the dispatcher may skip a legal
+  # candidate and fall through to an unevaluated one, spawning a same-file
+  # pair (proven live 2026-10-21: nuxt.config.ts collision via t_67fc1905).
+  # Every ready candidate gets a hold verdict; the cap math stays in the
+  # dispatch call.
+  CTOK=$(mktemp); surface_of_card "$c" | tokens_of >"$CTOK"
   HOLD=0; WHY=""
   if [ "$RUN_HAS_SURFACE" = 1 ]; then
     if grep -q . "$CTOK" && overlaps "$CTOK" "$SURF"; then
