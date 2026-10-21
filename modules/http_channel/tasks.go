@@ -9,16 +9,27 @@ import (
 )
 
 // The board HTTP surface: the kanban module's provider over
-// GET /tasks (list, filterable), POST /tasks, GET /tasks/{id}
-// (task + comments + events), PATCH /tasks/{id} and
-// POST /tasks/{id}/comments. Every route answers 501 when the
+// GET /boards, GET /tasks (list, filterable, board-picked), POST
+// /tasks, GET /tasks/{id} (task + comments + events), PATCH
+// /tasks/{id} and POST /tasks/{id}/comments. Task routes take a
+// ?board= query parameter; the empty value is the current board (the
+// pointer target resolved at mount). Every route answers 501 when the
 // kanban seam is not mounted - the board is optional, the API
 // degrades to a clear message instead of a panic.
+//
+// There is deliberately no cross-board mutation endpoint: a PATCH
+// moves a card inside its board only. Switching boards is the
+// registry pointer's job (omega kanban board use), never a card op.
 
 // boardUnavailable is the shared 501 guard for unmounted kanban.
 func boardUnavailable(w http.ResponseWriter) bool {
 	http.Error(w, "kanban board not configured", http.StatusNotImplemented)
 	return true
+}
+
+// boardParam reads the ?board= picker from the request.
+func boardParam(r *http.Request) string {
+	return r.URL.Query().Get("board")
 }
 
 // taskDetail is the GET /tasks/{id} payload: the task plus its thread.
@@ -28,9 +39,31 @@ type taskDetail struct {
 	Events   []agent.KanbanEvent   `json:"events"`
 }
 
+// handleBoards serves GET /boards: the board registry with the
+// current board flagged. 501 when the seam lacks the listing
+// capability (a single-board provider stays legal).
+func (s *Server) handleBoards(w http.ResponseWriter, r *http.Request) {
+	if s.Kanban == nil {
+		boardUnavailable(w)
+		return
+	}
+	lister, ok := s.Kanban.(agent.BoardLister)
+	if !ok {
+		http.Error(w, "board registry not supported", http.StatusNotImplemented)
+		return
+	}
+	boards, err := lister.Boards(r.Context())
+	if err != nil {
+		http.Error(w, "list boards: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"boards": boards})
+}
+
 // handleTasks serves GET /tasks (list; ?status= filters, the empty
-// value lists every status) and POST /tasks (create; title required,
-// unspecified status defaults to triage in the store).
+// value lists every status; ?board= picks the board) and POST /tasks
+// (create; title required, unspecified status defaults to triage in
+// the store).
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	if s.Kanban == nil {
 		boardUnavailable(w)
@@ -38,7 +71,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		tasks, err := s.Kanban.ListTasks(r.Context(), r.URL.Query().Get("status"))
+		tasks, err := s.Kanban.ListTasks(r.Context(), boardParam(r), r.URL.Query().Get("status"))
 		if err != nil {
 			http.Error(w, "list tasks: "+err.Error(), http.StatusBadRequest)
 			return
@@ -55,7 +88,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		out, err := s.Kanban.CreateTask(r.Context(), agent.KanbanTask{
+		out, err := s.Kanban.CreateTask(r.Context(), boardParam(r), agent.KanbanTask{
 			Title:    body.Title,
 			Body:     body.Body,
 			Assignee: body.Assignee,
@@ -87,17 +120,17 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		t, err := s.Kanban.GetTask(r.Context(), id)
+		t, err := s.Kanban.GetTask(r.Context(), boardParam(r), id)
 		if err != nil {
 			taskByIDError(w, err)
 			return
 		}
-		comments, err := s.Kanban.GetTaskComments(r.Context(), id)
+		comments, err := s.Kanban.GetTaskComments(r.Context(), boardParam(r), id)
 		if err != nil {
 			http.Error(w, "get comments: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		events, err := s.Kanban.GetTaskEvents(r.Context(), id)
+		events, err := s.Kanban.GetTaskEvents(r.Context(), boardParam(r), id)
 		if err != nil {
 			http.Error(w, "get events: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -117,7 +150,7 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		}
 		// task.update keeps a simple non-pointer Status field ("" = no
 		// change); wire it through directly
-		out, err := s.Kanban.UpdateTask(r.Context(), id, agent.KanbanPatch{
+		out, err := s.Kanban.UpdateTask(r.Context(), boardParam(r), id, agent.KanbanPatch{
 			Title:     body.Title,
 			Body:      body.Body,
 			Assignee:  body.Assignee,
@@ -162,7 +195,7 @@ func (s *Server) handleTaskComments(w http.ResponseWriter, r *http.Request) {
 	if body.Author == "" {
 		body.Author = "web"
 	}
-	c, err := s.Kanban.AddComment(r.Context(), id, body.Author, body.Body)
+	c, err := s.Kanban.AddComment(r.Context(), boardParam(r), id, body.Author, body.Body)
 	if err != nil {
 		taskByIDError(w, err)
 		return

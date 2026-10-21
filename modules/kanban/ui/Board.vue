@@ -3,7 +3,31 @@
     ref="boardEl"
     class="board"
     :class="{ narrow: narrow }">
-    <div class="board-scroll">
+    <div
+      v-if="boards.length > 1 || boardName"
+      class="board-head">
+      <label
+        class="board-switch-label"
+        for="board-switcher">board</label>
+      <select
+        id="board-switcher"
+        class="board-switch-select"
+        :value="boardName"
+        @change="switchBoard(($event.target as HTMLInputElement).value)">
+        <option
+          v-for="b in boards"
+          :key="b.name"
+          :value="b.name">{{ b.name }}</option>
+      </select>
+      <span
+        v-if="boardName"
+        class="board-switch-count">{{ tasks.length }} card{{
+          tasks.length === 1 ? "" : "s"
+        }}</span>
+    </div>
+    <div
+      class="board-scroll"
+      :key="boardName">
       <div
         v-for="(col, i) in cols"
         :key="BOARD_STATUSES[i]"
@@ -116,8 +140,11 @@
     columns,
     isNarrowWidth,
     isSettled,
+    pickBootBoard,
     step,
+    withBoard,
     type BoardComment,
+    type BoardInfo,
     type BoardTask,
   } from "./board/boardLogic";
 
@@ -131,12 +158,38 @@
   const tasks = ref<BoardTask[]>([]);
   const error = ref("");
 
+  // --- board switcher (card t_d7a7beaa): the dropdown rides GET
+  // /boards; "" means "server default" and renders no switcher when
+  // the capability is missing. The inspector (drawer) reads the same
+  // board - every call below goes through withBoard.
+  const boards = ref<BoardInfo[]>([]);
+  const boardName = ref("");
+
+  async function fetchBoards() {
+    try {
+      const res = await fetch("/boards");
+      if (!res.ok) return; // capability absent: single-board install
+      const body = await res.json();
+      boards.value = body.boards ?? [];
+      boardName.value = pickBootBoard(boards.value);
+    } catch {
+      // registry noise stays silent - the board still renders
+    }
+  }
+
+  function switchBoard(name: string) {
+    if (name === boardName.value) return;
+    boardName.value = name;
+    selected.value = null; // the drawer's card belongs to the old board
+    fetchBoard();
+  }
+
   const POLLS_MS = 5000;
   let timer: ReturnType<typeof setInterval> | undefined;
 
   async function fetchBoard() {
     try {
-      const res = await fetch("/tasks");
+      const res = await fetch(withBoard("/tasks", boardName.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
       tasks.value = body.tasks ?? [];
@@ -190,7 +243,7 @@
     const title = drafts[status].trim();
     if (!title) return;
     try {
-      const res = await fetch("/tasks", {
+      const res = await fetch(withBoard("/tasks", boardName.value), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, status }),
@@ -206,7 +259,7 @@
   // --- moves: arrow buttons and the drawer's status selector
   async function moveBoard(t: BoardTask, status: string) {
     try {
-      const res = await fetch(`/tasks/${encodeURIComponent(t.id)}`, {
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(t.id)}`, boardName.value), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -231,7 +284,7 @@
 
   async function loadDetail(id: string) {
     try {
-      const res = await fetch(`/tasks/${encodeURIComponent(id)}`);
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, boardName.value));
       if (!res.ok) throw new Error(`GET /tasks/${id}: ${res.status}`);
       const d = await res.json();
       selected.value = d.task;
@@ -249,7 +302,7 @@
   // spinning the loading flag (the user may be typing a comment)
   async function applyDetailPatch(id: string) {
     try {
-      const res = await fetch(`/tasks/${encodeURIComponent(id)}`);
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, boardName.value));
       if (!res.ok) return;
       const d = await res.json();
       selected.value = d.task;
@@ -269,7 +322,7 @@
     if (!selected.value || !body.trim()) return;
     try {
       const res = await fetch(
-        `/tasks/${encodeURIComponent(selected.value.id)}/comments`,
+        withBoard(`/tasks/${encodeURIComponent(selected.value.id)}/comments`, boardName.value),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -292,7 +345,7 @@
   }
 
   onMounted(() => {
-    fetchBoard();
+    fetchBoards().then(() => fetchBoard());
     timer = setInterval(fetchBoard, POLLS_MS);
   });
   onUnmounted(() => {
@@ -310,6 +363,33 @@
     min-height: 0;
     position: relative;
     overflow: hidden;
+  }
+  .board-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px 0;
+    flex: none;
+  }
+  .board-switch-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.5;
+  }
+  .board-switch-select {
+    font: inherit;
+    font-size: 12px;
+    color: inherit;
+    background: color-mix(in srgb, currentcolor 6%, transparent);
+    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
+    border-radius: 6px;
+    padding: 3px 6px;
+    max-width: 160px;
+  }
+  .board-switch-count {
+    font-size: 10.5px;
+    opacity: 0.5;
   }
   .board-scroll {
     display: flex;

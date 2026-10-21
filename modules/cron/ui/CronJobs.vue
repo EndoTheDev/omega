@@ -1,5 +1,8 @@
 <template>
-  <section class="cron-list">
+  <section
+    ref="rootEl"
+    class="cron-list"
+    :class="{ narrow: narrow }">
     <p
       v-if="error"
       class="panel-status">
@@ -41,7 +44,8 @@
 </template>
 
 <script setup lang="ts">
-  import { onMounted, ref } from "vue";
+  import { onBeforeUnmount, onMounted, ref } from "vue";
+  import { isNarrowWidth } from "./narrow";
 
   // Module-owned UI (card t_db430fea): the cron scheduler's job set,
   // from GET /cron/jobs. READ-ONLY v1 by settled decision - names,
@@ -59,6 +63,40 @@
   const jobs = ref<CronJobInfo[]>([]);
   const loaded = ref(false);
   const error = ref("");
+
+  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
+  // root measures its OWN rendered container (the inspector column it
+  // currently rides in) and flips the class; the scoped stylesheet
+  // below condenses. Same mechanism as the shell's useNarrow - kept
+  // in-module because module UI imports no shell code (Board
+  // precedent); the threshold is unit-covered in ./narrow.ts.
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
+    // (same rAF deferral as the shell's useNarrow: the flip changes the
+    // observed layout itself, so the callback must not mutate this frame)
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(rootEl.value);
+    // mount measures NOW: a tab remount in place produces no further
+    // resize entry, so the class must not wait for the next width
+    // change (the shell's useNarrow does the same on mount)
+    narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   // shortTime renders the RFC3339 next fire as a local, compact
   // date-time ("10/20 08:00") - the raw RFC string is noise in a row
@@ -132,5 +170,18 @@
   .cron-meta {
     font-size: 11px;
     opacity: 0.6;
+  }
+  /* narrow: the module-UI recipe (card t_a2fdc630). The rows are
+     already single-column; what dies first at ~300px is horizontal
+     breathing room - the head's name/badge pair wraps and the chrome
+     condenses so a long schedule line never elides. */
+  .cron-list.narrow {
+    padding: 6px 8px 10px;
+  }
+  .cron-list.narrow .cron-head {
+    flex-wrap: wrap;
+  }
+  .cron-list.narrow .cron-name {
+    font-size: 11.5px;
   }
 </style>

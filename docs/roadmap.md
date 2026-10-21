@@ -47,7 +47,7 @@ and git history.
 - First-run seeding removed: memory.md/user.md are agent-created on
   first use, nothing personal ships in file or binary
 
-### v0.9.0 (dev lane, unreleased)
+### v0.9.0 (shipped)
 
 - Module-owned UI: modules ship components in `modules/<name>/ui/`,
   composed at build time (no runtime registry)
@@ -66,17 +66,24 @@ and git history.
   layout migration, magnetic pane snapping, process-group kill fix
   for cancelled shell runs, status bar durability (uptime, version,
   last-run stats)
+- Theming system: token-override YAMLs in the home, hot reload,
+  picker in settings (`GET /themes`)
+- Webui image input (attach strip + `/attach-image` server fetch with
+  the internal-address guard) and the `vision_model` captioner
+- Inspector tab suite: Files (read-only working-dir surface), Cron,
+  Logs, Skills, Tools, Settings, Kanban
+- Reasoning-effort control: `thinking_level` end to end (TUI command,
+  request field, webui select)
+- Webui/HTTP reference docs live in `docs/webui.md` / `docs/api.md`;
+  the binary reference in `docs/cli.md`
 
 ## Planned
 
-- Web UI: theming system (token overrides, hot reload), stacked chat
-  appearance, image input, inspector tabs, reasoning-effort control
 - Agent self-improvement: read-only eval suite + propose-only
   reflection loop (evaluated improvements, never self-merged)
 - OpenTelemetry observability (research: traces, metrics, tool timings)
-- More tools (grep, glob, multi-file edit)
+- More tools (grep, glob)
 - Prompt templates with variable interpolation
-- Core-trust module (pluggable trust gate)
 - Discord/Telegram channels (via the Channel seam)
 - Serve-mode delegation support (SSE polling)
 

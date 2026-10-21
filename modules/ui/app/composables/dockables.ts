@@ -37,6 +37,7 @@ export const DOCK_COMPONENTS = [
   "tools",
   "settings",
   "kanban",
+  "insights",
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
@@ -202,6 +203,23 @@ export const DOCKABLES: readonly DockableComponent[] = [
     policy: "singleton",
     area: "right",
     closable: false,
+  },
+  {
+    // card t_e1e61680: insights lives in the MAIN area, not the
+    // inspector - the daily-activity table and per-tool breakdown want
+    // more than the ~300px inspector column, and the width pressure
+    // test in the card ruled for a main-pane view. Singleton + closable:
+    // one usage dashboard, opened and closed like any main tab.
+    id: "insights",
+    title: "insights",
+    // usage bars: three columns, ascending, in one frame
+    icon: {
+      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
+      paths: ["M7 17v-4", "M12 17V9", "M17 17v-2"],
+    },
+    policy: "singleton",
+    area: "main",
+    closable: true,
   },
 ];
 
