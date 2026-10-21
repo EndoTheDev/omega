@@ -293,7 +293,12 @@ conflict_step() {
 }
 
 git checkout -q "$bra" 2>/dev/null || die "cannot check out $bra locally"
-if ! git rebase --no-fork-point "$BASE" >/dev/null 2>&1; then
+# --no-fork-point: the replay set is merge-base-defined, no reflog guessing.
+# --reapply-cherry-picks: dev may already carry a SAME-PATCH-IDENTICAL commit
+# EARLIER in its history (applied, reverted, re-added by a later commit) -
+# cherry-pick suppression would silently skip the branch's real work and
+# fast-forward onto dev, landing nothing (found live on the 2nd landing).
+if ! git rebase --no-fork-point --reapply-cherry-picks "$BASE" >/dev/null 2>&1; then
   git checkout -q "$BASE" 2>/dev/null || true
   conflict_step
 fi

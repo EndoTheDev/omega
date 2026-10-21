@@ -315,6 +315,33 @@ if [ "$rc" != 0 ]; then badf "S6c: expected rc 0, got $rc: $(cat "$HARNESS/run.o
 [ "$(status_of t_emp)" = "done" ] || badf "S6c: card stays done, got $(status_of t_emp)"
 git -C "$REPO" diff-tree -r "$pre" HEAD | grep . && badf "S6c: no content drift from an empty-branch landing"
 
+echo "== S6d: patch dev applied+reverted earlier gets REAPPLIED (cherry-pick suppression)"
+ok
+
+mk_harness
+new_board
+new_repo
+echo "keep" >"$REPO/keep.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm "base A (smoke proof present)"
+git -C "$REPO" tag baseA
+# dev: remove the proof (the same patch the branch will carry), then a fixture commit re-adds it
+git -C "$REPO" rm -q keep.txt
+git -C "$REPO" commit -qm "docs(dev): dev removes the proof"
+echo "keep" >"$REPO/keep.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm "fix(dev): fixture re-adds the proof"
+# branch from baseA: the removal (patch-id identical to dev's earlier removal)
+git -C "$REPO" checkout -q -b wt/t_skip baseA
+git -C "$REPO" rm -q keep.txt
+git -C "$REPO" commit -qm "fix(card): remove the proof (same patch)"
+git -C "$REPO" checkout -q dev
+card_row t_skip wt/t_skip 500
+run --no-push
+if [ "$rc" != 0 ]; then badf "S6d: reapply must land (rc 0), got $rc: $(cat "$HARNESS/run.out")"; fi
+[ -f "$REPO/keep.txt" ] && badf "S6d: the landing must re-remove the proof from dev"
+[ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_skip)" ] ||
+  badf "S6d: marker at dev tip"
+[ "$(status_of t_skip)" = "done" ] || badf "S6d: card stays done, got $(status_of t_skip)"
+
 echo ""
 echo "train-pass_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
