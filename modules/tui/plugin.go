@@ -14,6 +14,11 @@ type Plugin struct{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (Plugin) Name() string       { return "tui" }
+
+// Description implements agent.Describer.
+func (Plugin) Description() string {
+	return "terminal UI: the Bubble Tea frontend with slash commands"
+}
 func (Plugin) Provides() []string { return []string{"frontend"} }
 func (Plugin) Requires() []string { return nil }
 

@@ -14,6 +14,11 @@ func NewPlugin() *Plugin { return &Plugin{} }
 // Name returns the plugin name shown in /extensions.
 func (p *Plugin) Name() string { return "prompt" }
 
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "system prompt builder: base prompt plus module prompt sections and user overrides"
+}
+
 // Provides lists the seams this plugin mounts.
 func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
 

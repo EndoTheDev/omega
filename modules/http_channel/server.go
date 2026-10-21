@@ -101,6 +101,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/tools", s.handleTools)
+	mux.HandleFunc("/extensions", s.handleExtensions)
 	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
 	mux.HandleFunc("/skills", s.handleSkills)
 	mux.HandleFunc("/logs", s.handleLogs)

@@ -16,6 +16,11 @@ type Plugin struct{}
 // Name returns the extension name shown in /extensions.
 func (p *Plugin) Name() string { return "tools" }
 
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "built-in tools: shell.run and the files domain (read/write/edit, batch operations)"
+}
+
 // Provides lists seam names this plugin mounts. "tools" is additive,
 // so multiple plugins can contribute tool providers without conflict.
 func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections"} }

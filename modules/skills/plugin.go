@@ -18,6 +18,11 @@ type Plugin struct{}
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string       { return "skills" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "skills: reusable procedure files agents can invoke in a sub-agent"
+}
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 

@@ -31,6 +31,11 @@ func NewPluginWithConfig(cfg *Config, home string) *Plugin {
 // Name returns the plugin name shown in the /extensions listing.
 func (p *Plugin) Name() string { return "cron" }
 
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "cron: schedules omega prompts on cron expressions, one agent turn per fire"
+}
+
 // Provides lists the seams this plugin mounts.
 func (p *Plugin) Provides() []string { return []string{"cron"} }
 

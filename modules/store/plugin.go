@@ -18,6 +18,11 @@ type Plugin struct{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string       { return "store" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "session persistence: SQLite-backed message and session store"
+}
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
