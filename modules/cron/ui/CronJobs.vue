@@ -44,8 +44,8 @@
 </template>
 
 <script setup lang="ts">
-  import { onMounted, ref } from "vue";
-  import { useNarrow } from "./narrow";
+  import { onBeforeUnmount, onMounted, ref } from "vue";
+  import { isNarrowWidth } from "./narrow";
 
   // Module-owned UI (card t_db430fea): the cron scheduler's job set,
   // from GET /cron/jobs. READ-ONLY v1 by settled decision - names,
@@ -64,14 +64,35 @@
   const loaded = ref(false);
   const error = ref("");
 
-  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
-  // this root measures its OWN rendered container (the inspector
-  // column it currently rides in) and flips the class; the rules in
-  // the scoped stylesheet below do the condensing. A threshold of
-  // 360 here: below it the name/badge head and the meta lines read
-  // cramped, not just short.
+  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
+  // root measures its OWN rendered container (the inspector column it
+  // currently rides in) and flips the class; the scoped stylesheet
+  // below condenses. Same mechanism as the shell's useNarrow - kept
+  // in-module because module UI imports no shell code (Board
+  // precedent); the threshold is unit-covered in ./narrow.ts.
   const rootEl = ref<HTMLElement | null>(null);
-  const narrow = useNarrow(rootEl);
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
+    // (same rAF deferral as the shell's useNarrow: the flip changes the
+    // observed layout itself, so the callback must not mutate this frame)
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(rootEl.value);
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   // shortTime renders the RFC3339 next fire as a local, compact
   // date-time ("10/20 08:00") - the raw RFC string is noise in a row
