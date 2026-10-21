@@ -1180,6 +1180,95 @@ labels stopped short of the right edge. */
 .msg-copy:focus-visible { opacity: 1; pointer-events: auto; }
 .msg-copy:hover { color: var(--text); }
 
+/* fork affordance (t_a62eeb43): the same hover-fade chip as msg-copy,
+   parked just left of it on the bubble's top edge; any HISTORICAL
+   message carries it (a streaming bubble has no id). Click anchors the
+   composer - the next send continues from this message. */
+.msg-fork {
+  position: absolute;
+  top: 4px;
+  right: 44px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: var(--mono);
+  line-height: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.bubble:hover .msg-fork,
+.msg-fork:focus-visible { opacity: 1; pointer-events: auto; }
+.msg-fork:hover { color: var(--accent); }
+
+/* variant switcher (t_a62eeb43): « 2/3 » straddling the response block's
+   top border - small, mono, always visible while the session renders
+   this branch. Sessions without variants render NOTHING of this (the
+   component only mounts with a branch block), so plain sessions are
+   pixel-identical to before. The arrows are the only affordance that
+   rewrites which path the transcript serves. */
+.variant-switcher {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--text-dim);
+}
+.variant-switcher .v-pos { padding: 0 2px; color: var(--text); }
+.variant-switcher .v-arrow {
+  border: none;
+  background: none;
+  padding: 0 3px;
+  font: inherit;
+  line-height: 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.variant-switcher .v-arrow:hover:not(:disabled) { color: var(--accent); }
+.variant-switcher .v-arrow:disabled { opacity: 0.35; cursor: default; }
+
+/* the composer's fork chip: state, not decoration - while the anchor is
+   armed the next send runs FROM a historical message, and the user must
+   be able to see (and drop) that */
+.fork-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.fork-clear {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.fork-clear:hover { color: var(--text); }
+
 /* image attachments in a transcript bubble: inline thumbnails,
    click opens the full-size data URL in a new tab */
 .msg-images {

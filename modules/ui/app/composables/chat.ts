@@ -24,6 +24,7 @@ import {
   fetchTranscript,
   renderTranscriptItems,
   persistedTelemetry,
+  postVariantSelect,
   streamChat,
   attachSession,
   stopSession,
@@ -32,6 +33,7 @@ import {
   lastUserText,
   attachImageUrl,
   type OmegaImage,
+  type VariantBlock,
 } from "./omega.ts";
 
 // --- transcript item shapes (moved from app.vue: every chat instance
@@ -41,6 +43,10 @@ export interface MessageItem {
   kind: "message";
   role: "user" | "assistant";
   content: string;
+  // store row id (restored history / post-run refetch only) - the
+  // variants surface's address (switcher + fork). Live-built items
+  // carry none.
+  id?: string;
   streaming?: boolean;
   // client-side timestamp for live messages, backend created_at for
   // restored history (ChatMessage renders it as a hover title)
@@ -128,6 +134,15 @@ export interface ChatState {
   // live run, or a successful restore) - the unsaved->created flow sets
   // it so the post-create watcher never clobbers the live transcript
   loaded?: boolean;
+  // the session's branch points (t_17365247 wire block, restored with
+  // the transcript and refreshed after every select + run end). Empty
+  // for sessions without variants - the switcher renders nothing then.
+  variants: VariantBlock[];
+  // the composer's FORK anchor (t_a62eeb43): a historical assistant
+  // message the next send continues FROM (POST /chat {fork}). null =
+  // plain send at the active path's end. Fork of a USER message does
+  // not anchor - it reruns that turn immediately (replay semantics).
+  forkFrom: string | null;
 }
 
 export const DEFAULT_CHAT_STATE: ChatState = {
@@ -141,6 +156,8 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   tokensPerSecond: 0,
   liveChunksPerSecond: 0,
   lastChunksPerSecond: 0,
+  variants: [],
+  forkFrom: null,
 };
 
 /** the app-level callbacks the host needs - the session LIST, the dock
@@ -192,6 +209,17 @@ export interface ChatHost {
   /** re-send this tab's last complete user message (interrupted/rebusy
       affordance); no-op while the session's run slot is taken */
   retry(key: string, model?: string, thinking?: number): Promise<boolean>;
+  /** variant navigation (t_a62eeb43): select the 0-based sibling at a
+      branch point, re-fetch and re-render the active path; false while
+      the session's run slot is taken */
+  selectVariant(key: string, messageId: string, index?: number): Promise<boolean>;
+  /** fork affordance on a historical message: an ASSISTANT target
+      anchors the composer (the next typed send POSTs /chat {fork}); a
+      USER target reruns that turn immediately (replay semantics). No-op
+      while the session's run slot is taken. */
+  fork(key: string, messageId: string, model?: string, thinking?: number): Promise<void>;
+  /** drop the anchor without sending */
+  clearFork(key: string): void;
   /** stop THIS tab's bound session's live run */
   cancel(key: string): void;
   /** the composer's busy bit for one tab: the per-session run slot
@@ -249,6 +277,21 @@ export interface ActivityPhase {
       tool counts on from the server's elapsed-so-far (live-run merge),
       the same initialMs contract the ToolCallLine meter runs on */
   initialMs?: number;
+}
+
+// findMessageItem locates a transcript MESSAGE item by its store row id
+// (the variants surface's address). Live-built items carry no id and are
+// never found here - exactly right: the fork affordance works on
+// historical messages only. Pure.
+export function findMessageItem(
+  items: TranscriptItem[],
+  id: string,
+): MessageItem | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]!;
+    if (it.kind === "message" && it.id === id) return it;
+  }
+  return null;
 }
 
 export function activityPhase(
@@ -337,6 +380,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         tokensPerSecond: 0,
         liveChunksPerSecond: 0,
         lastChunksPerSecond: 0,
+        variants: [],
+        forkFrom: null,
       });
       st = states.get(key) as ChatState;
       return st;
@@ -568,6 +613,33 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   }
   type StreamDriver = ReturnType<typeof makeStreamDriver>;
 
+  // refetchTranscript replaces this state's view with the server's
+  // rendered ACTIVE PATH (card t_a62eeb43): the ids + variants block the
+  // live transcript never carries arrive only on the wire. Callers:
+  // a run that just ended (a retry mid-session just forged a variant -
+  // the switcher must appear without a manual reload) and a variant
+  // select. Nothing is fetched while a run is live on the SERVER (the
+  // runHub tail would race the restore) or when the fetch fails (the
+  // live view stays). Sets loaded - the view IS the session's content.
+  async function refetchTranscript(st: ChatState): Promise<void> {
+    const sessionId = st.sessionId;
+    if (!sessionId) return;
+    try {
+      const detail = await fetchTranscript(sessionId);
+      if (detail.running) return;
+      st.variants = detail.variants ?? [];
+      st.transcript = renderTranscriptItems(detail.items);
+      // a fork anchor survives only while its target stays rendered
+      if (st.forkFrom && !st.transcript.some((i) => i.kind === "message" && i.id === st.forkFrom)) {
+        st.forkFrom = null;
+      }
+      st.loaded = true;
+      st.notify?.(true);
+    } catch {
+      // keep the previous view on a transient fetch failure
+    }
+  }
+
   // runStream drives one interaction over a transport: start() performs
   // the POST /chat (send path) or the GET /sessions/<id>/events attach
   // (tab attach path) and consumes the SSE with the driver's handlers.
@@ -635,6 +707,14 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
           deps.refreshSessions();
         }, TITLE_REFRESH_MS);
       }
+      // A run that just ended may have forged or moved variants (a
+      // retry's fresh sibling, a fork's new sub-branch, a cancel's
+      // partial). The live transcript has ids on nothing - one refetch
+      // brings the ids, the variants block and the server-derived path
+      // in. Skip it when an interrupted marker is present: the marker
+      // is per-tab live state the restore does not carry (load() keeps
+      // only a REFETCHED one, and running:false would drop ours).
+      if (!hasInterruptedMarker(st.transcript)) await refetchTranscript(st);
       st.notify?.();
       if (st.orphan) states.delete(st.key);
     }
@@ -671,6 +751,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // same component contract the live stream paints (the
       // backend-owns-facts rework) - no reload-side reconstruction loop
       st.transcript = renderTranscriptItems(detail.items);
+      // the branch points ride the restore (t_a62eeb43): the switcher
+      // and the fork affordance read this block. Absent key = plain
+      // session, an empty list keeps the shape total.
+      st.variants = detail.variants ?? [];
       // a stale resume affordance retires when its premise died: a
       // session with a live run proves the stream did NOT end - the
       // merge below is now the content, and the fresh attach appends
@@ -710,17 +794,31 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     if (st.sessionId && busyAll.value.has(st.sessionId)) return false;
     // unsaved chat create window: one send at a time per tab
     if (!st.sessionId && busyKeys.value.has(key)) return false;
+    // FORK anchor (t_a62eeb43): a set anchor changes the send's target -
+    // the forked message chains onto the anchor server-side (context
+    // truncates there) and the live-view user bubble splices in right
+    // after it. A stale anchor (its bubble left the transcript through
+    // a refetch/swap) silently degrades to a plain send.
+    const forkID = st.forkFrom && findMessageItem(st.transcript, st.forkFrom) ? st.forkFrom : null;
+    st.forkFrom = null;
     // a fresh send retires a stale resume affordance - after a later
     // exchange the marker no longer describes the transcript state
     if (hasInterruptedMarker(st.transcript))
       st.transcript = withoutMarkers(st.transcript);
-    st.transcript.push({
+    const userItem: MessageItem = {
       kind: "message",
       role: "user",
       content: text,
       images: st.attachments.length ? st.attachments.slice() : undefined,
       time: new Date().toISOString(),
-    });
+    };
+    if (forkID) {
+      const at = st.transcript.findIndex((i) => i.kind === "message" && i.id === forkID);
+      if (at >= 0) st.transcript.splice(at + 1, 0, userItem);
+      else st.transcript.push(userItem);
+    } else {
+      st.transcript.push(userItem);
+    }
     st.notify?.(true);
 
     // The create-then-send dance is GONE (Endo 2026-10-18: /chat is
@@ -745,6 +843,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         },
         model,
         thinking,
+        false,
+        forkID ?? undefined,
       ),
     );
     return true;
@@ -798,6 +898,66 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     } catch (e) {
       st.statusLine = `attach failed: ${e}`;
     }
+  }
+
+  // selectVariant flips a branch point's active variant server-side
+  // (t_a62eeb43); the re-fetch re-renders the ACTIVE PATH - everything
+  // after the branch point swaps to the selected branch. CONTINUE =
+  // SELECT: the composer's next plain send POSTs /chat with no fork,
+  // and the server's context IS the selected path - the composer sends,
+  // it never needs to know the branch shape.
+  async function selectVariant(
+    key: string,
+    messageId: string,
+    index?: number,
+  ): Promise<boolean> {
+    const st = ensureState(key);
+    if (composerBusy(key) || !st.sessionId) return false;
+    try {
+      await postVariantSelect(st.sessionId, { message_id: messageId, select: index });
+    } catch (e) {
+      st.statusLine = `variant select failed: ${e}`;
+      return false;
+    }
+    await load(key, st.sessionId);
+    return true;
+  }
+
+  // fork anchors the NEXT send at a historical message (t_a62eeb43,
+  // per Endo's ruling - the affordance is explicit and visible): an
+  // assistant target sets forkFrom, the composer chip shows it and the
+  // next send POSTs /chat {fork: id}. A user target carries no message
+  // (the server's rule: a user-turn fork takes no messages - replay
+  // semantics), so it reruns that turn immediately: same /chat {fork}
+  // stream, empty messages. Both sides are gated on the session's run
+  // slot; a target not in the transcript (stale) is a no-op.
+  async function fork(
+    key: string,
+    messageId: string,
+    model?: string,
+    thinking?: number,
+  ): Promise<void> {
+    const st = ensureState(key);
+    if (composerBusy(key) || !st.sessionId) return;
+    const target = findMessageItem(st.transcript, messageId);
+    if (!target) return;
+    if (target.role === "user") {
+      // replay at that turn: a new variant of that user message's
+      // response, appended below (the run-stream refetch renders it)
+      await runStream(st, (drv) =>
+        streamChat([], st.sessionId!, drv.handlers, model, thinking, false, messageId),
+      );
+      return;
+    }
+    st.forkFrom = messageId;
+    st.notify?.();
+  }
+
+  function clearFork(key: string) {
+    const st = states.get(key);
+    if (!st?.forkFrom) return;
+    st.forkFrom = null;
+    st.notify?.();
   }
 
   function cancel(key: string) {
@@ -854,6 +1014,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     removeAttachment,
     attachUrl,
     retry,
+    selectVariant,
+    fork,
+    clearFork,
     cancel,
     composerBusy,
     closeState,
