@@ -1508,19 +1508,28 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 				m.err = "no store available"
 				return m, nil
 			}
-			messages, err := m.store.GetMessages(context.Background(), id)
+			// Active path (t_17365247): a branched session loads its
+			// currently selected branch; sessions without pointers load
+			// the same linear list as before. Meta entries replay from
+			// the full row list - they sit outside the tree on purpose.
+			times, err := m.store.GetMessagesWithTimes(context.Background(), id)
+			if err != nil {
+				m.err = "resume: " + err.Error()
+				return m, nil
+			}
+			messageList, err := m.store.GetActiveMessages(context.Background(), id)
 			if err != nil {
 				m.err = "resume: " + err.Error()
 				return m, nil
 			}
 			m.sessionID = id
-			m.history = messages
-			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme)
+			m.history = messageList
+			m.transcript = renderTranscript(messageList, m.viewport.Width, m.theme)
 			m.segments = nil
 			m.err = ""
 			m.storeErr = ""
-			for _, msg := range messages {
-				switch v := msg.(type) {
+			for _, sm := range times {
+				switch v := sm.Message.(type) {
 				case ai.ModelChange:
 					m.modelName = v.Model
 				case ai.ThinkingLevelChange:

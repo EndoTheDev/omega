@@ -25,9 +25,13 @@ import (
 //	              frame
 //
 // The shape is the client transcript's component contract: items restore
-// and live stream render through the same components.
+// and live stream render through the same components. ID (t_17365247)
+// is the message's store row id as a string - user items need it to
+// address branch points on the variants surface; live-tail items (the
+// run still holds the row) carry none.
 type transcriptItem struct {
 	Kind       string            `json:"kind"`
+	ID         string            `json:"id,omitempty"`
 	Content    string            `json:"content,omitempty"`
 	Time       string            `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
 	ResponseMs int64             `json:"response_ms,omitempty"`
@@ -50,12 +54,16 @@ type transcriptItem struct {
 // session open replaces both the history fetch and its reconstruction
 // loop). Same store gates as the other session endpoints: 501 without a
 // store, 404 for an unknown or deleted session, 500 on a store fault.
-// Items come from GetMessagesWithTimes in append order - the persisted
-// order IS the final order (assistant segments carry thinking -> calls ->
-// content in message order; tool results sit where history placed them),
-// so timing and ordering are the store's facts, recomputed on every read:
-// old sessions written before a persistence fix keep whatever shape they
-// were saved with.
+// Items come from the ACTIVE PATH (t_17365247): GetActiveView derives
+// the tree from the persisted parent pointers and returns the render
+// path - sessions without pointers derive the linear append order and
+// render exactly as they always did - plus the variants block (branch
+// points with >=2 sibling runs; absent for sessions without variants).
+// The active path IS the final order (assistant segments carry thinking
+// -> calls -> content in message order; tool results sit where history
+// placed them), so timing and ordering are the store's facts,
+// recomputed on every read: old sessions written before a persistence
+// fix keep whatever shape they were saved with.
 func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -75,12 +83,12 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
 		return
 	}
-	bare, err := s.store.GetMessagesWithTimes(r.Context(), id)
+	view, err := s.store.GetActiveView(r.Context(), id)
 	if err != nil {
-		http.Error(w, "get messages: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "get transcript: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	items := buildTranscriptItems(bare)
+	items := buildTranscriptItems(view.Path)
 	// Reattach completeness (card t_692254f7): a session with a live run
 	// owns items the store has not seen yet - the run persists only at
 	// its end, so its segments (open thinking, running tool call, the
@@ -92,6 +100,23 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	if tail, live := s.runs.tailItems(id); live {
 		items = append(items, tail...)
 	}
+	if len(view.Branches) > 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session": sess,
+			"items":   items,
+			// live-run flag (always present, running:true/false): the
+			// runHub, not the client, owns "is this session streaming" -
+			// the webui reattach flow reads this on session open
+			"running": s.runs.active(id),
+			// variants block (t_17365247): branch points with >=2
+			// sibling runs - message_id (the parent), count, the active
+			// index, the sibling head ids.
+			"variants": view.Branches,
+		})
+		return
+	}
+	// No variants: the key stays ABSENT, matching every pre-tree
+	// transcript response byte for byte (backward-compat wire).
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": sess,
 		"items":   items,
@@ -113,6 +138,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
 	items := make([]transcriptItem, 0, len(msgs))
 	for _, sm := range msgs {
+		id := agent.MsgID(sm.ID)
 		switch m := sm.Message.(type) {
 		case ai.User:
 			if m.Content == "" && len(m.Images) == 0 {
@@ -120,6 +146,7 @@ func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
 			}
 			items = append(items, transcriptItem{
 				Kind:    "user",
+				ID:      id,
 				Content: m.Content,
 				Time:    transcriptTime(sm.CreatedAt, m.Timestamp),
 				// images ride the restore (scope add 2026-10-20): the
@@ -132,6 +159,7 @@ func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
 			if m.Thinking != nil && *m.Thinking != "" {
 				it := transcriptItem{
 					Kind:    "thinking",
+					ID:      id,
 					Content: *m.Thinking,
 					Time:    transcriptTime(sm.CreatedAt, m.Timestamp),
 				}
@@ -143,6 +171,7 @@ func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
 			if m.Content != "" {
 				it := transcriptItem{
 					Kind:    "message",
+					ID:      id,
 					Content: m.Content,
 					Time:    transcriptTime(sm.CreatedAt, m.Timestamp),
 				}
@@ -161,6 +190,7 @@ func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
 			}
 			it := transcriptItem{
 				Kind:       "tool_result",
+				ID:         id,
 				ToolCallID: m.ToolCallID,
 				Content:    m.Content,
 				IsError:    m.IsError,

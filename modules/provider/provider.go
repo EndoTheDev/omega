@@ -213,6 +213,10 @@ func messagesToJSON(messages []ai.Message, stringArgs bool) []map[string]any {
 			m["tool_calls"] = wire
 		}
 		delete(m, "timestamp")
+		// The tree pointer (branching, t_17365247) is store-level truth,
+		// never provider wire - a parent_id in a chat payload 400s on
+		// strict wire validators and is noise on lenient ones.
+		delete(m, "parent_id")
 		msgJSON[i] = m
 	}
 	return msgJSON

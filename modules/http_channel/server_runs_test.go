@@ -709,15 +709,19 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 		t.Fatalf("cancel must not ride the timeout error frame; frames: %v", lines)
 	}
 
+	// The hub lets go: the freed slot proves the unwinding deregistered.
+	// finish runs after persistRun (launchRun's defers), so this wait is
+	// also the persistence barrier: reading earlier races the detached
+	// store writes - the parent-pointer resolution (t_17365247) slowed
+	// the persist enough to lose that race under -race, deterministically.
+	waitFor(t, "run deregistered after stop", func() bool { return !s.runs.active("t2") })
+
 	// What streamed before the cancel persists: the partial chunk. The
 	// errored tool call persists with it (same as a timeout unwind).
 	msgs := sessionMessages(t, ts, "t2")
 	if len(msgs) < 1 || msgs[0] != "par" {
 		t.Fatalf("persisted assistant = %q, want [par] first", msgs)
 	}
-
-	// The hub lets go: the freed slot proves the unwinding deregistered.
-	waitFor(t, "run deregistered after stop", func() bool { return !s.runs.active("t2") })
 
 	// The freed slot takes a new run - no stale 409. The replacement
 	// run parks in the same hang tool, so the cap is tightened first:

@@ -411,10 +411,30 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]ai.Messag
 // the touch, updated_at froze after the title's last write - the
 // sidebar's time buckets silently drifted off the real activity, and
 // no unread state could ever be derived from the row.
+//
+// Conversation messages get their tree pointer materialized here
+// (t_17365247): an explicitly set ai.*.ParentID wins (validated against
+// this session's rows); a missing pointer resolves to the active path
+// leaf - the message follows (or answers) whatever the active
+// conversation currently ends at. Bookkeeping entries
+// (model_change/thinking_level_change/variant_select) persist
+// pointerless; they live outside the tree.
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error {
 	role, payload, err := ai.EncodeMessage(msg)
 	if err != nil {
 		return err
+	}
+	if conversationRole(role) {
+		parent, err := s.resolveParent(ctx, sessionID, msg)
+		if err != nil {
+			return err
+		}
+		if parent != "" {
+			role, payload, err = ai.EncodeMessage(agent.WithParentID(msg, parent))
+			if err != nil {
+				return err
+			}
+		}
 	}
 	now := ai.NowISO()
 	if _, err = s.db.ExecContext(ctx,
@@ -451,29 +471,10 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]ai.Message
 }
 
 // GetMessagesWithTimes returns a session's messages in append order,
-// each paired with its store-level created_at.
+// each paired with its row id (the tree identity, agent.MsgID renders
+// it for the wire and pointers) and store-level created_at.
 func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]agent.StoredMessage, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT role, payload, created_at FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []agent.StoredMessage
-	for rows.Next() {
-		var msg agent.StoredMessage
-		var role, payload string
-		if err := rows.Scan(&role, &payload, &msg.CreatedAt); err != nil {
-			return nil, err
-		}
-		m, err := ai.DecodeMessage(role, []byte(payload))
-		if err != nil {
-			return nil, err
-		}
-		msg.Message = m
-		out = append(out, msg)
-	}
-	return out, rows.Err()
+	return s.loadRows(ctx, sessionID)
 }
 
 // CountMessages returns the number of messages in a session.
@@ -489,13 +490,13 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 // maintained counters; fine for hundreds of sessions - counter columns
 // are the upgrade if a session list ever gets slow. message_count is
 // every stored message; tool_count is the tool-role subset.
-// Bookkeeping entries (model_change, thinking_level_change) are
-// excluded from message_count, matching the insights convention for
-// non-conversation messages.
+// Bookkeeping entries (model_change, thinking_level_change,
+// variant_select) are excluded from message_count, matching the
+// insights convention for non-conversation messages.
 func (s *Store) SessionCounts(ctx context.Context) (map[string]agent.SessionCounts, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id,
-		        SUM(role NOT IN ('model_change', 'thinking_level_change')),
+		        SUM(role NOT IN ('model_change', 'thinking_level_change', 'variant_select')),
 		        SUM(role = 'tool')
 		 FROM messages GROUP BY session_id`)
 	if err != nil {
@@ -759,11 +760,12 @@ type notableTracker struct {
 
 // countMessages iterates over a session's messages, incrementing the
 // global message counter and accumulating per-session user/tool stats.
-// Non-conversation entries (ModelChange, ThinkingLevelChange) are skipped.
+// Non-conversation entries (ModelChange, ThinkingLevelChange,
+// VariantSelect) are skipped.
 func countMessages(msgs []ai.Message, in *agent.Insights, st *sessionStats) {
 	for _, msg := range msgs {
 		switch msg.(type) {
-		case ai.ModelChange, ai.ThinkingLevelChange:
+		case ai.ModelChange, ai.ThinkingLevelChange, ai.VariantSelect:
 			continue
 		}
 		in.Messages++

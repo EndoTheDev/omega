@@ -90,6 +90,7 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
+	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/tasks", s.handleTasks)
 	mux.HandleFunc("/tasks/{id}/comments", s.handleTaskComments)
@@ -245,14 +246,26 @@ type chatRequest struct {
 	SessionID     string            `json:"session_id,omitempty"`
 	Model         string            `json:"model,omitempty"`
 	ThinkingLevel int               `json:"thinking_level,omitempty"`
-	// retry re-runs the session's LAST user message without persisting a
-	// duplicate user bubble (t_357cbe9c). No messages are accepted on
-	// the wire: the persisted history itself is the replayed turn, so a
-	// reload shows the same truth the live run produced. The prior
-	// (cancelled/partial or complete) response stays put - the fresh
-	// response appends below it - and the run slot's 409 gate plus the
-	// cancel semantics are exactly the normal send's.
+	// Retry re-runs the session's LAST user turn as a SIBLING VARIANT
+	// (t_17365247, superseding the append semantics of t_357cbe9c): the
+	// fresh response's head parents to the same USER message the prior
+	// response answered, so the store stays an append list with no
+	// duplicate user bubble while the tree gains a sibling. No messages
+	// are accepted on the wire: the persisted history itself is the
+	// replayed turn.
 	Retry bool `json:"retry,omitempty"`
+	// Fork re-plays at an arbitrary branch point (the per-message fork
+	// button): the value is a message id. A user-turn target behaves
+	// as a retry pinned there (no messages); an assistant/tool target
+	// continues FROM it - it takes the fork's user message (whose
+	// bubble chains onto the forked message) and runs the turn.
+	// Requires a session id. Mutually exclusive with retry.
+	Fork string `json:"fork,omitempty"`
+	// branchParent pins the run head's parent when the channel computed
+	// it (retry/fork-of-user) - empty = derive (first assistant after a
+	// user is the head; continuations / tool results chain off the
+	// leaf). Unexported: never part of the request wire.
+	branchParent string
 }
 
 // assistantRecord accumulates one response segment of an assistant turn
@@ -363,16 +376,25 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Retry guards run BEFORE auto-create: retry only ever re-plays an
-	// EXISTING session's persisted last user turn - a sessionless retry
-	// has nothing to replay (auto-creating an empty session to 400 into
-	// would be noise), and messages alongside retry are a client bug.
+	// Retry/fork guards run BEFORE auto-create: both re-play an
+	// EXISTING session's persisted tree - a sessionless replay has
+	// nothing to replay (auto-creating an empty session to 400 into
+	// would be noise), and messages alongside a replay-turn are a
+	// client bug (the retry replays the turn verbatim).
 	if req.Retry && (s.store == nil || req.SessionID == "") {
 		http.Error(w, "retry requires a session", http.StatusBadRequest)
 		return
 	}
 	if req.Retry && len(messages) > 0 {
 		http.Error(w, "retry takes no messages", http.StatusBadRequest)
+		return
+	}
+	if req.Fork != "" && (s.store == nil || req.SessionID == "") {
+		http.Error(w, "fork requires a session", http.StatusBadRequest)
+		return
+	}
+	if req.Fork != "" && req.Retry {
+		http.Error(w, "fork and retry are mutually exclusive", http.StatusBadRequest)
 		return
 	}
 
@@ -423,7 +445,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	messages, ok := s.loadSessionMessages(r.Context(), w, req, messages)
+	messages, ok := s.loadSessionMessages(r.Context(), w, &req, messages)
 	if !ok {
 		return
 	}
@@ -539,14 +561,19 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 // incoming messages, and persists each appended message. When no session
 // is configured (nil store or empty ID), messages are returned unchanged.
 // On failure an HTTP error is written to w and ok is false.
-// A retry request takes the other branch (t_357cbe9c): NOTHING is
-// appended or persisted - history up to and including the session's last
-// user message is the replayed context. Truncating AT the user message
-// (not the raw history) keeps the prior cancelled/partial response out
-// of the provider's context while it stays alive in the stored
-// transcript: the fresh response appends below it, no duplicate user
-// bubble, providers never receive an assistant-tail they didn't ask for.
-func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req chatRequest, messages []ai.Message) ([]ai.Message, bool) {
+//
+// History is the ACTIVE PATH (t_17365247), not the linear list: sibling
+// variants stay out of the provider's context, and the persisted tree is
+// what a reload renders. Retry takes the other branch (t_357cbe9c,
+// replay turn verbatim): NOTHING is appended, context truncates at the
+// active path's last user message, and req.branchParent pins the fresh
+// run head's parent to that user - the tree's sibling-variant hop. The
+// prior partial/complete response stays in the store and becomes a
+// selectable variant the transcript still addresses. A fork re-plays at
+// its target: user-turn targets pin the head like a retry (no messages);
+// assistant/tool targets continue FROM them - context truncates at the
+// target inclusive and the fork's message chains onto it.
+func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req *chatRequest, messages []ai.Message) ([]ai.Message, bool) {
 	if s.store == nil || req.SessionID == "" {
 		return messages, true
 	}
@@ -554,15 +581,15 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 		http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
 		return nil, false
 	}
-	history, err := s.store.GetMessages(ctx, req.SessionID)
+	view, err := s.store.GetActiveView(ctx, req.SessionID)
 	if err != nil {
 		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
 		return nil, false
 	}
 	if req.Retry {
 		end := -1
-		for i := len(history) - 1; i >= 0; i-- {
-			if _, ok := history[i].(ai.User); ok {
+		for i := len(view.Path) - 1; i >= 0; i-- {
+			if _, ok := view.Path[i].Message.(ai.User); ok {
 				end = i
 				break
 			}
@@ -571,16 +598,75 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 			http.Error(w, "nothing to retry: session has no user message", http.StatusBadRequest)
 			return nil, false
 		}
-		return history[:end+1], true
+		req.branchParent = agent.MsgID(view.Path[end].ID)
+		return storedMessages(view.Path[:end+1]), true
 	}
-	messages = append(history, messages...)
-	for _, m := range messages[len(history):] {
-		if err := s.store.AppendMessage(ctx, req.SessionID, m); err != nil {
-			http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
+	if req.Fork != "" {
+		forkID, idErr := agent.ParseMsgID(req.Fork)
+		if idErr != nil {
+			http.Error(w, idErr.Error(), http.StatusBadRequest)
 			return nil, false
 		}
+		at := -1
+		for i, sm := range view.Path {
+			if sm.ID == forkID {
+				at = i
+				break
+			}
+		}
+		if at == -1 {
+			http.Error(w, "fork target is not on the active path (select its variant via /sessions/{id}/variants first, then fork)", http.StatusBadRequest)
+			return nil, false
+		}
+		switch view.Path[at].Message.(type) {
+		case ai.User:
+			if len(messages) > 0 {
+				http.Error(w, "fork of a user turn takes no messages (retry semantics)", http.StatusBadRequest)
+				return nil, false
+			}
+			req.branchParent = req.Fork
+			return storedMessages(view.Path[:at+1]), true
+		default:
+			if len(messages) == 0 {
+				http.Error(w, "fork requires a message to run from the forked point", http.StatusBadRequest)
+				return nil, false
+			}
+			for i := range messages {
+				messages[i] = agent.WithParentID(messages[i], req.Fork)
+			}
+			if err := s.appendIncoming(ctx, req.SessionID, messages); err != nil {
+				http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
+				return nil, false
+			}
+			return append(storedMessages(view.Path[:at+1]), messages...), true
+		}
 	}
-	return messages, true
+	if err := s.appendIncoming(ctx, req.SessionID, messages); err != nil {
+		http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	return append(storedMessages(view.Path), messages...), true
+}
+
+// appendIncoming persists a send's messages in order (the store
+// materializes each one's tree pointer - derived leaf, or the explicit
+// parent the fork path set).
+func (s *Server) appendIncoming(ctx context.Context, sessionID string, messages []ai.Message) error {
+	for _, m := range messages {
+		if err := s.store.AppendMessage(ctx, sessionID, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// storedMessages strips the tree view down to plain provider context.
+func storedMessages(path []agent.StoredMessage) []ai.Message {
+	out := make([]ai.Message, 0, len(path))
+	for _, sm := range path {
+		out = append(out, sm.Message)
+	}
+	return out
 }
 
 // setupSSE sets SSE response headers and returns the flusher. On failure
@@ -740,6 +826,7 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 		return nil
 	}
 	lastContent := ""
+	head := true // the first conversation-carrying record is the run head
 	for _, rec := range recs {
 		if rec.content == "" && rec.thinking == "" && len(rec.toolCalls) == 0 {
 			continue
@@ -753,6 +840,15 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 		if rec.thinkDur > 0 || rec.respDur > 0 {
 			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkDur.Milliseconds(), ResponseMs: rec.respDur.Milliseconds()}
 		}
+		// Retry/fork-of-user runs parent their head to the branch-point
+		// user explicitly (t_17365247): the store's derived leaf here
+		// would still be the PREVIOUS run - the sibling-variant hop is
+		// channel knowledge. Normal sends stay on the derived path
+		// (the head answers the just-persisted user message).
+		if head && req.branchParent != "" {
+			assistant.ParentID = req.branchParent
+		}
+		head = false
 		if err := s.store.AppendMessage(ctx, req.SessionID, assistant); err != nil {
 			return fmt.Errorf("persist response: %w", err)
 		}
