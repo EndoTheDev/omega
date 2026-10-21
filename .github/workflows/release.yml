@@ -17,7 +17,17 @@ jobs:
 
       - name: Determine version
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+        # nightly tags (vX.Y.Z-nightly.*) ride the prerelease flag: they
+        # sort BELOW their stable target and GitHub keeps them out of the
+        # "Latest" release the updater's stable channel reads.
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          PRERELEASE=false
+          case "$VERSION" in *-nightly.*) PRERELEASE=true ;; esac
+          {
+            echo "VERSION=$VERSION"
+            echo "PRERELEASE=$PRERELEASE"
+          } >> $GITHUB_OUTPUT
 
       - uses: actions/setup-node@v4
         with:
@@ -78,6 +88,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
           files: |
             dist/omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip
             dist/omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz
@@ -104,7 +115,9 @@ jobs:
             If you already have omega installed: `omega update`
 
       - name: Post to Discord
-        if: success()
+        # the word is the marketing moment: nightlies soak quietly, only
+        # stable releases announce
+        if: success() && steps.version.outputs.PRERELEASE == 'false'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |

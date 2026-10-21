@@ -3,7 +3,8 @@
 How card work reaches dev: one mechanical, no-LLM train pass. This page
 is the operator + worker contract for pipeline v2 round 3 (train, marker
 refs, review-at-close); round 1 documented CI dev signal + the stale
-wt sweep, round 2 the embed lane.
+wt sweep, round 2 the embed lane, round 4 the nightly channel + drift
+gate + soak automation.
 
 ## Card flow
 
@@ -77,6 +78,87 @@ bisects to the landing that shipped it.
 - (b) the worker onboarding skill is live - hermes-side, pending. Until
   it lands, the cap stays at 2 and the flip is recorded, not applied.
 
+# Round 4: nightly channel, drift gate, soak automation
+
+The loop that makes stable releases cheap. Patch releases are nearly
+automated; minor/major get a suggestion a human confirms; the stable
+tag is Endo's word forever - version is a promise.
+
+## The versioning law
+
+- After stable `vX.Y.Z` ships, nightlies run at `vX.Y.(Z+1)-nightly.*`
+  (one per day). The HYPHEN makes nightly a semver prerelease that sorts
+  BELOW `vX.Y.Z`, and the prerelease flag keeps it out of the "Latest"
+  release the updater's stable channel reads. (`vX.Y.Z+build` was
+  rejected: `+` build metadata is ignored by semver precedence - the
+  updater compare would break.)
+- The next stable tag is the newest SOAKED nightly's commit re-tagged to
+  that same number (`v0.9.1-nightly.20261022` -> stable `v0.9.1`) once
+  Endo names it.
+- Minor/major bumps are human-only, but auto-SUGGESTED:
+  `scripts/release-suggest.sh` scans commits since the last stable tag
+  and prints the suggested bump (BREAKING CHANGE marker or
+  removed/renamed API surface -> major; any `feat:` -> minor; else
+  patch) plus the evidence commits that drove it. The suggestion never
+  tags anything - the release prompt renders it, Endo confirms or
+  overrides in one word.
+
+## The nightly channel (`.github/workflows/nightly.yml`)
+
+Cron `30 3 * * *` (workflow_dispatch for manual runs too), against the
+dev tip (pinned - scheduled runs otherwise default to master):
+
+1. go vet + go test on dev tip.
+2. validation journeys (`scripts/journeys/run.sh`) against a booted
+   lane with no provider - model-driven journeys SKIP loudly, the
+   presentation journeys decide the build.
+3. Green -> tag `vX.Y.(Z+1)-nightly.YYYYMMDD` and push it. `release.yml`
+   fires on the tag push for free and ships the 5-platform assets
+   flagged prerelease (the Discord announcement step is quarantined to
+   stable releases - the word is the marketing moment).
+4. Red or partial -> NO tag. The run summary carries an alert block and
+   GitHub notifies the failed scheduled run; master keeps its current
+   soak point.
+5. Green re-run on a day that already has its nightly skips loudly
+   (one nightly per day).
+
+## The drift gate (`scripts/drift-gate.sh`, wired hard in ci.yml)
+
+CI on every dev push fails RED when dev is over 10 commits or over 7
+days ahead of master. The report table (commits / days / merge-base /
+verdict) lands in the run summary. Red is not an insult, it is the
+tripwire: it means master is falling behind and a sync is due - a
+release round, or the nightly soak ff. An unmeasurable base (missing
+origin/master) is exit 2 = red: unknowable drift is never green.
+
+## The soak law (the scheduled `soak` job in nightly.yml)
+
+The newest nightly tag older than 48h fast-forwards master to itself iff
+ALL of:
+
+- nightly CI is green on the soak point (red or missing runs = hold),
+- its release exists with assets and the prerelease flag on
+  (channel separation is load-bearing - a stable-channel leak blocks),
+- zero open regression reports are triaged against it (any hold = ff
+  blocked until the fix re-soaks),
+- master is still an ancestor of the soak point (never force; when
+  stable already moved past it there is nothing to ff).
+
+On green the job ff's master to the nightly and prints the release
+prompt (suggested bump + evidence) in the run summary - the next stable
+release round starts pre-filled. Every outcome writes its block into
+the summary: no nightly yet / soaking `Nh` / soak green / blocked-why.
+The soak definition Endo ratified: CI green + journeys + Endo's eyeball
+round + external regression reports - the eyeball is what the 48h and
+the human confirm are for.
+
+## Updater channels
+
+`omega update --nightly`, `omega.bak` rollback and the semver compare
+ride the companion card (golang.org/x/mod/semver or equivalent - string
+equality died on arrival). The prerelease flag above is what keeps the
+stable channel from ever seeing a nightly.
+
 ## The wiring pieces
 
 | Piece                | Job                                                     |
@@ -86,6 +168,9 @@ bisects to the landing that shipped it.
 | `scripts/train-bisect.sh` | the marker-chain walk: --list, or bisect by check   |
 | `scripts/review-at-close.sh` | fresh review worktree + cold diff vs merge-base |
 | `scripts/train-dry-run.sh` | stale wt/* sweep preview (stage 1, report/apply)   |
+| `scripts/drift-gate.sh` | hard-fail drift check, dev vs master (10 commits / 7 days) |
+| `scripts/release-suggest.sh` | suggested bump + evidence commits, never tags |
+| `.github/workflows/nightly.yml` | nightly prerelease tag on green dev tip + the soak ff |
 
 Journeys (run 3b) wire their suite in as `scripts/journeys/run.sh`;
 train-pass already calls that path when it exists.

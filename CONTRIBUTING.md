@@ -29,8 +29,10 @@ Every PR passes the same admission rules, in plain words:
    regen through the embed lane (`modules/ui/scripts/build.sh`, then
    commit the synced `modules/http_channel/static/`). These gates run
    in **GitHub CI, never on any private machine**. That is explicit
-   policy, not a convenience. (Today's CI job runs vet + test; the
-   remaining checks land in the workflow as pipeline v2 continues.)
+   policy, not a convenience. (Today's CI job runs vet + test + the
+   shell scratch-repo suite, and fails dev pushes on the drift gate;
+   the remaining checks - full build + validation journeys - land with
+   the nightly channel.)
 3. **Review is read-only.** A maintainer will read your diff anywhere
    they like, but nothing from a PR is executed outside GitHub CI
    runners. We do not build or run external code locally, at all, for

@@ -16,6 +16,10 @@ jobs:
           go-version: '1.26'
       - run: go vet ./...
       - run: go test ./...
+      - name: Shell scratch-repo suite (drift gate + release suggest)
+        run: |
+          bash scripts/drift-gate_test.sh
+          bash scripts/release-suggest_test.sh
 
   drift:
     runs-on: ubuntu-latest
@@ -24,22 +28,5 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Measure drift vs master (report-only)
-        run: |
-          commits=$(git rev-list --count origin/master..HEAD)
-          mb=$(git merge-base origin/master HEAD)
-          mb_ct=$(git log -1 --format=%ct "$mb")
-          head_ct=$(git log -1 --format=%ct HEAD)
-          days=$(( (head_ct - mb_ct) / 86400 ))
-          echo "drift: $commits commits ahead of master, $days days since last sync"
-          {
-            echo "## Drift vs master (reported, not enforced)"
-            echo ""
-            echo "| metric | value |"
-            echo "|--------|-------|"
-            echo "| commits ahead of master | $commits |"
-            echo "| days since last sync from master | $days |"
-            echo "| merge-base | \`$mb\` |"
-            echo ""
-            echo "Hard-fail thresholds (10 commits / 7 days) arrive with the nightly-channel card."
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Drift gate (FAIL RED when dev is over 10 commits or over 7 days ahead of master)
+        run: scripts/drift-gate.sh
