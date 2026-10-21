@@ -150,6 +150,14 @@
             module="kanban"
             :open="isMobile ? inspectorOpen : false" />
         </template>
+        <!-- card t_e1e61680: insights is a MAIN-area tab - opened from
+             any pane's '+' menu, closed like chat (hover-X). The mount
+             loads its own payload on activation (onMounted). -->
+        <template #pane-insights>
+          <InsightsTab
+            v-if="!isMobile"
+            class="pane" />
+        </template>
       </DockSplit>
     </div>
 
@@ -354,6 +362,9 @@
   } from "./composables/focus";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
+  // card t_e1e61680: insights joins the main area (registry: singleton,
+  // closable) - the outlet renders it when its tab is active
+  import InsightsTab from "./components/insights/InsightsTab.vue";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
