@@ -8,14 +8,15 @@ package http_channel
 //
 // Route note: the mux mount line lives in server.go, which is owned
 // by card t_d7a7beaa while it runs (same-file ruling, recorded on the
-// card). These tests mount s.handleInsights on a test-local mux,
-// which exercises the real handler end-to-end through HTTP without
-// touching server.go; the review pass lands the mount line and the
-// Handler()-level test is a natural follow-up there.
+// card). These tests serve s.handleInsights through a real listener
+// (httptest.NewServer), exercising the real handler end-to-end over
+// HTTP without touching server.go; the review pass lands the mount
+// line and a Handler()-level test is a natural follow-up there.
 
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -70,19 +71,27 @@ func seedInsightsRows(t *testing.T, st *store.Store) {
 }
 
 // insightsGet serves the handler through a one-route mux - the same
-// path shape the serve-time mux uses - and decodes the payload.
+// path shape the serve-time mux uses - and decodes the payload. The
+// request rides a real listener (httptest.NewServer), so it is a
+// socket-level round-trip, not a recorder-only one.
 func insightsGet(t *testing.T, s *Server, url string) insightsPayload {
 	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/insights", s.handleInsights)
-	req := httptest.NewRequest(http.MethodGet, url, nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET %s: status = %d, body = %q", url, rec.Code, rec.Body.String())
+	srv := httptest.NewServer(http.HandlerFunc(s.handleInsights))
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: status = %d, body = %q", url, resp.StatusCode, string(body))
 	}
 	var p insightsPayload
-	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+	if err := json.Unmarshal(body, &p); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 	return p
