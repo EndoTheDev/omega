@@ -68,7 +68,7 @@
   // whose pure math owns floors (128 drag / 320 chat) and the snap
   // ladder (+320, panes.ts).
   import { inject, ref } from "vue";
-  import { snapCandidate } from "../composables/panes";
+  import { snapCandidateAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
     DOCK_API_KEY,
@@ -171,17 +171,24 @@
       return;
     }
     // the controlled pane is left (fixed) or, when it flexes, the fixed
-    // right one - mirror the pure fn's read to light the snap guide
+    // right one - mirror the pure fn's read to light the snap guide.
+    // card t_67fc1905: the bottom shell rides BELOW a column divider; drag
+    // down grows it (+cumulative), and its ladder is +200 (panes.ts).
     const node = props.node as DockSplit;
     const li = dividerIndex - 1;
     const i = dividerIndex;
-    const px =
-      (node.children[li] as DockPaneNode).fixed !== null
+    const bottomCase =
+      node.direction === "column" &&
+      (node.children[i] as DockPaneNode).fixed !== null;
+    const px = bottomCase
+      ? startPx[i] + cumulative
+      : (node.children[li] as DockPaneNode).fixed !== null
         ? startPx[li] + cumulative
         : (node.children[i] as DockPaneNode).fixed !== null
           ? startPx[i] - cumulative
           : startPx[li] + cumulative;
-    snappedIdx.value = snapCandidate(px) !== null ? dividerIndex : null;
+    const step = bottomCase ? BOTTOM_SNAP_STEP : SNAP_STEP;
+    snappedIdx.value = snapCandidateAt(px, step) !== null ? dividerIndex : null;
   }
 
   function onEnd() {
