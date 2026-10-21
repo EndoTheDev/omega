@@ -9,8 +9,12 @@
     :content="item.content"
     :images="item.images"
     :time="item.time"
+    :item-id="item.id"
+    :variant="item.role === 'assistant' ? variant : null"
     :final-ms="item.finalMs"
-    :streaming="item.streaming" />
+    :streaming="item.streaming"
+    @select="(i) => item.id && variant && $emit('select', variant.message_id, i)"
+    @fork="item.id && $emit('fork', item.id)" />
   <ThinkingBlock
     v-else-if="item.kind === 'thinking' && showThinking"
     :content="item.content"
@@ -38,10 +42,18 @@
 
 <script setup lang="ts">
   import type { TranscriptItem } from "../composables/chat";
+  import type { VariantBlock } from "../composables/omega";
 
   defineProps<{
     item: TranscriptItem;
     showThinking: boolean;
+    // this item's branch block (assistant messages with >=2 sibling
+    // runs) - resolved by ChatTab through variantOf, null elsewhere
+    variant?: VariantBlock | null;
   }>();
-  const emit = defineEmits<{ (e: "retry"): void }>();
+  const emit = defineEmits<{
+    (e: "retry"): void;
+    (e: "select", messageId: string, index: number): void;
+    (e: "fork", messageId: string): void;
+  }>();
 </script>

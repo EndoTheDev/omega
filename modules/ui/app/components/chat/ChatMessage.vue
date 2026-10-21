@@ -28,6 +28,38 @@
       <span
         v-if="streaming"
         class="cursor" />
+      <!-- variant switcher (t_a62eeb43): « 2/3 » pinned on the response
+           block's top edge - only rendered when the props carry a branch
+           block (assistant bubbles with >=2 sibling runs). Arrows emit
+           the sibling index; the host POSTs the select endpoint and the
+           transcript path re-renders. -->
+      <div
+        v-if="variant"
+        class="variant-switcher">
+        <button
+          class="v-arrow"
+          type="button"
+          title="previous variant"
+          :disabled="vLabel.index <= 0"
+          @click.stop="emit('select', vLabel.index - 1)">«</button>
+        <span class="v-pos">{{ vLabel.index + 1 }}/{{ vLabel.count }}</span>
+        <button
+          class="v-arrow"
+          type="button"
+          title="next variant"
+          :disabled="vLabel.index >= vLabel.count - 1"
+          @click.stop="emit('select', vLabel.index + 1)">»</button>
+      </div>
+      <!-- fork affordance (t_a62eeb43, per Endo's ruling - visible): any
+           HISTORICAL message carries it; the current streaming bubble
+           (no id / still streaming) never renders one. Click anchors the
+           composer - the next send runs from this message. -->
+      <button
+        v-if="itemId && !streaming"
+        class="msg-fork"
+        type="button"
+        title="fork from here - the next send continues from this message"
+        @click.stop="emit('fork')">fork</button>
       <!-- copy message (/copy parity): hover glyph like the sessions row
            actions; the click carries the RAW source, never the render -->
       <button
@@ -49,6 +81,8 @@
     formatMsgTime,
     renderMarkdown,
     type OmegaImage,
+    variantLabel,
+    type VariantBlock,
   } from "../../composables/omega";
   import { useElapsed } from "../../composables/useElapsed";
 
@@ -56,6 +90,12 @@
     role: "user" | "assistant";
     content: string;
     streaming?: boolean;
+    // store row id (restored history / post-run refetch) - the switcher
+    // and fork affordance's address; live bubbles carry none
+    itemId?: string;
+    // this bubble's branch block (assistant responses with >=2 sibling
+    // runs) - resolved by ChatTab, rendered as the « 2/3 » switcher
+    variant?: VariantBlock | null;
     time?: string;
     // image attachments (user messages; restored history carries them)
     images?: OmegaImage[];
@@ -63,6 +103,24 @@
     // live meter (restored items mount final and never start one)
     finalMs?: number;
   }>();
+
+  // the variant affordances surface upward: select carries the SIBLING
+  // index clicked; fork carries this bubble's store id. ChatItem maps
+  // select onto the branch point's id (this component does not know it).
+  const emit = defineEmits<{
+    (e: "select", index: number): void;
+    (e: "fork"): void;
+  }>();
+
+  // the « 2/3 » read: THIS bubble's 0-based sibling position clamped
+  // into range (variantLabel), one-indexed plus the total in the span.
+  // Read only under the v-if="variant" branch; the fallback keeps the
+  // computed total (a referrer outside that branch would have no slot).
+  const vLabel = computed(() =>
+    props.variant ?
+      variantLabel(props.variant, props.itemId)
+      : { index: 0, count: 1 },
+  );
 
   // Click-to-open: a data URL in a new browser tab is the plain full
   // view (no lightbox infrastructure for v1).
