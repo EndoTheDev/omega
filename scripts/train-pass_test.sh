@@ -233,6 +233,88 @@ grep -q "culprit: landing 0002-t_l2" "$HARNESS/run.out" || badf "S5b: wrong culp
 bisect_run "$TIP"
 grep -q "git bisect start" "$HARNESS/run.out" || badf "S5c: manual recipe missing when no cmd given"
 
+echo "== S6: second landing gets seq 0002 (the real 1st-to-2nd-landing regression)"
+ok
+
+mk_harness
+new_board
+new_repo
+# S1-style landing first (marker 0001), then a second card + landing
+git -C "$REPO" checkout -q -b wt/t_cardA
+echo "cardA work" >"$REPO/cardA.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm "feat(card): cardA work"
+git -C "$REPO" checkout -q dev
+card_row t_cardA wt/t_cardA 100
+run --no-push
+git -C "$REPO" rev-parse --verify -q refs/train/0001-t_cardA >/dev/null || badf "S6: first marker missing"
+git -C "$REPO" checkout -q -b wt/t_cardB
+echo "cardB work" >"$REPO/cardB.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm "feat(card): cardB work"
+branch_tip="$(git -C "$REPO" rev-parse wt/t_cardB)"
+git -C "$REPO" checkout -q dev
+card_row t_cardB wt/t_cardB 200
+run --no-push
+if [ "$rc" != 0 ]; then badf "S6: second landing rc $rc: $(cat "$HARNESS/run.out")"; fi
+git -C "$REPO" rev-parse --verify -q refs/train/0002-t_cardB >/dev/null || badf "S6: SEQUENCE BROKEN - second marker must be 0002, not a crashed re-0001"
+[ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0002-t_cardB)" ] ||
+  badf "S6: 0002 marker must sit at dev tip"
+[ "$(git -C "$REPO" rev-parse dev^2)" = "$branch_tip" ] ||
+  badf "S6: the landing must be a real two-parent merge (branch side == replayed tip)"
+[ "$(git -C "$REPO" rev-parse dev^1)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_cardA)" ] ||
+  badf "S6: the merge's first parent must be the previous dev tip (0001 landing)"
+# train-bisect --list must walk both markers in order
+bisect_run --list
+seqs="$(grep -oE '^000[0-9]' "$HARNESS/run.out" | tr -d '\n')"
+[ "$seqs" = "00010002" ] || badf "S6: --list chain wrong (got $seqs)"
+
+echo "== S6b: zero-replay (patch already on dev) is LOUD, never a silent empty landing"
+ok
+
+mk_harness
+new_board
+new_repo
+echo "v0" >"$REPO/x.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm "base v0"
+# branch: change x.txt to v1
+git -C "$REPO" checkout -q -b wt/t_dup
+echo "v1" >"$REPO/x.txt"
+git -C "$REPO" commit -qam "fix(card): x.txt v1"
+# dev: the SAME change lands via dev's own commit first
+git -C "$REPO" checkout -q dev
+echo "v1" >"$REPO/x.txt"
+git -C "$REPO" commit -qam "fix(dev): x.txt v1 (independent)"
+card_row t_dup wt/t_dup 300
+pre="$(git -C "$REPO" rev-parse dev)"
+run --no-push
+if [ "$rc" != 4 ]; then badf "S6b: zero-replay must demote (rc 4), got $rc: $(cat "$HARNESS/run.out")"; fi
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S6b: dev untouched on anomaly"
+[ "$(status_of t_dup)" = "ready" ] || badf "S6b: card demoted to ready, got $(status_of t_dup)"
+git -C "$REPO" rev-parse --verify -q refs/train/0001-t_dup >/dev/null && badf "S6b: no marker on an aborted landing"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_dup || badf "S6b: branch kept on anomaly"
+grep -q "replay anomaly" "$HARNESS/run.out" || badf "S6b: anomaly evidence missing"
+
+echo "== S6c: an initially-empty commit branch still lands a REAL two-parent merge"
+ok
+
+mk_harness
+new_board
+new_repo
+card_row t_emp wt/t_emp 400
+git -C "$REPO" checkout -q -b wt/t_emp
+git -C "$REPO" commit -q --allow-empty -m "empty commit on card branch"
+git -C "$REPO" checkout -q dev
+pre="$(git -C "$REPO" rev-parse dev)"
+run --no-push
+# git keeps initially-empty commits during replay, so the landing is a
+# genuine two-parent merge with no content drift - never "already up to
+# date": the train's no-op-merge guard keeps that path impossible.
+if [ "$rc" != 0 ]; then badf "S6c: expected rc 0, got $rc: $(cat "$HARNESS/run.out")"; fi
+[ "$(git -C "$REPO" rev-parse dev^2)" != "" ] || badf "S6c: landing has no branch-side parent"
+[ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_emp)" ] ||
+  badf "S6c: marker at dev tip"
+[ "$(status_of t_emp)" = "done" ] || badf "S6c: card stays done, got $(status_of t_emp)"
+git -C "$REPO" diff-tree -r "$pre" HEAD | grep . && badf "S6c: no content drift from an empty-branch landing"
+
 echo ""
 echo "train-pass_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
