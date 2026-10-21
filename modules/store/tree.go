@@ -44,15 +44,60 @@ func (s *Store) loadRows(ctx context.Context, sessionID string) ([]agent.StoredM
 	return out, rows.Err()
 }
 
+// loadViewRows reads the rows a PARENTED session's tree reads: every
+// ancestor's rows (root first) precede the session's own rows - a branch
+// inherits its parent's history as a prefix, the same view the TUI's
+// /branch load renders (GetAncestorMessages). Sessions without a parent
+// load just their own rows, unchanged. A missing ancestor (orphan chain
+// after a hard delete) ends the walk - the visible part reads, matching
+// SessionTree's orphan-root handling.
+func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]agent.StoredMessage, error) {
+	own, err := s.loadRows(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	sess, err := s.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if sess.ParentID == "" {
+		return own, nil
+	}
+	var chain []string
+	seen := map[string]bool{sessionID: true}
+	cur := sess.ParentID
+	for cur != "" && !seen[cur] {
+		seen[cur] = true
+		chain = append(chain, cur)
+		parent, err := s.GetSession(ctx, cur)
+		if err != nil {
+			break
+		}
+		cur = parent.ParentID
+	}
+	// chain is leaf-to-root; ancestor rows prepend root-to-leaf.
+	out := own
+	for i := len(chain) - 1; i >= 0; i-- {
+		rows, err := s.loadRows(ctx, chain[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(rows, out...)
+	}
+	return out, nil
+}
+
 // GetActiveView returns the session's tree-derived active view: the
 // active path (context assembly + render order) and the branch-point
 // metadata. Sessions written without pointers derive the same linear
-// path they always rendered.
+// path they always rendered. Parented sessions (branch children,
+// t_17365247's session fork) derive over the merged ancestor+own rows,
+// so the child's active path IS the whole lineage.
 func (s *Store) GetActiveView(ctx context.Context, sessionID string) (agent.ActiveView, error) {
 	if _, err := s.GetSession(ctx, sessionID); err != nil {
 		return agent.ActiveView{}, err
 	}
-	rows, err := s.loadRows(ctx, sessionID)
+	rows, err := s.loadViewRows(ctx, sessionID)
 	if err != nil {
 		return agent.ActiveView{}, err
 	}
@@ -75,28 +120,27 @@ func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]ai.M
 
 // resolveParent computes the parent pointer a conversation message
 // carries into its row: an explicitly set pointer on the message wins
-// (validated against the session's rows - a dangling pointer would
-// truncate the chain), otherwise it derives to the active path's leaf
-// (what the message follows/answers right now).
+// (validated against the session's merged view rows - a dangling pointer
+// would truncate the chain), otherwise it derives to the active path's
+// leaf (what the message follows/answers right now). The merged view
+// (loadViewRows) includes ancestor rows for parented sessions, so a
+// branch child's first message chains onto the ancestor leaf correctly.
 func (s *Store) resolveParent(ctx context.Context, sessionID string, msg ai.Message) (string, error) {
+	view, err := s.GetActiveView(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
 	if parent := agent.ParentIDOf(msg); parent != "" {
 		numeric, err := agent.ParseMsgID(parent)
 		if err != nil {
 			return "", err
 		}
-		var n int
-		if err := s.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM messages WHERE id = ? AND session_id = ?`, numeric, sessionID).Scan(&n); err != nil {
-			return "", err
+		for _, sm := range view.Path {
+			if sm.ID == numeric {
+				return parent, nil
+			}
 		}
-		if n == 0 {
-			return "", &parentMsgError{parent: parent, session: sessionID}
-		}
-		return parent, nil
-	}
-	view, err := s.GetActiveView(ctx, sessionID)
-	if err != nil {
-		return "", err
+		return "", &parentMsgError{parent: parent, session: sessionID}
 	}
 	if len(view.Path) == 0 {
 		return "", nil
