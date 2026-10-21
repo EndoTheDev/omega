@@ -53,3 +53,30 @@ is missing, rebuild omega:
 If you see `SQLITE_BUSY` when running subagents, make sure you are
 running omega v0.1.2 or later — WAL mode + busy_timeout was added to
 handle concurrent access from parent and subagent processes.
+
+## Where did my database go? (data/ layout, v0.8+)
+
+The databases live in `<home>/data/` (`omega.db`, `kanban.db`, plus
+their SQLite `-wal`/`-shm` sidecars). On the first boot of the version
+that introduced the layout, a legacy home-root database is MOVED (renamed,
+never copied) into `data/` automatically — nothing to do by hand, and the
+old path never resurrects. The three yaml files moved the same way into
+`<home>/config/` earlier; resolution checks the home root first, so legacy
+installs kept working unchanged.
+
+## A chat reply came back empty (`finish_reason: "load"`)
+
+An empty-but-successful turn usually means the run sent no `role` on its
+message(s) — a content-only payload decodes to zero messages, and Ollama
+ends the empty turn with `done_reason: "load"` which surfaces as
+`finish_reason: "load"` on the stream. Send `{role: "user", content: ...}`
+entries via `/chat` (see [api.md](api.md)); for one-shot checks prefer
+`omega run "..."`.
+
+## Conflict markers show up in the served web UI
+
+The SPA bundle has been built from conflicted/stash-poisoned source.
+Regenerate, don't hand-fix: `cd modules/ui && bash scripts/build.sh`,
+then rebuild `go build ./cmd/omega` and verify the served CSS/JS came
+out clean (grep served files, never the `.vue` sources). See
+"poisoned-bundle diagnosis" in [webui.md](webui.md).
