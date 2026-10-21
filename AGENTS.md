@@ -133,7 +133,7 @@ AGENTS.md (root - this file)
 │   ├── trust.yaml            # trust state (gitignored)
 │   └── skills/               # skill templates (tracked)
 └── cmd/
-    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name); config examples + memory/user seed starters in cmd/omega/examples/ (embedded for first-run bootstrap); home resolution (bin-dir installs → ~/.omega), self-update with checksum verification, release channels (stable/`--nightly`, semver gate, `omega.bak` rollback)
+    └── omega/                 # single binary: serve, run, health, chat (no arg → TUI, `<path>` → chdir + TUI); project trust (--approve/--no-approve, trust.yaml); export, update, insights; `@file` image input; /new --ephemeral, /sessions (table, delete, resume by #/label/id), /tree (table), /copy, /export, /search, /insights, /thinking, /tools, /extensions, /skills, /theme, /models, /model (number or name), /files, /cron, /logs (read-only browse views); config examples + memory/user seed starters in cmd/omega/examples/ (embedded for first-run bootstrap); home resolution (bin-dir installs → ~/.omega), self-update with checksum verification, release channels (stable/`--nightly`, semver gate, `omega.bak` rollback)
 ```
 
 ## Child Doc Shape
