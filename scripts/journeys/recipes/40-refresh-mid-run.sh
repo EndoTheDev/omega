@@ -15,21 +15,34 @@ open_app
 open_journey_row "(journey) refresh-midrun $TAG"
 ab find placeholder "message omega" click >/dev/null
 ab keyboard type "Write 15 numbered lines. Each line is exactly: journey line N (N is 1 to 15)"
+sleep 1
+ab press Enter
 ab press Enter
 step "sent long prompt"
 
-# mid-stream: a streaming bubble with a cursor must exist, THEN reload
-ab wait --text "journey line" >/dev/null 2>&1 || true
-streaming=$(jsq '!!(document.querySelector(".cursor") || document.querySelector(".msg .cursor"))')
-if [ "$streaming" != "true" ]; then
+# mid-stream: wait for a streaming cursor with a real poll - TTFT is
+# seconds, so a one-shot check right after send always lost the race.
+# (The old `ab wait --text "journey line"` matched the USER bubble -
+# the prompt itself contains the token - and a one-shot cursor check
+# 0.3s after send always read false, so the fallback fired on a
+# cancel-faced composer and the wider send never left the draft.)
+if poll_js '!!document.querySelector(".msg .cursor")' 15; then
+  :
+else
+  # no cursor inside 15s: the run finished ultra fast (or returned
+  # empty). Wait for the composer to go idle BEFORE resending - Enter
+  # on a cancel-faced composer sends nothing.
+  poll_js '!document.querySelector("button.send.cancel, .composer .cancel")' 90 \
+    || die "first run never finished (composer still cancel-faced after 90s)"
   step "stream finished too fast to catch - restarting wider"
   ab find placeholder "message omega" click >/dev/null
   ab keyboard type "Write 30 numbered lines. Each line is exactly: journey line N (N is 1 to 30)"
+  sleep 1
   ab press Enter
-  wait_js '!!document.querySelector(".msg .cursor")' 20 || true
+  ab press Enter
+  poll_js '!!document.querySelector(".msg .cursor")' 15 \
+    || die "no streaming cursor seen; cannot test mid-run refresh (stream finished or never started)"
 fi
-streaming=$(jsq '!!document.querySelector(".msg .cursor")')
-[ "$streaming" = "true" ] || die "no streaming cursor seen; cannot test mid-run refresh (stream finished or never started)"
 step "mid-stream confirmed (cursor blinking)"
 
 # the customer reloads NOW, while the run is still live
