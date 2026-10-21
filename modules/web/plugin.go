@@ -12,6 +12,11 @@ type Plugin struct{}
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string       { return "web" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "web extension: browser-driven page fetching and extraction"
+}
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return nil }
 

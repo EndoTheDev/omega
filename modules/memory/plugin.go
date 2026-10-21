@@ -13,6 +13,11 @@ type Plugin struct{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string       { return "memory" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "durable memory: facts saved and recalled across sessions by the agent"
+}
 func (p *Plugin) Provides() []string { return []string{"memory", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 

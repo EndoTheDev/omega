@@ -27,6 +27,11 @@ var _ agent.Plugin = (*Plugin)(nil)
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string     { return "kanban" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "kanban: the durable task board agents and workers coordinate through"
+}
 func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 
 // Requires: the board tools are plain store CRUD - nothing to wait for.

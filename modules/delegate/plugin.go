@@ -17,6 +17,11 @@ func NewPlugin() *Plugin {
 }
 
 func (p *Plugin) Name() string       { return "delegate" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "delegate: spawns subagents to run subtasks in isolated sessions"
+}
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return nil }
 

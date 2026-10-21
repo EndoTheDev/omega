@@ -80,6 +80,15 @@ type Plugin interface {
 	Mount(ctx *Context) error
 }
 
+// Describer is an optional Plugin capability: a one-line, human-
+// readable description shown by inventory surfaces (the TUI
+// /extensions listing and the webui GET /extensions endpoint).
+// Plugins that don't implement it are listed with an empty
+// description; surfaces render those without the line.
+type Describer interface {
+	Description() string
+}
+
 // Exclusive seams: two plugins providing the same one is a conflict.
 // "tools" is additive: multiple plugins contribute to ToolProviders.
 var exclusiveSeams = map[string]bool{
@@ -198,6 +207,9 @@ func mountPlugins(ordered []Plugin, ctx *Context) error {
 		info := ExtensionInfo{
 			Name:  p.Name(),
 			Seams: p.Provides(),
+		}
+		if d, ok := p.(Describer); ok {
+			info.Description = d.Description()
 		}
 		// Count tools this plugin added.
 		for _, tp := range ctx.ToolProviders[beforeTools:] {

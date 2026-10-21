@@ -11,6 +11,11 @@ import (
 type Plugin struct{}
 
 func (p *Plugin) Name() string       { return "compactor" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "context compaction: keeps the transcript head and tail, summarizes the middle when the token budget is exceeded"
+}
 func (p *Plugin) Provides() []string { return []string{"compactor"} }
 func (p *Plugin) Requires() []string { return []string{"provider"} }
 
