@@ -57,13 +57,19 @@ class_of() {  # id -> webui | go | docs  (from body/title text)
 }
 
 overlaps() {  # candidate tokens, running tokens -> hit if any token pair overlaps
-  # a token matches if the strings are equal, or one is a directory prefix of the other
-  local ctok rtok
+  # a token matches if the strings are equal, or one is a directory prefix of
+  # the other. Trailing slashes are normalized first - "modules/http_channel/"
+  # as a dir token made the prefix pattern "modules/http_channel//*" (double
+  # slash, never matches) and the guard went token-blind on exactly the
+  # ephemeral x bottom-panel server.go overlap (proven 2026-10-22).
+  local ctok rtok ct rt
   while read -r ctok; do
     [ -z "$ctok" ] && continue
+    ct="${ctok%/}"
     while read -r rtok; do
       [ -z "$rtok" ] && continue
-      if [[ "$ctok" == "$rtok" || "$ctok" == "$rtok"/* || "$rtok" == "$ctok"/* ]]; then
+      rt="${rtok%/}"
+      if [[ "$ct" == "$rt" || "$ct" == "$rt"/* || "$rt" == "$ct"/* ]]; then
         return 0
       fi
     done <"$2"
