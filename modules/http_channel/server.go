@@ -91,6 +91,8 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
+	mux.HandleFunc("/sessions/{id}/branch", s.handleSessionBranch)
+	mux.HandleFunc("/sessions/{id}/export", s.handleSessionExport)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/tasks", s.handleTasks)
 	mux.HandleFunc("/tasks/{id}/comments", s.handleTaskComments)

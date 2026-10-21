@@ -43,6 +43,8 @@
             @new="openChatTab(null)"
             @pin="togglePin"
             @archive="toggleArchive"
+            @branch="branchChatSession"
+            @rename="renameChatSession"
             @remove="askDelete"
           />
         </template>
@@ -280,6 +282,7 @@
   import { modulePanels } from "./composables/module-panels.generated";
   import {
     archiveSession,
+    branchSession,
     deleteSession,
     fetchHealthInfo,
     fetchModels,
@@ -290,6 +293,7 @@
     sessionPath,
     pinSession,
     parseAppearance,
+    renameSession,
     APPEARANCE_KEY,
     isAtBottom,
     pillVisible,
@@ -823,6 +827,39 @@
     sessions.value = updateList(sessions.value);
     try {
       await archiveSession(id, target);
+    } catch {
+      sessions.value = before;
+      refreshSessions();
+    }
+  }
+
+  // branchSession flow (t_6bf696e4, the /branch parity): POST creates
+  // the child (parent_id set, history inherited server-side), the
+  // refresh brings the -badge'd rows in, and the child opens like any
+  // session. A failed POST leaves the parent untouched - the refresh
+  // shows the truth.
+  async function branchChatSession(id: string) {
+    let child: Session | null = null;
+    try {
+      child = await branchSession(id);
+    } catch {
+      return;
+    }
+    if (!child) return;
+    await refreshSessions();
+    openChatTab(child.id);
+  }
+
+  // rename flow (the /label parity): the optimistic label flip paints
+  // instantly, the PUT lands the real one; a failed PUT reverts and
+  // re-syncs (same shape as the pin/archive toggles).
+  async function renameChatSession(id: string, label: string) {
+    const updateList = (list: Session[]) =>
+      list.map((s) => (s.id === id ? { ...s, label } : s));
+    const before = sessions.value;
+    sessions.value = updateList(sessions.value);
+    try {
+      await renameSession(id, label);
     } catch {
       sessions.value = before;
       refreshSessions();

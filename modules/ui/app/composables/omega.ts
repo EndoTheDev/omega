@@ -77,6 +77,10 @@ export interface Session {
   // runHub, not the client, owns "is this session streaming" - every
   // tab reconciles its pulse against the row
   running?: boolean;
+  // parent session id (branch children, t_6bf696e4): present + non-empty
+  // only on forked sessions - the sidebar's "↳ branch" row badge reads
+  // it; the list itself stays linear (roots and children together)
+  parent_id?: string;
 }
 
 // LastRunStats is one completed run's average rates, stored on the
@@ -1561,6 +1565,56 @@ export async function deleteSession(id: string): Promise<void> {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(`delete: ${r.status}`);
+}
+
+// branchSession forks a session (POST /sessions/{id}/branch - the
+// /branch parity). Returns the CHILD row (parent_id set); the caller
+// refreshes the list and opens the child like any session. The child's
+// transcript + context inherit the parent's history server-side.
+export async function branchSession(id: string): Promise<Session> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/branch`, {
+    method: "POST",
+  });
+  if (!r.ok) throw new Error(`branch: ${r.status}`);
+  return (await r.json()) as Session;
+}
+
+// renameSession PUTs the label on the session row (the /label parity -
+// same endpoint the webui title flow uses).
+export async function renameSession(id: string, label: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!r.ok) throw new Error(`rename: ${r.status}`);
+}
+
+// exportSessionUrl is the JSONL export (the /export parity) as a plain
+// download href - one {"role","content"} line per message, served as an
+// attachment; the anchor's `download` attribute keeps the filename.
+export function exportSessionUrl(id: string): string {
+  return `/sessions/${encodeURIComponent(id)}/export`;
+}
+
+// sessionRowBadge is the subtle branch mark for parented sessions (the
+// fork lineage, t_6bf696e4): "↳ branch" inside the row, nothing for
+// plain sessions - badge-less rows render exactly as they always did.
+export function sessionRowBadge(s: Pick<Session, "parent_id">): string {
+  return s.parent_id ? "↳ branch" : "";
+}
+
+// commitSessionRename reduces an inline rename draft to its commit
+// form: a no-op draft (empty, or unchanged after trim) returns null -
+// the edit just closes - a real edit returns the trimmed label for the
+// PUT. Pure: the component owns the editing state.
+export function commitSessionRename(
+  draft: string,
+  current: string | undefined,
+): string | null {
+  const trimmed = draft.trim();
+  if (!trimmed || trimmed === (current ?? "")) return null;
+  return trimmed;
 }
 
 // Minimal structural view of a transcript item for the retry helpers -

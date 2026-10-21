@@ -78,15 +78,87 @@
                 aria-hidden="true">&#9733;</span>
             </button>
             <span class="session-title">{{ s.label || s.id }}</span>
+            <!-- branch badge (t_6bf696e4): parented sessions carry the
+                 subtle ↳ mark - the lineage is the server-side
+                 parent_id, the label text is the pure sessionRowBadge -->
             <span
-              v-if="meta(s)"
+              v-if="badge(s)"
+              class="session-branch">↳ branch</span>
+            <!-- inline rename: the pencil edit swaps the title for an
+                 input; commit on Enter/blur, cancel on Esc - the pure
+                 commitSessionRename drops no-op drafts (no PUT) -->
+            <input
+              v-if="renamingId === s.id"
+              class="session-rename"
+              aria-label="Rename session"
+              v-model="renameDraft"
+              autofocus
+              @click.stop
+              @keyup.enter="commitRename(s)"
+              @keyup.esc="renamingId = null"
+              @blur="commitRename(s)" />
+            <span
+              v-if="renamingId !== s.id && meta(s)"
               class="session-meta">{{ meta(s) }}</span>
-            <!-- hover action cluster: archive (box) + delete (trash),
+            <!-- hover action cluster: branch (fork) + rename (pencil) +
+                 export (download), then archive (box) + delete (trash),
                  inset LEFT of the time slot - the age text's slot stays
                  empty during hover (the row's 34px right padding band) -->
             <span
               class="row-actions"
               @mouseenter="hoveredId = s.id">
+              <button
+                class="icon-btn row-act"
+                title="Branch session (fork, inherits the history)"
+                aria-label="Branch session"
+                @click.stop="$emit('branch', s.id)">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true">
+                  <path
+                    d="M4 2v6a3 3 0 0 0 3 3h5M9 8l3 3-3 3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.2" />
+                </svg>
+              </button>
+              <button
+                class="icon-btn row-act"
+                title="Rename session"
+                aria-label="Rename session"
+                @click.stop="startRename(s.id)">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true">
+                  <path
+                    d="M11.5 2.5l2 2L6 12l-2.7.7L4 10z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.2" />
+                </svg>
+              </button>
+              <a
+                class="icon-btn row-act row-export"
+                :href="exportUrl(s.id)"
+                :download="s.id + '.jsonl'"
+                title="Export session (JSONL)"
+                aria-label="Export session as JSONL">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true">
+                  <path
+                    d="M8 2v7M5 6.5L8 9.5l3-3M3 12.5h10"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.2" />
+                </svg>
+              </a>
               <button
                 class="icon-btn row-act"
                 :title="s.archived ? 'Unarchive session' : 'Archive session'"
@@ -154,8 +226,11 @@
   import { computed, onUnmounted, ref, watch } from "vue";
   import {
     bucketSessions,
+    commitSessionRename,
+    exportSessionUrl,
     relativeAge,
     rowMeta,
+    sessionRowBadge,
     withSearchHits,
     searchSessions,
     SESSION_SEARCH_DEBOUNCE_MS,
@@ -174,7 +249,8 @@
     open: boolean;
   }>();
 
-  defineEmits<{
+  const emit =
+    defineEmits<{
     (e: "open", id: string): void;
     (e: "new"): void;
     (e: "pin", id: string, pinned: boolean): void;
@@ -182,6 +258,14 @@
     // at the list bottom instantly - the optimistic patch flips the flag
     // on the row the list already holds
     (e: "archive", id: string, archived: boolean): void;
+    // branch forks the session (t_6bf696e4): app.vue POSTs, refreshes
+    // the list and opens the child like any session
+    (e: "branch", id: string): void;
+    // rename commits the inline draft; app.vue PUTs the label (the
+    // /label parity) and patches the row it already holds
+    (e: "rename", id: string, label: string): void;
+    // export renders nothing here - the download anchor goes straight
+    // to GET /sessions/{id}/export (the /export parity); no emit needed
     // delete is destructive and unconfirmed here - app.vue owns the
     // confirm dialog and only then calls the API
     (e: "remove", id: string): void;
@@ -306,5 +390,32 @@
   }
   function meta(s: Session): string {
     return rowMeta(s);
+  }
+  function badge(s: Session): string {
+    return sessionRowBadge(s);
+  }
+  function exportUrl(id: string): string {
+    return exportSessionUrl(id);
+  }
+
+  // --- inline rename ---
+  // renamingId holds the row whose title is an input right now; the
+  // draft starts from the row's label (id fallback) on start and the
+  // commit routes through the pure commitSessionRename (null = no-op -
+  // empty or unchanged drafts just close the edit). Escape cancels;
+  // both paths clear the editing state first so the blur never double
+  // commits.
+  const renamingId = ref<string | null>(null);
+  const renameDraft = ref("");
+  function startRename(id: string) {
+    const s = props.sessions.find((x) => x.id === id);
+    renamingId.value = id;
+    renameDraft.value = s?.label || s?.id || "";
+  }
+  function commitRename(s: Session) {
+    if (renamingId.value !== s.id) return;
+    renamingId.value = null;
+    const label = commitSessionRename(renameDraft.value, s.label);
+    if (label !== null) emit("rename", s.id, label);
   }
 </script>
