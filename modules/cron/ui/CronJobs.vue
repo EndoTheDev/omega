@@ -1,5 +1,8 @@
 <template>
-  <section class="cron-list">
+  <section
+    ref="rootEl"
+    class="cron-list"
+    :class="{ narrow: narrow }">
     <p
       v-if="error"
       class="panel-status">
@@ -42,6 +45,7 @@
 
 <script setup lang="ts">
   import { onMounted, ref } from "vue";
+  import { useNarrow } from "./narrow";
 
   // Module-owned UI (card t_db430fea): the cron scheduler's job set,
   // from GET /cron/jobs. READ-ONLY v1 by settled decision - names,
@@ -59,6 +63,15 @@
   const jobs = ref<CronJobInfo[]>([]);
   const loaded = ref(false);
   const error = ref("");
+
+  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
+  // this root measures its OWN rendered container (the inspector
+  // column it currently rides in) and flips the class; the rules in
+  // the scoped stylesheet below do the condensing. A threshold of
+  // 360 here: below it the name/badge head and the meta lines read
+  // cramped, not just short.
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = useNarrow(rootEl);
 
   // shortTime renders the RFC3339 next fire as a local, compact
   // date-time ("10/20 08:00") - the raw RFC string is noise in a row
@@ -132,5 +145,18 @@
   .cron-meta {
     font-size: 11px;
     opacity: 0.6;
+  }
+  /* narrow: the module-UI recipe (card t_a2fdc630). The rows are
+     already single-column; what dies first at ~300px is horizontal
+     breathing room - the head's name/badge pair wraps and the chrome
+     condenses so a long schedule line never elides. */
+  .cron-list.narrow {
+    padding: 6px 8px 10px;
+  }
+  .cron-list.narrow .cron-head {
+    flex-wrap: wrap;
+  }
+  .cron-list.narrow .cron-name {
+    font-size: 11.5px;
   }
 </style>

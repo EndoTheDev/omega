@@ -1,7 +1,8 @@
 <template>
   <aside
+    ref="rootEl"
     class="aside pane inspector-panel"
-    :class="{ open: open }">
+    :class="{ open: open, narrow: narrow }">
     <div class="inspector-files">
       <ul class="files-list">
         <li
@@ -25,6 +26,7 @@
         :entries="rootEntries"
         base=""
         :depth="0"
+        :narrow="narrow"
         @open="openFile" />
     </div>
 
@@ -74,6 +76,7 @@
   import { ref } from "vue";
   import { fetchFilesBrowse, fetchFilesRead, sortFileEntries } from "../../composables/omega";
   import type { FileEntry } from "../../composables/omega";
+  import { useNarrow } from "~/composables/narrow";
   import FileTree from "./FileTree.vue";
 
   // `open` is the mobile drawer overlay state (desktop tabs never pass it
@@ -82,6 +85,14 @@
   defineProps<{
     open?: boolean;
   }>();
+
+  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
+  // the root measures its OWN rendered container (this tab rides both
+  // the inspector column and main-pane-width mounts) and flips the
+  // class; the tree gets it passed down, the scoped stylesheet below
+  // rebalances the preview share.
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = useNarrow(rootEl);
 
   const rootEntries = ref<FileEntry[]>([]);
   const loadingRoot = ref(false);
@@ -132,3 +143,23 @@
 
   loadRoot();
 </script>
+
+<style scoped>
+  /* narrow: the module-UI recipe (card t_a2fdc630). The tab is already
+     one column (tree above, preview below); narrow rebalances the
+     vertical split - at ~300px a 45%-capped preview shows a header and
+     two lines, so it takes the larger share instead (the tree scrolls,
+     code wants lines). Scoped here, not in main.css: these rules are
+     this tab's narrow view, not shell geometry. */
+  .inspector-panel.narrow .file-preview {
+    max-height: 64%;
+    padding: 6px 8px 8px;
+  }
+  .inspector-panel.narrow .preview-body {
+    font-size: 10.5px;
+    padding: 6px 8px;
+  }
+  .inspector-panel.narrow .preview-head {
+    margin-bottom: 4px;
+  }
+</style>

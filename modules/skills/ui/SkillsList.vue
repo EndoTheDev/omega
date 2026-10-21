@@ -1,5 +1,8 @@
 <template>
-  <section class="skills-list">
+  <section
+    ref="rootEl"
+    class="skills-list"
+    :class="{ narrow: narrow }">
     <p
       v-if="error"
       class="panel-status">
@@ -31,6 +34,7 @@
 
 <script setup lang="ts">
   import { onMounted, ref } from "vue";
+  import { useNarrow } from "./narrow";
 
   // Module-owned UI (card t_db430fea): the loaded skill inventory,
   // from GET /skills. READ-ONLY v1 - name + description rows only; the
@@ -44,6 +48,13 @@
   const skills = ref<SkillInfo[]>([]);
   const loaded = ref(false);
   const error = ref("");
+
+  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
+  // this root measures its OWN rendered container and flips the class;
+  // the scoped stylesheet below condenses. The threshold rides the
+  // module's shared NARROW_MAX_PX (narrow.ts, agrees with the shell).
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = useNarrow(rootEl);
 
   onMounted(async () => {
     try {
@@ -89,5 +100,22 @@
   .skills-desc {
     font-size: 11px;
     opacity: 0.6;
+  }
+  /* narrow: the module-UI recipe (card t_a2fdc630). Name + description
+     already stack vertically; the adaptation is condensed chrome - at
+     ~300px the wide row padding reads as dead space. */
+  .skills-list.narrow {
+    padding: 6px 8px 10px;
+  }
+  .skills-list.narrow .skills-row {
+    padding: 4px 0;
+  }
+  .skills-list.narrow .skills-name {
+    font-size: 11.5px;
+    /* skill names are dotted paths (skills.read paths): long ones only
+       ellipsize when the row is measured-narrow */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>
