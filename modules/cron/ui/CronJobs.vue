@@ -88,6 +88,10 @@
       });
     });
     resizeObs.observe(rootEl.value);
+    // mount measures NOW: a tab remount in place produces no further
+    // resize entry, so the class must not wait for the next width
+    // change (the shell's useNarrow does the same on mount)
+    narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
   });
   onBeforeUnmount(() => {
     resizeObs?.disconnect();

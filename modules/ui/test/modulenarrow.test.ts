@@ -109,7 +109,16 @@ for (const entry of RETROFIT) {
     }
     // both paths guard the ancient-host + zero-width + rAF lessons (the
     // shell composable carries them in narrow.ts; module copies inline)
-    if (entry.module !== null) assert.match(src, /w > 0/, "zero-width measure noise is never narrow");
+    if (entry.module !== null) {
+      assert.match(src, /w > 0/, "zero-width measure noise is never narrow");
+      // mount measures NOW: a remount-in-place tab gets no further
+      // resize entry, the class cannot wait for the next width change
+      assert.match(
+        src,
+        /narrow\.value = isNarrowWidth\(Math\.round\(rootEl\.value\.getBoundingClientRect\(\)\.width\)\)/,
+        "the mount-measure line",
+      );
+    }
     for (const rule of entry.rules) {
       assert.match(src, rule, "its narrow rules ship in its own stylesheet");
     }
