@@ -1,4 +1,0 @@
-train smoke proof A+C - vehicle card t_a5d560dc (pipeline v2 3/4 verify).
-This file exists to be landed by the merge train's FIRST real pass.
-Landing 2 of the verify (t_...) removes it while exercising the conflict path.
-Precedent: pipeline v2 embed-lane proof A+B (landed, then reverted). DEV-SIDE EDIT: conflicts with t_ac0482e8 on purpose - t_068f12f2 verify.
