@@ -75,14 +75,14 @@ export default defineNuxtConfig({
     })),
   ],
   nitro: {
-    devProxy: {
-      "/health": { target: "http://127.0.0.1:8098/health" },
-      "/models": { target: "http://127.0.0.1:8098/models" },
-      "/tools": { target: "http://127.0.0.1:8098/tools" },
-      "/chat": { target: "http://127.0.0.1:8098/chat" },
-      "/sessions": { target: "http://127.0.0.1:8098/sessions" },
-      "/tasks": { target: "http://127.0.0.1:8098/tasks" },
-    },
+    devProxy: Object.fromEntries(
+      ["/health", "/models", "/tools", "/chat", "/sessions", "/tasks"].map(
+        (p) => [
+          p,
+          { target: process.env.OMEGA_DEV_API ?? "http://127.0.0.1:8098" + p },
+        ],
+      ),
+    ),
     output: {
       publicDir: "dist",
     },

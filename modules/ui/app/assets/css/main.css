@@ -2130,41 +2130,80 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .icon-btn.drawer-btn { display: inline-flex; }
   .icon-btn.edge-toggle { display: none; }
 
-  .sessions {
+  /* card t_e76ce7b6: the mobile drawer. The dock's pinned-edge content is
+     suppressed under the breakpoint (app.vue's edge-pane slots carry
+     v-if="!isMobile"); MobileDrawer is the mobile-only overlay that
+     renders the same content with its own tab bar. It slides from an
+     edge under the menubar / above the statusbar, same frost layer as
+     the scrim. The old .sessions/.aside fixed positioning is gone - the
+     drawer owns the overlay now. */
+  .mobile-drawer {
     position: fixed;
     top: 35px; /* menubar height - slides under the chrome */
-    left: 0;
     bottom: 29px; /* statusbar height */
-    height: auto;
-    /* width from the app.vue binding (70%); the desktop hard-wall
-       max-width must NOT clamp the mobile overlay */
+    width: 70%;
     max-width: none;
+    height: auto;
     z-index: 12;
+    display: flex;
+    flex-direction: column;
+    background: var(--z1);
+    box-shadow: var(--shadow);
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
   }
-  .sessions.open { transform: translateX(0); }
+  .mobile-drawer.right { transform: translateX(100%); right: 0; }
+  .mobile-drawer.left { left: 0; }
+  .mobile-drawer.open { transform: translateX(0); }
+
+  /* the drawer's own tab bar (the dock's .dock-tabbar is hidden under
+     the breakpoint - REPRO 2: the strip renders inside the drawer) */
+  .mobile-drawer-tabbar {
+    display: flex;
+    gap: 2px;
+    padding: 4px 6px 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    flex: 0 0 auto;
+  }
+  .mobile-drawer-tab {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: var(--r-chip) var(--r-chip) 0 0;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mobile-drawer-tab:hover { color: var(--text); }
+  .mobile-drawer-tab.active {
+    color: var(--text);
+    background: var(--z1-raised);
+  }
+  .mobile-drawer-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* the hosted pane fills the drawer: the desktop .sessions width /
+     .aside min-width must not clamp inside the narrow overlay */
+  .mobile-drawer-content > .pane {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: 1;
+    border-radius: 0;
+  }
 
   .divider { display: none; }
   .dock-divider { display: none; }
   .dock-menu, .dock-tabbar { display: none; }
-  /* the desktop seam tuck: card floats with its full rounding again */
   .dock-pane > .dock-content, .dock-pane > .dock-empty { margin-top: 0; }
-
-  /* inspector: mirrored overlay from the right */
-  .aside {
-    position: fixed;
-    top: 35px; /* menubar height - slides under the chrome */
-    right: 0;
-    bottom: 29px; /* statusbar height */
-    height: auto;
-    max-width: none; /* desktop hard-wall clamp must not apply on mobile */
-    flex-basis: auto;
-    z-index: 12;
-    transform: translateX(100%);
-    transition: transform 0.2s ease-out;
-  }
-  .aside.open { transform: translateX(0); }
 
   /* ponytail: a push-slide variant (240%-wide sliding grid row) was tried
      here and reverted - vw units, innerWidth and transform % all misbehave
