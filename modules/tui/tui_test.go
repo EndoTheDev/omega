@@ -774,8 +774,14 @@ func TestTabComplete(t *testing.T) {
 		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
 	}
 	panel := ansiStrip(m.autocompletePanel())
-	if !strings.Contains(panel, "/copy") || !strings.Contains(panel, "/help") {
+	// The dropup is a scroll window capped at maxAutocompleteRows:
+	// built-ins alone now exceed the cap, so the panel shows the head
+	// of the list and the truncation marker instead of every command.
+	if !strings.Contains(panel, "/copy") {
 		t.Fatalf("autocomplete panel missing options: %q", panel)
+	}
+	if !strings.Contains(panel, "...") {
+		t.Fatalf("autocomplete panel did not mark truncation: %q", panel)
 	}
 	// Nothing selected initially.
 	if m.autocompleteIndex != -1 {
