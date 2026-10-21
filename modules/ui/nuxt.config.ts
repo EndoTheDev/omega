@@ -58,7 +58,13 @@ export default defineNuxtConfig({
   // full types for the editor (tsconfig.json extends .nuxt/tsconfig.json),
   // but no type-check in the build loop - it stays fast
   typescript: { strict: true, typeCheck: false },
-  css: ["~/assets/css/main.css"],
+  css: [
+    "~/assets/css/main.css",
+    // card t_67fc1905: the bottom panel's rules (mobile zero-collapse)
+    // live apart from main.css - the drawer-repairs card owns main.css's
+    // media block edits this round, so the panel gets its own file
+    "~/assets/css/bottompanel.css",
+  ],
   // Auto-import: the shell's own components keep their flat names (the
   // area folders are layout, not namespace); each module UI dir
   // registers with the module name as namespace prefix - Nuxt's

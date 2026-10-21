@@ -7,6 +7,9 @@
         'drop-hover': dropHover,
         'drop-refused': refusedIdx !== null,
         pinned,
+        // card t_67fc1905: the bottom shell gets its own class (the
+        // bottom-panel css file owns its look + the mobile zero-collapse)
+        'edge-bottom': node.edge === 'bottom',
       },
     ]"
     :style="cellStyle"

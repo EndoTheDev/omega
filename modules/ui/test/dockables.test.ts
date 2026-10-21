@@ -67,6 +67,15 @@ function instanceCount(t: DockNode, component: string): number {
     0,
   );
 }
+/** card t_67fc1905: the boot grafts the bottom panel - a createDock'd tree's
+    root is a column now; the main row is its FIRST child. (Pure helpers
+    like defaultTree below still BUILD row trees for the engine tests -
+    the graft happens in the loader.) */
+function mainRowOf(t: DockNode): DockSplit {
+  const root = asSplit(t);
+  assert.equal(root.direction, "column", "a dock store tree's root is a column (bottom-panel era)");
+  return asSplit(root.children[0]);
+}
 /**
  * default shell shape (card t_4ae27e0d): row
  * [sidebar(240), chat(flex), the five-tab inspector pane(300)].
@@ -473,13 +482,14 @@ describe("dock store: the pane-model reset", () => {
     const tree = dock.tree.value;
     // the chat pane is back to chat-only; the inspector pane holds the
     // ONE settings tab (pinned), in the canonical order
-    const chatPane = paneById(tree, asSplit(tree).children[1].id);
+    const row = mainRowOf(tree); // t_67fc1905: the column root holds the row + the bottom shell
+    const chatPane = paneById(tree, row.children[1].id);
     assert.deepEqual(
       chatPane.tabs.map((x) => x.component),
       ["chat"],
       "the stray settings tab left the main pane",
     );
-    const insp = paneById(tree, asSplit(tree).children[2].id);
+    const insp = paneById(tree, row.children[2].id);
     assert.equal(
       insp.tabs.filter((t) => t.component === "settings").length,
       1,
@@ -500,7 +510,7 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    const main = paneById(tree, asSplit(tree).children[1].id);
+    const main = paneById(tree, mainRowOf(tree).children[1].id);
     assert.deepEqual(
       main.tabs.slice(0, 2).map((x) => x.component),
       ["settings", "chat"],
@@ -523,10 +533,13 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    assert.equal(panes(tree).length, 3, "sidebar + chat + inspector");
+    // t_67fc1905: the boot graft adds the bottom shell (logs) - the fixed
+    // shape is now sidebar + chat + inspector + bottom
+    assert.equal(panes(tree).length, 4, "sidebar + chat + inspector + bottom");
     const comps = panes(tree).map((p) => p.tabs[0]?.component);
     assert.deepEqual(comps[0], "sidebar");
     assert.equal(panes(tree)[0]!.fixed, 240);
+    assert.deepEqual(comps[3], "http_channel", "the bottom shell holds logs");
   });
 
   it("ensureMainPane returns the first main pane; never inserts when one lives", async () => {
@@ -550,13 +563,25 @@ describe("dock store: the pane-model reset", () => {
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
-    assert.equal(panes(dock.tree.value).length, 2, "sidebars only");
+    // t_67fc1905: the bottom shell joins the pinned set on boot
+    assert.equal(panes(dock.tree.value).length, 3, "sidebars + the bottom shell");
     const id = dock.ensureMainPane();
     const tree = dock.tree.value;
     const pane = paneById(tree, id);
     assert.equal(pane.tabs.length, 0, "a fresh flexible pane");
-    assert.equal(panes(tree).length, 3, "the dock has a main pane again");
-    assert.equal(panes(tree)[2]!.id, id, "inserted at the root's after-edge");
+    assert.equal(panes(tree).length, 4, "the dock has a main pane again");
+    // the new pane lands inside the MAIN ROW, at its after-edge (never
+    // beside the column's bottom child)
+    assert.deepEqual(
+      panes(tree).map((p) => p.id),
+      [
+        mainRowOf(tree).children[0].id, // sidebar
+        mainRowOf(tree).children[1].id, // inspector
+        id, // the fresh main pane, after-edge of the row
+        asSplit(tree).children[1].id, // the bottom shell
+      ],
+      "inserted at the row's after-edge, the bottom shell last",
+    );
   });
 
   it("canRemovePane: pinned never, the last remaining pane never", async () => {
@@ -565,28 +590,36 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    const side = paneById(tree, asSplit(tree).children[0].id);
-    const files = paneById(tree, asSplit(tree).children[2].id);
-    const chatPane = paneById(tree, asSplit(tree).children[1].id);
+    const row = mainRowOf(tree); // t_67fc1905: row indexes live one level down now
+    const side = paneById(tree, row.children[0].id);
+    const files = paneById(tree, row.children[2].id);
+    const chatPane = paneById(tree, row.children[1].id);
     assert.equal(dock.canRemovePane(side.id), false, "sessions pane unclosable");
     assert.equal(dock.canRemovePane(files.id), false, "inspector pane unclosable");
+    assert.equal(
+      dock.canRemovePane(paneById(tree, asSplit(tree).children[1].id).id),
+      false,
+      "the bottom shell is unclosable too",
+    );
     assert.equal(dock.canRemovePane(chatPane.id), true, "a main pane may go");
   });
 
-  it("closing every main pane still leaves the dock alive (the pinned two)", async () => {
+  it("closing every main pane still leaves the dock alive (the pinned set)", async () => {
     const t: DockNode = makePane("chat");
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
     // boot repair already has the fixed shape; dropping the chat pane
-    // must leave the pinned two (the engine's never-empty guard is what
-    // would refuse a zero-pane dock from any other call path)
+    // must leave the pinned set (sidebars + the bottom shell). the
+    // engine's never-empty guard is what would refuse a zero-pane dock
+    // from any other call path
     const chatPane = panes(dock.tree.value).find((p) => p.tabs[0]?.component === "chat")!;
     dock.remove(chatPane.id);
     await flush();
     const tree = dock.tree.value;
-    assert.equal(panes(tree).length, 2, "the pinned sidebars hold the dock");
+    // t_67fc1905: the pinned set is the two sidebars + the bottom shell
+    assert.equal(panes(tree).length, 3, "the pinned sidebars + bottom hold the dock");
     assert.equal(dock.ensureMainPane().length > 0, true, "a main pane reopens");
   });
 
@@ -596,7 +629,8 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    const files = paneById(tree, asSplit(tree).children[2].id);
+    const row = mainRowOf(tree); // t_67fc1905
+    const files = paneById(tree, row.children[2].id);
     dock.closeTab(files.id, 0);
     dock.closeTab(files.id, 1);
     await flush();
@@ -606,7 +640,7 @@ describe("dock store: the pane-model reset", () => {
       "none of the seven may close",
     );
     // the main class still closes through the store
-    const chatPane = paneById(tree, asSplit(tree).children[1].id);
+    const chatPane = paneById(tree, row.children[1].id);
     dock.closeTab(chatPane.id, 0);
     await flush();
     assert.equal(paneById(dock.tree.value, chatPane.id).tabs.length, 0);

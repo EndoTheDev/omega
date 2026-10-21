@@ -1,0 +1,24 @@
+/* omega webui: the bottom panel (card t_67fc1905). The horizontal pane
+   pinned under the main panel (logs home today; the terminal joins the
+   tab strip later). Desktop layout is tree-driven - the dock's column
+   root sizes the shell and its divider drag sets height px, so NO
+   desktop geometry lives here. What this file owns: the mobile ruling. */
+
+@media (max-width: 768px) {
+  /* mobile: no desktop-shaped bottom panel on a phone - the shell
+     zero-collapses exactly like the sidebar overlay cells (state
+     survives in the tree; the menubar toggle and divider own it above
+     the breakpoint). position: static + overflow: hidden: the cell
+     takes no flex space and the desktop chrome inside (tab bar) clips;
+     the logs body itself is a position:fixed .aside (the same mobile
+     drawer rule the inspector already rides), so it escapes the clip
+     and sits off-screen until its drawer opens. !important beats the
+     tree's inline px heights. */
+  .dock-pane.edge-bottom {
+    height: 0 !important;
+    min-height: 0 !important;
+    flex: 0 0 0 !important;
+    position: static;
+    overflow: hidden;
+  }
+}

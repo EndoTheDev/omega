@@ -604,19 +604,32 @@ describe("serialize / deserialize", () => {
 });
 
 describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
-  it("always three panes: sidebar(240), chat, inspector-5(240 default)", () => {
-    const t = migrateLegacy(() => null);
+  // card t_67fc1905: the default tree gains the bottom panel - the root is
+  // a COLUMN now: [the main row [sidebar, chat, inspector], the bottom
+  // shell (fixed 200, logs tab, edge "bottom")]
+  function mainRow(t: DockNode): DockSplit {
     const root = asSplit(t);
-    assert.equal(root.children.length, 3);
-    assert.equal(asPane(root.children[0]).tabs[0].component, "sidebar");
-    assert.equal(asPane(root.children[0]).fixed, 240);
-    assert.equal(asPane(root.children[1]).tabs[0].component, "chat");
-    assert.equal(asPane(root.children[1]).fixed, null);
-    assert.equal(asPane(root.children[2]).fixed, 240);
+    assert.equal(root.direction, "column", "the default root is a column (bottom-panel era)");
+    assert.equal(root.children.length, 2, "main row + bottom shell");
+    return asSplit(root.children[0]);
+  }
+  it("always four panes: sidebar(240), chat, inspector-7(240 default), bottom(200, logs)", () => {
+    const t = migrateLegacy(() => null);
+    const row = mainRow(t);
+    assert.equal(row.children.length, 3);
+    assert.equal(asPane(row.children[0]).tabs[0].component, "sidebar");
+    assert.equal(asPane(row.children[0]).fixed, 240);
+    assert.equal(asPane(row.children[1]).tabs[0].component, "chat");
+    assert.equal(asPane(row.children[1]).fixed, null);
+    assert.equal(asPane(row.children[2]).fixed, 240);
     assert.deepEqual(
-      asPane(root.children[2]).tabs.map((x) => x.component),
+      asPane(row.children[2]).tabs.map((x) => x.component),
       ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
     );
+    const bottom = asPane(asSplit(t).children[1]);
+    assert.equal(bottom.edge, "bottom");
+    assert.equal(bottom.fixed, 200);
+    assert.deepEqual(bottom.tabs.map((x) => x.component), ["http_channel"]);
   });
   it("persisted widths render verbatim, open flags are dead history", () => {
     const t = migrateLegacy((k) =>
@@ -624,23 +637,23 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
       : k === LEGACY_WIDTH_KEYS.inspector ? "400"
       : "false", // even a persisted 'closed' flag changes nothing
     );
-    const root = asSplit(t);
-    assert.equal(asPane(root.children[0]).fixed, 300);
-    assert.equal(asPane(root.children[2]).fixed, 400);
+    const row = mainRow(t);
+    assert.equal(asPane(row.children[0]).fixed, 300);
+    assert.equal(asPane(row.children[2]).fixed, 400);
   });
   it("sub-floor legacy width renders verbatim (open pane keeps its width)", () => {
     const t = migrateLegacy((k) =>
       k === LEGACY_WIDTH_KEYS.sidebar ? "150" : null,
     );
-    assert.equal(asPane(asSplit(t).children[0]).fixed, 150);
+    assert.equal(asPane(mainRow(t).children[0]).fixed, 150);
   });
   it("bad flag strings fall back to the default widths", () => {
     const t = migrateLegacy((k) =>
       k === LEGACY_WIDTH_KEYS.sidebar ? "abc" : k === LEGACY_WIDTH_KEYS.inspector ? "maybe" : null,
     );
-    const root = asSplit(t);
-    assert.equal(asPane(root.children[0]).fixed, 240);
-    assert.equal(asPane(root.children[2]).fixed, 240);
+    const row = mainRow(t);
+    assert.equal(asPane(row.children[0]).fixed, 240);
+    assert.equal(asPane(row.children[2]).fixed, 240);
   });
 });
 

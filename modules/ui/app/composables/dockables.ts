@@ -49,8 +49,10 @@ export type DockInstancePolicy = "singleton" | "multi";
 
 // where a component may live (card t_4ae27e0d): "left" is the
 // sidebar-pinned sessions pane, "right" the sidebar-pinned inspector
-// pane, "main" the closable main pane class (hover-X).
-export type DockArea = "left" | "right" | "main";
+// pane, "main" the closable main pane class (hover-X). card t_67fc1905:
+// "bottom" joins the pinned class - the horizontal panel under the main
+// panel (logs home today, the terminal's future tab host).
+export type DockArea = "left" | "right" | "main" | "bottom";
 
 // icon glyphs render at 14px in a 24x24 viewBox, currentColor stroke,
 // 2px round-cap joins (the shell's MenuBar icon scale). rect is the
@@ -71,6 +73,18 @@ export interface DockableComponent {
   icon: DockIcon;
   policy: DockInstancePolicy;
   area: DockArea;
+  /** card t_67fc1905: the hosts that keep this component alive BEYOND its
+      `area` home. Most components are single-host ([area] by omission);
+      logs (http_channel) is the first dual-host domain: the bottom panel
+      AND the secondary sidebar both seat it (same domain, two hosts -
+      card 2's finding). Two instances may coexist; the singleton
+      "at most once" invariant reads one per host instead. */
+  homes?: readonly DockArea[];
+  /** card t_67fc1905: where a FRESH built host seats this component -
+      its default home. null/omitted = `area`. The bottom host's builder
+      reads this: every component with defaultHome "bottom" joins the
+      fresh bottom panel's tab strip (logs today, one place to grow). */
+  defaultHome?: DockArea;
   /** tab shows a hover-X. Pinned components (left/right) are unclosable:
       their pane hosts them forever; main tabs close (hover-X). */
   closable: boolean;
@@ -134,6 +148,10 @@ export const DOCKABLES: readonly DockableComponent[] = [
     },
     policy: "singleton",
     area: "right",
+    // card t_67fc1905: dual host - the bottom panel's default home tab,
+    // still seatable in the secondary sidebar (same domain, two hosts)
+    homes: ["right", "bottom"],
+    defaultHome: "bottom",
     closable: false,
   },
   {
@@ -247,6 +265,26 @@ export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
     list, so a new inspector view joins it in ONE place. */
 export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =
   DOCKABLES.filter((d) => d.area === "right").map((d) => d.id);
+
+// --- the host homes (card t_67fc1905): the registry decides the default
+// home per host. A built host (the bottom panel today) seeds its fresh
+// tab strip from every component whose defaultHome names it. ----
+
+/** the components a fresh `host` pane seats as its default tabs.
+    "bottom" today: logs (http_channel) - the terminal joins here later
+    by registering the same way. Registered in ONE place (the registry). */
+export function defaultHostTabs(host: DockArea): DockComponentName[] {
+  return DOCKABLES
+    .filter((d) => (d.defaultHome ?? d.area) === host)
+    .map((d) => d.id);
+}
+
+/** which hosts may keep an instance of `id` alive (the singleton
+    invariant now reads ONE PER HOST for dual-host domains like logs) */
+export function hostsOf(id: DockComponentName): readonly DockArea[] {
+  const d = dockableOf(id);
+  return d.homes ?? [d.area];
+}
 
 // --- the composition-manifest side (module-owned components) -----------------
 
