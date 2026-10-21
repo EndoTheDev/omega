@@ -14,6 +14,22 @@ JOURNEY_NEEDS_MODEL=1
 # navigation, so open_app re-mounts the app clean.
 fresh_open() { ab open "about:blank" >/dev/null 2>&1; open_app; }
 
+# open_row <label-fallback>: OPEN the journey session with a title
+# selector click. open_journey_row's find-text click HOVERS first - and
+# the hover reveals the row-action cluster under the cursor, so the
+# click can land on the rename pencil: the editor opens (meta hides, no
+# transcript). The title element click bubbles to the row's open emit.
+open_row() {
+  local fallback="$1" i=0 out
+  while [ "$i" -lt 20 ]; do
+    out=$(jsq "(()=>{const rows = Array.from(document.querySelectorAll(\".session-list li\")); const r = rows.find(x => (x.innerText || \"\").includes(\"$fallback\")); if (!r) return 0; const t = r.querySelector(\".session-title\"); if (!t) return 0; t.click(); return 1;})()" 2>&1 | tail -1)
+    [ "$out" = "1" ] && return 0
+    sleep 1
+    i=$((i + 1))
+  done
+  die "journey session row never appeared in sidebar: $fallback"
+}
+
 JRN_ID=$(new_journey_session branch-root | tail -1)
 TAG=$(journey_tag)
 ROOTLABEL="(journey) branch-root $TAG"
@@ -38,7 +54,7 @@ done
 assert_eq "$seeded" "1" "seeded exchange persisted (store message_count > 0)"
 
 fresh_open
-open_journey_row "$ROOTLABEL"
+open_row "(journey) branch-root "
 
 # reload-pulled row meta: a fresh open re-fetches /sessions, so the row's
 # counts render without racing the background poll
