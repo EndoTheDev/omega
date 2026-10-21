@@ -19,6 +19,7 @@ package http_channel
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -211,5 +212,35 @@ func TestExportJSONLShape(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("export missing status = %d, want 404", resp.StatusCode)
 		}
+	}
+}
+
+// HEAD export: same headers as the GET (the download probe - the webui
+// anchor, curl -I - reads Content-Disposition without a body). The
+// branch tests lean on the shape test for the GET.
+func TestExportHead(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	createSession(t, ts, "exph")
+	if err := st.AppendMessage(context.Background(), "exph", ai.NewUser("head seed")); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	resp, err := http.Head(ts.URL + "/sessions/exph/export")
+	if err != nil {
+		t.Fatalf("export head: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("export head status = %d, want 200", resp.StatusCode)
+	}
+	cd := resp.Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "attachment") || !strings.Contains(cd, `exph.jsonl`) {
+		t.Fatalf("head content-disposition = %q, want attachment named exph.jsonl", cd)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if len(string(body)) != 0 {
+		t.Fatalf("head body = %q, want empty", body)
 	}
 }
