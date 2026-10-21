@@ -401,7 +401,7 @@ func TestRenderTranscriptRendersAssistant(t *testing.T) {
 		ai.NewUser("hi"),
 		ai.NewAssistant("**bold** `code`"),
 	}
-	out := renderTranscript(messages, 80, themes["dark"])
+	out := renderTranscript(messages, 80, themes["dark"], nil)
 
 	if !strings.Contains(out, "\x1b[") {
 		t.Fatalf("expected ANSI escape codes in rendered transcript, got %q", out)
@@ -1446,7 +1446,7 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 		ai.NewToolResult("11:12 AM", "c1", false),
 		ai.NewAssistant("It's 11:12 AM."),
 	}
-	out := ansiStrip(renderTranscript(messages, 80, themes["dark"]))
+	out := ansiStrip(renderTranscript(messages, 80, themes["dark"], nil))
 
 	if !strings.Contains(out, "whats the time rn?") {
 		t.Fatalf("missing user message: %q", out)
@@ -1478,7 +1478,7 @@ func TestRenderTranscriptCompacted(t *testing.T) {
 		ai.NewSystem("injected prompt - never persisted, skip"),
 		ai.NewUser("continue"),
 	}
-	out := ansiStrip(renderTranscript(messages, 80, themes["dark"]))
+	out := ansiStrip(renderTranscript(messages, 80, themes["dark"], nil))
 	if !strings.Contains(out, "[compacted:") {
 		t.Fatalf("missing compaction summary: %q", out)
 	}
