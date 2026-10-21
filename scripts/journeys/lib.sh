@@ -83,6 +83,21 @@ wait_js() {
 # wait_text <text> <timeout_s>: wait until text renders, then die on miss
 wait_text() { ab wait --text "$1" >/dev/null 2>&1 || die "text never rendered: $1"; step "ok: text rendered: $1"; }
 
+# poll_js <expr> <timeout_s>: like wait_js but NEVER dies - returns 1 on
+# timeout. wait_js always exits the recipe on timeout (die calls exit, and
+# `wait_js ... || true` cannot catch an exit), so any fallback path must
+# use poll_js.
+poll_js() {
+  local expr="$1" t="${2:-15}" i=0 out
+  while [ "$i" -lt $((t * 2)) ]; do
+    out=$(jsq "$expr" 2>&1)
+    if [ "$out" = "true" ]; then return 0; fi
+    sleep 0.5
+    i=$((i + 1))
+  done
+  return 1
+}
+
 # open_app: fresh SPA load in the journey session + console hook
 open_app() {
   ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || \
