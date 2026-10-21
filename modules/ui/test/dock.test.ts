@@ -472,8 +472,8 @@ describe("tab ops", () => {
     });
   });
 
-  it("MAIN_DOCKABLES: the MAIN-area inventory only (card t_4ae27e0d; settings left for the inspector, t_49d0b308)", () => {
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
+  it("MAIN_DOCKABLES: the MAIN-area inventory (card t_4ae27e0d; settings left for the inspector, t_49d0b308; insights joined, t_e1e61680)", () => {
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "insights"]);
   });
 });
 
