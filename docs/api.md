@@ -25,7 +25,8 @@ documented below that is not in that mux is not real.
 | `/sessions/{id}/variants`            | GET, POST, PATCH | branch points + active-variant select    |
 | `/sessions/{id}/branch`              | POST       | fork a child session (store-linked)            |
 | `/sessions/{id}/export`              | GET        | active path as JSONL attachment                |
-| `/tasks`                             | GET, POST  | kanban board (list/create)                     |
+| `/boards`                           | GET        | board registry (multi-board, current flagged)   |
+| `/tasks`                             | GET, POST  | kanban board (list/create, `?board=` picker)    |
 | `/tasks/{id}`                        | GET, PATCH | task detail (task+comments+events) / edits     |
 | `/tasks/{id}/comments`               | POST       | add a comment (author default: `web`)          |
 | `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector |
@@ -39,7 +40,8 @@ documented below that is not in that mux is not real.
 
 Optional seams degrade with a status code, never a panic: no store ->
 `/sessions*` and `/sessions/search` answer 501; no settings seam ->
-`/settings` answers 501; no kanban mount -> `/tasks*` answer 501.
+`/settings` answers 501; no kanban mount -> `/tasks*` and `/boards`
+answer 501.
 
 Session titles generate on first exchange via a detached second agent
 run (`context.WithoutCancel`); failures are silent and rapid first
@@ -221,7 +223,19 @@ config.yaml is their only door. Knob help lines note which apply on
 restart vs hot-apply live (http timeout + compaction hot-apply; context
 window help reports what startup auto-probed).
 
+### /boards (multi-board registry)
+
+- `GET /boards` — the board registry, the current board flagged. Answers
+  501 when the kanban seam is not mounted or the provider lacks the
+  listing capability (single-board implementations stay legal).
+
 ### /tasks (kanban)
+
+- Every task route takes `?board=<name>`; the empty value is the
+  current board (the pointer target resolved at mount, CLI:
+  `omega kanban board use <name>`). There is no cross-board mutation
+  endpoint: a PATCH moves a card inside its board only, switching
+  boards is a pointer operation, never a card op.
 
 - `GET /tasks` — list rows; `?status=` filters, the empty value lists
   every status.
