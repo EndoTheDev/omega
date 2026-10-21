@@ -1,0 +1,259 @@
+name: Nightly
+
+# Pipeline v2 round 4: the nightly channel + the soak automation.
+# Laws (docs/pipeline.md):
+#   - nightly = semver PRERELEASE tag on green dev tip: vX.Y.(Z+1)-nightly.YYYYMMDD
+#     (the HYPHEN makes it a prerelease that sorts BELOW its stable target,
+#     so the updater's stable channel never offers it; the `+` form was
+#     rejected - build metadata is ignored by semver precedence)
+#   - red or partial run -> NO tag, alert in the run summary (the tick)
+#   - soak: the newest nightly older than 48h whose CI is green, shipped
+#     assets, and has zero open regression reports ff's master to itself
+#   - version allocation: after stable vX.Y.Z, nightlies run at
+#     vX.Y.(Z+1)-nightly.*; the next stable tag = the newest soaked
+#     nightly's commit, named by Endo's word only
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: Nightly suite + prerelease tag (dev tip)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the nightly tag; release.yml builds its assets
+    steps:
+      - name: Checkout dev tip (scheduled runs default to master - pin dev)
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/dev
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Go suite
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Boot the validation lane (no provider on purpose)
+        run: |
+          mkdir -p "$RUNNER_TEMP/omega-lane"
+          go build -o "$RUNNER_TEMP/omega-lane/omega" ./cmd/omega
+          OMEGA_MODEL=dummy OMEGA_HOST=http://127.0.0.1:9 OMEGA_PORT=8098 \
+            OMEGA_DB_PATH="$RUNNER_TEMP/nightly-lane.db" \
+            "$RUNNER_TEMP/omega-lane/omega" serve >"$RUNNER_TEMP/lane.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8098/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "validation lane never came up:" >&2
+          cat "$RUNNER_TEMP/lane.log" >&2
+          exit 1
+
+      - name: Validation journeys
+        run: scripts/journeys/run.sh
+        env:
+          JOURNEY_BASE_URL: http://127.0.0.1:8098
+
+      - name: Compute the nightly version (patch+1 of the newest stable)
+        id: ver
+        run: |
+          LAST="$(git tag -l 'v*.*.*' | grep -v -- '-' | sort -V | tail -1)"
+          if [ -z "$LAST" ]; then
+            echo "::error::no stable v* tag found - cannot allocate a nightly version" >&2
+            exit 1
+          fi
+          IFS='.' read -r MAJ MIN PAT <<<"${LAST#v}"
+          TODAY="$(date -u +%Y%m%d)"
+          echo "TAG=v${MAJ}.${MIN}.$((PAT + 1))-nightly.${TODAY}" >>"$GITHUB_OUTPUT"
+          echo "LAST_STABLE=$LAST" >>"$GITHUB_OUTPUT"
+
+      - name: Tag dev tip green (one nightly per day)
+        run: |
+          TAG="${{ steps.ver.outputs.TAG }}"
+          DEVSHA="$(git rev-parse HEAD)"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::warning::nightly $TAG already exists - green re-run skips, no second tag"
+            {
+              echo "## :clock5: Nightly already tagged: \`$TAG\`"
+              echo ""
+              echo "Green re-run on the same day skips (one nightly per day)."
+            } >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          {
+            echo "## :white_check_mark: Nightly tagged: \`$TAG\`"
+            echo ""
+            echo "- dev tip: \`$DEVSHA\` (stable word still \`${{ steps.ver.outputs.LAST_STABLE }}\`)"
+            echo "- prerelease by construction (the hyphen): the updater's stable channel will not offer it"
+            echo "- release builds fire on the tag push (\`.github/workflows/release.yml\`)"
+            echo "- soak: after 48h, still-green with zero open regressions ff's master to \`$TAG\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Alert - red or partial means NO tag (the tick report block)
+        if: failure()
+        run: |
+          {
+            echo "## :rotating_light: NIGHTLY $(date -u +%F): RED - no nightly tag"
+            echo ""
+            echo "The failed step above is the reason. No tag was pushed; master keeps its"
+            echo "current soak point. The soak automation will not advance on a red nightly."
+          } >>"$GITHUB_STEP_SUMMARY"
+          echo "::error::nightly red - no tag (see failed step)"
+
+  soak:
+    name: Soak gate - the newest soaked nightly ff's master
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # fast-forwards master to the soak point
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout master with full history + tags
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/master
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Pick the newest nightly tag
+        id: pick
+        run: |
+          TAG="$(git tag -l 'v*-nightly.*' | sort -V | tail -1)"
+          echo "TAG=$TAG" >>"$GITHUB_OUTPUT"
+          if [ -z "$TAG" ]; then
+            {
+              echo "## Soak - no nightly tag exists yet, nothing to soak"
+            } >>"$GITHUB_STEP_SUMMARY"
+            echo "NONE=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "NONE=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Soak age - newest nightly must be older than 48h
+        if: steps.pick.outputs.NONE == 'false'
+        run: |
+          TAG="${{ steps.pick.outputs.TAG }}"
+          sha="$(git rev-parse "${TAG}^{commit}")"
+          now="$(date +%s)"
+          ct="$(git log -1 --format=%ct "$sha")"
+          ageh=$(( (now - ct) / 3600 ))
+          if [ $((now - ct)) -lt 172800 ]; then
+            echo "::warning::soaking continues - $TAG is ${ageh}h old (< 48h)"
+            {
+              echo "## Soak - \`$TAG\` is ${ageh}h old, soaking continues (need 48h)"
+            } >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "READY=true" >>"$GITHUB_ENV"
+          echo "TAG=$TAG" >>"$GITHUB_ENV"
+
+      - name: Nightly CI green on the soak point
+        if: env.READY == 'true'
+        run: |
+          sha="$(git rev-parse "${TAG}^{commit}")"
+          concls="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$sha&per_page=100" \
+            --paginate --jq '.workflow_runs[] | select(.path == ".github/workflows/nightly.yml") | .conclusion')"
+          green="$(printf '%s\n' "$concls" | grep -c '^success$' || true)"
+          red="$(printf '%s\n' "$concls" | grep -cE 'failure|cancelled|startup_failure|timed_out' || true)"
+          {
+            echo "## Soak - \`$TAG\` CI on \`${sha:0:12}\` - $green green, $red red runs"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [ "$green" -eq 0 ] || [ "$red" -gt 0 ]; then
+            echo "::error::soak blocked - nightly CI is not green on the soak point ($green green / $red red)"
+            {
+              echo "**Blocked:** nightly CI is not green on the soak point - the fix must re-soak."
+            } >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: The soak point shipped (release with assets, prerelease flag on)
+        if: env.READY == 'true'
+        run: |
+          rel="$(gh release view "$TAG" --json assets,isPrerelease,isDraft 2>/dev/null)" || {
+            echo "::error::soak blocked - no release for $TAG (release.yml never landed its assets)"
+            { echo "## Soak blocked - no release for \`$TAG\`" ; } >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          assets="$(printf '%s' "$rel" | jq '.assets | length')"
+          draft="$(printf '%s' "$rel" | jq -r '.isDraft')"
+          pre="$(printf '%s' "$rel" | jq -r '.isPrerelease')"
+          if [ "$draft" = "true" ] || [ "$assets" -eq 0 ]; then
+            echo "::error::soak blocked - release $TAG is a draft or has no assets (got $assets)"
+            { echo "**Blocked:** release \`$TAG\` has no assets (or is a draft)." ; } >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$pre" != "true" ]; then
+            echo "::error::soak blocked - $TAG is NOT flagged prerelease, the stable channel would see it"
+            { echo "**Blocked:** \`$TAG\` missing the prerelease flag (channel separation broke)." ; } >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "::notice::soak - $TAG release has $assets assets, prerelease flag on"
+
+      - name: Zero open regression reports (any hold = ff blocked)
+        if: env.READY == 'true'
+        run: |
+          count="$(gh issue list --repo "${{ github.repository }}" --label regression --state open --json number --jq 'length')"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::soak blocked - $count open regression report(s), ff holds until the fix re-soaks"
+            {
+              echo "## Soak blocked - $count open regression report(s) triaged against \`$TAG\`"
+            } >>"$GITHUB_STEP_SUMMARY"
+            gh issue list --repo "${{ github.repository }}" --label regression --state open >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Master must still be behind the soak point (ff, never force)
+        if: env.READY == 'true'
+        run: |
+          git fetch -q origin master
+          if git merge-base --is-ancestor origin/master "${TAG}^{commit}"; then
+            echo "FF=true" >>"$GITHUB_ENV"
+          else
+            echo "::warning::master is not an ancestor of $TAG - nothing to ff (stable already moved past it), no force"
+            {
+              echo "## Soak - master is not behind \`$TAG\`, no fast-forward (never force)"
+            } >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Fast-forward master to the soak point + print the release prompt
+        if: env.FF == 'true'
+        run: |
+          git push origin "refs/tags/$TAG:refs/heads/master"
+          echo "::notice::master fast-forwarded to $TAG"
+          {
+            echo "## :white_check_mark: SOAK GREEN - master fast-forwarded to \`$TAG\`"
+            echo ""
+            echo "- the next stable tag is this commit, named by Endo's word (same number, minus \`-nightly.*\`)"
+            echo ""
+            echo "### Release prompt"
+            echo ""
+            echo '```'
+            bash scripts/release-suggest.sh || { echo "(release-suggest could not run here)"; }
+            echo '```'
+            echo ""
+            echo "_The suggestion never tags anything - Endo confirms or overrides._"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Alert - the soak did not advance (the tick report block)
+        if: failure()
+        run: |
+          {
+            echo "## :rotating_light: SOAK - no master advance today"
+            echo ""
+            echo "The failed step above names the hold (red soak point, missing assets,"
+            echo "open regressions). The soak automation never force-pushes and never"
+            echo "advances a held point."
+          } >>"$GITHUB_STEP_SUMMARY"
+          echo "::error::soak did not advance master (see failed step)"
