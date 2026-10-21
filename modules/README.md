@@ -79,6 +79,17 @@ sections between Project Context and Environment.
 3. Create a `plugin.go` with a `NewPlugin(...)` function returning
    a `Plugin` implementation.
 4. `Mount` populates `Context` slots from config.
+5. Register the plugin in `buildPlugins()` in `cmd/omega/main.go` -
+   an unregistered plugin never mounts.
+6. Tools append to `ctx.ToolProviders` during `Mount()`; commands
+   append to `ctx.Commands` and chain `ctx.CommandHandler` (call the
+   previous handler on miss).
+7. Leave `<name>_test.go` behind - each non-trivial package carries
+   a self-check.
+
+Never create an `AGENTS.md` for a module - the root `AGENTS.md` is
+the single worker map; worker-facing rules for a new module land in
+the root map's module laws and in `docs/architecture.md`.
 
 ### Module-owned UI
 
