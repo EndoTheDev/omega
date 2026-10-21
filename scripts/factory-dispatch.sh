@@ -27,6 +27,17 @@ tokens_of() {  # extract repo paths from free text (body or diff)
   grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
 }
 
+candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
+  local body files
+  body=$(sqlite3 "$DB" "SELECT body FROM tasks WHERE id='$1';")
+  files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
+  if [ -n "$files" ]; then
+    tokens_of <<<"$files"
+  else
+    tokens_of <<<"$body"
+  fi
+}
+
 surface_of_card() {  # id -> file tokens: worktree diff against dev + body
   local id="$1"
   local wt=".worktrees/$id"
@@ -72,6 +83,7 @@ RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 # -- candidates, oldest first --
 mapfile -t CAND < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='ready' ORDER BY created_at;")
 PARKED=(); LEGAL=0
+PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
   # ponytail: no early break at 2 legal - the dispatcher may skip a legal
@@ -79,25 +91,31 @@ for c in "${CAND[@]:-}"; do
   # pair (proven live 2026-10-21: nuxt.config.ts collision via t_67fc1905).
   # Every ready candidate gets a hold verdict; the cap math stays in the
   # dispatch call.
-  CTOK=$(mktemp); surface_of_card "$c" | tokens_of >"$CTOK"
-  HOLD=0; WHY=""
-  if [ "$RUN_HAS_SURFACE" = 1 ]; then
-    if grep -q . "$CTOK" && overlaps "$CTOK" "$SURF"; then
-      HOLD=1
-      WHY="same-file: $(head -1 "$CTOK")"
-      # name the actual matching token (prefix-aware)
+  CTOK=$(mktemp)
+  { candidate_tokens "$c"
+    git diff --name-only dev..."wt/$c" 2>/dev/null || true   # resumed candidates carry real writes in their worktrees
+  } >"$CTOK"
+  HOLD=0; WHY=""; MATCHF=""
+  if grep -q . "$CTOK"; then
+    if [ "$RUN_HAS_SURFACE" = 1 ] && overlaps "$CTOK" "$SURF"; then
+      HOLD=1; MATCHF="$SURF"
+    elif grep -q . "$PASS_SURF" && overlaps "$CTOK" "$PASS_SURF"; then
+      HOLD=1; MATCHF="$PASS_SURF"   # pair collision: a legal co-spawn candidate owns the file
+    fi
+    if [ "$HOLD" = 1 ]; then
+      WHY="same-file"
       while read -r ct; do
-        grep -qE "^${ct}(/|$)" "$SURF" || grep -qE "^[a-zA-Z0-9_./-]*${ct}" "$SURF" && { WHY="same-file: $ct"; break; }
+        [ -n "$MATCHF" ] && grep -qE "^${ct}(/|$)" "$MATCHF" && { WHY="same-file: $ct"; break; }
       done <"$CTOK"
-    elif ! grep -q . "$CTOK"; then
-      # no tokens in body -> class fallback
+    fi
+  elif [ "$RUN_HAS_SURFACE" = 1 ]; then
+      # no tokens in body/worktree -> class fallback
       RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r"; done | sort -u | tr '\n' ',')
       CC=$(class_of "$c")
       case "$CC" in
         go)  [[ "$RC" == *webui* && "$RC" == *go,* ]] && { HOLD=1; WHY="go-class beside go/webui mix: $RC"; };;
         *)   : ;;  # webui+webui legal since embed-lane proof; docs collides with nothing
       esac
-    fi
   fi
   rm -f "$CTOK"
   if [ "$HOLD" = 1 ]; then
@@ -106,9 +124,12 @@ for c in "${CAND[@]:-}"; do
   else
     echo "legal: $c"
     LEGAL=$((LEGAL+1))
+    { git diff --name-only dev..."wt/$c" 2>/dev/null || true   # resumed candidates carry real writes
+      candidate_tokens "$c"
+    } >>"$PASS_SURF"
   fi
 done
-rm -f "$SURF"
+rm -f "$SURF" "$PASS_SURF"
 
 [ "$DRY" = 1 ] && { echo "(dry-run: no dispatch)"; exit 0; }
 
