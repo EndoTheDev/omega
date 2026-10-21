@@ -135,8 +135,12 @@ rm -f "$SURF" "$PASS_SURF"
 
 # -- park colliders (sentinel claim-lock: the dispatcher skips locked cards;
 #    a status flip does NOT protect - unclaimed cards are daemon food), dispatch, restore --
-park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p';"; done; }
-unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock='' WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
+# park only takes NULL/'' locks: a card already holding another sentinel (queue-hold
+# from a tick's canonical park) keeps it - overwriting it unparked a parked card live.
+# unpark restores NULL, never '': the dispatcher's claim filter is `claim_lock IS NULL`,
+# and an '' lock left the card invisible to every later dispatch (Spawned: 0, all buckets empty).
+park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p' AND (claim_lock IS NULL OR claim_lock='');"; done; }
+unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock=NULL WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
 park "${PARKED[@]:-}"
 trap 'unpark "${PARKED[@]:-}"' EXIT
 if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
