@@ -18,6 +18,19 @@
           @click="$emit('remove-attachment', i)">&times;</button>
       </div>
     </div>
+    <!-- the fork anchor (t_a62eeb43): a visible affordance while the
+         next send is chained onto a historical message - the send POSTs
+         /chat {fork} and runs FROM that point; × drops the anchor -->
+    <div
+      v-if="forkAnchor"
+      class="fork-chip">
+      <span>fork: next send continues from this point</span>
+      <button
+        class="fork-clear"
+        type="button"
+        title="drop the fork anchor"
+        @click="$emit('clear-fork')">&times;</button>
+    </div>
     <div class="composer-row">
       <button
         class="plus-btn"
@@ -98,6 +111,9 @@
     // pending image attachments - owned by the app: the transcript
     // bubble and the interrupted retry both need them
     attachments: OmegaImage[];
+    // set while the next send is chained onto a historical message
+    // (the fork affordance on the response block) - shows the chip
+    forkAnchor?: string | null;
   }>();
 
   const emit = defineEmits<{
@@ -110,6 +126,7 @@
     (e: "attach-files", images: OmegaImage[]): void;
     (e: "remove-attachment", index: number): void;
     (e: "attach-url", url: string): void;
+    (e: "clear-fork"): void;
   }>();
 
   // send needs text OR an attachment - image-only messages are valid
