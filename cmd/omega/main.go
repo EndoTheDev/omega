@@ -58,7 +58,10 @@ Usage:
   omega serve           start the HTTP server (SSE streaming)
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
-  omega update              check for and install the latest release
+  omega update              install the latest stable release (nightlies invisible)
+  omega update --nightly    install the newest -nightly.* prerelease instead
+  omega update --rollback   swap back to omega.bak + verify it runs
+  omega rollback            same as omega update --rollback
   omega health          check the server at the configured port
 
 Flags:
@@ -68,6 +71,11 @@ Flags:
   --no-approve          skip the current project's AGENTS.md
   --version, -v         print version
   --help, -h            show this help
+
+Update flags:
+  --nightly             nightly channel: newest prerelease tag
+  --allow-downgrade     permit installing a version lower than the running one
+                        (a stale mirror must never quietly revert a box)
 `
 
 // run parses the subcommand and dispatches. The first non-flag argument
@@ -109,7 +117,11 @@ func run(args []string) error {
 	case "insights":
 		return cmdInsights(parseConfigFlag(rest), rest)
 	case "update":
-		return cmdUpdate()
+		return cmdUpdate(rest)
+	case "rollback":
+		// Alias for `omega update --rollback` — same one-generation
+		// swap back, health-verified.
+		return cmdRollback()
 	case "chat", "":
 		// Explicit chat subcommand, or no subcommand: default to the TUI.
 		return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
