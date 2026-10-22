@@ -89,6 +89,11 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+        // card t_d7a7beaa: the board switcher reads GET /boards in dev
+        // too (same-origin embedded in production); without this route
+        // the switcher's v-if never turns true on a dev lane and the
+        // header spacing (t_de8ae822) cannot be verified live
+        "/boards",
         // card t_14f73742: the extensions inventory tab fetches the
         // module list in dev (same-origin embedded in production)
         "/extensions",
