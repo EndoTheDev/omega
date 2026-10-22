@@ -52,6 +52,11 @@ type Session struct {
 	// were migrated straight to 2 - a manual label is never retitled.
 	TitleState int `json:"title_state"`
 
+	// Agent is the profile this session is bound to ("default" for
+	// sessions created before/without the agent surface). Bound at
+	// creation - a session never switches agents mid-conversation.
+	Agent string `json:"agent,omitempty"`
+
 	// LastRun is the status bar's last-known run telemetry, computed at
 	// run end (real provider usage over the run's streaming wall clock)
 	// and persisted on the session row. Nil until a run with reported

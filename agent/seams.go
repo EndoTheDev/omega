@@ -147,6 +147,23 @@ type StoreProvider interface {
 	SessionModels(ctx context.Context) (map[string]string, error)
 }
 
+// AgentSessionStore is the optional agent-scoped session surface
+// (card t_7e2b7002). Sessions are bound to an agent at creation and
+// never switch agents mid-conversation. The core StoreProvider stays
+// untouched so the default surface (and every fake) keeps compiling:
+// implementers opt in by type-asserting to this interface, the same
+// pattern CronLister and SkillsLister use.
+type AgentSessionStore interface {
+	// CreateAgentSession creates a session BOUND to agentName - the
+	// row's agent column is written, not inferred. Unknown agent
+	// names are the caller's problem (profile validation happens at
+	// the surface, the store knows only rows).
+	CreateAgentSession(ctx context.Context, id, parentID, label, agentName string) error
+	// ListAgentSessions returns the sessions bound to agentName,
+	// ordered by creation time.
+	ListAgentSessions(ctx context.Context, agentName string) ([]Session, error)
+}
+
 // SkillsProvider is the skill loading seam. The default implementation
 // scans a directory for <name>/<name>.md files, provided via the skills
 // plugin. The host uses this to populate the skill list for autocomplete,
