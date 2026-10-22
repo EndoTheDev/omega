@@ -71,9 +71,14 @@ func insightsPayloadOf(in *agent.Insights) insightsPayload {
 		ToolCalls:      in.ToolCalls,
 		TotalTokens:    in.TotalTokens,
 		AvgSessionMsgs: in.AvgSessionMsgs,
-		NotableMsgs:    insightsNotableRow{Value: in.NotableMsgs.Value, Detail: in.NotableMsgs.Detail},
-		NotableTokens:  insightsNotableRow{Value: in.NotableTokens.Value, Detail: in.NotableTokens.Detail},
-		NotableTools:   insightsNotableRow{Value: in.NotableTools.Value, Detail: in.NotableTools.Detail},
+		// arrays stay arrays on the wire: a nil Go slice marshals as
+		// null, and the webui's insights template (data.tools.length)
+		// dereferences the field on every boot - the null crashed the
+		// SPA boot on any lane whose window holds no tool calls.
+		Tools:         []insightsToolRow{},
+		NotableMsgs:   insightsNotableRow{Value: in.NotableMsgs.Value, Detail: in.NotableMsgs.Detail},
+		NotableTokens: insightsNotableRow{Value: in.NotableTokens.Value, Detail: in.NotableTokens.Detail},
+		NotableTools:  insightsNotableRow{Value: in.NotableTools.Value, Detail: in.NotableTools.Detail},
 	}
 	for _, t := range in.Tools {
 		p.Tools = append(p.Tools, insightsToolRow{Name: t.Name, Count: t.Count})
