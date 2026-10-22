@@ -9,7 +9,7 @@
       id="notif-bell"
       class="icon-btn notif-bell"
       aria-label="Notifications"
-      :title="unread > 0 ? `${unread} unread notifications` : 'Notifications'"
+      :title="badgeCount > 0 ? `${badgeCount} unread (${unread} notifications, ${pending} pending questions)` : 'Notifications'"
       @click="toggle">
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -27,10 +27,11 @@
         </g>
       </svg>
       <span
-        v-if="unread > 0"
+        v-if="badgeCount > 0"
         class="notif-badge"
+        :class="{ verdict: pending > 0 && unread === 0 }"
         role="status"
-        :aria-label="`${unread} unread`">{{ badgeText }}</span>
+        :aria-label="`${badgeCount} unread`">{{ badgeText }}</span>
     </button>
 
     <!-- dropdown panel: newest first, capped list, mark-all on top -->
@@ -48,6 +49,26 @@
           mark all read
         </button>
       </div>
+      <ul
+        v-if="pendingVerdicts.length"
+        class="notif-verdicts"
+        role="list">
+        <li
+          v-for="p in pendingVerdicts"
+          :key="p.id"
+          class="notif-row verdict"
+          @click="openVerdict(p)">
+          <span class="notif-kind" data-kind="verdict">?</span>
+          <span class="notif-row-main">
+            <span class="notif-row-title">{{ p.title }}</span>
+            <span class="notif-row-meta">
+              <span class="notif-verdict pending">pending question</span>
+              <span class="notif-age">session {{ shortId(p.session_id) }}</span>
+            </span>
+          </span>
+        </li>
+      </ul>
+
       <ul class="notif-list" role="list">
         <li
           v-for="n in list"
@@ -108,6 +129,7 @@
     toastLifetime,
     type OmegaNotification,
   } from "../../composables/notifications";
+  import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
 
   const emit = defineEmits<{
     // navigation intent: app.vue routes task -> board, cron -> the
@@ -120,12 +142,21 @@
   const list = ref<OmegaNotification[]>([]);
   const toasts = ref<{ key: number; record: OmegaNotification }[]>([]);
   const root = ref<HTMLElement | null>(null);
+  // Verdict cards v1 (card t_2ecf9c51): the bell also counts pending
+  // agent questions. Polled (no SSE for them in v1) at a modest cadence;
+  // a 501 (seam unmounted) just leaves the count at zero.
+  const pendingVerdicts = ref<PendingVerdictCard[]>([]);
+  let verdictPoll: ReturnType<typeof setInterval> | null = null;
 
   let toastKey = 0;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let closeStream: (() => void) | null = null;
 
-  const badgeText = computed(() => (unread.value > 99 ? "99+" : String(unread.value)));
+  // badge sums unread finished-things and pending agent questions: the
+  // bell is the one place a user looks for "something needs me".
+  const pending = computed(() => pendingVerdicts.value.length);
+  const badgeCount = computed(() => unread.value + pending.value);
+  const badgeText = computed(() => (badgeCount.value > 99 ? "99+" : String(badgeCount.value)));
 
   function age(ts: string): string {
     return notificationAge(ts);
@@ -142,6 +173,11 @@
     }
   }
 
+  // shortId trims a session id to its first 8 chars for the verdict row.
+  function shortId(id: string): string {
+    return id && id.length > 8 ? id.slice(0, 8) : id;
+  }
+
   function toggle() {
     open.value = !open.value;
     if (open.value) void refresh();
@@ -149,12 +185,27 @@
 
   async function refresh() {
     try {
-      const page = await fetchNotifications(false);
+      const [page, vpage] = await Promise.all([
+        fetchNotifications(false),
+        fetchVerdicts("").catch(() => ({ cards: [] as PendingVerdictCard[], count: 0 })),
+      ]);
       list.value = page.notifications;
       unread.value = page.unread;
+      pendingVerdicts.value = vpage.cards;
     } catch {
       // the bell degrades to an empty panel on a failed fetch
     }
+  }
+
+  // openVerdict routes a pending-card click to the card's chat session,
+  // reusing the existing chat-nav intent (kind=chat, source_id=session).
+  function openVerdict(p: PendingVerdictCard) {
+    open.value = false;
+    emit("open", {
+      kind: "chat",
+      source_id: p.session_id,
+      title: p.title,
+    } as OmegaNotification);
   }
 
   async function openRecord(n: OmegaNotification, fromToast = false) {
@@ -221,11 +272,16 @@
       if (!n.read) unread.value += 1;
       pushToast(n);
     });
+    // verdict cards have no SSE in v1: poll every 15s. Cheap (localhost,
+    // a tiny JSON list) and matches the cadence a human-paced question
+    // settles at; the card's own live render in chat is the real UI.
+    verdictPoll = setInterval(() => { void refresh(); }, 15_000);
   });
 
   onUnmounted(() => {
     document.removeEventListener("click", onDocClick);
     for (const id of timers) clearTimeout(id);
+    if (verdictPoll) clearInterval(verdictPoll);
     closeStream?.();
   });
 </script>
@@ -252,6 +308,12 @@
     padding: 0 3px;
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+  /* a question-only badge (no unread notifications) reads as a quieter
+     accent so a pending question is still visible but not alarming */
+  .notif-badge.verdict {
+    background: var(--accent-soft, color-mix(in srgb, var(--accent) 35%, var(--z1)));
+    color: var(--text);
   }
   .notif-panel {
     position: absolute;
@@ -303,6 +365,19 @@
     padding: 0;
     max-height: 320px;
     overflow-y: auto;
+  }
+  .notif-verdicts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .notif-row.verdict .notif-kind {
+    color: var(--accent, #e8833a);
+    font-weight: 700;
+  }
+  .notif-verdict.pending {
+    color: var(--accent, #e8833a);
   }
   .notif-row {
     display: flex;

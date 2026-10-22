@@ -28,6 +28,10 @@
     :final-ms="item.finalMs"
     :output="item.output"
     :result="item.result" />
+  <VerdictCard
+    v-else-if="item.kind === 'verdict'"
+    :item="item"
+    :session-id="sessionId" />
   <div
     v-else-if="item.kind === 'interrupted'"
     class="interrupted-line">
@@ -50,6 +54,8 @@
     // this item's branch block (assistant messages with >=2 sibling
     // runs) - resolved by ChatTab through variantOf, null elsewhere
     variant?: VariantBlock | null;
+    // the chat tab's session id - verdict cards POST answers against it
+    sessionId?: string;
   }>();
   const emit = defineEmits<{
     (e: "retry"): void;

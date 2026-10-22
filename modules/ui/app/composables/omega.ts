@@ -175,11 +175,39 @@ export interface ToolItem {
 export interface InterruptedItem {
   kind: "interrupted";
 }
+// Verdict cards v1 (card t_2ecf9c51): a request_verdict tool call
+// renders as an interactive card, NOT a tool line. Live items come from
+// the tool_call frame's arguments; restored items from the persisted
+// assistant tool_call row. The matching tool_result's JSON content
+// (built by modules/verdict resultMap) carries the settled verdict.
+export interface VerdictItem {
+  kind: "verdict";
+  // the tool_call id - settles the card against its tool_result
+  callId?: string;
+  title: string;
+  body?: string;
+  options: string[];
+  freeText: boolean;
+  timeoutS?: number;
+  // live mounts anchor the client countdown to the frame's arrival;
+  // restored items never count down (issuedAt unknown client-side, the
+  // countdown is an approximation either way)
+  issuedAt?: number;
+  status: "pending" | "settled";
+  // the settled verdict, rendered as the card's outcome line
+  verdictKind?: "" | "answer" | "skip" | "expired";
+  picked?: string;
+  answerText?: string;
+  // the stream ended while the card was still pending: no answer can
+  // arrive anymore - render the card dead, not actionable
+  stale?: boolean;
+}
 export type TranscriptItem =
   | MessageItem
   | ThinkingItem
   | ToolItem
-  | InterruptedItem;
+  | InterruptedItem
+  | VerdictItem;
 
 // TranscriptWireItem is one server-rendered transcript item, in the
 // wire order history produced it. The shapes mirror what the live SSE
@@ -220,6 +248,7 @@ export function renderTranscriptItems(
   const out: TranscriptItem[] = [];
   if (!items) return out;
   const toolById = new Map<string, ToolItem>();
+  const verdictById = new Map<string, VerdictItem>();
   for (const it of items) {
     switch (it.kind) {
       case "user":
@@ -272,10 +301,37 @@ export function renderTranscriptItems(
           elapsedMs: it.running ? (it.elapsed_ms ?? 0) : undefined,
         };
         if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
+        // Verdict cards v1 (card t_2ecf9c51): a request_verdict call
+        // renders as a verdict card and NO tool line (the card is the
+        // interactive surface AND the technical record - its result
+        // below still settles the card). The matching tool_result is
+        // consumed by the card branch, never by the tool-line map.
+        if (t.name === "request_verdict") {
+          const v = verdictCardFromToolArgs(it.tool_call?.arguments);
+          if (it.tool_call?.id) verdictById.set(it.tool_call.id, v);
+          v.status = "pending"; // settled by the tool_result below
+          // a restored card whose call is NOT part of a live run tail
+          // will never see a tool_result - render it dead from the
+          // start; a matching tool_result still overrides to settled
+          v.stale = it.running !== true;
+          out.push(v);
+          break;
+        }
         out.push(t);
         break;
       }
       case "tool_result": {
+        // a verdict's result settles the card (the technical record
+        // rides the card, there is no plain tool line for it)
+        const v = it.tool_call_id ? verdictById.get(it.tool_call_id) : undefined;
+        if (v) {
+          const settled = verdictFromResultText(it.content || "");
+          v.status = "settled";
+          v.verdictKind = settled.verdictKind || "expired";
+          v.picked = settled.picked;
+          v.answerText = settled.answerText;
+          break;
+        }
         if (!it.tool_call_id) continue;
         const t = toolById.get(it.tool_call_id);
         if (!t) continue;
@@ -289,6 +345,99 @@ export function renderTranscriptItems(
     }
   }
   return out;
+}
+
+// --- verdict cards v1 (card t_2ecf9c51) ---
+
+// verdictCardFromToolArgs builds a card item from a request_verdict
+// tool_call's arguments. Pure - the live stream and the restored
+// transcript both call this; a malformed args blob degrades to an
+// untitled free-text card, never a crashed render.
+export function verdictCardFromToolArgs(args: unknown): VerdictItem {
+  const a = (args ?? {}) as Record<string, unknown>;
+  const opts: string[] = Array.isArray(a.options)
+    ? a.options.filter((o): o is string => typeof o === "string" && o !== "")
+    : [];
+  return {
+    kind: "verdict",
+    title: typeof a.title === "string" && a.title ? a.title : "question",
+    body: typeof a.body === "string" && a.body ? a.body : undefined,
+    options: opts,
+    freeText: a.free_text === true,
+    timeoutS: typeof a.timeout_s === "number" && a.timeout_s > 0 ? a.timeout_s : undefined,
+    status: "pending",
+  };
+}
+
+// verdictFromResultText parses the request_verdict tool result's JSON
+// (modules/verdict resultMap). Non-JSON content (a refusal, an error
+// string) means the card never issued: the card is dead, no verdict.
+export function verdictFromResultText(text: string): {
+  verdictKind: "" | "answer" | "skip" | "expired";
+  picked?: string;
+  answerText?: string;
+} {
+  try {
+    const j = JSON.parse(text) as Record<string, unknown>;
+    const kind = j.verdict;
+    if (kind === "answer" || kind === "skip" || kind === "expired") {
+      const picked = typeof j.option === "string" && j.option ? j.option : undefined;
+      const answerText = typeof j.text === "string" && j.text ? j.text : undefined;
+      return { verdictKind: kind, picked, answerText };
+    }
+    return { verdictKind: "expired" };
+  } catch {
+    return { verdictKind: "expired" };
+  }
+}
+
+// PendingVerdictCard is the /verdicts listing row (the bell count and
+// the re-render-after-reload source). ExpiresAt is a Unix ms epoch.
+export interface PendingVerdictCard {
+  id: string;
+  session_id: string;
+  title: string;
+  body?: string;
+  options?: string[];
+  free_text?: boolean;
+  timeout_s?: number;
+  expires_at: number;
+}
+
+// fetchVerdicts lists pending cards: one session's cards, or every
+// session's when empty (the bell count).
+export async function fetchVerdicts(sessionId = ""): Promise<{ cards: PendingVerdictCard[]; count: number }> {
+  const url = sessionId
+    ? `/sessions/${encodeURIComponent(sessionId)}/verdicts`
+    : `/verdicts`;
+  const r = await fetch(url);
+  if (r.status === 501) return { cards: [], count: 0 }; // seam unmounted
+  if (!r.ok) throw new Error(`verdicts: ${r.status}`);
+  return r.json();
+}
+
+// postVerdict records the user's answer on one card. card_id is
+// optional: absent means the session's oldest pending card (the common
+// case - one run per session). A 409 (the race was lost: answered,
+// skipped, or expired) throws with the server's reason so the losing
+// surface shows it instead of retrying.
+export async function postVerdict(
+  sessionId: string,
+  body: { card_id?: string; option_index?: number; option?: string; text?: string; skip?: boolean },
+): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/verdicts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let msg = `verdict: ${r.status}`;
+    try {
+      const j = (await r.json()) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch { /* the status-code message stands */ }
+    throw new Error(msg);
+  }
 }
 
 // --- chat appearance (card t_84e4653c) ---

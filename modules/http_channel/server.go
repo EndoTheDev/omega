@@ -51,6 +51,10 @@ type Server struct {
 	// /notifications list + read, /notifications/events SSE toasts.
 	// Nil answers 501 - the seam is optional like the board.
 	Notifications agent.NotificationsProvider
+	// Verdicts is the interactive-question seam (verdict cards v1,
+	// card t_2ecf9c51): /verdicts listing + /sessions/{id}/verdicts
+	// answering. Nil answers 501 - optional like the board.
+	Verdicts agent.VerdictsProvider
 	httpSrv *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -121,6 +125,12 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/notifications", s.handleNotifications)
 	mux.HandleFunc("/notifications/read", s.handleNotificationsRead)
 	mux.HandleFunc("/notifications/events", s.handleNotificationEvents)
+	// card t_2ecf9c51: the verdict-cards answer surface. /verdicts is
+	// the cross-session listing (the bell count); /sessions/{id}/verdicts
+	// lists one session and accepts the answer POST. The card itself
+	// renders live from the tool_call / tool_result SSE frames.
+	mux.HandleFunc("/verdicts", s.handleVerdicts)
+	mux.HandleFunc("/sessions/{id}/verdicts", s.handleVerdicts)
 	// card t_7e2b7002 (deferred mount, review pass): the multi-agent
 	// REST surface. Handlers live in server_agents.go.
 	mux.HandleFunc("/agents", s.handleAgents)
@@ -768,6 +778,9 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	// tools run in THIS session's context: board tools read the session
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
+	// Verdict cards v1: the no-store legacy path is still an interactive
+	// turn - request_verdict may issue from here.
+	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
 	var recs []assistantRecord
 	var rec assistantRecord
 	var usage streamUsage
@@ -1037,6 +1050,14 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 		// Final call: the reply's gist is part of the gist.
 		prompt += "\nAssistant: " + truncate(lastAssistant, 400)
 	}
+
+	// Verdict cards v1 (card t_2ecf9c51): the title turn reuses the
+	// FULL tool table (nil Tools falls back to the registered set) and
+	// the incoming user content can invite tool use. A title turn must
+	// never hard-pause on the card (no session, nobody answering): deny
+	// request_verdict by name - the loop filters it after every provider
+	// merge, the same mechanism the ephemeral path denies memory with.
+	ctx = agent.WithDeniedTools(ctx, "request_verdict")
 
 	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
 	title := ""
