@@ -77,8 +77,13 @@ wait_js '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].some(e=
 step "ok: insights tab renders the dashboard"
 
 # real numbers: a positive session count and a token figure in the
-# overview (catches an empty-payload render)
-nums=$(jsq '(()=>{const el=[...document.querySelectorAll(".dock-content,.pane")].map(e=>e.innerText).find(t=>/overview/i.test(t))||"";
+# overview (catches an empty-payload render). The pane is found by its
+# overview H3 HEADING, never by body-wide text matching: a session
+# titled "Intro and Repo Overview" in the sidebar pane matches
+# /overview/i first (DOM order) and the regex reads the sidebar's
+# rows instead of the dashboard.
+nums=$(jsq '(()=>{const p=[...document.querySelectorAll(".dock-content,.pane")].find(e=>[...e.querySelectorAll("h3")].some(h=>/^overview$/i.test((h.textContent||"").trim())));
+ const el=p?p.innerText:"";
  const s=/sessions\s*\n?\s*(\d+)/.exec(el); const k=/tokens \(est\.\)\s*\n?\s*([\d,]+)/.exec(el);
  return s&&k&&Number(s[1])>0&&Number(k[1].replace(/,/g,""))>0?1:0})()')
 assert_eq "$nums" "1" "overview carries real data"
