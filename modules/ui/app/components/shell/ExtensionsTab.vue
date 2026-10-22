@@ -1,7 +1,8 @@
 <template>
   <aside
+    ref="rootEl"
     class="aside pane inspector-panel"
-    :class="{ open: open }">
+    :class="{ open: open, narrow: narrow }">
     <div class="inspector-extensions">
       <p class="extensions-summary">{{ summary }}</p>
       <ul
@@ -70,6 +71,7 @@
   import type { OmegaExtension } from "../../composables/omega";
   import { extensionsRows, extensionsSummary } from "./extensionsRows";
   import { modulePanels } from "../../composables/module-panels.generated";
+  import { useNarrow } from "~/composables/narrow";
 
   // `open` is the mobile drawer overlay state (desktop tabs never pass
   // it up - the pane is always shown); matches FilesTab / SettingsTab.
@@ -80,6 +82,13 @@
   // open-module(moduleId): switch the inspector to that module's dock
   // tab (app.vue's outlet handler owns the dock call).
   defineEmits<{ (e: "open-module", moduleId: string): true }>();
+
+  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
+  // the root measures its own rendered container (this tab rides both
+  // the inspector column and drawer mounts) and flips the class; the
+  // scoped stylesheet below reflows the rows.
+  const rootEl = ref<HTMLElement | null>(null);
+  const narrow = useNarrow(rootEl);
 
   const extensions = ref<OmegaExtension[]>([]);
   const loading = ref(false);
@@ -102,3 +111,93 @@
 
   load();
 </script>
+
+<style scoped>
+  /* the inventory voice: same scrolling body as .inspector-files
+     (main.css owns .aside / the shared shell chrome), this block is the
+     tab's own rows. Rows are entry list items in the session-list voice:
+     raised chip hover, mono meta on the edge. */
+  .inspector-extensions {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px 8px 8px;
+  }
+  .extensions-summary {
+    margin: 0 0 6px;
+    padding: 0 2px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .extensions-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .extension-row {
+    padding: 6px 8px;
+    border-radius: var(--r-chip);
+    font-size: 12px;
+  }
+  .extension-row:hover { background: var(--z1-raised); }
+  .extension-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+  .extension-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+  }
+  .extension-ui { margin-left: auto; flex: none; }
+  .extension-open {
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .extension-open:hover { text-decoration: underline; }
+  .extension-noui {
+    margin-left: auto;
+    flex: none;
+    font-size: 10.5px;
+    color: var(--text-dim);
+  }
+  .extension-desc {
+    margin: 2px 0 0;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+  }
+  .extension-meta {
+    margin: 2px 0 0;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+  }
+  .extensions-status {
+    margin: 0;
+    padding: 4px 2px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .extensions-error { color: var(--err); }
+
+  /* narrow: the module-UI recipe (card t_a2fdc630) - the name and its
+     action share the head row tightly; the description still wraps. */
+  .inspector-panel.narrow .extensions-summary {
+    overflow-wrap: anywhere;
+  }
+  .inspector-panel.narrow .extension-open {
+    font-size: 10.5px;
+  }
+</style>
