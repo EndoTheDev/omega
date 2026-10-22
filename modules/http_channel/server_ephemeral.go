@@ -76,6 +76,11 @@ func (r *ephRegistry) create(id string) *ephemeralSession {
 	s := &ephemeralSession{id: id, createdAt: now, updatedAt: now}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.records == nil {
+		// lazy: a zero-value registry (a Server built without the
+		// constructor path) self-initializes
+		r.records = map[string]*ephemeralSession{}
+	}
 	r.records[id] = s
 	return s
 }
