@@ -124,6 +124,60 @@
         </g>
       </svg>
     </button>
+    <!-- card t_67fc1905: the bottom panel's toggle joins the desktop
+         edge cluster - same edge-toggle class (hidden below 768px, the
+         media block owns that). Unlike the sidebars this one is
+         SELF-CONTAINED: the drawer-repairs card owns app.vue's wiring
+         this round, so the button drives the dock api directly instead
+         of going through a @toggle-bottom emit. -->
+    <button
+      class="icon-btn edge-toggle"
+      aria-label="Toggle bottom panel"
+      :title="bottomOpen ? 'Close bottom panel' : 'Open bottom panel'"
+      @click="toggleBottom">
+      <svg
+        v-if="bottomOpen"
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2">
+          <rect
+            width="18"
+            height="18"
+            x="3"
+            y="3"
+            rx="2" />
+          <path d="M3 15h18m9 6l-3-3m3 3l3-3" />
+        </g>
+      </svg>
+      <svg
+        v-else
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2">
+          <rect
+            width="18"
+            height="18"
+            x="3"
+            y="3"
+            rx="2" />
+          <path d="M3 15h18m9 6v-6m0 0l-3 3m3-3l3 3" />
+        </g>
+      </svg>
+    </button>
     <!-- mobile only: the dock panes turn into slide-in drawers below
          768px - these buttons surface ONLY there, as the drawers'
          handles (the desktop toggles above are display:none there). -->
@@ -191,6 +245,22 @@
   // drawer flips (below 768px, via the same emits dispatched on
   // isMobile in app.vue). open-state icons read the DOCK tree, not the
   // drawer state.
+  import { computed, inject } from "vue";
+  import { DOCK_API_KEY, findEdgePane } from "../../composables/dock";
+
+  // card t_67fc1905: the bottom toggle is self-contained - reads + drives
+  // the dock api directly (the sidebar toggles went through emits because
+  // the SAME button doubles as the mobile drawer handle; desktop chrome
+  // hiding below 768px comes from the edge-toggle class, so this button
+  // needs no app.vue wiring at all).
+  const dock = inject(DOCK_API_KEY);
+  const bottomOpen = computed(
+    () => dock !== undefined && findEdgePane(dock.tree.value, "bottom") !== null,
+  );
+  function toggleBottom() {
+    dock?.toggleBottom();
+  }
+
   defineProps<{
     sidebarOpen: boolean;
     inspectorOpen: boolean;

@@ -14,12 +14,23 @@ export const SNAP_ZONE = 15;
 // this width (manual resize below it still works afterwards)
 export const PANE_OPEN_MIN = 320;
 
+// card t_67fc1905: the bottom panel's ladder is every +200 (the recorded
+// choice over +160). The panel's practical heights run ~160-480px, where
+// 200px rungs land meaningfully; the sidebars' +320 rungs would rarely be
+// hittable on a horizontal pane. Fresh bottom panels open ON rung 200.
+export const BOTTOM_SNAP_STEP = 200;
+
 /** returns the exact snap size when the drag is inside a zone, else null */
-export function snapCandidate(w: number): number | null {
-  const n = Math.round(w / SNAP_STEP);
+export function snapCandidateAt(px: number, step: number): number | null {
+  const n = Math.round(px / step);
   if (n < 1) return null;
-  const p = n * SNAP_STEP;
-  return Math.abs(w - p) <= SNAP_ZONE ? p : null;
+  const p = n * step;
+  return Math.abs(px - p) <= SNAP_ZONE ? p : null;
+}
+
+/** the sidebars' +320 ladder (the original voice snapCandidate keeps) */
+export function snapCandidate(px: number): number | null {
+  return snapCandidateAt(px, SNAP_STEP);
 }
 
 /** the ladder's rungs up to maxPx, inclusive - tests and callers that want
