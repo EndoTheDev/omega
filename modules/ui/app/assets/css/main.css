@@ -748,6 +748,11 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   display: flex;
   gap: 2px;
   opacity: 0;
+  /* inert while invisible: the cluster overlays the title's own column,
+     so an opacity:0-but-hit-testable band ate every click on the row
+     (t_7adf2e7f: the find-text journey click landed on a hidden .row-act
+     and the row never opened). Only hover/keyboard-focus lights it up. */
+  pointer-events: none;
   transition: opacity 0.12s ease;
   background: var(--z1-raised);
 }
@@ -758,7 +763,7 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
    chrome so it reads identical to its siblings */
 a.row-export { text-decoration: none; color: var(--text-dim); }
 .session-list li:hover .row-actions,
-.row-actions:focus-within { opacity: 1; }
+.row-actions:focus-within { opacity: 1; pointer-events: auto; }
 /* the time slot is reserved on hover: opacity/visibility only, never
    display:none - the number fades back into its exact position */
 .session-list li:hover .session-time { opacity: 0; }

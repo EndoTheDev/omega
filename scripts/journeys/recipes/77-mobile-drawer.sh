@@ -25,6 +25,23 @@ panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 [ "$panes" -ge 3 ] 2>/dev/null || die "default dock tree did not render ($panes panes)"
 step "ok: dock tree renders ($panes panes)"
 
+# capture the REGISTRY-grounded strip BEFORE the strip's pane is closed
+# (t_7adf2e7f: a hardcoded expectation went stale with the first drift -
+# the assert below now pins the drawer to the strip the desktop sidebar
+# renders, and that strip IS INSPECTOR_TAB_COMPONENTS ground truth: the
+# loader restores the full set on every fresh boot, and app.vue derives
+# the drawer's fallback (drawerTabsForEdge) from the same registry list).
+# A future registry tab joins both surfaces and this assert stays green;
+# a drawer-derivation regression reds on the mismatch.
+desktop_strip=$(jsq '(()=>{const panes=[...document.querySelectorAll(".dock-pane.pinned")]
+ .filter(p=>!p.classList.contains("edge-bottom")&&!p.querySelector(".session-list"));
+ const pane=panes[0]; if(!pane) return "";
+ return [...pane.querySelectorAll(".dock-tab-title")]
+  .map(e=>(e.textContent||"").trim()).join(",")})()')
+desktop_strip=${desktop_strip#\"}; desktop_strip=${desktop_strip%\"}
+[ -n "$desktop_strip" ] || die "could not capture the desktop inspector strip"
+step "ok: inspector strip captured: $desktop_strip"
+
 # --- REPRO 1 setup: desktop-close BOTH sidebars (prune the pinned panes) ---
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
 sleep 0.3
@@ -66,11 +83,11 @@ open=$(jsq 'document.querySelector(".mobile-drawer.right.open")?1:0')
 assert_eq "$open" "1" "REPRO 2: inspector drawer opens (right.open)"
 tabs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).map(t=>t.textContent.trim()).join(",")')
 tabs=${tabs#\"}; tabs=${tabs%\"}  # jsq returns JSON-encoded strings; strip the quotes
-# the inspector strip is the REGISTRY's right-area panels: agents
-# (t_7e2b7002) and the extensions inventory (t_14f73742) joined it - the
-# strip grew, the drift is on the journey (the shape is: the drawer
-# lists every registry inspector panel in order)
-assert_eq "$tabs" "Files,Cron,Logs,Skills,Tools,agents,Settings,Kanban,extensions" "REPRO 2: inspector drawer shows the registry tab strip"
+# the strip is pinned to the DESKTOP inspector strip captured above (the
+# registry's right-area panels - agents (t_7e2b7002) and extensions
+# (t_14f73742) joined it via the registry, and so will the next one):
+# the drawer must EQUAL that strip, never a recipe-copied list
+assert_eq "$tabs" "$desktop_strip" "REPRO 2: inspector drawer shows the registry tab strip (== desktop strip)"
 
 # the active tab is Files (the file tree renders, not a module panel)
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.textContent.trim()')
