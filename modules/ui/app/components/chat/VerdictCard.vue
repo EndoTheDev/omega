@@ -37,7 +37,7 @@
               v-if="opt.description"
               class="verdict-desc">{{ opt.description }}</span>
           </span>
-        </component>
+        </button>
       </div>
       <button
         v-if="item.multi && item.options.length"
