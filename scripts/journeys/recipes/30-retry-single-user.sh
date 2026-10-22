@@ -21,9 +21,11 @@ label_journey_session "$SID" "(journey) retry-single $TAG"
 # panejs <expr over p>: evaluate expr against the focused chat pane p -
 # the .dock-pane whose aria-selected tab title carries this run's label.
 # Prints NO_PANE when the pane is absent (kept as a value so callers can
-# poll while the sidebar list still loads).
+# poll while the sidebar list still loads). The eval result is a JSON
+# string (agent-browser quotes everything) - stripped to the bare text
+# so callers compare plain values.
 panejs() {
-  jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) retry-single')));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1
+  jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) retry-single')));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1 | sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g'
 }
 
 # scoped_wait <expr> <timeout_s>: poll the focused pane; timeout dies
