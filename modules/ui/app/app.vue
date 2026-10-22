@@ -41,6 +41,7 @@
             :open="drawerOpen"
             @open="openChatTab"
             @new="openChatTab(null)"
+            @new-ephemeral="openEphemeralTab"
             @pin="togglePin"
             @archive="toggleArchive"
             @branch="branchChatSession"
@@ -185,6 +186,7 @@
         :open="drawerOpen"
         @open="openChatTab"
         @new="openChatTab(null)"
+        @new-ephemeral="openEphemeralTab"
         @pin="togglePin"
         @archive="toggleArchive"
         @remove="askDelete"
@@ -352,6 +354,7 @@
   import {
     CHAT_HOST_KEY,
     DEFAULT_CHAT_STATE,
+    EPHEMERAL_DRAFT_REF,
     createChatHost,
     type ChatState,
   } from "./composables/chat";
@@ -490,6 +493,12 @@
   // fallback covers the rest (files = "Files").
   provide(DOCK_TAB_TITLE_KEY, (tab) => {
     if (tab.component === "chat") {
+      // ephemeral tabs (card t_d96a5cd5): the draft marker or a bound
+      // `eph-` id never matches a session row (they are store-invisible)
+      // - the tab is named by contract, not by lookup
+      if (tab.sessionRef === EPHEMERAL_DRAFT_REF || tab.sessionRef?.startsWith("eph-")) {
+        return "ephemeral";
+      }
       if (!tab.sessionRef) return "new chat";
       const s = sessions.value.find((x) => x.id === tab.sessionRef);
       return s?.label || "chat";
@@ -620,6 +629,20 @@
     if (isMobile.value) drawerOpen.value = false;
     // open == read is owned by the ChatTab mount's load(); a newly
     // opened tab mounts and restores immediately
+  }
+
+  // openEphemeralTab (card t_d96a5cd5): the "+ new" dropdown's no-persist
+  // entry. A composer-first tab CARRYING the EPHEMERAL_DRAFT_REF marker
+  // - ChatTab reads the marker into the state's ephemeral bit, the send
+  // rides /chat {ephemeral:true} and the server's `eph-` id adopts onto
+  // the tab. Always mints fresh (no draft reuse: a plain draft and an
+  // ephemeral draft are different contracts and must not merge).
+  function openEphemeralTab() {
+    const pane = dock.ensureMainPane();
+    const key = nextTabKey();
+    dock.openTab(pane, { component: "chat", sessionRef: EPHEMERAL_DRAFT_REF, key });
+    focusedKey.value = key;
+    if (isMobile.value) drawerOpen.value = false;
   }
 
   // popstate re-targets to the URL's session: an open-by-session tab is

@@ -28,6 +28,7 @@ import {
   streamChat,
   attachSession,
   stopSession,
+  deleteSession,
   hasInterruptedMarker,
   withoutMarkers,
   lastUserText,
@@ -143,7 +144,20 @@ export interface ChatState {
   // plain send at the active path's end. Fork of a USER message does
   // not anchor - it reruns that turn immediately (replay semantics).
   forkFrom: string | null;
+  // ephemeral chat (card t_d96a5cd5): this tab's session is a
+  // NO-PERSIST `eph-` session - server memory only, gone at restart,
+  // no sidebar row, the memory tool denied server-side. Close deletes
+  // the server record (the contract: close = gone). Retry/fork/
+  // variants never exist here: the store tree they replay is absent.
+  ephemeral?: boolean;
 }
+
+/** EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a
+    composer-first ephemeral tab (card t_d96a5cd5): minted client-side
+    before any send, exchanged for the server's `eph-` id on the leading
+    `session` frame. Never a real session id - the registry namespace
+    prefix is `eph-`. */
+export const EPHEMERAL_DRAFT_REF = "ephemeral";
 
 export const DEFAULT_CHAT_STATE: ChatState = {
   key: "",
@@ -188,7 +202,7 @@ export interface ChatHost {
   busyAll: ComputedRef<BusyMap>;
   /** any live stream anywhere - the tab-title spinner source */
   anyBusyNow: ComputedRef<boolean>;
-  ensureState(key: string, sessionId?: string | null): ChatState;
+  ensureState(key: string, sessionId?: string | null, ephemeral?: boolean): ChatState;
   /** mount-time restore of one tab's view: persisted history rebuild +
       telemetry, reading the detail's live-run flag to attach. Refetch
       is skipped while this state itself is attached/busy (a refetch
@@ -366,7 +380,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     () => busyAll.value.size > 0 || busyKeys.value.size > 0,
   );
 
-  function ensureState(key: string, sessionId: string | null = null): ChatState {
+  function ensureState(key: string, sessionId: string | null = null, ephemeral?: boolean): ChatState {
     let st = states.get(key);
     if (!st) {
       states.set(key, {
@@ -382,14 +396,18 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         lastChunksPerSecond: 0,
         variants: [],
         forkFrom: null,
+        ephemeral: !!ephemeral,
       });
       st = states.get(key) as ChatState;
       return st;
     }
     // the tab binds the session: an unsaved state that gained its id
     // (the create path wrote it right after this ensure) adopts it - the
-    // key stays the tab instance's identity
+    // key stays the tab instance's identity. The ephemeral bit NEVER
+    // flips: the server-minted `eph-` id adopting onto an unsaved tab
+    // keeps the no-persist contract attached to the state.
     if (sessionId && st.sessionId !== sessionId) st.sessionId = sessionId;
+    if (ephemeral !== undefined) st.ephemeral = ephemeral;
     return st;
   }
 
@@ -684,8 +702,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // A stream ending on the FOCUSED tab never unreads itself - the
       // user watched the content live, so it is marked read. A
       // background stream (this page or another) leaves its row
-      // unread: that is the feature.
-      if (st.sessionId && deps.isFocused(st.key)) deps.markRead(st.sessionId);
+      // unread: that is the feature. Ephemeral sessions have no row:
+      // the read-stamp POST would only 204 into nothing.
+      if (st.sessionId && !st.ephemeral && deps.isFocused(st.key)) deps.markRead(st.sessionId);
       // refresh once the row carries the run's persisted numbers - the
       // sidebar's pulse, the title and the durable telemetry feed from it
       await deps.refreshSessions();
@@ -701,8 +720,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         st.lastChunksPerSecond = durable.cps;
       }
       // the title goroutine writes the session label seconds AFTER the
-      // run really ends - the refresh above runs too early to see it
-      if (!row || !row.label) {
+      // run really ends - the refresh above runs too early to see it.
+      // Ephemeral sessions never grow a row or a label - skip the timer.
+      if (!st.ephemeral && (!row || !row.label)) {
         setTimeout(() => {
           deps.refreshSessions();
         }, TITLE_REFRESH_MS);
@@ -714,9 +734,15 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // in. Skip it when an interrupted marker is present: the marker
       // is per-tab live state the restore does not carry (load() keeps
       // only a REFETCHED one, and running:false would drop ours).
-      if (!hasInterruptedMarker(st.transcript)) await refetchTranscript(st);
+      // Ephemeral sessions have no store tree, no ids, no variants -
+      // the in-memory registry serves restore on reload (load()), the
+      // live view IS the content here.
+      if (!st.ephemeral && !hasInterruptedMarker(st.transcript)) await refetchTranscript(st);
       st.notify?.();
-      if (st.orphan) states.delete(st.key);
+      if (st.orphan) {
+        states.delete(st.key);
+        dropEphemeralServerRecord(st.sessionId, st.key);
+      }
     }
   }
 
@@ -845,6 +871,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         thinking,
         false,
         forkID ?? undefined,
+        // ephemeral: no-persist contract on the wire - the server mints
+        // (or continues) the `eph-` session in memory, denies the
+        // memory tool, and never writes the store (card t_d96a5cd5)
+        st.ephemeral,
       ),
     );
     return true;
@@ -864,6 +894,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // nothing persisted to replay
     const sessionId = st.sessionId;
     if (!sessionId) return false;
+    // ephemeral: nothing persisted to replay - the server refuses the
+    // flag combination, the affordance never renders there (ChatTab
+    // gates canRetry off the same bit)
+    if (st.ephemeral) return false;
     // the transcript's last user message is the retry target: the
     // affordance exists only when an exchange sits there, and the
     // server re-validates against the persisted history (trailing
@@ -987,11 +1021,27 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     });
   }
 
+  // dropEphemeralServerRecord enforces the close = gone contract: when
+  // the LAST state bound to an `eph-` session stops being rendered, the
+  // server's in-memory record is deleted (card t_d96a5cd5). A miss
+  // (record already gone, another window still bound) is a benign
+  // race / no-op, never an error surfaces to the user.
+  function dropEphemeralServerRecord(sessionId: string | null, exceptKey: string | null) {
+    if (!sessionId || !sessionId.startsWith("eph-")) return;
+    for (const [key, s] of states.entries()) {
+      if (key !== exceptKey && s.sessionId === sessionId) return;
+    }
+    deleteSession(sessionId).catch(() => {});
+  }
+
   function closeState(key: string) {
     const st = states.get(key);
     if (!st) return;
     if (busyKeys.value.has(key)) st.orphan = true;
-    else states.delete(key);
+    else {
+      states.delete(key);
+      dropEphemeralServerRecord(st.sessionId, key);
+    }
   }
 
   function closeSession(sessionId: string) {
@@ -999,6 +1049,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       if (st.sessionId !== sessionId) continue;
       closeState(key);
     }
+    dropEphemeralServerRecord(sessionId, null);
   }
 
   return {

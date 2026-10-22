@@ -902,14 +902,23 @@ func (m *model) startRun() {
 	if m.compaction != nil {
 		ag.SetMaxToolOutput(m.compaction.MaxToolOutput)
 	}
+	// The run context carries the session id (board tool attribution);
+	// ephemeral runs additionally deny the memory tool - nothing the
+	// memory extension writes would outlive the session's own no-persist
+	// contract (card t_d96a5cd5). The name matches the memory
+	// extension's registered tool (modules/memory targetMemory).
+	ctx = agent.WithSessionID(ctx, m.sessionID)
+	if m.ephemeral {
+		ctx = agent.WithDeniedTools(ctx, "memory")
+	}
 	// Pass a non-nil channel as a mode flag so the agent loop
 	// knows this is TUI mode (don't block on subagent results).
 	m.userInput = make(chan string, 1)
 	ag.SetUserInput(m.userInput)
 	if provider != nil {
-		m.events = ag.RunWithProvider(agent.WithSessionID(ctx, m.sessionID), provider, m.history, nil)
+		m.events = ag.RunWithProvider(ctx, provider, m.history, nil)
 	} else {
-		m.events = ag.Run(agent.WithSessionID(ctx, m.sessionID), m.history, nil)
+		m.events = ag.Run(ctx, m.history, nil)
 	}
 }
 
