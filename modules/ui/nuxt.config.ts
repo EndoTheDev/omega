@@ -92,6 +92,9 @@ export default defineNuxtConfig({
         // card t_14f73742: the extensions inventory tab fetches the
         // module list in dev (same-origin embedded in production)
         "/extensions",
+        // card t_e1e61680: the insights dashboard fetches GET /insights
+        // (same-origin embedded in production)
+        "/insights",
       ].map(
         (p) => [
           p,
