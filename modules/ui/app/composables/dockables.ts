@@ -35,6 +35,7 @@ export const DOCK_COMPONENTS = [
   "http_channel",
   "skills",
   "tools",
+  "agents",
   "settings",
   "kanban",
   "insights",
@@ -172,6 +173,22 @@ export const DOCKABLES: readonly DockableComponent[] = [
     icon: {
       rect: { x: 2, y: 3, width: 20, height: 18, rx: 2 },
       paths: ["M6 9h12", "M9 13h6"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    // card t_7e2b7002: the agents panel - the multi-agent inventory
+    // (list, detail, scaffold, new-session-as-agent).
+    id: "agents",
+    title: "agents",
+    // person: head circle + shoulders arc
+    icon: {
+      paths: [
+        "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
+        "M5.5 19a6.5 6.5 0 0 1 13 0",
+      ],
     },
     policy: "singleton",
     area: "right",

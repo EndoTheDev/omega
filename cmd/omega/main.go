@@ -58,6 +58,7 @@ Usage:
   omega serve           start the HTTP server (SSE streaming)
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
+  omega agents         list agents; `+"`omega agents create <name>`"+` scaffolds one
   omega update              install the latest stable release (nightlies invisible)
   omega update --nightly    install the newest -nightly.* prerelease instead
   omega update --rollback   swap back to omega.bak + verify it runs
@@ -87,6 +88,12 @@ func run(args []string) error {
 	// Set OMEGA_HOME early so all child processes inherit it.
 	home := omegaHome()
 	os.Setenv("OMEGA_HOME", home)
+	// Default-agent migration (card t_7e2b7002): agents/ appears on
+	// first boot; legacy home memory.md/user.md move into
+	// agents/default/ - exactly once, before anything reads them.
+	if err := agent.MigrateDefaultAgent(home); err != nil {
+		return err
+	}
 	// Set OMEGA_SKILLS_DIR so the skills extension can read skills.
 	os.Setenv("OMEGA_SKILLS_DIR", home+"/skills")
 	// Set OMEGA_BIN so the delegate extension can spawn subagents.
@@ -119,6 +126,8 @@ func run(args []string) error {
 		return cmdExport(parseConfigFlag(rest), rest)
 	case "insights":
 		return cmdInsights(parseConfigFlag(rest), rest)
+	case "agents":
+		return cmdAgents(rest)
 	case "update":
 		return cmdUpdate(rest)
 	case "rollback":
@@ -269,10 +278,15 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Skills.Dir = home + "/skills"
 	}
 	if cfg.Memory.File == "memory.md" {
-		cfg.Memory.File = home + "/memory.md"
+		// card t_7e2b7002: the default agent's memory files live in its
+		// profile dir - MigrateDefaultAgent (run(), before any command)
+		// moved the legacy home files there. Pointing the default at the
+		// old home path would strand the migrated content and silently
+		// start a fresh memory - the read side must follow the move.
+		cfg.Memory.File = home + "/agents/default/memory.md"
 	}
 	if cfg.Memory.UserProfileFile == "user.md" {
-		cfg.Memory.UserProfileFile = home + "/user.md"
+		cfg.Memory.UserProfileFile = home + "/agents/default/user.md"
 	}
 	if cfg.Logging.File == "omega.log" {
 		cfg.Logging.File = home + "/omega.log"
@@ -322,7 +336,7 @@ func buildConfigs(cfg Config) map[string]any {
 		"store":        store.Config{DBPath: cfg.Store.DBPath},
 		"provider":     provider.Config{Type: cfg.Provider.Type, ModelName: cfg.Provider.ModelName, Host: cfg.Provider.Host, APIKey: cfg.Provider.APIKey},
 		"http_channel": httpchannel.Config{Port: cfg.Server.Port, Bind: cfg.Server.Bind, RunTimeout: cfg.Server.RunTimeout, TitleModel: cfg.TitleModel},
-		"skills":       skills.Config{Dir: cfg.Skills.Dir},
+		"skills":       skills.Config{Dir: cfg.Skills.Dir, SharedDir: cfg.Skills.SharedDir},
 		"memory":       memory.Config{Enabled: cfg.Memory.Enabled, UserProfileEnabled: cfg.Memory.UserProfileEnabled, CharLimit: cfg.Memory.CharLimit, UserProfileCharLimit: cfg.Memory.UserProfileCharLimit, File: cfg.Memory.File, UserProfileFile: cfg.Memory.UserProfileFile},
 		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},
 		"compactor":    cfg.Compaction,
@@ -530,6 +544,15 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	}
 	if err := resolveHomePaths(&cfg); err != nil {
 		return err
+	}
+	// Delegated child running AS an agent (OMEGA_AGENT, card
+	// t_7e2b7002): the agent's config.yaml layers over the home's -
+	// model, provider, system_prompt - and its skills/memory/logs are
+	// its own. The default surface ignores the var entirely.
+	if name := resolveAgentName(); name != "" {
+		if err := ApplyAgentLayer(&cfg, omegaHome(), name); err != nil {
+			return fmt.Errorf("agent layer %s: %w", name, err)
+		}
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, _, err := newAgent(cfg, appendPrompts, trust)

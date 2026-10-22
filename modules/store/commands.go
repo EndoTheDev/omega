@@ -181,14 +181,41 @@ func SessionDisplayName(label, id string) string {
 }
 
 // HandleNewCommand returns a new_session action. The TUI resets state.
+// Flags: --ephemeral skips the store; --agent <name> binds the session
+// the TUI's first message will create to that agent profile (card
+// t_7e2b7002). The agent name rides Action.List[0]; unknown names fail
+// at creation, not here - the flag parse stays store-free.
 func HandleNewCommand(args string) (agent.CommandResult, error) {
 	ephemeral := ""
-	if strings.TrimSpace(args) == "--ephemeral" {
-		ephemeral = "--ephemeral"
+	var agentName string
+	fields := strings.Fields(args)
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		switch {
+		case f == "--ephemeral":
+			ephemeral = "--ephemeral"
+		case f == "--agent" || strings.HasPrefix(f, "--agent="):
+			if f == "--agent" {
+				if i+1 >= len(fields) {
+					return agent.CommandResult{}, fmt.Errorf("usage: /new --agent <name>")
+				}
+				i++
+				agentName = fields[i]
+			} else {
+				agentName = strings.TrimPrefix(f, "--agent=")
+			}
+		}
 	}
-	return agent.CommandResult{
+	res := agent.CommandResult{
 		Actions: []agent.CmdAction{{Type: "new_session", Value: ephemeral}},
-	}, nil
+	}
+	if agentName != "" {
+		if err := agent.ValidAgentName(agentName); err != nil {
+			return res, fmt.Errorf("/new --agent: %w", err)
+		}
+		res.Actions[0].List = []string{agentName}
+	}
+	return res, nil
 }
 
 // HandleResumeCommand resolves the argument to a session ID using the
