@@ -323,6 +323,10 @@ func (m model) handleRetry() (tea.Model, tea.Cmd) {
 	m.reloadViewAt(view, end)
 	m.forkParent = ""
 	m.retryParent = branch
+	// The fresh response's head chains onto the branch-point user at
+	// persist time too - the sink is built with this headParent
+	// (t_17365247's sibling-variant hop, now loop-side).
+	m.headParent = branch
 	m.headPinned = false
 	m.retryMarker = ""
 	if n := len(heads) + 1; n >= 2 {
