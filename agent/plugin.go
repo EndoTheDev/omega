@@ -59,6 +59,13 @@ type Context struct {
 	// answer 501.
 	Notifications NotificationsProvider
 
+	// Verdicts is the interactive-question seam (verdict cards v1):
+	// the request_verdict tool blocks on Ask, the HTTP channel and the
+	// TUI answer through it. Nil when the verdict module is absent -
+	// the tool refuses to block without the seam, the HTTP endpoints
+	// answer 501.
+	Verdicts VerdictsProvider
+
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAll.
 	Channels []Channel
@@ -118,6 +125,7 @@ var exclusiveSeams = map[string]bool{
 	"cron":           true,
 	"kanban":         true,
 	"notifications":  true,
+	"verdicts":       true,
 }
 
 // MountAll sorts plugins by dependencies and mounts each into ctx.

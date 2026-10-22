@@ -228,6 +228,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// detached runs carry the session id too: task tools in the detached
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)
+		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
+		// interactive turn - request_verdict may issue from here.
+		ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
 		// Ephemeral (card t_d96a5cd5): the loop filters the denied name
 		// AFTER every provider merge, so a tool an extension re-adds
 		// under the same name never runs in a no-persist session.

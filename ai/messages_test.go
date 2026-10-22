@@ -28,6 +28,12 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{"tool_result_error", ToolResult{Content: "boom", ToolCallID: "tc2", IsError: true, Timestamp: "2026-01-01T00:00:00Z"}, "tool"},
 		{"model_change", ModelChange{Model: "glm-5.2", Timestamp: "2026-01-01T00:00:00Z"}, "model_change"},
 		{"thinking_level_change", ThinkingLevelChange{Level: "high", Timestamp: "2026-01-01T00:00:00Z"}, "thinking_level_change"},
+		{"verdict_card", NewVerdictCard("c1", "Approve?", "ship it?", []string{"yes", "no"}, false, 0), "verdict_card"},
+		{"verdict_card_freetext", NewVerdictCard("c2", "Name?", "", nil, true, 90), "verdict_card"},
+		{"verdict_pick", NewVerdict("c1", 1, "yes", "", false, false), "verdict"},
+		{"verdict_skip", NewVerdict("c1", 0, "", "", true, false), "verdict"},
+		{"verdict_expired", NewVerdict("c1", 0, "", "", false, true), "verdict"},
+		{"verdict_text", NewVerdict("c2", 0, "", "omega", false, false), "verdict"},
 	}
 
 	for _, tc := range cases {

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/EndoTheDev/omega/ai"
 )
@@ -373,6 +374,99 @@ type SkillsLister interface {
 	// description included (content is inspector-irrelevant).
 	ListSkills() ([]Skill, error)
 }
+
+// VerdictPrompt is one agent-issued question (verdict cards v1) as it
+// is registered with the verdicts seam: the tool's arguments plus the
+// runtime identity (id, session, deadline). Options is the labeled
+// pick list (empty = free text only); FreeText additionally allows a
+// typed answer. Defaults ride the seam implementation (20 minutes).
+type VerdictPrompt struct {
+	ID        string
+	SessionID string
+	Title     string
+	Body      string
+	Options   []string
+	FreeText  bool
+	TimeoutS  int
+	ExpiresAt time.Time
+}
+
+// Verdict is the recorded answer to one VerdictPrompt: a pick (index is
+// 1-based; Option the label), free text, a recorded skip (no silent
+// dismissal), or the expiry firing. Exactly one of the four applies.
+type Verdict struct {
+	CardID      string
+	OptionIndex int
+	Option      string
+	Text        string
+	Skipped     bool
+	Expired     bool
+}
+
+// Kind labels the verdict for tool results and wire payloads:
+// "answer", "skip", "expired".
+func (v Verdict) Kind() string {
+	switch {
+	case v.Expired:
+		return "expired"
+	case v.Skipped:
+		return "skip"
+	default:
+		return "answer"
+	}
+}
+
+// VerdictsProvider is the interactive-question seam (verdict cards v1).
+// The verdict module implements it; the tool blocks on Ask, the HTTP
+// channel and the TUI answer through it. Whichever surface answers
+// first wins - Answer enforces the race. Nil on the Context (module
+// absent) is the only valid "not implemented" answer: the tool refuses
+// to block without the seam.
+type VerdictsProvider interface {
+	// Ask registers the card and BLOCKS until the user answers, the
+	// card expires, ctx is cancelled (run stop / shutdown), or the
+	// seam stops. Expired is a normal return (Verdict.Expired), not an
+	// error. The card persists to the session transcript before
+	// blocking when a store is behind the seam.
+	Ask(ctx context.Context, card VerdictPrompt) (Verdict, error)
+	// Answer records the user's answer to one pending card. The FIRST
+	// answer wins; a second one errors naming the reason (already
+	// answered, already expired, unknown card). The record persists
+	// before Ask wakes. Returns the RESOLVED verdict (card id and the
+	// picked option label filled in) so the answering surface can echo
+	// what actually landed.
+	Answer(sessionID, cardID string, v Verdict) (Verdict, error)
+	// Pending lists the unanswered, unexpired cards, oldest first.
+	// A session filter of "" lists every session's pending cards.
+	Pending(sessionID string) []VerdictPrompt
+}
+
+// Run origins (verdict cards v1): which surface launched the agent
+// turn. request_verdict only issues from interactive turns - cron fires
+// and delegate subagents must never hard-pause waiting for a click.
+const (
+	RunOriginInteractive = "interactive"
+	RunOriginCron        = "cron"
+	RunOriginDelegate    = "delegate"
+)
+
+// WithRunOrigin tags the run context with its launching surface. The
+// request_verdict tool reads it to refuse background origins.
+func WithRunOrigin(ctx context.Context, origin string) context.Context {
+	if origin == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, runOriginKey{}, origin)
+}
+
+// RunOriginFromContext returns the run's origin tag ("" when unset -
+// callers treat that as interactive).
+func RunOriginFromContext(ctx context.Context) string {
+	origin, _ := ctx.Value(runOriginKey{}).(string)
+	return origin
+}
+
+type runOriginKey struct{}
 
 // Frontend is the user-facing interface seam. The default implementation
 // is the terminal TUI (modules/tui/). A custom implementation could
