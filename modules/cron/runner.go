@@ -42,6 +42,9 @@ type Runner struct {
 	memory agent.MemoryProvider
 	ag     *agent.Agent
 	store  agent.StoreProvider
+	// notifier is the finished-things seam, read from deps.Ctx at
+	// Start (card t_5d9032d3). Nil-safe: no seam, no emission.
+	notifier agent.NotificationsProvider
 
 	mu        sync.Mutex
 	running   map[string]bool  // per-job fire guard
@@ -92,6 +95,9 @@ func (r *Runner) Start(ctx context.Context, deps agent.CronDeps) error {
 	}
 	r.ag = deps.Agent
 	r.store = deps.Store
+	if deps.Ctx != nil {
+		r.notifier = deps.Ctx.Notifications
+	}
 
 	r.loadCronState()
 	r.catchUp(ctx, r.now())
@@ -219,6 +225,27 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 
 	r.applyDeliver(ctx, job, final)
 	r.recordFire(job, when)
+	r.emitFinished(job.Name, runErr == nil)
+}
+
+// emitFinished records one finished-things record for the fire (card
+// t_5d9032d3). Metadata only - the job name goes in the title, never
+// prompt or run content. Catch-up fires travel through fire too, so
+// one occurrence = one record regardless of how it fired.
+func (r *Runner) emitFinished(jobName string, ok bool) {
+	if r.notifier == nil {
+		return
+	}
+	verdict := "ok"
+	if !ok {
+		verdict = "failed"
+	}
+	_, _ = r.notifier.Emit(agent.Notification{
+		Kind:     "cron",
+		SourceID: jobName,
+		Title:    "cron " + jobName + " finished",
+		Verdict:  verdict,
+	})
 }
 
 // agentTurn is the default runTurn: one full agent turn in the cron

@@ -29,6 +29,7 @@ func (p *Plugin) Requires() []string { return nil }
 // PendingDelegations on the Context.
 func (p *Plugin) Mount(ctx *agent.Context) error {
 	p.delegate.logger = ctx.Logger
+	p.delegate.notifier = ctx.Notifications
 	ctx.ToolProviders = append(ctx.ToolProviders, p.delegate)
 
 	// Bridge internal injectedMsg channel to agent.InjectedMessage.

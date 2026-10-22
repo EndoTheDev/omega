@@ -25,6 +25,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/mcp"
 	"github.com/EndoTheDev/omega/modules/memory"
+	"github.com/EndoTheDev/omega/modules/notifications"
 	"github.com/EndoTheDev/omega/modules/prompt"
 	"github.com/EndoTheDev/omega/modules/provider"
 	"github.com/EndoTheDev/omega/modules/skills"
@@ -315,6 +316,11 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		skills.NewPlugin(),
 		compactor.NewPlugin(),
 		memory.NewPlugin(),
+		// card t_5d9032d3: the finished-things store mounts BEFORE any
+		// emitter (delegate/kanban read ctx.Notifications at Mount,
+		// cron at Start) - list order is the mount order for plugins
+		// without Requires edges.
+		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),
 		mcpPlugin,
