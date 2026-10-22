@@ -3,6 +3,7 @@ package http_channel
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
 )
@@ -112,15 +113,27 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		}
 		return
 	}
-	v.CardID = req.CardID
-	writeJSON(w, http.StatusOK, map[string]any{
-		"card_id": req.CardID,
+	// the hub knows the real card id (the no-card_id POST answers the
+	// session's oldest pending card) - never echo the request's echo back
+	cardID := v.CardID
+	if cardID == "" {
+		cardID = req.CardID
+	}
+	out := map[string]any{
+		"card_id": cardID,
 		"verdict": v.Kind(),
-		"option":  v.Option,
-		"option_index": v.OptionIndex,
-		"text":    v.Text,
-		"skipped": v.Skipped,
-	})
+	}
+	if v.OptionIndex > 0 {
+		out["option"] = v.Option
+		out["option_index"] = v.OptionIndex
+	}
+	if v.Text != "" {
+		out["text"] = v.Text
+	}
+	if v.Skipped {
+		out["skipped"] = true
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // toVerdictWire maps one runtime card to its wire shape.
@@ -145,29 +158,12 @@ func toVerdictWire(c agent.VerdictPrompt) verdictCardWire {
 // (the card was answered, skipped, or expired before this attempt).
 func isAlreadySettled(err error) bool {
 	msg := err.Error()
-	for _, phrase := range []string{"already answered", "already skipped", "already expired"} {
-		if contains(msg, phrase) {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(msg, "already answered") ||
+		strings.Contains(msg, "already skipped") ||
+		strings.Contains(msg, "already expired")
 }
 
 // isUnknownCard reports whether an Answer error is "no such card".
 func isUnknownCard(err error) bool {
-	return contains(err.Error(), "no pending verdict card")
-}
-
-// contains is a tiny strings.Contains local to avoid pulling strings
-// into this file's import set for two call sites.
-func contains(s, sub string) bool {
-	if len(sub) == 0 {
-		return true
-	}
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(err.Error(), "no pending verdict card")
 }
