@@ -47,6 +47,49 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// extensionListing is one GET /extensions row: the same facts the TUI
+// /extensions command renders (name, tools, commands, seams) plus the
+// module's own one-line description (agent.Describer, omitted when the
+// module doesn't implement it). has-ui does NOT ride this wire: the
+// webui derives it at build time from the composition manifest
+// (modules/<name>/ui/dockable.json - compose.ts), the runtime doesn't
+// ship module source. Extensions carry no versions.
+type extensionListing struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Tools       int      `json:"tools"`
+	Commands    int      `json:"commands"`
+	Seams       []string `json:"seams"`
+}
+
+// handleExtensions serves GET /extensions: the loaded-extension
+// inventory in mount order - the webui parity of the TUI /extensions
+// command. Mount order is the dependency order MountAll built, the
+// same order the TUI renders; keep it, don't alphabetize away the
+// seams-require-providers structure. A no-extension run lists as an
+// empty array, like the other inspector reads.
+func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	info := s.agent.ExtensionInfos()
+	out := make([]extensionListing, 0, len(info))
+	for _, e := range info {
+		seams := e.Seams
+		if seams == nil {
+			seams = []string{}
+		}
+		out = append(out, extensionListing{
+			Name:        e.Name,
+			Description: e.Description,
+			Tools:       e.Tools,
+			Commands:    e.Commands,
+			Seams:       seams,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // skillListing is one GET /skills row: name + description only. The
 // inspector tab renders exactly this; skill content, directories and
 // the prompt section never ride the wire.

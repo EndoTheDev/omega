@@ -10,6 +10,11 @@ type Plugin struct{}
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string       { return "trust" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "trust: gates project context (AGENTS.md) and shell approval"
+}
 func (p *Plugin) Provides() []string { return []string{"trust"} }
 func (p *Plugin) Requires() []string { return nil }
 

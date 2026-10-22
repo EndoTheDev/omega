@@ -1236,6 +1236,27 @@ export async function fetchSessions(): Promise<Session[]> {
   return r.json();
 }
 
+// --- extensions inventory: GET /extensions (card t_14f73742) ---
+
+// OmegaExtension is one loaded module: the TUI /extensions facts (name,
+// tool + command counts, seams) plus the module's own one-line
+// description (omitted when the module doesn't implement agent.Describer).
+// has-ui is NOT on the wire - the shell derives it from the composition
+// manifest (modules/<name>/ui/dockable.json) at build time.
+export interface OmegaExtension {
+  name: string;
+  description?: string;
+  tools: number;
+  commands: number;
+  seams: string[];
+}
+
+export async function fetchExtensions(): Promise<OmegaExtension[]> {
+  const r = await fetch("/extensions");
+  if (!r.ok) throw new Error(`extensions: ${r.status}`);
+  return r.json();
+}
+
 // --- settings pane: config knobs behind /settings ---
 
 // SettingKnob is one exposed config field. Type drives the control:

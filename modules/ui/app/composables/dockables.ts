@@ -38,6 +38,7 @@ export const DOCK_COMPONENTS = [
   "agents",
   "settings",
   "kanban",
+  "extensions",
   "insights",
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
@@ -216,6 +217,26 @@ export const DOCKABLES: readonly DockableComponent[] = [
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
       paths: ["M9 3v18", "M15 3v18"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    // card t_14f73742: the extensions inventory joins the inspector - the
+    // webui parity of the TUI /extensions command. A SHELL tab over
+    // GET /extensions (the composition-contract ruling is recorded in
+    // extensionsRows.ts): the shell owns the listing because it
+    // aggregates every module, so no module can own this panel. has-ui
+    // rows emit open-module - the tab only routes, the module panels
+    // mount. Unclosable like every inspector view: the loader restores
+    // the full strip, and the outlet template must always exist.
+    id: "extensions",
+    title: "extensions",
+    // four squares: the module inventory, one frame
+    icon: {
+      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
+      paths: ["M8 8h1", "M15 8h1", "M8 15h1", "M15 15h1"],
     },
     policy: "singleton",
     area: "right",

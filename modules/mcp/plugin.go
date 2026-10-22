@@ -31,6 +31,11 @@ func NewPluginFromEnv() (*Plugin, error) {
 // Name returns the plugin name shown in the /extensions listing.
 func (p *Plugin) Name() string { return "mcp" }
 
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "MCP bridge: tools from configured Model Context Protocol servers"
+}
+
 // Provides lists the seams this plugin mounts. MCP provides tools
 // (additive — multiple plugins can contribute tools).
 func (p *Plugin) Provides() []string { return []string{"tools"} }

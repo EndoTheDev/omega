@@ -89,6 +89,9 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+        // card t_14f73742: the extensions inventory tab fetches the
+        // module list in dev (same-origin embedded in production)
+        "/extensions",
       ].map(
         (p) => [
           p,

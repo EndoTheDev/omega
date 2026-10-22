@@ -218,11 +218,12 @@ type ToolInfo struct {
 
 // ExtensionInfo is metadata about a loaded extension, for display.
 type ExtensionInfo struct {
-	Name     string
-	Tools    int
-	Commands int
-	Seams    []string   // declared seam types ("prompt_builder", "compactor", etc.)
-	ToolList []ToolInfo // tools provided by this extension (name + description)
+	Name        string
+	Description string     // one-line purpose, from the optional Describer seam
+	Tools       int
+	Commands    int
+	Seams       []string   // declared seam types ("prompt_builder", "compactor", etc.)
+	ToolList    []ToolInfo // tools provided by this extension (name + description)
 }
 
 // PromptBuildOptions carries context for extension-built system prompts.

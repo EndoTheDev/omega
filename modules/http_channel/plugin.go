@@ -15,6 +15,11 @@ type Plugin struct{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string       { return "http_channel" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "HTTP channel: the web UI API server - chat streaming, sessions, inspector endpoints"
+}
 func (p *Plugin) Provides() []string { return []string{"channel"} }
 func (p *Plugin) Requires() []string { return nil }
 
