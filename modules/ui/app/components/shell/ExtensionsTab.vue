@@ -66,7 +66,7 @@
   // tab IS the /extensions surface.
   // Lazy like the other inspector tabs: the load runs on mount, the dock
   // only activates a tab's content when the tab IS active.
-  import { ref } from "vue";
+  import { computed, ref } from "vue";
   import { fetchExtensions } from "../../composables/omega";
   import type { OmegaExtension } from "../../composables/omega";
   import { extensionsRows, extensionsSummary } from "./extensionsRows";
@@ -94,8 +94,10 @@
   const loading = ref(false);
   const error = ref("");
 
-  const rows = () => extensionsRows(extensions.value, modulePanels.map((p) => p.module));
-  const summary = () => extensionsSummary(rows());
+  const rows = computed(() =>
+    extensionsRows(extensions.value, modulePanels.map((p) => p.module)),
+  );
+  const summary = computed(() => extensionsSummary(rows.value));
 
   async function load() {
     loading.value = true;
