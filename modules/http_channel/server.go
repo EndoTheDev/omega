@@ -1051,6 +1051,14 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 		prompt += "\nAssistant: " + truncate(lastAssistant, 400)
 	}
 
+	// Verdict cards v1 (card t_2ecf9c51): the title turn reuses the
+	// FULL tool table (nil Tools falls back to the registered set) and
+	// the incoming user content can invite tool use. A title turn must
+	// never hard-pause on the card (no session, nobody answering): deny
+	// request_verdict by name - the loop filters it after every provider
+	// merge, the same mechanism the ephemeral path denies memory with.
+	ctx = agent.WithDeniedTools(ctx, "request_verdict")
+
 	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
 	title := ""
 	for ev := range events {
