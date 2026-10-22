@@ -189,6 +189,9 @@ type InjectedMessage struct {
 type ExtensionCommand struct {
 	Name        string `json:"name"` // includes leading slash, e.g. "/mycmd"
 	Description string `json:"description"`
+	// Args optionally lists first-argument completions the serving
+	// frontend's autocomplete offers once the command itself is typed.
+	Args []string `json:"args,omitempty"`
 }
 
 // CommandResult is what an extension command returns. Text is printed

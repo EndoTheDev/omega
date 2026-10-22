@@ -767,11 +767,17 @@ func TestTabComplete(t *testing.T) {
 	}
 
 	// Multiple matches: "/" matches every known command, so the
-	// autocomplete panel lists the options with the selected one highlighted.
+	// autocomplete panel lists the options with the selected one
+	// highlighted. Shell built-ins are 8 now (card t_88bb7dcf moved the
+	// feature commands to the module seam), so a module provider tops
+	// the table past the maxAutocompleteRows cap.
+	pctx := &agent.Context{TUIProviders: []agent.TUIProvider{fakeTUICommands{{Name: "/zmod"}, {Name: "/amod"}}}}
+	m.commands = buildCommands(knownCommands, pctx, nil)
+	m.moduleCommands = moduleCommands(pctx)
 	m.textarea.SetValue("/")
 	m.updateAutocomplete()
-	if len(m.autocompleteMatches) != len(knownCommands) {
-		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
+	if len(m.autocompleteMatches) != len(m.commands) {
+		t.Fatalf("expected %d matches for /, got %d", len(m.commands), len(m.autocompleteMatches))
 	}
 	panel := ansiStrip(m.autocompletePanel())
 	// The dropup is a scroll window capped at maxAutocompleteRows:
@@ -1803,7 +1809,7 @@ func newProviderTestCtx(prov ai.Provider) *agent.Context {
 		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
 		agent.ExtensionCommand{Name: "/model", Description: "switch model"},
 		agent.ExtensionCommand{Name: "/thinking", Description: "set thinking level"},
-		agent.ExtensionCommand{Name: "/tools", Description: "list tools"},
+		agent.ExtensionCommand{Name: "/tools", Description: "list tools", Args: []string{"on", "off", "auto", "list"}},
 		agent.ExtensionCommand{Name: "/provider", Description: "show provider"},
 	)
 	thinkingLevel := "medium" // tracked in closure for cycle support

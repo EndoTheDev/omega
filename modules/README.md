@@ -49,6 +49,19 @@ modules that own prompt content append a `PromptSectioner` to
 `Context.PromptSectioners`; the prompt builder renders their
 sections between Project Context and Environment.
 
+## Module-owned TUI (agent.TUIProvider)
+
+The webui law applies to the TUI too (card t_88bb7dcf): a module that
+owns a TUI face implements `agent.TUIProvider` in `<name>/tui.go` -
+`TUICommands()` declares the slash commands, `HandleTUICommand`
+executes them through the `agent.TUIConsole` the shell hands over -
+and appends itself to `ctx.TUIProviders` during `Mount()`. The
+registration is the plugin: a plugin left out of `buildPlugins()`
+takes its commands out of the TUI table with it. A handler may
+return a full-screen view (`TUIResult{Overlay}`, the `/files`
+shape) or a follow loop (`TUIResult{Tick}`, the `/logs -f` shape);
+reference: `docs/tui.md`, module-owned command owners.
+
 ## Available modules
 
 | Package         | Seam(s)        | Description                                          |
@@ -58,10 +71,10 @@ sections between Project Context and Environment.
 | `store/`        | store, tools   | SQLite session store + sessions.search tool          |
 | `skills/`       | skills, tools, prompt_sections | Skill loading + skills.read tool + /skills command + Available Skills section |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
-| `logging/`      | logging        | Operational logging (file logger, LoggerProvider)    |
+| `logging/`      | logging, TUI   | Operational logging (file logger, LoggerProvider) + /logs tail+follow command |
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block |
 | `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
-| `tools/`        | tools, prompt_sections | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools) |
+| `tools/`        | tools, prompt_sections, TUI | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools); /files browser + /tools command |
 | `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
 | `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
@@ -70,7 +83,7 @@ sections between Project Context and Environment.
 | `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
 | `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading)   |
-| `cron/`         | cron           | Scheduled prompts (crons.yaml, cron:<name> sessions) |
+| `cron/`         | cron, TUI      | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron) |
 
 ## Writing an module
 

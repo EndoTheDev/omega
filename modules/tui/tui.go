@@ -210,23 +210,61 @@ func themeNames() []string {
 	return names
 }
 
-// knownCommands are the built-in slash commands, ordered semantically:
-// session lifecycle, then model control, then transcript tools, then
-// app commands. Skill names are appended at startup, so autocomplete
-// matches both built-ins and loaded skills.
-var knownCommands = []string{"/copy", "/extensions", "/theme", "/files", "/cron", "/logs", "/variant", "/fork", "/retry", "/exit", "/help"}
+// knownCommands are the shell-owned built-in slash commands - utility
+// first, conversation control last. Feature commands are NOT here:
+// they ride the module seam (agent.TUIProvider in
+// Context.TUIProviders), the extension command chain, or skills, so
+// removing a plugin takes its commands out of this list with it - the
+// same law the webui enforces through directory registration.
+var knownCommands = []string{"/copy", "/extensions", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
 
-// commandOptions maps commands with enum arguments to their valid values.
-// The autocomplete offers these as second-level completions once the
-// input equals the command (or the command plus a partial option).
-// Commands with free-form or dynamic arguments are not listed here.
+// buildCommands assembles the per-model command list: shell commands,
+// then module commands from the mounted TUI providers (module_ui.go),
+// then extension commands, then skill names. Cloning avoids mutating
+// the package-level slice.
+func buildCommands(known []string, pctx *agent.Context, skills []agent.Skill) []string {
+	commands := make([]string, 0, len(known)+len(skills)+8)
+	commands = append(commands, known...)
+	for _, c := range moduleTable(pctx) {
+		commands = append(commands, c.Name)
+	}
+	if pctx != nil {
+		for _, c := range pctx.Commands {
+			commands = append(commands, c.Name)
+		}
+	}
+	for _, s := range skills {
+		commands = append(commands, "/"+s.Name)
+	}
+	return commands
+}
+
+// commandOptions maps shell-owned commands with enum arguments to
+// their valid values. Module and extension commands carry their own
+// options (TUICommand.Args / ExtensionCommand.Args) and merge in
+// through moduleOptions. The autocomplete offers these as second-level
+// completions once the input equals the command (or the command plus
+// a partial option). Commands with free-form or dynamic arguments are
+// not listed here.
 var commandOptions = map[string][]string{
 	"/new":      {"--ephemeral"},
 	"/thinking": {"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"},
-	"/tools":    {"on", "off", "auto", "list"},
 	"/theme":    {"dark", "light", "auto"},
 	"/sessions": {"delete"},
-	"/logs":     {"-f"},
+}
+
+// autocompleteOptions merges the shell-owned enum options with the
+// options module providers and extension commands declare on their
+// own commands (TUICommand.Args / ExtensionCommand.Args).
+func autocompleteOptions(pctx *agent.Context) map[string][]string {
+	merged := make(map[string][]string, len(commandOptions)+4)
+	for k, v := range commandOptions {
+		merged[k] = v
+	}
+	for k, v := range moduleOptions(pctx) {
+		merged[k] = v
+	}
+	return merged
 }
 
 // streamSegment is one ordered piece of a streaming turn. Segments are
@@ -294,13 +332,12 @@ type model struct {
 	contextWindow        int              // auto-discovered from provider; 0 = unknown, fall back to config
 	view                 agent.ActiveView // tree view of the loaded session; /variant /fork navigation
 	forkParent           string           // row id the next send chains onto (/fork); "" = derive leaf
-	retryParent          string           // branch point the in-flight retry's head pins to; "" = none
-	headPinned           bool             // retry head already parented this run
-	retryMarker          string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
-	files                *filesBrowser    // open /files browser; nil = closed
-	logFollow            bool             // /logs -f: appending on a one-second tick
-	logFile              string           // log file the follow mode reads
-	logOffset            int64            // follow read position (byte offset)
+	retryParent           string           // branch point the in-flight retry's head pins to; "" = none
+	headPinned            bool             // retry head already parented this run
+	retryMarker           string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
+	screen                agent.TUIScreen  // open module full-screen view (module seam); nil = closed
+	tick                  *agent.TUITick   // active module follow loop (/logs -f pattern); nil = idle
+	moduleCommands        map[string]agent.TUIProvider
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -388,19 +425,11 @@ func newChatModel(providerType, modelName string, compaction *agent.CompactionCo
 	ta.SetHeight(minTextareaHeight)
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
-	// Build the per-model command list: clone the built-in commands,
-	// append extension commands, then skill names. This avoids mutating
-	// the package-level slice.
-	commands := make([]string, len(knownCommands))
-	copy(commands, knownCommands)
-	if pctx != nil {
-		for _, c := range pctx.Commands {
-			commands = append(commands, c.Name)
-		}
-	}
-	for _, s := range skills {
-		commands = append(commands, "/"+s.Name)
-	}
+	// Build the per-model command list: shell commands, then module
+	// commands from the mounted TUI providers, then extension
+	// commands, then skill names. The dispatch map indexes the module
+	// providers by name (module_ui.go).
+	commands := buildCommands(knownCommands, pctx, skills)
 	// Resolve the theme; fall back to dark. "auto" detects the OS
 	// appearance and copies the resolved theme's styles.
 	t, ok := themes[themeName]
@@ -430,6 +459,7 @@ func newChatModel(providerType, modelName string, compaction *agent.CompactionCo
 		skills:               skills,
 		extensions:           pctx,
 		commands:             commands,
+		moduleCommands:       moduleCommands(pctx),
 		autocompleteIndex:    -1,
 		autocompleteSlashPos: -1,
 		showThinking:         true,
@@ -455,8 +485,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screenHeight = msg.Height
 		m.viewport.Width = msg.Width
 		m.resizeTextarea()
-		if m.files != nil {
-			m.layoutFiles()
+		// The open module screen resizes itself off the same message
+		// (its layout is its own business); its console writes land on
+		// the model this Update returns.
+		if m.screen != nil {
+			out := m
+			m.screen.Update(msg, tuiConsole{m: &out})
+			m = out
 		}
 		if len(m.history) > 0 && !m.busy {
 			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
@@ -469,15 +504,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		// The file browser, when open, owns every key: it is a
-		// full-screen view over the transcript.
-		if m.files != nil {
-			return m.updateFilesKeys(msg)
+		// A module full-screen view, when open, owns every key: it is
+		// a full-screen view over the transcript.
+		if m.screen != nil {
+			if mo, _, consumed := m.routeModuleScreen(msg); consumed {
+				return mo, nil
+			}
 		}
-		// /logs -f stops on the next keypress - following a log is a
-		// watch mode, and typing means the user wants the prompt back.
-		if m.logFollow {
-			m.stopLogFollow()
+		// A module follow loop (/logs -f pattern) stops on the next
+		// keypress - following a log is a watch mode, and typing means
+		// the user wants the prompt back.
+		if m.tick != nil {
+			m.tick = nil
 		}
 		if m.busy {
 			// Escape cancels the in-flight run; the agent loop observes
@@ -777,10 +815,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.contextWindow = msg.contextWindow
 		return m, nil
 
-	case logFollowTickMsg:
-		// /logs -f: append what the logger wrote since the last
-		// tick and schedule the next one.
-		return m.handleLogFollowTick()
+	case moduleTickMsg:
+		// A module follow loop (/logs -f): step it and reschedule.
+		return m.handleModuleTick()
 
 	default:
 		var cmd tea.Cmd
@@ -1196,12 +1233,6 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExtensions()
 	case "/theme":
 		return m.handleTheme(fields[1:])
-	case "/files":
-		return m.handleFiles(fields[1:])
-	case "/cron":
-		return m.handleCronCommand()
-	case "/logs":
-		return m.handleLogs(fields[1:])
 	case "/help":
 		m.transcript += m.renderHelp()
 		m.refresh()
@@ -1239,6 +1270,11 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		// Route to the provider extension command.
 		return m.handleExtensionCommand("/model", arg)
 	default:
+		// Module-owned commands first: the provider that registered the
+		// command executes it (agent.TUIProvider, the module seam).
+		if _, ok := m.moduleCommands[fields[0]]; ok {
+			return m.handleModuleCommand(fields[0], strings.Join(fields[1:], " "))
+		}
 		// Check if the command matches a loaded extension command.
 		cmd := fields[0]
 		if m.extensions != nil {
@@ -1337,7 +1373,7 @@ func (m *model) updateAutocomplete() {
 	matches := m.autocompleteMatches[:0]
 	// Split at the first space: cmd is the command part.
 	cmd, _, _ := strings.Cut(partial, " ")
-	if options, ok := commandOptions[cmd]; ok {
+	if options, ok := autocompleteOptions(m.extensions)[cmd]; ok {
 		// Second level: match options by prefix. Full strings so
 		// acceptMatch replaces the whole token unchanged.
 		for _, opt := range options {
@@ -2182,14 +2218,10 @@ func renderCodeBlock(code, lang string, width int, t Theme) string {
 // the conversation is empty (fresh start or /new), a startup splash
 // replaces the viewport.
 func (m model) View() string {
-	// The file browser is a full-screen view: it replaces the
+	// A module full-screen view is exactly that: it replaces the
 	// transcript, autocomplete and textarea entirely.
-	if m.files != nil {
-		var sb strings.Builder
-		sb.WriteString(m.filesView())
-		sb.WriteString("\n")
-		sb.WriteString(m.theme.Status.Render(m.statusLine()))
-		return sb.String()
+	if m.screen != nil {
+		return m.moduleScreenView()
 	}
 	var sb strings.Builder
 	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
@@ -2514,8 +2546,8 @@ func wordWrap(s string, width int) string {
 
 // renderHelp returns the /help text. Commands are laid out as a
 // two-column table with widths computed from the data, matching the
-// /sessions and /tree tables. Extension-provided commands are
-// appended after built-in commands.
+// /sessions and /tree tables. Module TUI-provider rows follow the
+// shell rows; extension-provided commands are appended after those.
 func (m model) renderHelp() string {
 	builtin := [][2]string{
 		{"/exit", "quit"},
@@ -2534,15 +2566,14 @@ func (m model) renderHelp() string {
 		{"/search <query>", "search session messages (full-text)"},
 		{"/insights [days]", "show cross-session usage analytics (default: 30 days)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
-		{"/tools [on|off|auto|list]", "tool results: expanded / collapsed / auto, or list all tools"},
 		{"/extensions", "list loaded extensions"},
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
-		{"/files [path]", "browse the working directory (enter opens, esc/q closes)"},
-		{"/cron", "list cron jobs (read-only)"},
-		{"/logs [-f]", "tail omega.log (-f: keep following)"},
 		{"/help", "show this help"},
 	}
 	rows := builtin
+	for _, c := range moduleTable(m.extensions) {
+		rows = append(rows, [2]string{c.Name, c.Help})
+	}
 	if m.extensions != nil {
 		for _, c := range m.extensions.Commands {
 			rows = append(rows, [2]string{c.Name, c.Description})

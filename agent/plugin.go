@@ -42,6 +42,13 @@ type Context struct {
 	// Frontend (exclusive — one frontend at a time). The host calls
 	// Run after mounting all extensions.
 	Frontend Frontend
+
+	// TUI providers (additive — module-owned TUI commands and
+	// screens, card t_88bb7dcf). Each module appends its TUIProvider
+	// during Mount - the registration point; a plugin left out of
+	// buildPlugins never mounts and its TUI surface is simply absent,
+	// the same law the webui enforces through directory registration.
+	TUIProviders []TUIProvider
 	Trust    TrustProvider
 	Cron     CronProvider
 	Kanban   KanbanProvider
