@@ -103,6 +103,21 @@ export default defineNuxtConfig({
           // route fetched the target's SPA root (HTML instead of API)
           { target: (process.env.OMEGA_DEV_API ?? "http://127.0.0.1:8098") + p },
         ],
+      )
+      // The period switch: devProxy routes match by prefix on the FULL
+      // request path (query included) and h3 rewrites the layer-relative
+      // remainder onto the request - a bare-keyed route mangles
+      // /insights?days=7 into /insights/?days=7 and the SPA eats its own
+      // index.html as the "response" (the JSON parse blowup). The window
+      // values are fixed literals (InsightsTab's four options), so give
+      // each its own literal route with the query in BOTH key and target
+      // - the two compose correctly through httpxy's targetPath +
+      // targetSearch join (card t_d7fd3ad3's 79 period-switch step).
+      .concat(
+        [7, 30, 90, 0].map((d) => {
+          const api = process.env.OMEGA_DEV_API ?? "http://127.0.0.1:8098";
+          return [`/insights?days=${d}`, { target: `${api}/insights?days=${d}` }];
+        }),
       ),
     ),
     output: {
