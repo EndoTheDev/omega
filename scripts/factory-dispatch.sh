@@ -21,7 +21,14 @@ cd "$(dirname "$0")/.."
 
 DB="$HOME/.hermes/kanban/boards/project-omega/kanban.db"
 CAP=4
-DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
+DRY=0; MAXARG=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=1 ;;
+    --max) MAXARG="${2:-0}"; shift ;;
+  esac
+  shift
+done
 
 tokens_of() {  # extract repo paths from free text (body or diff)
   grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
@@ -100,6 +107,7 @@ for c in "${CAND[@]:-}"; do
   CTOK=$(mktemp)
   { candidate_tokens "$c"
     git diff --name-only dev..."wt/$c" 2>/dev/null || true   # resumed candidates carry real writes in their worktrees
+    git -C ".worktrees/$c" status --short 2>/dev/null | awk '{print $NF}' || true   # ...and UNCOMMITTED files (proven: t_88bb7dcf's uncommitted journey script was invisible without this)
   } >"$CTOK"
   HOLD=0; WHY=""; MATCHF=""
   if grep -q . "$CTOK"; then
@@ -152,6 +160,8 @@ trap 'unpark "${PARKED[@]:-}"' EXIT
 if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
   SLOTS=$(( CAP - ${#RUNNING[@]} ))
   [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
+  [ "$MAXARG" -gt 0 ] && { B=$(( MAXARG - ${#RUNNING[@]} )); [ "$B" -lt "$SLOTS" ] && [ "$B" -ge 0 ] && SLOTS=$B; }   # an explicit --max N bounds total concurrency (running + spawns <= N)
+  [ "$SLOTS" -le 0 ] && { echo "no dispatch (--max reached: ${#RUNNING[@]} running)"; exit 0; }
   hermes kanban dispatch --max $(( ${#RUNNING[@]} + SLOTS )) 2>&1 | grep -E "Spawned|assigned" || true
 else
   echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP)"
