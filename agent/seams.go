@@ -432,8 +432,10 @@ type VerdictsProvider interface {
 	// Answer records the user's answer to one pending card. The FIRST
 	// answer wins; a second one errors naming the reason (already
 	// answered, already expired, unknown card). The record persists
-	// before Ask wakes.
-	Answer(sessionID, cardID string, v Verdict) error
+	// before Ask wakes. Returns the RESOLVED verdict (card id and the
+	// picked option label filled in) so the answering surface can echo
+	// what actually landed.
+	Answer(sessionID, cardID string, v Verdict) (Verdict, error)
 	// Pending lists the unanswered, unexpired cards, oldest first.
 	// A session filter of "" lists every session's pending cards.
 	Pending(sessionID string) []VerdictPrompt

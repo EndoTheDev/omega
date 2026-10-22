@@ -156,7 +156,7 @@ func (h *Hub) expire(cardID string) {
 // case is exactly one; ambiguous cases name the count in the error and
 // leave the choice to the caller). First answer wins; every later
 // attempt errors with the reason.
-func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) error {
+func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, error) {
 	h.mu.Lock()
 	var c *cardState
 	if cardID == "" {
@@ -165,7 +165,7 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) error {
 		// count in the error and leave the choice to the caller)
 		if sessionID == "" {
 			h.mu.Unlock()
-			return fmt.Errorf("answer is ambiguous: no session and no card given")
+			return agent.Verdict{}, fmt.Errorf("answer is ambiguous: no session and no card given")
 		}
 		for _, cand := range h.cards {
 			if !cand.settled && cand.prompt.SessionID == sessionID {
@@ -175,14 +175,14 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) error {
 		}
 		if c == nil {
 			h.mu.Unlock()
-			return fmt.Errorf("no pending verdict card in session %s", sessionID)
+			return agent.Verdict{}, fmt.Errorf("no pending verdict card in session %s", sessionID)
 		}
 		cardID = c.prompt.ID
 	} else {
 		c = h.byIDLocked(cardID)
 		if c == nil {
 			h.mu.Unlock()
-			return fmt.Errorf("no pending verdict card %s", cardID)
+			return agent.Verdict{}, fmt.Errorf("no pending verdict card %s", cardID)
 		}
 		// session boundary: a known card from another session cannot be
 		// answered through this session's surface (the URL is the
@@ -190,18 +190,18 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) error {
 		// /verdict command answers without a session context).
 		if sessionID != "" && c.prompt.SessionID != sessionID {
 			h.mu.Unlock()
-			return fmt.Errorf("verdict card %s belongs to a different session", cardID)
+			return agent.Verdict{}, fmt.Errorf("verdict card %s belongs to a different session", cardID)
 		}
 	}
 	if c.settled {
 		h.mu.Unlock()
 		if c.expired {
-			return fmt.Errorf("verdict card %s already expired", cardID)
+			return agent.Verdict{}, fmt.Errorf("verdict card %s already expired", cardID)
 		}
 		if c.skipped {
-			return fmt.Errorf("verdict card %s already skipped", cardID)
+			return agent.Verdict{}, fmt.Errorf("verdict card %s already skipped", cardID)
 		}
-		return fmt.Errorf("verdict card %s already answered", cardID)
+		return agent.Verdict{}, fmt.Errorf("verdict card %s already answered", cardID)
 	}
 
 	// Validations per card shape (design point 1: ONE card shape):
@@ -213,21 +213,21 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) error {
 	case v.OptionIndex > 0:
 		if v.OptionIndex > len(c.prompt.Options) {
 			h.mu.Unlock()
-			return fmt.Errorf("option %d is out of range: the card has %d options", v.OptionIndex, len(c.prompt.Options))
+			return agent.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", v.OptionIndex, len(c.prompt.Options))
 		}
 		v.Option = c.prompt.Options[v.OptionIndex-1]
 	case v.Text != "":
 		if len(c.prompt.Options) > 0 && !c.prompt.FreeText {
 			h.mu.Unlock()
-			return fmt.Errorf("card %s takes an option, not free text", cardID)
+			return agent.Verdict{}, fmt.Errorf("card %s takes an option, not free text", cardID)
 		}
 	default:
 		if len(c.prompt.Options) > 0 {
 			h.mu.Unlock()
-			return fmt.Errorf("card %s needs an option pick (1..%d) or a skip", cardID, len(c.prompt.Options))
+			return agent.Verdict{}, fmt.Errorf("card %s needs an option pick (1..%d) or a skip", cardID, len(c.prompt.Options))
 		}
 		h.mu.Unlock()
-		return fmt.Errorf("card %s needs free text or a skip", cardID)
+		return agent.Verdict{}, fmt.Errorf("card %s needs free text or a skip", cardID)
 	}
 
 	c.settled = true
@@ -241,7 +241,7 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) error {
 	h.mu.Unlock()
 
 	h.persist(record)
-	return nil
+	return v, nil
 }
 
 // Pending implements agent.VerdictsProvider: unanswered, unexpired

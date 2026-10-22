@@ -71,7 +71,7 @@ func (p *tuiProvider) HandleTUICommand(name, args string, c agent.TUIConsole) ag
 		c.Error(perr.Error())
 		return agent.TUIResult{}
 	}
-	if err := p.hub.Answer("", card.ID, v); err != nil {
+	if _, err := p.hub.Answer("", card.ID, v); err != nil {
 		c.Error(err.Error())
 		return agent.TUIResult{}
 	}
