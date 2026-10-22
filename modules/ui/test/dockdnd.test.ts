@@ -104,16 +104,14 @@ describe("zone gates", () => {
 });
 
 describe("dockDropToZone (the docking mutation)", () => {
-  it("drop left: B splits, the dragged tab takes the left half", () => {
+  it("drop left: B splits, the dragged tab takes the left half, the emptied source closes (t_aa9dbada)", () => {
     const { root, a, b } = row();
     const out = dockDropToZone(root, a.id, 0, b.id, "left");
     assert.notEqual(out, root); // a real mutation
-    assert.equal(paneCount(out), 3); // A stays, B split around N
-    // the row: [A, row[N, B]]
-    const kids = (out as DockSplit).children as DockNode[];
-    const A = paneOf(out, a.id);
-    assert.deepEqual(A.tabs.map((t) => t.component), [], "A emptied to the '+' menu");
-    const pair = kids[1] as DockSplit;
+    assert.equal(paneCount(out), 2); // A closes with its last tab; B split around N
+    assert.ok(!findPane(out, a.id), "the emptied source pane closed");
+    // the tree: row[N, B] - the emptied A pruned, the pair hoisted to root
+    const pair = out as DockSplit;
     assert.equal(pair.direction, "row");
     assert.deepEqual(pair.sizes, [0.5, 0.5], "the half goes to the dragged pane");
     const N = pair.children[0] as DockPane;
@@ -125,7 +123,10 @@ describe("dockDropToZone (the docking mutation)", () => {
   it("drop right/top/bottom map the zone's direction + side", () => {
     const mk = (zone: DragZone) => {
       const { root, a, b } = row();
-      return { root, a, b, out: dockDropToZone(root, a.id, 0, b.id, zone) };
+      // a second tab in A: the drop moves tab 0 but A keeps hosting, so the
+      // source pane survives and the structure reads stay split-focused
+      (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
+      return { root, a, b, out: dockDropToZone(root, a.id, 1, b.id, zone) };
     };
     // right: [A, row[B, N]] - the fresh pane rides right of the target
     const r = mk("right");
@@ -154,7 +155,10 @@ describe("dockDropToZone (the docking mutation)", () => {
 
   it("drop center groups the tab into the target (no split)", () => {
     const { root, a, b } = row();
-    const out = dockDropToZone(root, a.id, 0, b.id, "center");
+    // A keeps a tab so the source pane survives - this test reads the plain
+    // move semantics, not the last-tab-out close (covered in its own test)
+    (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
+    const out = dockDropToZone(root, a.id, 1, b.id, "center");
     assert.equal(paneCount(out), 2);
     const B = paneOf(out, b.id);
     assert.deepEqual(B.tabs.map((t) => t.component), ["files", "chat"]);
@@ -167,7 +171,9 @@ describe("dockDropToZone (the docking mutation)", () => {
   });
 
   it("edge shells keep their shape: split zones refuse, center groups", () => {
-    // A(chat) | B(files, pinned right shell)
+    // A(chat) | B(files, pinned right shell) - A's ONLY tab moves to B's
+    // center, so A closes with it (t_aa9dbada); the pinned shell itself
+    // never closes (it may sit empty)
     const a = makePane("chat");
     const b = makePane("files", 240, "right");
     const root = makeSplit("row", [a, b]);
@@ -176,7 +182,8 @@ describe("dockDropToZone (the docking mutation)", () => {
     const center = dockDropToZone(root, a.id, 0, b.id, "center");
     const B = paneOf(center, b.id);
     assert.deepEqual(B.tabs.map((t) => t.component), ["files", "chat"], "center still groups");
-    assert.equal(paneCount(center), 2, "no pane minted");
+    assert.ok(!findPane(center, a.id), "the emptied source pane closed");
+    assert.equal(paneCount(center), 1, "the shell is the only pane left");
   });
 
   it("the LOCKED tab (sessions) refuses every zone landing outside left", () => {

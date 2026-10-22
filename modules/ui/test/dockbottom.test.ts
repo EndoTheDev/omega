@@ -152,13 +152,15 @@ describe("the bottom shell's place in the tree", () => {
 });
 
 describe("close / reopen (persistence rulings)", () => {
-  it("the menubar toggle closes the bottom panel completely (the never-empty rule is main-only)", () => {
+  it("the menubar toggle closes the bottom panel completely (the never-empty rule is main-only)", async () => {
     const store = new MemoryStorage() as unknown as Storage;
     const dock = createDock(store);
     assert.ok(bottomOf(dock.tree.value));
     dock.toggleBottom();
     assert.equal(bottomOf(dock.tree.value), null, "the shell is out of the tree");
-    assert.equal(store.getItem(BOTTOM_CLOSED_KEY), "1", "closure persisted");
+    await flush();
+    const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
+    assert.ok(rec.closedEdges.includes("bottom"), "closure rides the record (t_aa9dbada)");
     assert.equal(paneCount(dock.tree.value) > 0, true, "the dock is never empty");
   });
 
@@ -167,7 +169,7 @@ describe("close / reopen (persistence rulings)", () => {
     const first = createDock(store);
     first.toggleBottom();
     assert.equal(bottomOf(first.tree.value), null);
-    await flush(); // persisted tree now reflects the pruned shell
+    await flush(); // persisted record now reflects the pruned shell + closed flag
     // a fresh boot with the SAME store: the dock sees the closed flag and leaves the shell out
     const second = createDock(store);
     assert.equal(bottomOf(second.tree.value), null, "still closed after reload");
@@ -191,16 +193,17 @@ describe("close / reopen (persistence rulings)", () => {
     assert.equal(recalledEdgePx(store, "bottom"), 240);
   });
 
-  it("a stale CLOSED flag under a PRESENT shell gets cleared (repair)", () => {
+  it("a legacy CLOSED key under a PRESENT shell is retired without reopening rules (migration)", async () => {
     const store = new MemoryStorage() as unknown as Storage;
     const dock = createDock(store);
-    store.setItem(BOTTOM_CLOSED_KEY, "1"); // corrupt: shell present + flag set
+    await flush(); // the record now carries closedEdges - the legacy key is dead input
+    store.setItem(BOTTOM_CLOSED_KEY, "1"); // corrupt: flag set, record newer
     const again = createDock(store);
     assert.ok(bottomOf(again.tree.value), "the shell stays");
-    assert.equal(store.getItem(BOTTOM_CLOSED_KEY), "0", "the stale flag cleared at boot");
+    assert.equal(store.getItem(BOTTOM_CLOSED_KEY), null, "the legacy key retired at boot");
   });
 
-  it("the bottom panel's drag-close (divider push) persists closure too", () => {
+  it("the bottom panel's drag-close (divider push) persists closure too", async () => {
     const store = new MemoryStorage() as unknown as Storage;
     const dock = createDock(store);
     // drag the horizontal divider DOWN past the floor (drag down shrinks
@@ -214,7 +217,9 @@ describe("close / reopen (persistence rulings)", () => {
     );
     assert.ok(res.collapsedPaneId, "the close intent fired");
     assert.equal(bottomOf(dock.tree.value), null);
-    assert.equal(store.getItem(BOTTOM_CLOSED_KEY), "1", "the push-close also persists");
+    await flush();
+    const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
+    assert.ok(rec.closedEdges.includes("bottom"), "the push-close rides the record");
   });
 });
 
@@ -251,16 +256,14 @@ describe("the boot repair (ensureBottomPanel)", () => {
     assert.equal(bottomOf(after)!.id, bottomOf(before)!.id);
   });
 
-  it("respects the closed flag (never reinserts a closed panel)", () => {
+  it("respects the closed-edge set (never reinserts a closed panel)", () => {
     const store = new MemoryStorage() as unknown as Storage;
-    store.setItem(BOTTOM_CLOSED_KEY, "1");
     const tree = migrateLegacy((k) => null); // shape with shell, but no store write
-    const docked = hideBottomPanel(tree, store); // close: flag written, shell gone
-    const again = ensureBottomPanel(docked, store);
-    assert.equal(bottomOf(again), null, "the closed flag holds");
-    store.setItem(BOTTOM_CLOSED_KEY, "0");
-    const revealed = ensureBottomPanel(docked, store);
-    assert.ok(bottomOf(revealed), "clearing the flag lets the repair reinsert");
+    const docked = hideBottomPanel(tree, store); // close: height remembered, shell gone
+    const again = ensureBottomPanel(docked, ["bottom"]);
+    assert.equal(bottomOf(again), null, "the closed-edge set holds");
+    const revealed = ensureBottomPanel(docked, []);
+    assert.ok(bottomOf(revealed), "an open set lets the repair reinsert");
   });
 
   it("revealBottomPanel reopens the shell at the remembered height", () => {
@@ -269,7 +272,6 @@ describe("the boot repair (ensureBottomPanel)", () => {
     dock.toggleBottom();
     const back = revealBottomPanel(dock.tree.value, store);
     assert.ok(bottomOf(back));
-    assert.equal(store.getItem(BOTTOM_CLOSED_KEY), "0");
   });
 });
 

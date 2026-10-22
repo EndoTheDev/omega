@@ -368,18 +368,22 @@ export function rehomeInsightsTab(tree: DockNode): DockNode {
 }
 
 /** the pinned shells are fixed chrome: a loaded tree that somehow lost one
-    of the two (a pre-marker tree, or a pane toggled closed) gets it
-    re-inserted at its edge, and the loader's rulings are re-asserted:
-    sessions ALWAYS sits in the left shell's bar, and inspector-area
-    singletons missing from the whole tree return to the right shell (the
-    default arrangement fallback - settings has no menu path). Pure;
+    of the two (a pre-marker tree) gets it re-inserted at its edge, and the
+    loader's rulings are re-asserted: sessions ALWAYS sits in the left
+    shell's bar, and inspector-area singletons missing from the whole tree
+    return to the right shell (the default arrangement fallback - settings
+    has no menu path). EXCEPTION (card t_aa9dbada): a shell in `closed`
+    (the user left it closed - the record persists that) stays out. Pure;
     fully-satisfied tree returns unchanged. */
-export function ensurePinnedEdges(tree: DockNode): DockNode {
-  let result = deriveEdgeMarkers(tree);
-  if (!findEdgePane(result, "sidebar")) {
+export function ensurePinnedEdges(
+  tree: DockNode,
+  closed: readonly DockEdgeComponent[] = [],
+): DockNode {
+  let result = deriveEdgeMarkers(tree, closed);
+  if (!closed.includes("sidebar") && !findEdgePane(result, "sidebar")) {
     result = insertRootEdge(result, "before", makePane("sidebar", 240, "left"));
   }
-  if (!findEdgePane(result, "inspector")) {
+  if (!closed.includes("inspector") && !findEdgePane(result, "inspector")) {
     result = insertRootEdge(result, "after", defaultInspectorPane(result, 240));
   }
   result = forceSessionsLeft(result);
@@ -389,9 +393,15 @@ export function ensurePinnedEdges(tree: DockNode): DockNode {
 /** pre-marker trees were identified by content fingerprint; mint `edge`
     markers from it when one side is unclaimed. Only fires for the FIRST
     content match of an unclaimed side, so a legit main pane hosting
-    relocated inspector tabs is never grabbed. Idempotent; no-op returns
-    the SAME tree. */
-export function deriveEdgeMarkers(tree: DockNode): DockNode {
+    relocated inspector tabs is never grabbed - and a side the record says
+    the user closed is never minted either (a main pane hosting dragged-in
+    inspector tabs would otherwise be claimed by the closed shell's
+    reappearance, card t_aa9dbada). Idempotent; no-op returns the SAME
+    tree. */
+export function deriveEdgeMarkers(
+  tree: DockNode,
+  closed: readonly DockEdgeComponent[] = [],
+): DockNode {
   const claimed: Record<"left" | "right", boolean> = { left: false, right: false };
   for (const n of allNodes(tree)) {
     if (isPane(n) && n.edge) claimed[n.edge] = true;
@@ -401,12 +411,17 @@ export function deriveEdgeMarkers(tree: DockNode): DockNode {
   let changed = false;
   for (const n of allNodes(copy)) {
     if (!isPane(n) || n.edge) continue;
-    if (!claimed.left && n.tabs.some((t) => t.component === "sidebar")) {
+    if (
+      !claimed.left &&
+      !closed.includes("sidebar") &&
+      n.tabs.some((t) => t.component === "sidebar")
+    ) {
       n.edge = "left";
       claimed.left = true;
       changed = true;
     } else if (
       !claimed.right &&
+      !closed.includes("inspector") &&
       n.tabs.some((t) => (INSPECTOR_TAB_COMPONENTS as readonly string[]).includes(t.component))
     ) {
       n.edge = "right";
@@ -847,13 +862,15 @@ function defaultInspectorPane(tree: DockNode, fixed: number): DockPane {
 // sidebars - pinned, unclosable TO the empty-removal paths, resizable via
 // the horizontal divider). It is a TAB HOST (the terminal joins later as
 // another tab); its fresh tab strip comes from the dockable registry's
-// defaultHome "bottom" (logs today). Closed state is page-BEYOND-lifetime:
-// a closed bottom panel stays closed across reloads (unlike the sidebars,
-// whose fixed shape the loader re-asserts), so closure is stored in the
-// same local store the tree lives in, NOT re-inserted by ensurePinnedEdges.
+// defaultHome "bottom" (logs today). Since card t_aa9dbada every edge
+// pane's closure persists the same way (the record's closed-edge set) -
+// reloads restore the visibility the user left, sidebars included.
 
-/** closed-flag persistence: the bottom panel's hide (toggle or divider
-    push) survives reloads when this reads "1" */
+/** closed-flag persistence (pre card t_aa9dbada): the bottom panel's hide
+    (toggle or divider push) survives reloads when this reads "1". The
+    closed-edge set inside the layout record owns persistence now; this key
+    is a LEGACY MIGRATION INPUT - the boot reads it once (records that
+    predate `closedEdges`), then removes it. */
 export const BOTTOM_CLOSED_KEY = "omega.dock-bottom-closed";
 
 /** the fresh bottom shell: a fixed-height edge pane seeded from the
@@ -878,35 +895,32 @@ export function ensureBottomShell(tree: DockNode): DockNode {
 }
 
 /** the boot repair's bottom ruling (differs from the sidebars'): the
-    shell present -> present; absent AND closed-flag -> leave absent
-    (closure survives reload); absent AND no flag -> graft it (fresh
-    boots and trees that predate the panel). Pure except the store flag
-    cleanup (a stale flag under a present shell gets cleared). */
-export function ensureBottomPanel(tree: DockNode, store: Storage): DockNode {
-  const pane = findEdgePane(tree, "bottom");
-  if (pane) {
-    if (store.getItem(BOTTOM_CLOSED_KEY) === "1") store.setItem(BOTTOM_CLOSED_KEY, "0");
-    return tree;
-  }
-  if (store.getItem(BOTTOM_CLOSED_KEY) === "1") return tree; // closed by choice
+    shell present -> present; absent AND closed (the record's closed-edge
+    set - closure survives reload) -> leave absent; absent AND open ->
+    graft it (fresh boots and trees that predate the panel). Pure. */
+export function ensureBottomPanel(
+  tree: DockNode,
+  closed: readonly DockEdgeComponent[] = [],
+): DockNode {
+  if (findEdgePane(tree, "bottom")) return tree;
+  if (closed.includes("bottom")) return tree; // closed by choice
   return ensureBottomShell(tree);
 }
 
-/** the toggle's hide half (the bottom domain): remember the height, mark
-    closure, prune (like hideEdgePane - the guarded route around
-    removePane's pinned refusals; the panel may close COMPLETELY). */
+/** the toggle's hide half (the bottom domain): remember the height, prune
+    (like hideEdgePane - the guarded route around removePane's pinned
+    refusals; the panel may close COMPLETELY). The closed-edge marking is
+    the caller's (createDock owns the set that rides the record). */
 export function hideBottomPanel(tree: DockNode, store: Storage): DockNode {
   const pane = findEdgePane(tree, "bottom");
   if (!pane) return tree;
   if (pane.fixed !== null) rememberEdgePx(store, "bottom", pane.fixed);
-  store.setItem(BOTTOM_CLOSED_KEY, "1");
   return prunePane(tree, pane.id);
 }
 
-/** the toggle's reopen half: clear the closure, graft the shell back at
-    the remembered height (absent/invalid falls to the default 200). */
+/** the toggle's reopen half: graft the shell back at the remembered
+    height (absent/invalid falls to the default 200). */
 export function revealBottomPanel(tree: DockNode, store: Storage): DockNode {
-  store.setItem(BOTTOM_CLOSED_KEY, "0");
   const shell = bottomShellPane();
   const restored = recalledEdgePx(store, "bottom");
   shell.fixed = Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX);
@@ -996,14 +1010,17 @@ export function closeTab(tree: DockNode, paneId: string, index: number): DockNod
 /** card 2 DnD: move a tab between positions/panes. `toIndex` is the
     insertion index into the TARGET pane's tabs AFTER the tab has been
     lifted out of the source (for a same-pane reorder, the callers pass
-    the post-removal index - clamped to the remaining range). Both panes
-    survive: emptying the source leaves it showing the '+' menu (settled
-    ruling), never a removal. VS Code semantics: the moved tab FOCUSES in
-    the target pane; the source focuses whatever neighbor remains.
-    card t_d6b657a7: ANY tab moves between ANY bars (sidebars <-> main,
-    bidirectional) except the LOCKED sessions tab, which may only drop
-    inside the left shell's own bar (reorder there, refuse everywhere
-    else). */
+    the post-removal index - clamped to the remaining range). card
+    t_aa9dbada: when a cross-pane move takes the source pane's LAST tab,
+    the source pane closes with it (same result as the manual remove
+    button) - a non-pinned main pane never lingers empty from a move.
+    Pinned shells stay empty-but-present (the shells may sit empty; the
+    never-empty law keeps the last pane alive via prunePane's guard). VS
+    Code semantics: the moved tab FOCUSES in the target pane; the source
+    focuses whatever neighbor remains. card t_d6b657a7: ANY tab moves
+    between ANY bars (sidebars <-> main, bidirectional) except the LOCKED
+    sessions tab, which may only drop inside the left shell's own bar
+    (reorder there, refuse everywhere else). */
 export function moveTab(
   tree: DockNode,
   fromPaneId: string,
@@ -1034,7 +1051,7 @@ export function moveTab(
       }
     });
   }
-  return cloneTreeWith(tree, (n) => {
+  const result = cloneTreeWith(tree, (n) => {
     if (!isPane(n)) return;
     if (n.id === fromPaneId) {
       n.tabs = n.tabs.filter((_, i) => i !== fromIndex);
@@ -1049,6 +1066,17 @@ export function moveTab(
       n.active = at;
     }
   });
+  // card t_aa9dbada: the last tab out closes the source pane (the manual
+  // remove button's result, automatic) - a main pane never lingers empty
+  // from a move. The guards live in the law itself: pinned shells stay
+  // (they may sit empty), the last remaining pane stays (prunePane's
+  // never-empty guard).
+  if (result === tree) return tree;
+  const src = findPane(result, fromPaneId);
+  if (src && !isPinnedPane(src) && src.tabs.length === 0) {
+    return prunePane(result, fromPaneId);
+  }
+  return result;
 }
 
 /** split a pane into `direction` (row = side by side, column = stacked).
@@ -1363,17 +1391,38 @@ export function clamp(v: number, lo: number, hi: number): number {
 // card t_d6b657a7: v2 - shell panes carry the `edge` marker; the layout
 // stores WHICH TABS live in WHICH pane (free content, restored verbatim
 // on reload). v1 (= pre-card, content-fingerprint sidebars) deserializes
-// and migrates in the loader.
+// and migrates in the loader. card t_aa9dbada: the record also carries the
+// closed-edge set (`closedEdges` - which pinned shells the user left
+// closed); a reload restores THAT state, the loader stops re-asserting an
+// open shape over it. The field is optional (older records lack it) and v2
+// readers that predate it ignore it - no version bump, no compat shim.
 const LAYOUT_VERSION = 2;
 
-export function serialize(tree: DockNode): string {
-  return JSON.stringify({ v: LAYOUT_VERSION, tree });
+/** the closed-edge flags on a layout record: undefined when the record
+    predates the field (the legacy bottom-flag migration reads that), a
+    validated array otherwise (unknown entries filter out) */
+function validateClosedEdges(raw: unknown): DockEdgeComponent[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((c): c is DockEdgeComponent =>
+    typeof c === "string" && (EDGE_COMPONENTS as readonly string[]).includes(c),
+  );
+}
+
+export function serialize(
+  tree: DockNode,
+  closedEdges: readonly DockEdgeComponent[] = [],
+): string {
+  return JSON.stringify({ v: LAYOUT_VERSION, tree, closedEdges });
 }
 
 export interface LoadedLayout {
   tree: DockNode;
   /** the persisted version: 1 needs the era migration, 2 loads as-is */
   version: 1 | 2;
+  /** which pinned shells the record says the user left closed; missing on
+      records that predate the field (the legacy bottom flag migrates them) */
+  closedEdges?: DockEdgeComponent[];
 }
 
 /** validates + parses a persisted layout. Returns null for anything the
@@ -1387,11 +1436,12 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
     return null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const rec = parsed as { v?: unknown; tree?: unknown };
+  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown };
   if (rec.v !== 1 && rec.v !== 2) return null;
   const tree = validateNode(rec.tree);
   if (!tree) return null;
-  return { tree, version: rec.v };
+  const closedEdges = validateClosedEdges(rec.closedEdges);
+  return { tree, version: rec.v, ...(closedEdges ? { closedEdges } : {}) };
 }
 
 /** the plain tree-only read (every caller that does not care about the
@@ -1659,6 +1709,14 @@ export function createDock(store: Storage): DockApi {
   // forced into the left bar, missing inspector singletons restored.
   const stored = store.getItem(DOCK_LAYOUT_KEY);
   const loaded = stored ? deserializeLayout(stored) : null;
+  // card t_aa9dbada: the closed-edge set rides the record - the reload
+  // restores the visibility the user left (no shaped re-assertion over it).
+  // A record that predates the field migrates its bottom closure from the
+  // legacy key; the key retires after the read (the record owns closure).
+  const closedEdges: DockEdgeComponent[] =
+    loaded?.closedEdges ??
+    (store.getItem(BOTTOM_CLOSED_KEY) === "1" ? ["bottom"] : []);
+  store.removeItem(BOTTOM_CLOSED_KEY);
   let initial = loaded
     ? loaded.tree
     : migrateLegacy((k) => store.getItem(k));
@@ -1680,28 +1738,38 @@ export function createDock(store: Storage): DockApi {
   // main-pane strand lifts before the shell repair so restoreInspectorSet
   // seats it in the right pane on the same boot.
   initial = rehomeInsightsTab(initial);
-  initial = ensurePinnedEdges(initial);
+  initial = ensurePinnedEdges(initial, closedEdges);
   // card t_67fc1905: the bottom panel is grafted (or left closed) AFTER the
   // sidebars repair and BEFORE chat keys - the panel hosts no chat tabs,
   // and its id must seed above the loaded tree's max (syncIdSeed ran once)
-  initial = ensureBottomPanel(initial, store);
+  initial = ensureBottomPanel(initial, closedEdges);
   initial = assignChatKeys(initial);
   // a modernized/fixed-shape-repaired load persists at once (now as v2) so
   // the next boot sees the modern tree even if no mutation fires this session
-  if (stored) store.setItem(DOCK_LAYOUT_KEY, serialize(initial));
+  if (stored) store.setItem(DOCK_LAYOUT_KEY, serialize(initial, closedEdges));
   // shallowRef: the tree stays PLAIN data (structuredClone rejects proxies);
   // every op swaps the root, so reactivity rides the ref change alone
   const tree = shallowRef(initial) as Ref<DockNode>;
 
   // persist the WHOLE tree on every mutation (card ruling: layout lives in
-  // localStorage alone; the URL owns only the focused session)
+  // localStorage alone; the URL owns only the focused session). The
+  // closed-edge set rides every write (card t_aa9dbada: visibility saves
+  // WITH the layout - a reload restores the state the user left).
   watch(
     tree,
     (t) => {
-      store.setItem(DOCK_LAYOUT_KEY, serialize(t));
+      store.setItem(DOCK_LAYOUT_KEY, serialize(t, closedEdges));
     },
     { deep: true },
   );
+
+  /** the closed-edge marking helper, idempotent - toggles, drag-closes
+      and the narrow give-way all route through it */
+  const setClosed = (comp: DockEdgeComponent, closed: boolean) => {
+    const at = closedEdges.indexOf(comp);
+    if (closed && at < 0) closedEdges.push(comp);
+    if (!closed && at >= 0) closedEdges.splice(at, 1);
+  };
 
   const has = (component: DockComponentName): boolean =>
     // singleton semantics (card t_30ee04fb): exists anywhere, active tab
@@ -1778,11 +1846,11 @@ export function createDock(store: Storage): DockApi {
     const d = dragSplitDivider(node, dividerIndex, startPx, deltaPx, contentPx);
     // card t_f6d5a771: divider close + squeeze push-back are back - the
     // intents prune the tree directly (prunePane is the same body
-    // hideEdgePane runs; a pinned pane hides, it is never unpinned). The
-    // next page load re-asserts the fixed shape via ensurePinnedEdges, so
-    // the hide is page-lifetime exactly like the menubar toggle's. Edge
-    // panes remember their width first - the menubar toggle reopens them
-    // at it (the reopen-at-its-width mechanic).
+    // hideEdgePane runs; a pinned pane hides, it is never unpinned). card
+    // t_aa9dbada: the close persists now (the closed-edge set rides the
+    // record) - a reload restores the visibility the user left, exactly
+    // like the menubar toggle. Edge panes remember their width first - the
+    // menubar toggle reopens them at it (the reopen-at-its-width mechanic).
     if (d.split !== node) tree.value = graftSplit(tree.value, d.split);
     for (const id of [d.collapsedPaneId, d.pushedPaneId]) {
       if (!id) continue;
@@ -1790,11 +1858,7 @@ export function createDock(store: Storage): DockApi {
       if (gone) {
         const comp = edgeComponentOf(gone);
         if (comp && gone.fixed !== null) rememberEdgePx(store, comp, gone.fixed);
-        // card t_67fc1905: the bottom panel's drag-close (its own divider
-        // push) persists closure across reloads - the sidebar drag-close is
-        // page-lifetime (the loader re-asserts the fixed shape); the bottom
-        // panel's hide survives, like its menubar toggle
-        if (comp === "bottom") store.setItem(BOTTOM_CLOSED_KEY, "1");
+        if (comp) setClosed(comp, true);
       }
       tree.value = prunePane(tree.value, id);
     }
@@ -1804,23 +1868,28 @@ export function createDock(store: Storage): DockApi {
   const toggleEdge = (component: "sidebar" | "inspector", side: "before" | "after") => {
     const pane = findEdgePane(tree.value, component);
     if (pane) {
-      // hide remembers the pane's width - the reopen restores it
+      // hide remembers the pane's width - the reopen restores it; the
+      // closed-edge set marks the closure so a reload restores it too
       if (pane.fixed !== null) rememberEdgePx(store, component, pane.fixed);
+      setClosed(component, true);
       tree.value = hideEdgePane(tree.value, component);
     } else {
       // reopen-clamp: a stale sub-floor remembered width reopens AT 320
+      setClosed(component, false);
       tree.value = revealEdgePane(tree.value, component, side, recalledEdgePx(store, component));
     }
   };
 
-  // card t_67fc1905: the bottom panel's toggle (menubar) - closed state
-  // survives reloads via BOTTOM_CLOSED_KEY (unlike the sidebars, whose
-  // closure is page-lifetime). Hide remembers the height; reopen restores
-  // it (absent/invalid falls to the default 200).
+  // card t_67fc1905: the bottom panel's toggle (menubar). card t_aa9dbada:
+  // closure rides the record's closed-edge set (the legacy BOTTOM_CLOSED_KEY
+  // is retired; the marking no longer writes a store key). Hide remembers
+  // the height; reopen restores it (absent/invalid falls to the default 200).
   const toggleBottom = () => {
     if (findEdgePane(tree.value, "bottom")) {
       tree.value = hideBottomPanel(tree.value, store);
+      setClosed("bottom", true);
     } else {
+      setClosed("bottom", false);
       tree.value = revealBottomPanel(tree.value, store);
     }
   };
@@ -1828,9 +1897,14 @@ export function createDock(store: Storage): DockApi {
   // card t_33f8756c: the window-narrow give-way (app.vue's resize watcher
   // measures the pane-area and hands the content px in). Each collapsed
   // edge pane's width goes through the same memory the menubar toggle uses.
+  // card t_aa9dbada: the give-way's closure persists like every other hide
+  // (a reload never re-reveals a pane the user's own state says is closed).
   const narrowSqueeze = (contentPx: number) => {
     const res = narrowGiveWay(tree.value, contentPx);
-    for (const h of res.hidden) rememberEdgePx(store, h.component, h.px);
+    for (const h of res.hidden) {
+      rememberEdgePx(store, h.component, h.px);
+      setClosed(h.component, true);
+    }
     if (res.hidden.length) tree.value = res.tree;
   };
 
