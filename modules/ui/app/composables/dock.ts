@@ -25,6 +25,10 @@ import {
   snapCandidateAt,
 } from "./panes.ts";
 import {
+  zoneSplitOf,
+  type DragZone,
+} from "./dockdnd.ts";
+import {
   DOCK_COMPONENTS,
   DOCKABLES,
   INSPECTOR_TAB_COMPONENTS,
@@ -974,6 +978,52 @@ export function splitPane(
   return insertPane(tree, paneId, direction, side, makePane(null));
 }
 
+/** card t_0e833eae: the docking drop - a tab released on a ZONE of another
+    pane's body. center: the existing body-drop semantics (move to the end
+    of the target's bar). left/right/top/bottom: the target splits with the
+    zone's direction+side and the dragged tab lands IN the new half-pane
+    (VS Code editor-group docking: drop left -> the target splits, the
+    dragged tab takes the left half). Refusals return the tree unchanged:
+    same-pane gestures (zones are cross-pane only - body drops of a pane's
+    own tab keep the focus-only read), a vanished pane mid-gesture, and
+    EDGE SHELLS on a split zone (the shells keep their fixed shape; their
+    center accepts the tab like any bar). moveTab's own locked-tab law
+    still guards every landing (sessions dock-drops nowhere but left). */
+export function dockDropToZone(
+  tree: DockNode,
+  fromPaneId: string,
+  fromIndex: number,
+  toPaneId: string,
+  zone: DragZone,
+): DockNode {
+  if (fromPaneId === toPaneId) return tree; // zones never self-dock
+  const from = findPane(tree, fromPaneId);
+  const to = findPane(tree, toPaneId);
+  if (!from || !to || !from.tabs[fromIndex]) return tree;
+  const split = zoneSplitOf(zone);
+  if (!split) return moveTab(tree, fromPaneId, fromIndex, toPaneId, to.tabs.length);
+  if (isPinnedPane(to)) return tree; // shells keep their shape
+  // the LOCKED tab can never land in a fresh split pane (it is a main
+  // pane, not the left shell) - refuse BEFORE splitting, so a refused
+  // release never reshapes the tree around a landing that never happens
+  if (isLockedTab(from.tabs[fromIndex]!.component)) return tree;
+  // split the target, then seat the tab: the fresh pane is the node the
+  // insertion minted (id diff - insertPane mints its own ids)
+  const before = new Set<string>();
+  for (const n of allNodes(tree)) if (isPane(n)) before.add(n.id);
+  const after = insertPane(tree, toPaneId, split.direction, split.side, makePane(null));
+  if (after === tree) return tree; // target vanished mid-gesture
+  let freshId: string | null = null;
+  for (const n of allNodes(after)) {
+    if (isPane(n) && !before.has(n.id)) {
+      freshId = n.id;
+      break;
+    }
+  }
+  if (!freshId) return after;
+  return moveTab(after, fromPaneId, fromIndex, freshId, 0);
+}
+
 // --- chat tab session binding (card t_4f0e88f2) -------------------------------
 
 export interface ChatTabLocation {
@@ -1430,6 +1480,16 @@ export interface DockApi {
   closeTab: (paneId: string, index: number) => void;
   /** card 2 DnD: move a tab (same-pane reorder or between panes) */
   moveTab: (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => void;
+  /** card t_0e833eae: the docking drop - release a dragged tab on a zone
+      of another pane's body: halves split the target around the tab,
+      center groups it. Refusals are no-ops (shells don't split, zones
+      never self-dock). */
+  dockDropToZone: (
+    fromPaneId: string,
+    fromIndex: number,
+    toPaneId: string,
+    zone: DragZone,
+  ) => void;
   /** card 4 - the dockable contract opener: singletons FOCUS their one
       instance when it lives (created | focused), multi goes through the
       app's chat opener instead - this must only be called for singletons */
@@ -1579,6 +1639,14 @@ export function createDock(store: Storage): DockApi {
   const moveTabIn = (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => {
     tree.value = moveTab(tree.value, fromPaneId, fromIndex, toPaneId, toIndex);
   };
+  const dockDropToZoneIn = (
+    fromPaneId: string,
+    fromIndex: number,
+    toPaneId: string,
+    zone: DragZone,
+  ) => {
+    tree.value = dockDropToZone(tree.value, fromPaneId, fromIndex, toPaneId, zone);
+  };
   const setSessionRef = (key: string, sessionRef: string | null) => {
     tree.value = setTabSessionRef(tree.value, key, sessionRef);
   };
@@ -1663,6 +1731,7 @@ export function createDock(store: Storage): DockApi {
 
   return {
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
+    dockDropToZone: dockDropToZoneIn,
     openSingleton: openSingletonIn,
     setSessionRef, closeSession,
     findChatTab: (key: string) => findChatTab(tree.value, key),

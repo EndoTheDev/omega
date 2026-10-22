@@ -381,6 +381,46 @@ body {
   outline-offset: -3px;
 }
 
+/* card t_0e833eae: the docking prediction overlay - a tab dragged over
+   ANOTHER pane's body lights its landing zone. The overlay is an absolute
+   child of the pane (position: relative), inset under the 35px tab bar.
+   pointer-events: none - the drag keeps flowing to the pane underneath,
+   the overlay predicts but never intercepts. Layout-inert like every
+   drop affordance: the zone fill + ghost paint over the body, nothing
+   reflows. */
+.dock-drop-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 35px; /* the tab bar's height (the .dock-tabbar contract) */
+  pointer-events: none;
+  z-index: 4; /* above pane chrome, below the open menus */
+}
+.dock-drop-zone {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--accent) 75%, transparent);
+  border-radius: var(--r-pane);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* the ghost: the dragged tab's identity rendered where it would land -
+   a small chip riding the zone's center, translucent enough to read the
+   content under it as a preview, not a placeholder */
+.dock-drop-ghost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--z1));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 25%);
+}
 /* empty pane: the '+' component menu (VS Code empty editor-group style) */
 .dock-empty {
   flex: 1;
@@ -2228,6 +2268,11 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .dock-divider { display: none; }
   .dock-menu, .dock-tabbar { display: none; }
   .dock-pane > .dock-content, .dock-pane > .dock-empty { margin-top: 0; }
+  /* card t_0e833eae: the docking overlay is desktop-only - the drawer's
+     cards own the touch surface on narrow, so the inset rule would be a
+     stale 35px top over the untucked pane. DnD never fires on touch; this
+     is the correctness belt. */
+  .dock-drop-overlay { display: none; }
 
   /* ponytail: a push-slide variant (240%-wide sliding grid row) was tried
      here and reverted - vw units, innerWidth and transform % all misbehave
