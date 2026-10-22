@@ -257,49 +257,50 @@ type model struct {
 	cancel               context.CancelFunc // cancels the in-flight run; nil when idle
 	events               <-chan agent.Event // run goroutine writes here; Update drains via cmd
 	store                agent.StoreProvider
-	sessionID            string                 // current session; "" until the first message creates one
-	storeErr             string                 // store open/persistence error, shown in the status line
-	promptHistory        []string               // previously submitted prompts, for Up/Down recall
-	historyIndex         int                    // position in promptHistory; 0 = empty/current input
-	autocompleteMatches  []string               // slash commands matching the current input
-	autocompleteIndex    int                    // highlighted match; -1 = none selected
-	autocompleteOffset   int                    // first visible row in the dropup window
-	autocompleteSlashPos int                    // byte offset of the / triggering autocomplete, -1 = none
-	screenHeight         int                    // terminal height from the last resize
-	skills               []agent.Skill          // loaded skills, for autocomplete and invocation
-	extensions           *agent.Context       // plugin context (provider, compactor, commands, etc.)
-	commands             []string               // knownCommands + skill names, per-model copy
-	showThinking         bool                   // /thinking display toggle; auto-set from thinkingLevel
-	thinkingLevel        string                 // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
-	showToolResults      bool                   // /tools toggle; default false (collapsed)
-	toolResultsAuto      bool                   // /tools auto; short results full, long ones collapsed
-	queuedInput          string                 // follow-up typed while agent runs; auto-submits on done
-	userInput            chan string            // mode flag for agent loop (nil = one-shot, non-nil = TUI)
-	autoNamed            bool                   // true after the first auto-name attempt
-	sessionLabel         string                 // model-generated title, shown in status bar
-	autoNameGen          int                    // bumped on /new; stale auto-name results are dropped
-	sessionList          []agent.Session        // cached from last /sessions, for /resume by #
-	modelList            []string               // cached from last /models, for /model <#> selection
-	ephemeral            bool                   // /new --ephemeral; nothing persisted
-	theme                Theme                  // active color/style theme
-	trustState           string                 // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
-	notifications        string                 // "bell" / "desktop" / "off", fired on turn complete
-	version              string                 // build version for splash display
-	cwd                  string                 // working directory passed from host
-	lastToolCall         string                 // last tool call name, for syntax highlighting results
-	lastToolArgs         map[string]any         // last tool call args, for language detection
-	lastRender           time.Time              // debounce for live glamour rendering during streaming
-	lastRenderedResponse string                 // cached glamour output for debounced frames
-	contextWindow        int                    // auto-discovered from provider; 0 = unknown, fall back to config
-	view                 agent.ActiveView       // tree view of the loaded session; /variant /fork navigation
-	forkParent           string                 // row id the next send chains onto (/fork); "" = derive leaf
-	retryParent          string                 // branch point the in-flight retry's head pins to; "" = none
-	headPinned           bool                   // retry head already parented this run
-	retryMarker          string                 // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
-	files                *filesBrowser          // open /files browser; nil = closed
-	logFollow            bool                   // /logs -f: appending on a one-second tick
-	logFile              string                 // log file the follow mode reads
-	logOffset            int64                  // follow read position (byte offset)
+	sessionID            string           // current session; "" until the first message creates one
+	agentName            string           // agent binding for the next auto-created session (/new --agent)
+	storeErr             string           // store open/persistence error, shown in the status line
+	promptHistory        []string         // previously submitted prompts, for Up/Down recall
+	historyIndex         int              // position in promptHistory; 0 = empty/current input
+	autocompleteMatches  []string         // slash commands matching the current input
+	autocompleteIndex    int              // highlighted match; -1 = none selected
+	autocompleteOffset   int              // first visible row in the dropup window
+	autocompleteSlashPos int              // byte offset of the / triggering autocomplete, -1 = none
+	screenHeight         int              // terminal height from the last resize
+	skills               []agent.Skill    // loaded skills, for autocomplete and invocation
+	extensions           *agent.Context   // plugin context (provider, compactor, commands, etc.)
+	commands             []string         // knownCommands + skill names, per-model copy
+	showThinking         bool             // /thinking display toggle; auto-set from thinkingLevel
+	thinkingLevel        string           // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
+	showToolResults      bool             // /tools toggle; default false (collapsed)
+	toolResultsAuto      bool             // /tools auto; short results full, long ones collapsed
+	queuedInput          string           // follow-up typed while agent runs; auto-submits on done
+	userInput            chan string      // mode flag for agent loop (nil = one-shot, non-nil = TUI)
+	autoNamed            bool             // true after the first auto-name attempt
+	sessionLabel         string           // model-generated title, shown in status bar
+	autoNameGen          int              // bumped on /new; stale auto-name results are dropped
+	sessionList          []agent.Session  // cached from last /sessions, for /resume by #
+	modelList            []string         // cached from last /models, for /model <#> selection
+	ephemeral            bool             // /new --ephemeral; nothing persisted
+	theme                Theme            // active color/style theme
+	trustState           string           // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
+	notifications        string           // "bell" / "desktop" / "off", fired on turn complete
+	version              string           // build version for splash display
+	cwd                  string           // working directory passed from host
+	lastToolCall         string           // last tool call name, for syntax highlighting results
+	lastToolArgs         map[string]any   // last tool call args, for language detection
+	lastRender           time.Time        // debounce for live glamour rendering during streaming
+	lastRenderedResponse string           // cached glamour output for debounced frames
+	contextWindow        int              // auto-discovered from provider; 0 = unknown, fall back to config
+	view                 agent.ActiveView // tree view of the loaded session; /variant /fork navigation
+	forkParent           string           // row id the next send chains onto (/fork); "" = derive leaf
+	retryParent          string           // branch point the in-flight retry's head pins to; "" = none
+	headPinned           bool             // retry head already parented this run
+	retryMarker          string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
+	files                *filesBrowser    // open /files browser; nil = closed
+	logFollow            bool             // /logs -f: appending on a one-second tick
+	logFile              string           // log file the follow mode reads
+	logOffset            int64            // follow read position (byte offset)
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -844,11 +845,34 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 				m.refresh()
 				return m, nil
 			}
-			if err := m.store.CreateSession(context.Background(), id, "", ""); err != nil {
-				m.storeErr = "create session: " + err.Error()
-				m.busy = false
-				m.refresh()
-				return m, nil
+			// Agent-bound session (/new --agent): bind at
+			// creation, or refuse loudly. A store without the
+			// optional surface never silently demotes the
+			// binding to the default agent.
+			created := false
+			if m.agentName != "" {
+				if as, ok := m.store.(agent.AgentSessionStore); ok {
+					if err := as.CreateAgentSession(context.Background(), id, "", "", m.agentName); err != nil {
+						m.storeErr = "create agent session: " + err.Error()
+						m.busy = false
+						m.refresh()
+						return m, nil
+					}
+					created = true
+				} else {
+					m.storeErr = "agent sessions not supported by this store"
+					m.busy = false
+					m.refresh()
+					return m, nil
+				}
+			}
+			if !created {
+				if err := m.store.CreateSession(context.Background(), id, "", ""); err != nil {
+					m.storeErr = "create session: " + err.Error()
+					m.busy = false
+					m.refresh()
+					return m, nil
+				}
 			}
 			m.sessionID = id
 			m.storeErr = ""
@@ -1595,6 +1619,12 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.autoNamed = false
 			m.autoNameGen++
 			m.sessionID = ""
+			m.agentName = ""
+			if len(action.List) > 0 {
+				// /new --agent <name>: the next auto-created
+				// session binds to this agent profile.
+				m.agentName = action.List[0]
+			}
 			m.ephemeral = action.Value == "--ephemeral"
 			m.view = agent.ActiveView{}
 			m.forkParent = ""
@@ -2138,7 +2168,6 @@ func renderCodeBlock(code, lang string, width int, t Theme) string {
 	return style.Render(body)
 }
 
-
 // View renders the full screen: viewport on top, status bar, then the
 // autocomplete dropup panel (when open), textarea at the bottom. When
 // the conversation is empty (fresh start or /new), a startup splash
@@ -2481,7 +2510,7 @@ func wordWrap(s string, width int) string {
 func (m model) renderHelp() string {
 	builtin := [][2]string{
 		{"/exit", "quit"},
-		{"/new [--ephemeral]", "start a new conversation (--ephemeral: nothing persisted)"},
+		{"/new [--ephemeral] [--agent <name>]", "start a new conversation (--ephemeral: nothing persisted; --agent: bound to an agent profile)"},
 		{"/sessions", "list saved sessions"},
 		{"/resume <#|id|label>", "resume a session (line # from /sessions, id, or label)"},
 		{"/branch [id]", "branch a new session from the current (or given) one"},

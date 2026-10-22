@@ -90,7 +90,11 @@ func (d *Delegate) Tools() map[string]agent.Tool {
 						"type":        "integer",
 						"description": "Max seconds to wait (action task, default 300).",
 					},
-				},
+					"agent": map[string]any{
+						"type":        "string",
+						"description": "Registered agent profile to run the subtask as (action task): its config, skills, memory and logs. Default: none - runs as the plain home config.",
+					},
+					},
 				"required": []string{"action"},
 			},
 			Run: d.runDelegate,
@@ -147,9 +151,23 @@ func (d *Delegate) InjectedChannel() <-chan injectedMsg {
 
 func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (string, error) {
 	prompt, _ := args["prompt"].(string)
+	agentName, _ := args["agent"].(string)
 	timeoutSec := 300
 	if t, ok := args["timeout"].(float64); ok && t > 0 {
 		timeoutSec = int(t)
+	}
+
+	// Agent target (card t_7e2b7002): the subtask runs as one of the
+	// home's registered agents - its config layers over the home's,
+	// its skills/memory/logs are its own. Validated here so a typo
+	// fails immediately instead of quietly running as not-configured
+	// defaults a minute later (the child's LoadConfig would only
+	// reject a truly malformed layer, not a ghost name).
+	if agentName != "" {
+		home := os.Getenv("OMEGA_HOME")
+		if _, err := agent.LoadProfile(home, agentName); err != nil {
+			return "", fmt.Errorf("delegate: unknown agent %q - register it first (%s)", agentName, agent.AgentDir(home, agentName))
+		}
 	}
 
 	taskID := fmt.Sprintf("task-%d", atomic.AddInt64(&d.taskCounter, 1))
@@ -161,6 +179,9 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	cmd := exec.CommandContext(taskCtx, omegaBin, "run", prompt)
 	cmd.Env = append(os.Environ(), "OMEGA_SUBAGENT=1")
+	if agentName != "" {
+		cmd.Env = append(cmd.Env, "OMEGA_AGENT="+agentName)
+	}
 	// Process-group kill, same as the shell tool: without it the
 	// timeout kills only the omega child while shells it spawned
 	// survive as orphans holding locks (the bug class shellKillSetup

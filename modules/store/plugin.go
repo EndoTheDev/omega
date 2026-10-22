@@ -48,10 +48,12 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	// Register session commands.
 	ctx.Commands = append(ctx.Commands,
 		agent.ExtensionCommand{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
+		agent.ExtensionCommand{Name: "/agents", Description: "list registered agent profiles"},
+		agent.ExtensionCommand{Name: "/agent", Description: "show one agent profile's detail (/agent <name>)"},
 		agent.ExtensionCommand{Name: "/tree", Description: "show session tree with nesting and message counts"},
 		agent.ExtensionCommand{Name: "/search", Description: "search past session messages by keyword"},
 		agent.ExtensionCommand{Name: "/insights", Description: "show cross-session usage analytics"},
-		agent.ExtensionCommand{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence)"},
+		agent.ExtensionCommand{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence, --agent <name> to bind it)"},
 		agent.ExtensionCommand{Name: "/resume", Description: "resume a session by #, id, or label"},
 		agent.ExtensionCommand{Name: "/branch", Description: "branch a new session from the current (or given) one"},
 		agent.ExtensionCommand{Name: "/label", Description: "set a label on the current session (no text clears it)"},
@@ -64,6 +66,11 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		switch name {
 		case "/sessions":
 			return HandleSessionsCommand(c, s, args)
+		case "/agents":
+			return HandleAgentsCommand(c, s)
+		case "/agent":
+			// TUI passes the raw args; the agent name is the first word.
+			return HandleAgentDetailCommand(c, s, args)
 		case "/tree":
 			return HandleTreeCommand(c, s)
 		case "/search":

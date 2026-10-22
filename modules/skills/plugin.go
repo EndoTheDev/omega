@@ -34,6 +34,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	}
 
 	sp := NewSkillsProvider(dir)
+	sp.SharedDir = cfg.SharedDir
 	ctx.Skills = sp
 	ctx.ToolProviders = append(ctx.ToolProviders, sp)
 	ctx.PromptSectioners = append(ctx.PromptSectioners, sp)

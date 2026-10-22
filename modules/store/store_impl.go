@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	archived INTEGER NOT NULL DEFAULT 0,
 	title_state INTEGER NOT NULL DEFAULT 0,
 	last_read_at TEXT NOT NULL DEFAULT '',
+	agent TEXT NOT NULL DEFAULT 'default',
 	last_run TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -201,6 +202,7 @@ INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 		`ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN title_state INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'default'`,
 		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -262,12 +264,18 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
-		&sess.TitleState, &sess.LastReadAt, &lastRun); err != nil {
+		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun); err != nil {
 		return agent.Session{}, err
 	}
 	sess.ParentID = parent.String
 	sess.Pinned = pinned != 0
 	sess.Archived = archived != 0
+	// Normalize: the row default is 'default', but a session written
+	// by an older writer that left the column empty still belongs to
+	// the default agent. omitempty then never hides the binding.
+	if sess.Agent == "" {
+		sess.Agent = agent.DefaultAgentName
+	}
 	// last_run is a JSON blob; empty means the session never ran. A
 	// malformed blob decodes to nil - the rates just stay blank.
 	if lastRun != "" {
@@ -280,7 +288,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, last_run"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
@@ -312,10 +320,16 @@ func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error
 	return sess, nil
 }
 
-// ListSessions returns all sessions ordered by creation time.
+// ListSessions returns the sessions of the DEFAULT agent, ordered by
+// creation time. This is the binding that keeps the pre-agent session
+// list, tree, and insights exactly what they were (card t_7e2b7002):
+// sessions created as another agent never appear here - they surface
+// through ListAgentSessions. ComputeInsights has the same consequence
+// and shares it knowingly: agent-owned sessions are v1 shells (no chat
+// runs on them yet), so nothing measurable is missing from the numbers.
 func (s *Store) ListSessions(ctx context.Context) ([]agent.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+sessionColumns+` FROM sessions ORDER BY created_at`)
+		`SELECT `+sessionColumns+` FROM sessions WHERE agent = 'default' ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
