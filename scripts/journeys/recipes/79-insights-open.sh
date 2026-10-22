@@ -1,20 +1,22 @@
 #!/bin/bash
-# 79-insights-open - the insights tab journey (t_e1e61680 + the '+'
-# menu repair). Catches the invisible-to-gates family live on the
-# lane: the '+' new-tab menu iterated a never-defined identifier
-# from t_d6b657a7 until 2026-10-22 and rendered EMPTY - insights
-# shipped unreachable in the UI with every gate green. A journey
-# that opens the tab through the real UI would have gone red.
+# 79-insights-open - the insights tab journey (t_e1e61680; home moved
+# t_d7fd3ad3). Catches the invisible-to-gates family live on the lane:
+# the '+' new-tab menu once iterated a never-defined identifier and
+# rendered EMPTY - insights shipped unreachable in the UI with every
+# gate green. A journey that drives the tab through the real UI would
+# have gone red.
 #
-# Customer-visible invariants, asserted here:
-#   menu    - the '+' menu of the MAIN pane lists the inventory
-#             (insights included): the refill source is alive.
-#   tab     - clicking insights opens a main tab whose content
-#             renders the usage dashboard (OVERVIEW present).
-#   numbers - the overview carries real data (a session count
-#             > 0, a token figure, the period header).
-#   ranges   - the period switches exist (7 days / 30 days /
-#             90 days / all time) and the header follows a click.
+# card t_d7fd3ad3 moved the home: insights is the SECONDARY sidebar's
+# default-visible tab now (label "Insights", capital I). Customer-visible
+# invariants, asserted here:
+#   default  - a fresh boot's inspector strip already carries insights
+#              (exact case) - no menu open needed to see the tab.
+#   render   - clicking the tab mounts the usage dashboard (OVERVIEW).
+#   numbers  - the overview carries real data (a session count > 0, a
+#              token figure, the period header).
+#   ranges   - the period switches exist and the header follows a click.
+#   menu     - the MAIN pane's '+' menu still lists insights and FOCUSES
+#              the sidebar instance (no second insights tab appears).
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 open_app
@@ -28,31 +30,17 @@ panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 [ "$panes" -ge 3 ] 2>/dev/null || die "default dock tree did not render ($panes panes)"
 step "ok: dock tree renders ($panes panes)"
 
-# the MAIN pane: the pane hosting the chat/board/sessions tabs. Its
-# '+' button opens the new-tab menu.
-mainJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
- const hit=ps.find(p=>[...p.querySelectorAll(".dock-tab-title")].some(t=>/chat/i.test(t.textContent||"")));
- if(!hit) return 0; const plus=hit.querySelector("button.dock-tab-new");
- if(!plus) return 0; plus.click(); return 1})()'
-opened=$(jsq "$mainJS")
-assert_eq "$opened" "1" "main pane '+' menu opens"
+# the default home: the inspector strip names insights before any click
+# (exact case - capital I, the registry voice)
+default=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].map(e=>(e.textContent||"").trim());
+ return t.includes("Insights")?1:0})()')
+assert_eq "$default" "1" "insights tab default-visible (capital I) in the inspector strip"
 
-# the menu lists insights - the empty-menu regression dies here
-listed=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
- return m&&[...m.querySelectorAll("button")].some(b=>(b.textContent||"").trim()==="insights")?1:0})()')
-assert_eq "$listed" "1" "'+' menu lists insights"
-
-# click insights: the singleton opens in the main pane
-clicked=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
- const b=[...m.querySelectorAll("button")].find(b=>(b.textContent||"").trim()==="insights");
- if(!b) return 0; b.click(); return 1})()')
-assert_eq "$clicked" "1" "insights menu item clicked"
-
-# the tab renders: an insights tab title exists and the dashboard
-# body carries the OVERVIEW block (body-wide: the first .dock-content
-# in DOM order is the sidebar pane, not the main pane)
-wait_js '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].some(e=>/insights/i.test(e.textContent||""));
- return t&&(document.body.innerText||"").includes("OVERVIEW")})()' 15
+# click it: the dashboard body carries the OVERVIEW block
+clicked=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].find(e=>(e.textContent||"").trim()==="Insights");
+ if(!t) return 0; t.click(); return 1})()')
+assert_eq "$clicked" "1" "insights tab clicked"
+wait_js '(()=>{return (document.body.innerText||"").includes("OVERVIEW")})()' 15
 step "ok: insights tab renders the dashboard"
 
 # real numbers: a positive session count and a token figure in the
@@ -77,5 +65,27 @@ while [ "$i" -lt 30 ]; do
 done
 [ "$ok" = "1" ] || die "7-days header never rendered (last: [$got])"
 step "ok: period header follows the 7-days switch"
+
+# the MAIN pane's '+' menu coexists (t_d7fd3ad3): it lists insights and
+# clicking it FOCUSES the sidebar instance - no second insights tab
+before=$(jsq 'document.querySelectorAll(".dock-tab-title").length')
+mainJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
+ const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/chat/i.test(t.textContent||"")));
+ if(!hit) return 0; const plus=hit.querySelector("button.dock-tab-new");
+ if(!plus) return 0; plus.click(); return 1})()'
+opened=$(jsq "$mainJS")
+assert_eq "$opened" "1" "main pane '+' menu opens"
+listed=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
+ return m&&[...m.querySelectorAll("button")].some(b=>(b.textContent||"").trim()==="Insights")?1:0})()')
+assert_eq "$listed" "1" "'+' menu lists insights (capital I)"
+clicked=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
+ const b=[...m.querySelectorAll("button")].find(b=>(b.textContent||"").trim()==="Insights");
+ if(!b) return 0; b.click(); return 1})()')
+assert_eq "$clicked" "1" "insights menu item clicked"
+# no duplicate: the singleton focused the sidebar instance, so the tab
+# count is unchanged
+after=$(jsq 'document.querySelectorAll(".dock-tab-title").length')
+[ "$before" = "$after" ] || die "menu open minted a duplicate insights tab ($before -> $after tabs)"
+step "ok: '+' menu focuses the sidebar instance (no duplicate tab)"
 
 step "done: insights opens through the UI with real data"
