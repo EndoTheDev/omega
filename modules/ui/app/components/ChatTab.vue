@@ -132,6 +132,7 @@
   import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
+    EPHEMERAL_DRAFT_REF,
     activityPhase,
     type ChatState,
     type MessageItem,
@@ -183,11 +184,21 @@
   // the tab key: minted at creation, present on every persisted chat tab
   // (dock boot-time normalization) - the host's state key
   const stateKey = props.tab.key ?? "";
-  // the tab owns the binding: unsaved (no sessionRef) -> composer-first
-  const sessionId = computed(() => props.tab.sessionRef ?? null);
+  // the tab owns the binding: unsaved (no sessionRef) -> composer-first.
+  // EPHEMERAL_DRAFT_REF is a marker, not an id - a composer-first
+  // EPHEMERAL tab's binding (the state stays unbound until the send).
+  const sessionId = computed(() =>
+    props.tab.sessionRef === EPHEMERAL_DRAFT_REF ? null : props.tab.sessionRef ?? null,
+  );
+  // the ephemeral bit: the draft marker, or a bound `eph-` id (the
+  // registry's namespace - a reload re-mints the state, so the
+  // no-persist contract must ride the binding)
+  const isEphemeral =
+    props.tab.sessionRef === EPHEMERAL_DRAFT_REF ||
+    (props.tab.sessionRef?.startsWith("eph-") ?? false);
 
   // ensure BEFORE the computeds read the map: setup runs pre-render
-  host.ensureState(stateKey, sessionId.value);
+  host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
   // the reactive read through the wrapped map is the view
   const state = computed<ChatState | undefined>(() =>
     (host.states.get(stateKey) as ChatState | undefined),
@@ -223,7 +234,9 @@
     return host.busyKeys.value.has(stateKey);
   });
   const canRetry = computed(
-    () => !busy.value && lastUserText(transcript.value) !== null,
+    // ephemeral (card t_d96a5cd5): nothing persisted to replay - the
+    // affordance never renders, the server refuses the flag combination
+    () => !busy.value && lastUserText(transcript.value) !== null && !state.value?.ephemeral,
   );
 
   // --- stacked live-run layout (card t_c40164cf): derived, no new

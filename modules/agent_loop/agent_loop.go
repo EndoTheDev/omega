@@ -53,6 +53,20 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		tools = merged
 	}
 
+	// Run-scoped deny (agent.WithDeniedTools): the merged registry - the
+	// caller's map PLUS every provider's contribution - drops the denied
+	// names before schemas and dispatch see them. A fresh map: the deny
+	// must never shrink a map the caller still owns.
+	if denied := agent.DeniedTools(ctx); len(denied) > 0 {
+		filtered := make(map[string]agent.Tool, len(tools))
+		for name, t := range tools {
+			if !denied[name] {
+				filtered[name] = t
+			}
+		}
+		tools = filtered
+	}
+
 	maxTurns := opts.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns

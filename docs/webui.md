@@ -103,6 +103,32 @@ The gutter divider retains magnetic snap rebase mechanics
 - Error payloads in the SSE driver THROW (`composables/omega.ts`) — a
   swallowed stream error is an invisible dead stream.
 
+## Ephemeral chat (card t_d96a5cd5)
+
+- An ephemeral chat is a **chat tab, not a session**. Entry point: the
+  sessions panel's `+ new` dropdown (`new chat` / `new ephemeral
+  chat`). The tab carries the `EPHEMERAL_DRAFT_REF` marker until the
+  send; the server mints an `eph-` id on the leading `session` frame.
+- **Pure in-memory.** No store row, no messages on disk: conversation
+  context, transcript items and telemetry live in the server's
+  `ephRegistry` (modules/http_channel/server_ephemeral.go). Restart
+  kills; reload reattaches from server memory (transcript endpoint,
+  same reattach machinery). Never a persisted-then-deleted shape.
+- **Invisible to every store-derived surface by law**: session lists,
+  search (FTS5), export, counts, TUI `/sessions` — the store never
+  sees it. The `eph-` prefix is the namespace guard every endpoint
+  routes on.
+- **Memory tool denied** (run-scoped, `agent.WithDeniedTools`, the
+  loop filters post-merge so extension ToolProviders cannot
+  reintroduce it). Ceiling: nothing blocks files/shell writes to
+  memory.md yet — that is the parked sandbox round's job; it does not
+  block ephemeral.
+- **Close = gone** (v2 has no upgrade-to-persist; a persist action is
+  a separate follow-up card). Closing the last tab on an `eph-` id
+  DELETEs the registry record, even mid-run (the run cancels first).
+- Retry/fork/variants never exist on an ephemeral tab — the store
+  tree they replay is absent. The server 400s the flag combination.
+
 ## Component map
 
 - `app.vue` — orchestrator: open/create routing (open in the main pane,

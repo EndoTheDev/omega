@@ -228,6 +228,12 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// detached runs carry the session id too: task tools in the detached
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)
+		// Ephemeral (card t_d96a5cd5): the loop filters the denied name
+		// AFTER every provider merge, so a tool an extension re-adds
+		// under the same name never runs in a no-persist session.
+		if req.Ephemeral {
+			ctx = agent.WithDeniedTools(ctx, "memory")
+		}
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage
@@ -312,11 +318,14 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.store == nil {
+	id := r.PathValue("id")
+	// Ephemeral reattach: the run hub is the truth, no store needed (an
+	// eph run without a store still broadcasts). Non-eph ids keep the
+	// store gate - store-less servers have no session transcript.
+	if s.store == nil && !isEphemeralID(id) {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
 	}
-	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return
