@@ -94,7 +94,13 @@ jobs:
             exit 0
           fi
           git tag "$TAG"
-          git push origin "$TAG"
+          PAT_PUSH="${{ secrets.NIGHTLY_TAG_PAT }}"
+          if [ -n "$PAT_PUSH" ]; then
+            git push "https://x-access-token:${PAT_PUSH}@github.com/EndoTheDev/omega.git" "$TAG"
+          else
+            echo "::warning::NIGHTLY_TAG_PAT secret absent - GITHUB_TOKEN push used; GITHUB_TOKEN pushes never trigger release.yml, so tonight's tag gets NO prebuilt assets (anti-recursion rule)"
+            git push origin "$TAG"
+          fi
           {
             echo "## :white_check_mark: Nightly tagged: \`$TAG\`"
             echo ""
