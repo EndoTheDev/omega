@@ -1,16 +1,45 @@
 package tui
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
+
+	"github.com/charmbracelet/lipgloss"
 )
+
+// vo builds pick rows from labels: the test shorthand for
+// []ai.VerdictOption (labels only, no description).
+func vo(labels ...string) []ai.VerdictOption {
+	out := make([]ai.VerdictOption, len(labels))
+	for i, l := range labels {
+		out[i] = ai.VerdictOption{Label: l}
+	}
+	return out
+}
+
+// testVerdictTheme is the banner test's styles: lipgloss renderers with
+// no color set keep the assertions on plain text.
+func testVerdictTheme() Theme {
+	return Theme{
+		Name:     "test",
+		User:     lipgloss.NewStyle(),
+		Thinking: lipgloss.NewStyle(),
+		Tool:     lipgloss.NewStyle(),
+		Info:     lipgloss.NewStyle(),
+		Status:   lipgloss.NewStyle(),
+		Match:    lipgloss.NewStyle(),
+		Error:    lipgloss.NewStyle(),
+	}
+}
 
 // verdictAnswerFromInput is the TUI shell's live busy-Enter parser (the
 // mirror of the verdict module's /verdict command parser). It must agree
-// on the option-number / y-n / skip / free-text contract.
+// on the option-number / comma-multi / y-n / skip / typed-text contract.
 func TestVerdictAnswerFromInput(t *testing.T) {
-	card := agent.VerdictPrompt{ID: "c1", Title: "Pick", Options: []string{"yes", "no"}}
+	card := agent.VerdictPrompt{ID: "c1", Title: "Pick", Options: vo("yes", "no")}
 
 	cases := []struct {
 		name    string
@@ -28,8 +57,8 @@ func TestVerdictAnswerFromInput(t *testing.T) {
 		{"s alias", card, "s", "", agent.Verdict{Skipped: true}},
 		{"out of range", card, "9", "option number", agent.Verdict{}},
 		{"free text rejected", card, "hello", "option number", agent.Verdict{}},
-		{"free text allowed", agent.VerdictPrompt{ID: "c2", Title: "Name", FreeText: true}, "omega", "", agent.Verdict{Text: "omega"}},
-		{"empty on freetext card", agent.VerdictPrompt{ID: "c2", Title: "Name", FreeText: true}, "  ", "empty answer", agent.Verdict{}},
+		{"free text allowed", agent.VerdictPrompt{ID: "c2", Title: "Name", AllowText: true}, "omega", "", agent.Verdict{Text: "omega"}},
+		{"empty on allowtext card", agent.VerdictPrompt{ID: "c2", Title: "Name", AllowText: true}, "  ", "empty answer", agent.Verdict{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -43,10 +72,83 @@ func TestVerdictAnswerFromInput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tc.want {
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("verdict = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestVerdictAnswerFromInputMulti(t *testing.T) {
+	card := agent.VerdictPrompt{ID: "cm", Title: "Multi", Options: vo("a", "b", "c"), Multi: true}
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+		want    agent.Verdict
+	}{
+		{"comma list", "1,3", "", agent.Verdict{OptionIndexes: []int{1, 3}, Options: []string{"a", "c"}}},
+		{"lone number", "2", "", agent.Verdict{OptionIndexes: []int{2}, Options: []string{"b"}}},
+		{"out of range member", "1,9", "out of range", agent.Verdict{}},
+		{"y rejected", "y", "multi-select", agent.Verdict{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := verdictAnswerFromInput(card, tc.input)
+			if tc.wantErr != "" {
+				if err == nil || !containsSub(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("verdict = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+// verdictBanner parses the tool args (the card) for display; multi and
+// allow_text cards show their contract line, described options carry
+// their description lines.
+func TestVerdictBannerShapes(t *testing.T) {
+	args := map[string]any{
+		"title": "Deploy?",
+		"body":  "pick lanes",
+		"options": []any{
+			map[string]any{"label": "Ship", "description": "merge now"},
+			map[string]any{"label": "Hold"},
+		},
+		"multi":      true,
+		"allow_text": true,
+	}
+	out := verdictBanner(args, 80, testVerdictTheme())
+	for _, want := range []string{
+		"[question] Deploy?",
+		"1. Ship",
+		"merge now",
+		"2. Hold",
+		"multi-select",
+		"answer:",
+	} {
+		if !containsSub(out, want) {
+			t.Fatalf("banner missing %q:\n%s", want, out)
+		}
+	}
+
+	single := verdictBanner(map[string]any{
+		"title":      "ok?",
+		"options":    []any{"yes", "no"},
+		"allow_text": true,
+	}, 80, testVerdictTheme())
+	if containsSub(single, "multi-select") {
+		t.Fatalf("single card banner shows multi-select:\n%s", single)
+	}
+	if !containsSub(single, "type your own answer") {
+		t.Fatalf("allow_text banner missing the typed answer hint:\n%s", single)
 	}
 }
 

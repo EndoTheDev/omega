@@ -60,7 +60,7 @@ Usage:
   omega serve           start the HTTP server (SSE streaming)
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
-  omega agents         list agents; `+"`omega agents create <name>`"+` scaffolds one
+  omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
   omega update              install the latest stable release (nightlies invisible)
   omega update --nightly    install the newest -nightly.* prerelease instead
   omega update --rollback   swap back to omega.bak + verify it runs
@@ -324,7 +324,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),
-		// card t_2ecf9c51: verdict cards - request_verdict tool, the
+		// card t_2ecf9c51: verdict cards - verdict tool, the
 		// verdicts seam, and the /verdict TUI command. Requires store
 		// (the hub captures it at Mount to persist card + verdict rows);
 		// placed after the tools module so the prompt section lands
@@ -581,8 +581,8 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	defer stop()
 
 	// Subagent origin (verdict cards v1): a delegated `omega run` child
-	// sets OMEGA_SUBAGENT=1. The request_verdict tool refuses to issue
-	// from any non-interactive origin - a subagent must not hard-pause
+	// sets OMEGA_SUBAGENT=1. The verdict tool refuses to issue from any
+	// non-interactive origin - a subagent must not hard-pause
 	// waiting for a click its parent surface would have to surface.
 	if os.Getenv("OMEGA_SUBAGENT") != "" {
 		ctx = agent.WithRunOrigin(ctx, agent.RunOriginDelegate)

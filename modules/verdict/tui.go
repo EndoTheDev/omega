@@ -20,7 +20,7 @@ type tuiProvider struct {
 // TUICommands implements agent.TUIProvider.
 func (p *tuiProvider) TUICommands() []agent.TUICommand {
 	return []agent.TUICommand{
-		{Name: "/verdict", Help: "list pending verdict cards / answer one: /verdict <N> <num|y|n|skip|text>"},
+		{Name: "/verdict", Help: "list pending verdict cards / answer one: /verdict <N> <num|1,3|y|n|skip|text>"},
 	}
 }
 
@@ -29,6 +29,7 @@ func (p *tuiProvider) TUICommands() []agent.TUICommand {
 //	/verdict            list every pending card (oldest first), numbered
 //	/verdict N          pick one to answer: prints the card and its options
 //	/verdict N 2        answer card N with option number 2
+//	/verdict N 1,3      answer a multi card with options 1 and 3
 //	/verdict N y        y/n shortcuts map to the first two options
 //	/verdict N skip     record a skip
 //	/verdict N <text>   free text (only when the card allows it)
@@ -54,7 +55,7 @@ func (p *tuiProvider) HandleTUICommand(name, args string, c agent.TUIConsole) ag
 
 	idx, err := strconv.Atoi(parts[0])
 	if err != nil || idx < 1 || idx > len(cards) {
-		c.Error("usage: /verdict           list pending\n       /verdict <N> <num|y|n|skip|text>")
+		c.Error("usage: /verdict           list pending\n       /verdict <N> <num|1,3|y|n|skip|text>")
 		return agent.TUIResult{}
 	}
 	card := cards[idx-1]
@@ -62,7 +63,7 @@ func (p *tuiProvider) HandleTUICommand(name, args string, c agent.TUIConsole) ag
 	// Select-only: print the card so the next command can answer it.
 	if len(parts) == 1 {
 		c.Labeled("card "+strconv.Itoa(idx), formatCard(card))
-		c.Labeled("answer with", fmt.Sprintf("/verdict %d <option # | y | n | skip | text>", idx))
+		c.Labeled("answer with", fmt.Sprintf("/verdict %d <option # | 1,3 (multi) | y | n | skip | text>", idx))
 		return agent.TUIResult{}
 	}
 
@@ -81,7 +82,7 @@ func (p *tuiProvider) HandleTUICommand(name, args string, c agent.TUIConsole) ag
 }
 
 // parseTUIAnswer maps typed tokens to an agent.Verdict, mirroring the
-// design's option-number / y-n / free-text contract.
+// design's option-number / comma-multi / y-n / free-text contract.
 func parseTUIAnswer(card agent.VerdictPrompt, rest []string) (agent.Verdict, error) {
 	tok := strings.TrimSpace(strings.Join(rest, " "))
 	if tok == "" {
@@ -91,34 +92,82 @@ func parseTUIAnswer(card agent.VerdictPrompt, rest []string) (agent.Verdict, err
 	case "skip", "dismiss", "s":
 		return agent.Verdict{Skipped: true}, nil
 	case "y", "yes":
+		if err := ensureNotMulti(card); err != nil {
+			return agent.Verdict{}, err
+		}
 		if len(card.Options) == 0 {
 			return agent.Verdict{}, fmt.Errorf("this card has no y/n options")
 		}
-		return agent.Verdict{OptionIndex: 1, Option: card.Options[0]}, nil
+		return agent.Verdict{OptionIndex: 1, Option: card.Options[0].Label}, nil
 	case "n", "no":
+		if err := ensureNotMulti(card); err != nil {
+			return agent.Verdict{}, err
+		}
 		if len(card.Options) < 2 {
 			return agent.Verdict{}, fmt.Errorf("this card has no 'no' option")
 		}
-		return agent.Verdict{OptionIndex: 2, Option: card.Options[1]}, nil
+		return agent.Verdict{OptionIndex: 2, Option: card.Options[1].Label}, nil
 	}
-	if n, err := strconv.Atoi(tok); err == nil {
+	// a multi card takes a comma-separated pick list ("1,3"); a lone
+	// number ("2") is the one-row multi-select.
+	if card.Multi {
+		if ixs, err := parseOptionIndexes(tok); err == nil {
+			labels := make([]string, 0, len(ixs))
+			for _, ix := range ixs {
+				if ix < 1 || ix > len(card.Options) {
+					return agent.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", ix, len(card.Options))
+				}
+				labels = append(labels, card.Options[ix-1].Label)
+			}
+			return agent.Verdict{OptionIndexes: ixs, Options: labels}, nil
+		}
+	} else if n, err := strconv.Atoi(tok); err == nil {
 		if n < 1 || n > len(card.Options) {
 			return agent.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", n, len(card.Options))
 		}
-		return agent.Verdict{OptionIndex: n, Option: card.Options[n-1]}, nil
+		return agent.Verdict{OptionIndex: n, Option: card.Options[n-1].Label}, nil
 	}
-	if len(card.Options) > 0 && !card.FreeText {
+	if len(card.Options) > 0 && !card.AllowText {
 		return agent.Verdict{}, fmt.Errorf("this card takes an option number, not free text")
 	}
 	return agent.Verdict{Text: tok}, nil
+}
+
+// parseOptionIndexes parses a comma-separated pick list ("1,3"). It
+// returns an error when any token is not an option number, so a
+// malformed multi answer falls through to the free-text path with a
+// clear rejection rather than a partial pick.
+func parseOptionIndexes(tok string) ([]int, error) {
+	fields := strings.Split(tok, ",")
+	ixs := make([]int, 0, len(fields))
+	for _, f := range fields {
+		n, err := strconv.Atoi(strings.TrimSpace(f))
+		if err != nil || n < 1 || n > 32 {
+			return nil, fmt.Errorf("not an option number: %q", f)
+		}
+		ixs = append(ixs, n)
+	}
+	return ixs, nil
+}
+
+// ensureNotMulti rejects single-pick tokens (y/n/one number) on a
+// multi card, so a single tap can never silently under-answer.
+func ensureNotMulti(card agent.VerdictPrompt) error {
+	if card.Multi {
+		return fmt.Errorf("this card is multi-select: pick numbers, e.g. /verdict N 1,3")
+	}
+	return nil
 }
 
 func formatCardList(cards []agent.VerdictPrompt) string {
 	var sb strings.Builder
 	for i, c := range cards {
 		fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, shortID(c.ID), c.Title)
-		if len(c.Options) > 0 {
-			fmt.Fprintf(&sb, "    options: %s\n", strings.Join(c.Options, ", "))
+		for _, opt := range c.Options {
+			fmt.Fprintf(&sb, "    - %s\n", opt.Label)
+			if opt.Description != "" {
+				fmt.Fprintf(&sb, "      %s\n", firstN(opt.Description, 72))
+			}
 		}
 		if c.Body != "" {
 			fmt.Fprintf(&sb, "    %s\n", firstN(c.Body, 80))
@@ -129,14 +178,21 @@ func formatCardList(cards []agent.VerdictPrompt) string {
 
 func formatCard(c agent.VerdictPrompt) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s\n", c.Title)
+	fmt.Fprintf(&sb, "%s", c.Title)
+	if c.Multi {
+		sb.WriteString(" (multi-select)")
+	}
+	sb.WriteString("\n")
 	if c.Body != "" {
 		fmt.Fprintf(&sb, "%s\n", c.Body)
 	}
 	for i, opt := range c.Options {
-		fmt.Fprintf(&sb, "  %d. %s\n", i+1, opt)
+		fmt.Fprintf(&sb, "  %d. %s\n", i+1, opt.Label)
+		if opt.Description != "" {
+			fmt.Fprintf(&sb, "     %s\n", opt.Description)
+		}
 	}
-	if c.FreeText {
+	if c.AllowText {
 		sb.WriteString("  (or type free text)\n")
 	}
 	return strings.TrimRight(sb.String(), "\n")
@@ -148,6 +204,8 @@ func formatVerdict(card agent.VerdictPrompt, v agent.Verdict) string {
 		return "skipped: " + card.Title
 	case v.Expired:
 		return "expired: " + card.Title
+	case len(v.OptionIndexes) > 0:
+		return fmt.Sprintf("picked %v: %s", v.OptionIndexes, card.Title)
 	case v.OptionIndex > 0:
 		return fmt.Sprintf("picked %d (%s): %s", v.OptionIndex, v.Option, card.Title)
 	default:

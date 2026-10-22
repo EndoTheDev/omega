@@ -332,14 +332,14 @@ type model struct {
 	contextWindow        int              // auto-discovered from provider; 0 = unknown, fall back to config
 	view                 agent.ActiveView // tree view of the loaded session; /variant /fork navigation
 	forkParent           string           // row id the next send chains onto (/fork); "" = derive leaf
-	retryParent           string           // branch point the in-flight retry's head pins to; "" = none
-	headPinned            bool             // retry head already parented this run
-	retryMarker           string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
-	persistInput          []ai.Message     // this run's new input messages; the loop's sink persists them (t_471f6d4a)
-	headParent            string           // the run's head-pin parent (retry); "" = derive leaf
-	screen                agent.TUIScreen  // open module full-screen view (module seam); nil = closed
-	tick                  *agent.TUITick   // active module follow loop (/logs -f pattern); nil = idle
-	moduleCommands        map[string]agent.TUIProvider
+	retryParent          string           // branch point the in-flight retry's head pins to; "" = none
+	headPinned           bool             // retry head already parented this run
+	retryMarker          string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
+	persistInput         []ai.Message     // this run's new input messages; the loop's sink persists them (t_471f6d4a)
+	headParent           string           // the run's head-pin parent (retry); "" = derive leaf
+	screen               agent.TUIScreen  // open module full-screen view (module seam); nil = closed
+	tick                 *agent.TUITick   // active module follow loop (/logs -f pattern); nil = idle
+	moduleCommands       map[string]agent.TUIProvider
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -982,7 +982,7 @@ func (m *model) startRun() {
 	// extension's registered tool (modules/memory targetMemory).
 	ctx = agent.WithSessionID(ctx, m.sessionID)
 	// Verdict cards v1 (card t_2ecf9c51): the TUI is an interactive
-	// origin - request_verdict may issue here, and the busy-Enter
+	// origin - verdict.request may issue here, and the busy-Enter
 	// intercept answers it.
 	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
 	if m.ephemeral {
@@ -1050,7 +1050,7 @@ func (m *model) handleEvent(event agent.Event) {
 			m.lastToolCall = chunk.ToolCall.Name
 			m.lastToolArgs = chunk.ToolCall.Arguments
 			var sb strings.Builder
-			if chunk.ToolCall.Name == "request_verdict" {
+			if chunk.ToolCall.Name == "verdict" {
 				// Verdict cards v1: the question banner replaces the raw
 				// args dump. The user answers by typing 1/y/n/skip/text +
 				// Enter while the run blocks (busy-Enter intercept).

@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 )
 
 // Verdict cards v1 (card t_2ecf9c51): the answer surface. The card
 // itself renders live from the existing tool_call / tool_result SSE
-// frames (request_verdict's args carry title/options/timeout; the result
+// frames (verdict.request's args carry title/options/timeout; the result
 // carries the verdict JSON) - these endpoints are the ANSWER path and
 // the pending listing the bell polls. The verdicts seam is optional:
 // a nil Server.Verdicts degrades to 501, mirroring the board and
@@ -20,26 +21,28 @@ import (
 // millisecond epoch so the client countdowns against the server clock
 // without a timezone dance.
 type verdictCardWire struct {
-	ID        string   `json:"id"`
-	SessionID string   `json:"session_id"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body,omitempty"`
-	Options   []string `json:"options,omitempty"`
-	FreeText  bool     `json:"free_text,omitempty"`
-	TimeoutS  int      `json:"timeout_s,omitempty"`
-	ExpiresAt int64    `json:"expires_at"`
+	ID        string             `json:"id"`
+	SessionID string             `json:"session_id"`
+	Title     string             `json:"title"`
+	Body      string             `json:"body,omitempty"`
+	Options   []ai.VerdictOption `json:"options,omitempty"`
+	Multi     bool               `json:"multi,omitempty"`
+	AllowText bool               `json:"allow_text,omitempty"`
+	TimeoutS  int                `json:"timeout_s,omitempty"`
+	ExpiresAt int64              `json:"expires_at"`
 }
 
 // verdictAnswerRequest is the POST /sessions/{id}/verdicts body. One of
-// option_index, option (label), text, or skip. card_id is optional: when
-// absent the session's oldest pending card is answered (one run per
-// session, so the common case is exactly one).
+// option_indexes (multi), option_index, option (label), text, or skip.
+// card_id is optional: when absent the session's oldest pending card
+// is answered (one run per session, so the common case is exactly one).
 type verdictAnswerRequest struct {
-	CardID      string `json:"card_id,omitempty"`
-	OptionIndex int    `json:"option_index,omitempty"`
-	Option      string `json:"option,omitempty"`
-	Text        string `json:"text,omitempty"`
-	Skip        bool   `json:"skip,omitempty"`
+	CardID        string `json:"card_id,omitempty"`
+	OptionIndexes []int  `json:"option_indexes,omitempty"`
+	OptionIndex   int    `json:"option_index,omitempty"`
+	Option        string `json:"option,omitempty"`
+	Text          string `json:"text,omitempty"`
+	Skip          bool   `json:"skip,omitempty"`
 }
 
 func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
@@ -94,10 +97,11 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		return
 	}
 	v := agent.Verdict{
-		OptionIndex: req.OptionIndex,
-		Option:      req.Option,
-		Text:        req.Text,
-		Skipped:     req.Skip,
+		OptionIndexes: req.OptionIndexes,
+		OptionIndex:   req.OptionIndex,
+		Option:        req.Option,
+		Text:          req.Text,
+		Skipped:       req.Skip,
 	}
 	answered, err := s.Verdicts.Answer(sessionID, req.CardID, v)
 	if err != nil {
@@ -125,6 +129,10 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		out["option"] = answered.Option
 		out["option_index"] = answered.OptionIndex
 	}
+	if len(answered.OptionIndexes) > 0 {
+		out["option_indexes"] = answered.OptionIndexes
+		out["options"] = answered.Options
+	}
 	if answered.Text != "" {
 		out["text"] = answered.Text
 	}
@@ -146,7 +154,8 @@ func toVerdictWire(c agent.VerdictPrompt) verdictCardWire {
 		Title:     c.Title,
 		Body:      c.Body,
 		Options:   c.Options,
-		FreeText:  c.FreeText,
+		Multi:     c.Multi,
+		AllowText: c.AllowText,
 		TimeoutS:  c.TimeoutS,
 		ExpiresAt: exp,
 	}

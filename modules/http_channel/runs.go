@@ -229,7 +229,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
-		// interactive turn - request_verdict may issue from here.
+		// interactive turn - verdict.request may issue from here.
 		ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
 		// Turn copy persistence belongs to the loop (card t_471f6d4a),
 		// same wiring as the inline path.

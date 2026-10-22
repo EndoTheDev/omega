@@ -4,8 +4,8 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// Plugin mounts the verdicts seam and its surfaces: the request_verdict
-// tool, the /verdict TUI command, and a short prompt section so the
+// Plugin mounts the verdicts seam and its surfaces: the verdict tool,
+// the /verdict TUI command, and a short prompt section so the
 // model knows when to ask. The hub is built once and shared by the
 // tool (the blocking Ask), the HTTP channel (the answer POSTs), and the
 // TUI (the answer command) - that one object is the single-answer race.
@@ -20,7 +20,7 @@ func (p *Plugin) Name() string { return "verdict" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "verdict cards: the request_verdict tool hard-pauses a turn until the user answers by click or type"
+	return "verdict cards: the verdict.request sub-action hard-pauses a turn until the user answers by click or type"
 }
 
 // Provides: verdicts (exclusive - one hub on the Context), tools and
@@ -47,11 +47,12 @@ func NewPlugin() *Plugin { return &Plugin{} }
 
 const promptSectionOrder = 35 // after memory (10), skills (20), tools (30)
 
-// PromptSections renders the model guidance for request_verdict: when
-// to ask and the block/answer contract. The JSON tool schema already
-// reaches the model; this is the "use it well" nudge.
+// PromptSections renders the model guidance for verdict.request: when
+// to ask (the agent decides, no gate or config) and the block/answer
+// contract. The JSON tool schema already reaches the model; this is
+// the "use it well" nudge.
 func (p *Plugin) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
-	body := "- request_verdict: ask the user when a decision needs human input (approve, pick between options, or free text). It BLOCKS the turn until they answer, the card expires (20 minutes default), or the run is cancelled - so ask only when you cannot proceed without them.\n- Prefer concrete options over open questions. Approval is two options (\"yes\" / \"no\"). A skip is always available and is recorded, never ignored.\n- The verdict returns as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"skip\"} | {verdict:\"expired\"}. Act on it through your normal tools; the card itself executes nothing.\n"
+	body := "- verdict.request: ask the user when a decision materially affects them and you cannot proceed without their input - approval (two options, \"yes\" / \"no\"), a pick between options, a multi-select, or free text (allow_text). It BLOCKS the turn until they answer, the card expires (20 minutes default), or the run is cancelled - so ask only when you cannot proceed without them, and decide autonomously for everything else.\n- Prefer concrete options over open questions; give each option a one-line description when the choice needs explaining. Options render as a list, one per row.\n- The verdict returns as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} (multi) | {verdict:\"skip\"} | {verdict:\"expired\"}. Act on it through your normal tools; the card itself executes nothing.\n"
 	return []agent.PromptSection{
 		{Title: "Verdict Cards", Body: body, Order: promptSectionOrder},
 	}
