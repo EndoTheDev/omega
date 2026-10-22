@@ -160,11 +160,14 @@ func (p testToolProvider) Tools() map[string]agent.Tool { return p.tools }
 
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
+	// Persistence outlives the run ctx - same WithoutCancel law the
+	// real loop applies, so a cancelled run still lands its copy.
+	persistCtx := context.WithoutCancel(ctx)
 	persist := func(msg ai.Message) {
 		if sink == nil {
 			return
 		}
-		_ = sink.AppendTurnMessage(ctx, msg)
+		_ = sink.AppendTurnMessage(persistCtx, msg)
 	}
 	for _, msg := range agent.PersistInput(ctx) {
 		persist(msg)
@@ -180,6 +183,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		return nil
 	}
 	var content strings.Builder
+	persisted := false
 	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
 		if chunk, ok := event.(ai.ResponseChunk); ok {
 			content.WriteString(chunk.Content)
@@ -190,10 +194,18 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			// mid-run must find the record already in the store.
 			assistant := ai.NewAssistant(content.String())
 			persist(assistant)
+			persisted = true
 			opts.Events <- agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 			opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}
 			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}
 		}
+	}
+	// The stream unwound without a stop StreamEnd - a cancelled run
+	// (stop mid-turn) or a script that closed early. What streamed
+	// persists as the turn's partial: the transcript keeps the copy
+	// the user already saw rendered.
+	if !persisted && content.Len() > 0 {
+		persist(ai.NewAssistant(content.String()))
 	}
 	return nil
 }
