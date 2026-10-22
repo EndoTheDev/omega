@@ -1,10 +1,11 @@
 <template>
-  <!-- card t_e1e61680: the /insights parity view. Hosts as a MAIN-area
-       dock tab (registry entry: singleton, closable) - the width
-       pressure ruling: this table set wants the wide main pane, not the
-       ~300px inspector column, so it takes no `narrow` machinery (that
-       recipe is for inspector surfaces). No chart dependency: honest
-       rows and CSS-width bars, the same numbers the TUI prints. -->
+  <!-- card t_e1e61680: the /insights parity view. card t_d7fd3ad3: the
+       home moved - insights is a default-visible SECONDARY-sidebar tab
+       now (registry: singleton, unclosable, area "right"), superseding
+       the main-area width ruling. The auto-fit grid stacks its boxes in
+       the ~300px inspector column; no narrow machinery needed. No chart
+       dependency: honest rows and CSS-width bars, the same numbers the
+       TUI prints. -->
   <section class="pane insights">
     <header class="insights-head">
       <div>

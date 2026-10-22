@@ -4,6 +4,28 @@
    root sizes the shell and its divider drag sets height px, so NO
    desktop geometry lives here. What this file owns: the mobile ruling. */
 
+/* --- the width modes (card t_d7fd3ad3 item 6) ---
+   The applier (app.vue) measures the main panes' bounding box and writes
+   the insets as CSS custom properties on the ROOT split element - they
+   inherit to both consumers below. "aligned" (default): the bottom panel
+   matches the main panes' width (the VS Code panel read; the sidebars
+   stand clear). "full": the applier clears the properties and the panel
+   spans the dock area (the pre-card behavior). Defaults 0 = full, so a
+   boot before the first measured pass renders full-width, never inset by
+   stale values. */
+
+.dock-pane.edge-bottom {
+  margin-left: var(--bottom-inset-left, 0px);
+  margin-right: var(--bottom-inset-right, 0px);
+}
+
+/* the root divider rides the same insets so the resize handle stays over
+   the panel it drags (aligned mode only; full mode the vars are gone) */
+.dock-root > .dock-divider {
+  margin-left: var(--bottom-inset-left, 0px);
+  margin-right: var(--bottom-inset-right, 0px);
+}
+
 @media (max-width: 768px) {
   /* mobile: no desktop-shaped bottom panel on a phone - the shell
      zero-collapses exactly like the sidebar overlay cells (state
