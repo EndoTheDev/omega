@@ -1903,8 +1903,12 @@ export function thinkingLevelWire(selection: string): number | undefined {
 // last user turn and the fresh response appends below the prior one.
 // fork (t_a62eeb43): sends chained onto a historical message - the
 // server truncates context at the target and parents the run there.
-// Fork of a user turn is replay semantics - no messages ride the wire
+// fork of a user turn is replay semantics - no messages ride the wire
 // there either.
+// ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no store
+// row, nothing on disk; the server mints the `eph-` id (or continues
+// the in-memory session when sessionId carries one) and the memory
+// tool never runs. Retry/fork are refused there by design.
 export async function streamChat(
   messages: OmegaMessage[],
   sessionId: string | null,
@@ -1913,9 +1917,11 @@ export async function streamChat(
   thinkingLevel?: number,
   retry?: boolean,
   fork?: string,
+  ephemeral?: boolean,
 ): Promise<void> {
   const body: Record<string, unknown> = retry ? { retry: true } : { messages };
   if (sessionId) body.session_id = sessionId;
+  if (ephemeral) body.ephemeral = true;
   if (model) body.model = model;
   if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;
   if (fork) body.fork = fork;

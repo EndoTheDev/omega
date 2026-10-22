@@ -69,13 +69,18 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.store == nil {
-		http.Error(w, "session store not configured", http.StatusNotImplemented)
-		return
-	}
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "missing session id", http.StatusBadRequest)
+		return
+	}
+	// Ephemeral transcripts come from the registry (card t_d96a5cd5);
+	// ok=false hands non-eph ids to the store path below.
+	if s.serveEphemeralTranscript(w, id) {
+		return
+	}
+	if s.store == nil {
+		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
 	}
 	sess, err := s.store.GetSession(r.Context(), id)
