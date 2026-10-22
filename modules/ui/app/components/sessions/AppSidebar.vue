@@ -3,18 +3,45 @@
     class="sessions"
     :class="{ open: open }">
     <div class="sessions-head">
-      <span class="head-actions">
-        <!-- new-chat dropdown (card t_d96a5cd5): a plain "new chat" and
-             the NO-PERSIST "new ephemeral chat" - two entry points that
-             share one button. Click-outside closes; choosing either
-             item closes and emits. -->
-        <button
+      <!-- card t_aee5199f: the new-chat control is a FULL-WIDTH split
+           button - the body mints the default (persisted) chat, the
+           arrow-down opens t_d96a5cd5's type picker: new chat /
+           new ephemeral chat. All styling stays scoped so this surface
+           never grows main.css (SAME-FILE discipline: t_33f8756c owns
+           the shared sheet) - only .new-btn's shared chip look from
+           main.css is consumed. -->
+      <div class="head-actions">
+        <div
           class="new-btn"
-          :aria-expanded="newMenuOpen"
-          @click="newMenuOpen = !newMenuOpen"
-          title="New conversation">
-          + new
-        </button>
+          @keydown.esc="newMenuOpen = false">
+          <button
+            class="new-main"
+            title="New conversation"
+            @click="pickNew(false)">
+            + new
+          </button>
+          <button
+            class="new-caret"
+            aria-haspopup="true"
+            aria-label="Choose new chat type"
+            :aria-expanded="newMenuOpen"
+            title="New chat type"
+            @click="newMenuOpen = !newMenuOpen">
+            <svg
+              class="new-caret-chevron"
+              :class="{ open: newMenuOpen }"
+              width="8"
+              height="8"
+              viewBox="0 0 8 8"
+              aria-hidden="true">
+              <path
+                d="M1 2.5L4 5.5L7 2.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.2" />
+            </svg>
+          </button>
+        </div>
         <div
           v-if="newMenuOpen"
           class="new-menu"
@@ -30,7 +57,7 @@
             New ephemeral chat
           </button>
         </div>
-      </span>
+      </div>
     </div>
     <div class="session-search">
       <!-- shared look (SearchInput); the BEHAVIOR stays here: debounced
@@ -458,17 +485,67 @@
     if (label !== null) emit("rename", s.id, label);
   }
 </script>
-<!-- scoped: the new-chat dropdown (card t_d96a5cd5) lives beside the
-     shared .new-btn rules in main.css - the menu styling stays HERE so
-     this surface never grows main.css (SAME-FILE discipline: t_e76ce7b6
-     owns the shared sheet's open blocks). -->
+<!-- scoped: the split new-chat control (card t_aee5199f) and the type
+     picker live HERE - this surface never grows main.css (SAME-FILE
+     discipline: t_e76ce7b6 / t_33f8756c own the shared sheet's open
+     blocks). Only .new-btn's shared chip look (border, radius, dim
+     text + accent hover) is consumed from main.css. -->
 <style scoped>
 .head-actions {
   position: relative;
+  width: 100%;
+}
+/* the split wrapper keeps the shared .new-btn chip (border, radius,
+   dim text, accent hover). The halves inside are borderless - the
+   wrapper's border draws the pill, a hairline divides body from
+   arrow; hovering either half lights the whole chip (wrapper :hover
+   rules from main.css + color: inherit). */
+.new-btn {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  padding: 0;
+}
+.new-main {
+  flex: 1;
+  text-align: left;
+  padding: 5px 8px 5px 10px;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.new-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--stroke);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.new-main:focus-visible,
+.new-caret:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+/* the picker's arrow: closed (down) when the menu is shut, rotated
+   open (up) while the type choice shows - same 0.12s ease as the
+   bucket chevrons */
+.new-caret-chevron {
+  transition: transform 0.12s ease;
+}
+.new-caret-chevron.open {
+  transform: rotate(180deg);
 }
 .new-menu {
   position: absolute;
   top: 100%;
+  left: 0;
   right: 0;
   z-index: 30;
   min-width: 180px;
