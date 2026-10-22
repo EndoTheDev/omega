@@ -192,6 +192,14 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb
 }
 
+// ExtensionInfos returns the metadata about loaded extensions set at
+// mount time (name, description, seams, tool/command counts). The
+// http_channel inspector surfaces it on GET /extensions - the webui
+// parity of the TUI /extensions listing.
+func (a *Agent) ExtensionInfos() []ExtensionInfo {
+	return a.extensionInfos
+}
+
 // SetExtensionInfos sets the metadata about loaded extensions, used
 // for prompt building and the /extensions command.
 func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {

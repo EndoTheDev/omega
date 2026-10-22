@@ -12,6 +12,11 @@ type Plugin struct{}
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string       { return "agent-loop" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "the agent loop: model turns, tool dispatch, retries, and streaming"
+}
 func (p *Plugin) Provides() []string { return []string{"loop"} }
 func (p *Plugin) Requires() []string { return nil }
 

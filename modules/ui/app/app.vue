@@ -159,6 +159,19 @@
             module="kanban"
             :open="isMobile ? inspectorOpen : false" />
         </template>
+        <!-- card t_14f73742: the extensions inventory joins the inspector -
+             the webui parity of the TUI /extensions command. A SHELL tab
+             over GET /extensions (composition ruling in extensionsRows.ts):
+             has-ui rows emit open-module and openModuleTab routes to the
+             module's inspector tab. /help parity: the webui has no
+             slash-command bar - this tab IS the /extensions surface. -->
+        <template #pane-extensions>
+          <ExtensionsTab
+            v-if="!isMobile"
+            class="pane"
+            :open="inspectorOpen"
+            @open-module="openModuleTab" />
+        </template>
         <!-- card t_e1e61680: insights is a MAIN-area tab - opened from
              any pane's '+' menu, closed like chat (hover-X). The mount
              loads its own payload on activation (onMounted). -->
@@ -240,6 +253,15 @@
         :user-themes="userThemes"
         :open="inspectorOpen"
         @set-theme="setTheme" />
+      <!-- card t_14f73742: the mobile drawer seats the shell inventory
+           tab like any inspector view - before the module catch-all,
+           which would try InspectorPanel(module="extensions") and
+           render an empty panel body. -->
+      <ExtensionsTab
+        v-else-if="inspectorDrawerActiveId === 'extensions'"
+        class="pane"
+        :open="inspectorOpen"
+        @open-module="openModuleTab" />
       <InspectorPanel
         v-else-if="inspectorDrawerActiveId"
         class="pane"
@@ -375,6 +397,9 @@
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
   import AgentsPanel from "./components/agents/AgentsPanel.vue";
+  // card t_14f73742: the extensions inventory joins the inspector (registry:
+  // singleton, pinned right) - the outlet renders it when its tab is active
+  import ExtensionsTab from "./components/shell/ExtensionsTab.vue";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
@@ -808,6 +833,18 @@
   const inspectorDrawerActiveId = computed(() =>
     clampDrawerTab(inspectorDrawerTabs.value, mobileInspectorTab.value)?.id,
   );
+
+  // card t_14f73742: a has-ui extension row routes to the module's
+  // inspector tab - focus its live instance, open it if the strip
+  // dropped one (the loader restores the full set anyway). The guard is
+  // honest against malformed endpoint payloads: an id outside the
+  // registry never reaches the dock engine.
+  function openModuleTab(moduleId: string) {
+    if (!(INSPECTOR_TAB_COMPONENTS as readonly string[]).includes(moduleId)) return;
+    const pane = findEdgePane(dock.tree.value, "inspector");
+    if (!pane) return;
+    dock.openSingleton(pane.id, moduleId as DockComponentName);
+  }
 
   function toggleSidebar() {
     if (!isMobile.value) {

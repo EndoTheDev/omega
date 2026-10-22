@@ -175,25 +175,26 @@ describe("the dockable registry", () => {
     assert.deepEqual([...closable].sort(), ["chat", "insights"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector SEVEN pinned right (t_49d0b308)", () => {
+  it("the fixed sidebars: sidebar pinned left, the inspector EIGHT pinned right (t_49d0b308 + t_14f73742)", () => {
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
       ["sidebar"],
     );
     // the default order is the ruling's: files, cron, logs, skills,
-    // tools, settings, kanban (logs = the http_channel module id)
+    // tools, settings, kanban, extensions (logs = the http_channel
+    // module id; extensions joins the inventory last, t_14f73742)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the seven",
+      "no X on any of the eight",
     );
   });
 
@@ -207,6 +208,10 @@ describe("the dockable registry", () => {
     assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
     assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
+    // card t_14f73742: extensions IS refillable - the '+' menu is a real
+    // entry point for the inventory tab (unlike settings, it has a
+    // routeable panel body over GET /extensions)
+    assert.ok(MENU_DOCKABLES.includes("extensions"), "extensions IS refillable");
   });
 
   it("legacy ids: pre-reset trees deserialize but nothing may open one", () => {
@@ -414,7 +419,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(tree, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes
@@ -449,7 +454,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -505,7 +510,7 @@ describe("dock store: the pane-model reset", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
     );
   });
 
@@ -645,8 +650,8 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,http_channel,skills,tools,agents,settings,kanban",
-      "none of the eight may close",
+      "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions",
+      "none of the nine may close",
     );
     // the main class still closes through the store
     const chatPane = paneById(tree, row.children[1].id);

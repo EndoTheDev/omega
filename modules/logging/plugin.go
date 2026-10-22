@@ -14,6 +14,11 @@ type Plugin struct{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string       { return "logging" }
+
+// Description implements agent.Describer.
+func (p *Plugin) Description() string {
+	return "file logging: every run, tool call, and error appended to OMEGA_HOME/omega.log"
+}
 func (p *Plugin) Provides() []string { return []string{"logging"} }
 func (p *Plugin) Requires() []string { return nil }
 

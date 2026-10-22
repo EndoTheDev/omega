@@ -17,6 +17,11 @@ type Plugin struct{}
 // Name returns the plugin name shown in the /extensions listing.
 func (Plugin) Name() string { return "provider" }
 
+// Description implements agent.Describer.
+func (Plugin) Description() string {
+	return "model provider: LLM transport (Ollama, OpenAI, Anthropic), streaming and model listing"
+}
+
 // Provides lists the seam names this plugin mounts.
 func (Plugin) Provides() []string { return []string{"provider"} }
 
