@@ -1,6 +1,7 @@
 package http_channel
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -103,10 +104,11 @@ func (r *ephRegistry) drop(id string) bool {
 	return true
 }
 
-// appendUser records a send's incoming messages: into the provider
-// history and, in wire order, into the transcript items (the same user
-// item shape persisted history produces, minus the store row id - the
-// variants surface addresses ids, and an ephemeral session has none).
+// appendUser records a send's incoming messages into the wire
+// transcript items (the same user item shape persisted history
+// produces, minus the store row id - the variants surface addresses
+// ids, and an ephemeral session has none). The provider-facing history
+// copy lands through the loop's eph sink at run start (t_471f6d4a).
 func (r *ephRegistry) appendUser(id string, messages []ai.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -114,7 +116,6 @@ func (r *ephRegistry) appendUser(id string, messages []ai.Message, now time.Time
 	if !ok {
 		return
 	}
-	s.history = append(s.history, messages...)
 	for _, m := range messages {
 		if u, isUser := m.(ai.User); isUser {
 			item := transcriptItem{Kind: "user", Content: u.Content, Time: now.UTC().Format(time.RFC3339)}
@@ -127,12 +128,47 @@ func (r *ephRegistry) appendUser(id string, messages []ai.Message, now time.Time
 	s.updatedAt = now.UTC()
 }
 
-// commit is the run-end persist (persistAssistant's ephemeral branch):
-// flattened assistant records go into the provider history (same shape
-// the store write builds - thinking, tool calls, timing, then each
-// record's tool results) and into the transcript items via the same
-// appendRecordItems flattening the live tail uses (closed: no running
-// flags, durations attached). Usage/last mirror the session-row writes.
+// appendHistory persists one loop-produced turn copy into the record's
+// provider-facing history - the ephemeral conversation's store
+// equivalent. Best effort: a record that vanished (close, restart)
+// drops the write silently.
+func (r *ephRegistry) appendHistory(id string, msg ai.Message, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.records[id]
+	if !ok {
+		return
+	}
+	s.history = append(s.history, msg)
+	s.updatedAt = now.UTC()
+}
+
+// ephTurnSink is the ephemeral session's TurnSink (t_471f6d4a): the
+// loop is the only writer of turn copies, and this registry is the
+// ephemeral conversation's store. Empty assistants write nothing - the
+// wire items commit applies the same guard on the rendering side.
+type ephTurnSink struct {
+	r  *ephRegistry
+	id string
+}
+
+func (s ephTurnSink) AppendTurnMessage(ctx context.Context, msg ai.Message) error {
+	if a, ok := msg.(ai.Assistant); ok &&
+		a.Content == "" &&
+		(a.Thinking == nil || *a.Thinking == "") &&
+		len(a.ToolCalls) == 0 {
+		return nil
+	}
+	s.r.appendHistory(s.id, msg, time.Now())
+	return nil
+}
+
+// commit is the run-end epilogue: flattened assistant records go into
+// the transcript items via the same appendRecordItems flattening the
+// live tail uses (closed: no running flags, durations attached). The
+// provider history itself was written turn-by-turn through the eph
+// sink while the run streamed. Usage/last mirror the session-row
+// writes.
 func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -143,21 +179,6 @@ func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsag
 	for _, rec := range recs {
 		if rec.content == "" && rec.thinking == "" && len(rec.toolCalls) == 0 {
 			continue
-		}
-		assistant := ai.NewAssistant(rec.content)
-		if rec.thinking != "" {
-			text := rec.thinking
-			assistant.Thinking = &text
-		}
-		assistant.ToolCalls = rec.toolCalls
-		if rec.thinkDur > 0 || rec.respDur > 0 {
-			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkDur.Milliseconds(), ResponseMs: rec.respDur.Milliseconds()}
-		}
-		s.history = append(s.history, assistant)
-		// tool results follow the assistant-with-calls message - the
-		// provider loop requires the tool-role turn after every call
-		for _, res := range rec.results {
-			s.history = append(s.history, res)
 		}
 		s.items = appendRecordItems(s.items, rec, false, now)
 	}

@@ -198,13 +198,12 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	}
 
 	// Session labeled cron:<name>; prompt + run outputs persist even
-	// if the turn itself fails.
+	// if the turn itself fails. Session creation stays here; the
+	// turn-copy persistence (prompt, assistant, tool results) rides
+	// the loop's sink (t_471f6d4a).
 	if r.store != nil {
 		if err := r.store.CreateSession(ctx, sessionID, "", "cron:"+job.Name); err != nil {
 			r.errorf("job %s: create session: %v", job.Name, err)
-		}
-		if err := r.store.AppendMessage(ctx, sessionID, ai.NewUser(job.Prompt)); err != nil {
-			r.errorf("job %s: persist prompt: %v", job.Name, err)
 		}
 	}
 
@@ -252,12 +251,17 @@ func (r *Runner) emitFinished(jobName string, ok bool) {
 }
 
 // agentTurn is the default runTurn: one full agent turn in the cron
-// session. Sends the job prompt through the loop, streams to
-// completion, and persists assistant + tool-result messages.
+// session. Sends the job prompt through the loop; the loop's sink
+// persists prompt, assistant, and tool results (t_471f6d4a) - the
+// runner only adds the session's token totals.
 func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (string, error) {
 	if r.ag == nil {
 		return "", fmt.Errorf("no agent wired (cron runner started without deps.Agent)")
 	}
+	// The turn-copy sink: store-backed, cron:<name> session, no head
+	// pin (fresh session, the derived leaf starts empty).
+	ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(r.store, sessionID, ""))
+	ctx = agent.WithPersistInput(ctx, []ai.Message{ai.NewUser(job.Prompt)})
 	var prompt, completion int
 	var final string
 	var runErr error
@@ -265,17 +269,6 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 		switch e := event.(type) {
 		case agent.AssistantMessageEvent:
 			final = e.Message.Content
-			if r.store != nil {
-				if err := r.store.AppendMessage(ctx, sessionID, e.Message); err != nil {
-					r.errorf("job %s: persist assistant: %v", job.Name, err)
-				}
-			}
-		case agent.ToolResultEvent:
-			if r.store != nil {
-				if err := r.store.AppendMessage(ctx, sessionID, e.Message); err != nil {
-					r.errorf("job %s: persist tool result: %v", job.Name, err)
-				}
-			}
 		case agent.StreamEvent:
 			if end, ok := e.Event.(ai.StreamEnd); ok {
 				if end.PromptEvalCount != nil {
