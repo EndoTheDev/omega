@@ -547,7 +547,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         // the segment's text is over - the tool lines carry the activity
         // now; the next onResponse builds a fresh streaming bubble
         assistant.streaming = false;
-        if (tool.name === "request_verdict") {
+        if (tool.name === "verdict") {
           // Verdict cards v1 (card t_2ecf9c51): the card renders ABOVE
           // the tool line as the interactive surface. issuedAt anchors
           // the client countdown; the matching tool_result settles it.
@@ -578,7 +578,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       onToolResult: (result) => {
         // a verdict's result settles its card INSTEAD of the tool-line
         // path - the card IS the render (no plain tool line was pushed
-        // for request_verdict), so the materialize fallback must not
+        // for verdict), so the materialize fallback must not
         // ghost a bare "tool" row for it
         for (let i = st.transcript.length - 1; i >= 0; i--) {
           const item = st.transcript[i];
