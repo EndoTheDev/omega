@@ -159,12 +159,12 @@ describe("tree construction", () => {
     assert.deepEqual(normalizeSizes(2, [NaN, 1]), [0.5, 0.5]);
   });
 
-  it("default shape carries the five real inspector tabs (files active)", () => {
+  it("default shape carries the inspector tabs in registry order (files active)", () => {
     const t = defaultTree();
     const insp = asSplit(t).children[2];
     assert.deepEqual(
       asPane(insp).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban", "extensions"],
     );
     assert.equal(asPane(insp).active, 0);
   });
@@ -449,7 +449,7 @@ describe("tab ops", () => {
       const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
       assert.deepEqual(
         tabComps(movedBack, files.id),
-        ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+        ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban", "extensions"],
         "the moved tab rejoins the inspector bar at the caret",
       );
       assert.deepEqual(tabComps(t, chat.id), ["chat"], "refusals leave the tree untouched");
@@ -613,7 +613,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(root.children.length, 2, "main row + bottom shell");
     return asSplit(root.children[0]);
   }
-  it("always four panes: sidebar(240), chat, inspector-7(240 default), bottom(200, logs)", () => {
+  it("always four panes: sidebar(240), chat, inspector-8(240 default), bottom(200, logs)", () => {
     const t = migrateLegacy(() => null);
     const row = mainRow(t);
     assert.equal(row.children.length, 3);
@@ -624,7 +624,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(asPane(row.children[2]).fixed, 240);
     assert.deepEqual(
       asPane(row.children[2]).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban", "extensions"],
     );
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
@@ -660,7 +660,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
 // --- the pane-model reset specifics (card t_4ae27e0d) ------------------------
 
 describe("pane-model reset", () => {
-  it("expandInspectorTabs expands the legacy id into the five real tabs", () => {
+  it("expandInspectorTabs expands the legacy id into the real tabs", () => {
     const legacy: DockNode = {
       kind: "pane",
       id: "n1",
@@ -671,7 +671,7 @@ describe("pane-model reset", () => {
     const out = expandInspectorTabs(legacy);
     assert.deepEqual(
       (out as DockPane).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban", "extensions"],
     );
     assert.equal((out as DockPane).active, 0);
   });
@@ -689,13 +689,13 @@ describe("pane-model reset", () => {
     );
     assert.equal(asPane(out.children[0]).fixed, 240);
   });
-  it("ensurePinnedEdges re-inserts the inspector pane (five tabs) at the RIGHT edge", () => {
+  it("ensurePinnedEdges re-inserts the inspector pane at the RIGHT edge", () => {
     const t: DockNode = makePane("chat");
     const out = asSplit(ensurePinnedEdges(t));
     const right = asPane(out.children[2]); // [sidebar, chat, inspector]
     assert.deepEqual(
       right.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban", "extensions"],
     );
     assert.equal(right.fixed, 240);
   });
@@ -793,7 +793,7 @@ describe("edge toggle (card t_47b776ad)", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x): string => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban", "extensions"],
     );
   });
 
@@ -1095,7 +1095,7 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
     // time; the shell stays pinned + empty
     const insp = paneByComponent(t, "files");
     const chat = paneByComponent(t, "chat");
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < INSPECTOR_TAB_COMPONENTS.length; i++) {
       t = moveTab(t, insp.id, 0, chat.id, findPane(t, chat.id)!.tabs.length);
     }
     const shell = findPane(t, insp.id)!;
@@ -1263,7 +1263,7 @@ describe("v1 layout migration (t_d6b657a7)", () => {
     // empty the right shell into the main pane, then persist
     const insp = paneByComponent(t, "files");
     let chatPane = paneByComponent(t, "chat");
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < INSPECTOR_TAB_COMPONENTS.length; i++) {
       chatPane = paneByComponent(t, "chat");
       t = moveTab(t, insp.id, 0, chatPane.id, findPane(t, chatPane.id)!.tabs.length);
     }
