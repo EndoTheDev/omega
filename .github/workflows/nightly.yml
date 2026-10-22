@@ -60,7 +60,9 @@ jobs:
           exit 1
 
       - name: Validation journeys
-        run: scripts/journeys/run.sh
+        run: |
+          npm i -g agent-browser && agent-browser install
+          scripts/journeys/run.sh
         env:
           JOURNEY_BASE_URL: http://127.0.0.1:8098
 
