@@ -103,7 +103,7 @@ step "sent the card instruction"
 
 # the card renders as an interactive card, not a tool line: our title
 # token pins OUR card (the throwaway session has no other cards)
-wait_js '(([...document.querySelectorAll(".verdict-title")].some(t => (t.innerText||"").includes("J82 layout probe")))) ? 1 : 0' 150
+wait_js '[...document.querySelectorAll(".verdict-title")].some(t => (t.innerText||"").includes("J82 layout probe"))' 150
 step "ok: verdict card rendered"
 
 # list layout geometry: the rows stack top to bottom - every row's top
@@ -118,7 +118,7 @@ geo=$(jsq '(()=>{
     if(Math.abs(opts[i].getBoundingClientRect().left-opts[i-1].getBoundingClientRect().left)>2) return "not-one-column@"+i;
   }
   return "stacked:"+opts.length;
-})()' 2>&1)
+})()' 2>&1 | tr -d '"')
 case "$geo" in stacked:*) step "ok: options stack top to bottom, one per row ($geo)";;
   *) die "list layout geometry failed: $geo";;
 esac
@@ -134,27 +134,36 @@ desc=$(jsq '(()=>{
   if(!card.querySelector(".verdict-confirm")) return "no-confirm";
   if(!(card.querySelector(".verdict-free-label")||{innerText:""}).innerText.includes("type your own answer")) return "no-typed-row";
   return "ok";
-})()' 2>&1)
+})()' 2>&1 | tr -d '"')
 assert_eq "$desc" "ok" "described rows + multi confirm + typed-answer row render"
 
 # act like the customer: toggle two rows, confirm, the card settles
-# with every picked label on the outcome line
+# with every picked label on the outcome line. The clicks and the
+# aria read are separate evals: Vue flushes the DOM on a microtask,
+# a same-script read sees the pre-toggle tree.
 clicked=$(jsq '(()=>{
   const card=[...document.querySelectorAll(".verdict-card")].filter(c=>c.innerText.includes("J82 layout probe"))[0];
   if(!card) return "no-card";
   const opts=[...card.querySelectorAll(".verdict-option-row")];
   opts[0].click(); opts[1].click();
-  return opts[0].getAttribute("aria-pressed")+","+opts[1].getAttribute("aria-pressed");
-})()' 2>&1)
-[ "$clicked" = "true,true" ] || die "row toggles did not register (aria: $clicked)"
+  return "clicked";
+})()' 2>&1 | tr -d '"')
+[ "$clicked" = "clicked" ] || die "row click failed: $clicked"
+wait_js '[...document.querySelectorAll(".verdict-card")].some(c => c.innerText.includes("J82 layout probe") && [...c.querySelectorAll(".verdict-option-row")].filter(r => r.classList.contains("selected")).length === 2)' 15
+aria=$(jsq '(()=>{
+  const card=[...document.querySelectorAll(".verdict-card")].filter(c=>c.innerText.includes("J82 layout probe"))[0];
+  const rows=[...card.querySelectorAll(".verdict-option-row")];
+  return rows[0].getAttribute("aria-pressed")+","+rows[1].getAttribute("aria-pressed");
+})()' 2>&1 | tr -d '"')
+[ "$aria" = "true,true" ] || die "row toggles did not register (aria: $aria)"
 card_confirm=$(jsq '(()=>{
   const card=[...document.querySelectorAll(".verdict-card")].filter(c=>c.innerText.includes("J82 layout probe"))[0];
   card.querySelector(".verdict-confirm").click(); return "sent";
-})()' 2>&1)
+})()' 2>&1 | tr -d '"')
 [ "$card_confirm" = "sent" ] || die "confirm click failed: $card_confirm"
 step "ok: two rows toggled, confirm sent"
 
-wait_js '(([...document.querySelectorAll(".verdict-card")].some(c => c.classList.contains("settled") && /answered:\s*Ship,\s*Hold/.test(c.innerText)))) ? 1 : 0' 90
+wait_js '[...document.querySelectorAll(".verdict-card")].some(c => c.classList.contains("settled") && /answered:\s*Ship,\s*Hold/.test(c.innerText))' 90
 step "ok: card settled with the multi answer (answered: Ship, Hold)"
 
 wait_js '!document.querySelector("button.send.cancel, .composer .cancel")' 90
