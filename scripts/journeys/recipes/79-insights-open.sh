@@ -71,7 +71,7 @@ assert_eq "$hdr" "1" "period select switches present"
 # `true` from ab eval; the 1/0 shape matches every assert above)
 i=0; ok=0; got=""
 while [ "$i" -lt 30 ]; do
-  got=$(jsq '(()=>((document.body.innerText)||"").includes("Last 7 days")?1:0})()')
+  got=$(jsq '(()=>{return ((document.body.innerText)||"").includes("Last 7 days")?1:0})()')
   if [ "$got" = "1" ]; then ok=1; break; fi
   sleep 0.5; i=$((i + 1))
 done
