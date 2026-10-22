@@ -33,7 +33,7 @@ func (m *model) tryAnswerVerdict(input string) (handed bool) {
 		m.err = err.Error()
 		return true // consumed as a verdict attempt; the error line says why
 	}
-	if err := m.extensions.Verdicts.Answer(m.sessionID, card.ID, v); err != nil {
+	if _, err := m.extensions.Verdicts.Answer(m.sessionID, card.ID, v); err != nil {
 		m.err = err.Error()
 		return true
 	}

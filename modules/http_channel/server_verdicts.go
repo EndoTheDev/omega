@@ -99,7 +99,8 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		Text:        req.Text,
 		Skipped:     req.Skip,
 	}
-	if err := s.Verdicts.Answer(sessionID, req.CardID, v); err != nil {
+	answered, err := s.Verdicts.Answer(sessionID, req.CardID, v)
+	if err != nil {
 		// settled cards (answered/skipped/expired) race to 409 with the
 		// reason; unknown / no-pending-card is 404. The message names the
 		// reason so the losing surface can show it instead of retrying.
@@ -113,24 +114,21 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		}
 		return
 	}
-	// the hub knows the real card id (the no-card_id POST answers the
-	// session's oldest pending card) - never echo the request's echo back
-	cardID := v.CardID
-	if cardID == "" {
-		cardID = req.CardID
-	}
+	// the hub resolves the real card id (the no-card_id POST answers the
+	// session's oldest pending card) and fills the picked option's
+	// label - echo what actually landed
 	out := map[string]any{
-		"card_id": cardID,
-		"verdict": v.Kind(),
+		"card_id": answered.CardID,
+		"verdict": answered.Kind(),
 	}
-	if v.OptionIndex > 0 {
-		out["option"] = v.Option
-		out["option_index"] = v.OptionIndex
+	if answered.OptionIndex > 0 {
+		out["option"] = answered.Option
+		out["option_index"] = answered.OptionIndex
 	}
-	if v.Text != "" {
-		out["text"] = v.Text
+	if answered.Text != "" {
+		out["text"] = answered.Text
 	}
-	if v.Skipped {
+	if answered.Skipped {
 		out["skipped"] = true
 	}
 	writeJSON(w, http.StatusOK, out)
