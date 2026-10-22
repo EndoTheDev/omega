@@ -42,16 +42,8 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	return nil
 }
 
-// Hub returns the mounted hub, so the host can Close it on shutdown
-// (release every still-blocked Ask). Safe to call only after Mount.
-func (p *Plugin) Hub() *Hub { return p.hub }
-
-// Close releases blocked verdict asks - the host calls this on shutdown.
-func (p *Plugin) Close() {
-	if p.hub != nil {
-		p.hub.Close()
-	}
-}
+// NewPlugin returns a verdict Plugin.
+func NewPlugin() *Plugin { return &Plugin{} }
 
 const promptSectionOrder = 35 // after memory (10), skills (20), tools (30)
 
@@ -64,6 +56,3 @@ func (p *Plugin) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSec
 		{Title: "Verdict Cards", Body: body, Order: promptSectionOrder},
 	}
 }
-
-// NewPlugin returns a verdict Plugin.
-func NewPlugin() *Plugin { return &Plugin{} }

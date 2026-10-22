@@ -44,7 +44,6 @@ type Hub struct {
 
 	mu     sync.Mutex
 	cards  []*cardState
-	closed bool
 }
 
 // cardState is one card's identity plus its answer race: exactly one
@@ -67,12 +66,14 @@ func NewHub(store agent.StoreProvider, logger agent.LoggerProvider) *Hub {
 	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
 }
 
-// Close releases every blocked Ask (as a cancelled verdict error) - the
-// host calls it on shutdown so a mid-verdict tool call does not hang.
+// Close is the host shutdown hook: it settles every still-pending card
+// so a later Answer is rejected cleanly, instead of delivering into a
+// dead tool call. A run's ctx cancellation already does this per card;
+// Close is the belt-and-braces sweep. Tests use it to unblock an Ask
+// deterministically without spinning a context cancellation.
 func (h *Hub) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.closed = true
 	for _, c := range h.cards {
 		if !c.settled {
 			c.settled = true
@@ -83,8 +84,8 @@ func (h *Hub) Close() {
 
 // Ask implements agent.VerdictsProvider: registers the card, persists
 // the ai.VerdictCard record, arms the expiry timer, and blocks until
-// an answer, the expiry, or ctx cancellation. A hub already closed (or
-// context gone before registration) errors immediately.
+// an answer, the expiry, or ctx cancellation. ctx cancellation (run
+// stop / shutdown) settles the card; Close is the host-wide sweep.
 func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict, error) {
 	if card.ID == "" {
 		id, err := agent.NewSessionID()
@@ -101,10 +102,6 @@ func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict,
 
 	state := &cardState{prompt: card, answer: make(chan agent.Verdict, 1)}
 	h.mu.Lock()
-	if h.closed || len(state.answer) > 0 {
-		h.mu.Unlock()
-		return agent.Verdict{}, fmt.Errorf("verdicts hub closed")
-	}
 	h.cards = append(h.cards, state)
 	h.mu.Unlock()
 
