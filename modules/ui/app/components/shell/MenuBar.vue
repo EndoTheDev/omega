@@ -236,6 +236,10 @@
     <!-- the settings gear is GONE (card t_47b776ad): settings is a
          dock-tab singleton opened from the pane '+' menu, not the window
          chrome. -->
+    <!-- card t_5d9032d3: the notifications bell joins the right cluster
+         (rightmost on desktop - the drawer handles hide above 768px).
+         The open intents re-emit to app.vue, which owns navigation. -->
+    <NotificationCenter @open="$emit('open-notification', $event)" />
   </header>
 </template>
 
@@ -247,6 +251,9 @@
   // drawer state.
   import { computed, inject } from "vue";
   import { DOCK_API_KEY, findEdgePane } from "../../composables/dock";
+  // card t_5d9032d3: the finished-things bell (badge, dropdown panel,
+  // live toasts) - the shell hosts it, app.vue routes its open intents.
+  import NotificationCenter from "../notifications/NotificationCenter.vue";
 
   // card t_67fc1905: the bottom toggle is self-contained - reads + drives
   // the dock api directly (the sidebar toggles went through emits because
@@ -271,5 +278,6 @@
     (e: "toggle-sidebar"): void;
     (e: "toggle-inspector"): void;
     (e: "view", v: "chat" | "board"): void;
+    (e: "open-notification", n: unknown): void;
   }>();
 </script>
