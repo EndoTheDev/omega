@@ -12,6 +12,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/provider"
 	"github.com/EndoTheDev/omega/modules/store"
@@ -437,9 +438,9 @@ func TestNewSessionIDCryptoRand(t *testing.T) {
 	}
 }
 
-// TestSubmitPersistsMessages verifies that a submit against a store
-// auto-creates a session and persists the user message, and that an
-// AgentEnd persists the assistant response.
+// TestSubmitPersistsMessages pins the t_471f6d4a seam: submit wires
+// the real agent loop with the store sink, the loop persists the run's
+// user input and the turn's assistant - the TUI itself writes nothing.
 func TestSubmitPersistsMessages(t *testing.T) {
 	s, err := store.Open(":memory:")
 	if err != nil {
@@ -447,14 +448,18 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	}
 	defer s.Close()
 
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	pctx := newTestCtx(s)
+	// Persistence belongs to the loop now, so the run must actually
+	// execute: mount the loop and a scripted provider into the
+	// extension context, exactly what a boot does.
+	if err := agent_loop.NewPlugin().Mount(pctx); err != nil {
+		t.Fatalf("mount loop: %v", err)
+	}
+	pctx.Provider = ai.NewFakeProviderScripts("test",
+		scriptedResponse("ok"),
+	)
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", pctx, nil, "dark", "", "bell", "dev", "")
 	m.textarea.SetValue("hello")
-
-	// Simulate a completed prior run so submit creates a fresh channel and
-	// the goroutine's AgentStart lands synchronously.
-	ch := make(chan agent.Event, 64)
-	m.events = ch
-	close(ch)
 	updated, _ := m.submit()
 	m = updated.(model)
 
@@ -465,10 +470,15 @@ func TestSubmitPersistsMessages(t *testing.T) {
 		t.Fatalf("store error: %s", m.storeErr)
 	}
 
-	// Fold an assistant response.
-	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "ok"}})
-	m.handleEvent(agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("ok")})
-	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
+	// Drain the real run to completion: the loop persists the user
+	// input before the first turn and the assistant at turn end.
+	// handleEvent, not Update - the program is nil in unit tests.
+	for ev := range m.events {
+		m.handleEvent(ev)
+	}
+	if m.storeErr != "" {
+		t.Fatalf("store error after run: %s", m.storeErr)
+	}
 
 	sessions, err := s.ListSessions(context.Background())
 	if err != nil {
@@ -488,8 +498,16 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	if !ok || u.Content != "hello" {
 		t.Fatalf("first message = %#v, want user 'hello'", msgs[0])
 	}
-	if _, ok := msgs[1].(ai.Assistant); !ok {
-		t.Fatalf("second message = %T, want ai.Assistant", msgs[1])
+	if a, ok := msgs[1].(ai.Assistant); !ok || a.Content != "ok" {
+		t.Fatalf("second message = %#v, want assistant 'ok'", msgs[1])
+	}
+}
+
+// scriptedResponse builds the one-turn script a test run needs.
+func scriptedResponse(content string) []ai.StreamEvent {
+	return []ai.StreamEvent{
+		ai.ResponseChunk{Type: "response_chunk", Content: content},
+		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 }
 

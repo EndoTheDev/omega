@@ -383,7 +383,11 @@ func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger agent.L
 	if sink == nil {
 		return
 	}
-	if err := sink.AppendTurnMessage(ctx, msg); err != nil && logger != nil {
+	// Persistence outlives the run context: a stop or cancel must not
+	// eat the turn copy. The partial assistant of a cancelled stream
+	// and the errored tool result that follows it belong to the
+	// transcript as much as any finished turn.
+	if err := sink.AppendTurnMessage(context.WithoutCancel(ctx), msg); err != nil && logger != nil {
 		logger.Errorf("persist %s: %v", stage, err)
 	}
 }

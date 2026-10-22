@@ -628,13 +628,24 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error
 	opts.Events <- agent.StreamEvent{Event: ai.ResponseChunk{Type: "response_chunk", Content: "par"}}
 	opts.Events <- agent.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "hang"}}}
 	opts.Events <- agent.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+	// Mirror the real loop: the assistant persists before the tool
+	// runs, and both survive the cancelled ctx (WithoutCancel law).
+	if sink := agent.RunTurnSink(ctx); sink != nil {
+		_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewAssistant("par"))
+	}
 	if l.started != nil {
 		l.started()
 	}
 	result, err := opts.Tools["hang"].Run(ctx, nil)
 	if err != nil {
+		if sink := agent.RunTurnSink(ctx); sink != nil {
+			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewToolResult(err.Error(), "c1", true))
+		}
 		opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), "c1", true)}
 	} else {
+		if sink := agent.RunTurnSink(ctx); sink != nil {
+			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewToolResult(result, "c1", false))
+		}
 		opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, "c1", false)}
 	}
 	opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
