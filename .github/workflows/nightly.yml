@@ -48,6 +48,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/omega-lane"
           go build -o "$RUNNER_TEMP/omega-lane/omega" ./cmd/omega
+          echo "OMEGA_BIN=$RUNNER_TEMP/omega-lane/omega" >> "$GITHUB_ENV"
           OMEGA_MODEL=dummy OMEGA_HOST=http://127.0.0.1:9 OMEGA_PORT=8098 \
             OMEGA_DB_PATH="$RUNNER_TEMP/nightly-lane.db" \
             "$RUNNER_TEMP/omega-lane/omega" serve >"$RUNNER_TEMP/lane.log" 2>&1 &
