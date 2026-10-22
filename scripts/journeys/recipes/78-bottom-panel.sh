@@ -57,7 +57,10 @@ under=$(jsq '(() => {
 assert_eq "$under" "1" "bottom panel renders under the main panel"
 
 # --- 2: divider drag (+200 ladder: 200 -> 400) --------------------------
-# the bottom divider is the column root's LAST divider in the DOM
+# the bottom divider is the column root's LAST divider in the DOM.
+# t_be305778: the shell anchors to the viewport bottom - drag UP GROWS it
+# (the divider is its top edge); the drag-down variant was the inverted
+# gesture this card fixed.
 divx=$(jsq '(() => {
   const ds = document.querySelectorAll(".dock-divider");
   return Math.round(ds[ds.length - 1].getBoundingClientRect().x) + 2;
@@ -69,8 +72,8 @@ divy=$(jsq '(() => {
 [ -n "$divx" ] && [ -n "$divy" ] || die "no bottom divider found"
 ab mouse move "$divx" "$divy" >/dev/null 2>&1
 ab mouse down >/dev/null 2>&1
-d=30; while [ "$d" -le 200 ]; do ab mouse move "$divx" $((divy + d)) >/dev/null 2>&1; sleep 0.03; d=$((d + 30)); done
-ab mouse move "$divx" $((divy + 200)) >/dev/null 2>&1
+d=30; while [ "$d" -le 200 ]; do ab mouse move "$divx" $((divy - d)) >/dev/null 2>&1; sleep 0.03; d=$((d + 30)); done
+ab mouse move "$divx" $((divy - 200)) >/dev/null 2>&1
 ab mouse up >/dev/null 2>&1
 sleep 0.4
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom").getBoundingClientRect().height)')

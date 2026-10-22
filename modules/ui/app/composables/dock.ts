@@ -1170,13 +1170,16 @@ export function dragSplitDivider(
     return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
   }
   if (isPane(rp) && rp.fixed !== null) {
-    // t_67fc1905 BOTTOM EDGE: in a column, the fixed pane BELOW the
-    // divider (the bottom shell) is controlled like a LEFT child - drag
-    // down (+delta) GROWS it, the divider rides down with it. The right
-    // sidebar's mirror read (req = px - delta) would invert the gesture
-    // for a horizontal pane. Snap ladder: the bottom's +200 (panes.ts).
+    // t_67fc1905 BOTTOM EDGE (sign fixed t_be305778): the bottom shell is
+    // anchored to the viewport's BOTTOM - the divider is its TOP edge
+    // (y = contentPx - fixed), so drag DOWN (+delta) SHRINKS it and drag
+    // up grows it: the same mirror read as a row's fixed right pane
+    // (req = px - delta). The old left-child read (req = px + delta)
+    // assumed the divider rides under the pane's growth - inverted the
+    // gesture: drag up moved the divider down. Snap ladder: the bottom's
+    // +200 (panes.ts).
     if (split.direction === "column") {
-      const req = pxOf(i) + deltaPx;
+      const req = pxOf(i) - deltaPx;
       if (req < MIN_PANE_PX) {
         return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
       }

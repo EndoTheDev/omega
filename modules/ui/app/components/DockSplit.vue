@@ -172,8 +172,9 @@
     }
     // the controlled pane is left (fixed) or, when it flexes, the fixed
     // right one - mirror the pure fn's read to light the snap guide.
-    // card t_67fc1905: the bottom shell rides BELOW a column divider; drag
-    // down grows it (+cumulative), and its ladder is +200 (panes.ts).
+    // card t_67fc1905 (sign fixed t_be305778): the bottom shell anchors to
+    // the viewport bottom, so drag UP grows it (-cumulative: the divider
+    // is the shell's TOP edge); its ladder is +200 (panes.ts).
     const node = props.node as DockSplit;
     const li = dividerIndex - 1;
     const i = dividerIndex;
@@ -181,7 +182,7 @@
       node.direction === "column" &&
       (node.children[i] as DockPaneNode).fixed !== null;
     const px = bottomCase
-      ? startPx[i] + cumulative
+      ? startPx[i] - cumulative
       : (node.children[li] as DockPaneNode).fixed !== null
         ? startPx[li] + cumulative
         : (node.children[i] as DockPaneNode).fixed !== null
