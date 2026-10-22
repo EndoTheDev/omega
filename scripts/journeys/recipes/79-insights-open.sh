@@ -30,6 +30,19 @@ panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 [ "$panes" -ge 3 ] 2>/dev/null || die "default dock tree did not render ($panes panes)"
 step "ok: dock tree renders ($panes panes)"
 
+# self-sufficient data seed. The old "seeded model run" step drove a real
+# chat turn (completion_tokens > 0) and red on the nightly's no-provider
+# lane (t_7adf2e7f: "seeded model run completed ... got [0] want [1]")
+# instead of testing anything insights-related. The overview's numbers
+# are text-estimated (store EstimateTokens), so a persisted user turn
+# seeds them WITHOUT a model: the nightly lane keeps no journey data,
+# fresh db -> sessions 0 -> the overview renders its empty state and the
+# numbers assert is unreachable. Seed this recipe's own throwaway
+# session (jrn- prefix, deleted by the suite's cleanup trap).
+seed=$(new_journey_session insights | tail -1)
+send_journey_message "$seed" "insights overview seed - one persisted user turn"
+step "ok: seeded jrn session for the overview numbers"
+
 # the default home: the inspector strip names insights before any click
 # (exact case - capital I, the registry voice)
 default=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].map(e=>(e.textContent||"").trim());
