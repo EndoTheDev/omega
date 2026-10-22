@@ -125,15 +125,32 @@ test("the window selector mirrors the TUI arg semantics", () => {
   assert.match(vue, /watch\(days, \(\) => load\(\)\)/, "a window change refetches");
 });
 
-test("the view is a main-area dockable, and only that (card t_e1e61680 width ruling)", () => {
+test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
   const dockables = read("modules", "ui", "app", "composables", "dockables.ts");
   assert.match(dockables, /id: "insights"/, "registry entry exists");
-  // the main-pane choice with its why, recorded where the ruling lives
-  assert.match(dockables, /\n    area: "main",\n    closable: true,\n  \},\n\];/s,
-    "insights is the last registry entry, main-area, closable");
-  assert.match(dockables, /width pressure/, "the ruling is recorded at the entry");
-  // the app outlet exists
+  // the home ruling recorded where it lives: right shell, unclosable,
+  // capital-I label - the default-visible inspector tab
+  assert.match(
+    dockables,
+    /id: "insights",\n    title: "Insights",/,
+    "the tab label reads Insights (capital I)",
+  );
+  assert.match(
+    dockables,
+    /\n    area: "right",\n    closable: false,\n  \},\n\];/s,
+    "insights is the last registry entry, right-shell, unclosable",
+  );
+  assert.match(dockables, /card t_d7fd3ad3/, "the ruling is recorded at the entry");
+  // the app outlet exists (the tab renders wherever it lives)
   const app = read("modules", "ui", "app", "app.vue");
   assert.match(app, /#pane-insights/, "the outlet template exists");
   assert.match(app, /<InsightsTab/, "the view mounts in the outlet");
+  // the mobile drawer seats the shell-owned tab before the module
+  // catch-all (InspectorPanel(module="insights") would render an empty
+  // body - extensions' t_14f73742 ruling, insights joins it)
+  assert.match(
+    app,
+    /inspectorDrawerActiveId === 'insights'/,
+    "the mobile drawer has its insights branch",
+  );
 });

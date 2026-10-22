@@ -337,6 +337,36 @@ export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string
   return { tree: copy, paneId: pane.id };
 }
 
+/** card t_d7fd3ad3: insights changed HOME. Trees persisted while its area
+    was "main" (t_e1e61680) still hold a closable insights tab in a main
+    pane; the new home is the right shell (t_d7fd3ad3). This lift removes
+    every insights tab living OUTSIDE the right shell's pane - the loader's
+    restoreInspectorSet then seats it in the right shell on the same boot
+    (missing-from-tree path). A insights tab a user parked in another EDGE
+    shell stays (free content; only the main-pane stranding is repaired).
+    Pure; no-op returns the SAME tree. */
+export function rehomeInsightsTab(tree: DockNode): DockNode {
+  let stranded = false;
+  for (const n of allNodes(tree)) {
+    if (
+      isPane(n) &&
+      n.edge !== "right" &&
+      n.tabs.some((t) => t.component === "insights")
+    ) {
+      stranded = true;
+      break;
+    }
+  }
+  if (!stranded) return tree;
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n) || n.edge === "right") return;
+    const idx = n.tabs.findIndex((t) => t.component === "insights");
+    if (idx < 0) return;
+    n.tabs = n.tabs.filter((_, i) => i !== idx);
+    n.active = clamp(idx < n.active ? n.active - 1 : n.active, 0, n.tabs.length - 1);
+  });
+}
+
 /** the pinned shells are fixed chrome: a loaded tree that somehow lost one
     of the two (a pre-marker tree, or a pane toggled closed) gets it
     re-inserted at its edge, and the loader's rulings are re-asserted:
@@ -1584,6 +1614,10 @@ export function createDock(store: Storage): DockApi {
   // divider intents' prunePane, canRemovePane, focus lookups) acts on BOTH
   // panes. Syncing first keeps every minted id above the loaded tree's max.
   syncIdSeed(initial);
+  // card t_d7fd3ad3: insights' home moved (main -> the right shell) - the
+  // main-pane strand lifts before the shell repair so restoreInspectorSet
+  // seats it in the right pane on the same boot.
+  initial = rehomeInsightsTab(initial);
   initial = ensurePinnedEdges(initial);
   // card t_67fc1905: the bottom panel is grafted (or left closed) AFTER the
   // sidebars repair and BEFORE chat keys - the panel hosts no chat tabs,

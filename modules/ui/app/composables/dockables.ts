@@ -101,7 +101,7 @@ export interface DockableComponent {
 export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "sidebar",
-    title: "sessions",
+    title: "Sessions",
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
       paths: ["M9 3v18", "M13 9l3 3-3 3"],
@@ -243,21 +243,24 @@ export const DOCKABLES: readonly DockableComponent[] = [
     closable: false,
   },
   {
-    // card t_e1e61680: insights lives in the MAIN area, not the
-    // inspector - the daily-activity table and per-tool breakdown want
-    // more than the ~300px inspector column, and the width pressure
-    // test in the card ruled for a main-pane view. Singleton + closable:
-    // one usage dashboard, opened and closed like any main tab.
+    // card t_d7fd3ad3 (Endo's eyeball round 2): insights' real home is the
+    // SECONDARY sidebar - a default-visible inspector tab, label "Insights"
+    // (the kanban inspector tab is the pattern). This supersedes the
+    // main-area width-pressure ruling (t_e1e61680): the dashboard's grid
+    // stacks in the ~300px column, and the loader (restoreInspectorSet)
+    // seats it in the right shell on every boot. Singleton + unclosable
+    // like every inspector view; the main '+' menu entry stays (the
+    // singleton opener FOCUSES the sidebar instance - clean coexistence).
     id: "insights",
-    title: "insights",
+    title: "Insights",
     // usage bars: three columns, ascending, in one frame
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
       paths: ["M7 17v-4", "M12 17V9", "M17 17v-2"],
     },
     policy: "singleton",
-    area: "main",
-    closable: true,
+    area: "right",
+    closable: false,
   },
 ];
 

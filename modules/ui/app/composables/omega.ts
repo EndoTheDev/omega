@@ -925,10 +925,18 @@ export interface InsightsPayload {
 
 // fetchInsights reads the cross-session usage analytics. days mirrors
 // the TUI command's arg semantics: null = the server default (30),
-// 0 = all time.
-export function fetchInsights(days: number | null = null): Promise<InsightsPayload> {
+// 0 = all time. The server's lists are nil Go slices on empty windows -
+// they come over the wire as null (tools) - normalized to [] here so
+// the view never reads .length off null (card t_d7fd3ad3: the journey
+// caught the render TypeError on an empty tools window).
+export async function fetchInsights(days: number | null = null): Promise<InsightsPayload> {
   const suffix = days === null ? "" : `?days=${days}`;
-  return filesQuery(`/insights${suffix}`);
+  const p = await filesQuery<InsightsPayload>(`/insights${suffix}`);
+  return {
+    ...p,
+    tools: p.tools ?? [],
+    daily: p.daily ?? [],
+  };
 }
 
 // --- message hover timestamps ---
