@@ -59,6 +59,47 @@ test("dividerDelta + dragSplitDivider: the reduced stream tracks the pointer (th
   assert.equal((t.children[0] as DockPane).fixed, 390, "sidebar = baseline + full travel");
 });
 
+// t_be305778: the column orientation joins the pointer contract. The
+// bottom shell anchors to the viewport's BOTTOM - the divider is its TOP
+// edge (y = contentPx - height) - so a drag UP (delta < 0) GROWS it and
+// drag down shrinks it: the mirror of the row's fixed-right-sidebar read.
+// The old "+delta grows it" left-child read moved the divider AGAINST the
+// pointer (drag up -> divider down); this test pins BOTH ways so the
+// orientation cannot regress silently again.
+const columnShell = () => makeSplit("column", [makePane("chat", null), makePane("http_channel", 200)]);
+
+test("dividerDelta + dragSplitDivider (column): drag UP tracks the pointer up (the shell GROWS)", () => {
+  const CONTENT = 1000; // mainRow 800 + bottom 200; divider starts at y 800
+  const s = fresh();
+  let t = columnShell();
+  for (let i = 1; i <= 15; i++) {
+    const raw = 800 - i * 10;
+    const d = dividerDelta(s, -i * 10, raw, false)!;
+    t = dragSplitDivider(t, 1, [800, 200], d, CONTENT).split;
+  }
+  const b = (t.children[1] as DockPane).fixed;
+  assert.ok(b !== null);
+  assert.equal(b, 350, "drag up 150 grows the shell 200 -> 350");
+  assert.equal(CONTENT - b, 650, "the divider's y rode UP with the pointer (800 - 150)");
+});
+
+test("dividerDelta + dragSplitDivider (column): drag DOWN tracks the pointer down (the shell SHRINKS)", () => {
+  const CONTENT = 1000;
+  const s = fresh();
+  let t = columnShell();
+  // 50px of travel (5 moves): further travel hits the 128 close floor -
+  // the shell's own divider push - which is covered in dockbottom.test.ts
+  for (let i = 1; i <= 5; i++) {
+    const raw = 800 + i * 10;
+    const d = dividerDelta(s, i * 10, raw, false)!;
+    t = dragSplitDivider(t, 1, [800, 200], d, CONTENT).split;
+  }
+  const b = (t.children[1] as DockPane).fixed;
+  assert.ok(b !== null);
+  assert.equal(b, 150, "drag down 50 shrinks the shell 200 -> 150");
+  assert.equal(CONTENT - b, 850, "the divider's y rode DOWN with the pointer (800 + 50)");
+});
+
 test("dividerDelta: the reworked shape (per-event increments) fails loudly", () => {
   // the 6a90f3a bug: deltas stuck at one increment - the reduction must
   // NOT produce that stream

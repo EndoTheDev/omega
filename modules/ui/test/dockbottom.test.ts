@@ -178,9 +178,10 @@ describe("close / reopen (persistence rulings)", () => {
     const dock = createDock(store);
     await flush();
     const bottom = bottomOf(dock.tree.value)!;
-    // resize to an unsnapped height by direct drag on the model (no UI)
+    // resize to an unsnapped height by direct drag on the model (no UI);
+    // drag UP grows the bottom shell (it anchors to the viewport bottom)
     const root = dock.tree.value as DockSplit;
-    const d = dragSplitDivider(root, 1, [600, 200], 40, 800); // grow by 40 → 240
+    const d = dragSplitDivider(root, 1, [600, 200], -40, 800); // grow by 40 → 240
     dock.tree.value = d.split;
     assert.equal(bottomOf(dock.tree.value)!.fixed, 240);
     dock.toggleBottom();
@@ -202,12 +203,13 @@ describe("close / reopen (persistence rulings)", () => {
   it("the bottom panel's drag-close (divider push) persists closure too", () => {
     const store = new MemoryStorage() as unknown as Storage;
     const dock = createDock(store);
-    // drag the horizontal divider UP past the floor: the bottom collapses
+    // drag the horizontal divider DOWN past the floor (drag down shrinks
+    // the viewport-bottom-anchored shell): the bottom collapses
     const res = dock.drag(
       (dock.tree.value as DockSplit).id,
       1,
       [600, 200],
-      -100,
+      100,
       800,
     );
     assert.ok(res.collapsedPaneId, "the close intent fired");
@@ -287,36 +289,48 @@ describe("the horizontal divider drag (the bottom shell)", () => {
     return { split, startPx, contentPx: content };
   }
 
-  it("drag DOWN grows the bottom shell (the inverse of the right sidebar)", () => {
+  // t_be305778 pointer-tracking invariant: the bottom shell anchors to the
+  // viewport BOTTOM, so the divider sits at y = contentPx - bottomHeight -
+  // a drag DOWN (+delta) must SHRINK the shell and drag UP grow it, with
+  // the divider's screen y tracking the pointer either way. (The original
+  // block pinned "drag DOWN grows" - the left-child read - which inverted
+  // the live gesture; these tests pin the pointer contract instead.)
+  it("drag DOWN shrinks the bottom shell (the divider is its TOP edge)", () => {
     const { split, startPx, contentPx } = column(200);
     const d = dragSplitDivider(split, 1, startPx, 50, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
-    assert.equal(bottom.fixed, 250, "+delta grows the bottom");
+    assert.equal(bottom.fixed, 150, "+delta shrinks the bottom");
+    assert.ok(bottom.fixed !== null);
     assert.equal(d.collapsedPaneId, null);
+    assert.equal(contentPx - bottom.fixed, contentPx - startPx[1]! + 50,
+      "the divider's y (content - height) rode DOWN with the pointer");
   });
 
-  it("drag UP shrinks the bottom shell to the 128 floor", () => {
+  it("drag UP grows the bottom shell to the 128-floor cap of the chat", () => {
     const { split, startPx, contentPx } = column(200);
     const d = dragSplitDivider(split, 1, startPx, -60, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
-    assert.equal(bottom.fixed, Math.max(MIN_PANE_PX, 140), "shrinks toward the floor");
+    assert.equal(bottom.fixed, 260, "-delta grows the bottom");
+    assert.ok(bottom.fixed !== null);
+    assert.equal(contentPx - bottom.fixed, contentPx - startPx[1]! - 60,
+      "the divider's y rode UP with the pointer");
   });
 
-  it("drag past the floor is a CLOSE intent (the panel's own divider push)", () => {
+  it("drag DOWN past the floor is a CLOSE intent (the panel's own divider push)", () => {
     const { split, startPx, contentPx } = column(200);
-    const d = dragSplitDivider(split, 1, startPx, -120, contentPx);
-    assert.ok(d.collapsedPaneId, "collapse intent");
+    const d = dragSplitDivider(split, 1, startPx, 120, contentPx);
+    assert.ok(d.collapsedPaneId, "collapse intent: 200 - 120 < 128");
   });
 
   it("snaps on the +200 ladder (200/400/600), not the sidebars' +320", () => {
     const { split, startPx, contentPx } = column(200);
     assert.equal(BOTTOM_SNAP_STEP, 200);
-    // into the +14 zone of 400: 400 - 214 = ... start 200, target ~386-414 → snap 400
-    const d = dragSplitDivider(split, 1, startPx, 190, contentPx); // 200 + 190 = 390 → snap 400
+    // into the +14 zone of 400: 400 - 214 = ... start 200, drag UP 190: 200 + 190 = 390 → snap 400
+    const d = dragSplitDivider(split, 1, startPx, -190, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 400, "snapped to rung 400");
     // between rungs stays free: 200 + 100 = 300 (midway) → no snap
-    const free = dragSplitDivider(split, 1, startPx, 100, contentPx);
+    const free = dragSplitDivider(split, 1, startPx, -100, contentPx);
     const bottomFree = (free.split as DockSplit).children[1] as DockPane;
     assert.equal(bottomFree.fixed, 300, "between rungs the drag is free");
   });
@@ -324,7 +338,7 @@ describe("the horizontal divider drag (the bottom shell)", () => {
   it("the chat (the absorbing neighbor above) keeps its 320 floor", () => {
     const { split, startPx, contentPx } = column(200, 700);
     // grow the bottom beyond what a 320 chat floor leaves: 700 - 320 = 380
-    const d = dragSplitDivider(split, 1, startPx, 400, contentPx);
+    const d = dragSplitDivider(split, 1, startPx, -400, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 380, "capped by the chat floor");
   });
