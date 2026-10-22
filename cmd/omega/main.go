@@ -33,6 +33,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/tools"
 	"github.com/EndoTheDev/omega/modules/trust"
 	"github.com/EndoTheDev/omega/modules/tui"
+	"github.com/EndoTheDev/omega/modules/verdict"
 	"github.com/EndoTheDev/omega/modules/web"
 )
 
@@ -323,6 +324,12 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),
+		// card t_2ecf9c51: verdict cards - request_verdict tool, the
+		// verdicts seam, and the /verdict TUI command. Requires store
+		// (the hub captures it at Mount to persist card + verdict rows);
+		// placed after the tools module so the prompt section lands
+		// after the tools list.
+		verdict.NewPlugin(),
 		mcpPlugin,
 		delegate.NewPlugin(),
 		web.NewPlugin(),
@@ -572,6 +579,16 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 
 	ctx, stop := signalContext()
 	defer stop()
+
+	// Subagent origin (verdict cards v1): a delegated `omega run` child
+	// sets OMEGA_SUBAGENT=1. The request_verdict tool refuses to issue
+	// from any non-interactive origin - a subagent must not hard-pause
+	// waiting for a click its parent surface would have to surface.
+	if os.Getenv("OMEGA_SUBAGENT") != "" {
+		ctx = agent.WithRunOrigin(ctx, agent.RunOriginDelegate)
+	} else {
+		ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+	}
 
 	var userMsg ai.Message
 	if len(images) > 0 {
