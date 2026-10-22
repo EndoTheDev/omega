@@ -45,6 +45,12 @@ type Context struct {
 	Trust    TrustProvider
 	Cron     CronProvider
 	Kanban   KanbanProvider
+	// Notifications is the finished-things store seam (card t_5d9032d3):
+	// kanban completions, cron fires and dispatched chat runs each emit
+	// one record the webui bell serves. Nil when the notifications
+	// plugin is absent - every emitter is nil-safe, the HTTP endpoints
+	// answer 501.
+	Notifications NotificationsProvider
 
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAll.
@@ -104,6 +110,7 @@ var exclusiveSeams = map[string]bool{
 	"trust":          true,
 	"cron":           true,
 	"kanban":         true,
+	"notifications":  true,
 }
 
 // MountAll sorts plugins by dependencies and mounts each into ctx.

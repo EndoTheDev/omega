@@ -40,6 +40,32 @@ type Store struct {
 
 	mu    sync.Mutex
 	named map[string]*sql.DB
+
+	// notifier is the finished-things seam (card t_5d9032d3), wired by
+	// the kanban plugin after MountAll order places notifications
+	// first. Nil-safe: a store without the seam just doesn't notify.
+	notifier agent.NotificationsProvider
+}
+
+// SetNotifier wires the finished-things seam (the plugin calls this
+// post-mount; exposed for tests to inject a recorder).
+func (s *Store) SetNotifier(n agent.NotificationsProvider) {
+	s.notifier = n
+}
+
+// emitDone records one task notification when a task ENTERED done in
+// this update. Best-effort: a notification failure never fails the
+// board write (the caller swallows the error). Title is metadata only.
+func (s *Store) emitDone(taskID string) {
+	if s.notifier == nil {
+		return
+	}
+	_, _ = s.notifier.Emit(agent.Notification{
+		Kind:     "task",
+		SourceID: taskID,
+		Title:    "task " + taskID + " done",
+		Verdict:  "ok",
+	})
 }
 
 // Compile-time assertions: *Store implements the kanban seam plus the
@@ -465,6 +491,9 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch agen
 		return agent.KanbanTask{}, err
 	}
 
+	// card t_5d9032d3: a task that ENTERS done this update emits one
+	// finished-things record (fired after the commit below).
+	enteredDone := false
 	events := [][2]string{}
 	edits := []string{}
 
@@ -482,6 +511,7 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch agen
 			// exists - archiving a never-done task leaves it unset
 			if patch.Status == StatusDone && t.CompletedAt == "" {
 				t.CompletedAt = now()
+				enteredDone = true
 			}
 			if !IsSettled(patch.Status) && t.CompletedAt != "" {
 				t.CompletedAt = ""
@@ -535,6 +565,9 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
 	}
 	if err := tx.Commit(); err != nil {
 		return agent.KanbanTask{}, err
+	}
+	if enteredDone {
+		s.emitDone(taskID)
 	}
 	return t, nil
 }

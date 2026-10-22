@@ -391,6 +391,47 @@ type TrustProvider interface {
 	State(cwd string, approve, noApprove bool) string
 }
 
+// Notification is one finished-thing record (card t_5d9032d3): a kanban
+// task completed, a cron fire finished, or a dispatched chat run ended.
+// The title line is METADATA ONLY (source kind + id + verdict) - prompt
+// and session content never ride a notification (privacy law).
+type Notification struct {
+	ID        int64  `json:"id"`
+	Kind      string `json:"kind"`    // task | cron | chat
+	SourceID  string `json:"source_id"`
+	Title     string `json:"title"`   // metadata line, no prompt/session content
+	Verdict   string `json:"verdict"` // ok | failed
+	CreatedAt string `json:"created_at"`
+	Read      bool   `json:"read"`
+}
+
+// NotificationsProvider is the finished-things store seam. The default
+// implementation is modules/notifications (a small SQLite db in the
+// data dir, same family as the board). Emitters (kanban, cron,
+// delegate) call Emit; the HTTP channel serves List/Mark* to the webui
+// bell and live-forwards Emit traffic to Subscribe clients (toasts).
+type NotificationsProvider interface {
+	// Emit records one notification. The store fills ID and CreatedAt
+	// and validates Kind ("task", "cron", "chat") and Verdict ("",
+	// "ok", "failed" - "" normalizes to ok). Retention keeps the 200
+	// newest records; the oldest pruned on insert.
+	Emit(n Notification) (Notification, error)
+	// List returns records newest-first. A non-empty unreadOnly
+	// filters to unread rows. limit <= 0 means the server default;
+	// offset pages deeper. The second return is the current unread
+	// count (computed over the whole set, not the page).
+	List(ctx context.Context, unreadOnly bool, limit, offset int) (notes []Notification, unread int, err error)
+	// MarkRead flags one record read. A missing id errors.
+	MarkRead(ctx context.Context, id int64) error
+	// MarkAllRead flags every record read.
+	MarkAllRead(ctx context.Context) error
+	// Subscribe returns a live channel of newly emitted records plus a
+	// cancel func that releases the subscription. Delivery is
+	// best-effort: a slow reader drops frames rather than blocking
+	// emission. Cancel is idempotent.
+	Subscribe() (<-chan Notification, func())
+}
+
 // FrontendOptions carries host-level settings the frontend needs that
 // are not on the Context itself. All fields are optional zero-values.
 type FrontendOptions struct {

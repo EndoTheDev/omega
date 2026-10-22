@@ -6,7 +6,8 @@
       :inspector-open="inspectorDocked"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
-      @view="switchMainView" />
+      @view="switchMainView"
+      @open-notification="openNotification" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
          backdrop-filter frost renders against the shell's root, so the
@@ -396,6 +397,8 @@
   } from "./composables/focus";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
+  // card t_5d9032d3: notification open intents route here from the bell
+  import type { OmegaNotification } from "./composables/notifications";
   // card t_e1e61680: insights joins the main area (registry: singleton,
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
@@ -513,6 +516,32 @@
   function openBoardSession(id: string) {
     mainView.value = "chat";
     openChatTab(id);
+  }
+
+  // card t_5d9032d3: the bell's open intent routes by source kind -
+  // task -> the board (the card lives there), cron -> the cron inspector
+  // tab, chat -> the session when one is bound (a dispatched subagent
+  // run id is not a local session; the route is a no-op then).
+  function openNotification(n: OmegaNotification | unknown) {
+    const rec = n as OmegaNotification;
+    if (!rec || typeof rec.kind !== "string") return;
+    switch (rec.kind) {
+      case "task":
+        if (mainView.value !== "board") {
+          mainView.value = "board";
+          boardHostPane.value = resolveActivePaneId();
+          history.replaceState({}, "", "/board");
+        }
+        return;
+      case "cron":
+        openModuleTab("cron");
+        return;
+      case "chat":
+        if (sessions.value.some((s) => s.id === rec.source_id)) {
+          openChatTab(rec.source_id);
+        }
+        return;
+    }
   }
   provide(CHAT_HOST_KEY, host);
 

@@ -32,6 +32,9 @@ type Delegate struct {
 	taskCounter int64
 	injected    chan injectedMsg
 	logger      agent.LoggerProvider
+	// notifier is the finished-things seam (card t_5d9032d3), wired by
+	// the plugin at mount. Nil-safe: no seam, no notification.
+	notifier agent.NotificationsProvider
 }
 
 // injectedMsg carries a subagent result to be injected as a new turn.
@@ -197,14 +200,36 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	go func() {
 		defer cancel()
 		output, err := cmd.CombinedOutput()
+		d.finish(taskID, output, err)
+	}()
+
+	return fmt.Sprintf("Subagent %s started. The result will appear automatically when it finishes. Use delegate.status to check progress.", taskID), nil
+}
+
+// finish records a dispatched run's completion (card t_5d9032d3): the
+// captured output lands on the task, the result injects into the host
+// conversation, and one finished-things record emits - verdict ok on a
+// clean exit, failed on error. The notification title is metadata only
+// (the dispatch id); prompt and output never enter it.
+func (d *Delegate) finish(taskID string, output []byte, runErr error) {
+	d.mu.Lock()
+	task := d.tasks[taskID]
+	if task != nil {
 		task.mu.Lock()
-		if err != nil {
-			task.output.WriteString(fmt.Sprintf("error: %v\n%s", err, string(output)))
+		if runErr != nil {
+			task.output.WriteString(fmt.Sprintf("error: %v\n%s", runErr, string(output)))
 		} else {
 			task.output.Write(output)
 		}
 		task.done = true
-		result := task.output.String()
+		task.mu.Unlock()
+	}
+	d.mu.Unlock()
+
+	if task != nil {
+		result := ""
+		task.mu.Lock()
+		result = task.output.String()
 		task.mu.Unlock()
 
 		// Inject result into host conversation. Non-blocking send;
@@ -218,9 +243,21 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 				fmt.Fprintf(os.Stderr, "delegate: injected channel full, dropping result for %s\n", taskID)
 			}
 		}
-	}()
+	}
 
-	return fmt.Sprintf("Subagent %s started. The result will appear automatically when it finishes. Use delegate.status to check progress.", taskID), nil
+	if d.notifier == nil {
+		return
+	}
+	verdict := "ok"
+	if runErr != nil {
+		verdict = "failed"
+	}
+	_, _ = d.notifier.Emit(agent.Notification{
+		Kind:     "chat",
+		SourceID: taskID,
+		Title:    "chat " + taskID + " finished",
+		Verdict:  verdict,
+	})
 }
 
 func (d *Delegate) runDelegateStatus(ctx context.Context, args map[string]any) (string, error) {

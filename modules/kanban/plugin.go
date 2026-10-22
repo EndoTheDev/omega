@@ -84,6 +84,10 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		p.store = s
 	}
 	p.tools = &ToolProvider{board: p.store}
+	// card t_5d9032d3: done transitions report to the finished-things
+	// store. The notifications plugin mounts earlier in the host's list
+	// (before cron/kanban), so the seam is resolved here; nil is legal.
+	p.store.SetNotifier(ctx.Notifications)
 	p.wireCommands(ctx)
 	ctx.Kanban = p.store
 	ctx.ToolProviders = append(ctx.ToolProviders, p.tools)
