@@ -47,6 +47,10 @@ type Server struct {
 	Skills  agent.SkillsProvider
 	Cron    agent.CronProvider
 	logger  agent.LoggerProvider
+	// Notifications is the finished-things seam (card t_5d9032d3):
+	// /notifications list + read, /notifications/events SSE toasts.
+	// Nil answers 501 - the seam is optional like the board.
+	Notifications agent.NotificationsProvider
 	httpSrv *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -112,6 +116,11 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/themes", s.handleThemes)
 	mux.HandleFunc("/insights", s.handleInsights)
+	// card t_5d9032d3: the finished-things surface. Handlers live in
+	// server_notify.go; /notifications/events is the live toast stream.
+	mux.HandleFunc("/notifications", s.handleNotifications)
+	mux.HandleFunc("/notifications/read", s.handleNotificationsRead)
+	mux.HandleFunc("/notifications/events", s.handleNotificationEvents)
 	// card t_7e2b7002 (deferred mount, review pass): the multi-agent
 	// REST surface. Handlers live in server_agents.go.
 	mux.HandleFunc("/agents", s.handleAgents)

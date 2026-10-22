@@ -36,6 +36,9 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 	// handlers degrade to empty lists / 404 when a module is absent.
 	c.srv.Skills = deps.Ctx.Skills
 	c.srv.Cron = deps.Ctx.Cron
+	// card t_5d9032d3: the finished-things seam (bell list/read + live
+	// toast stream). Optional - nil degrades to 501s.
+	c.srv.Notifications = deps.Ctx.Notifications
 	c.srv.logger = deps.Ctx.Logger
 	c.srv.runTimeout = c.runTimeout
 	c.srv.titleModel = c.titleModel
