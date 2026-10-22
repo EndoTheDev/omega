@@ -33,6 +33,10 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		return fmt.Errorf("logging: %w", err)
 	}
 	ctx.Logger = logger
+	// The TUI command rides the module seam: a logging plugin left out
+	// of buildPlugins takes /logs out of the command table with it
+	// (card t_88bb7dcf).
+	ctx.TUIProviders = append(ctx.TUIProviders, &tui{})
 	return nil
 }
 

@@ -42,9 +42,16 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	ctx.ToolProviders = append(ctx.ToolProviders, provider)
 	ctx.PromptSectioners = append(ctx.PromptSectioners, p)
 
+	// /tools stays an extension command (it returns CommandResult with
+	// display-mode actions the shell interprets); its enum completions
+	// ride on the command itself now, not a shell-side map.
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/tools", Description: "list tools or toggle tool result display [on|off|auto|list]"},
+		agent.ExtensionCommand{Name: "/tools", Description: "list tools or toggle tool result display [on|off|auto|list]", Args: []string{"on", "off", "auto", "list"}},
 	)
+	// The /files browser rides the module TUI seam (the read view over
+	// the files domain). A tools plugin left out of buildPlugins takes
+	// /files out of the command table with it (card t_88bb7dcf).
+	ctx.TUIProviders = append(ctx.TUIProviders, &tui{})
 
 	prev := ctx.CommandHandler
 	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
