@@ -231,6 +231,10 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
 		// interactive turn - request_verdict may issue from here.
 		ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+		// Turn copy persistence belongs to the loop (card t_471f6d4a),
+		// same wiring as the inline path.
+		ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))
+		ctx = agent.WithPersistInput(ctx, req.persistInput)
 		// Ephemeral (card t_d96a5cd5): the loop filters the denied name
 		// AFTER every provider merge, so a tool an extension re-adds
 		// under the same name never runs in a no-persist session.

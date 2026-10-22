@@ -146,8 +146,11 @@ func newTestServer() *Server {
 }
 
 // testLoop is a minimal loop for http_channel tests. It mirrors the
-// real loop's event sequence for simple one-turn conversations.
-// The real loop lives in modules/agent_loop/.
+// real loop's event sequence AND its turn-copy persistence (t_471f6d4a):
+// the caller's PersistInput writes first, then the streamed turn's
+// assistant record - built from the content the provider actually sent,
+// the same shape the real loop persists. The real loop lives in
+// modules/agent_loop/ (the timing suites run it directly).
 type testLoop struct{}
 
 // testToolProvider is a stub ToolProvider for the /tools inventory test.
@@ -156,6 +159,16 @@ type testToolProvider struct{ tools map[string]agent.Tool }
 func (p testToolProvider) Tools() map[string]agent.Tool { return p.tools }
 
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+	sink := agent.RunTurnSink(ctx)
+	persist := func(msg ai.Message) {
+		if sink == nil {
+			return
+		}
+		_ = sink.AppendTurnMessage(ctx, msg)
+	}
+	for _, msg := range agent.PersistInput(ctx) {
+		persist(msg)
+	}
 	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
 	if opts.Provider != nil {
 		start.ModelName = opts.Provider.ModelName()
@@ -166,10 +179,17 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		opts.Events <- agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no provider configured"}
 		return nil
 	}
+	var content strings.Builder
 	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
+		if chunk, ok := event.(ai.ResponseChunk); ok {
+			content.WriteString(chunk.Content)
+		}
 		opts.Events <- agent.StreamEvent{Event: event}
 		if end, ok := event.(ai.StreamEnd); ok && end.FinishReason == "stop" {
-			assistant := ai.NewAssistant("")
+			// Persist BEFORE the event, like the real loop: a reload
+			// mid-run must find the record already in the store.
+			assistant := ai.NewAssistant(content.String())
+			persist(assistant)
 			opts.Events <- agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 			opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}
 			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}

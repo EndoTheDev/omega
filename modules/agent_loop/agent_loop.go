@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
@@ -112,6 +113,20 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 	turns := 0
 	overflowRetries := 0
+
+	// Turn-copy persistence (card t_471f6d4a): the run's new input
+	// persists here first, then one assistant + its tool results per
+	// turn, provider-correct order - user -> assistant(A + thinking +
+	// calls) -> tool results -> assistant(B). The caller wraps the
+	// TurnSink (with its session id and any head-parent pin) and the
+	// messages it is adding with this send around the run context; a
+	// sink without input persists turns only. Persistence failures log
+	// and move on - a dead store never kills a live run.
+	sink := agent.RunTurnSink(ctx)
+	for _, msg := range agent.PersistInput(ctx) {
+		persistTurnMessage(ctx, sink, opts.Logger, msg, "user input")
+	}
+
 	for {
 		if ctx.Err() != nil {
 			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
@@ -146,6 +161,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		turnStart := agent.TurnStart{Type: "turn_start", Turn: turns}
 		opts.Events <- turnStart
 
+		// Phase meter: the persistence record's timing fields are
+		// measured here, where the chunks actually arrive - chunk-to-
+		// chunk while a phase runs, boundary-to-chunk when it opens
+		// (turn start, or the last tool result), tool-call arrivals
+		// close both spans. Same law the channel's live-view meter
+		// follows; the loop's numbers are the persisted ones.
+		meter := newPhaseMeter()
 		var content, thinking strings.Builder
 		var toolCalls []ai.ToolCall
 		finishReason := "stop"
@@ -160,10 +182,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		for event := range opts.Provider.Stream(ctx, messages, toolSchemas(tools)) {
 			switch e := event.(type) {
 			case ai.ResponseChunk:
+				meter.response(time.Now())
 				content.WriteString(e.Content)
 			case ai.ThinkingChunk:
+				meter.thinking(time.Now())
 				thinking.WriteString(e.Content)
 			case ai.ToolCallEvent:
+				meter.toolCall(e.ToolCall.ID, time.Now())
 				toolCalls = append(toolCalls, e.ToolCall)
 			case ai.StreamEnd:
 				finishReason = e.FinishReason
@@ -216,6 +241,14 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			assistant.Thinking = &text
 		}
 		assistant.ToolCalls = toolCalls
+		// Timing rides the assistant record itself: the loop's meters
+		// are the persisted ones, so every surface's reload (webui,
+		// TUI, export) sees thinking/response spans - not only the
+		// sessions the http channel used to meter.
+		if thinkMs, respMs := meter.spans(); thinkMs > 0 || respMs > 0 {
+			assistant.Timing = &ai.Timing{ThinkingMs: thinkMs, ResponseMs: respMs}
+		}
+		persistTurnMessage(ctx, sink, opts.Logger, assistant, "assistant")
 		messages = append(messages, assistant)
 		assistantEvent := agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
@@ -223,6 +256,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		// Execute tool calls concurrently. Results are collected in
 		// order so the message history stays deterministic.
 		results := make([]ai.ToolResult, len(toolCalls))
+		completed := make([]time.Time, len(toolCalls))
 		var wg sync.WaitGroup
 		for i, call := range toolCalls {
 			tool, ok := tools[call.Name]
@@ -234,6 +268,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			go func(idx int, c ai.ToolCall, t agent.Tool) {
 				defer wg.Done()
 				result, err := t.Run(ctx, c.Arguments)
+				completed[idx] = time.Now()
 				if err != nil {
 					results[idx] = ai.NewToolResult(err.Error(), c.ID, true)
 					if opts.Logger != nil {
@@ -250,7 +285,14 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		wg.Wait()
 
 		executed := 0
-		for _, msg := range results {
+		for i, msg := range results {
+			// Wall-clock the tool actually ran: dispatch (the call
+			// event) to completion. Unknown tools report none - they
+			// never ran.
+			if start, ok := meter.callStart(toolCalls[i].ID); ok && !completed[i].IsZero() {
+				msg.Timing = &ai.Timing{ElapsedMs: completed[i].Sub(start).Milliseconds()}
+			}
+			persistTurnMessage(ctx, sink, opts.Logger, msg, "tool result")
 			messages = append(messages, msg)
 			toolResultEvent := agent.ToolResultEvent{Type: "tool_result", Message: msg}
 			opts.Events <- toolResultEvent
@@ -281,7 +323,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				}
 			}
 			if combined != "" {
-				messages = append(messages, ai.NewUser(combined))
+				injected := ai.NewUser(combined)
+				persistTurnMessage(ctx, sink, opts.Logger, injected, "user input")
+				messages = append(messages, injected)
 				continue
 			}
 		}
@@ -293,7 +337,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				select {
 				case msg, ok := <-opts.InjectedMessages:
 					if ok {
-						messages = append(messages, ai.NewUser(msg.Text))
+						injected := ai.NewUser(msg.Text)
+						persistTurnMessage(ctx, sink, opts.Logger, injected, "user input")
+						messages = append(messages, injected)
 						continue
 					}
 				case <-ctx.Done():
@@ -327,6 +373,77 @@ func isOverflowError(err string) bool {
 		}
 	}
 	return false
+}
+
+// persistTurnMessage writes one finished message through the run's
+// TurnSink. Persistence failures log and move on - a dead store never
+// kills a live run, the channel surfaces the reload gap instead of an
+// error frame mid-stream.
+func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger agent.LoggerProvider, msg ai.Message, stage string) {
+	if sink == nil {
+		return
+	}
+	if err := sink.AppendTurnMessage(ctx, msg); err != nil && logger != nil {
+		logger.Errorf("persist %s: %v", stage, err)
+	}
+}
+
+// phaseMeter tracks the turn's timing phases on the persistence record:
+// chunk-to-chunk while a phase runs, boundary-to-chunk when it opens
+// (turn start), tool-call arrivals closing both spans. The same law the
+// http channel's live-view accumulator follows - the loop's numbers are
+// the persisted ones now.
+type phaseMeter struct {
+	lastThink, lastResp, openAt time.Time
+	callStarts                  map[string]time.Time
+	thinkDur, respDur           time.Duration
+}
+
+func newPhaseMeter() *phaseMeter {
+	return &phaseMeter{openAt: time.Now()}
+}
+
+func (m *phaseMeter) thinking(now time.Time) { m.thinkDur += m.delta(m.lastThink, now); m.lastThink = now; m.openAt = now }
+func (m *phaseMeter) response(now time.Time) { m.respDur += m.delta(m.lastResp, now); m.lastResp = now; m.openAt = now }
+
+// toolCall records a call's dispatch instant and closes both stream
+// spans - the gap while the tool runs belongs to nobody.
+func (m *phaseMeter) toolCall(id string, now time.Time) {
+	m.lastThink, m.lastResp, m.openAt = time.Time{}, time.Time{}, time.Time{}
+	if m.callStarts == nil {
+		m.callStarts = map[string]time.Time{}
+	}
+	if id != "" {
+		m.callStarts[id] = now
+	}
+}
+
+func (m *phaseMeter) callStart(id string) (time.Time, bool) {
+	if m.callStarts == nil {
+		return time.Time{}, false
+	}
+	t, ok := m.callStarts[id]
+	return t, ok
+}
+
+// spans returns the turn's accumulated thinking and response durations.
+func (m *phaseMeter) spans() (thinkMs, respMs int64) {
+	return m.thinkDur.Milliseconds(), m.respDur.Milliseconds()
+}
+
+// delta returns the wall clock the chunk bills into its span:
+// chunk-to-chunk while the same phase is running (last set), and
+// boundary-to-chunk when the chunk opens a span, so a single-chunk
+// phase still carries its latency. An unset boundary contributes
+// nothing.
+func (m *phaseMeter) delta(last, now time.Time) time.Duration {
+	if !last.IsZero() {
+		return now.Sub(last)
+	}
+	if !m.openAt.IsZero() {
+		return now.Sub(m.openAt)
+	}
+	return 0
 }
 
 // toolSchemas converts a tools map to the provider schema list.
