@@ -57,6 +57,13 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// An in-memory database lives per connection: a pooled second
+	// connection would see an empty database (the session store's
+	// recipe). One connection keeps :memory: usable under pooling; a
+	// file DSN keeps the full connection pool.
+	if dsn == ":memory:" {
+		db.SetMaxOpenConns(1)
+	}
 	s := &Store{db: db, subs: map[int64]chan agent.Notification{}}
 	if err := s.migrate(); err != nil {
 		db.Close()
@@ -124,8 +131,9 @@ func (s *Store) Emit(n agent.Notification) (agent.Notification, error) {
 	if strings.TrimSpace(n.SourceID) == "" {
 		return agent.Notification{}, fmt.Errorf("notification source_id is required")
 	}
+	n.CreatedAt = now()
 	res, err := s.db.Exec(`INSERT INTO notifications (kind, source_id, title, verdict, created_at, read)
-VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, now())
+VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, n.CreatedAt)
 	if err != nil {
 		return agent.Notification{}, err
 	}
@@ -133,7 +141,10 @@ VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, now())
 	if err != nil {
 		return agent.Notification{}, err
 	}
-	if _, err := s.db.Exec(`DELETE FROM notifications WHERE id <= (
+	// Prune beyond retention: keep the retention-row-newest set. The
+	// boundary is the retention-th newest row's id (ids only ever
+	// grow, so id order is time order even across pruned gaps).
+	if _, err := s.db.Exec(`DELETE FROM notifications WHERE id < (
 SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); err != nil {
 		return agent.Notification{}, fmt.Errorf("prune: %w", err)
 	}
