@@ -525,10 +525,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.queuedInput = ""
 			}
 			// Enter queues the current input to auto-submit when the
-			// agent finishes. Typing is still allowed while busy.
+			// agent finishes - UNLESS a verdict card is pending on this
+			// session (card t_2ecf9c51): then the typed input is the
+			// ANSWER (option number / y/n / free text / skip) and the
+			// card resolves the blocked turn right away. The parse
+			// failure path keeps the typed text for a retry.
 			if msg.String() == "enter" {
 				queue := strings.TrimSpace(m.textarea.Value())
 				if queue == "" {
+					return m, nil
+				}
+				if m.tryAnswerVerdict(queue) {
+					m.textarea.SetValue("")
+					if m.err == "" {
+						m.textarea.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
+					}
 					return m, nil
 				}
 				m.queuedInput = queue
@@ -969,6 +980,10 @@ func (m *model) startRun() {
 	// contract (card t_d96a5cd5). The name matches the memory
 	// extension's registered tool (modules/memory targetMemory).
 	ctx = agent.WithSessionID(ctx, m.sessionID)
+	// Verdict cards v1 (card t_2ecf9c51): the TUI is an interactive
+	// origin - request_verdict may issue here, and the busy-Enter
+	// intercept answers it.
+	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
 	if m.ephemeral {
 		ctx = agent.WithDeniedTools(ctx, "memory")
 	}
@@ -1022,6 +1037,14 @@ func (m *model) handleEvent(event agent.Event) {
 			m.lastToolCall = chunk.ToolCall.Name
 			m.lastToolArgs = chunk.ToolCall.Arguments
 			var sb strings.Builder
+			if chunk.ToolCall.Name == "request_verdict" {
+				// Verdict cards v1: the question banner replaces the raw
+				// args dump. The user answers by typing 1/y/n/skip/text +
+				// Enter while the run blocks (busy-Enter intercept).
+				sb.WriteString(verdictBanner(chunk.ToolCall.Arguments, m.viewport.Width, m.theme))
+				m.segments = append(m.segments, streamSegment{kind: "tool", content: sb.String()})
+				break
+			}
 			sb.WriteString("\n")
 			sb.WriteString(m.theme.Tool.Render("[tool: " + chunk.ToolCall.Name + "]"))
 			sb.WriteString("\n")

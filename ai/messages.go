@@ -31,6 +31,10 @@ func EncodeMessage(msg Message) (string, []byte, error) {
 		role = "thinking_level_change"
 	case VariantSelect:
 		role = "variant_select"
+	case VerdictCard:
+		role = "verdict_card"
+	case Verdict:
+		role = "verdict"
 	default:
 		return "", nil, fmt.Errorf("unknown message type %T", msg)
 	}
@@ -87,6 +91,18 @@ func DecodeMessage(role string, payload []byte) (Message, error) {
 			return nil, err
 		}
 		return m, nil
+	case "verdict_card":
+		var m VerdictCard
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "verdict":
+		var m Verdict
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
 	default:
 		return nil, fmt.Errorf("unknown role %q", role)
 	}
@@ -105,6 +121,10 @@ func MessageRole(m Message) string {
 		return "assistant"
 	case ToolResult:
 		return "tool"
+	case VerdictCard:
+		return "verdict_card"
+	case Verdict:
+		return "verdict"
 	default:
 		return "unknown"
 	}
@@ -264,4 +284,64 @@ func (VariantSelect) isMessage() {}
 // NewVariantSelect creates a VariantSelect entry with timestamp set.
 func NewVariantSelect(branch, child string) VariantSelect {
 	return VariantSelect{Branch: branch, Child: child, Timestamp: NowISO()}
+}
+
+// VerdictCard is the transcript record of one agent-issued question
+// (verdict cards v1): appended when the request_verdict tool issues the
+// card, before the user answers. A bookkeeping entry exactly like
+// ModelChange: persisted to the store, invisible to context assembly
+// (the model sees the tool call and result, never this row), rendered
+// by every transcript surface that wants the audit trail. Roles on the
+// store row: "verdict_card".
+type VerdictCard struct {
+	CardID    string   `json:"card_id"`
+	Title     string   `json:"title"`
+	Body      string   `json:"body,omitempty"`
+	Options   []string `json:"options,omitempty"`
+	FreeText  bool     `json:"free_text,omitempty"`
+	TimeoutS  int      `json:"timeout_s,omitempty"`
+	Timestamp string   `json:"timestamp,omitempty"`
+}
+
+func (VerdictCard) isMessage() {}
+
+// NewVerdictCard creates a VerdictCard entry with timestamp set.
+func NewVerdictCard(cardID, title, body string, options []string, freeText bool, timeoutS int) VerdictCard {
+	return VerdictCard{
+		CardID:    cardID,
+		Title:     title,
+		Body:      body,
+		Options:   options,
+		FreeText:  freeText,
+		TimeoutS:  timeoutS,
+		Timestamp: NowISO(),
+	}
+}
+
+// Verdict is the transcript record of one answer: a pick, free text, a
+// recorded skip (no silent dismissal), or the expiry firing with no
+// answer. Role on the store row: "verdict".
+type Verdict struct {
+	CardID      string `json:"card_id"`
+	OptionIndex int    `json:"option_index,omitempty"`
+	Option      string `json:"option,omitempty"`
+	Text        string `json:"text,omitempty"`
+	Skipped     bool   `json:"skipped,omitempty"`
+	Expired     bool   `json:"expired,omitempty"`
+	Timestamp   string `json:"timestamp,omitempty"`
+}
+
+func (Verdict) isMessage() {}
+
+// NewVerdict creates a Verdict entry with timestamp set.
+func NewVerdict(cardID string, optionIndex int, option, text string, skipped, expired bool) Verdict {
+	return Verdict{
+		CardID:      cardID,
+		OptionIndex: optionIndex,
+		Option:      option,
+		Text:        text,
+		Skipped:     skipped,
+		Expired:     expired,
+		Timestamp:   NowISO(),
+	}
 }

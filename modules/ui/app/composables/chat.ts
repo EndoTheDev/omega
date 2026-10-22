@@ -33,6 +33,9 @@ import {
   withoutMarkers,
   lastUserText,
   attachImageUrl,
+  verdictCardFromToolArgs,
+  verdictFromResultText,
+  type VerdictItem,
   type OmegaImage,
   type VariantBlock,
 } from "./omega.ts";
@@ -91,7 +94,8 @@ export type TranscriptItem =
   | MessageItem
   | ThinkingItem
   | ToolItem
-  | InterruptedItem;
+  | InterruptedItem
+  | VerdictItem;
 
 /** ChatState is ONE chat tab's view of ITS session: transcript, draft,
     telemetry. A stream writes ONLY its own state, so any session can
@@ -543,6 +547,26 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         // the segment's text is over - the tool lines carry the activity
         // now; the next onResponse builds a fresh streaming bubble
         assistant.streaming = false;
+        if (tool.name === "request_verdict") {
+          // Verdict cards v1 (card t_2ecf9c51): the card renders ABOVE
+          // the tool line as the interactive surface. issuedAt anchors
+          // the client countdown; the matching tool_result settles it.
+          // The args arrive pre-serialized on this path - the parse is
+          // verbatim the JSON the server built the prompt from.
+          let parsed: unknown = null;
+          try {
+            parsed = tool.output ? JSON.parse(tool.output) : null;
+          } catch {
+            parsed = null;
+          }
+          const card = verdictCardFromToolArgs(parsed);
+          card.callId = tool.id;
+          card.issuedAt = Date.now();
+          card.timeoutS = card.timeoutS && card.timeoutS > 0 ? card.timeoutS : 1200; // 20 min default
+          st.transcript.push(card);
+          st.notify?.();
+          return;
+        }
         st.transcript.push({
           kind: "tool",
           name: tool.name,
@@ -552,6 +576,22 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         st.notify?.();
       },
       onToolResult: (result) => {
+        // a verdict's result settles its card INSTEAD of the tool-line
+        // path - the card IS the render (no plain tool line was pushed
+        // for request_verdict), so the materialize fallback must not
+        // ghost a bare "tool" row for it
+        for (let i = st.transcript.length - 1; i >= 0; i--) {
+          const item = st.transcript[i];
+          if (item?.kind !== "verdict" || item.status !== "pending") continue;
+          if (result.toolCallId && item.callId && result.toolCallId !== item.callId) continue;
+          const settled = verdictFromResultText(result.content);
+          item.status = "settled";
+          item.verdictKind = settled.verdictKind || "expired";
+          item.picked = settled.picked;
+          item.answerText = settled.answerText;
+          st.notify?.();
+          return;
+        }
         // attach the result to the most recent tool line (status -> done)
         for (let i = st.transcript.length - 1; i >= 0; i--) {
           const item = st.transcript[i];
@@ -610,6 +650,13 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
             item.interrupted = true;
           if ((item.kind === "thinking" || item.kind === "message") && item.streaming)
             item.streaming = false;
+          // a verdict card still pending at finalize: the stream's last
+          // hope (the tool_result this session's run had) is gone - the
+          // card renders as dead, never actionable. st.transcript is
+          // reactive across two tabs on one session; the OTHER tab's
+          // stream may still settle it, but this tab's view must not
+          // promise a click that can still run.
+          if (item.kind === "verdict" && item.status === "pending") item.stale = true;
         }
         // thinking is assigned inside stream callbacks the type system
         // can't track across the closure - cast to the runtime type

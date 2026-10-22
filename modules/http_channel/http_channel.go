@@ -39,6 +39,8 @@ func (c *HTTPChannel) Start(ctx context.Context, deps agent.ChannelDeps) error {
 	// card t_5d9032d3: the finished-things seam (bell list/read + live
 	// toast stream). Optional - nil degrades to 501s.
 	c.srv.Notifications = deps.Ctx.Notifications
+	// card t_2ecf9c51: the verdicts seam (answer POSTs + pending list).
+	c.srv.Verdicts = deps.Ctx.Verdicts
 	c.srv.logger = deps.Ctx.Logger
 	c.srv.runTimeout = c.runTimeout
 	c.srv.titleModel = c.titleModel
