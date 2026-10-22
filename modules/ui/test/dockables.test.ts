@@ -184,12 +184,12 @@ describe("the dockable registry", () => {
     // tools, settings, kanban (logs = the http_channel module id)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
@@ -414,7 +414,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(tree, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes
@@ -449,7 +449,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -505,14 +505,15 @@ describe("dock store: the pane-model reset", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "settings", "kanban"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban"],
     );
   });
 
   it("a v2 tree with settings dragged into a main pane KEEPS it (free content)", async () => {
     let t: DockNode = defaultTree();
-    // settings is tab 5 of the inspector bar: drag it into the main pane
-    t = moveTab(t, asSplit(t).children[2].id, 5, asSplit(t).children[1].id, 0);
+    // settings is tab 6 of the inspector bar (agents joined at 5): drag
+    // it into the main pane
+    t = moveTab(t, asSplit(t).children[2].id, 6, asSplit(t).children[1].id, 0);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
@@ -644,8 +645,8 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,http_channel,skills,tools,settings,kanban",
-      "none of the seven may close",
+      "files,cron,http_channel,skills,tools,agents,settings,kanban",
+      "none of the eight may close",
     );
     // the main class still closes through the store
     const chatPane = paneById(tree, row.children[1].id);

@@ -278,10 +278,15 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Skills.Dir = home + "/skills"
 	}
 	if cfg.Memory.File == "memory.md" {
-		cfg.Memory.File = home + "/memory.md"
+		// card t_7e2b7002: the default agent's memory files live in its
+		// profile dir - MigrateDefaultAgent (run(), before any command)
+		// moved the legacy home files there. Pointing the default at the
+		// old home path would strand the migrated content and silently
+		// start a fresh memory - the read side must follow the move.
+		cfg.Memory.File = home + "/agents/default/memory.md"
 	}
 	if cfg.Memory.UserProfileFile == "user.md" {
-		cfg.Memory.UserProfileFile = home + "/user.md"
+		cfg.Memory.UserProfileFile = home + "/agents/default/user.md"
 	}
 	if cfg.Logging.File == "omega.log" {
 		cfg.Logging.File = home + "/omega.log"

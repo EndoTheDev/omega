@@ -158,6 +158,27 @@ func TestResolveAgentName(t *testing.T) {
 	}
 }
 
+func TestResolveHomePathsDefaultMemoryFollowsMigration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	if err := agent.MigrateDefaultAgent(home); err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	if cfg.Memory.File != "memory.md" || cfg.Memory.UserProfileFile != "user.md" {
+		t.Fatalf("precondition: defaults, got %q / %q", cfg.Memory.File, cfg.Memory.UserProfileFile)
+	}
+	if err := resolveHomePaths(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Memory.File != filepath.Join(home, "agents", "default", "memory.md") {
+		t.Errorf("memory.file = %q, want the default agent's profile dir", cfg.Memory.File)
+	}
+	if cfg.Memory.UserProfileFile != filepath.Join(home, "agents", "default", "user.md") {
+		t.Errorf("user profile = %q, want the default agent's profile dir", cfg.Memory.UserProfileFile)
+	}
+}
+
 func TestHelpMentionsAgents(t *testing.T) {
 	if !strings.Contains(helpText, "omega agents") {
 		t.Errorf("help text lost the agents command")
