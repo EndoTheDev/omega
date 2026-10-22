@@ -66,7 +66,11 @@ open=$(jsq 'document.querySelector(".mobile-drawer.right.open")?1:0')
 assert_eq "$open" "1" "REPRO 2: inspector drawer opens (right.open)"
 tabs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).map(t=>t.textContent.trim()).join(",")')
 tabs=${tabs#\"}; tabs=${tabs%\"}  # jsq returns JSON-encoded strings; strip the quotes
-assert_eq "$tabs" "Files,Cron,Logs,Skills,Tools,Settings,Kanban" "REPRO 2: inspector drawer shows the seven-tab strip"
+# the inspector strip is the REGISTRY's right-area panels: agents
+# (t_7e2b7002) and the extensions inventory (t_14f73742) joined it - the
+# strip grew, the drift is on the journey (the shape is: the drawer
+# lists every registry inspector panel in order)
+assert_eq "$tabs" "Files,Cron,Logs,Skills,Tools,agents,Settings,Kanban,extensions" "REPRO 2: inspector drawer shows the registry tab strip"
 
 # the active tab is Files (the file tree renders, not a module panel)
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.textContent.trim()')
