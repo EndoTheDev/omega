@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="paneEl"
     class="dock-pane dock-cell"
     :class="[
       kindClass,
@@ -183,6 +184,27 @@
         remove pane
       </button>
     </div>
+    <!-- docking prediction overlay (card t_0e833eae): a tab dragged over
+         ANOTHER pane's body lights its landing zone - the four half-zones
+         split the target around the dragged tab, center groups it - with
+         a ghost of the dragged tab where it lands. pointer-events: none
+         (css) keeps the gesture flowing to the pane underneath; the tab
+         BAR keeps the caret affordance instead (zones are body-only). -->
+    <div
+      v-if="dropZone"
+      class="dock-drop-overlay"
+      :data-zone="dropZone">
+      <div
+        class="dock-drop-zone"
+        :style="zoneStyle">
+        <span
+          v-if="dragGhost"
+          class="dock-drop-ghost">
+          <DockItemIcon :icon="dragGhost.icon" />
+          {{ dragGhost.title }}
+        </span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -204,7 +226,7 @@
     type DockableComponent,
     type DockComponentName,
   } from "../composables/dockables";
-  import { tabDrag, dropAllowedFor } from "../composables/dockdnd";
+  import { tabDrag, dropAllowedFor, zoneForPoint, zoneRectFractions, splitAllowedFor, type DragZone, type ZoneRect } from "../composables/dockdnd";
   // the re-export path keeps one import surface for engine-side consumers;
   // dockables.ts is the registry's true source (card t_30ee04fb)
 
@@ -351,9 +373,42 @@
   // sessions over the chat pane), the chip under the cursor lights refuse
   const refusedIdx = ref<number | null>(null);
   const dropHover = ref(false);
+  // card t_0e833eae: the docking prediction - the landing zone a dragged
+  // tab would drop into on THIS pane's body (null = no body hover, or the
+  // same-pane/stale case where no docking preview shows)
+  const dropZone = ref<DragZone | null>(null);
+  // the ghost chip's registry entry: the dragged tab's component, so the
+  // preview shows WHAT will land (title + icon) before release
+  const dragGhost = computed(() => {
+    if (!dropZone.value) return null;
+    const d = tabDrag.current();
+    return d ? dockableOf(d.component) : null;
+  });
+  // the zone rectangle as body fractions (pure dockdnd math) - percent
+  // positioning, no px bookkeeping in the component
+  const zoneStyle = computed(() => {
+    const f = zoneRectFractions(dropZone.value ?? "center");
+    return {
+      left: f.x * 100 + "%",
+      top: f.y * 100 + "%",
+      width: f.w * 100 + "%",
+      height: f.h * 100 + "%",
+    };
+  });
+  // the zone math runs on the pane BODY (under the tab bar) - VS Code's
+  // read: the tab strip owns the caret band, the body owns the zones
+  function bodyRect(): ZoneRect {
+    const pane = paneEl.value;
+    if (!pane) return { x: 0, y: 0, w: 0, h: 0 };
+    const pr = pane.getBoundingClientRect();
+    const bar = pane.querySelector(".dock-tabbar");
+    const top = bar ? bar.getBoundingClientRect().bottom : pr.top;
+    return { x: pr.left, y: top, w: pr.width, h: Math.max(0, pr.bottom - top) };
+  }
   const newTabMenu = ref(false);
   const menuOpen = ref(false); // the pane-actions (split / remove) menu
   const tabsEl = ref<HTMLElement | null>(null);
+  const paneEl = ref<HTMLElement | null>(null); // the pane root (zone-math measurements)
 
   // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
   // (the window dragend/drop cleanup clears the gesture record)
@@ -387,6 +442,7 @@
     refusedIdx.value = caretIndexFor(e);
     dropHover.value = false;
     dropIdx.value = null;
+    dropZone.value = null;
   }
 
   function onTabbarDragOver(e: DragEvent) {
@@ -396,6 +452,7 @@
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     dropHover.value = true;
     refusedIdx.value = null;
+    dropZone.value = null; // the bar's band: the caret predicts, zones clear
     dropIdx.value = caretIndexFor(e);
   }
 
@@ -417,8 +474,30 @@
     if (!dropAllowed()) return refuse(e); // locked drag, wrong shell
     e.preventDefault(); // a drop anywhere in the pane lands
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    dropHover.value = true;
+    // the TAB BAR band rides through (the per-tab handlers own it): the
+    // caret predicts there, zones stay body-only (card t_0e833eae)
+    const el = e.target as HTMLElement | null;
+    if (el?.closest?.(".dock-tabbar")) {
+      dropHover.value = true;
+      refusedIdx.value = null;
+      dropZone.value = null;
+      return;
+    }
+    const d = tabDrag.current();
+    // zones are CROSS-PANE: a body hover of the pane's own tab keeps the
+    // classic focus-on-drop read (no docking preview of itself)
+    if (d && d.paneId === props.node.id) {
+      dropHover.value = true;
+      refusedIdx.value = null;
+      dropZone.value = null;
+      return;
+    }
+    // VS Code zone read on the pane body: halves + center. Edge shells
+    // never split, so their zones fold to center (group into the bar).
+    const raw = zoneForPoint(e.clientX, e.clientY, bodyRect());
+    dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
+    dropZone.value = splitAllowedFor(props.node.edge) ? raw : "center";
   }
 
   function onPaneDragLeave(e: DragEvent) {
@@ -427,13 +506,23 @@
     clearDrop();
   }
 
-  // body drop (VS Code): same pane = focus only; another pane = move to end
+  // body drop (VS Code): same pane = focus only; another pane: the lit
+  // zone decides - split the target around the dragged tab (halves, the
+  // new half-pane seats the tab) or group it as a plain tab (center).
+  // The pure op refuses its illegal landings as no-ops (shells don't
+  // split, zones never self-dock), so release never tears the layout.
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
     const d = payloadOf(e);
+    const zone = dropZone.value;
     if (d && dropAllowed()) {
-      if (d.p === props.node.id) api.focus(props.node.id, d.t);
-      else api.moveTab(d.p, d.t, props.node.id, props.node.tabs.length);
+      if (zone && d.p !== props.node.id) {
+        api.dockDropToZone(d.p, d.t, props.node.id, zone);
+      } else if (d.p === props.node.id) {
+        api.focus(props.node.id, d.t);
+      } else {
+        api.moveTab(d.p, d.t, props.node.id, props.node.tabs.length);
+      }
     }
     clearDrop();
   }
@@ -442,6 +531,7 @@
     dropHover.value = false;
     dropIdx.value = null;
     refusedIdx.value = null;
+    dropZone.value = null;
     tabDrag.end();
   }
   // any drag ending anywhere clears the local highlight (dropped elsewhere,
@@ -449,10 +539,17 @@
   function onDragEnd() {
     clearDrop();
   }
+  // keyboard escape cancels the drag cleanly: the browser fires dragend on
+  // Esc for native DnD, and the keydown here backs it (headless/OS variance)
+  // so prediction state never outlives the gesture - layout untouched.
+  function onEscKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && tabDrag.current()) clearDrop();
+  }
   onMounted(() => {
     document.addEventListener("click", onDocClick);
     window.addEventListener("dragend", onDragEnd);
     window.addEventListener("drop", onDragEnd);
+    window.addEventListener("keydown", onEscKey);
   });
   function onDocClick() {
     menuOpen.value = false;
@@ -462,5 +559,6 @@
     document.removeEventListener("click", onDocClick);
     window.removeEventListener("dragend", onDragEnd);
     window.removeEventListener("drop", onDragEnd);
+    window.removeEventListener("keydown", onEscKey);
   });
 </script>
