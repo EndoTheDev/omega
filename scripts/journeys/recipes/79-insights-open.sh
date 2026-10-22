@@ -17,6 +17,25 @@
 #             90 days / all time) and the header follows a click.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
+# seed: the overview asserts REAL numbers (a session count > 0, a token
+# figure) - on a swept lane nothing qualifies and the assertions are
+# unfalsifiable reds. The journey runs its own throwaway session (one
+# real model exchange) so the numbers exist regardless of lane state.
+JRN_ID=$(new_journey_session insights | tail -1)
+label_journey_session "$JRN_ID" "(journey) insights-seed $(journey_tag)"
+send_journey_message "$JRN_ID" "insights seed - reply with exactly: seedok"
+seeded=0
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  seeded=$(curl -s "$JOURNEY_BASE_URL/sessions" | python3 -c "
+import sys, json
+rows = json.load(sys.stdin)
+print(1 if any(r['id'] == '$JRN_ID' and r.get('completion_tokens', 0) > 0 for r in rows) else 0)
+")
+  [ "$seeded" = "1" ] && break
+  sleep 2
+done
+assert_eq "$seeded" "1" "seeded model run completed (completion_tokens > 0)"
+
 open_app
 ab set viewport 1280 800 >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
@@ -49,15 +68,17 @@ clicked=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
 assert_eq "$clicked" "1" "insights menu item clicked"
 
 # the tab renders: an insights tab title exists and the dashboard
-# body carries the OVERVIEW block (body-wide: the first .dock-content
-# in DOM order is the sidebar pane, not the main pane)
+# body carries the overview block (body-wide: the first .dock-content
+# in DOM order is the sidebar pane, not the main pane). The heading is
+# the component's lowercase h3 - matched case-insensitively, since the
+# journey once pinned an uppercase OVERVIEW that no build ever shipped.
 wait_js '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].some(e=>/insights/i.test(e.textContent||""));
- return t&&(document.body.innerText||"").includes("OVERVIEW")})()' 15
+ return t&&/overview/i.test((document.body.innerText||""))})()' 15
 step "ok: insights tab renders the dashboard"
 
 # real numbers: a positive session count and a token figure in the
 # overview (catches an empty-payload render)
-nums=$(jsq '(()=>{const el=[...document.querySelectorAll(".dock-content,.pane")].map(e=>e.innerText).find(t=>t.includes("OVERVIEW"))||"";
+nums=$(jsq '(()=>{const el=[...document.querySelectorAll(".dock-content,.pane")].map(e=>e.innerText).find(t=>/overview/i.test(t))||"";
  const s=/sessions\s*\n?\s*(\d+)/.exec(el); const k=/tokens \(est\.\)\s*\n?\s*([\d,]+)/.exec(el);
  return s&&k&&Number(s[1])>0&&Number(k[1].replace(/,/g,""))>0?1:0})()')
 assert_eq "$nums" "1" "overview carries real data"
