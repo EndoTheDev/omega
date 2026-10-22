@@ -36,6 +36,7 @@ import {
   openSingleton,
   createDock,
   DOCK_LAYOUT_KEY,
+  BOTTOM_CLOSED_KEY,
   hideEdgePane,
   revealEdgePane,
   rememberEdgePx,
@@ -409,21 +410,31 @@ describe("tab ops", () => {
       assert.equal(findPane(out, right.id)!.active, 0);
     });
 
-    it("moving a pane's LAST tab empties but KEEPS the pane", () => {
+    it("moving a pane's LAST tab closes the pane (card t_aa9dbada)", () => {
       const { t, left, right } = twoPaneTree();
       // drain left pane one tab at a time (target index from the FRESH
       // pane - destructured refs point at the pre-move tree)
       let cur = moveTab(t, left.id, 0, right.id, findPane(t, right.id)!.tabs.length);
-      assert.equal(panes(cur).length, 2, "no pane vanished");
+      assert.equal(panes(cur).length, 2, "the source still hosts a tab, it stays");
       cur = moveTab(cur, left.id, 0, right.id, findPane(cur, right.id)!.tabs.length);
-      const l = findPane(cur, left.id)!;
-      assert.equal(l.tabs.length, 0, "source pane empty");
-      assert.equal(panes(cur).length, 2, "empty source pane survives (menu ruling)");
+      assert.ok(!findPane(cur, left.id), "the last tab out closes the pane");
+      assert.equal(panes(cur).length, 1, "the survivor hoists (same result as the remove button)");
       assert.deepEqual(tabComps(cur, right.id), ["chat", "chat", "scratch"]);
       assert.ok(
         findPane(cur, right.id)!.tabs.some((x) => x.component === "scratch"),
         "the drained tab landed in the right pane",
       );
+    });
+
+    it("a PINNED shell emptied by a move stays (shells may sit empty)", () => {
+      const shell = makePane("files", 240, "right");
+      const chat = makePane("chat");
+      const t = makeSplit("row", [shell, chat]);
+      const out = moveTab(t, shell.id, 0, chat.id, 0);
+      const s = findPane(out, shell.id)!;
+      assert.ok(s, "the pinned shell is not pruned");
+      assert.equal(s.tabs.length, 0, "the shell sits empty after the move");
+      assert.deepEqual(tabComps(out, chat.id), ["files", "chat"], "the tab landed");
     });
 
     it("emptying the source moves focus to the remaining neighbor", () => {
@@ -1414,6 +1425,78 @@ describe("v1 layout migration (t_d6b657a7)", () => {
     const loc = findComponentTab(tree, "settings")!;
     assert.equal(loc.tab.component, "settings");
     assert.equal(findPane(tree, loc.paneId)!.id, chatPane.id, "settings still lives in the main pane");
+  });
+});
+
+// card t_aa9dbada: pane visibility saves WITH the layout - the record's
+// closed-edge set is what reloads restore (no shaped re-assertion over it).
+describe("closed-edge persistence (card t_aa9dbada)", () => {
+  it("serialize/deserializeLayout round-trips the closed-edge set", () => {
+    const rec = deserializeLayout(serialize(defaultTree(), ["sidebar", "bottom"]))!;
+    assert.deepEqual(rec.closedEdges, ["sidebar", "bottom"]);
+    // absent on records that predate the field (the legacy migration reads it)
+    assert.equal(
+      deserializeLayout(JSON.stringify({ v: 2, tree: defaultTree() }))!.closedEdges,
+      undefined,
+    );
+    // garbage entries filter, not fail
+    const filtered = deserializeLayout(
+      JSON.stringify({ v: 2, tree: defaultTree(), closedEdges: ["sidebar", "alien", 42] }),
+    )!;
+    assert.deepEqual(filtered.closedEdges, ["sidebar"]);
+    // garbage shapes -> empty, never thrown
+    const shaped = deserializeLayout(
+      JSON.stringify({ v: 2, tree: defaultTree(), closedEdges: "nope" }),
+    )!;
+    assert.deepEqual(shaped.closedEdges, []);
+  });
+
+  it("ensurePinnedEdges leaves a shell the record says is closed OUT", () => {
+    const bare = makePane("chat");
+    const out = ensurePinnedEdges(bare, ["sidebar", "inspector"]);
+    assert.equal(findEdgePane(out, "sidebar"), null);
+    assert.equal(findEdgePane(out, "inspector"), null);
+    // a closed side is never marker-MINTED from content either (a main pane
+    // hosting dragged-in inspector tabs would otherwise be claimed by the
+    // closed shell's reappearance)
+    const main = makeSplit("row", [makePane("files"), makePane("chat")]);
+    const unclaimed = deriveEdgeMarkers(main, ["inspector"]);
+    assert.equal(findEdgePane(unclaimed, "inspector"), null);
+  });
+
+  it("RELOAD restores closed sidebars: close, flush, boot -> still closed; reopen -> back", async () => {
+    const mem = new MemoryStorage();
+    const first = createDock(mem as unknown as Storage);
+    assert.ok(findEdgePane(first.tree.value, "sidebar"));
+    assert.ok(findEdgePane(first.tree.value, "inspector"));
+    first.toggleEdge("sidebar", "before");
+    first.toggleEdge("inspector", "after");
+    assert.equal(findEdgePane(first.tree.value, "sidebar"), null);
+    await flush(); // the record carries the closed-edge set now
+    const second = createDock(mem as unknown as Storage);
+    assert.equal(findEdgePane(second.tree.value, "sidebar"), null, "sessions sidebar stays closed");
+    assert.equal(findEdgePane(second.tree.value, "inspector"), null, "inspector sidebar stays closed");
+    assert.ok(paneCount(second.tree.value) >= 1, "the dock is never empty");
+    // the user reopens: that state persists too
+    second.toggleEdge("sidebar", "before");
+    await flush();
+    const third = createDock(mem as unknown as Storage);
+    assert.ok(findEdgePane(third.tree.value, "sidebar"), "reopen persists too");
+  });
+
+  it("a legacy record (no closedEdges) migrates the bottom flag once, then the key retires", async () => {
+    const mem = new MemoryStorage();
+    const rec = JSON.parse(serialize(defaultTree()));
+    delete rec.closedEdges; // the pre-fix record shape
+    mem.setItem(DOCK_LAYOUT_KEY, JSON.stringify(rec));
+    mem.setItem(BOTTOM_CLOSED_KEY, "1");
+    const dock = createDock(mem as unknown as Storage);
+    assert.equal(findEdgePane(dock.tree.value, "bottom"), null, "the legacy closure migrates");
+    assert.ok(findEdgePane(dock.tree.value, "sidebar"), "sidebars are untouched by the flag");
+    assert.equal(mem.getItem(BOTTOM_CLOSED_KEY), null, "the key retired after the read");
+    await flush(); // the migrated closure persists as record data
+    const after = createDock(mem as unknown as Storage);
+    assert.equal(findEdgePane(after.tree.value, "bottom"), null, "the migrated closure persists");
   });
 });
 
