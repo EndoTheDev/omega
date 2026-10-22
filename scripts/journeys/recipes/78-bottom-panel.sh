@@ -7,8 +7,8 @@
 #   2  divider drag resizes its height on the +200 snap ladder (200 -> 400)
 #   3  reload persists the resized tree
 #   4  close/reopen: the menubar toggle round-trips the panel; closure
-#      SURVIVES a reload (BOTTOM_CLOSED_KEY), the reopen restores the
-#      remembered height
+#      SURVIVES a reload (the record's closed-edge set, card t_aa9dbada),
+#      the reopen restores the remembered height
 #   5  mobile (<768px): the bottom cell zero-collapses (state survives),
 #      the desktop toggle drops out, and the logs view stays reachable in
 #      the inspector drawer (the dual-host union)
@@ -100,7 +100,7 @@ ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
-assert_eq "$bottom" "0" "the closed state survives a reload (BOTTOM_CLOSED_KEY)"
+assert_eq "$bottom" "0" "the closed state survives a reload (closed-edge set)"
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle bottom panel").click()' >/dev/null 2>&1
 sleep 0.6
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')

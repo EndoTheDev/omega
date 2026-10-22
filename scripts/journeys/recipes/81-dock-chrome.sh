@@ -83,4 +83,27 @@ done
 [ "$ok" = "1" ] || die "aligned mode never restored (last: [$got])"
 step "ok: aligned mode restored"
 
+# --- card t_aa9dbada: pane visibility persists WITH the layout -----------
+# Close BOTH sidebars via the menubar toggles, reload: the panes stay
+# closed (the record's closed-edge set restores the visibility the user
+# left - the loader no longer re-asserts the open shape over it), and the
+# reopen persists the same way.
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle right sidebar").click()' >/dev/null 2>&1
+sleep 0.5
+ab reload >/dev/null 2>&1
+ab wait --load networkidle >/dev/null 2>&1 || true
+sleep 1
+closed_left=$(jsq 'document.querySelector(".sessions .session-list")?0:1')
+assert_eq "$closed_left" "1" "RELOAD: the closed sessions sidebar STAYS closed"
+closed_right=$(jsq 'document.querySelector(".dock-pane.edge-right")?0:1')
+assert_eq "$closed_right" "1" "RELOAD: the closed inspector sidebar STAYS closed"
+alive=$(jsq 'document.querySelector(".composer")?1:0')
+assert_eq "$alive" "1" "the main pane still renders under both closed sidebars"
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
+sleep 0.6
+back=$(jsq 'document.querySelector(".sessions .session-list")?1:0')
+assert_eq "$back" "1" "the reopen persists too (state the user left)"
+step "ok: sidebar closure persists across reload (t_aa9dbada)"
+
 step "done: dock chrome holds - Sessions, closed pinned bars, aligned bottom panel"
