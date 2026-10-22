@@ -43,6 +43,7 @@ import {
   firstMainPaneId,
   insertMainPane,
   expandInspectorTabs,
+  rehomeInsightsTab,
   ensurePinnedEdges,
   forceSessionsLeft,
   restoreInspectorSet,
@@ -164,7 +165,7 @@ describe("tree construction", () => {
     const insp = asSplit(t).children[2];
     assert.deepEqual(
       asPane(insp).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     assert.equal(asPane(insp).active, 0);
   });
@@ -449,7 +450,7 @@ describe("tab ops", () => {
       const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
       assert.deepEqual(
         tabComps(movedBack, files.id),
-        ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+        ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
         "the moved tab rejoins the inspector bar at the caret",
       );
       assert.deepEqual(tabComps(t, chat.id), ["chat"], "refusals leave the tree untouched");
@@ -472,8 +473,8 @@ describe("tab ops", () => {
     });
   });
 
-  it("MAIN_DOCKABLES: the MAIN-area inventory (card t_4ae27e0d; settings left for the inspector, t_49d0b308; insights joined, t_e1e61680)", () => {
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "insights"]);
+  it("MAIN_DOCKABLES: the MAIN-area inventory (card t_4ae27e0d; settings left, t_49d0b308; insights left too, t_d7fd3ad3)", () => {
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
   });
 });
 
@@ -624,7 +625,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(asPane(row.children[2]).fixed, 240);
     assert.deepEqual(
       asPane(row.children[2]).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
@@ -671,7 +672,7 @@ describe("pane-model reset", () => {
     const out = expandInspectorTabs(legacy);
     assert.deepEqual(
       (out as DockPane).tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     assert.equal((out as DockPane).active, 0);
   });
@@ -695,9 +696,48 @@ describe("pane-model reset", () => {
     const right = asPane(out.children[2]); // [sidebar, chat, inspector]
     assert.deepEqual(
       right.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     assert.equal(right.fixed, 240);
+  });
+
+  it("rehomeInsightsTab lifts the main-pane strand; the loader seats it in the right shell (t_d7fd3ad3)", () => {
+    // a tree persisted while insights' home was "main" (t_e1e61680): a
+    // closable insights tab opened into the MAIN pane. The right shell
+    // already holds its own instance (the registry seats it), so the
+    // strand is the SECOND insights tab - the one outside the shell.
+    let t: DockNode = defaultTree();
+    const chatId = findComponentPane(t, "chat")!.id;
+    t = openTab(t, chatId, { component: "insights" });
+    const strand = findComponentTab(t, "insights")!;
+    assert.notEqual(strand.paneId, findEdgePane(t, "inspector")!.id);
+    assert.equal(
+      asPane(findPane(t, strand.paneId)!).edge,
+      undefined,
+      "pre: the strand lives in a main pane",
+    );
+    // the lift removes every insights tab outside the right shell
+    const lifted = rehomeInsightsTab(t);
+    const liftedPane = findPane(lifted, strand.paneId)!;
+    assert.ok(liftedPane, "the main pane survives");
+    assert.ok(
+      !liftedPane.tabs.some((x) => x.component === "insights"),
+      "the strand's tab is gone",
+    );
+    assert.ok(
+      findEdgePane(lifted, "inspector")!.tabs.some((x) => x.component === "insights"),
+      "the right shell's instance survives the lift",
+    );
+    // the loader (ensurePinnedEdges -> restoreInspectorSet) seats it in
+    // the right shell on the same boot (here it was alive already)
+    const loaded = ensurePinnedEdges(lifted);
+    const right = findEdgePane(loaded, "inspector")!;
+    assert.ok(
+      right.tabs.some((x) => x.component === "insights"),
+      "restore keeps insights in the right shell",
+    );
+    // a clean tree is a no-op (same reference - the pure contract)
+    assert.equal(rehomeInsightsTab(loaded), loaded);
   });
   it("a modern tree passes ensurePinnedEdges untouched", () => {
     const t = defaultTree();
@@ -793,7 +833,7 @@ describe("edge toggle (card t_47b776ad)", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x): string => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
   });
 
@@ -1258,9 +1298,12 @@ describe("v1 layout migration (t_d6b657a7)", () => {
     assert.equal(findPane(loaded.tree, "n4")!.edge, "right");
   });
 
-  it("a v2 arrangement reloads verbatim: shells empty stay empty", async () => {
+  it("a v2 arrangement reloads verbatim: shells empty stay empty - except insights' home (t_d7fd3ad3)", async () => {
     let t: DockNode = defaultTree();
-    // empty the right shell into the main pane, then persist
+    // empty the right shell into the main pane, then persist. card
+    // t_d7fd3ad3: insights' home is the right shell now - its old
+    // main-area tab (closable then, unclosable in the new registry) is
+    // lifted back on boot, so the bar refills with exactly insights.
     const insp = paneByComponent(t, "files");
     let chatPane = paneByComponent(t, "chat");
     for (let i = 0; i < INSPECTOR_TAB_COMPONENTS.length; i++) {
@@ -1273,7 +1316,11 @@ describe("v1 layout migration (t_d6b657a7)", () => {
     await flush();
     const tree = dock.tree.value;
     const shell = findEdgePane(tree, "inspector")!;
-    assert.equal(shell.tabs.length, 0, "the bar stays empty");
+    assert.deepEqual(
+      shell.tabs.map((x) => x.component),
+      ["insights"],
+      "the bar refills with insights - its home, never main",
+    );
     assert.equal(isPinnedPane(shell), true, "the marker survived");
     const loc = findComponentTab(tree, "settings")!;
     assert.equal(loc.tab.component, "settings");
