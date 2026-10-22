@@ -15,6 +15,7 @@ omega run <prompt>    run one prompt to stdout
 omega serve           start the HTTP server (SSE streaming)
 omega export <id|label> [output]   export a session as JSONL
 omega insights [--days N]          session usage analytics (default: 30 days)
+omega agents                       list registered agents; `omega agents create <name>` scaffolds one
 omega update              install the latest stable release
 omega update --rollback   swap back to omega.bak + health-verify
 omega rollback            alias for omega update --rollback
@@ -87,6 +88,23 @@ tokens). Nothing in the window prints "No sessions in the last N days."
 
 ```bash
 omega insights --days 90
+```
+
+### `omega agents`
+
+Lists the registered agent profiles (name, description, model, skill
+count, memory size, directory). The default agent always exists; boot
+moves legacy home-root `memory.md`/`user.md` into
+`~/.omega/agents/default/` (a rename, exactly once). `create` scaffolds
+`~/.omega/agents/<name>/` with a commented `config.yaml` (it layers over
+the home config), an empty `skills/`, and an empty `logs/` - memory and
+user files are never seeded. Sessions created as an agent never appear
+in the default agent's session list.
+
+```bash
+omega agents
+omega agents create scout "fast probe agent"
+omega agents create                    # fails: name required
 ```
 
 ### `omega update`
