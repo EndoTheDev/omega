@@ -23,13 +23,13 @@ JOURNEY_BASE_URL=${JOURNEY_BASE_URL:-http://127.0.0.1:8098}
 JOURNEY_CHROME_PORT=${JOURNEY_CHROME_PORT:-9333}
 JOURNEY_SESSION=${JOURNEY_SESSION:-omega-journey}
 
-# ab <args...>: one agent-browser call in the isolated journey session.
+# ab <args...>: one agent-browser call, ALWAYS in this run's browser
+# session: the daemon multiplexes concurrent clients (another card's
+# journey run rides the same daemon) and the default connection is
+# global - a session name keeps pages, navigation and the console log
+# bucket private to THIS suite (lib.sh lives in run.sh's export).
 ab() {
-  if [ -n "${JOURNEY_CDP_ATTACHED:-}" ]; then
-    "$AB" "$@"
-  else
-    "$AB" --session "$JOURNEY_SESSION" "$@"
-  fi
+  "$AB" --session "${JOURNEY_SESSION:-omega-journey}" "$@"
 }
 
 # step <desc>: progress line

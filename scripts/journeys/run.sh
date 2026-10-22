@@ -39,6 +39,13 @@ JOURNEY_BASE_URL="${JOURNEY_BASE_URL:-http://127.0.0.1:8098}"
 JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-9333}"
 JOURNEY_TIMEOUT="${JOURNEY_TIMEOUT:-300}"
 JOURNEY_JSON="${JOURNEY_JSON:-0}"
+# the browser session name rides EVERY command (lib.sh ab) and the CDP
+# connect: two concurrent suite runs share one agent-browser daemon, and
+# the daemon's default connection is global - without a session-scoped
+# connect the LAST connect wins and both runs drive one chrome (mis-read
+# DOM, foreign console noise, phantom reds). A fixed name keeps the
+# single-run behavior; concurrent workers export distinct names.
+JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"
 
 # --- agent-browser binary ----------------------------------------------------
 AB="$(command -v agent-browser 2>/dev/null | head -1)"
@@ -70,7 +77,10 @@ launch_chrome() {
     LIBS="$(find "$HOME/.hermes/profiles" -maxdepth 2 -type d -name 'chromium-libs' 2>/dev/null | head -1)"
   fi
   [ -n "$LIBS" ] || LIBS="$(dirname "$BINPATH")"
-  local UD="${TMPDIR:-/tmp}/omega-journeys-chrome-profile"
+  # per-port profile: two concurrent suite runs launch two chromiums -
+  # one shared user-data-dir would collide (chromium refuses a second
+  # instance on a locked profile, or the reset wipes a running one)
+  local UD="${TMPDIR:-/tmp}/omega-journeys-chrome-profile-$JOURNEY_CHROME_PORT"
   if [ "${1:-}" = "reset" ]; then rm -rf "$UD"; fi
   mkdir -p "$UD"
   LD_LIBRARY_PATH="$LIBS:$(dirname "$BINPATH")" "$BINPATH" \
@@ -127,7 +137,7 @@ if ! chrome_listening; then
   fi
 fi
 if chrome_listening; then
-  "$AB" connect "$JOURNEY_CHROME_PORT" >/dev/null 2>&1 || { echo "journeys: agent-browser cannot attach to the CDP port" >&2; exit 2; }
+  "$AB" --session "$JOURNEY_SESSION" connect "$JOURNEY_CHROME_PORT" >/dev/null 2>&1 || { echo "journeys: agent-browser cannot attach to the CDP port" >&2; exit 2; }
   JOURNEY_CDP_ATTACHED=1
 fi
 # else: agent-browser daemon launches its own Chrome on first command.
