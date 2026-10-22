@@ -1,27 +1,6 @@
 <template>
   <header class="menubar">
     <span class="brand">Ωmega</span>
-    <div
-      class="view-switch"
-      role="tablist"
-      aria-label="main view">
-      <button
-        class="view-tab"
-        :class="{ on: view === 'chat' }"
-        role="tab"
-        :aria-selected="view === 'chat'"
-        @click="$emit('view', 'chat')">
-        chat
-      </button>
-      <button
-        class="view-tab"
-        :class="{ on: view === 'board' }"
-        role="tab"
-        :aria-selected="view === 'board'"
-        @click="$emit('view', 'board')">
-        board
-      </button>
-    </div>
     <span class="menubar-spacer" />
     <!-- card t_47b776ad: the desktop toggles are BACK. "Fixed" means
          identity + reopenability: the sidebars are pinned singleton panes
@@ -76,60 +55,13 @@
         </g>
       </svg>
     </button>
-    <button
-      class="icon-btn edge-toggle"
-      aria-label="Toggle right sidebar"
-      :title="inspectorOpen ? 'Close right sidebar' : 'Open right sidebar'"
-      @click="$emit('toggle-inspector')">
-      <svg
-        v-if="inspectorOpen"
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M15 3v18M8 9l3 3l-3 3" />
-        </g>
-      </svg>
-      <svg
-        v-else
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M15 3v18m-5-6l-3-3l3-3" />
-        </g>
-      </svg>
-    </button>
-    <!-- card t_67fc1905: the bottom panel's toggle joins the desktop
-         edge cluster - same edge-toggle class (hidden below 768px, the
-         media block owns that). Unlike the sidebars this one is
-         SELF-CONTAINED: the drawer-repairs card owns app.vue's wiring
-         this round, so the button drives the dock api directly instead
-         of going through a @toggle-bottom emit. -->
+    <!-- card t_33f8756c: the three edge toggles read left | bottom | right,
+         matching the screen edge each one controls (the old order was
+         left, right, bottom). t_67fc1905 history: the bottom panel's
+         toggle joined this cluster; it stays SELF-CONTAINED - the
+         drawer-repairs card owns app.vue's wiring, so the button drives
+         the dock api directly. Hidden below 768px with the rest
+         (the media block owns that). -->
     <button
       class="icon-btn edge-toggle"
       aria-label="Toggle bottom panel"
@@ -175,6 +107,54 @@
             y="3"
             rx="2" />
           <path d="M3 15h18m9 6v-6m0 0l-3 3m3-3l3 3" />
+        </g>
+      </svg>
+    </button>
+    <button
+      class="icon-btn edge-toggle"
+      aria-label="Toggle right sidebar"
+      :title="inspectorOpen ? 'Close right sidebar' : 'Open right sidebar'"
+      @click="$emit('toggle-inspector')">
+      <svg
+        v-if="inspectorOpen"
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2">
+          <rect
+            width="18"
+            height="18"
+            x="3"
+            y="3"
+            rx="2" />
+          <path d="M15 3v18M8 9l3 3l-3 3" />
+        </g>
+      </svg>
+      <svg
+        v-else
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2">
+          <rect
+            width="18"
+            height="18"
+            x="3"
+            y="3"
+            rx="2" />
+          <path d="M15 3v18m-5-6l-3-3l3-3" />
         </g>
       </svg>
     </button>
@@ -271,13 +251,11 @@
   defineProps<{
     sidebarOpen: boolean;
     inspectorOpen: boolean;
-    view: "chat" | "board";
   }>();
 
   defineEmits<{
     (e: "toggle-sidebar"): void;
     (e: "toggle-inspector"): void;
-    (e: "view", v: "chat" | "board"): void;
     (e: "open-notification", n: unknown): void;
   }>();
 </script>

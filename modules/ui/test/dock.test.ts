@@ -19,6 +19,10 @@ import {
   MAIN_DOCKABLES,
   INSPECTOR_TAB_COMPONENTS,
   dragSplitDivider,
+  narrowGiveWay,
+  minDockPx,
+  CHAT_FLOOR_PX,
+  type NarrowHiddenEntry,
   serialize,
   deserialize,
   deserializeLayout,
@@ -913,6 +917,91 @@ describe("edge width memory (card t_f6d5a771)", () => {
     const mainPaneId = firstMainPaneId(t)!;
     const chat = findPane(t, mainPaneId)!;
     assert.equal(edgeComponentOf(chat), null);
+  });
+});
+
+describe("window-narrow give-way (card t_33f8756c)", () => {
+  // the default shell needs 240 (sidebar) + 320 (chat floor) + 300
+  // (inspector) + 8 (two rows' dividers) = 868 content px
+  it("minDockPx: rows sum children + dividers, columns take the widest", () => {
+    assert.equal(minDockPx(defaultTree()), 868);
+    // a lone flexible pane floors at 320; a fixed pane at its px
+    assert.equal(minDockPx(makePane("chat")), CHAT_FLOOR_PX);
+    // a column's requirement is its widest child only
+    const col = makeSplit("column", [
+      makePane("sidebar", 240),
+      makePane("chat", null),
+    ]);
+    assert.equal(minDockPx(col), 320);
+  });
+
+  it("narrowGiveWay: the secondary (inspector) collapses first", () => {
+    const t = defaultTree();
+    // 800 seats sidebar + chat floor + one divider, but not the inspector
+    const res = narrowGiveWay(t, 800);
+    assert.deepEqual(
+      res.hidden,
+      [{ component: "inspector", px: 300 }] satisfies NarrowHiddenEntry[],
+    );
+    assert.equal(findEdgePane(res.tree, "inspector"), null);
+    assert.notEqual(findEdgePane(res.tree, "sidebar"), null);
+    // the main pane is untouched
+    assert.equal(minDockPx(res.tree), 564);
+  });
+
+  it("narrowGiveWay: starved further, the primary gives way next", () => {
+    const res = narrowGiveWay(defaultTree(), 500);
+    assert.deepEqual(
+      res.hidden.map((h) => h.component),
+      ["inspector", "sidebar"],
+    );
+    assert.equal(findEdgePane(res.tree, "inspector"), null);
+    assert.equal(findEdgePane(res.tree, "sidebar"), null);
+    // what is left is the main pane at its 320 floor
+    assert.equal(minDockPx(res.tree), CHAT_FLOOR_PX);
+  });
+
+  it("narrowGiveWay: a window that fits hides nothing; already-hidden stay gone", () => {
+    const t = defaultTree();
+    assert.deepEqual(narrowGiveWay(t, 1000).hidden, []);
+    assert.deepEqual(narrowGiveWay(t, 868).hidden, []); // exactly seated
+    // once both are gone nothing further can collapse (never-empty dock)
+    const squeezed = narrowGiveWay(t, 500).tree;
+    const again = narrowGiveWay(squeezed, 300);
+    assert.deepEqual(again.hidden, []);
+    assert.equal(again.tree, squeezed); // nothing hidden: identity preserved
+  });
+
+  it("dock.narrowSqueeze prunes through the store and remembers the widths", () => {
+    const mem: Record<string, string> = {};
+    const store = {
+      getItem: (k: string) => (k in mem ? mem[k] : null),
+      setItem: (k: string, v: string) => {
+        mem[k] = v;
+      },
+      removeItem: (k: string) => {
+        delete mem[k];
+      },
+      clear: () => {
+        for (const k of Object.keys(mem)) delete mem[k];
+      },
+      key: () => null,
+      length: 0,
+    } as Storage;
+    createDock(store); // boot pass runs the load pipeline; ignore the value
+    const dock = createDock(store);
+    dock.narrowSqueeze(800);
+    assert.equal(findEdgePane(dock.tree.value, "inspector"), null);
+    assert.notEqual(findEdgePane(dock.tree.value, "sidebar"), null);
+    // the inspector's width went into the edge-px memory; the reopen clamp
+    // lifts the sub-floor 300 to the 320 open minimum (openClamp contract)
+    assert.equal(recalledEdgePx(store, "inspector"), 320);
+    dock.toggleEdge("inspector", "after");
+    assert.equal(asPane(findEdgePane(dock.tree.value, "inspector")!).fixed, 320);
+    // a roomy resize is a no-op - the tree never rewrites
+    const before = serialize(dock.tree.value);
+    dock.narrowSqueeze(4000);
+    assert.equal(serialize(dock.tree.value), before);
   });
 });
 

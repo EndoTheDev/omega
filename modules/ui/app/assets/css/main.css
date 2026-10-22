@@ -115,40 +115,16 @@ body {
 
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
-/* main-view switcher: chat | board pill, matches .icon-btn chrome */
-.view-switch {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--z1-raised);
-  border-radius: 7px;
-}
-.view-tab {
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--text);
-  opacity: 0.55;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-.view-tab:hover { opacity: 0.85; }
-.view-tab.on {
-  opacity: 1;
-  font-weight: 600;
-  background: var(--z1-raised);
-}
 
 /* ---- layer 1: pane area — floating rounded panes on the canvas ---- */
 .pane-area {
   display: flex;
   min-height: 0;
   min-width: 0;
-  /* panes squeeze each other - never a horizontal scrollbar. Chat keeps a
-     floor; the right pane flexes down first and collapses when starved. */
+  /* panes squeeze each other - never a horizontal scrollbar. The chat's
+     320px floor is a HARD wall: when the window narrows, dock.narrowSqueeze
+     (app.vue's resize pass) collapses the secondary sidebar first, then the
+     primary - the main pane never starves (card t_33f8756c). */
   overflow: hidden;
   /* 3px breathing room between panes and the status bar (pure spacing -
      matches the top gutter; the status bar grows by the same 3px so the
