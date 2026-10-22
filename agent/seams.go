@@ -24,8 +24,8 @@ type LoopOptions struct {
 	Tools              map[string]Tool
 	ToolProviders      []ToolProvider // additive tool sources (extensions)
 	CompactionProvider CompactionProvider
-	PromptBuilder      PromptBuilder           // builds system prompt + guidelines
-	ExtensionInfos     []ExtensionInfo         // for prompt building context
+	PromptBuilder      PromptBuilder   // builds system prompt + guidelines
+	ExtensionInfos     []ExtensionInfo // for prompt building context
 	MaxTurns           int
 	MaxToolOutput      int
 	CWD                string
@@ -34,7 +34,7 @@ type LoopOptions struct {
 	PromptContext      string   // trust-gated AGENTS.md project context
 	Events             chan<- Event
 	InjectedMessages   <-chan InjectedMessage // subagent results (nil if no delegate extension)
-	UserInput          <-chan string           // user messages while running (nil for one-shot mode)
+	UserInput          <-chan string          // user messages while running (nil for one-shot mode)
 	PendingDelegations func() int             // returns count of running subagent tasks
 	Logger             LoggerProvider         // optional logger; nil = no logging
 }
@@ -377,30 +377,37 @@ type SkillsLister interface {
 
 // VerdictPrompt is one agent-issued question (verdict cards v1) as it
 // is registered with the verdicts seam: the tool's arguments plus the
-// runtime identity (id, session, deadline). Options is the labeled
-// pick list (empty = free text only); FreeText additionally allows a
-// typed answer. Defaults ride the seam implementation (20 minutes).
+// runtime identity (id, session, deadline). Each option carries a
+// label and an optional description (empty = no options, allow-text
+// only). Multi allows several picks in one answer; AllowText
+// additionally allows a typed answer. Defaults ride the seam
+// implementation (20 minutes).
 type VerdictPrompt struct {
 	ID        string
 	SessionID string
 	Title     string
 	Body      string
-	Options   []string
-	FreeText  bool
+	Options   []ai.VerdictOption
+	Multi     bool
+	AllowText bool
 	TimeoutS  int
 	ExpiresAt time.Time
 }
 
-// Verdict is the recorded answer to one VerdictPrompt: a pick (index is
-// 1-based; Option the label), free text, a recorded skip (no silent
-// dismissal), or the expiry firing. Exactly one of the four applies.
+// Verdict is the recorded answer to one VerdictPrompt: a single pick
+// (index is 1-based; Option the label), a multi pick (OptionIndexes
+// every selected index, Options the labels), free text, a recorded
+// skip (no silent dismissal), or the expiry firing. Exactly one of
+// the five applies.
 type Verdict struct {
-	CardID      string
-	OptionIndex int
-	Option      string
-	Text        string
-	Skipped     bool
-	Expired     bool
+	CardID        string
+	OptionIndex   int
+	Option        string
+	OptionIndexes []int
+	Options       []string
+	Text          string
+	Skipped       bool
+	Expired       bool
 }
 
 // Kind labels the verdict for tool results and wire payloads:
@@ -442,7 +449,7 @@ type VerdictsProvider interface {
 }
 
 // Run origins (verdict cards v1): which surface launched the agent
-// turn. request_verdict only issues from interactive turns - cron fires
+// verdict.request only issues from interactive turns - cron fires
 // and delegate subagents must never hard-pause waiting for a click.
 const (
 	RunOriginInteractive = "interactive"
@@ -491,7 +498,7 @@ type TrustProvider interface {
 // and session content never ride a notification (privacy law).
 type Notification struct {
 	ID        int64  `json:"id"`
-	Kind      string `json:"kind"`    // task | cron | chat
+	Kind      string `json:"kind"` // task | cron | chat
 	SourceID  string `json:"source_id"`
 	Title     string `json:"title"`   // metadata line, no prompt/session content
 	Verdict   string `json:"verdict"` // ok | failed

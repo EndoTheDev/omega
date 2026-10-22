@@ -11,8 +11,19 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/modules/verdict"
 )
+
+// vo builds pick rows from labels: the test shorthand for
+// []ai.VerdictOption (labels only, no description).
+func vo(labels ...string) []ai.VerdictOption {
+	out := make([]ai.VerdictOption, len(labels))
+	for i, l := range labels {
+		out[i] = ai.VerdictOption{Label: l}
+	}
+	return out
+}
 
 // verdictServer builds a server with the verdicts seam mounted on a
 // fresh hub, plus a helper to issue a blocking card in the background
@@ -52,7 +63,7 @@ func issueCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{}
 	done := make(chan struct{})
 	go func() {
 		_, _ = h.Ask(context.Background(), agent.VerdictPrompt{
-			ID: id, SessionID: session, Title: "Approve?", Options: []string{"yes", "no"},
+			ID: id, SessionID: session, Title: "Approve?", Options: vo("yes", "no"),
 		})
 		close(done)
 	}()
@@ -160,6 +171,65 @@ func TestVerdictsSecondAnswerReturns409(t *testing.T) {
 	if !strings.Contains(e["error"].(string), "already answered") {
 		t.Fatalf("409 error = %v, want containing 'already answered'", e["error"])
 	}
+}
+
+func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
+	ts, h := verdictServer(t)
+	done := make(chan struct{})
+	go func() {
+		_, _ = h.Ask(context.Background(), agent.VerdictPrompt{
+			ID: "cm", SessionID: "s1", Title: "Pick lanes", Multi: true,
+			Options: []ai.VerdictOption{{Label: "Ship", Description: "merge now"}, {Label: "Hold"}, {Label: "Stop"}},
+		})
+		close(done)
+	}()
+	// wait for the card; the pending list must carry the described
+	// options and the multi flag (the card the webui re-renders from).
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if len(h.Pending("s1")) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	list := verdictGet(t, ts, "/sessions/s1/verdicts")
+	rows, _ := list["cards"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("pending cards = %v, want one", list["cards"])
+	}
+	card, _ := rows[0].(map[string]any)
+	if card["multi"] != true {
+		t.Fatalf("pending card multi = %v, want true", card["multi"])
+	}
+	opts, _ := card["options"].([]any)
+	first, _ := opts[0].(map[string]any)
+	if first["label"] != "Ship" || first["description"] != "merge now" {
+		t.Fatalf("pending option 0 = %v, want label Ship description merge-now", first)
+	}
+
+	r, err := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
+		strings.NewReader(`{"card_id":"cm","option_indexes":[1,3]}`))
+	if err != nil {
+		t.Fatalf("POST answer: %v", err)
+	}
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("multi answer status = %d, want 200: %s", r.StatusCode, body)
+	}
+	var ans map[string]any
+	if err := json.Unmarshal(body, &ans); err != nil {
+		t.Fatalf("answer decode: %v", err)
+	}
+	ixs, _ := ans["option_indexes"].([]any)
+	if len(ixs) != 2 || ixs[0] != float64(1) || ixs[1] != float64(3) {
+		t.Fatalf("answer indexes = %v, want [1 3]", ans["option_indexes"])
+	}
+	labels, _ := ans["options"].([]any)
+	if len(labels) != 2 || labels[0] != "Ship" || labels[1] != "Stop" {
+		t.Fatalf("answer labels = %v, want [Ship Stop]", ans["options"])
+	}
+	<-done
 }
 
 func TestVerdictsAnswerUnknownCard404(t *testing.T) {

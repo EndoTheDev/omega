@@ -215,7 +215,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	turnCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	// Verdict cards v1 (card t_2ecf9c51): a cron fire is a background
-	// turn - request_verdict refuses to hard-pause from this origin.
+	// turn - verdict.request refuses to hard-pause from this origin.
 	turnCtx = agent.WithRunOrigin(turnCtx, agent.RunOriginCron)
 
 	final, runErr := r.runTurn(turnCtx, sessionID, job)

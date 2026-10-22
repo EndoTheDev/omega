@@ -44,9 +44,9 @@ type Server struct {
 	// a nil Skills serves an empty list on /skills, a nil Cron an
 	// empty list on /cron/jobs, and a nil logger (or one without a
 	// path) 404s on /logs.
-	Skills  agent.SkillsProvider
-	Cron    agent.CronProvider
-	logger  agent.LoggerProvider
+	Skills agent.SkillsProvider
+	Cron   agent.CronProvider
+	logger agent.LoggerProvider
 	// Notifications is the finished-things seam (card t_5d9032d3):
 	// /notifications list + read, /notifications/events SSE toasts.
 	// Nil answers 501 - the seam is optional like the board.
@@ -55,7 +55,7 @@ type Server struct {
 	// card t_2ecf9c51): /verdicts listing + /sessions/{id}/verdicts
 	// answering. Nil answers 501 - optional like the board.
 	Verdicts agent.VerdictsProvider
-	httpSrv *http.Server
+	httpSrv  *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
 	// otherwise run forever and hold the session's run slot until
@@ -790,7 +790,7 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
 	// Verdict cards v1: the no-store legacy path is still an interactive
-	// turn - request_verdict may issue from here.
+	// turn - verdict.request may issue from here.
 	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
 	// Turn copy persistence belongs to the loop (card t_471f6d4a): the
 	// sink carries the session and the head-parent pin, the run input
@@ -1043,7 +1043,7 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 	// never hard-pause on the card (no session, nobody answering): deny
 	// request_verdict by name - the loop filters it after every provider
 	// merge, the same mechanism the ephemeral path denies memory with.
-	ctx = agent.WithDeniedTools(ctx, "request_verdict")
+	ctx = agent.WithDeniedTools(ctx, "verdict")
 
 	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
 	title := ""

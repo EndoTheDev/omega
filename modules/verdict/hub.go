@@ -1,6 +1,6 @@
 // Package verdict implements verdict cards v1 (card t_2ecf9c51): the
 // agent issues a question mid-turn, the turn HARD-PAUSES inside the
-// request_verdict tool, and the user answers by click (webui) or type
+// verdict.request tool, and the user answers by click (webui) or type
 // (TUI). Whichever surface answers first wins - the second answerer is
 // rejected with a reason, never double-applied. Advisory in v1: the
 // verdict is recorded as session messages; the agent then acts through
@@ -42,22 +42,24 @@ type Hub struct {
 	// deadline is the default per-card timeout when a call passes none.
 	deadline time.Duration
 
-	mu     sync.Mutex
-	cards  []*cardState
+	mu    sync.Mutex
+	cards []*cardState
 }
 
 // cardState is one card's identity plus its answer race: exactly one
 // resolution channel send wins (Answer or the expiry timer), and any
 // later Answer sees the settled state and returns the reason.
 type cardState struct {
-	prompt   agent.VerdictPrompt
-	answer   chan agent.Verdict
-	settled  bool // answered, skipped, or expired
-	expired  bool
-	skipped  bool
-	option   string
-	optionIx int
-	text     string
+	prompt       agent.VerdictPrompt
+	answer       chan agent.Verdict
+	settled      bool // answered, skipped, or expired
+	expired      bool
+	skipped      bool
+	option       string
+	optionIx     int
+	optionIxs    []int
+	optionLabels []string
+	text         string
 }
 
 // NewHub builds a hub. store is optional (ephemeral sessions and
@@ -108,7 +110,7 @@ func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict,
 	// Persist the card BEFORE the pause completes the audit trail even
 	// if the process dies mid-question. Best effort: persistence must
 	// never block or fail the question itself.
-	h.persist(ai.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.FreeText, card.TimeoutS))
+	h.persist(ai.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
 
 	timer := time.AfterFunc(timeout, func() { h.expire(card.ID) })
 	defer timer.Stop()
@@ -141,7 +143,7 @@ func (h *Hub) expire(cardID string) {
 	}
 	c.settled = true
 	c.expired = true
-	record := ai.NewVerdict(cardID, 0, "", "", false, true)
+	record := ai.NewVerdict(cardID, nil, nil, "", false, true)
 	c.answer <- agent.Verdict{CardID: cardID, Expired: true}
 	h.mu.Unlock()
 
@@ -205,19 +207,41 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 	}
 
 	// Validations per card shape (design point 1: ONE card shape):
-	// a pick must land on a real option; free text only when the card
-	// allows it; a skip is always allowed and is recorded, never silent.
+	// a pick must land on real option(s); free text only when the card
+	// allows it; a skip is always allowed and is recorded, never
+	// silent. A multi card takes option_indexes; a single card takes
+	// one option_index.
 	switch {
 	case v.Skipped:
 		// always fine
+	case len(v.OptionIndexes) > 0:
+		if !c.prompt.Multi {
+			h.mu.Unlock()
+			return agent.Verdict{}, fmt.Errorf("card %s takes a single pick (1..%d), not a multi-select answer", cardID, len(c.prompt.Options))
+		}
+		labels := make([]string, 0, len(v.OptionIndexes))
+		for _, ix := range v.OptionIndexes {
+			if ix < 1 || ix > len(c.prompt.Options) {
+				h.mu.Unlock()
+				return agent.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", ix, len(c.prompt.Options))
+			}
+			labels = append(labels, c.prompt.Options[ix-1].Label)
+		}
+		v.Options = labels
+		v.OptionIndex = v.OptionIndexes[0]
+		v.Option = labels[0]
 	case v.OptionIndex > 0:
 		if v.OptionIndex > len(c.prompt.Options) {
 			h.mu.Unlock()
 			return agent.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", v.OptionIndex, len(c.prompt.Options))
 		}
-		v.Option = c.prompt.Options[v.OptionIndex-1]
+		if c.prompt.Multi {
+			h.mu.Unlock()
+			return agent.Verdict{}, fmt.Errorf("card %s is multi-select: answer with option_indexes (1..%d)", cardID, len(c.prompt.Options))
+		}
+		v.Option = c.prompt.Options[v.OptionIndex-1].Label
 	case v.Text != "":
-		if len(c.prompt.Options) > 0 && !c.prompt.FreeText {
+		if len(c.prompt.Options) > 0 && !c.prompt.AllowText {
 			h.mu.Unlock()
 			return agent.Verdict{}, fmt.Errorf("card %s takes an option, not free text", cardID)
 		}
@@ -234,9 +258,21 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 	c.skipped = v.Skipped
 	c.option = v.Option
 	c.optionIx = v.OptionIndex
+	c.optionIxs = v.OptionIndexes
+	c.optionLabels = v.Options
 	c.text = v.Text
 	v.CardID = cardID
-	record := ai.NewVerdict(cardID, v.OptionIndex, v.Option, v.Text, v.Skipped, false)
+	// a single pick rides OptionIndex/Option; a multi pick rides
+	// OptionIndexes/Options. The record normalizes both to the
+	// indexed shape so the audit row always names the pick(s).
+	ixs, labels := v.OptionIndexes, v.Options
+	if ixs == nil && v.OptionIndex > 0 {
+		ixs = []int{v.OptionIndex}
+	}
+	if labels == nil && v.Option != "" {
+		labels = []string{v.Option}
+	}
+	record := ai.NewVerdict(cardID, ixs, labels, v.Text, v.Skipped, false)
 	c.answer <- v
 	h.mu.Unlock()
 
@@ -320,14 +356,19 @@ func cardOf(msg ai.Message) string {
 	return ""
 }
 
-// resultMap is the wire shape the request_verdict TOOL RESULT carries
+// resultMap is the wire shape the verdict.request TOOL RESULT carries
 // back to the model (the loop persists it through the normal tool
 // result path). Flat and small: the agent reads it, acts through its
-// normal tools, nothing executes off it.
+// normal tools, nothing executes off it. A multi answer adds the
+// selected indexes and their labels.
 func resultMap(v agent.Verdict) string {
 	out := map[string]any{
 		"card_id": v.CardID,
 		"verdict": v.Kind(),
+	}
+	if len(v.OptionIndexes) > 0 {
+		out["option_indexes"] = v.OptionIndexes
+		out["options"] = v.Options
 	}
 	if v.OptionIndex > 0 {
 		out["option_index"] = v.OptionIndex

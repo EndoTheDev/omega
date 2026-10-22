@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,6 +60,16 @@ func (s *fakeStore) roles() []string {
 	out := make([]string, len(recs))
 	for i, r := range recs {
 		out[i] = r.role
+	}
+	return out
+}
+
+// vo builds pick rows from labels: the test shorthand for
+// []ai.VerdictOption (label only, no description).
+func vo(labels ...string) []ai.VerdictOption {
+	out := make([]ai.VerdictOption, len(labels))
+	for i, l := range labels {
+		out[i] = ai.VerdictOption{Label: l}
 	}
 	return out
 }
@@ -127,7 +137,7 @@ func drainWithTimeout(t *testing.T, ch <-chan askResult, d time.Duration) askRes
 
 func TestAskBlocksUntilAnswered(t *testing.T) {
 	h := NewHub(nil, nil)
-	card := agent.VerdictPrompt{SessionID: "s1", Title: "ok?", Options: []string{"yes", "no"}}
+	card := agent.VerdictPrompt{SessionID: "s1", Title: "ok?", Options: vo("yes", "no")}
 	ch := askAsync(t, h, card)
 
 	cards := waitForPending(t, h, "s1", 1)
@@ -151,7 +161,7 @@ func TestAskBlocksUntilAnswered(t *testing.T) {
 
 func TestAnswerResolvesOldestPendingWhenCardIDEmpty(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "cX", SessionID: "s1", Title: "q", Options: []string{"a", "b"}})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "cX", SessionID: "s1", Title: "q", Options: vo("a", "b")})
 	waitForPending(t, h, "s1", 1)
 	if _, err := h.Answer("s1", "", agent.Verdict{OptionIndex: 2}); err != nil {
 		t.Fatalf("Answer: %v", err)
@@ -164,7 +174,7 @@ func TestAnswerResolvesOldestPendingWhenCardIDEmpty(t *testing.T) {
 
 func TestAnswerWrongSessionRejected(t *testing.T) {
 	h := NewHub(nil, nil)
-	_ = askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}})
+	_ = askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
 	if _, err := h.Answer("s2", "c1", agent.Verdict{OptionIndex: 1}); err == nil {
 		t.Fatal("Answer from a different session must error")
@@ -175,7 +185,7 @@ func TestAnswerWrongSessionRejected(t *testing.T) {
 
 func TestAnswerValidations(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "pick", Options: []string{"a", "b"}})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "pick", Options: vo("a", "b")})
 	waitForPending(t, h, "s1", 1)
 	t.Cleanup(func() {
 		// a failed assertion leaves the card pending; skipping resolves it
@@ -208,7 +218,7 @@ func TestAnswerValidations(t *testing.T) {
 
 func TestFreeTextOnlyCard(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "name?", FreeText: true})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "name?", AllowText: true})
 	waitForPending(t, h, "s1", 1)
 	// a pick on a free-text-only card is rejected: no options to index.
 	if _, err := h.Answer("s1", "c1", agent.Verdict{OptionIndex: 1}); err == nil {
@@ -223,9 +233,104 @@ func TestFreeTextOnlyCard(t *testing.T) {
 	}
 }
 
+func TestMultiAnswerStoresEveryIndex(t *testing.T) {
+	st := newFakeStore()
+	h := NewHub(st, nil)
+	card := agent.VerdictPrompt{
+		ID: "cm1", SessionID: "s1", Title: "which modules?",
+		Options: []ai.VerdictOption{{Label: "a", Description: "first"}, {Label: "b"}, {Label: "c"}},
+		Multi:   true,
+	}
+	ch := askAsync(t, h, card)
+	waitForPending(t, h, "s1", 1)
+	ans, err := h.Answer("s1", "cm1", agent.Verdict{OptionIndexes: []int{1, 3}})
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if len(ans.OptionIndexes) != 2 || ans.OptionIndexes[0] != 1 || ans.OptionIndexes[1] != 3 {
+		t.Fatalf("answer indexes = %v, want [1 3]", ans.OptionIndexes)
+	}
+	if len(ans.Options) != 2 || ans.Options[0] != "a" || ans.Options[1] != "c" {
+		t.Fatalf("answer labels = %v, want [a c]", ans.Options)
+	}
+	r := drain(t, ch)
+	if r.err != nil {
+		t.Fatalf("Ask error: %v", r.err)
+	}
+	if len(r.v.OptionIndexes) != 2 || r.v.Kind() != "answer" {
+		t.Fatalf("verdict = %+v, want the multi pick", r.v)
+	}
+	// exactly one record, and it carries every selected index + label
+	roles := st.roles()
+	if len(roles) != 2 || roles[1] != "verdict" {
+		t.Fatalf("roles = %v, want [verdict_card verdict]", roles)
+	}
+	var rec ai.Verdict
+	if err := json.Unmarshal(st.snapshot()[1].payload, &rec); err != nil {
+		t.Fatalf("decode verdict row: %v", err)
+	}
+	if len(rec.OptionIndexes) != 2 || rec.OptionIndexes[0] != 1 || rec.OptionIndexes[1] != 3 {
+		t.Fatalf("recorded indexes = %v, want [1 3]", rec.OptionIndexes)
+	}
+	if len(rec.Options) != 2 || rec.Options[0] != "a" || rec.Options[1] != "c" {
+		t.Fatalf("recorded labels = %v, want [a c]", rec.Options)
+	}
+}
+
+func TestMultiAnswerSingleIndex(t *testing.T) {
+	h := NewHub(nil, nil)
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "cm2", SessionID: "s1", Title: "q", Options: vo("a", "b"), Multi: true})
+	waitForPending(t, h, "s1", 1)
+	ans, err := h.Answer("s1", "cm2", agent.Verdict{OptionIndexes: []int{2}})
+	if err != nil {
+		t.Fatalf("Answer single-index multi: %v", err)
+	}
+	if ans.OptionIndex != 2 || ans.Option != "b" || len(ans.OptionIndexes) != 1 {
+		t.Fatalf("answer = %+v, want the one-row multi pick", ans)
+	}
+	_ = drain(t, ch)
+}
+
+func TestMultiShapeMismatchesRejected(t *testing.T) {
+	h := NewHub(nil, nil)
+	mcard := agent.VerdictPrompt{ID: "cm3", SessionID: "s1", Title: "multi", Options: vo("a", "b"), Multi: true}
+	ch := askAsync(t, h, mcard)
+	waitForPending(t, h, "s1", 1)
+	t.Cleanup(func() { _, _ = h.Answer("s1", "cm3", agent.Verdict{Skipped: true}); <-ch })
+	if _, err := h.Answer("s1", "cm3", agent.Verdict{OptionIndex: 1}); err == nil || !strings.Contains(err.Error(), "multi-select") {
+		t.Fatalf("single pick on multi card err = %v, want the multi-select complaint", err)
+	}
+	if _, err := h.Answer("s1", "cm3", agent.Verdict{OptionIndexes: []int{4}}); err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("out-of-range multi pick err = %v, want out of range", err)
+	}
+}
+
+func TestMultiAnswerOnSingleCardRejected(t *testing.T) {
+	h := NewHub(nil, nil)
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "cs1", SessionID: "s1", Title: "single", Options: vo("a", "b")})
+	waitForPending(t, h, "s1", 1)
+	t.Cleanup(func() { _, _ = h.Answer("s1", "cs1", agent.Verdict{Skipped: true}); <-ch })
+	if _, err := h.Answer("s1", "cs1", agent.Verdict{OptionIndexes: []int{1, 2}}); err == nil || !strings.Contains(err.Error(), "single pick") {
+		t.Fatalf("multi answer on single card err = %v, want the single-pick complaint", err)
+	}
+}
+
+func TestAllowTextOnOptionsCard(t *testing.T) {
+	h := NewHub(nil, nil)
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "add?", Options: vo("yes", "no"), AllowText: true})
+	waitForPending(t, h, "s1", 1)
+	if _, err := h.Answer("s1", "c1", agent.Verdict{Text: "yes, but later"}); err != nil {
+		t.Fatalf("typed answer on allow_text card: %v", err)
+	}
+	r := drain(t, ch)
+	if r.v.Text != "yes, but later" {
+		t.Fatalf("verdict = %+v, want the typed text", r.v)
+	}
+}
+
 func TestSkipRecorded(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
 	r2, err := h.Answer("s1", "c1", agent.Verdict{Skipped: true})
 	if err != nil {
@@ -242,7 +347,7 @@ func TestSkipRecorded(t *testing.T) {
 
 func TestSecondAnswerRejected(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
 	_, _ = h.Answer("s1", "c1", agent.Verdict{OptionIndex: 1})
 	_ = drain(t, ch)
@@ -254,7 +359,7 @@ func TestSecondAnswerRejected(t *testing.T) {
 
 func TestExpiryFiresSafeAnswer(t *testing.T) {
 	h := NewHub(nil, nil)
-	card := agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"yes", "no"}, TimeoutS: 1}
+	card := agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("yes", "no"), TimeoutS: 1}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "s1", 1)
 	// wait past the 1s deadline; the timer fires the expired verdict.
@@ -277,7 +382,7 @@ func TestCtxCancellationSettlesCard(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.Ask(ctx, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}})
+		_, err := h.Ask(ctx, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 		done <- err
 	}()
 	waitForPending(t, h, "s1", 1)
@@ -294,7 +399,7 @@ func TestCtxCancellationSettlesCard(t *testing.T) {
 
 func TestCloseUnblocksPendingAsk(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
 	h.Close()
 	r := drain(t, ch)
@@ -306,7 +411,7 @@ func TestCloseUnblocksPendingAsk(t *testing.T) {
 func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 	st := newFakeStore()
 	h := NewHub(st, nil)
-	card := agent.VerdictPrompt{ID: "c1", SessionID: "s9", Title: "ok?", Options: []string{"yes", "no"}}
+	card := agent.VerdictPrompt{ID: "c1", SessionID: "s9", Title: "ok?", Options: vo("yes", "no")}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "s9", 1)
 	_, _ = h.Answer("s9", "c1", agent.Verdict{OptionIndex: 1})
@@ -333,7 +438,7 @@ func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 func TestExpiryPersisted(t *testing.T) {
 	st := newFakeStore()
 	h := NewHub(st, nil)
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}, TimeoutS: 1})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y"), TimeoutS: 1})
 	waitForPending(t, h, "s1", 1)
 	_ = drainWithTimeout(t, ch, 3*time.Second)
 	roles := st.roles()
@@ -352,7 +457,7 @@ func TestPersistenceFailureDoesNotBlockQuestion(t *testing.T) {
 	st := newFakeStore()
 	st.appendOK = false
 	h := NewHub(st, nil) // nil logger keeps the failure quiet
-	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: []string{"y"}})
+	ch := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	// the card registers despite the store failing to persist it.
 	waitForPending(t, h, "s1", 1)
 	if _, err := h.Answer("s1", "c1", agent.Verdict{OptionIndex: 1}); err != nil {
@@ -396,8 +501,8 @@ func TestResultMapShapes(t *testing.T) {
 
 func TestPendingFiltersBySessionAndExcludesSettled(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch1 := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q1", Options: []string{"y"}})
-	ch2 := askAsync(t, h, agent.VerdictPrompt{ID: "c2", SessionID: "s2", Title: "q2", Options: []string{"y"}})
+	ch1 := askAsync(t, h, agent.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q1", Options: vo("y")})
+	ch2 := askAsync(t, h, agent.VerdictPrompt{ID: "c2", SessionID: "s2", Title: "q2", Options: vo("y")})
 	waitForPending(t, h, "", 2)
 	if got := h.Pending("s1"); len(got) != 1 || got[0].ID != "c1" {
 		t.Fatalf("Pending(s1) = %+v, want only c1", got)

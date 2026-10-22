@@ -49,9 +49,9 @@ type Context struct {
 	// buildPlugins never mounts and its TUI surface is simply absent,
 	// the same law the webui enforces through directory registration.
 	TUIProviders []TUIProvider
-	Trust    TrustProvider
-	Cron     CronProvider
-	Kanban   KanbanProvider
+	Trust        TrustProvider
+	Cron         CronProvider
+	Kanban       KanbanProvider
 	// Notifications is the finished-things store seam (card t_5d9032d3):
 	// kanban completions, cron fires and dispatched chat runs each emit
 	// one record the webui bell serves. Nil when the notifications
@@ -60,7 +60,7 @@ type Context struct {
 	Notifications NotificationsProvider
 
 	// Verdicts is the interactive-question seam (verdict cards v1):
-	// the request_verdict tool blocks on Ask, the HTTP channel and the
+	// the verdict tool blocks on Ask, the HTTP channel and the
 	// TUI answer through it. Nil when the verdict module is absent -
 	// the tool refuses to block without the seam, the HTTP endpoints
 	// answer 501.
@@ -71,9 +71,9 @@ type Context struct {
 	Channels []Channel
 
 	// Cross-cutting (set by specific plugins).
-	Commands          []ExtensionCommand
-	CommandHandler    func(ctx context.Context, name, args string) (CommandResult, error)
-	InjectedMessages  <-chan InjectedMessage
+	Commands           []ExtensionCommand
+	CommandHandler     func(ctx context.Context, name, args string) (CommandResult, error)
+	InjectedMessages   <-chan InjectedMessage
 	PendingDelegations func() int
 
 	// Shared state.

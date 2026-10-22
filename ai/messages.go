@@ -286,62 +286,102 @@ func NewVariantSelect(branch, child string) VariantSelect {
 	return VariantSelect{Branch: branch, Child: child, Timestamp: NowISO()}
 }
 
+// VerdictOption is one pick row on a verdict card (verdict cards
+// v1.1): the label the card shows, plus an optional one-line
+// description rendered under the label. UnmarshalJSON accepts the
+// v1 shape (a bare string) so old audit rows keep decoding; the
+// marshal side is always the object form.
+type VerdictOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+func (v *VerdictOption) UnmarshalJSON(b []byte) error {
+	var label string
+	if err := json.Unmarshal(b, &label); err == nil {
+		v.Label = label
+		return nil
+	}
+	type plain VerdictOption
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*v = VerdictOption(p)
+	return nil
+}
+
 // VerdictCard is the transcript record of one agent-issued question
-// (verdict cards v1): appended when the request_verdict tool issues the
+// (verdict cards v1): appended when the verdict tool issues the
 // card, before the user answers. A bookkeeping entry exactly like
 // ModelChange: persisted to the store, invisible to context assembly
 // (the model sees the tool call and result, never this row), rendered
 // by every transcript surface that wants the audit trail. Roles on the
 // store row: "verdict_card".
 type VerdictCard struct {
-	CardID    string   `json:"card_id"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body,omitempty"`
-	Options   []string `json:"options,omitempty"`
-	FreeText  bool     `json:"free_text,omitempty"`
-	TimeoutS  int      `json:"timeout_s,omitempty"`
-	Timestamp string   `json:"timestamp,omitempty"`
+	CardID    string          `json:"card_id"`
+	Title     string          `json:"title"`
+	Body      string          `json:"body,omitempty"`
+	Options   []VerdictOption `json:"options,omitempty"`
+	Multi     bool            `json:"multi,omitempty"`
+	AllowText bool            `json:"allow_text,omitempty"`
+	TimeoutS  int             `json:"timeout_s,omitempty"`
+	Timestamp string          `json:"timestamp,omitempty"`
 }
 
 func (VerdictCard) isMessage() {}
 
 // NewVerdictCard creates a VerdictCard entry with timestamp set.
-func NewVerdictCard(cardID, title, body string, options []string, freeText bool, timeoutS int) VerdictCard {
+func NewVerdictCard(cardID, title, body string, options []VerdictOption, multi, allowText bool, timeoutS int) VerdictCard {
 	return VerdictCard{
 		CardID:    cardID,
 		Title:     title,
 		Body:      body,
 		Options:   options,
-		FreeText:  freeText,
+		Multi:     multi,
+		AllowText: allowText,
 		TimeoutS:  timeoutS,
 		Timestamp: NowISO(),
 	}
 }
 
-// Verdict is the transcript record of one answer: a pick, free text, a
-// recorded skip (no silent dismissal), or the expiry firing with no
-// answer. Role on the store row: "verdict".
+// Verdict is the transcript record of one answer: a single pick, a
+// multi-select pick (every selected index), free text, a recorded
+// skip (no silent dismissal), or the expiry firing with no answer.
+// Role on the store row: "verdict".
 type Verdict struct {
-	CardID      string `json:"card_id"`
-	OptionIndex int    `json:"option_index,omitempty"`
-	Option      string `json:"option,omitempty"`
-	Text        string `json:"text,omitempty"`
-	Skipped     bool   `json:"skipped,omitempty"`
-	Expired     bool   `json:"expired,omitempty"`
-	Timestamp   string `json:"timestamp,omitempty"`
+	CardID        string   `json:"card_id"`
+	OptionIndex   int      `json:"option_index,omitempty"`
+	Option        string   `json:"option,omitempty"`
+	OptionIndexes []int    `json:"option_indexes,omitempty"`
+	Options       []string `json:"options,omitempty"`
+	Text          string   `json:"text,omitempty"`
+	Skipped       bool     `json:"skipped,omitempty"`
+	Expired       bool     `json:"expired,omitempty"`
+	Timestamp     string   `json:"timestamp,omitempty"`
 }
 
 func (Verdict) isMessage() {}
 
-// NewVerdict creates a Verdict entry with timestamp set.
-func NewVerdict(cardID string, optionIndex int, option, text string, skipped, expired bool) Verdict {
-	return Verdict{
-		CardID:      cardID,
-		OptionIndex: optionIndex,
-		Option:      option,
-		Text:        text,
-		Skipped:     skipped,
-		Expired:     expired,
-		Timestamp:   NowISO(),
+// NewVerdict creates a Verdict entry with timestamp set. A single
+// pick indexes one option (optionIndex >= 1, option its label); a
+// multi pick carries the selected indexes and their labels; text,
+// skip, and expiry carry none.
+func NewVerdict(cardID string, optionIndexes []int, options []string, text string, skipped, expired bool) Verdict {
+	v := Verdict{
+		CardID:    cardID,
+		Text:      text,
+		Skipped:   skipped,
+		Expired:   expired,
+		Timestamp: NowISO(),
 	}
+	if len(optionIndexes) > 0 {
+		v.OptionIndexes = optionIndexes
+		v.OptionIndex = optionIndexes[0]
+	}
+	if len(options) > 0 {
+		v.Options = options
+		v.Option = options[0]
+	}
+	return v
 }
