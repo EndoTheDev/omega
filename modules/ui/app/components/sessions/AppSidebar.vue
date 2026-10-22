@@ -4,12 +4,32 @@
     :class="{ open: open }">
     <div class="sessions-head">
       <span class="head-actions">
+        <!-- new-chat dropdown (card t_d96a5cd5): a plain "new chat" and
+             the NO-PERSIST "new ephemeral chat" - two entry points that
+             share one button. Click-outside closes; choosing either
+             item closes and emits. -->
         <button
           class="new-btn"
-          @click="$emit('new')"
+          :aria-expanded="newMenuOpen"
+          @click="newMenuOpen = !newMenuOpen"
           title="New conversation">
           + new
         </button>
+        <div
+          v-if="newMenuOpen"
+          class="new-menu"
+          @click.stop>
+          <button
+            class="new-menu-item"
+            @click="pickNew(false)">
+            New chat
+          </button>
+          <button
+            class="new-menu-item"
+            @click="pickNew(true)">
+            New ephemeral chat
+          </button>
+        </div>
       </span>
     </div>
     <div class="session-search">
@@ -223,7 +243,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onUnmounted, ref, watch } from "vue";
+  import { computed, onBeforeUnmount, onUnmounted, ref, watch } from "vue";
   import {
     bucketSessions,
     commitSessionRename,
@@ -253,6 +273,9 @@
     defineEmits<{
     (e: "open", id: string): void;
     (e: "new"): void;
+    // new-ephemeral (card t_d96a5cd5): the dropdown's no-persist entry
+    // - app.vue mints a composer-first ephemeral tab
+    (e: "new-ephemeral"): void;
     (e: "pin", id: string, pinned: boolean): void;
     // archive/unarchive: the row moves to (or out of) the archived group
     // at the list bottom instantly - the optimistic patch flips the flag
@@ -272,6 +295,22 @@
   }>();
 
   const query = ref("");
+  // the new-chat dropdown's open bit + click-outside close (document
+  // listener bound on open, torn down on close/unmount)
+  const newMenuOpen = ref(false);
+  function pickNew(ephemeral: boolean) {
+    newMenuOpen.value = false;
+    if (ephemeral) emit("new-ephemeral");
+    else emit("new");
+  }
+  function onDocClick() {
+    newMenuOpen.value = false;
+  }
+  watch(newMenuOpen, (open) => {
+    if (open) document.addEventListener("click", onDocClick);
+    else document.removeEventListener("click", onDocClick);
+  });
+  onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
   // ids and rank order returned by the backend's unified session
   // search (null = no query / first response not in yet). The endpoint
   // owns BOTH title and content hits - no in-memory filter runs
@@ -419,3 +458,41 @@
     if (label !== null) emit("rename", s.id, label);
   }
 </script>
+<!-- scoped: the new-chat dropdown (card t_d96a5cd5) lives beside the
+     shared .new-btn rules in main.css - the menu styling stays HERE so
+     this surface never grows main.css (SAME-FILE discipline: t_e76ce7b6
+     owns the shared sheet's open blocks). -->
+<style scoped>
+.head-actions {
+  position: relative;
+}
+.new-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  min-width: 180px;
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  background: var(--z1-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  display: flex;
+  flex-direction: column;
+}
+.new-menu-item {
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.new-menu-item:hover {
+  background: var(--z2);
+}
+</style>
