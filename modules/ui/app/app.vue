@@ -123,6 +123,15 @@
             :open="isMobile ? inspectorOpen : false" />
         </template>
 
+        <!-- card t_7e2b7002: the agents panel - profile inventory with
+             scaffold + new-session-as-agent (own fetch, inspector
+             family). -->
+        <template #pane-agents>
+          <AgentsPanel
+            v-if="!isMobile"
+            class="pane" />
+        </template>
+
         <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry
              point exists (the '+' menu no longer lists it); the tab lives
              pinned in the inspector pane. The mount loads on activation
@@ -365,6 +374,7 @@
   // card t_e1e61680: insights joins the main area (registry: singleton,
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
+  import AgentsPanel from "./components/agents/AgentsPanel.vue";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)

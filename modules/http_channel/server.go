@@ -107,6 +107,11 @@ func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StorePro
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/themes", s.handleThemes)
 	mux.HandleFunc("/insights", s.handleInsights)
+	// card t_7e2b7002 (deferred mount, review pass): the multi-agent
+	// REST surface. Handlers live in server_agents.go.
+	mux.HandleFunc("/agents", s.handleAgents)
+	mux.HandleFunc("/agents/{name}", s.handleAgent)
+	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
