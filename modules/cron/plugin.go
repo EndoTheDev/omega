@@ -11,8 +11,9 @@ import (
 // provides the "cron" seam (exclusive) - the serve host starts the
 // runner after MountAll with the store open.
 type Plugin struct {
-	cfg  *Config
-	home string
+	cfg    *Config
+	home   string
+	runner agent.CronProvider // the mounted scheduler; nil = not mounted
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -62,7 +63,12 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	}
 	p.cfg = cfg
 	p.home = home
-	ctx.Cron = NewRunner(cfg, home)
+	p.runner = NewRunner(cfg, home)
+	ctx.Cron = p.runner
+	// The TUI command rides the module seam: registering here means a
+	// cron plugin left out of buildPlugins takes /cron out of the
+	// command table with it (card t_88bb7dcf).
+	ctx.TUIProviders = append(ctx.TUIProviders, &tui{p: p})
 	return nil
 }
 
