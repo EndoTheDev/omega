@@ -9,6 +9,7 @@ package provider
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
@@ -16,11 +17,15 @@ import (
 
 const keypoolModel = "glm-5.3"
 
+// keypoolDefaultHost is the standard keypool surface: the openai and
+// anthropic lanes live under /v1, the ollama-native lane at the root.
+const keypoolDefaultHost = "http://127.0.0.1:11435/v1"
+
 func keypoolProvider(t *testing.T, typ string) (*Provider, string) {
 	t.Helper()
 	host := os.Getenv("KEYPOOL_HOST")
 	if host == "" {
-		host = "http://127.0.0.1:11435/v1"
+		host = keypoolDefaultHost
 	}
 	return &Provider{typ: typ, baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}, host
 }
@@ -171,6 +176,78 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 	if text2 == "" {
 		t.Error("round trip: no response text")
 	}
+}
+
+// TestLiveKeypoolOllama drives the ollama-native lane end to end:
+// tool call (arguments arrive as an object), then the tool result
+// folded back (role "tool") and the model answering from it.
+func TestLiveKeypoolOllama(t *testing.T) {
+	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
+		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
+	}
+	// The ollama-native lane serves at the root, not under /v1.
+	host := strings.TrimSuffix(os.Getenv("KEYPOOL_HOST"), "/v1")
+	if host == "" {
+		host = strings.TrimSuffix(keypoolDefaultHost, "/v1")
+	}
+	p := &Provider{typ: "ollama", baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}
+	tools := []ai.ToolSchema{{
+		Name:        "get_weather",
+		Description: "Get current weather for a city",
+		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
+	}}
+
+	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
+	var calls []ai.ToolCallEvent
+	end := ai.StreamEnd{}
+	for _, e := range got {
+		switch ev := e.(type) {
+		case ai.ResponseChunk:
+			t.Logf("turn 1 text: %s", ev.Content)
+		case ai.ToolCallEvent:
+			calls = append(calls, ev)
+		case ai.StreamEnd:
+			end = ev
+		}
+	}
+	if end.Error != "" {
+		t.Fatalf("turn 1 stream error: %s", end.Error)
+	}
+	if len(calls) == 0 {
+		t.Fatalf("turn 1: no tool call event (finish_reason=%q)", end.FinishReason)
+	}
+	if end.FinishReason != "tool_call" {
+		t.Errorf("turn 1 finish_reason = %q, want tool_call", end.FinishReason)
+	}
+	if _, ok := calls[0].ToolCall.Arguments["city"]; !ok {
+		t.Errorf("turn 1: arguments decoded without \"city\" key: %v", calls[0].ToolCall.Arguments)
+	}
+	t.Logf("turn 1: tool call id=%s name=%s args=%v", calls[0].ToolCall.ID, calls[0].ToolCall.Name, calls[0].ToolCall.Arguments)
+
+	// Turn 2: tool result folds back (role "tool" + tool_call_id).
+	messages := []ai.Message{
+		ai.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
+		ai.Assistant{Content: "", ToolCalls: []ai.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
+		ai.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
+	}
+	got2 := collectEvents(t, p.Stream(testContext(), messages, tools))
+	text2, end2 := "", ai.StreamEnd{}
+	for _, e := range got2 {
+		switch ev := e.(type) {
+		case ai.ResponseChunk:
+			text2 += ev.Content
+		case ai.StreamEnd:
+			end2 = ev
+		}
+	}
+	if end2.Error != "" {
+		t.Fatalf("turn 2 stream error: %s", end2.Error)
+	}
+	if text2 == "" {
+		t.Error("turn 2: no response text")
+	}
+	t.Logf("turn 2: %d chars, finish=%s, usage in=%v out=%v cached=%v",
+		len(text2), end2.FinishReason, deref(end2.PromptEvalCount), deref(end2.EvalCount), deref(end2.CachedCount))
 }
 
 func deref(n *int) any {
