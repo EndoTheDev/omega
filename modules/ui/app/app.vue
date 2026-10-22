@@ -1,12 +1,10 @@
 <template>
   <div class="shell">
     <MenuBar
-      :view="mainView"
       :sidebar-open="sidebarDocked"
       :inspector-open="inspectorDocked"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
-      @view="switchMainView"
       @open-notification="openNotification" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
@@ -531,6 +529,39 @@
   // re-measure the pass after the DOM catches up with the layout change
   watch([() => dock.tree.value, bottomWidthMode], () => nextTick(applyBottomWidth));
 
+  // card t_33f8756c: the window-narrow give-way. The main pane never dips
+  // below its 320px contract floor and is never overlapped: the SECONDARY
+  // sidebar (inspector) collapses first, then the PRIMARY - dock.narrowSqueeze
+  // owns the priority and remembers each hidden pane's width for its toggle.
+  // The content box is the root split's rendered width (the pane-area's
+  // padding already excluded). Below the breakpoint the mobile drawers own
+  // the layout - the squeeze stands down there.
+  function applyNarrowSqueeze() {
+    if (isMobile.value) return;
+    const root = document.querySelector<HTMLElement>(".pane-area > .dock-root");
+    if (!root) return;
+    dock.narrowSqueeze(root.clientWidth);
+  }
+  // one listener: the bottom-width applier and the give-way run together
+  function onWinResize() {
+    applyBottomWidth();
+    applyNarrowSqueeze();
+  }
+  // the pane-area resize observer (the give-way belt) - declared here so
+  // onUnmounted can reach it whatever the mount path observed
+  let areaObserver: ResizeObserver | null = null;
+
+  // the give-way also runs after any STRUCTURAL tree change: a menubar
+  // toggle reopen into a still-narrow window changes no container width
+  // (no resize event, no pane-area resize) - the squeeze re-checks after
+  // the DOM settles and gives the just-reopened pane away again (the chat
+  // floor is a hard wall; the toggle is a no-op below the seat width).
+  // Idempotent: once the tree fits, no-op - the watch settles immediately.
+  watch(
+    () => dock.tree.value,
+    () => nextTick(applyNarrowSqueeze),
+  );
+
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
   // session (the runHub run slot is per session). ---
@@ -548,6 +579,9 @@
   // URL ruling (replaceState only, the URL owns the focused chat),
   // /board is a replaceState overlay - the urlPath watcher skips while
   // the board is up and chat reclaims the URL on the way back.
+  // card t_33f8756c: the menubar's chat/board switch is GONE (the kanban
+  // inspector tab carries the board now) - mainView survives as the
+  // /board route + bell-task overlay state; no menubar control re-emits.
   // ponytail: board renders in ONE pane (the active chat pane); the
   // dockable-contract card gives board its own component slot later.
   const mainView = ref<"chat" | "board">("chat");
@@ -555,17 +589,6 @@
     () => modulePanels.find((p) => p.module === "kanban")?.component,
   );
   const boardHostPane = ref<string>("");
-
-  function switchMainView(v: "chat" | "board") {
-    if (mainView.value === v) return;
-    mainView.value = v;
-    if (v === "board") {
-      boardHostPane.value = resolveActivePaneId();
-      history.replaceState({}, "", "/board");
-    } else {
-      history.replaceState({}, "", urlPath.value);
-    }
-  }
 
   // a board card's transcript chip lands the user in that conversation
   function openBoardSession(id: string) {
@@ -1197,10 +1220,19 @@
     // type-to-capture: window-level keydown (any printable key jumps
     // into the focused chat's composer when no text field holds focus)
     window.addEventListener("keydown", onKeyCapture);
+    // the give-way belt: the resize event alone misses layout changes that
+    // never touch window.width (emulated viewports, a toggle-reopen into a
+    // still-narrow window) - the pane-area observer feeds the same squeeze
+    // on ANY root width change. Idempotent: once the tree fits, no-op.
+    const areaEl = document.querySelector(".pane-area");
+    if (areaEl && typeof ResizeObserver !== "undefined") {
+      areaObserver = new ResizeObserver(() => applyNarrowSqueeze());
+      areaObserver.observe(areaEl);
+    }
     // the width pass re-measures on viewport changes too (the insets are
     // px measurements against the rendered panes)
-    window.addEventListener("resize", applyBottomWidth);
-    void nextTick(applyBottomWidth); // the boot pass (the watch needs a change)
+    window.addEventListener("resize", onWinResize);
+    void nextTick(onWinResize); // the boot pass (the watch needs a change)
 
     // mobile detection: sidebars become slide-in overlays below 768px
     const mobileQuery = window.matchMedia("(max-width: 768px)");
@@ -1272,7 +1304,7 @@
     // (unknown/deleted ids and home route through the persisted chat
     // focus). Then the ChatTab mount restores + attaches per tab.
     // /board boots into the kanban view (boardHostPane resolves on
-    // the first switchMainView; boot keeps the default pane).
+    // the first board overlay activation; boot keeps the default pane).
     if (/^\/board\/?$/.test(window.location.pathname)) {
       mainView.value = "board";
       boardHostPane.value = resolveActivePaneId();
@@ -1303,7 +1335,8 @@
   onUnmounted(() => {
     document.removeEventListener("click", onDocClick);
     window.removeEventListener("keydown", onKeyCapture);
-    window.removeEventListener("resize", applyBottomWidth);
+    window.removeEventListener("resize", onWinResize);
+    areaObserver?.disconnect();
     window.removeEventListener("popstate", onPop);
     if (healthTimer) clearInterval(healthTimer);
     if (runningTimer) clearInterval(runningTimer);

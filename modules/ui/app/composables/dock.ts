@@ -749,6 +749,61 @@ export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
     : null;
 }
 
+// --- window-narrow give-way (card t_33f8756c) --------------------------------
+// Divider drags already enforce the priority floors per gesture, but a plain
+// WINDOW resize skips the math entirely: the fixed sidebars keep their px,
+// and the flexible main pane shrinks under its 320px contract floor (or the
+// fixed sum overflows the pane-area). The give-way is the resize twin of the
+// squeeze chain: the SECONDARY sidebar (inspector) collapses first, then the
+// PRIMARY (sessions) - the same page-lifetime hide the menubar toggle does,
+// with the width remembered so the toggle reopens the pane at it. A wider
+// window never re-reveals (the user reopens by toggle, like a drag-close).
+
+/** the minimum horizontal px a subtree needs at its axis. A row SUMS its
+    children (plus the 4px dividers DockDivider renders between them), a
+    column takes its WIDEST child, a fixed pane counts its px, a flexible
+    pane counts the 320px chat floor (the contract: every flexible pane
+    floors there - dragSplitDivider treats them identically). */
+export function minDockPx(node: DockNode): number {
+  if (isPane(node)) return node.fixed !== null ? node.fixed : CHAT_FLOOR_PX;
+  const reqs = node.children.map(minDockPx);
+  const dividers = node.direction === "row" ? (reqs.length - 1) * 4 : 0;
+  return node.direction === "row"
+    ? reqs.reduce((a, b) => a + b, 0) + dividers
+    : Math.max(0, ...reqs);
+}
+
+/** one give-way step's record: which edge pane collapsed at what width */
+export interface NarrowHiddenEntry {
+  component: "sidebar" | "inspector";
+  /** the collapsed pane's fixed px - the store remembers it via
+      rememberEdgePx so the menubar toggle reopens the pane at it */
+  px: number;
+}
+
+/** pure window-narrow give-way: while `contentPx` cannot seat every fixed
+    pane plus the flexible 320 floor, the SECONDARY sidebar (inspector)
+    collapses first, then the PRIMARY (sessions). Each hidden entry carries
+    the pane's remembered width. When the tree already fits (or only the
+    two edge panes are gone and it still doesn't), it stops - user-made
+    splits are never pruned by a resize. */
+export function narrowGiveWay(
+  tree: DockNode,
+  contentPx: number,
+): { tree: DockNode; hidden: NarrowHiddenEntry[] } {
+  const hidden: NarrowHiddenEntry[] = [];
+  let t = tree;
+  // secondary first (the inspector gives way before the sessions pane)
+  for (const comp of ["inspector", "sidebar"] as const) {
+    if (minDockPx(t) <= contentPx) break;
+    const pane = findEdgePane(t, comp);
+    if (!pane) continue;
+    hidden.push({ component: comp, px: pane.fixed ?? 0 });
+    t = hideEdgePane(t, comp);
+  }
+  return { tree: t, hidden };
+}
+
 /** the toggle's reopen half: the shell comes back at the root's edge -
     same builders ensurePinnedEdges uses, so reopen and boot-repair mint
     IDENTICAL panes. card t_d6b657a7: the reopened right shell mints only
@@ -1566,6 +1621,13 @@ export interface DockApi {
     deltaPx: number,
     contentPx: number,
   ) => { collapsedPaneId: string | null; pushedPaneId: string | null };
+  /** card t_33f8756c: the window-narrow give-way. While the content box
+      `contentPx` cannot seat every fixed pane plus the flexible 320 floor,
+      the secondary sidebar (inspector) collapses first, then the primary
+      (sessions); each hide remembers the pane's width via the edge-px
+      memory, so the menubar toggle restores exactly what the resize took.
+      Page-lifetime like a drag-close - a wider window never re-reveals. */
+  narrowSqueeze: (contentPx: number) => void;
 }
 
 export const DOCK_API_KEY: InjectionKey<DockApi> = Symbol("omega-dock-api");
@@ -1763,6 +1825,15 @@ export function createDock(store: Storage): DockApi {
     }
   };
 
+  // card t_33f8756c: the window-narrow give-way (app.vue's resize watcher
+  // measures the pane-area and hands the content px in). Each collapsed
+  // edge pane's width goes through the same memory the menubar toggle uses.
+  const narrowSqueeze = (contentPx: number) => {
+    const res = narrowGiveWay(tree.value, contentPx);
+    for (const h of res.hidden) rememberEdgePx(store, h.component, h.px);
+    if (res.hidden.length) tree.value = res.tree;
+  };
+
   return {
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
     dockDropToZone: dockDropToZoneIn,
@@ -1772,5 +1843,6 @@ export function createDock(store: Storage): DockApi {
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
     firstDraftChatTab: () => firstDraftChatTab(tree.value),
     split, remove, toggleEdge, ensureMainPane, canRemovePane, drag, toggleBottom,
+    narrowSqueeze,
   };
 }
