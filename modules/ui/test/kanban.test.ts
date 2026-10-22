@@ -163,3 +163,15 @@ test("board view wires the switcher through every board call", () => {
   const drawer = readFileSync(join(uiRoot, "..", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
   assert.doesNotMatch(drawer, /fetch\(/, "the inspector follows the switch via props");
 });
+
+test("board head keeps the fillet-tuck top spacing", () => {
+  // the dock tab strip tucks -var(--r-pane) (8px) over the pane content,
+  // so an 8px spacer above the switcher is fully consumed - the select
+  // touches the strip. 10px matches the sibling inspector panels
+  // (settings.narrow / insights both carry 10px top padding).
+  const boardVue = readFileSync(join(uiRoot, "..", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /\.board-head\s*\{[^}]*padding:\s*10px 12px 0/s,
+    "head keeps the 10px top spacing that survives the 8px tuck");
+  assert.doesNotMatch(boardVue, /padding:\s*8px 12px 0/,
+    "the tuck-consumed 8px spacer stays out");
+});

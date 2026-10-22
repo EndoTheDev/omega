@@ -368,7 +368,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px 0;
+    /* 10px top, not 8px: the dock tab strip tucks -var(--r-pane) (8px)
+       over the pane content, so an 8px spacer is fully consumed and the
+       select touches the strip. 10px matches the inspector's other
+       panels (settings.narrow / insights both carry 10px) and leaves
+       the same 2px of real space above the switcher. */
+    padding: 10px 12px 0;
     flex: none;
   }
   .board-switch-label {
