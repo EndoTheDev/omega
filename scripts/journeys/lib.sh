@@ -98,8 +98,12 @@ poll_js() {
   return 1
 }
 
-# open_app: fresh SPA load in the journey session + console hook
+# open_app: fresh SPA load in the journey session + console hook. The
+# viewport resets to desktop FIRST: a recipe that died mid-way leaves
+# its mobile viewport on the tab (77-mobile-drawer crosses to 420px and
+# dies at mobile), and the next recipe must not inherit it.
 open_app() {
+  ab set viewport 1280 800 >/dev/null 2>&1 || true
   ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || \
     { JOURNEY_CDP_ATTACHED=0; ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || die "cannot open $JOURNEY_BASE_URL"; }
   ab wait --load networkidle >/dev/null 2>&1 || true
