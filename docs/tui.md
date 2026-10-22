@@ -46,6 +46,7 @@ normal message.
 | `/theme [name]`                       | shell    | Switch theme (dark, light, auto; no arg lists all)                                                      |
 | `/files [path]`                       | tools    | Browse the working directory (enter opens, esc/q closes)                                                |
 | `/cron`                               | cron     | List cron jobs (read-only)                                                                              |
+| `/verdict [<N> [<num|y|n|skip|text>]]` | verdict | List pending verdict cards; `<N>` picks one, then an answer: option number / y/n / skip / free text. While a run blocks on the card, typed input + Enter answers it directly (card t_2ecf9c51) |
 | `/logs [-f]`                          | logging  | Tail omega.log (`-f`: keep following)                                                                   |
 | `/help`                               | shell    | Show help                                                                                               |
 
