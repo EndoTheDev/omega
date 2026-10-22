@@ -186,8 +186,12 @@ export interface VerdictItem {
   callId?: string;
   title: string;
   body?: string;
-  options: string[];
-  freeText: boolean;
+  // the pick rows, top to bottom: label plus optional description
+  options: VerdictOptionItem[];
+  // multi-select: rows toggle, a confirm button submits every pick
+  multi: boolean;
+  // a "type your own answer" row renders between options and skip
+  allowText: boolean;
   timeoutS?: number;
   // live mounts anchor the client countdown to the frame's arrival;
   // restored items never count down (issuedAt unknown client-side, the
@@ -196,11 +200,20 @@ export interface VerdictItem {
   status: "pending" | "settled";
   // the settled verdict, rendered as the card's outcome line
   verdictKind?: "" | "answer" | "skip" | "expired";
+  // the picked label(s), already joined for multi answers
   picked?: string;
   answerText?: string;
   // the stream ended while the card was still pending: no answer can
   // arrive anymore - render the card dead, not actionable
   stale?: boolean;
+}
+
+// VerdictOptionItem is one pick row: the label the row shows and an
+// optional one-line description under it (v1.1: options may also
+// arrive as bare strings - one-word rows without a description).
+export interface VerdictOptionItem {
+  label: string;
+  description?: string;
 }
 export type TranscriptItem =
   | MessageItem
@@ -306,7 +319,7 @@ export function renderTranscriptItems(
         // interactive surface AND the technical record - its result
         // below still settles the card). The matching tool_result is
         // consumed by the card branch, never by the tool-line map.
-        if (t.name === "request_verdict") {
+        if (t.name === "verdict") {
           const v = verdictCardFromToolArgs(it.tool_call?.arguments);
           if (it.tool_call?.id) verdictById.set(it.tool_call.id, v);
           v.status = "pending"; // settled by the tool_result below
@@ -349,27 +362,41 @@ export function renderTranscriptItems(
 
 // --- verdict cards v1 (card t_2ecf9c51) ---
 
-// verdictCardFromToolArgs builds a card item from a request_verdict
-// tool_call's arguments. Pure - the live stream and the restored
+// verdictCardFromToolArgs builds a card item from a verdict tool
+// call's arguments. Pure - the live stream and the restored
 // transcript both call this; a malformed args blob degrades to an
 // untitled free-text card, never a crashed render.
 export function verdictCardFromToolArgs(args: unknown): VerdictItem {
   const a = (args ?? {}) as Record<string, unknown>;
-  const opts: string[] = Array.isArray(a.options)
-    ? a.options.filter((o): o is string => typeof o === "string" && o !== "")
+  const opts: VerdictOptionItem[] = Array.isArray(a.options)
+    ? a.options
+        .map((o): VerdictOptionItem | null => {
+          if (typeof o === "string" && o !== "") return { label: o };
+          if (o && typeof o === "object") {
+            const label = (o as Record<string, unknown>).label;
+            const desc = (o as Record<string, unknown>).description;
+            if (typeof label === "string" && label !== "") {
+              // no description key when the option has none
+              return typeof desc === "string" && desc ? { label, description: desc } : { label };
+            }
+          }
+          return null; // junk row: dropped, not fatal
+        })
+        .filter((o): o is VerdictOptionItem => o !== null)
     : [];
   return {
     kind: "verdict",
     title: typeof a.title === "string" && a.title ? a.title : "question",
     body: typeof a.body === "string" && a.body ? a.body : undefined,
     options: opts,
-    freeText: a.free_text === true,
+    multi: a.multi === true,
+    allowText: a.allow_text === true,
     timeoutS: typeof a.timeout_s === "number" && a.timeout_s > 0 ? a.timeout_s : undefined,
     status: "pending",
   };
 }
 
-// verdictFromResultText parses the request_verdict tool result's JSON
+// verdictFromResultText parses the verdict tool result's JSON
 // (modules/verdict resultMap). Non-JSON content (a refusal, an error
 // string) means the card never issued: the card is dead, no verdict.
 export function verdictFromResultText(text: string): {
@@ -381,7 +408,15 @@ export function verdictFromResultText(text: string): {
     const j = JSON.parse(text) as Record<string, unknown>;
     const kind = j.verdict;
     if (kind === "answer" || kind === "skip" || kind === "expired") {
-      const picked = typeof j.option === "string" && j.option ? j.option : undefined;
+      let picked: string | undefined;
+      if (Array.isArray(j.options)) {
+        // a multi answer: every picked label, joined for the outcome line
+        picked = j.options
+          .filter((o): o is string => typeof o === "string" && o !== "")
+          .join(", ") || undefined;
+      } else if (typeof j.option === "string" && j.option) {
+        picked = j.option;
+      }
       const answerText = typeof j.text === "string" && j.text ? j.text : undefined;
       return { verdictKind: kind, picked, answerText };
     }
@@ -398,8 +433,9 @@ export interface PendingVerdictCard {
   session_id: string;
   title: string;
   body?: string;
-  options?: string[];
-  free_text?: boolean;
+  options?: VerdictOptionItem[];
+  multi?: boolean;
+  allow_text?: boolean;
   timeout_s?: number;
   expires_at: number;
 }
@@ -423,7 +459,7 @@ export async function fetchVerdicts(sessionId = ""): Promise<{ cards: PendingVer
 // surface shows it instead of retrying.
 export async function postVerdict(
   sessionId: string,
-  body: { card_id?: string; option_index?: number; option?: string; text?: string; skip?: boolean },
+  body: { card_id?: string; option_indexes?: number[]; option_index?: number; option?: string; text?: string; skip?: boolean },
 ): Promise<void> {
   const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/verdicts`, {
     method: "POST",

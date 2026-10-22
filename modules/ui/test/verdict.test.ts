@@ -1,5 +1,5 @@
-// omega webui: unit tests for verdict cards v1 (card t_2ecf9c51).
-// Three layers, matching the house patterns:
+// omega webui: unit tests for verdict cards v1.1 (cards t_2ecf9c51,
+// t_42d4dc09). Three layers, matching the house patterns:
 // - the pure card helpers: args parse, result parse, wire restore
 //   (verdictCardFromToolArgs, verdictFromResultText, renderTranscriptItems);
 // - the fetch wrappers: fetchVerdicts / postVerdict URL + body contract
@@ -36,17 +36,32 @@ test("verdictCardFromToolArgs builds the card from the tool args", () => {
   const card = verdictCardFromToolArgs({
     title: "Approve the apply?",
     body: "this writes the patch",
-    options: ["yes, apply", "no"],
-    free_text: true,
+    options: [
+      { label: "yes, apply", description: "merge the worktree now" },
+      { label: "no" },
+    ],
+    multi: true,
+    allow_text: true,
     timeout_s: 300,
   });
   assert.equal(card.kind, "verdict");
   assert.equal(card.title, "Approve the apply?");
   assert.equal(card.body, "this writes the patch");
-  assert.deepEqual(card.options, ["yes, apply", "no"]);
-  assert.equal(card.freeText, true);
+  assert.deepEqual(card.options, [
+    { label: "yes, apply", description: "merge the worktree now" },
+    { label: "no" },
+  ]);
+  assert.equal(card.multi, true);
+  assert.equal(card.allowText, true);
   assert.equal(card.timeoutS, 300);
   assert.equal(card.status, "pending");
+});
+
+test("verdictCardFromToolArgs keeps bare-string options as label-only rows", () => {
+  const card = verdictCardFromToolArgs({ title: "q", options: ["yes", "no"] });
+  assert.deepEqual(card.options.map((o) => o.label), ["yes", "no"]);
+  assert.deepEqual(card.options.map((o) => o.description), [undefined, undefined]);
+  assert.equal(card.multi, false);
 });
 
 test("verdictCardFromToolArgs degrades malformed args, never crashes", () => {
@@ -56,10 +71,10 @@ test("verdictCardFromToolArgs degrades malformed args, never crashes", () => {
     assert.equal(card.status, "pending");
     assert.ok(Array.isArray(card.options));
   }
-  const withJunk = verdictCardFromToolArgs({ title: 5, options: [42, "", "ok"], free_text: 1 as unknown as boolean });
+  const withJunk = verdictCardFromToolArgs({ title: 5, options: [{ label: "" }, {}, "ok"], allow_text: 1 as unknown as boolean });
   assert.equal(withJunk.title, "question");
-  assert.deepEqual(withJunk.options, ["ok"]);
-  assert.equal(withJunk.freeText, false); // non-true free_text is false, not 1
+  assert.deepEqual(withJunk.options, [{ label: "ok" }]); // junk rows drop, not fatal
+  assert.equal(withJunk.allowText, false); // non-true allow_text is false, not 1
 });
 
 test("verdictFromResultText parses the tool-result JSON shapes", () => {
@@ -70,6 +85,10 @@ test("verdictFromResultText parses the tool-result JSON shapes", () => {
   assert.deepEqual(
     verdictFromResultText(`{"card_id":"c2","verdict":"answer","text":"omega"}`),
     { verdictKind: "answer", picked: undefined, answerText: "omega" },
+  );
+  assert.deepEqual(
+    verdictFromResultText(`{"card_id":"c3","verdict":"answer","option_indexes":[1,3],"options":["a","c"]}`),
+    { verdictKind: "answer", picked: "a, c", answerText: undefined },
   );
   assert.deepEqual(
     verdictFromResultText(`{"card_id":"c1","verdict":"skip","skipped":true}`),
@@ -91,10 +110,10 @@ test("verdictFromResultText: non-JSON and unknown kinds are a dead card, not a c
 
 // --- wire restore ---
 
-test("renderTranscriptItems: a request_verdict call renders the card, not a tool line", () => {
+test("renderTranscriptItems: a verdict call renders the card, not a tool line", () => {
   const items = renderTranscriptItems([
     { kind: "message", content: "go?", role: "user", time: "t0" },
-    { kind: "tool_call", tool_call: { id: "tc1", name: "request_verdict", arguments: { title: "Approve?", options: ["yes", "no"] } } },
+    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict", arguments: { title: "Approve?", options: ["yes", "no"] } } },
     { kind: "tool_result", tool_call_id: "tc1", content: `{"card_id":"c1","verdict":"answer","option_index":1,"option":"yes"}`, elapsed_ms: 4200 },
   ]);
   assert.deepEqual(items.map((i) => (i.kind === "verdict" ? "verdict" : i.kind)), ["message", "verdict"]);
@@ -102,16 +121,35 @@ test("renderTranscriptItems: a request_verdict call renders the card, not a tool
   assert.equal(card.kind, "verdict");
   if (card.kind !== "verdict") return;
   assert.equal(card.title, "Approve?");
-  assert.deepEqual(card.options, ["yes", "no"]);
+  assert.deepEqual(card.options, [{ label: "yes" }, { label: "no" }]);
   // the matching tool_result settled the card with the recorded verdict
   assert.equal(card.status, "settled");
   assert.equal(card.verdictKind, "answer");
   assert.equal(card.picked, "yes");
 });
 
+test("renderTranscriptItems: described options survive the restore (list layout data)", () => {
+  const items = renderTranscriptItems([
+    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict", arguments: {
+      title: "Pick lanes",
+      options: [{ label: "Ship", description: "merge now" }, { label: "Hold" }],
+      multi: true,
+      allow_text: true,
+    } } },
+  ]);
+  const card = items[0];
+  if (card.kind !== "verdict") throw new Error("expected a verdict item");
+  assert.deepEqual(card.options, [
+    { label: "Ship", description: "merge now" },
+    { label: "Hold" },
+  ]);
+  assert.equal(card.multi, true);
+  assert.equal(card.allowText, true);
+});
+
 test("renderTranscriptItems: an unrestored (not running) card starts stale, never actionable", () => {
   const items = renderTranscriptItems([
-    { kind: "tool_call", tool_call: { id: "tc1", name: "request_verdict", arguments: { title: "Old question" } } },
+    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict", arguments: { title: "Old question" } } },
   ]);
   const card = items[0];
   if (card.kind !== "verdict") throw new Error("expected a verdict item");
@@ -208,6 +246,23 @@ test("postVerdict posts the answer to the session endpoint", async () => {
   }
 });
 
+test("postVerdict: a multi confirm posts every selected option index", async () => {
+  const seen: { url: string; method: string; body: string }[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL, init: { method?: string; body?: string }) => {
+    seen.push({ url: String(url), method: init?.method ?? "GET", body: String(init?.body ?? "") });
+    return Promise.resolve(new Response(JSON.stringify({ card_id: "cm", verdict: "answer", option_indexes: [1, 3] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    }));
+  }) as typeof globalThis.fetch;
+  try {
+    await postVerdict("s1", { option_indexes: [1, 3] });
+    assert.deepEqual(JSON.parse(seen[0].body), { option_indexes: [1, 3] });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("postVerdict: a lost race (409) throws the server's reason, so the loser shows it", async () => {
   const realFetch = globalThis.fetch;
   globalThis.fetch = (() =>
@@ -248,10 +303,16 @@ test("ChatItem routes verdict items to the VerdictCard component", () => {
   assert.match(chatItem, /item\.kind === 'verdict'/, "the verdict kind is the route in");
 });
 
-test("VerdictCard posts answers to the session's verdicts endpoint and shows the race reason", () => {
+test("VerdictCard renders the list layout and sends every answer shape", () => {
   const vue = read("modules/ui/app/components/chat/VerdictCard.vue");
+  assert.match(vue, /verdict-option-row/, "options render as stacked rows (list layout, not pills)");
+  assert.match(vue, /flex-direction: column/, "the rows stack top to bottom, one per row");
+  assert.match(vue, /verdict-desc/, "each row shows its option description");
+  assert.match(vue, /confirmMulti/, "multi cards confirm, they do not answer on first tap");
+  assert.match(vue, /option_indexes: \[\.\.\.selected\.value\]/, "the confirm posts every selected index");
+  assert.match(vue, /option_index: index/, "single rows still send a numeric option index");
+  assert.match(vue, /type your own answer/, "the typed-answer row sits between options and skip");
   assert.match(vue, /postVerdict\(props\.sessionId/, "answers post to the session the chat tab owns");
-  assert.match(vue, /option_index: index/, "button picks send a numeric option index");
   assert.match(vue, /skip: true/, "no silent dismissal: the skip posts as a verdict");
   assert.match(vue, /error\.value = e instanceof Error \? e\.message/, "the race reason renders (no silent retry)");
 });
@@ -265,7 +326,7 @@ test("the notifications bell counts pending verdict cards", () => {
 
 test("chat.ts streams the card above the tool line and settles it from the result", () => {
   const chat = read("modules/ui/app/composables/chat.ts");
-  assert.match(chat, /tool\.name === "request_verdict"/, "the live stream recognizes the card tool");
+  assert.match(chat, /tool\.name === "verdict"/, "the live stream recognizes the card tool");
   assert.match(chat, /verdictCardFromToolArgs/, "live cards build from the tool args");
   assert.match(chat, /verdictFromResultText/, "the tool_result settles the card");
   assert.match(chat, /item\.kind === "verdict" && item\.status === "pending"/, "a dead stream's card goes stale, never actionable");
