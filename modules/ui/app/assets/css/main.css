@@ -302,8 +302,14 @@ body {
 }
 .dock-tab.active::after {
   right: calc(-1 * var(--r-pane));
+  /* t_d7fd3ad3: the right fillet MIRRORS the left's geometry - the
+     quarter-disk cutout centers on the fillet square's TOP-RIGHT corner
+     (the tab's bottom-right seam), not on the left's 0 0 copy. As copied,
+     the notch centered on the square's own top-left (inside the arc over
+     the tab), so the arc cut into the raised strip and it bled at the
+     seam. The mirrored center keeps the concave sweep hugging the card. */
   background: radial-gradient(
-    circle at 0 0,
+    circle at 100% 0,
     transparent var(--r-pane),
     var(--z1) calc(var(--r-pane) + 0.4px)
   );

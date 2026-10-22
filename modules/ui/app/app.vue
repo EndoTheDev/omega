@@ -174,9 +174,12 @@
             :open="inspectorOpen"
             @open-module="openModuleTab" />
         </template>
-        <!-- card t_e1e61680: insights is a MAIN-area tab - opened from
-             any pane's '+' menu, closed like chat (hover-X). The mount
-             loads its own payload on activation (onMounted). -->
+        <!-- card t_e1e61680: insights was a main-area tab; card t_d7fd3ad3
+             moved its home to the SECONDARY sidebar (a default-visible
+             inspector tab, label "Insights"). The outlet renders wherever
+             the tab lives; the '+' menu entry stays and FOCUSES this
+             instance (singleton). The mount loads its own payload on
+             activation (onMounted). -->
         <template #pane-insights>
           <InsightsTab
             v-if="!isMobile"
@@ -259,12 +262,19 @@
       <!-- card t_14f73742: the mobile drawer seats the shell inventory
            tab like any inspector view - before the module catch-all,
            which would try InspectorPanel(module="extensions") and
-           render an empty panel body. -->
+           render an empty panel body.
+           card t_d7fd3ad3: insights joins the same class - its home is
+           the right shell now, so the drawer needs its branch before the
+           catch-all (InspectorPanel(module="insights") would render an
+           empty body - insights is shell-owned, not a module panel). -->
       <ExtensionsTab
         v-else-if="inspectorDrawerActiveId === 'extensions'"
         class="pane"
         :open="inspectorOpen"
         @open-module="openModuleTab" />
+      <InsightsTab
+        v-else-if="inspectorDrawerActiveId === 'insights'"
+        class="pane" />
       <InspectorPanel
         v-else-if="inspectorDrawerActiveId"
         class="pane"
@@ -320,7 +330,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
+  import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
   import { modulePanels } from "./composables/module-panels.generated";
   import {
     archiveSession,
@@ -371,6 +381,9 @@
     DOCK_TAB_TITLE_KEY,
     nextTabKey,
   } from "./composables/dock";
+  // card t_d7fd3ad3 item 6: the bottom panel's width mode - the applier
+  // reads the shared ref; settings writes it
+  import { useBottomWidthMode } from "./composables/bottomWidth";
   // card t_e76ce7b6: the mobile drawer renders the pinned-edge content
   // (sessions / inspector tabs) independently of the dock tree, so it
   // reads the dockable registry directly for the default tab set + the
@@ -475,6 +488,48 @@
   // the sidebars are FIXED panes (card t_4ae27e0d): no open/close state
   // exists on desktop. drawerOpen/inspectorOpen are the MOBILE overlay
   // flags only; the MenuBar drawer buttons surface on mobile only.
+
+  // --- card t_d7fd3ad3 item 6: the bottom panel's width modes ---
+  // aligned (the default): the panel's width matches the MAIN panes'
+  // bounding box - the VS Code panel read, the sidebars stand clear.
+  // full: the panel spans the dock area (the pre-card behavior).
+  // The applier measures the rendered panes and writes the insets as CSS
+  // custom properties on the ROOT split element; bottompanel.css puts
+  // them on the bottom pane AND the root divider (the handle stays over
+  // the panel it drags). Defaults are 0, so an un-applied boot renders
+  // full-width and no stale measurement can inset anything.
+  const bottomWidthMode = useBottomWidthMode();
+  function clearBottomInsets(area: HTMLElement) {
+    area.style.removeProperty("--bottom-inset-left");
+    area.style.removeProperty("--bottom-inset-right");
+  }
+  function applyBottomWidth() {
+    // the bottom shell hides (toggle/drag-close) - nothing to align
+    const bottom = document.querySelector<HTMLElement>(".dock-pane.edge-bottom");
+    const area = bottom?.parentElement;
+    if (!bottom || !area) return;
+    const reset = () => clearBottomInsets(area);
+    if (bottomWidthMode.value !== "aligned") return reset();
+    const mains = [
+      ...document.querySelectorAll<HTMLElement>(".dock-pane:not(.pinned)"),
+    ];
+    if (mains.length === 0) return reset();
+    const areaBox = area.getBoundingClientRect();
+    let left = Infinity;
+    let right = -Infinity;
+    for (const pane of mains) {
+      const r = pane.getBoundingClientRect();
+      left = Math.min(left, r.left);
+      right = Math.max(right, r.right);
+    }
+    if (!(right > left)) return reset(); // no rendered main box - stay full
+    const insetL = Math.max(0, Math.round(left - areaBox.left));
+    const insetR = Math.max(0, Math.round(areaBox.right - right));
+    area.style.setProperty("--bottom-inset-left", insetL + "px");
+    area.style.setProperty("--bottom-inset-right", insetR + "px");
+  }
+  // re-measure the pass after the DOM catches up with the layout change
+  watch([() => dock.tree.value, bottomWidthMode], () => nextTick(applyBottomWidth));
 
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
@@ -1142,6 +1197,10 @@
     // type-to-capture: window-level keydown (any printable key jumps
     // into the focused chat's composer when no text field holds focus)
     window.addEventListener("keydown", onKeyCapture);
+    // the width pass re-measures on viewport changes too (the insets are
+    // px measurements against the rendered panes)
+    window.addEventListener("resize", applyBottomWidth);
+    void nextTick(applyBottomWidth); // the boot pass (the watch needs a change)
 
     // mobile detection: sidebars become slide-in overlays below 768px
     const mobileQuery = window.matchMedia("(max-width: 768px)");
@@ -1244,6 +1303,7 @@
   onUnmounted(() => {
     document.removeEventListener("click", onDocClick);
     window.removeEventListener("keydown", onKeyCapture);
+    window.removeEventListener("resize", applyBottomWidth);
     window.removeEventListener("popstate", onPop);
     if (healthTimer) clearInterval(healthTimer);
     if (runningTimer) clearInterval(runningTimer);

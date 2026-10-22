@@ -21,9 +21,9 @@
     <!-- the pane's tab bar IS the header (35px, MenuBar contract).
          card t_d6b657a7: edge shells (sessions / inspector homes) are
          unclosable as panes - no remove X, no actions menu - but host
-         FREE tabs: every tab drags (sessions only inside "left"), the
-         '+' refills from the menu inventory, chat's X works wherever
-         it drops. -->
+         FREE tabs: every tab drags (sessions only inside "left"), chat's
+         X works wherever it drops. card t_d7fd3ad3: the '+' is MAIN-pane
+         chrome - the pinned shells (sidebars + bottom) carry no '+'. -->
     <div
       ref="tabsEl"
       class="dock-tabbar">
@@ -65,7 +65,12 @@
           </div>
           <!-- insertion caret "after the last tab" rides the '+' button's
                left edge (absolute pseudo-element, no reflow) -->
+        <!-- card t_d7fd3ad3 (items 2+5): the '+' is MAIN-pane chrome only -
+             the pinned shells (both sidebars AND the bottom panel) are
+             closed tab bars: no '+', no menu. The main pane keeps its
+             load-bearing '+' (the dockable inventory menu). -->
         <button
+          v-if="!pinned"
           class="dock-tab-new"
           :class="{ 'caret-before': dropIdx === node.tabs.length }"
           aria-label="new tab"

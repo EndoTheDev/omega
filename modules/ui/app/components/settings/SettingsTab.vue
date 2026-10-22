@@ -160,6 +160,12 @@
     type UserTheme,  } from "~/composables/omega";
   import { useNarrow } from "~/composables/narrow";
   import type { ToolDisplay } from "~/composables/toolDisplay";
+  // card t_d7fd3ad3 item 6: the dock group's client knob rides the shared
+  // bottom-width mode ref (the applier in app.vue reads the same signal)
+  import {
+    setBottomWidthMode,
+    useBottomWidthMode,
+  } from "~/composables/bottomWidth";
 
   const props = defineProps<{
     showThinking: boolean;
@@ -292,9 +298,38 @@
     ],
   }));
 
-  const isClient = (group: SettingGroup) => group.key === "chat";
+  // card t_d7fd3ad3 item 6: the dock's client knob - the bottom panel's
+  // width mode. "aligned" (default) matches the panel to the main panes'
+  // box (the VS Code panel read); "full" spans the dock area. Written
+  // straight to the shared module ref (composables/bottomWidth.ts) - the
+  // applier in app.vue re-measures on the same signal.
+  const bottomWidthMode = useBottomWidthMode();
+  const dockGroup = computed<SettingGroup>(() => ({
+    key: "dock",
+    label: "dock",
+    knobs: [
+      {
+        key: "dock.bottom_width",
+        label: "bottom panel width",
+        type: "select",
+        value: bottomWidthMode.value,
+        options: ["aligned", "full"],
+        help:
+          "aligned matches the bottom panel to the main pane's width " +
+          "(the sidebars stand clear, like the VS Code panel); full " +
+          "spans the whole window",
+      },
+    ],
+  }));
 
-  const allGroups = computed<SettingGroup[]>(() => [chatGroup.value, ...groups.value]);
+  const isClient = (group: SettingGroup) =>
+    group.key === "chat" || group.key === "dock";
+
+  const allGroups = computed<SettingGroup[]>(() => [
+    chatGroup.value,
+    dockGroup.value,
+    ...groups.value,
+  ]);
 
   const visibleGroups = computed<SettingGroup[]>(() =>
     filterSettingGroups(allGroups.value, query.value),
@@ -339,6 +374,7 @@
     if (knob.key === "chat.show_thinking") return props.showThinking;
     if (knob.key === "chat.appearance") return props.appearance;
     if (knob.key === "chat.tool_display") return props.toolDisplay;
+    if (knob.key === "dock.bottom_width") return bottomWidthMode.value;
     return props.themeMode;
   };
 
@@ -380,6 +416,8 @@
         emit("update:appearance", value as Appearance);
       else if (knob.key === "chat.tool_display")
         emit("update:toolDisplay", value as ToolDisplay);
+      else if (knob.key === "dock.bottom_width")
+        setBottomWidthMode(value === "full" ? "full" : "aligned");
       return;
     }
     draft.value = { ...draft.value, [knob.key]: value };

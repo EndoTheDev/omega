@@ -156,45 +156,42 @@ describe("the dockable registry", () => {
       );
       assert.equal(typeof d.closable, "boolean", `${d.id}: closable flag`);
       // the lock is narrow now (t_d6b657a7): only sessions is locked;
-      // unclosable is the wider property (everything except chat and
-      // insights - card t_e1e61680 opens insights as a main-area tab
-      // that closes like chat's)
+      // unclosable is the wider property - chat is the only closable
+      // component left (card t_d7fd3ad3: insights' home moved to the
+      // right shell; unclosable like every inspector view)
       assert.equal(isLockedTab(d.id), d.id === 'sidebar', `${d.id}: lock == sessions`);
-      assert.equal(
-        isClosableTab(d.id),
-        ["chat", "insights"].includes(d.id),
-        `${d.id}: closable == chat/insights`,
-      );
+      assert.equal(isClosableTab(d.id), d.id === "chat", `${d.id}: closable == chat`);
     }
   });
 
-  it("policy split (card t_4ae27e0d + t_49d0b308 + t_e1e61680): chat the only multi; closables are chat + insights", () => {
+  it("policy split (card t_4ae27e0d + t_49d0b308 + t_d7fd3ad3): chat the only multi; chat the only closable", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
     assert.deepEqual(multi, ["chat"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
-    assert.deepEqual([...closable].sort(), ["chat", "insights"]);
+    assert.deepEqual([...closable].sort(), ["chat"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector EIGHT pinned right (t_49d0b308 + t_14f73742)", () => {
+  it("the fixed sidebars: sidebar pinned left, the inspector NINE pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3)", () => {
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
       ["sidebar"],
     );
     // the default order is the ruling's: files, cron, logs, skills,
-    // tools, settings, kanban, extensions (logs = the http_channel
-    // module id; extensions joins the inventory last, t_14f73742)
+    // tools, settings, kanban, extensions, insights (logs = the
+    // http_channel module id; extensions joined last at t_14f73742;
+    // insights joined the right shell at t_d7fd3ad3)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the eight",
+      "no X on any of the nine",
     );
   });
 
@@ -202,9 +199,9 @@ describe("the dockable registry", () => {
     // settings has no menu path (ruling, t_d6b657a7): persistence and the
     // default-arrangement fallback are its only entry. MAIN_DOCKABLES (the
     // main-area list) and MENU_DOCKABLES (the refill inventory) both
-    // exclude it. card t_e1e61680: insights joins the main area as the
-    // second openable singleton (chat stays the only multi).
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "insights"]);
+    // exclude it. card t_d7fd3ad3: insights LEFT the main area (its home
+    // is the right shell) - chat is the main class's only member again.
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
     assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
     assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
@@ -212,6 +209,10 @@ describe("the dockable registry", () => {
     // entry point for the inventory tab (unlike settings, it has a
     // routeable panel body over GET /extensions)
     assert.ok(MENU_DOCKABLES.includes("extensions"), "extensions IS refillable");
+    // card t_d7fd3ad3: insights stays menu-fillable - the singleton
+    // opener FOCUSES its inspector instance (clean coexistence with the
+    // default sidebar home)
+    assert.ok(MENU_DOCKABLES.includes("insights"), "insights IS refillable");
   });
 
   it("legacy ids: pre-reset trees deserialize but nothing may open one", () => {
@@ -257,11 +258,17 @@ describe("the dockable registry", () => {
       { ...COMPONENT_TITLES },
     );
     // the pinned sidebars have no menu-open path (card t_4ae27e0d);
-    // settings left the main class (card t_49d0b308). card t_e1e61680:
-    // insights rejoins the class - singleton, closable like chat.
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "insights"]);
+    // settings left the main class (card t_49d0b308) and insights left
+    // with it (card t_d7fd3ad3: its home is the right shell) - chat is
+    // the main class's only member.
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
     const ids = DOCKABLES.map((d) => d.id);
     assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
+    // card t_d7fd3ad3 items 1+3: the two header voices go capital -
+    // "Sessions" (primary) and "Insights" (secondary); the module-tab
+    // and inspector-voice titles stay lowercase by Endo's call
+    assert.equal(COMPONENT_TITLES.sidebar, "Sessions");
+    assert.equal(COMPONENT_TITLES.insights, "Insights");
   });
 
   it("chrome is NOT in the registry (MenuBar/StatusBar are the window, not content)", () => {
@@ -419,7 +426,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(tree, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes
@@ -454,7 +461,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -510,7 +517,7 @@ describe("dock store: the pane-model reset", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
     );
   });
 
@@ -650,7 +657,7 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions",
+      "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions,insights",
       "none of the nine may close",
     );
     // the main class still closes through the store
