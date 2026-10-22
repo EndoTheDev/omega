@@ -299,6 +299,11 @@ type chatRequest struct {
 	// user is the head; continuations / tool results chain off the
 	// leaf). Unexported: never part of the request wire.
 	branchParent string
+	// persistInput is the send's incoming messages - the run's turn
+	// copy the LOOP persists through its sink before the first turn
+	// (fork parents already applied). Unexported: never part of the
+	// request wire.
+	persistInput []ai.Message
 	// Ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no
 	// store row, nothing on disk; the `eph-` id (carried on the leading
 	// `session` frame) lives in the server's in-memory registry until
@@ -627,9 +632,11 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"cancelling"}`)) //nolint:errcheck // constant body
 }
 
-// loadSessionMessages loads persisted history for a session, appends the
-// incoming messages, and persists each appended message. When no session
-// is configured (nil store or empty ID), messages are returned unchanged.
+// loadSessionMessages loads persisted history for a session and returns
+// it with the incoming messages appended. The incoming messages ride
+// req.persistInput - the loop persists them through its sink before the
+// first turn; nothing here writes the store. When no session is
+// configured (nil store or empty ID), messages are returned unchanged.
 // On failure an HTTP error is written to w and ok is false.
 //
 // History is the ACTIVE PATH (t_17365247), not the linear list: sibling
@@ -646,10 +653,12 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req *chatRequest, messages []ai.Message) ([]ai.Message, bool) {
 	if isEphemeralID(req.SessionID) {
 		// Ephemeral context (card t_d96a5cd5): the registry's in-memory
-		// history IS the conversation - the store is never read, the
-		// incoming send is recorded there. An eph id without the flag
-		// is a client bug (the session frame the client reattaches
-		// with always accompanies the flag).
+		// history IS the conversation - the store is never read. The
+		// send's wire items land here (rendering); the provider-facing
+		// history copy persists through the loop's eph sink at run
+		// start. An eph id without the flag is a client bug (the
+		// session frame the client reattaches with always accompanies
+		// the flag).
 		if !req.Ephemeral {
 			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
 			return nil, false
@@ -659,7 +668,8 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 			return nil, false
 		}
 		s.eph.appendUser(req.SessionID, messages, time.Now())
-		return s.eph.history(req.SessionID), true
+		req.persistInput = messages
+		return append(s.eph.history(req.SessionID), messages...), true
 	}
 	if s.store == nil || req.SessionID == "" {
 		return messages, true
@@ -721,30 +731,14 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 			for i := range messages {
 				messages[i] = agent.WithParentID(messages[i], req.Fork)
 			}
-			if err := s.appendIncoming(ctx, req.SessionID, messages); err != nil {
-				http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
-				return nil, false
-			}
+			// The fork's messages persist through the loop's sink;
+			// their explicit parent is what the store materializes.
+			req.persistInput = messages
 			return append(storedMessages(view.Path[:at+1]), messages...), true
 		}
 	}
-	if err := s.appendIncoming(ctx, req.SessionID, messages); err != nil {
-		http.Error(w, "persist message: "+err.Error(), http.StatusInternalServerError)
-		return nil, false
-	}
+	req.persistInput = messages
 	return append(storedMessages(view.Path), messages...), true
-}
-
-// appendIncoming persists a send's messages in order (the store
-// materializes each one's tree pointer - derived leaf, or the explicit
-// parent the fork path set).
-func (s *Server) appendIncoming(ctx context.Context, sessionID string, messages []ai.Message) error {
-	for _, m := range messages {
-		if err := s.store.AppendMessage(ctx, sessionID, m); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // storedMessages strips the tree view down to plain provider context.
@@ -770,6 +764,23 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
+// turnSinkFor builds the run's TurnSink (card t_471f6d4a) - the loop
+// is the only writer of turn copies, so every path that starts a run
+// wraps one. Store-backed sessions persist through the standard seam
+// (head parent = the branch point the channel computed); ephemeral
+// sessions persist into the registry's in-memory history (the eph
+// conversation's store equivalent). A legacy no-store non-ephemeral
+// run gets nil - it persists nothing, exactly as before.
+func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
+	if req.Ephemeral && req.SessionID != "" {
+		return &ephTurnSink{r: &s.eph, id: req.SessionID}
+	}
+	if s.store == nil || req.SessionID == "" {
+		return nil
+	}
+	return agent.NewStoreTurnSink(s.store, req.SessionID, req.branchParent)
+}
+
 // streamAgentEvents runs the agent event loop, writing SSE events to w.
 // prov is the per-request provider (a copy carrying the request's model).
 // It returns the accumulated assistant records for session persistence
@@ -781,6 +792,12 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	// Verdict cards v1: the no-store legacy path is still an interactive
 	// turn - request_verdict may issue from here.
 	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+	// Turn copy persistence belongs to the loop (card t_471f6d4a): the
+	// sink carries the session and the head-parent pin, the run input
+	// rides req.persistInput. Channels render from the store, never
+	// append turn content.
+	ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))
+	ctx = agent.WithPersistInput(ctx, req.persistInput)
 	var recs []assistantRecord
 	var rec assistantRecord
 	var usage streamUsage
@@ -900,22 +917,23 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 	return 0
 }
 
-// persistAssistant saves the assistant turn to the session, one message
-// per response segment: assistant(A + tool calls) -> tool results ->
-// assistant(B). Providers require this order (final answer as its own
-// message after the tool results); the webui reload renders one bubble
-// per message, matching the live segment split. usage adds the run's
-// real token totals to the session row; last writes the run's computed
-// last-known rates when non-nil (never cleared here - a run without
-// reported usage leaves the previous block standing). The first
-// persistence error is RETURNED, not written to a wire - the caller
-// owns the wire (the legacy request writes one error frame; the
-// detached run broadcasts one).
+// persistAssistant closes the run's persistence epilogue (the turn
+// copies themselves - assistants and tool results - the loop's sink
+// wrote while the turns completed, card t_471f6d4a). The ephemeral
+// branch commits the run's records into the registry (wire items +
+// telemetry, no disk). The store branch adds the run's real token
+// totals to the session row and writes the run's computed last-known
+// rates when non-nil (never cleared here - a run without reported
+// usage leaves the previous block standing). The first persistence
+// error is RETURNED, not written to a wire - the caller owns the wire
+// (the legacy request writes one error frame; the detached run
+// broadcasts one).
 func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats) error {
 	if req.Ephemeral && req.SessionID != "" {
 		// In-memory commit (card t_d96a5cd5): the run's records land in
-		// the registry (context history + transcript items + telemetry)
-		// - no store write, no title run, gone at restart.
+		// the registry (transcript items + telemetry) - the messages
+		// themselves ride the loop's eph sink; no store write, no
+		// title run, gone at restart.
 		s.eph.commit(req.SessionID, recs, usage, last, time.Now())
 		return nil
 	}
@@ -923,39 +941,7 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 		return nil
 	}
 	lastContent := ""
-	head := true // the first conversation-carrying record is the run head
 	for _, rec := range recs {
-		if rec.content == "" && rec.thinking == "" && len(rec.toolCalls) == 0 {
-			continue
-		}
-		assistant := ai.NewAssistant(rec.content)
-		if rec.thinking != "" {
-			text := rec.thinking
-			assistant.Thinking = &text
-		}
-		assistant.ToolCalls = rec.toolCalls
-		if rec.thinkDur > 0 || rec.respDur > 0 {
-			assistant.Timing = &ai.Timing{ThinkingMs: rec.thinkDur.Milliseconds(), ResponseMs: rec.respDur.Milliseconds()}
-		}
-		// Retry/fork-of-user runs parent their head to the branch-point
-		// user explicitly (t_17365247): the store's derived leaf here
-		// would still be the PREVIOUS run - the sibling-variant hop is
-		// channel knowledge. Normal sends stay on the derived path
-		// (the head answers the just-persisted user message).
-		if head && req.branchParent != "" {
-			assistant.ParentID = req.branchParent
-		}
-		head = false
-		if err := s.store.AppendMessage(ctx, req.SessionID, assistant); err != nil {
-			return fmt.Errorf("persist response: %w", err)
-		}
-		// tool results follow the assistant-with-calls message - providers
-		// require a tool-role message after every tool call in history
-		for _, res := range rec.results {
-			if err := s.store.AppendMessage(ctx, req.SessionID, res); err != nil {
-				return fmt.Errorf("persist tool result: %w", err)
-			}
-		}
 		if rec.content != "" {
 			lastContent = rec.content
 		}

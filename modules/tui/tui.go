@@ -335,6 +335,8 @@ type model struct {
 	retryParent           string           // branch point the in-flight retry's head pins to; "" = none
 	headPinned            bool             // retry head already parented this run
 	retryMarker           string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
+	persistInput          []ai.Message     // this run's new input messages; the loop's sink persists them (t_471f6d4a)
+	headParent            string           // the run's head-pin parent (retry); "" = derive leaf
 	screen                agent.TUIScreen  // open module full-screen view (module seam); nil = closed
 	tick                  *agent.TUITick   // active module follow loop (/logs -f pattern); nil = idle
 	moduleCommands        map[string]agent.TUIProvider
@@ -725,9 +727,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if combined != "" {
 					m.history = append(m.history, ai.NewUser(combined))
-					if m.store != nil && !m.ephemeral && m.sessionID != "" {
-						m.store.AppendMessage(context.Background(), m.sessionID, m.history[len(m.history)-1])
-					}
+					// The injected result is this run's input; the
+					// loop's sink persists it (t_471f6d4a).
+					m.persistInput = []ai.Message{m.history[len(m.history)-1]}
 					m.busy = true
 					m.segments = nil
 					m.err = ""
@@ -877,13 +879,17 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// derived leaf would otherwise ignore the forked perspective.
 	msg = applyForkPin(&m, msg)
 	m.history = append(m.history, msg)
+	// The send is this run's input; the loop's sink persists it
+	// before the first turn (t_471f6d4a). Ephemeral sessions have
+	// no store, so the sink is nil and nothing persists.
+	m.persistInput = []ai.Message{msg}
 	m.busy = true
 	m.segments = nil
 	m.err = ""
 	m.lastRenderedResponse = ""
 
-	// Persist the user message; auto-create a session on the first one.
-	// Ephemeral sessions skip the store entirely.
+	// Auto-create a session on the first send. Ephemeral sessions
+	// skip the store entirely.
 	if m.store != nil && !m.ephemeral {
 		if m.sessionID == "" {
 			id, err := agent.NewSessionID()
@@ -923,11 +929,6 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 				}
 			}
 			m.sessionID = id
-			m.storeErr = ""
-		}
-		if err := m.store.AppendMessage(context.Background(), m.sessionID, m.history[len(m.history)-1]); err != nil {
-			m.storeErr = "save message: " + err.Error()
-		} else {
 			m.storeErr = ""
 		}
 	}
@@ -987,6 +988,18 @@ func (m *model) startRun() {
 	if m.ephemeral {
 		ctx = agent.WithDeniedTools(ctx, "memory")
 	}
+	// Turn-copy persistence belongs to the loop (card t_471f6d4a): the
+	// sink carries the session and the head-pin parent, the run's new
+	// input rides the context and persists before the first turn. The
+	// TUI never appends turn content to the store; ephemeral runs get
+	// no sink and the input persists nowhere. Rendering stays
+	// event-driven and untouched.
+	if m.store != nil && m.sessionID != "" && !m.ephemeral {
+		ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(m.store, m.sessionID, m.headParent))
+	}
+	ctx = agent.WithPersistInput(ctx, m.persistInput)
+	m.persistInput = nil
+	m.headParent = ""
 	// Pass a non-nil channel as a mode flag so the agent loop
 	// knows this is TUI mode (don't block on subagent results).
 	m.userInput = make(chan string, 1)
@@ -1114,13 +1127,8 @@ func (m *model) handleEvent(event agent.Event) {
 		m.segments = nil
 	case agent.ToolResultEvent:
 		m.history = append(m.history, e.Message)
-		if m.store != nil && m.sessionID != "" {
-			if err := m.store.AppendMessage(context.Background(), m.sessionID, e.Message); err != nil {
-				m.storeErr = "save tool result: " + err.Error()
-			} else {
-				m.storeErr = ""
-			}
-		}
+		// Persisted by the loop's sink as the turn completed
+		// (t_471f6d4a); here it only lands in history.
 		// Append as a segment so it renders in order with thinking
 		// and tool calls at AgentEnd, not out of sequence.
 		lines := strings.Count(e.Message.Content, "\n") + 1
@@ -1151,20 +1159,16 @@ func (m *model) handleEvent(event agent.Event) {
 		}
 	case agent.AssistantMessageEvent:
 		// A /retry run pins its head to the branch-point user (the
-		// sibling-variant hop the http channel makes server-side);
-		// everything after chains off the derived leaf.
+		// sibling-variant hop the store sink makes at persist time -
+		// the sink was built with the retry's headParent); the display
+		// marker here mirrors what was persisted.
 		if m.retryParent != "" && !m.headPinned {
 			e.Message.ParentID = m.retryParent
 			m.headPinned = true
 		}
 		m.history = append(m.history, e.Message)
-		if m.store != nil && m.sessionID != "" {
-			if err := m.store.AppendMessage(context.Background(), m.sessionID, e.Message); err != nil {
-				m.storeErr = "save assistant: " + err.Error()
-			} else {
-				m.storeErr = ""
-			}
-		}
+		// Persisted by the loop's sink as the turn completed
+		// (t_471f6d4a); here it only lands in history.
 	}
 }
 

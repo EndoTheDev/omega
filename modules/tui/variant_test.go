@@ -7,6 +7,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/modules/agent_loop"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -192,9 +193,22 @@ func TestForkPersists(t *testing.T) {
 
 // TestRetrySiblingsPins: /retry trims to the last user turn, the run
 // head pins to the branch point, and the fresh response surfaces as a
-// variant (marker + tree state + stale selection reset).
+// variant (marker + tree state + stale selection reset). The run is a
+// real loop run - persistence is the loop's sink now (t_471f6d4a), so
+// the sibling-variant store law needs the run to actually execute.
 func TestRetrySiblingsPins(t *testing.T) {
 	mm := branchedModel(t).withSeed(t)
+	mountScriptedRun(&mm,
+		// turn 1: partial response then a tool call - persists the
+		// pinned head, then the tool result
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "fresh "},
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nop"}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		// turn 2: the unpinned follow-on assistant
+		scriptedResponse("answer"),
+	)
 
 	out, _ := mm.handleCommand("/retry")
 	retried := out.(model)
@@ -208,43 +222,48 @@ func TestRetrySiblingsPins(t *testing.T) {
 		t.Fatalf("expected fresh-head marker [3/3], got %q", retried.retryMarker)
 	}
 
-	// The run head pins to the branch-point user; later messages of
-	// the same run keep their own (derived) parent.
-	rm := retried
-	rm.handleEvent(agent.AssistantMessageEvent{Message: ai.NewAssistant("fresh answer")})
-	if got := agent.ParentIDOf(rm.history[1]); got != "1" {
+	// Drain the real run. The loop persists: head assistant pinned to
+	// the branch-point user, the tool result, then the follow-on.
+	for ev := range retried.events {
+		retried.handleEvent(ev)
+	}
+	if retried.retryParent != "" || retried.headPinned || retried.retryMarker != "" {
+		t.Fatal("retry state not cleared at AgentEnd")
+	}
+	if got := stripTranscript(retried); !strings.Contains(got, "[3/3]") {
+		t.Fatalf("retry marker missing from transcript: %q", got)
+	}
+
+	// The run head pinned to the branch-point user; later messages of
+	// the same run keep their own (derived) parent. History order:
+	// user (trimmed), head assistant, tool result, follow-on assistant.
+	if got := agent.ParentIDOf(retried.history[1]); got != "1" {
 		t.Fatalf("head not pinned: %q", got)
 	}
-	if !rm.headPinned {
-		t.Fatal("headPinned not set")
-	}
-	rm.handleEvent(agent.AssistantMessageEvent{Message: ai.NewAssistant("second segment")})
-	if got := agent.ParentIDOf(rm.history[2]); got != "" {
+	if got := agent.ParentIDOf(retried.history[3]); got != "" {
 		t.Fatalf("non-head message pinned: %q", got)
 	}
 
-	// AgentEnd: the streamed segments fold, the marker hits the
-	// transcript, retry state clears, and the store's tree carries
-	// the fresh head as a sibling. The segment mirrors the real run
-	// (AgentEnd renders from the streamed response segments).
-	rm.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "fresh "}})
-	rm.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "answer"}})
-	rm.handleEvent(agent.AgentEnd{Message: ai.NewAssistant("fresh answer")})
-	if rm.retryParent != "" || rm.headPinned || rm.retryMarker != "" {
-		t.Fatal("retry state not cleared at AgentEnd")
-	}
-	if got := stripTranscript(teaModel(rm)); !strings.Contains(got, "[3/3]") {
-		t.Fatalf("retry marker missing from transcript: %q", got)
-	}
-	view, err := rm.store.GetActiveView(context.Background(), rm.sessionID)
+	view, err := retried.store.GetActiveView(context.Background(), retried.sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Rows after the retry: 1 user, 2 asst, 3 asst, 4 select(first),
-	// 5 select reset, 6 fresh head. Default active = last sibling.
+	// 5 select reset, 6 fresh head, 7 tool result, 8 follow-on. The
+	// fresh head is a sibling variant; default active = last sibling.
 	if len(view.SiblingHeads["1"]) != 3 || view.ActiveHeads["1"] != "6" {
 		t.Fatalf("fresh head not a sibling variant: heads=%v active=%q", view.SiblingHeads["1"], view.ActiveHeads["1"])
 	}
+}
+
+// mountScriptedRun mounts the real agent loop and a scripted fake
+// provider into the model's extension context, so a started run
+// executes the loop and persists through its store sink.
+func mountScriptedRun(m *model, scripts ...[]ai.StreamEvent) {
+	if err := agent_loop.NewPlugin().Mount(m.extensions); err != nil {
+		panic(err)
+	}
+	m.extensions.Provider = ai.NewFakeProviderScripts("test", scripts...)
 }
 
 // TestVariantGuards rejects the commands without a store, without a
