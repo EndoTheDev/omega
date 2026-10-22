@@ -12,7 +12,7 @@ GATE="$(cd "$(dirname "$0")" && pwd)/drift-gate.sh"
 pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
-bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
+bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
 GUSER=(git -c user.email=t@t -c user.name=t)
 
@@ -23,21 +23,24 @@ fixture() {
 	local root
 	root="$(mktemp -d "${TMPDIR:-/tmp}/drift-fx.XXXXXX")"
 	(
-		cd "$root" || exit 1
-		git init -q -b master up
-		"${GUSER[@]}" -C up commit --allow-empty -q -m mb
+		cd "$root" &&
+		git init -q -b master up &&
+		"${GUSER[@]}" -C up commit --allow-empty -q -m mb &&
 		if [ "$age" -gt 0 ]; then
 			# rewrite the tip's committer date to exactly `age` days ago -
-			# the gate measures head_ct - mb_ct in whole days
+			# the gate measures head_ct - mb_ct in whole days. The -c
+			# identity flags matter: CI runners have no default git
+			# identity and a naked commit here would fail silently.
 			env GIT_COMMITTER_DATE="@$(( $(date +%s) - age * 86400 )) +0000" \
 				GIT_AUTHOR_DATE="@$(( $(date +%s) - age * 86400 )) +0000" \
-				git -C up commit --amend -q --no-edit --allow-empty
-		fi
-		git clone -q up dev
-		"${GUSER[@]}" -C dev checkout -q -b dev
+				"${GUSER[@]}" -C up commit --amend -q --no-edit --allow-empty || exit 9
+		fi &&
+		git clone -q up dev &&
+		"${GUSER[@]}" -C dev checkout -q -b dev &&
 		for i in $(seq 1 "$ahead"); do
-			"${GUSER[@]}" -C dev commit --allow-empty -q -m "c$i"
-		done
+			"${GUSER[@]}" -C dev commit --allow-empty -q -m "c$i" || exit 9
+		done &&
+		:
 	) >/dev/null 2>&1 || { bad "fixture $ahead/$age: setup failed"; echo; return 1; }
 	echo "$root/dev"
 }
@@ -46,6 +49,11 @@ fixture() {
 run_case() {
 	local dev=$1
 	shift
+	if [ -z "$dev" ] || [ ! -d "$dev" ]; then
+		OUT=""
+		RC=99
+		return
+	fi
 	OUT="$(cd "$dev" && env "$@" bash "$GATE" 2>&1)"
 	RC=$?
 }
