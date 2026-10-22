@@ -160,3 +160,60 @@ func TestLoopWithToolCalls(t *testing.T) {
 		t.Fatal("no events received")
 	}
 }
+// TestLoopDeniedTool pins the run-scoped tool deny (agent.WithDeniedTools):
+// a provider-merged registry drops the denied name BEFORE the model sees
+// schemas or dispatch - a memory tool riding a ToolProvider vanishes for
+// a denied run, and a tool the model still cannot help calling errors as
+// an IsError result instead of executing.
+func TestLoopDeniedTool(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("test",
+		[]ai.StreamEvent{
+			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "memory", Arguments: map[string]any{"action": "add"}}},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]ai.StreamEvent{
+			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
+			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	// memory rides a PROVIDER (the real mount shape): filtering the
+	// caller's Tools map alone would not reach it
+	providerTools := map[string]agent.Tool{
+		"memory": {
+			Description: "Save a memory",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				t.Fatal("the denied tool executed")
+				return "", nil
+			},
+		},
+	}
+
+	events := make(chan agent.Event, 64)
+	ctx := agent.WithDeniedTools(context.Background(), "memory")
+	go func() {
+		defer close(events)
+		Loop{}.Run(ctx, agent.LoopOptions{
+			Provider: provider,
+			Messages: []ai.Message{ai.NewUser("go")},
+			Tools:    map[string]agent.Tool{},
+			ToolProviders: []agent.ToolProvider{
+				agent.DefaultToolProvider{ToolsMap: providerTools},
+			},
+			Events: events,
+		})
+	}()
+
+	sawResult := false
+	for e := range events {
+		if te, ok := e.(agent.ToolResultEvent); ok {
+			sawResult = true
+			if !te.Message.IsError {
+				t.Errorf("denied tool result not an error: %+v", te.Message)
+			}
+		}
+	}
+	if !sawResult {
+		t.Fatal("no tool result event - the call path never ran")
+	}
+}
