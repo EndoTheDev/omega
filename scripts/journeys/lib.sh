@@ -23,13 +23,13 @@ JOURNEY_BASE_URL=${JOURNEY_BASE_URL:-http://127.0.0.1:8098}
 JOURNEY_CHROME_PORT=${JOURNEY_CHROME_PORT:-9333}
 JOURNEY_SESSION=${JOURNEY_SESSION:-omega-journey}
 
-# ab <args...>: one agent-browser call in the isolated journey session.
+# ab <args...>: one agent-browser call, ALWAYS in this run's browser
+# session: the daemon multiplexes concurrent clients (another card's
+# journey run rides the same daemon) and the default connection is
+# global - a session name keeps pages, navigation and the console log
+# bucket private to THIS suite (lib.sh lives in run.sh's export).
 ab() {
-  if [ -n "${JOURNEY_CDP_ATTACHED:-}" ]; then
-    "$AB" "$@"
-  else
-    "$AB" --session "$JOURNEY_SESSION" "$@"
-  fi
+  "$AB" --session "${JOURNEY_SESSION:-omega-journey}" "$@"
 }
 
 # step <desc>: progress line
@@ -98,8 +98,12 @@ poll_js() {
   return 1
 }
 
-# open_app: fresh SPA load in the journey session + console hook
+# open_app: fresh SPA load in the journey session + console hook. The
+# viewport resets to desktop FIRST: a recipe that died mid-way leaves
+# its mobile viewport on the tab (77-mobile-drawer crosses to 420px and
+# dies at mobile), and the next recipe must not inherit it.
 open_app() {
+  ab set viewport 1280 800 >/dev/null 2>&1 || true
   ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || \
     { JOURNEY_CDP_ATTACHED=0; ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || die "cannot open $JOURNEY_BASE_URL"; }
   ab wait --load networkidle >/dev/null 2>&1 || true
@@ -109,17 +113,25 @@ open_app() {
 # open_journey_row <label>: click the journey session's sidebar row,
 # retrying while the sidebar's session list is still loading (the SPA
 # fetches /sessions after boot - a one-shot find races that boot).
+# The find can also dispatch a REAL click too early: a row whose Vue
+# handlers have not hydrated yet swallows the click silently (route
+# unchanged, no tab opens) while the find reports success. So the
+# verdict is the OPEN - the focused chat tab drives the route to
+# /chat/<id> - re-clicked on every poll until the route moves.
 open_journey_row() {
-  local label="$1" i=0
-  while [ "$i" -lt 20 ]; do
+  local label="$1" i=0 opened
+  while [ "$i" -lt 30 ]; do
     if ab find text "$label" click >/dev/null 2>&1; then
-      step "ok: opened journey session row: $label"
-      return 0
+      opened=$(jsq 'location.pathname.startsWith("/chat/") ? 1 : 0' 2>&1 | tail -1)
+      if [ "$opened" = "1" ]; then
+        step "ok: opened journey session row: $label"
+        return 0
+      fi
     fi
     sleep 1
     i=$((i + 1))
   done
-  die "journey session row never appeared in sidebar: $label"
+  die "journey session row never opened: $label"
 }
 
 # assert_no_console_errors: the presentation-detector. A poisoned bundle,
