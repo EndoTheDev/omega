@@ -16,19 +16,59 @@ import (
 )
 
 // SkillsProvider implements agent.SkillsProvider by scanning a
-// directory for skill files.
+// directory for <name>/<name>.md skill files. SharedDir (optional) is
+// scanned before Dir and is every agent's shared skill home; Dir is
+// the agent's own. The merge is by skill NAME in scan order - first
+// match wins, so shared entries win name collisions (the card's
+// resolution order is literal: shared first).
 type SkillsProvider struct {
-	Dir string
+	Dir       string
+	SharedDir string
 }
 
-// LoadSkills scans dir for <name>/<name>.md skill files and returns
-// them. A missing directory returns an empty slice, not an error.
-// If dir is empty, uses the provider's configured Dir.
+// scanDirs returns the ordered directory list to scan: SharedDir
+// (set) first, then dir (the explicit argument; a missing dir yields
+// an empty slice, not an error).
+func (sp *SkillsProvider) scanDirs(dir string) []string {
+	var dirs []string
+	if sp.SharedDir != "" {
+		dirs = append(dirs, sp.SharedDir)
+	}
+	if dir != "" {
+		dirs = append(dirs, dir)
+	}
+	return dirs
+}
+
+// LoadSkills scans the configured directories (shared first, then
+// dir) for <name>/<name>.md skill files and returns them, deduped by
+// name with the first (shared) occurrence winning. Missing
+// directories return an empty slice, not an error. If dir is empty,
+// uses the provider's configured Dir.
 func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
 	if dir == "" {
 		dir = sp.Dir
 	}
-	return scanSkills(dir)
+	dirs := sp.scanDirs(dir)
+	if len(dirs) == 0 {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var out []agent.Skill
+	for _, d := range dirs {
+		skills, err := scanSkills(d)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range skills {
+			if seen[s.Name] {
+				continue
+			}
+			seen[s.Name] = true
+			out = append(out, s)
+		}
+	}
+	return out, nil
 }
 
 // ListSkills is the read-only inspector snapshot (agent.SkillsLister,
@@ -91,28 +131,34 @@ func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (str
 	if name == "" {
 		return "", fmt.Errorf(`missing required argument "name"`)
 	}
-	dir := sp.Dir
-	if dir == "" {
+	dirs := sp.scanDirs(sp.Dir)
+	if len(dirs) == 0 {
 		return "", fmt.Errorf("skills directory not configured")
 	}
-	skillFile := filepath.Join(dir, name, name+".md")
-	s, err := loadSkill(skillFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			entries, _ := os.ReadDir(dir)
-			var names []string
-			for _, e := range entries {
-				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-					names = append(names, e.Name())
-				}
-			}
-			return "", fmt.Errorf("skill %q not found. Available: %s", name, strings.Join(names, ", "))
+	// Read resolution follows the LoadSkills merge order: shared is
+	// scanned first, then the agent's own dir - so a name present in
+	// both resolves to the same winner the prompt listing shows.
+	var lastIsNotExist bool
+	for _, dir := range dirs {
+		skillFile := filepath.Join(dir, name, name+".md")
+		s, err := loadSkill(skillFile)
+		if err != nil {
+			lastIsNotExist = os.IsNotExist(err)
+			continue
 		}
-		return "", err
+		s.Name = name
+		s.Dir = filepath.Join(dir, name)
+		return formatSkill(s), nil
 	}
-	s.Name = name
-	s.Dir = filepath.Join(dir, name)
-	return formatSkill(s), nil
+	if lastIsNotExist {
+		skills, _ := sp.LoadSkills("")
+		var names []string
+		for _, s := range skills {
+			names = append(names, s.Name)
+		}
+		return "", fmt.Errorf("skill %q not found. Available: %s", name, strings.Join(names, ", "))
+	}
+	return "", fmt.Errorf("skill %q could not be read", name)
 }
 
 // HandleCommand processes the /skills slash command.
@@ -120,7 +166,7 @@ func (sp *SkillsProvider) HandleCommand(ctx context.Context, name, args string) 
 	if name != "/skills" {
 		return "", fmt.Errorf("unknown command: %s", name)
 	}
-	skills, err := scanSkills(sp.Dir)
+	skills, err := sp.LoadSkills("")
 	if err != nil {
 		return "", err
 	}

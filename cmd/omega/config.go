@@ -53,6 +53,9 @@ type WebConfig struct {
 // SkillsConfig controls where skills are loaded from.
 type SkillsConfig struct {
 	Dir string `yaml:"dir"`
+	// SharedDir is the root skills/shared home, scanned first (card
+	// t_7e2b7002): every agent sees it; an agent's own dir shadows.
+	SharedDir string `yaml:"shared_dir"`
 }
 
 // MemoryConfig controls the persistent memory system.
