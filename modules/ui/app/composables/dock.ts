@@ -16,7 +16,14 @@
 // for fixed panes (snap attractor 320/640 applies, 128px floor stands) and
 // fractions for flexible pairs.
 
-import { PANE_OPEN_MIN, openClamp, snapCandidate } from "./panes.ts";
+import {
+  PANE_OPEN_MIN,
+  SNAP_STEP,
+  BOTTOM_SNAP_STEP,
+  openClamp,
+  snapCandidate,
+  snapCandidateAt,
+} from "./panes.ts";
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
@@ -25,6 +32,7 @@ import {
   MAIN_DOCKABLES,
   MENU_DOCKABLES,
   COMPONENT_TITLES,
+  defaultHostTabs,
   isClosableTab,
   isLockedTab,
   type DockableComponentLike,
@@ -81,14 +89,21 @@ export interface DockPane {
   id: string;
   tabs: DockTab[];
   active: number;
-  /** fixed px size (sidebars); null = flexible (shares remainder) */
+  /** fixed px size (sidebars: WIDTH; the bottom shell: HEIGHT); null =
+      flexible (shares remainder) */
   fixed: number | null;
   /** card t_d6b657a7: the pinned shell identity - "left" = sessions home,
-      "right" = inspector home; undefined = main pane. "Fixed" is pane
-      IDENTITY now, not content: a shell pane unclosable as a whole, but
-      its TABS are free (everything drags everywhere except sessions). */
-  edge?: "left" | "right";
+      "right" = inspector home; card t_67fc1905: "bottom" = the bottom
+      panel's slot (the pinned horizontal child under the main panel).
+      undefined = main pane. "Fixed" is pane IDENTITY, not content: a
+      shell pane unclosable as a whole, but its TABS are free (everything
+      drags everywhere except sessions). */
+  edge?: "left" | "right" | "bottom";
 }
+/** the pinned shells' markers (the toggle/find API's domain names) */
+export type DockEdgeComponent = "sidebar" | "inspector" | "bottom";
+/** the bottom panel's constant height ladder default (runs at rung 200) */
+export const BOTTOM_DEFAULT_PX = 200;
 export interface DockSplit {
   kind: "split";
   id: string;
@@ -159,7 +174,7 @@ export function assignChatKeys(tree: DockNode): DockNode {
 export function makePane(
   component: DockComponentName | null,
   fixed: number | null = null,
-  edge?: "left" | "right",
+  edge?: "left" | "right" | "bottom",
 ): DockPane {
   return {
     kind: "pane",
@@ -285,10 +300,28 @@ export function firstMainPaneId(tree: DockNode): string | null {
   return null;
 }
 
-/** insert an EMPTY flexible main pane at the root's after-edge (the fixed
-    shell's recovery path: the opener uses this when the user managed to
-    remove the last main pane). Returns the new pane's id for focusing. */
+/** t_67fc1905: a main pane for the bottom-panel era. The root is a
+    COLUMN now (the main row rides on the pinned bottom child); a session
+    pane must go into the ROW, not beside the whole column. The first
+    row split child (the main row) takes the push; a structure that kept
+    no row falls back to wrapping the first child. */
+export function insertMainPaneIntoRow(tree: DockNode): { tree: DockNode; paneId: string } | null {
+  if (!isSplit(tree) || tree.direction !== "column") return null;
+  const rowIdx = tree.children.findIndex((c) => isSplit(c) && c.direction === "row");
+  if (rowIdx < 0) return null;
+  const copy = clone(tree);
+  const row = copy.children[rowIdx] as DockSplit;
+  row.children.push(makePane(null));
+  row.sizes = normalizeSizes(row.children.length, row.sizes);
+  return { tree: copy, paneId: (row.children[row.children.length - 1] as DockPane).id };
+}
+
+/** the opener's insert: delegates the column-rooted case to the row
+    push (the bottom panel must NOT gain a main pane beside the whole
+    column); the row-rooted/pane-rooted shapes take the classic path. */
 export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string } {
+  const inRow = insertMainPaneIntoRow(tree);
+  if (inRow) return inRow;
   const pane = makePane(null);
   if (isPane(tree) || !isSplit(tree) || tree.direction !== "row") {
     // pane root, or a column root: wrap in a row, new pane right of the tree
@@ -605,12 +638,13 @@ function prunePane(tree: DockNode, paneId: string): DockNode {
 // content is free, so the old tab fingerprint cannot survive.
 
 /** the dedicated pinned shell for `component`: the pane carrying the
-    matching edge marker (sessions = "left", inspector = "right"). */
+    matching edge marker (sessions = "left", inspector = "right",
+    card t_67fc1905: bottom panel = "bottom"). */
 export function findEdgePane(
   tree: DockNode,
-  component: "sidebar" | "inspector",
+  component: DockEdgeComponent,
 ): DockPane | null {
-  const want = component === "sidebar" ? "left" : "right";
+  const want = component === "sidebar" ? "left" : component === "inspector" ? "right" : "bottom";
   for (const n of allNodes(tree)) {
     if (isPane(n) && n.edge === want) return n;
   }
@@ -636,7 +670,7 @@ export function hideEdgePane(
 // the memory survives reloads too. Reads clamp through openClamp: a stale
 // sub-floor remembered width reopens AT 320.
 const EDGE_PX_KEY = "omega.dock-edge-px";
-const EDGE_COMPONENTS = ["sidebar", "inspector"] as const;
+const EDGE_COMPONENTS: readonly DockEdgeComponent[] = ["sidebar", "inspector", "bottom"];
 type EdgeComponent = (typeof EDGE_COMPONENTS)[number];
 
 export function rememberEdgePx(
@@ -665,13 +699,20 @@ export function recalledEdgePx(
     return null;
   }
   const px = mem[component];
-  return typeof px === "number" && Number.isFinite(px) ? openClamp(px) : null;
+  if (typeof px !== "number" || !Number.isFinite(px)) return null;
+  // the sidebars' reopen clamp lifts a stale sub-floor width to 320; the
+  // bottom panel's heights are smaller scale - floor at the drag floor
+  // (128), never at the sidebar's open clamp
+  return component === "bottom" ? Math.max(MIN_PANE_PX, px) : openClamp(px);
 }
 
 /** which edge component a pane's marker matches (null: not an edge pane)
     - the divider intents remember widths only for edge panes */
 export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
-  return pane.edge === "left" ? "sidebar" : pane.edge === "right" ? "inspector" : null;
+  return pane.edge === "left" ? "sidebar"
+    : pane.edge === "right" ? "inspector"
+    : pane.edge === "bottom" ? "bottom"
+    : null;
 }
 
 /** the toggle's reopen half: the shell comes back at the root's edge -
@@ -709,6 +750,78 @@ function defaultInspectorPane(tree: DockNode, fixed: number): DockPane {
     fixed,
     edge: "right",
   };
+}
+
+// --- the bottom panel (card t_67fc1905) ---------------------------------------
+// the horizontal pane pinned under the main panel: the ROOT split becomes
+// a COLUMN whose last child is the bottom shell (an edge pane like the
+// sidebars - pinned, unclosable TO the empty-removal paths, resizable via
+// the horizontal divider). It is a TAB HOST (the terminal joins later as
+// another tab); its fresh tab strip comes from the dockable registry's
+// defaultHome "bottom" (logs today). Closed state is page-BEYOND-lifetime:
+// a closed bottom panel stays closed across reloads (unlike the sidebars,
+// whose fixed shape the loader re-asserts), so closure is stored in the
+// same local store the tree lives in, NOT re-inserted by ensurePinnedEdges.
+
+/** closed-flag persistence: the bottom panel's hide (toggle or divider
+    push) survives reloads when this reads "1" */
+export const BOTTOM_CLOSED_KEY = "omega.dock-bottom-closed";
+
+/** the fresh bottom shell: a fixed-height edge pane seeded from the
+    registry's bottom home (the tab strip grows when future domain tabs
+    register their defaultHome in the same place). */
+export function bottomShellPane(): DockPane {
+  return {
+    kind: "pane",
+    id: nextNodeId(),
+    tabs: defaultHostTabs("bottom").map((c) => ({ component: c })),
+    active: 0,
+    fixed: BOTTOM_DEFAULT_PX,
+    edge: "bottom",
+  };
+}
+
+/** graft the bottom shell in: the tree becomes the column's first child.
+    Idempotent only via the caller (ensureBottomPanel); a shell that
+    already sits in the tree should not reach here. */
+export function ensureBottomShell(tree: DockNode): DockNode {
+  return makeSplit("column", [tree, bottomShellPane()]);
+}
+
+/** the boot repair's bottom ruling (differs from the sidebars'): the
+    shell present -> present; absent AND closed-flag -> leave absent
+    (closure survives reload); absent AND no flag -> graft it (fresh
+    boots and trees that predate the panel). Pure except the store flag
+    cleanup (a stale flag under a present shell gets cleared). */
+export function ensureBottomPanel(tree: DockNode, store: Storage): DockNode {
+  const pane = findEdgePane(tree, "bottom");
+  if (pane) {
+    if (store.getItem(BOTTOM_CLOSED_KEY) === "1") store.setItem(BOTTOM_CLOSED_KEY, "0");
+    return tree;
+  }
+  if (store.getItem(BOTTOM_CLOSED_KEY) === "1") return tree; // closed by choice
+  return ensureBottomShell(tree);
+}
+
+/** the toggle's hide half (the bottom domain): remember the height, mark
+    closure, prune (like hideEdgePane - the guarded route around
+    removePane's pinned refusals; the panel may close COMPLETELY). */
+export function hideBottomPanel(tree: DockNode, store: Storage): DockNode {
+  const pane = findEdgePane(tree, "bottom");
+  if (!pane) return tree;
+  if (pane.fixed !== null) rememberEdgePx(store, "bottom", pane.fixed);
+  store.setItem(BOTTOM_CLOSED_KEY, "1");
+  return prunePane(tree, pane.id);
+}
+
+/** the toggle's reopen half: clear the closure, graft the shell back at
+    the remembered height (absent/invalid falls to the default 200). */
+export function revealBottomPanel(tree: DockNode, store: Storage): DockNode {
+  store.setItem(BOTTOM_CLOSED_KEY, "0");
+  const shell = bottomShellPane();
+  const restored = recalledEdgePx(store, "bottom");
+  shell.fixed = Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX);
+  return makeSplit("column", [tree, shell]);
 }
 
 /** move a pane next to a target pane (card 2's DnD will call this). Pure
@@ -999,10 +1112,10 @@ export function dragSplitDivider(
   const room = Math.max(0, contentPx - othersPx);
 
   const capFor = (floorOther: number) => Math.max(MIN_PANE_PX, room - floorOther);
-  const applySnap = (px: number, lo: number, hi: number): number => {
+  const applySnap = (px: number, lo: number, hi: number, step: number = SNAP_STEP): number => {
     // attractor first, then the floors again: a snap point that overshoots
     // the cap lands ON the cap, never past it
-    const snapped = snapCandidate(px);
+    const snapped = snapCandidateAt(px, step);
     return clamp(snapped ?? px, lo, hi);
   };
   const pxOf = (k: number): number => startPx[k]!;
@@ -1057,6 +1170,23 @@ export function dragSplitDivider(
     return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
   }
   if (isPane(rp) && rp.fixed !== null) {
+    // t_67fc1905 BOTTOM EDGE: in a column, the fixed pane BELOW the
+    // divider (the bottom shell) is controlled like a LEFT child - drag
+    // down (+delta) GROWS it, the divider rides down with it. The right
+    // sidebar's mirror read (req = px - delta) would invert the gesture
+    // for a horizontal pane. Snap ladder: the bottom's +200 (panes.ts).
+    if (split.direction === "column") {
+      const req = pxOf(i) + deltaPx;
+      if (req < MIN_PANE_PX) {
+        return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
+      }
+      // the absorbing neighbor above: fixed floors at 128, flexible walls
+      // at the chat's 320
+      const hi = capFor(isPane(lp) && lp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX);
+      const s = squeeze(req, hi, li - 1, -1);
+      (next.children[i] as DockPane).fixed = applySnap(s.px, MIN_PANE_PX, s.cap, BOTTOM_SNAP_STEP);
+      return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
+    }
     const req = pxOf(i) - deltaPx;
     if (req < MIN_PANE_PX) {
       return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
@@ -1185,9 +1315,9 @@ function validateNode(raw: unknown): DockNode | null {
   const fixed = typeof n.fixed === "number" && Number.isFinite(n.fixed) && n.fixed >= 0
     ? n.fixed
     : null;
-  // card t_d6b657a7: the shell identity persists (v2); anything else is a
-  // main pane
-  const edge = n.edge === "left" || n.edge === "right" ? n.edge : undefined;
+  // card t_d6b657a7: the shell identity persists (v2); card t_67fc1905:
+  // "bottom" joins the edge class; anything else is a main pane
+  const edge = n.edge === "left" || n.edge === "right" || n.edge === "bottom" ? n.edge : undefined;
   const active = typeof n.active === "number" && Number.isFinite(n.active)
     ? clamp(Math.trunc(n.active), 0, Math.max(0, tabs.length - 1))
     : 0;
@@ -1228,20 +1358,28 @@ export function migrateLegacy(
     fixed: iw,
     edge: "right",
   };
-  const children: DockNode[] = [
-    makePane("sidebar", sw, "left"),
-    makePane("chat", null),
-    inspector,
-  ];
-
-  // fractions across the flexible chat: fixed panes ignore theirs, the
-  // chat absorbs - equal fractions keep deserialize()/normalize honest
-  const root: DockSplit = {
+  const mainRow: DockNode = {
     kind: "split",
     id: nextNodeId(),
     direction: "row",
-    children,
-    sizes: normalizeSizes(children.length, undefined),
+    children: [
+      makePane("sidebar", sw, "left"),
+      makePane("chat", null),
+      inspector,
+    ],
+    sizes: normalizeSizes(3, undefined),
+  };
+  // card t_67fc1905: the fresh boot wraps the row in a column with the
+  // bottom panel pinned under it - logs is its default tab (the registry's
+  // bottom home), the inspector still seats logs (dual host) - the main
+  // column above owns everything else
+  const bottom = bottomShellPane();
+  const root: DockSplit = {
+    kind: "split",
+    id: nextNodeId(),
+    direction: "column",
+    children: [mainRow, bottom],
+    sizes: normalizeSizes(2, undefined),
   };
   return root;
 }
@@ -1311,6 +1449,11 @@ export interface DockApi {
       pinned refusals. The hide is page-lifetime: the next load runs
       ensurePinnedEdges, which re-asserts the fixed shape. */
   toggleEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
+  /** card t_67fc1905: the bottom panel's menubar toggle - hide reopens at
+      the remembered height; closed state SURVIVES reloads (unlike the
+      sidebars, whose fixed shape the loader re-asserts). The panel may
+      close completely. */
+  toggleBottom: () => void;
   /** card t_4ae27e0d: the id of the FIRST main pane - the only place a
       session tab may open. The pinned sidebars are skipped; when the tree
       holds no main pane (the user removed the last one) a fresh flexible
@@ -1379,6 +1522,10 @@ export function createDock(store: Storage): DockApi {
   // panes. Syncing first keeps every minted id above the loaded tree's max.
   syncIdSeed(initial);
   initial = ensurePinnedEdges(initial);
+  // card t_67fc1905: the bottom panel is grafted (or left closed) AFTER the
+  // sidebars repair and BEFORE chat keys - the panel hosts no chat tabs,
+  // and its id must seed above the loaded tree's max (syncIdSeed ran once)
+  initial = ensureBottomPanel(initial, store);
   initial = assignChatKeys(initial);
   // a modernized/fixed-shape-repaired load persists at once (now as v2) so
   // the next boot sees the modern tree even if no mutation fires this session
@@ -1476,6 +1623,11 @@ export function createDock(store: Storage): DockApi {
       if (gone) {
         const comp = edgeComponentOf(gone);
         if (comp && gone.fixed !== null) rememberEdgePx(store, comp, gone.fixed);
+        // card t_67fc1905: the bottom panel's drag-close (its own divider
+        // push) persists closure across reloads - the sidebar drag-close is
+        // page-lifetime (the loader re-asserts the fixed shape); the bottom
+        // panel's hide survives, like its menubar toggle
+        if (comp === "bottom") store.setItem(BOTTOM_CLOSED_KEY, "1");
       }
       tree.value = prunePane(tree.value, id);
     }
@@ -1494,6 +1646,18 @@ export function createDock(store: Storage): DockApi {
     }
   };
 
+  // card t_67fc1905: the bottom panel's toggle (menubar) - closed state
+  // survives reloads via BOTTOM_CLOSED_KEY (unlike the sidebars, whose
+  // closure is page-lifetime). Hide remembers the height; reopen restores
+  // it (absent/invalid falls to the default 200).
+  const toggleBottom = () => {
+    if (findEdgePane(tree.value, "bottom")) {
+      tree.value = hideBottomPanel(tree.value, store);
+    } else {
+      tree.value = revealBottomPanel(tree.value, store);
+    }
+  };
+
   return {
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
     openSingleton: openSingletonIn,
@@ -1501,6 +1665,6 @@ export function createDock(store: Storage): DockApi {
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
     firstDraftChatTab: () => firstDraftChatTab(tree.value),
-    split, remove, toggleEdge, ensureMainPane, canRemovePane, drag,
+    split, remove, toggleEdge, ensureMainPane, canRemovePane, drag, toggleBottom,
   };
 }

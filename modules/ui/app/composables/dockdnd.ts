@@ -30,9 +30,11 @@ export const tabDrag = {
 /** PURE hit-test: may the active drag drop into a pane whose edge is
     `targetEdge` (null = main pane)? sessions is LOCKED to the left
     sidebar's own bar - everywhere else refuses (the chip under the
-    cursor renders the no-drop affordance while it hovers). */
+    cursor renders the no-drop affordance while it hovers). card
+    t_67fc1905: the bottom shell joins the edge class - free content
+    like the sidebars, every non-locked tab drops in/out. */
 export function dropAllowedFor(
-  targetEdge: "left" | "right" | null,
+  targetEdge: "left" | "right" | "bottom" | null,
   drag: TabDragInfo | null,
 ): boolean {
   if (!drag) return false;

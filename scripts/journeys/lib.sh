@@ -124,10 +124,17 @@ open_journey_row() {
 
 # assert_no_console_errors: the presentation-detector. A poisoned bundle,
 # a hydration ReferenceError, a broken signal shape all show up here.
-# Noise whitelist: none - the built app must be silent.
+# Noise whitelist: none - the built app must be silent. EXCEPTION: a
+# recipe run against a nuxt DEV lane (t_67fc1905's verify setup) rides
+# the vite HMR client, whose websocket/connect noise is a dev artifact -
+# set JOURNEY_DEV_LANE=1 there; the embedded lane (CI, :8098) never sets
+# it and asserts genuine silence.
 assert_no_console_errors() {
   local errs
   errs=$(ab console 2>&1)
+  if [ -n "${JOURNEY_DEV_LANE:-}" ]; then
+    errs=$(printf '%s' "$errs" | grep -viE 'vite|hmr|nuxt devtools|suspense')
+  fi
   if printf '%s' "$errs" | grep -qiE 'error|referenceerror|typeerror|syntaxerror'; then
     die "console errors on $JOURNEY_BASE_URL: $errs"
   fi
