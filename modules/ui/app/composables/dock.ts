@@ -475,8 +475,28 @@ export function restoreInspectorSet(tree: DockNode): DockNode {
 
 /** insert `pane` at the root's edge of a row (a pane root or a column
     root wraps into a row, keeping the edge meaningful - the pre-reset
-    toggle path's behavior). Private to the reset helpers. */
+    toggle path's behavior). Private to the reset helpers.
+
+    card t_556ee727: the bottom graft complicates the wrap - the root is
+    a COLUMN whose last child is the bottom shell. Wrapping THAT into a
+    row puts the reopened sidebar beside the whole column (band included:
+    the sidebar takes the right edge next to a squashed half-width dock
+    and the band shrinks with it). The sidebar's real home is the FIRST
+    child (the row above the band): insert there, wrap that child if it
+    is not a row. */
 function insertRootEdge(tree: DockNode, side: "before" | "after", pane: DockPane): DockNode {
+  if (
+    isSplit(tree) && tree.direction === "column" &&
+    tree.children.length > 0
+  ) {
+    const last = tree.children[tree.children.length - 1];
+    if (isPane(last) && last.edge === "bottom") {
+      const head = insertRootEdge(tree.children[0], side, pane);
+      const copy = clone(tree);
+      copy.children = [head, ...copy.children.slice(1)];
+      return copy;
+    }
+  }
   if (isPane(tree) || !isSplit(tree) || tree.direction !== "row") {
     const pair = side === "after" ? [tree, pane] : [pane, tree];
     return makeSplit("row", pair);
