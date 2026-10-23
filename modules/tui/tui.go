@@ -342,6 +342,11 @@ type model struct {
 	tick                 *core.TUITick   // active module follow loop (/logs -f pattern); nil = idle
 	canvasFeed           *canvasFeed     // canvas subscription (arc 3d); in-process deltas ride its channel
 	moduleCommands       map[string]core.TUIProvider
+	// Pane shell (arc 4a): fixed left/main/right/bottom geography.
+	termWidth       int            // total terminal width from the last resize (0 = never sized)
+	focus           string         // focused pane id; ""/main = chat pane owns the keys
+	leftVP, rightVP viewport.Model // sidebar pane viewports
+	bottomVP        viewport.Model // run-band viewport
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -470,8 +475,12 @@ func newChatModel(providerType, modelName string, compaction *core.CompactionCon
 		thinkingLevel:        "medium",
 		showToolResults:      true,
 		toolResultsAuto:      true,
-		canvasFeed:          openCanvasFeed(pctx),
-		theme:               t,
+		canvasFeed:           openCanvasFeed(pctx),
+		focus:                paneMainID,
+		leftVP:               viewport.New(1, 1),
+		rightVP:              viewport.New(1, 1),
+		bottomVP:             viewport.New(1, 1),
+		theme:                t,
 		trustState:           trustState,
 		notifications:        notifications,
 		version:              version,
@@ -498,9 +507,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForCanvas()
 
 	case tea.WindowSizeMsg:
-		m.textarea.SetWidth(msg.Width)
+		m.termWidth = msg.Width
 		m.screenHeight = msg.Height
-		m.viewport.Width = msg.Width
+		// Pane shell (arc 4a): the chat column is the main pane, so
+		// the transcript pipeline renders at the column width. The
+		// geometry is fixed v1 - only the pane sizes recompute here.
+		if geo := paneGeometryFor(msg.Width, msg.Height); geo.active {
+			m.viewport.Width = geo.main.w
+			m.textarea.SetWidth(geo.main.w)
+		} else {
+			m.viewport.Width = msg.Width
+			m.textarea.SetWidth(msg.Width)
+		}
 		m.resizeTextarea()
 		// The open module screen resizes itself off the same message
 		// (its layout is its own business); its console writes land on
@@ -533,6 +551,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the user wants the prompt back.
 		if m.tick != nil {
 			m.tick = nil
+		}
+		// The pane shell (arc 4a): when panes are active, the focused
+		// pane owns the keys. A focused sidebar or the run band answers
+		// scrolls, jumps and the cycle; esc/enter hand the keys back to
+		// the chat pane. From the chat pane, tab cycles only when no
+		// completion is underway, and digits jump only from an empty,
+		// idle, non-autocompleting input - mid-run digits keep building
+		// the queued answer (verdict cards and friends).
+		if geo := paneGeometryFor(m.termWidth, m.screenHeight); geo.active {
+			if m.focus == "" {
+				m.focus = paneMainID
+			}
+			if m.focus != paneMainID {
+				mo, cmd := m.routePaneKey(msg.String())
+				return mo, cmd
+			}
+			if msg.String() == "tab" && len(m.autocompleteMatches) == 0 {
+				return m.jumpPane(nextPane(paneMainID)), nil
+			}
+			if !msg.Paste && !m.busy && m.textarea.Value() == "" && len(m.autocompleteMatches) == 0 {
+				if len(msg.Runes) == 1 {
+					if id, ok := paneDigits[string(msg.Runes)]; ok {
+						return m.jumpPane(id), nil
+					}
+				}
+			}
 		}
 		if m.busy {
 			// Escape cancels the in-flight run; the agent loop observes
@@ -703,10 +747,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.MouseMsg:
-		// Mouse wheel scrolls the viewport.
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
+		// Pane shell (arc 4a): a press selects the pane under the
+		// pointer, a wheel step scrolls it. Without panes the legacy
+		// behavior - wheel scrolls the main viewport - stands.
+		return m.routeMouse(msg)
 
 	case core.Event:
 		m.handleEvent(msg)
@@ -2029,23 +2073,39 @@ func renderTranscript(messages []ai.Message, width int, t Theme, markers map[int
 // during streaming, debounced to 80ms to prevent CPU thrashing. The final
 // AgentEnd render is always a clean full glamour pass.
 func (m *model) refresh() {
+	// Pane mode (arc 4a): the in-flight run's tool+thinking output
+	// renders in the run band below the columns; the main viewport
+	// keeps only responses so a busy turn never interleaves the two.
+	paneMode := m.geometry().active
 	var sb strings.Builder
 	sb.WriteString(m.transcript)
 	for _, seg := range m.segments {
 		switch seg.kind {
 		case "thinking":
+			if paneMode {
+				continue
+			}
 			sb.WriteString("\n")
 			sb.WriteString(m.theme.Thinking.Render("[thinking]"))
 			sb.WriteString("\n")
 			sb.WriteString(m.theme.Thinking.Render(wordWrap(seg.content, m.viewport.Width)))
 			sb.WriteString("\n")
 		case "tool":
+			if paneMode {
+				continue
+			}
 			sb.WriteString(seg.content)
 		case "tool_result":
+			if paneMode {
+				continue
+			}
 			sb.WriteString("\n")
 			sb.WriteString(m.theme.Tool.Render(seg.content))
 			sb.WriteString("\n")
 		case "tool_result_highlighted":
+			if paneMode {
+				continue
+			}
 			sb.WriteString("\n")
 			sb.WriteString(seg.content)
 			sb.WriteString("\n")
@@ -2067,6 +2127,9 @@ func (m *model) refresh() {
 	}
 	m.viewport.SetContent(sb.String())
 	m.viewport.GotoBottom()
+	if paneMode {
+		m.bottomVP.SetContent(m.bottomPaneBody())
+	}
 }
 
 // extLexers maps file extensions to chroma lexer names for syntax
@@ -2267,6 +2330,17 @@ func (m model) View() string {
 	if m.screen != nil {
 		return m.moduleScreenView()
 	}
+	// The pane shell takes over above its minimum size; below it the
+	// legacy single-column composition remains the shape.
+	if geo := paneGeometryFor(m.termWidth, m.screenHeight); geo.active {
+		return m.paneView(geo)
+	}
+	return m.legacyView()
+}
+
+// legacyView is the pre-pane composition: transcript, status line,
+// autocomplete dropup, textarea - one full-width column.
+func (m model) legacyView() string {
 	var sb strings.Builder
 	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
 		sb.WriteString(m.splashView())
