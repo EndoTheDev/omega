@@ -26,6 +26,17 @@
   margin-right: var(--bottom-inset-right, 0px);
 }
 
+/* card t_556ee727: aligned keeps the SIDEBARS full-height. The shell is
+   a root-column child, so the row above loses the band's height for the
+   sidebars too. The applier (app.vue) measures the band and writes
+   --bottom-sidebars-overhang (the NEGATIVE margin the stretched pinned
+   cells extend by). The overhang lands BESIDE the band - the band's own
+   insets clear the way - and full/hide mode (the applier clears the
+   vars) restores the plain stretch. */
+.dock-pane.pinned:not(.edge-bottom) {
+  margin-bottom: var(--bottom-sidebars-overhang, 0px);
+}
+
 @media (max-width: 768px) {
   /* mobile: no desktop-shaped bottom panel on a phone - the shell
      zero-collapses exactly like the sidebar overlay cells (state
@@ -42,5 +53,9 @@
     flex: 0 0 0 !important;
     position: static;
     overflow: hidden;
+  }
+  /* an overhang measured on the desktop layout never reaches mobile */
+  .dock-pane.pinned:not(.edge-bottom) {
+    margin-bottom: 0;
   }
 }
