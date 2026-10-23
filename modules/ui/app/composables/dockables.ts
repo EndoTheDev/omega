@@ -40,6 +40,7 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "extensions",
   "insights",
+  "canvas",
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
@@ -263,6 +264,24 @@ export const DOCKABLES: readonly DockableComponent[] = [
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
       paths: ["M7 17v-4", "M12 17V9", "M17 17v-2"],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    // arc 3c: the CANVAS host tab - the shell's one generic surface for
+    // the canvas contract's panels. Shell-owned (like extensions): the
+    // registry entry is LAYOUT only (Q5a law) - which panels render
+    // inside it comes from the canvas store (GET /ui/canvas + the
+    // view_model_delta frames), never from a hardcoded list. No panel
+    // id ever enters this registry; each migration owns its panel kind.
+    id: "canvas",
+    title: "Canvas",
+    // easel: the panel frame on a stand
+    icon: {
+      rect: { x: 4, y: 3, width: 16, height: 12, rx: 2 },
+      paths: ["M12 15v3", "M8 21l4-3 4 3", "M8 7h8", "M8 10h5"],
     },
     policy: "singleton",
     area: "right",

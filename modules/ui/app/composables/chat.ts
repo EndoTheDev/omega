@@ -38,6 +38,7 @@ import {
   type VerdictItem,
   type OmegaImage,
   type VariantBlock,
+  type CanvasPanel,
 } from "./omega.ts";
 
 // --- transcript item shapes (moved from app.vue: every chat instance
@@ -194,6 +195,10 @@ export interface ChatHostDeps {
   /** whether THIS state key is the app's focused chat tab (the stream
       end only unreads the transcript the user watched) */
   isFocused(key: string): boolean;
+  /** one canvas panel delta arrived on a run stream (arc 3c) - the
+      app-level canvas store merges it; absent = no canvas, the frame
+      is dropped (the snapshot is the catch-up, same as the server) */
+  canvasDelta?(panel: CanvasPanel): void;
 }
 
 export interface ChatHost {
@@ -626,6 +631,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         st.tokensPerSecond =
           seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
       },
+      // canvas deltas ride EVERY run stream (arc 3b: one frame type on
+      // the chat stream both transports share) - forward to the app's
+      // canvas store through the host deps
+      onViewModelDelta: (panel) => deps.canvasDelta?.(panel),
     };
 
     return {
