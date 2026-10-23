@@ -26,7 +26,7 @@ var _ agent.Plugin = (*Plugin)(nil)
 // NewPlugin returns a kanban Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-func (p *Plugin) Name() string     { return "kanban" }
+func (p *Plugin) Name() string { return "kanban" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
@@ -34,8 +34,11 @@ func (p *Plugin) Description() string {
 }
 func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 
-// Requires: the board tools are plain store CRUD - nothing to wait for.
-func (p *Plugin) Requires() []string { return nil }
+// Requires: the notifications seam - Mount hands it to the board store
+// so done transitions emit finished-things records (card t_5d9032d3).
+// The board tools themselves are plain store CRUD with nothing to wait
+// for (card t_13a2af8a: the edge is declared data, not slice position).
+func (p *Plugin) Requires() []string { return []string{"notifications"} }
 
 // Mount opens the board db and mounts the provider plus the tools.
 // The db path is config db_path; the relative default resolves through
@@ -85,8 +88,8 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	}
 	p.tools = &ToolProvider{board: p.store}
 	// card t_5d9032d3: done transitions report to the finished-things
-	// store. The notifications plugin mounts earlier in the host's list
-	// (before cron/kanban), so the seam is resolved here; nil is legal.
+	// store. The Requires edge on "notifications" guarantees the seam
+	// is mounted by the time this runs; nil is legal.
 	p.store.SetNotifier(ctx.Notifications)
 	p.wireCommands(ctx)
 	ctx.Kanban = p.store
