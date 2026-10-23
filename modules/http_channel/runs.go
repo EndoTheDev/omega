@@ -185,6 +185,28 @@ func (h *runHub) broadcast(run *activeRun, f runFrame) {
 	}
 }
 
+// broadcastAll delivers one frame to every live run's subscribers -
+// the canvas delta fan-out (server_canvas.go). Panel state is global,
+// not per-session, so a delta rides every open stream: a webui tabs'
+// chat stream and its reattach stream are the same frame pipes, and
+// the frontend dispatches on the frame type. Same full-queue law as
+// broadcast: a stalled subscriber is cut, never allowed to stall a
+// run's loop for everyone.
+func (h *runHub) broadcastAll(f runFrame) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, run := range h.runs {
+		for ch := range run.subs {
+			select {
+			case ch <- f:
+			default:
+				delete(run.subs, ch)
+				close(ch)
+			}
+		}
+	}
+}
+
 // finish removes the run from the registry and closes every remaining
 // subscriber channel - the run's terminal agent_end frame was already
 // broadcast, so a clean consumer sees agent_end followed by stream end.
