@@ -45,7 +45,13 @@ type Context struct {
 	// buildPlugins never mounts and its TUI surface is simply absent,
 	// the same law the webui enforces through directory registration.
 	TUIProviders []TUIProvider
-	Trust        TrustProvider
+
+	// Panel providers (additive - canvas contract, arc 3a). Modules
+	// that own view-model surface append their PanelProvider during
+	// Mount - one seam declares both the panels and their action
+	// handlers. The canvas runtime seeds the snapshot from these.
+	PanelProviders []PanelProvider
+	Trust          TrustProvider
 	Cron         CronProvider
 	Kanban       KanbanProvider
 	// Notifications is the finished-things store seam (card t_5d9032d3):
