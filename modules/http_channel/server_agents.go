@@ -166,6 +166,13 @@ func (s *Server) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 			}
 			req.ID = id
 		}
+		// Same reserved-namespace guard as POST /sessions: an `eph-` id
+		// would create a durable row the store-read endpoints can never
+		// serve (the eph- lane is in-memory only).
+		if isEphemeralID(req.ID) {
+			http.Error(w, "invalid request: reserved session id prefix "+ephemeralPrefix, http.StatusBadRequest)
+			return
+		}
 		if err := as.CreateAgentSession(r.Context(), req.ID, "", "", name); err != nil {
 			http.Error(w, "create session: "+err.Error(), http.StatusConflict)
 			return

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -336,6 +337,15 @@ func (h *Hub) persist(msg ai.Message) {
 	}
 	h.mu.Unlock()
 	if session == "" {
+		return
+	}
+	// Ephemeral sessions (the `eph-` namespace minted by the HTTP
+	// channel) live in memory only. A card issued there must keep its
+	// records out of the store: an `eph-` row on disk is a durable
+	// transcript under an id no store read serves - it would never be
+	// read back and never be deleted (the ephemeral nothing-on-disk
+	// law). Skip persistence wholesale for the namespace.
+	if strings.HasPrefix(session, "eph-") {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

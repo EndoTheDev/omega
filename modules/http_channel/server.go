@@ -1161,6 +1161,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			}
 			req.ID = id
 		}
+		// The `eph-` namespace is minted by the /chat ephemeral lane and
+		// lives in memory only; a client-chosen `eph-` id would create a
+		// durable row the store-read endpoints can never serve.
+		if isEphemeralID(req.ID) {
+			http.Error(w, "invalid request: reserved session id prefix "+ephemeralPrefix, http.StatusBadRequest)
+			return
+		}
 		if err := s.store.CreateSession(r.Context(), req.ID, "", ""); err != nil {
 			http.Error(w, "create session: "+err.Error(), http.StatusConflict)
 			return
