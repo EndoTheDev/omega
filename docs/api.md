@@ -112,7 +112,13 @@ Response is `text/event-stream`; frames are `event: <name>\ndata:
 | `turn_end`        | turn complete                                               |
 | `agent_end`       | terminal state (`finish_reason`, incl. `cancelled` from a stop) |
 | `assistant_message`| the assembled assistant message                            |
+| `view_model_delta`| one canvas panel descriptor (arc 3b): a module updated its panel state; dispatch on this frame, then merge the panel |
 | `error`           | the error text (failures are events, not Go errors)         |
+
+The delta rides every live run stream (the chat's origin stream and
+`/sessions/{id}/events` alike) - panel state is global, not per-session,
+and there is no second channel. A delta emitted between runs has no
+stream to ride: the catch-up is the snapshot below.
 
 ## Sessions
 
@@ -284,6 +290,24 @@ up edits without restart.
   directory for the webui inspector: read-only, GET-only, 64 KiB
   preview cap, dot-segment + absolute + symlink-containment guards.
   No write path exists on this surface.
+
+## Canvas (view-model)
+
+The web half of the canvas contract (arc 3b): the webui loads the
+snapshot, then applies delta frames; actions go back through the pipe.
+The per-module REST routes stay; these two endpoints are additive.
+
+- `GET /ui/canvas` — the current panel snapshot of every mounted
+  module, one JSON array of panel descriptors verbatim (`id`, `title`,
+  `kind`, `payload`, `actions`). Mount order, panel ids sorted within
+  a module. Nothing mounted is a 200 with `[]`, not an error.
+- `POST /ui/actions` — the one action pipe. Body: `{"module",
+  "action", "args"}` (module-qualified, `args` raw JSON verbatim).
+  Routes through the canvas runtime to the capsule's registered
+  handler - zero per-module code. **404** on unknown module or
+  unknown action (route failures read as 404s, never 500s); the
+  handler's own error is a **500**; success returns the handler's
+  result as `{"result": ...}`. Non-POST/GET method mismatches are 405.
 
 ## SPA catch-all
 
