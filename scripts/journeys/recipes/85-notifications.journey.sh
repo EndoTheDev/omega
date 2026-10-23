@@ -24,7 +24,9 @@ printf '%s' "$payload" | grep -qF '"notifications"' || \
 step "ok: notifications seam mounted"
 
 # --- lifecycle: one done transition = one record ---
-before=$(printf '%s' "$payload" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["notifications"]));')
+# unread counts over the whole set, not the page (list pages at 50):
+# the badge, not the list length, is the growth proof.
+before=$(printf '%s' "$payload" | python3 -c 'import json,sys; print(json.load(sys.stdin)["unread"]);')
 
 runtag=$(date +%s)
 JRN_TASK="jrn-${runtag}-notify"
@@ -59,9 +61,10 @@ if printf '%s' "$rec" | grep -qF "${JRN_TASK}"; then
 fi
 step "ok: record kind=task verdict=ok, title metadata only"
 
-# the unread count grew by exactly this record
-after=$(curl -s "${JOURNEY_BASE_URL}/notifications" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["notifications"]));' 2>/dev/null)
-assert_eq "$after" "$((before + 1))" "one emit, one record (list $before -> $after)"
+# the unread badge grew by exactly this record (badge = whole-set
+# count; the list itself pages at 50 and cannot prove growth)
+after=$(curl -s "${JOURNEY_BASE_URL}/notifications" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["unread"]);' 2>/dev/null)
+assert_eq "$after" "$((before + 1))" "one emit, one record (unread $before -> $after)"
 
 # --- read: one id, then everything ---
 # mark-one: the record flips read, the unread filter drops it
