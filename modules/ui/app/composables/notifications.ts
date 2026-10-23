@@ -112,3 +112,81 @@ export function upsertRecord(
 export function toastLifetime(verdict: "ok" | "failed"): number {
   return verdict === "failed" ? 12000 : 6000;
 }
+
+// --- the board-select seam (card t_556ee727) -----------------------------
+
+// A task notification's click focuses the kanban tab; the BOARD the task
+// lives on crosses into the module-owned Board component through THIS
+// seam (module UI imports no shell code, so the selection is a window
+// CustomEvent, not a prop or an import). The stash covers the mount
+// race: the tab activation mounts the Board on the tick after the tree
+// swap, so the component re-reads the stash on mount and consumes it.
+export const BOARD_SELECT_EVENT = "omega-select-board";
+
+declare global {
+  interface Window {
+    __omegaBoardSelect?: string;
+  }
+}
+
+// boardOfTask pins which registered board holds the task: the FIRST
+// board whose task list carries the id (boards are isolated, a card
+// lives on exactly one). null when the scan comes up empty (an
+// archived task, a missing record, a single-board install - the click
+// still focuses the pane, the board stays where it is). Selecting by
+// name instead of leaving "" is deliberate: an explicit pick re-renders
+// the same columns for the default board, so the switch is a no-op.
+// Pure so the node test pins the scan order.
+export function boardOfTask(
+  taskId: string,
+  lists: readonly { board: string; tasks: readonly { id: string }[] }[],
+): string | null {
+  for (const l of lists) {
+    if (!l.board) continue; // the default board is never a switch target
+    if (l.tasks.some((t) => t.id === taskId)) return l.board;
+  }
+  return null;
+}
+
+// selectBoardFor publishes the select intent: the stash lands first
+// (the component may not be mounted yet - the mount reads it), the
+// event second. No-op on an empty board (the server default is already
+// what the board boots to).
+export function selectBoardFor(board: string): void {
+  if (!board) return;
+  if (typeof window === "undefined") return; // node tests
+  window.__omegaBoardSelect = board;
+  window.dispatchEvent(
+    new CustomEvent(BOARD_SELECT_EVENT, { detail: { board } }),
+  );
+}
+
+// resolveTaskBoard scans the registry for the board holding `taskId`:
+// GET /boards, then a GET /tasks per board looking for the id. Any
+// failure (the seam absent, a 501, a broken registry) resolves null -
+// the click still focuses the pane, the board just stays where it is.
+export async function resolveTaskBoard(taskId: string): Promise<string | null> {
+  let lists: { board: string; tasks: { id: string }[] }[];
+  try {
+    const rb = await fetch("/boards");
+    if (!rb.ok) return null; // single-board install: nothing to select
+    const body = await rb.json();
+    const names: string[] = (body.boards ?? [])
+      .map((b: { name?: string }) => (typeof b.name === "string" ? b.name : ""))
+      .filter(Boolean);
+    lists = [];
+    for (const board of names) {
+      try {
+        const rt = await fetch(`/tasks?board=${encodeURIComponent(board)}`);
+        if (!rt.ok) continue;
+        const tb = await rt.json();
+        lists.push({ board, tasks: (tb.tasks ?? []) as { id: string }[] });
+      } catch {
+        // one noisy board never breaks the scan
+      }
+    }
+  } catch {
+    return null;
+  }
+  return boardOfTask(taskId, lists);
+}

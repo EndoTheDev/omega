@@ -139,6 +139,27 @@ describe("the dockable registry", () => {
     assert.deepEqual([...ids].sort(), [...DOCK_COMPONENTS].sort());
   });
 
+  it("tab labels ride the Title Case siblings (card t_556ee727)", () => {
+    // every shell tab renders Title Case today: Files, Settings,
+    // Insights, and (card t_556ee727's pair) Agents + Extensions. The
+    // module tabs override via dockable.json; `agents`/`extensions` are
+    // the only registry titles the tab bar prints raw. Display labels
+    // ONLY - ids, routes and module names stay lowercase.
+    assert.equal(COMPONENT_TITLES.agents, "Agents");
+    assert.equal(COMPONENT_TITLES.extensions, "Extensions");
+    for (const d of DOCKABLES) {
+      if (d.id === "agents" || d.id === "extensions") continue;
+      assert.ok(
+        d.title === "Sessions" && d.id === "sidebar" ||
+          d.title === "Files" && d.id === "files" ||
+          d.title === "Settings" && d.id === "settings" ||
+          d.title === "Insights" && d.id === "insights" ||
+          d.title === d.id,
+        `${d.id}: unexpected label "${d.title}"`,
+      );
+    }
+  });
+
   it("carries the contract fields: non-empty title, ink, one policy, an area", () => {
     for (const d of DOCKABLES) {
       assert.ok(d.title.length > 0, `${d.id}: title`);

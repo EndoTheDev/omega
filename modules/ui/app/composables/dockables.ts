@@ -65,11 +65,15 @@ export interface DockIcon {
   paths: string[];
 }
 
-// one registry entry. `title` is the tab/menu voice (lowercase, like
-// the shell's tab bars); the open flows add their own verb (chat's
-// multi policy reads "new chat" in the menus). Module-tab titles are
-// resolved at runtime from each module's ui/dockable.json (the app's
-// DOCK_TAB_TITLE resolver) - the registry title is only the fallback.
+// one registry entry. `title` is the display voice for the tab/menu chip
+// (Title Case for shell tabs - Files, Agents, Extensions, Insights - the
+// module dockable.json titles follow the same voice); the open flows add
+// their own verb (chat's multi policy reads "new chat" in the menus).
+// Module-tab titles are resolved at runtime from each module's
+// ui/dockable.json (the app's DOCK_TAB_TITLE resolver) - the registry
+// title is only the fallback. card t_556ee727: identifiers, routes and
+// file paths stay lowercase everywhere - the casing lives in this label
+// alone.
 export interface DockableComponent {
   id: DockComponentName;
   title: string;
@@ -181,9 +185,10 @@ export const DOCKABLES: readonly DockableComponent[] = [
   },
   {
     // card t_7e2b7002: the agents panel - the multi-agent inventory
-    // (list, detail, scaffold, new-session-as-agent).
+    // (list, detail, scaffold, new-session-as-agent). card t_556ee727:
+    // the tab label joins the Title Case siblings.
     id: "agents",
-    title: "agents",
+    title: "Agents",
     // person: head circle + shoulders arc
     icon: {
       paths: [
@@ -232,7 +237,8 @@ export const DOCKABLES: readonly DockableComponent[] = [
     // mount. Unclosable like every inspector view: the loader restores
     // the full strip, and the outlet template must always exist.
     id: "extensions",
-    title: "extensions",
+    // card t_556ee727: the tab label joins the Title Case siblings.
+    title: "Extensions",
     // four squares: the module inventory, one frame
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },

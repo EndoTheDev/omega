@@ -408,8 +408,13 @@
   } from "./composables/focus";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
-  // card t_5d9032d3: notification open intents route here from the bell
+  // card t_5d9032d3: notification open intents route here from the bell;
+  // card t_556ee727: the board select seams (the task row's board pick)
   import type { OmegaNotification } from "./composables/notifications";
+  import {
+    resolveTaskBoard,
+    selectBoardFor,
+  } from "./composables/notifications";
   // card t_e1e61680: insights joins the main area (registry: singleton,
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
@@ -496,16 +501,30 @@
   // them on the bottom pane AND the root divider (the handle stays over
   // the panel it drags). Defaults are 0, so an un-applied boot renders
   // full-width and no stale measurement can inset anything.
+  // card t_556ee727: aligned mode ALSO re-asserts the sidebars'
+  // full height - the shell is a root-column child, so the row above
+  // (sidebars included) loses the band's height; the applier measures
+  // the band and writes --bottom-sidebars-overhang (negative), and
+  // bottompanel.css lets the two pinned sidebars overhang downward
+  // beside the band (its insets clear the way). full/hide clears the
+  // properties: plain stretch returns.
   const bottomWidthMode = useBottomWidthMode();
   function clearBottomInsets(area: HTMLElement) {
     area.style.removeProperty("--bottom-inset-left");
     area.style.removeProperty("--bottom-inset-right");
+    area.style.removeProperty("--bottom-sidebars-overhang");
   }
   function applyBottomWidth() {
-    // the bottom shell hides (toggle/drag-close) - nothing to align
+    // the bottom shell hides (toggle/drag-close) - clear the pass (a
+    // stale overhang would keep the sidebars stretched past the dock,
+    // a stale inset nothing consumes)
     const bottom = document.querySelector<HTMLElement>(".dock-pane.edge-bottom");
-    const area = bottom?.parentElement;
-    if (!bottom || !area) return;
+    const area = bottom?.parentElement ??
+      document.querySelector<HTMLElement>(".pane-area > .dock-root");
+    if (!bottom || !area) {
+      if (area) clearBottomInsets(area);
+      return;
+    }
     const reset = () => clearBottomInsets(area);
     if (bottomWidthMode.value !== "aligned") return reset();
     const mains = [
@@ -525,6 +544,15 @@
     const insetR = Math.max(0, Math.round(areaBox.right - right));
     area.style.setProperty("--bottom-inset-left", insetL + "px");
     area.style.setProperty("--bottom-inset-right", insetR + "px");
+    // the sidebars keep their full height in aligned mode: the band's
+    // measured height (plus the 4px root divider) is the overhang the
+    // pinned sidebars' CSS extends by - a NEGATIVE margin bottom lets
+    // the stretch re-claim the band region beside the band
+    const bandH = Math.max(0, Math.round(bottom.offsetHeight));
+    area.style.setProperty(
+      "--bottom-sidebars-overhang",
+      -(bandH + 4) + "px",
+    );
   }
   // re-measure the pass after the DOM catches up with the layout change
   watch([() => dock.tree.value, bottomWidthMode], () => nextTick(applyBottomWidth));
@@ -597,20 +625,30 @@
   }
 
   // card t_5d9032d3: the bell's open intent routes by source kind -
-  // task -> the board (the card lives there), cron -> the cron inspector
-  // tab, chat -> the session when one is bound (a dispatched subagent
-  // run id is not a local session; the route is a no-op then).
+  // task -> the kanban PANE comes to the foreground (the card lives
+  // there), cron -> the cron inspector tab, chat -> the session when
+  // one is bound (a dispatched subagent run id is not a local session;
+  // the route is a no-op then).
+  // card t_556ee727: the task route no longer hijacks the MAIN pane
+  // (the old mainView board overlay + /board replaceState is dead on
+  // this path) - the click opens the inspector if it is hidden, focuses
+  // the kanban tab, and hands the board select to the module board
+  // through the event seam. Chat content never changes on the click.
   function openNotification(n: OmegaNotification | unknown) {
     const rec = n as OmegaNotification;
     if (!rec || typeof rec.kind !== "string") return;
     switch (rec.kind) {
-      case "task":
-        if (mainView.value !== "board") {
-          mainView.value = "board";
-          boardHostPane.value = resolveActivePaneId();
-          history.replaceState({}, "", "/board");
+      case "task": {
+        if (!findEdgePane(dock.tree.value, "inspector")) {
+          // the inspector is hidden (toggle / drag-close / the narrow
+          // give-way pruned it) - the reopen re-asserts the full strip
+          dock.toggleEdge("inspector", "after");
         }
+        const pane = findEdgePane(dock.tree.value, "inspector");
+        if (pane) dock.openSingleton(pane.id, "kanban");
+        void focusNotificationBoard(rec.source_id);
         return;
+      }
       case "cron":
         openModuleTab("cron");
         return;
@@ -620,6 +658,20 @@
         }
         return;
     }
+  }
+
+  // the notification's board: resolve the task's board over the wire
+  // (registry + per-board task scan) and hand the pick to the module
+  // board. The channel is the event seam (the stash + CustomEvent in
+  // composables/notifications.ts): module UI imports no shell code, so
+  // the selection crosses as an event the Board component listens on -
+  // the stash covers the mount race (the tab activation mounts the
+  // board component on the tick AFTER openSingleton, but the resolve's
+  // fetches usually beat even that).
+  async function focusNotificationBoard(taskId: string) {
+    const board = await resolveTaskBoard(taskId);
+    if (!board) return;
+    selectBoardFor(board);
   }
   provide(CHAT_HOST_KEY, host);
 
