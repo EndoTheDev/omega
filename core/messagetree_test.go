@@ -1,4 +1,4 @@
-package agent
+package core
 
 // Tree derivation tests (t_17365247): the store is a linear append
 // list, the tree derives from parent pointers riding the message
@@ -8,19 +8,17 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/EndoTheDev/omega/ai"
 )
 
-func treeUser(content string) ai.User {
-	return ai.User{Content: content, Timestamp: time.Now().UTC().Format(time.RFC3339Nano)}
+func treeUser(content string) User {
+	return User{Content: content, Timestamp: time.Now().UTC().Format(time.RFC3339Nano)}
 }
 
-func treeAssistant(content string) ai.Assistant {
-	return ai.Assistant{Content: content, Timestamp: time.Now().UTC().Format(time.RFC3339Nano)}
+func treeAssistant(content string) Assistant {
+	return Assistant{Content: content, Timestamp: time.Now().UTC().Format(time.RFC3339Nano)}
 }
 
-func treeRows(t *testing.T, msgs ...ai.Message) []StoredMessage {
+func treeRows(t *testing.T, msgs ...Message) []StoredMessage {
 	t.Helper()
 	rows := make([]StoredMessage, len(msgs))
 	for i, m := range msgs {
@@ -30,7 +28,7 @@ func treeRows(t *testing.T, msgs ...ai.Message) []StoredMessage {
 }
 
 // withPtr returns a copy of the message carrying the parent pointer.
-func withPtr(m ai.Message, parent string) ai.Message { return WithParentID(m, parent) }
+func withPtr(m Message, parent string) Message { return WithParentID(m, parent) }
 
 // ids renders a path as the row-id order the consumers reason in.
 func pathIDs(view ActiveView) []string {
@@ -88,7 +86,7 @@ func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 		withPtr(treeUser("u"), ""),
 		withPtr(treeAssistant("first answer"), "1"),
 		withPtr(treeAssistant("second answer"), "1"),
-		ai.NewVariantSelect("1", "2"),
+		NewVariantSelect("1", "2"),
 	)
 	view := DeriveTree(rows)
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "2"}) {
@@ -98,7 +96,7 @@ func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 		t.Fatalf("active index = %d, want 0", view.Branches[0].ActiveIndex)
 	}
 	// a later select entry re-flips the same branch
-	rows = append(rows, StoredMessage{ID: 5, Message: ai.NewVariantSelect("1", "3")})
+	rows = append(rows, StoredMessage{ID: 5, Message: NewVariantSelect("1", "3")})
 	view = DeriveTree(rows)
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "3"}) {
 		t.Fatalf("path after re-select = %v, want [1 3] (last entry wins)", got)
@@ -110,12 +108,12 @@ func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 // user; selecting a variant group swaps the WHOLE run.
 func TestDeriveToolChainStaysInGroup(t *testing.T) {
 	a1 := treeAssistant("")
-	a1.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "web"}}
+	a1.ToolCalls = []ToolCall{{ID: "c1", Name: "web"}}
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),
-		withPtr(a1, "1"),                 // head + calls
-		withPtr(ai.NewToolResult("r", "c1", false), "2"), // result chains off its assistant
-		withPtr(treeAssistant("final"), "3"),             // follow-on segment
+		withPtr(a1, "1"),                              // head + calls
+		withPtr(NewToolResult("r", "c1", false), "2"), // result chains off its assistant
+		withPtr(treeAssistant("final"), "3"),          // follow-on segment
 	)
 	view := DeriveTree(rows)
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "2", "3", "4"}) {
@@ -172,11 +170,11 @@ func TestDeriveContinueFromSelected(t *testing.T) {
 // and never break chains.
 func TestDeriveMetaEntriesInvisible(t *testing.T) {
 	rows := treeRows(t,
-		ai.NewModelChange("glm-5.3"),
+		NewModelChange("glm-5.3"),
 		treeUser("u"),
 		treeAssistant("a"),
-		ai.NewThinkingLevelChange("high"),
-		ai.NewVariantSelect("1", "2"), // dangling selection ignored
+		NewThinkingLevelChange("high"),
+		NewVariantSelect("1", "2"), // dangling selection ignored
 	)
 	view := DeriveTree(rows)
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"2", "3"}) {
@@ -193,9 +191,9 @@ func TestDeriveResolutionMaps(t *testing.T) {
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),
 		withPtr(treeAssistant("a1"), "1"),
-		withPtr(ai.NewToolResult("r", "c1", false), "2"),
+		withPtr(NewToolResult("r", "c1", false), "2"),
 		withPtr(treeAssistant("a2"), "1"), // retry head
-		ai.NewVariantSelect("1", "4"),
+		NewVariantSelect("1", "4"),
 	)
 	view := DeriveTree(rows)
 	if view.ActiveHeads["1"] != "4" {

@@ -178,23 +178,9 @@ func DecodeMessage(role string, payload []byte) (Message, error) {
 }
 
 // MessageRole returns the role string for a message ("user", "assistant",
-// "system", "tool", or "unknown"). Shared by export, store commands, and
-// the TUI to avoid duplicating the type switch.
+// "system", "tool", or "unknown"). The role switch moved to core with
+// the message vocabulary (arc 1c, t_483de955 - core/messagetree.go
+// classifies rows by role and core cannot import omega/ai).
 func MessageRole(m Message) string {
-	switch m.(type) {
-	case System:
-		return "system"
-	case User:
-		return "user"
-	case Assistant:
-		return "assistant"
-	case ToolResult:
-		return "tool"
-	case VerdictCard:
-		return "verdict_card"
-	case Verdict:
-		return "verdict"
-	default:
-		return "unknown"
-	}
+	return core.MessageRole(m)
 }
