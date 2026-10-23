@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Message tree derivation (t_17365247): the session store stays a
@@ -13,18 +14,14 @@ import (
 // whose values are store row ids). Everything here is pure - same
 // input, same tree, no store.
 
-// BranchInfo describes one branch point on the wire: the parent
-// message id ("message_id"), the sibling RUN HEAD ids in append order
-// ("siblings"), how many variants exist ("count"), and which sibling
-// index is the active path ("active").
-type BranchInfo struct {
-	ParentID    string   `json:"message_id"`
-	Siblings    []string `json:"siblings,omitempty"`
-	Count       int      `json:"count"`
-	ActiveIndex int      `json:"active"`
-}
+// BranchInfo describes one branch point on the wire (moved to core,
+// arc 1b - ActiveView's wire field), t_17365247.
+type BranchInfo = core.BranchInfo
 
-// ActiveView is the tree-derived view of a session: Path is the active
+// ActiveView is the tree-derived view of a session (moved to core,
+// arc 1b - StoreProvider.GetActiveView returns it and the seam
+// contracts must be self-contained). The rest of messagetree follows
+// in arc 1c (t_483de955). Path is the active
 // path (render + context assembly), Branches the >=2-sibling branch
 // points the transcript wire serves. The remaining maps are the
 // navigation ground truth for the variants endpoint: SiblingHeads lists
@@ -33,15 +30,7 @@ type BranchInfo struct {
 // conversation message's run head (itself for heads), BranchByHead each
 // head's branch point. Path/Branches are wire fields; the maps are
 // internal resolution surfaces and never serialized.
-type ActiveView struct {
-	Path     []StoredMessage
-	Branches []BranchInfo
-
-	SiblingHeads  map[string][]string
-	ActiveHeads   map[string]string
-	HeadByMessage map[string]string
-	BranchByHead  map[string]string
-}
+type ActiveView = core.ActiveView
 
 // isConversation reports whether a message takes part in the tree.
 // Bookkeeping entries (model change, thinking level, variant selects,
