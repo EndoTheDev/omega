@@ -344,47 +344,22 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 	}, nil
 }
 
-// buildConfigs routes Config sub-sections into per-extension
-// typed Config structs. Each extension reads its own config via
-// ctx.Configs["<name>"].(<ext>.Config) — no external import needed.
-func buildConfigs(cfg Config) map[string]any {
-	return map[string]any{
-		"store":        store.Config{DBPath: cfg.Store.DBPath},
-		"provider":     provider.Config{Type: cfg.Provider.Type, ModelName: cfg.Provider.ModelName, Host: cfg.Provider.Host, APIKey: cfg.Provider.APIKey},
-		"http_channel": httpchannel.Config{Port: cfg.Server.Port, Bind: cfg.Server.Bind, RunTimeout: cfg.Server.RunTimeout, TitleModel: cfg.TitleModel},
-		"skills":       skills.Config{Dir: cfg.Skills.Dir, SharedDir: cfg.Skills.SharedDir},
-		"memory":       memory.Config{Enabled: cfg.Memory.Enabled, UserProfileEnabled: cfg.Memory.UserProfileEnabled, CharLimit: cfg.Memory.CharLimit, UserProfileCharLimit: cfg.Memory.UserProfileCharLimit, File: cfg.Memory.File, UserProfileFile: cfg.Memory.UserProfileFile},
-		"logging":      logging.Config{Enabled: cfg.Logging.Enabled, File: cfg.Logging.File},
-		"compactor":    cfg.Compaction,
-		"web":          web.Config{APIKey: cfg.Provider.APIKey, BaseURL: webBaseURL(cfg)},
-		"trust":        trust.Config{Home: omegaHome()},
-		"kanban":       kanbanModule.Config{DBPath: cfg.Kanban.DBPath},
-	}
-}
-
-// webBaseURL returns the host the web tools target: the explicit
-// web.base_url override when set, otherwise the provider host (with a
-// trailing /v1 stripped, mirroring provider.go's probe), so the
-// keypool mirror serves /api/web_search and /api/web_fetch with the
-// same auth swap + rotation as every other call.
-func webBaseURL(cfg Config) string {
-	if cfg.Web.BaseURL != "" {
-		return cfg.Web.BaseURL
-	}
-	return strings.TrimSuffix(cfg.Provider.Host, "/v1")
-}
+// buildConfigs and webBaseURL moved out in arc 2b (t_889388cc): the
+// plugins declare their config section (agent.Describer's ConfigKey),
+// agent.RouteConfigs builds the per-plugin map from the raw Config
+// via (*Config).ConfigSection in config.go.
 
 // newAgent wires config into a provider, agent, store, and extensions
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels.
 func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, error) {
-	ctx := &agent.Context{
-		CWD:     cwd(),
-		Configs: buildConfigs(cfg),
-	}
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
+	}
+	ctx := &agent.Context{
+		CWD:     cwd(),
+		Configs: agent.RouteConfigs(plugins, cfg),
 	}
 	if err := agent.MountAll(plugins, ctx); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
@@ -632,13 +607,13 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 
 	// Build the plugin context to get the store and skills.
-	pctx := &agent.Context{
-		CWD:     cwd(),
-		Configs: buildConfigs(cfg),
-	}
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return fmt.Errorf("build plugins: %w", err)
+	}
+	pctx := &agent.Context{
+		CWD:     cwd(),
+		Configs: agent.RouteConfigs(plugins, cfg),
 	}
 	if err := agent.MountAll(plugins, pctx); err != nil {
 		return fmt.Errorf("mount extensions: %w", err)

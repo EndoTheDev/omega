@@ -23,6 +23,10 @@ func (p *Plugin) Description() string {
 
 // Provides lists seam names this plugin mounts. "tools" is additive,
 // so multiple plugins can contribute tool providers without conflict.
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "" }
+
 func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections"} }
 
 // Requires lists seam names that must be mounted first. tools

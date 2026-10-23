@@ -29,6 +29,10 @@ func (p *Plugin) Description() string {
 // captures ctx.Logger at Mount) - any host mounting this plugin must
 // provide both seams; buildPlugins always does. Card t_13a2af8a:
 // mount order is declared data, not list position.
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "" }
+
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 

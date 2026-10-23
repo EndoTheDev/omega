@@ -30,13 +30,53 @@ type Plugin interface {
 	Mount(ctx *Context) error
 }
 
-// Describer is an optional Plugin capability: a one-line, human-
-// readable description shown by inventory surfaces (the TUI
-// /extensions listing and the webui GET /extensions endpoint).
-// Plugins that don't implement it are listed with an empty
-// description; surfaces render those without the line.
+// Describer is an optional Plugin capability. Description is a one-
+// line, human-readable description shown by inventory surfaces (the
+// TUI /extensions listing and the webui GET /extensions endpoint);
+// plugins that don't implement it are listed with an empty
+// description. ConfigKey names the config section the plugin reads
+// from ctx.Configs - empty means the plugin reads no section. The
+// host never routes configs by hand: RouteConfigs consults the
+// declaration below and pulls each declared section from the host's
+// raw config (arc 2b, t_889388cc).
 type Describer interface {
 	Description() string
+	ConfigKey() string
+}
+
+// ConfigSource is the host's raw config as the config router sees
+// it: typed config sections by name. cmd/omega implements it on its
+// Config type; a future or embedding host serves whatever sections
+// its own modules declare.
+type ConfigSource interface {
+	ConfigSection(name string) (any, bool)
+}
+
+// RouteConfigs builds the per-plugin config map from the host's raw
+// config. Each plugin that declares a config section (Describer's
+// ConfigKey) receives the matching section as Configs[key]; sections
+// the host does not provide are absent, and the plugin falls back to
+// its default at Mount. Call once per host wiring, after the plugins
+// are collected and before MountAll.
+func RouteConfigs(plugins []Plugin, raw ConfigSource) map[string]any {
+	configs := make(map[string]any)
+	if raw == nil {
+		return configs
+	}
+	for _, p := range plugins {
+		d, ok := p.(Describer)
+		if !ok {
+			continue
+		}
+		key := d.ConfigKey()
+		if key == "" {
+			continue
+		}
+		if v, ok := raw.ConfigSection(key); ok {
+			configs[key] = v
+		}
+	}
+	return configs
 }
 
 // Exclusive seams: two plugins providing the same one is a conflict.

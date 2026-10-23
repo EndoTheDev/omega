@@ -253,15 +253,90 @@ func TestResolveHomePaths(t *testing.T) {
 }
 
 
-// TestBuildConfigs verifies buildConfigs routes every Config sub-section
-// into the correct per-extension typed config struct, that all 9 keys are
-// present, and that the trust Home matches omegaHome().
+// TestConfigSectionTable pins every plugin's config section routing
+// (section name -> plugin key, arc 2b t_889388cc): for each mounted
+// plugin the ConfigKey declaration matches its routing row, and the
+// host's ConfigSection provides every section a plugin owns except
+// notifications (the host never routes it; the plugin defaults).
+func TestConfigSectionTable(t *testing.T) {
+	plugins, err := buildPlugins(DefaultConfig())
+	if err != nil {
+		t.Fatalf("buildPlugins returned error: %v", err)
+	}
+
+	// section name -> routing row. "" = the plugin reads no section.
+	tests := []struct{ plugin, section string }{
+		{"logging", "logging"},
+		{"agent-loop", ""},
+		{"provider", "provider"},
+		{"store", "store"},
+		{"skills", "skills"},
+		{"compactor", "compactor"},
+		{"memory", "memory"},
+		{"notifications", "notifications"},
+		{"prompt", ""},
+		{"tools", ""},
+		{"verdict", ""},
+		{"mcp", ""},
+		{"delegate", ""},
+		{"web", "web"},
+		{"http_channel", "http_channel"},
+		{"tui", ""},
+		{"trust", "trust"},
+		{"cron", ""},
+		{"kanban", "kanban"},
+	}
+	byName := make(map[string]string, len(plugins))
+	seen := make(map[string]bool, len(plugins))
+	for _, p := range plugins {
+		d, ok := p.(agent.Describer)
+		if !ok {
+			t.Errorf("plugin %q does not implement agent.Describer", p.Name())
+			continue
+		}
+		byName[p.Name()] = d.ConfigKey()
+		seen[p.Name()] = true
+	}
+	for _, tc := range tests {
+		if !seen[tc.plugin] {
+			t.Errorf("routing row %q: plugin missing from buildPlugins", tc.plugin)
+			continue
+		}
+		if got := byName[tc.plugin]; got != tc.section {
+			t.Errorf("plugin %q ConfigKey = %q, want %q", tc.plugin, got, tc.section)
+		}
+	}
+
+	// Every declared section must be routable via ConfigSection.
+	cfg := DefaultConfig()
+	for _, p := range plugins {
+		key := byName[p.Name()]
+		if key == "" || key == "notifications" {
+			continue
+		}
+		if _, ok := cfg.ConfigSection(key); !ok {
+			t.Errorf("plugin %q declares section %q but Config does not provide it", p.Name(), key)
+		}
+	}
+	// And the notifications declaration stays unrouted: same-host
+	// behavior as before the router (the plugin uses its default).
+	if _, ok := cfg.ConfigSection("notifications"); ok {
+		t.Errorf("Config provides a notifications section; the default host must not")
+	}
+}
+
+// TestBuildConfigs verifies the config router routes every Config
+// sub-section into the correct per-extension typed config struct, that
+// all 10 keys are present, and that the trust Home matches omegaHome().
+// (The old buildConfigs literal became agent.RouteConfigs + Config.
+// ConfigSection in arc 2b, t_889388cc; the field-level pins stay as
+// the behavior contract.)
 func TestBuildConfigs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 
 	cfg := DefaultConfig()
-	// Customize the fields buildConfigs is expected to propagate so a wrong
+	// Customize the fields the router is expected to propagate so a wrong
 	// mapping (e.g. store<->provider swap) fails the test.
 	cfg.Store.DBPath = "/tmp/store-test.db"
 	cfg.Provider.Type = "ollama"
@@ -286,7 +361,11 @@ func TestBuildConfigs(t *testing.T) {
 		MaxToolOutput: 8192,
 	}
 
-	configs := buildConfigs(cfg)
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins returned error: %v", err)
+	}
+	configs := agent.RouteConfigs(plugins, cfg)
 
 	// All 10 expected keys must be present (kanban joined with the
 	// board module card t_33487fb6).

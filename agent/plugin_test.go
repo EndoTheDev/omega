@@ -305,3 +305,66 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		t.Fatalf("expected 2 commands, got %d", ci.Commands)
 	}
 }
+
+// keyPlugin is a testPlugin that also declares a config section
+// (the Describer capability the config router consults).
+type keyPlugin struct {
+	testPlugin
+	desc string
+	key  string
+}
+
+func (p keyPlugin) Description() string { return p.desc }
+func (p keyPlugin) ConfigKey() string   { return p.key }
+
+// mapSource is a ConfigSource backed by a plain map - the shape the
+// host's raw config presents to the router.
+type mapSource map[string]any
+
+func (m mapSource) ConfigSection(name string) (any, bool) {
+	v, ok := m[name]
+	return v, ok
+}
+
+// TestRouteConfigs covers the config router contract (arc 2b,
+// t_889388cc): each plugin's declared ConfigKey pulls its matching
+// section from the raw config into the routed map. Sections the host
+// does not provide stay absent, plugins without a key or without the
+// Describer capability contribute nothing, and a nil source routes
+// nothing instead of panicking.
+func TestRouteConfigs(t *testing.T) {
+	src := mapSource{
+		"store":  "store-section",
+		"memory": "memory-section",
+	}
+	plugins := []Plugin{
+		keyPlugin{testPlugin{name: "store", provides: []string{"store"}}, "sessions", "store"},
+		keyPlugin{testPlugin{name: "memory", provides: []string{"memory"}}, "recalls", "memory"},
+		keyPlugin{testPlugin{name: "notifications", provides: []string{"notifications"}}, "bell", "notifications"},
+		keyPlugin{testPlugin{name: "tools", provides: []string{"tools"}}, "core tools", ""},
+		testPlugin{name: "plain", mount: func(*Context) error { return nil }},
+	}
+
+	got := RouteConfigs(plugins, src)
+	want := map[string]any{
+		"store":  "store-section",
+		"memory": "memory-section",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("RouteConfigs routed %d sections (%v), want %d", len(got), got, len(want))
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("RouteConfigs[%q] = %v, want %v", k, got[k], v)
+		}
+	}
+
+	// A nil source routes nothing rather than panicking.
+	if got := RouteConfigs(plugins, nil); len(got) != 0 {
+		t.Fatalf("RouteConfigs(nil source) = %v, want empty", got)
+	}
+	// No plugins: empty map, no panic.
+	if got := RouteConfigs(nil, src); len(got) != 0 {
+		t.Fatalf("RouteConfigs(nil plugins) = %v, want empty", got)
+	}
+}

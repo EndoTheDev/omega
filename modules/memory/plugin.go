@@ -18,6 +18,10 @@ func (p *Plugin) Name() string       { return "memory" }
 func (p *Plugin) Description() string {
 	return "durable memory: facts saved and recalled across sessions by the agent"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "memory" }
+
 func (p *Plugin) Provides() []string { return []string{"memory", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 

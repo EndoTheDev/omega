@@ -20,6 +20,10 @@ func (p *Plugin) Name() string       { return "http_channel" }
 func (p *Plugin) Description() string {
 	return "HTTP channel: the web UI API server - chat streaming, sessions, inspector endpoints"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "http_channel" }
+
 func (p *Plugin) Provides() []string { return []string{"channel"} }
 func (p *Plugin) Requires() []string { return nil }
 
