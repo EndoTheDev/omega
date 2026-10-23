@@ -2,7 +2,7 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Status](https://img.shields.io/badge/status-v0.9.0-blue)
+![Status](https://img.shields.io/badge/status-v0.10.0-blue)
 [![Sponsor](https://img.shields.io/badge/sponsor-ko--fi-FF5E5B)](https://ko-fi.com/endothedev)
 [![Sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/EndoTheDev)
 
@@ -16,7 +16,11 @@ The same binary also serves a VS Code-style web interface: a dock
 with draggable panes, live-streaming chat with retry and image
 attachments, sessions with search and pinning, settings, cron, logs,
 skills and a kanban board — all embedded, no separate frontend to
-run (`omega serve`).
+run (`omega serve`). Conversations branch: every retry is a sibling
+variant you can switch between. Agents can ask mid-run via verdict
+cards (single- or multi-choice, or free text), finished tasks ring
+a bell, chats can be ephemeral (in-memory only, nothing on disk),
+and multiple named agents run side by side.
 
 > **Warning:** The shell tool executes commands the LLM generates with
 > no sandboxing. Use Ollama for sensitive work — cloud providers
