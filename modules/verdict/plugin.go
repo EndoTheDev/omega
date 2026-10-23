@@ -24,12 +24,13 @@ func (p *Plugin) Description() string {
 }
 
 // Provides: verdicts (exclusive - one hub on the Context), tools and
-// prompt_sections (additive). Requires store so the hub can capture
-// ctx.Store at Mount and persist card + verdict audit rows; a host
-// without the store plugin still mounts (topo sort skips the dep only
-// when it is unsatisfiable - store is always present in buildPlugins).
+// prompt_sections (additive). Requires store (the hub captures it at
+// Mount to persist card + verdict audit rows) and logging (the hub
+// captures ctx.Logger at Mount) - any host mounting this plugin must
+// provide both seams; buildPlugins always does. Card t_13a2af8a:
+// mount order is declared data, not list position.
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
-func (p *Plugin) Requires() []string { return []string{"store"} }
+func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 
 // Mount builds the hub, publishes it on the Context, and appends the
 // tool provider, TUI provider, and prompt-section contributor.

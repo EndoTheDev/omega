@@ -318,10 +318,12 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		skills.NewPlugin(),
 		compactor.NewPlugin(),
 		memory.NewPlugin(),
-		// card t_5d9032d3: the finished-things store mounts BEFORE any
-		// emitter (delegate/kanban read ctx.Notifications at Mount,
-		// cron at Start) - list order is the mount order for plugins
-		// without Requires edges.
+		// card t_13a2af8a: mount order is declared data - the
+		// notifications consumers (delegate, kanban, cron) carry
+		// Requires edges naming the seam, and agent.MountAll's topoSort
+		// is the only ordering. Slice order below is a stable tiebreak
+		// only (it keeps prompt sections in authoring order among
+		// independent plugins; it carries no dependency semantics).
 		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),

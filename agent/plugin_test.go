@@ -85,6 +85,44 @@ func TestMountAllOrdering(t *testing.T) {
 	}
 }
 
+// TestMountAllRequiresEdgeForcesOrder proves a Requires edge forces
+// mount order regardless of slice position (card t_13a2af8a: mount
+// order is declared data). The notifications-shaped consumer is listed
+// before its producer in the slice; topoSort must still mount the
+// producer first.
+func TestMountAllRequiresEdgeForcesOrder(t *testing.T) {
+	var order []string
+	mk := func(name string, provides, requires []string) testPlugin {
+		return testPlugin{
+			name:     name,
+			provides: provides,
+			requires: requires,
+			mount: func(ctx *Context) error {
+				order = append(order, name)
+				return nil
+			},
+		}
+	}
+
+	plugins := []Plugin{
+		mk("consumer", []string{"tools"}, []string{"notifications"}),
+		mk("independent", []string{"independent"}, nil),
+		mk("notifications", []string{"notifications"}, nil),
+	}
+
+	ctx := &Context{}
+	if err := MountAll(plugins, ctx); err != nil {
+		t.Fatalf("MountAll: %v", err)
+	}
+	seen := map[string]int{}
+	for i, name := range order {
+		seen[name] = i
+	}
+	if seen["notifications"] > seen["consumer"] {
+		t.Fatalf("notifications must mount before its consumer, got order %v", order)
+	}
+}
+
 func TestMountAllMissingDep(t *testing.T) {
 	p := testPlugin{
 		name:     "compactor",

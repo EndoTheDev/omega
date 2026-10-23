@@ -41,9 +41,11 @@ func (p *Plugin) Description() string {
 func (p *Plugin) Provides() []string { return []string{"cron"} }
 
 // Requires lists seams that must be mounted before this plugin. The
-// cron runner receives the agent, store, memory and logger through
-// CronDeps at Start - no mount-time dependencies.
-func (p *Plugin) Requires() []string { return nil }
+// cron runner receives agent, store, memory and logger through
+// CronDeps at Start, and it captures ctx.Notifications there too -
+// declared as the notifications edge (card t_13a2af8a: mount order is
+// declared data, not a comment law about list position).
+func (p *Plugin) Requires() []string { return []string{"notifications"} }
 
 // Mount loads crons.yaml and mounts the Runner into ctx.Cron. A load
 // failure (invalid yaml) is a mount error - the operator sees the

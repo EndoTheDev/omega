@@ -16,17 +16,22 @@ func NewPlugin() *Plugin {
 	return &Plugin{delegate: NewDelegate()}
 }
 
-func (p *Plugin) Name() string       { return "delegate" }
+func (p *Plugin) Name() string { return "delegate" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "delegate: spawns subagents to run subtasks in isolated sessions"
 }
 func (p *Plugin) Provides() []string { return []string{"tools"} }
-func (p *Plugin) Requires() []string { return nil }
 
-// Mount appends the delegate ToolProvider, sets InjectedMessages and
-// PendingDelegations on the Context.
+// Requires: the notifications seam (Mount captures ctx.Notifications
+// as the dispatched-run emitter, card t_5d9032d3) and logging (Mount
+// captures ctx.Logger). Card t_13a2af8a: mount order is declared
+// data - the edge, not slice position.
+func (p *Plugin) Requires() []string { return []string{"notifications", "logging"} }
+
+// Mount appends the delegate ToolProvider and sets InjectedMessages
+// and PendingDelegations on the Context.
 func (p *Plugin) Mount(ctx *agent.Context) error {
 	p.delegate.logger = ctx.Logger
 	p.delegate.notifier = ctx.Notifications
