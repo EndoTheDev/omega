@@ -56,7 +56,12 @@ type Server struct {
 	// card t_2ecf9c51): /verdicts listing + /sessions/{id}/verdicts
 	// answering. Nil answers 501 - optional like the board.
 	Verdicts core.VerdictsProvider
-	httpSrv  *http.Server
+	// canvas is the runtime behind the canvas transport (arc 3b):
+	// panel snapshot source and the one action pipe (server_canvas.go).
+	// Nil means nothing mounted - /ui/canvas serves [] and /ui/actions
+	// answers the unknown-module 404.
+	canvas  *agent.Canvas
+	httpSrv *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
 	// otherwise run forever and hold the session's run slot until
@@ -137,6 +142,13 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/agents", s.handleAgents)
 	mux.HandleFunc("/agents/{name}", s.handleAgent)
 	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
+	// card t_e143f41f (arc 3b): the canvas transport. GET /ui/canvas is
+	// the load-time snapshot catch-up; POST /ui/actions is the web half
+	// of the one action pipe. Handlers live in server_canvas.go; the
+	// ViewModelDelta frames ride the existing run streams (no routes
+	// here for them - they are event types, not endpoints).
+	mux.HandleFunc("/ui/canvas", s.handleCanvas)
+	mux.HandleFunc("/ui/actions", s.handleUIActions)
 	// SPA: the built webui is embedded in the binary and served at /.
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
@@ -1554,6 +1566,8 @@ func eventTypeOf(event core.Event) string {
 		return "assistant_message"
 	case core.ToolResultEvent:
 		return "tool_result"
+	case core.ViewModelDelta:
+		return "view_model_delta"
 	}
 	return "event"
 }
