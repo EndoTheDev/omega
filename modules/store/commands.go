@@ -10,20 +10,21 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // HandleSessionsCommand lists all sessions with message counts.
 // Returns a text table for the TUI to display.
-func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args string) (agent.CommandResult, error) {
+func HandleSessionsCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no store available")
+		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
 	sessions, err := store.ListSessions(ctx)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("list sessions: %w", err)
+		return core.CommandResult{}, fmt.Errorf("list sessions: %w", err)
 	}
 	if len(sessions) == 0 {
-		return agent.CommandResult{Text: "[no sessions yet]"}, nil
+		return core.CommandResult{Text: "[no sessions yet]"}, nil
 	}
 	type row struct {
 		name  string
@@ -53,20 +54,20 @@ func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args 
 	for i, r := range rows {
 		fmt.Fprintf(&sb, "  %-3d  %-*s  %*d  %s\n", i+1, maxName, r.name, maxCount, r.count, r.id)
 	}
-	return agent.CommandResult{Text: sb.String()}, nil
+	return core.CommandResult{Text: sb.String()}, nil
 }
 
 // HandleTreeCommand renders the session tree.
-func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (agent.CommandResult, error) {
+func HandleTreeCommand(ctx context.Context, store core.StoreProvider) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no store available")
+		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
 	roots, err := store.GetSessionTree(ctx)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("tree: %w", err)
+		return core.CommandResult{}, fmt.Errorf("tree: %w", err)
 	}
 	if len(roots) == 0 {
-		return agent.CommandResult{Text: "[no sessions yet]"}, nil
+		return core.CommandResult{Text: "[no sessions yet]"}, nil
 	}
 	type row struct {
 		name  string
@@ -75,8 +76,8 @@ func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (agent.Co
 		glyph string
 	}
 	var rows []row
-	var flatten func(node *agent.SessionNode, depth int, last bool)
-	flatten = func(node *agent.SessionNode, depth int, last bool) {
+	var flatten func(node *core.SessionNode, depth int, last bool)
+	flatten = func(node *core.SessionNode, depth int, last bool) {
 		count, _ := store.CountMessages(ctx, node.ID)
 		name := SessionDisplayName(node.Label, node.ID)
 		glyph := ""
@@ -115,24 +116,24 @@ func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (agent.Co
 	for _, r := range rows {
 		fmt.Fprintf(&sb, "  %-*s %*d  %s\n", maxName, r.glyph+r.name, maxCount, r.count, r.id)
 	}
-	return agent.CommandResult{Text: sb.String()}, nil
+	return core.CommandResult{Text: sb.String()}, nil
 }
 
 // HandleSearchCommand runs an FTS5 search across session messages.
-func HandleSearchCommand(ctx context.Context, store agent.StoreProvider, args string) (agent.CommandResult, error) {
+func HandleSearchCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no session store available")
+		return core.CommandResult{}, fmt.Errorf("no session store available")
 	}
 	query := strings.TrimSpace(args)
 	if query == "" {
-		return agent.CommandResult{}, fmt.Errorf("usage: /search <query>")
+		return core.CommandResult{}, fmt.Errorf("usage: /search <query>")
 	}
 	results, err := store.SearchMessages(ctx, query)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("search: %w", err)
+		return core.CommandResult{}, fmt.Errorf("search: %w", err)
 	}
 	if len(results) == 0 {
-		return agent.CommandResult{Text: "[no results]"}, nil
+		return core.CommandResult{Text: "[no results]"}, nil
 	}
 	var sb strings.Builder
 	sb.WriteString("\n")
@@ -146,13 +147,13 @@ func HandleSearchCommand(ctx context.Context, store agent.StoreProvider, args st
 		sb.WriteString(r.Snippet)
 		sb.WriteString("\n")
 	}
-	return agent.CommandResult{Text: sb.String()}, nil
+	return core.CommandResult{Text: sb.String()}, nil
 }
 
 // HandleInsightsCommand computes cross-session usage analytics.
-func HandleInsightsCommand(ctx context.Context, store agent.StoreProvider, args string) (agent.CommandResult, error) {
+func HandleInsightsCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no session store available")
+		return core.CommandResult{}, fmt.Errorf("no session store available")
 	}
 	days := 30
 	if d, err := strconv.Atoi(strings.TrimSpace(args)); err == nil && d >= 0 {
@@ -160,12 +161,12 @@ func HandleInsightsCommand(ctx context.Context, store agent.StoreProvider, args 
 	}
 	stats, err := store.ComputeInsights(ctx, days)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("insights: %w", err)
+		return core.CommandResult{}, fmt.Errorf("insights: %w", err)
 	}
 	if stats.Sessions == 0 {
-		return agent.CommandResult{Text: fmt.Sprintf("[no sessions in the last %d days]", days)}, nil
+		return core.CommandResult{Text: fmt.Sprintf("[no sessions in the last %d days]", days)}, nil
 	}
-	return agent.CommandResult{Text: agent.FormatInsights(stats)}, nil
+	return core.CommandResult{Text: agent.FormatInsights(stats)}, nil
 }
 
 // SessionDisplayName returns the label, or a truncated ID if no label.
@@ -185,7 +186,7 @@ func SessionDisplayName(label, id string) string {
 // the TUI's first message will create to that agent profile (card
 // t_7e2b7002). The agent name rides Action.List[0]; unknown names fail
 // at creation, not here - the flag parse stays store-free.
-func HandleNewCommand(args string) (agent.CommandResult, error) {
+func HandleNewCommand(args string) (core.CommandResult, error) {
 	ephemeral := ""
 	var agentName string
 	fields := strings.Fields(args)
@@ -197,7 +198,7 @@ func HandleNewCommand(args string) (agent.CommandResult, error) {
 		case f == "--agent" || strings.HasPrefix(f, "--agent="):
 			if f == "--agent" {
 				if i+1 >= len(fields) {
-					return agent.CommandResult{}, fmt.Errorf("usage: /new --agent <name>")
+					return core.CommandResult{}, fmt.Errorf("usage: /new --agent <name>")
 				}
 				i++
 				agentName = fields[i]
@@ -206,8 +207,8 @@ func HandleNewCommand(args string) (agent.CommandResult, error) {
 			}
 		}
 	}
-	res := agent.CommandResult{
-		Actions: []agent.CmdAction{{Type: "new_session", Value: ephemeral}},
+	res := core.CommandResult{
+		Actions: []core.CmdAction{{Type: "new_session", Value: ephemeral}},
 	}
 	if agentName != "" {
 		if err := agent.ValidAgentName(agentName); err != nil {
@@ -220,31 +221,31 @@ func HandleNewCommand(args string) (agent.CommandResult, error) {
 
 // HandleResumeCommand resolves the argument to a session ID using the
 // store, then returns a load_session action for the TUI to load.
-func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (agent.CommandResult, error) {
+func HandleResumeCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no store available")
+		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
 	arg := strings.TrimSpace(args)
 	if arg == "" {
-		return agent.CommandResult{}, fmt.Errorf("usage: /resume <# | id | label>")
+		return core.CommandResult{}, fmt.Errorf("usage: /resume <# | id | label>")
 	}
 	// Build a session list for number-based resolution.
 	sessions, err := store.ListSessions(ctx)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("list sessions: %w", err)
+		return core.CommandResult{}, fmt.Errorf("list sessions: %w", err)
 	}
 	// Strip leading # for line numbers.
 	numStr := strings.TrimPrefix(arg, "#")
 	if n, err := strconv.Atoi(numStr); err == nil && n >= 1 && n <= len(sessions) {
-		return agent.CommandResult{
-			Actions: []agent.CmdAction{{Type: "load_session", Value: sessions[n-1].ID}},
+		return core.CommandResult{
+			Actions: []core.CmdAction{{Type: "load_session", Value: sessions[n-1].ID}},
 		}, nil
 	}
 	// Try exact ID match.
 	for _, s := range sessions {
 		if s.ID == arg {
-			return agent.CommandResult{
-				Actions: []agent.CmdAction{{Type: "load_session", Value: s.ID}},
+			return core.CommandResult{
+				Actions: []core.CmdAction{{Type: "load_session", Value: s.ID}},
 			}, nil
 		}
 	}
@@ -252,79 +253,79 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 	lower := strings.ToLower(arg)
 	for _, s := range sessions {
 		if s.Label != "" && strings.HasPrefix(strings.ToLower(s.Label), lower) {
-			return agent.CommandResult{
-				Actions: []agent.CmdAction{{Type: "load_session", Value: s.ID}},
+			return core.CommandResult{
+				Actions: []core.CmdAction{{Type: "load_session", Value: s.ID}},
 			}, nil
 		}
 	}
 	// Fallback: try the store directly.
 	if _, err := store.GetSession(ctx, arg); err == nil {
-		return agent.CommandResult{
-			Actions: []agent.CmdAction{{Type: "load_session", Value: arg}},
+		return core.CommandResult{
+			Actions: []core.CmdAction{{Type: "load_session", Value: arg}},
 		}, nil
 	}
-	return agent.CommandResult{}, fmt.Errorf("session not found: %s", arg)
+	return core.CommandResult{}, fmt.Errorf("session not found: %s", arg)
 }
 
 // HandleBranchCommand creates a child session and returns a branch_session
 // action with the child ID. The TUI loads the ancestor messages.
-func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (agent.CommandResult, error) {
+func HandleBranchCommand(ctx context.Context, store core.StoreProvider, parentID, args string) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no store available")
+		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
 	if parentID == "" {
-		return agent.CommandResult{}, fmt.Errorf("no current session to branch; /resume <id> first or pass one: /branch <id>")
+		return core.CommandResult{}, fmt.Errorf("no current session to branch; /resume <id> first or pass one: /branch <id>")
 	}
 	if _, err := store.GetSession(ctx, parentID); err != nil {
-		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
+		return core.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
 	// Generate a new session ID.
 	id, err := agent.NewSessionID()
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
+		return core.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
 	if err := store.CreateSession(ctx, id, parentID, ""); err != nil {
-		return agent.CommandResult{}, fmt.Errorf("branch: %w", err)
+		return core.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
-	return agent.CommandResult{
-		Actions: []agent.CmdAction{{Type: "branch_session", Value: id}},
+	return core.CommandResult{
+		Actions: []core.CmdAction{{Type: "branch_session", Value: id}},
 	}, nil
 }
 
 // HandleLabelCommand updates the session label in the store and returns
 // a set_label action for the TUI to update its display.
-func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (agent.CommandResult, error) {
+func HandleLabelCommand(ctx context.Context, store core.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil {
-		return agent.CommandResult{}, fmt.Errorf("no store available")
+		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
 	if sessionID == "" {
-		return agent.CommandResult{}, fmt.Errorf("no current session to label")
+		return core.CommandResult{}, fmt.Errorf("no current session to label")
 	}
 	label := strings.TrimSpace(args)
 	if err := store.UpdateSession(ctx, sessionID, label); err != nil {
-		return agent.CommandResult{}, fmt.Errorf("label: %w", err)
+		return core.CommandResult{}, fmt.Errorf("label: %w", err)
 	}
 	if label == "" {
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text:    "[label cleared]",
-			Actions: []agent.CmdAction{{Type: "set_label", Value: ""}},
+			Actions: []core.CmdAction{{Type: "set_label", Value: ""}},
 		}, nil
 	}
-	return agent.CommandResult{
+	return core.CommandResult{
 		Text:    "[label: " + label + "]",
-		Actions: []agent.CmdAction{{Type: "set_label", Value: label}},
+		Actions: []core.CmdAction{{Type: "set_label", Value: label}},
 	}, nil
 }
 
 // HandleExportCommand reads messages from the store and writes them as
 // JSONL to the given path. No TUI state needed.
-func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (agent.CommandResult, error) {
+func HandleExportCommand(ctx context.Context, store core.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil || sessionID == "" {
-		return agent.CommandResult{}, fmt.Errorf("no active session to export")
+		return core.CommandResult{}, fmt.Errorf("no active session to export")
 	}
 	messages, err := store.GetMessages(ctx, sessionID)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("export: %w", err)
+		return core.CommandResult{}, fmt.Errorf("export: %w", err)
 	}
 	path := sessionID + ".jsonl"
 	if p := strings.TrimSpace(args); p != "" {
@@ -332,7 +333,7 @@ func HandleExportCommand(ctx context.Context, store agent.StoreProvider, session
 	}
 	f, err := os.Create(path)
 	if err != nil {
-		return agent.CommandResult{}, fmt.Errorf("export: %w", err)
+		return core.CommandResult{}, fmt.Errorf("export: %w", err)
 	}
 	defer f.Close()
 	enc := json.NewEncoder(f)
@@ -340,8 +341,8 @@ func HandleExportCommand(ctx context.Context, store agent.StoreProvider, session
 		role := ai.MessageRole(msg)
 		content := agent.MessageText(msg)
 		if err := enc.Encode(map[string]string{"role": role, "content": content}); err != nil {
-			return agent.CommandResult{}, fmt.Errorf("export: %w", err)
+			return core.CommandResult{}, fmt.Errorf("export: %w", err)
 		}
 	}
-	return agent.CommandResult{Text: fmt.Sprintf("[exported %d messages to %s]", len(messages), path)}, nil
+	return core.CommandResult{Text: fmt.Sprintf("[exported %d messages to %s]", len(messages), path)}, nil
 }

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // agentsHome is the omega home the profiles scan. main sets OMEGA_HOME
@@ -52,7 +53,7 @@ func (s *Server) fillAgentSessions(profiles []agent.Profile) {
 	if s.store == nil {
 		return
 	}
-	as, ok := s.store.(agent.AgentSessionStore)
+	as, ok := s.store.(core.AgentSessionStore)
 	if !ok {
 		return
 	}
@@ -136,7 +137,7 @@ func (s *Server) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
 	}
-	as, ok := s.store.(agent.AgentSessionStore)
+	as, ok := s.store.(core.AgentSessionStore)
 	if !ok {
 		http.Error(w, "store does not support agent sessions", http.StatusNotImplemented)
 		return

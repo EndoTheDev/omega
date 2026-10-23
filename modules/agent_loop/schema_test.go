@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestToolSchemasActionEnumDerivesFromMetadata pins the drift gate at
@@ -13,10 +13,10 @@ import (
 // enum (here: "purge", not declared in Actions) is corrected, not
 // trusted.
 func TestToolSchemasActionEnumDerivesFromMetadata(t *testing.T) {
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"memory": {
 			Description: "domain tool",
-			Actions:     []agent.ToolAction{{Name: "add"}, {Name: "replace"}, {Name: "remove"}},
+			Actions:     []core.ToolAction{{Name: "add"}, {Name: "replace"}, {Name: "remove"}},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

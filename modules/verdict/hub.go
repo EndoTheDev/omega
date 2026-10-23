@@ -21,6 +21,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // DefaultTimeout is the per-card default deadline (design Q5): twenty
@@ -38,8 +39,8 @@ const DefaultTimeout = 20 * time.Minute
 // hundred bytes and issuance is human-paced; the upgrade path is a
 // prune pass when the slice exceeds a few hundred entries.
 type Hub struct {
-	store  agent.StoreProvider
-	logger agent.LoggerProvider
+	store  core.StoreProvider
+	logger core.LoggerProvider
 	// deadline is the default per-card timeout when a call passes none.
 	deadline time.Duration
 
@@ -51,8 +52,8 @@ type Hub struct {
 // resolution channel send wins (Answer or the expiry timer), and any
 // later Answer sees the settled state and returns the reason.
 type cardState struct {
-	prompt       agent.VerdictPrompt
-	answer       chan agent.Verdict
+	prompt       core.VerdictPrompt
+	answer       chan core.Verdict
 	settled      bool // answered, skipped, or expired
 	expired      bool
 	skipped      bool
@@ -65,7 +66,7 @@ type cardState struct {
 
 // NewHub builds a hub. store is optional (ephemeral sessions and
 // store-less hosts skip persistence); logger optional.
-func NewHub(store agent.StoreProvider, logger agent.LoggerProvider) *Hub {
+func NewHub(store core.StoreProvider, logger core.LoggerProvider) *Hub {
 	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
 }
 
@@ -85,15 +86,15 @@ func (h *Hub) Close() {
 	}
 }
 
-// Ask implements agent.VerdictsProvider: registers the card, persists
+// Ask implements core.VerdictsProvider: registers the card, persists
 // the ai.VerdictCard record, arms the expiry timer, and blocks until
 // an answer, the expiry, or ctx cancellation. ctx cancellation (run
 // stop / shutdown) settles the card; Close is the host-wide sweep.
-func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict, error) {
+func (h *Hub) Ask(ctx context.Context, card core.VerdictPrompt) (core.Verdict, error) {
 	if card.ID == "" {
 		id, err := agent.NewSessionID()
 		if err != nil {
-			return agent.Verdict{}, fmt.Errorf("mint card id: %w", err)
+			return core.Verdict{}, fmt.Errorf("mint card id: %w", err)
 		}
 		card.ID = id
 	}
@@ -103,7 +104,7 @@ func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict,
 	}
 	card.ExpiresAt = time.Now().Add(timeout)
 
-	state := &cardState{prompt: card, answer: make(chan agent.Verdict, 1)}
+	state := &cardState{prompt: card, answer: make(chan core.Verdict, 1)}
 	h.mu.Lock()
 	h.cards = append(h.cards, state)
 	h.mu.Unlock()
@@ -119,7 +120,7 @@ func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict,
 	select {
 	case v, ok := <-state.answer:
 		if !ok {
-			return agent.Verdict{}, fmt.Errorf("verdict cancelled: the hub closed mid-question")
+			return core.Verdict{}, fmt.Errorf("verdict cancelled: the hub closed mid-question")
 		}
 		return v, nil
 	case <-ctx.Done():
@@ -128,7 +129,7 @@ func (h *Hub) Ask(ctx context.Context, card agent.VerdictPrompt) (agent.Verdict,
 		h.mu.Lock()
 		state.settled = true
 		h.mu.Unlock()
-		return agent.Verdict{}, ctx.Err()
+		return core.Verdict{}, ctx.Err()
 	}
 }
 
@@ -145,7 +146,7 @@ func (h *Hub) expire(cardID string) {
 	c.settled = true
 	c.expired = true
 	record := ai.NewVerdict(cardID, nil, nil, "", false, true)
-	c.answer <- agent.Verdict{CardID: cardID, Expired: true}
+	c.answer <- core.Verdict{CardID: cardID, Expired: true}
 	h.mu.Unlock()
 
 	if h.logger != nil {
@@ -154,12 +155,12 @@ func (h *Hub) expire(cardID string) {
 	h.persist(record)
 }
 
-// Answer implements agent.VerdictsProvider. cardID empty means the
+// Answer implements core.VerdictsProvider. cardID empty means the
 // session's OLDEST pending card (one run per session, so the common
 // case is exactly one; ambiguous cases name the count in the error and
 // leave the choice to the caller). First answer wins; every later
 // attempt errors with the reason.
-func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, error) {
+func (h *Hub) Answer(sessionID, cardID string, v core.Verdict) (core.Verdict, error) {
 	h.mu.Lock()
 	var c *cardState
 	if cardID == "" {
@@ -168,7 +169,7 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 		// count in the error and leave the choice to the caller)
 		if sessionID == "" {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("answer is ambiguous: no session and no card given")
+			return core.Verdict{}, fmt.Errorf("answer is ambiguous: no session and no card given")
 		}
 		for _, cand := range h.cards {
 			if !cand.settled && cand.prompt.SessionID == sessionID {
@@ -178,14 +179,14 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 		}
 		if c == nil {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("no pending verdict card in session %s", sessionID)
+			return core.Verdict{}, fmt.Errorf("no pending verdict card in session %s", sessionID)
 		}
 		cardID = c.prompt.ID
 	} else {
 		c = h.byIDLocked(cardID)
 		if c == nil {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("no pending verdict card %s", cardID)
+			return core.Verdict{}, fmt.Errorf("no pending verdict card %s", cardID)
 		}
 		// session boundary: a known card from another session cannot be
 		// answered through this session's surface (the URL is the
@@ -193,18 +194,18 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 		// /verdict command answers without a session context).
 		if sessionID != "" && c.prompt.SessionID != sessionID {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("verdict card %s belongs to a different session", cardID)
+			return core.Verdict{}, fmt.Errorf("verdict card %s belongs to a different session", cardID)
 		}
 	}
 	if c.settled {
 		h.mu.Unlock()
 		if c.expired {
-			return agent.Verdict{}, fmt.Errorf("verdict card %s already expired", cardID)
+			return core.Verdict{}, fmt.Errorf("verdict card %s already expired", cardID)
 		}
 		if c.skipped {
-			return agent.Verdict{}, fmt.Errorf("verdict card %s already skipped", cardID)
+			return core.Verdict{}, fmt.Errorf("verdict card %s already skipped", cardID)
 		}
-		return agent.Verdict{}, fmt.Errorf("verdict card %s already answered", cardID)
+		return core.Verdict{}, fmt.Errorf("verdict card %s already answered", cardID)
 	}
 
 	// Validations per card shape (design point 1: ONE card shape):
@@ -218,13 +219,13 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 	case len(v.OptionIndexes) > 0:
 		if !c.prompt.Multi {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("card %s takes a single pick (1..%d), not a multi-select answer", cardID, len(c.prompt.Options))
+			return core.Verdict{}, fmt.Errorf("card %s takes a single pick (1..%d), not a multi-select answer", cardID, len(c.prompt.Options))
 		}
 		labels := make([]string, 0, len(v.OptionIndexes))
 		for _, ix := range v.OptionIndexes {
 			if ix < 1 || ix > len(c.prompt.Options) {
 				h.mu.Unlock()
-				return agent.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", ix, len(c.prompt.Options))
+				return core.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", ix, len(c.prompt.Options))
 			}
 			labels = append(labels, c.prompt.Options[ix-1].Label)
 		}
@@ -234,25 +235,25 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 	case v.OptionIndex > 0:
 		if v.OptionIndex > len(c.prompt.Options) {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", v.OptionIndex, len(c.prompt.Options))
+			return core.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", v.OptionIndex, len(c.prompt.Options))
 		}
 		if c.prompt.Multi {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("card %s is multi-select: answer with option_indexes (1..%d)", cardID, len(c.prompt.Options))
+			return core.Verdict{}, fmt.Errorf("card %s is multi-select: answer with option_indexes (1..%d)", cardID, len(c.prompt.Options))
 		}
 		v.Option = c.prompt.Options[v.OptionIndex-1].Label
 	case v.Text != "":
 		if len(c.prompt.Options) > 0 && !c.prompt.AllowText {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("card %s takes an option, not free text", cardID)
+			return core.Verdict{}, fmt.Errorf("card %s takes an option, not free text", cardID)
 		}
 	default:
 		if len(c.prompt.Options) > 0 {
 			h.mu.Unlock()
-			return agent.Verdict{}, fmt.Errorf("card %s needs an option pick (1..%d) or a skip", cardID, len(c.prompt.Options))
+			return core.Verdict{}, fmt.Errorf("card %s needs an option pick (1..%d) or a skip", cardID, len(c.prompt.Options))
 		}
 		h.mu.Unlock()
-		return agent.Verdict{}, fmt.Errorf("card %s needs free text or a skip", cardID)
+		return core.Verdict{}, fmt.Errorf("card %s needs free text or a skip", cardID)
 	}
 
 	c.settled = true
@@ -281,13 +282,13 @@ func (h *Hub) Answer(sessionID, cardID string, v agent.Verdict) (agent.Verdict, 
 	return v, nil
 }
 
-// Pending implements agent.VerdictsProvider: unanswered, unexpired
+// Pending implements core.VerdictsProvider: unanswered, unexpired
 // cards, oldest first. Empty filter lists every session.
-func (h *Hub) Pending(sessionID string) []agent.VerdictPrompt {
+func (h *Hub) Pending(sessionID string) []core.VerdictPrompt {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := time.Now()
-	out := make([]agent.VerdictPrompt, 0, len(h.cards))
+	out := make([]core.VerdictPrompt, 0, len(h.cards))
 	for _, c := range h.cards {
 		if c.settled {
 			continue
@@ -371,7 +372,7 @@ func cardOf(msg ai.Message) string {
 // result path). Flat and small: the agent reads it, acts through its
 // normal tools, nothing executes off it. A multi answer adds the
 // selected indexes and their labels.
-func resultMap(v agent.Verdict) string {
+func resultMap(v core.Verdict) string {
 	out := map[string]any{
 		"card_id": v.CardID,
 		"verdict": v.Kind(),

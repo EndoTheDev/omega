@@ -3,8 +3,8 @@ package store
 import (
 	"context"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Message tree support (t_17365247): parent pointers ride the whole-
@@ -20,17 +20,17 @@ func conversationRole(role string) bool {
 
 // loadRows reads a session's messages (id, role, payload, created_at)
 // in append order, decoded. Shared by the active-view machinery.
-func (s *Store) loadRows(ctx context.Context, sessionID string) ([]agent.StoredMessage, error) {
+func (s *Store) loadRows(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, role, payload, created_at FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []agent.StoredMessage
+	var out []core.StoredMessage
 	for rows.Next() {
 		var role, payload string
-		sm := agent.StoredMessage{}
+		sm := core.StoredMessage{}
 		if err := rows.Scan(&sm.ID, &role, &payload, &sm.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -51,7 +51,7 @@ func (s *Store) loadRows(ctx context.Context, sessionID string) ([]agent.StoredM
 // load just their own rows, unchanged. A missing ancestor (orphan chain
 // after a hard delete) ends the walk - the visible part reads, matching
 // SessionTree's orphan-root handling.
-func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]agent.StoredMessage, error) {
+func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	own, err := s.loadRows(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -93,15 +93,15 @@ func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]agent.Sto
 // path they always rendered. Parented sessions (branch children,
 // t_17365247's session fork) derive over the merged ancestor+own rows,
 // so the child's active path IS the whole lineage.
-func (s *Store) GetActiveView(ctx context.Context, sessionID string) (agent.ActiveView, error) {
+func (s *Store) GetActiveView(ctx context.Context, sessionID string) (core.ActiveView, error) {
 	if _, err := s.GetSession(ctx, sessionID); err != nil {
-		return agent.ActiveView{}, err
+		return core.ActiveView{}, err
 	}
 	rows, err := s.loadViewRows(ctx, sessionID)
 	if err != nil {
-		return agent.ActiveView{}, err
+		return core.ActiveView{}, err
 	}
-	return agent.DeriveTree(rows), nil
+	return core.DeriveTree(rows), nil
 }
 
 // GetActiveMessages returns the active path as plain messages - the
@@ -130,8 +130,8 @@ func (s *Store) resolveParent(ctx context.Context, sessionID string, msg ai.Mess
 	if err != nil {
 		return "", err
 	}
-	if parent := agent.ParentIDOf(msg); parent != "" {
-		numeric, err := agent.ParseMsgID(parent)
+	if parent := core.ParentIDOf(msg); parent != "" {
+		numeric, err := core.ParseMsgID(parent)
 		if err != nil {
 			return "", err
 		}
@@ -145,7 +145,7 @@ func (s *Store) resolveParent(ctx context.Context, sessionID string, msg ai.Mess
 	if len(view.Path) == 0 {
 		return "", nil
 	}
-	return agent.MsgID(view.Path[len(view.Path)-1].ID), nil
+	return core.MsgID(view.Path[len(view.Path)-1].ID), nil
 }
 
 // parentMsgError reports an explicit pointer the session's rows don't

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ func TestFirstLineOfDescExactly60(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestListToolsEmpty(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res := listTools(ctx)
 	if !strings.Contains(res.Text, "[no tools available]") {
 		t.Fatalf("expected '[no tools available]', got %q", res.Text)
@@ -85,9 +85,9 @@ func TestListToolsEmpty(t *testing.T) {
 func TestListToolsEmptyToolListSkipped(t *testing.T) {
 	// An extension with an empty ToolList should be skipped, and since no
 	// extension has tools, "[no tools available]" should appear.
-	ctx := &agent.Context{
-		Infos: []agent.ExtensionInfo{
-			{Name: "empty", ToolList: []agent.ToolInfo{}},
+	ctx := &core.Context{
+		Infos: []core.ExtensionInfo{
+			{Name: "empty", ToolList: []core.ToolInfo{}},
 		},
 	}
 	res := listTools(ctx)
@@ -97,11 +97,11 @@ func TestListToolsEmptyToolListSkipped(t *testing.T) {
 }
 
 func TestListToolsSingleExtension(t *testing.T) {
-	ctx := &agent.Context{
-		Infos: []agent.ExtensionInfo{
+	ctx := &core.Context{
+		Infos: []core.ExtensionInfo{
 			{
 				Name: "files",
-				ToolList: []agent.ToolInfo{
+				ToolList: []core.ToolInfo{
 					{Name: "files.read", Description: "read a file"},
 					{Name: "files.write", Description: "write a file"},
 				},
@@ -127,17 +127,17 @@ func TestListToolsSingleExtension(t *testing.T) {
 }
 
 func TestListToolsMultipleExtensions(t *testing.T) {
-	ctx := &agent.Context{
-		Infos: []agent.ExtensionInfo{
+	ctx := &core.Context{
+		Infos: []core.ExtensionInfo{
 			{
 				Name: "files",
-				ToolList: []agent.ToolInfo{
+				ToolList: []core.ToolInfo{
 					{Name: "files.read", Description: "read a file"},
 				},
 			},
 			{
 				Name: "shell",
-				ToolList: []agent.ToolInfo{
+				ToolList: []core.ToolInfo{
 					{Name: "shell.run", Description: "run a command"},
 				},
 			},
@@ -166,15 +166,15 @@ func TestListToolsMultipleExtensions(t *testing.T) {
 
 func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
 	// Extension with tools followed by an empty one — empty should be skipped.
-	ctx := &agent.Context{
-		Infos: []agent.ExtensionInfo{
+	ctx := &core.Context{
+		Infos: []core.ExtensionInfo{
 			{
 				Name: "files",
-				ToolList: []agent.ToolInfo{
+				ToolList: []core.ToolInfo{
 					{Name: "files.read", Description: "read a file"},
 				},
 			},
-			{Name: "empty", ToolList: []agent.ToolInfo{}},
+			{Name: "empty", ToolList: []core.ToolInfo{}},
 		},
 	}
 	res := listTools(ctx)
@@ -191,7 +191,7 @@ func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleToolsCommandNoArgs(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -205,7 +205,7 @@ func TestHandleToolsCommandNoArgs(t *testing.T) {
 }
 
 func TestHandleToolsCommandList(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "list")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -216,11 +216,11 @@ func TestHandleToolsCommandList(t *testing.T) {
 }
 
 func TestHandleToolsCommandListWithTools(t *testing.T) {
-	ctx := &agent.Context{
-		Infos: []agent.ExtensionInfo{
+	ctx := &core.Context{
+		Infos: []core.ExtensionInfo{
 			{
 				Name: "files",
-				ToolList: []agent.ToolInfo{
+				ToolList: []core.ToolInfo{
 					{Name: "files.read", Description: "read a file"},
 				},
 			},
@@ -236,7 +236,7 @@ func TestHandleToolsCommandListWithTools(t *testing.T) {
 }
 
 func TestHandleToolsCommandOn(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "on")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -254,7 +254,7 @@ func TestHandleToolsCommandOn(t *testing.T) {
 }
 
 func TestHandleToolsCommandExpanded(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "expanded")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -272,7 +272,7 @@ func TestHandleToolsCommandExpanded(t *testing.T) {
 }
 
 func TestHandleToolsCommandOff(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "off")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -290,7 +290,7 @@ func TestHandleToolsCommandOff(t *testing.T) {
 }
 
 func TestHandleToolsCommandCollapsed(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "collapsed")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -308,7 +308,7 @@ func TestHandleToolsCommandCollapsed(t *testing.T) {
 }
 
 func TestHandleToolsCommandAuto(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "auto")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -326,7 +326,7 @@ func TestHandleToolsCommandAuto(t *testing.T) {
 }
 
 func TestHandleToolsCommandInvalid(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	_, err := handleToolsCommand(ctx, "bogus")
 	if err == nil {
 		t.Fatal("expected error for invalid arg, got nil")
@@ -338,7 +338,7 @@ func TestHandleToolsCommandInvalid(t *testing.T) {
 
 func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 	// Leading/trailing whitespace should be trimmed, so "  list  " → listTools.
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "  list  ")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

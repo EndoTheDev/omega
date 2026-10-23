@@ -9,6 +9,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // runFrame is one prepared SSE frame: the event type plus its JSON data.
@@ -216,7 +217,7 @@ func (h *runHub) finish(run *activeRun) {
 // path (the tool result errors out, the next turn boundary emits a
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
-func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) {
+func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []ai.Message, tools map[string]core.Tool, req chatRequest) {
 	ctx, cancel := context.WithTimeout(runCtx, s.runTimeout)
 	// Register the internal cancel BEFORE the goroutine starts: a stop
 	// request arriving during launch must find the run cancellable, not
@@ -230,7 +231,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		ctx = agent.WithSessionID(ctx, req.SessionID)
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
 		// interactive turn - verdict.request may issue from here.
-		ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+		ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 		// Turn copy persistence belongs to the loop (card t_471f6d4a),
 		// same wiring as the inline path.
 		ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))
@@ -256,7 +257,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 			// goroutine after accumulate; the hub only swaps the slice.
 			s.runs.setTail(run, liveTranscriptItems(recs, rec, time.Now()))
 			// Usage arrives on each stream_end; sum every turn of the run.
-			if se, ok := event.(agent.StreamEvent); ok {
+			if se, ok := event.(core.StreamEvent); ok {
 				if end, ok := se.Event.(ai.StreamEnd); ok {
 					if end.PromptEvalCount != nil {
 						usage.prompt += *end.PromptEvalCount
@@ -286,7 +287,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 // into a broadcast error frame instead of a write to one request's wire
 // - nobody in particular is listening when persistence fails, and every
 // attached wire should learn about the failure the same way.
-func (s *Server) persistRun(ctx context.Context, run *activeRun, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats) {
+func (s *Server) persistRun(ctx context.Context, run *activeRun, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
 	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
 		s.runs.broadcast(run, runFrame{event: "error", data: []byte(err.Error())})
 	}

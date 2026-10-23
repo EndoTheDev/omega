@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/notifications"
 )
 
@@ -55,7 +55,7 @@ func TestNotificationsEndpoints501WithoutSeam(t *testing.T) {
 func TestNotificationsListUnreadAndPagination(t *testing.T) {
 	ts, st := serveNotifications(t)
 	for i := 0; i < 3; i++ {
-		if _, err := st.Emit(agent.Notification{Kind: "task", SourceID: "t_test", Title: "task t_test done"}); err != nil {
+		if _, err := st.Emit(core.Notification{Kind: "task", SourceID: "t_test", Title: "task t_test done"}); err != nil {
 			t.Fatalf("emit: %v", err)
 		}
 	}
@@ -66,7 +66,7 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	var page struct {
-		Notifications []agent.Notification `json:"notifications"`
+		Notifications []core.Notification `json:"notifications"`
 		Unread        int                  `json:"unread"`
 	}
 	json.NewDecoder(res.Body).Decode(&page)
@@ -84,7 +84,7 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	var page2 struct {
-		Notifications []agent.Notification `json:"notifications"`
+		Notifications []core.Notification `json:"notifications"`
 		Unread        int                  `json:"unread"`
 	}
 	json.NewDecoder(res.Body).Decode(&page2)
@@ -169,7 +169,7 @@ func TestNotificationEventsStreamDeliversEmissions(t *testing.T) {
 	}()
 
 	time.Sleep(100 * time.Millisecond) // the client is attached
-	if _, err := st.Emit(agent.Notification{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished", Verdict: "failed"}); err != nil {
+	if _, err := st.Emit(core.Notification{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 

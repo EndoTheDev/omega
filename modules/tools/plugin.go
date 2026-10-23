@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -36,7 +36,7 @@ func (p *Plugin) Requires() []string { return nil }
 // Mount appends the ToolProvider to ctx.ToolProviders and registers
 // the /tools command. The provider also carries the store-door
 // deny-guard (ENDO'S LAW 2026-10-18) built from the store config.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	provider := &ToolProvider{}
 	if c, ok := ctx.Configs["store"].(store.Config); ok {
 		provider.dbGuard = newDBGuard(c.DBPath)
@@ -50,7 +50,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	// display-mode actions the shell interprets); its enum completions
 	// ride on the command itself now, not a shell-side map.
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/tools", Description: "list tools or toggle tool result display [on|off|auto|list]", Args: []string{"on", "off", "auto", "list"}},
+		core.ExtensionCommand{Name: "/tools", Description: "list tools or toggle tool result display [on|off|auto|list]", Args: []string{"on", "off", "auto", "list"}},
 	)
 	// The /files browser rides the module TUI seam (the read view over
 	// the files domain). A tools plugin left out of buildPlugins takes
@@ -58,14 +58,14 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	ctx.TUIProviders = append(ctx.TUIProviders, &tui{})
 
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/tools" {
 			return handleToolsCommand(ctx, args)
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 	}
 
 	return nil
@@ -74,34 +74,34 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 // handleToolsCommand handles the /tools command. "list" (or no args)
 // lists all tools from all extensions. "on|off|auto" toggles display
 // state via a set_tool_display action.
-func handleToolsCommand(ctx *agent.Context, args string) (agent.CommandResult, error) {
+func handleToolsCommand(ctx *core.Context, args string) (core.CommandResult, error) {
 	arg := strings.TrimSpace(args)
 	if arg == "" || arg == "list" {
 		return listTools(ctx), nil
 	}
 	switch arg {
 	case "on", "expanded":
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text:    "[tool results expanded]",
-			Actions: []agent.CmdAction{{Type: "set_tool_display", Value: "expanded"}},
+			Actions: []core.CmdAction{{Type: "set_tool_display", Value: "expanded"}},
 		}, nil
 	case "off", "collapsed":
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text:    "[tool results collapsed]",
-			Actions: []agent.CmdAction{{Type: "set_tool_display", Value: "collapsed"}},
+			Actions: []core.CmdAction{{Type: "set_tool_display", Value: "collapsed"}},
 		}, nil
 	case "auto":
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text:    "[tool results auto]",
-			Actions: []agent.CmdAction{{Type: "set_tool_display", Value: "auto"}},
+			Actions: []core.CmdAction{{Type: "set_tool_display", Value: "auto"}},
 		}, nil
 	default:
-		return agent.CommandResult{}, fmt.Errorf("usage: /tools [on|off|auto|list]")
+		return core.CommandResult{}, fmt.Errorf("usage: /tools [on|off|auto|list]")
 	}
 }
 
 // listTools formats the tool list from ctx.Infos as text.
-func listTools(ctx *agent.Context) agent.CommandResult {
+func listTools(ctx *core.Context) core.CommandResult {
 	var sb strings.Builder
 	sb.WriteString("\n")
 
@@ -130,7 +130,7 @@ func listTools(ctx *agent.Context) agent.CommandResult {
 		sb.WriteString("[no tools available]\n")
 	}
 
-	return agent.CommandResult{Text: sb.String()}
+	return core.CommandResult{Text: sb.String()}
 }
 
 // firstLineOfDesc returns the first line of a tool description,

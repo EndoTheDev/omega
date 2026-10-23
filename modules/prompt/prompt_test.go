@@ -7,22 +7,23 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compile-time interface checks.
 var (
-	_ agent.PromptBuilder = (*PromptBuilder)(nil)
+	_ core.PromptBuilder = (*PromptBuilder)(nil)
 	_ agent.Plugin        = (*Plugin)(nil)
 )
 
 // stubSectioner contributes canned sections; used to pin the
 // assembler's section rules without pulling in other modules.
 type stubSectioner struct {
-	sections []agent.PromptSection
+	sections []core.PromptSection
 }
 
 // PromptSections returns the canned sections.
-func (s *stubSectioner) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
+func (s *stubSectioner) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	return s.sections
 }
 
@@ -44,7 +45,7 @@ func TestPluginMetadata(t *testing.T) {
 // TestMountSetsPromptBuilder verifies Mount populates ctx.PromptBuilder.
 func TestMountSetsPromptBuilder(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -56,8 +57,8 @@ func TestMountSetsPromptBuilder(t *testing.T) {
 // TestBuildPrompt verifies the core structure of the assembled prompt:
 // identity, guidelines, project context, environment, custom, append.
 func TestBuildPrompt(t *testing.T) {
-	b := NewPromptBuilder(&agent.Context{})
-	opts := agent.PromptBuildOptions{
+	b := NewPromptBuilder(&core.Context{})
+	opts := core.PromptBuildOptions{
 		CWD:            "/test/cwd",
 		ProjectContext: "This is a test project.",
 		Custom:         "Be extra careful.",
@@ -90,10 +91,10 @@ func TestBuildPrompt(t *testing.T) {
 // TestBuildPromptNoSections verifies no "## Tools" heading leaks from
 // the assembler when no module contributes one.
 func TestBuildPromptNoSections(t *testing.T) {
-	b := NewPromptBuilder(&agent.Context{})
-	prompt, _ := b.BuildPrompt(context.Background(), agent.PromptBuildOptions{
+	b := NewPromptBuilder(&core.Context{})
+	prompt, _ := b.BuildPrompt(context.Background(), core.PromptBuildOptions{
 		CWD:        "/test/cwd",
-		Extensions: []agent.ExtensionInfo{{Name: "tools", ToolList: []agent.ToolInfo{{Name: "shell", Description: "Run it.\nMore."}}}},
+		Extensions: []core.ExtensionInfo{{Name: "tools", ToolList: []core.ToolInfo{{Name: "shell", Description: "Run it.\nMore."}}}},
 	})
 	if strings.Contains(prompt, "## Tools") {
 		t.Errorf("prompt renders Tools with no contributing module:\n%s", prompt)
@@ -104,19 +105,19 @@ func TestBuildPromptNoSections(t *testing.T) {
 // sections render under "\n## <Title>\n", untitled ones as raw blocks,
 // and sections sort by Order with the contributing order as tiebreak.
 func TestBuildPromptSections(t *testing.T) {
-	ctx := &agent.Context{
-		PromptSectioners: []agent.PromptSectioner{
-			&stubSectioner{sections: []agent.PromptSection{
+	ctx := &core.Context{
+		PromptSectioners: []core.PromptSectioner{
+			&stubSectioner{sections: []core.PromptSection{
 				{Title: "Second", Body: "second body\n", Order: 20},
 				{Title: "Third", Body: "third body\n", Order: 20},
 			}},
-			&stubSectioner{sections: []agent.PromptSection{
+			&stubSectioner{sections: []core.PromptSection{
 				{Body: "raw block\n", Order: 10},
 			}},
 		},
 	}
 	b := NewPromptBuilder(ctx)
-	prompt, ok := b.BuildPrompt(context.Background(), agent.PromptBuildOptions{CWD: "/test/cwd"})
+	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{CWD: "/test/cwd"})
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")
 	}
@@ -144,7 +145,7 @@ func TestBuildPromptSections(t *testing.T) {
 // Context: core sections render, nothing else.
 func TestBuildPromptNilContext(t *testing.T) {
 	b := &PromptBuilder{now: func() time.Time { return time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC) }}
-	prompt, ok := b.BuildPrompt(context.Background(), agent.PromptBuildOptions{CWD: "/test/cwd"})
+	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{CWD: "/test/cwd"})
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")
 	}
@@ -158,7 +159,7 @@ func TestBuildPromptNilContext(t *testing.T) {
 
 // TestGuidelines returns the expected guideline lines.
 func TestGuidelines(t *testing.T) {
-	b := NewPromptBuilder(&agent.Context{})
+	b := NewPromptBuilder(&core.Context{})
 	g := b.Guidelines()
 	if len(g) != 6 {
 		t.Fatalf("Guidelines() returned %d lines, want 6", len(g))

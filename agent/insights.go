@@ -3,12 +3,14 @@ package agent
 import (
 	"fmt"
 	"strings"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 // FormatInsights renders an Insights struct as a plain-text report.
 // Shared by the CLI (omega insights, stdout) and the TUI (/insights
 // slash command, transcript).
-func FormatInsights(in *Insights) string {
+func FormatInsights(in *core.Insights) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("  omega insights — %s\n", in.Period))

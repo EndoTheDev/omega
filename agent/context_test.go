@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // stubPromptBuilder satisfies PromptBuilder for testing.
@@ -15,7 +16,7 @@ type stubPromptBuilder struct {
 	called     bool
 }
 
-func (s *stubPromptBuilder) BuildPrompt(_ context.Context, _ PromptBuildOptions) (string, bool) {
+func (s *stubPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOptions) (string, bool) {
 	s.called = true
 	return s.prompt, s.prompt != ""
 }
@@ -50,8 +51,8 @@ func TestNewFromContextFull(t *testing.T) {
 		Description: "alpha",
 		Run:         func(_ context.Context, _ map[string]any) (string, error) { return "alpha-ok", nil },
 	}}}
-	infos := []ExtensionInfo{{Name: "ext-a", Tools: 1}}
-	injected := make(chan InjectedMessage, 1)
+	infos := []core.ExtensionInfo{{Name: "ext-a", Tools: 1}}
+	injected := make(chan core.InjectedMessage, 1)
 	pending := func() int { return 3 }
 
 	ctx := &Context{
@@ -60,7 +61,7 @@ func TestNewFromContextFull(t *testing.T) {
 		Loop:              loop,
 		PromptBuilder:     pb,
 		Logger:            logger,
-		ToolProviders:     []ToolProvider{tp},
+		ToolProviders:     []core.ToolProvider{tp},
 		Infos:             infos,
 		InjectedMessages:  injected,
 		PendingDelegations: pending,

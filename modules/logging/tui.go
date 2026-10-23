@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // defaultLogLines is the /logs line count: the webui's /logs default.
@@ -25,11 +25,11 @@ const logTailWindow = 512 << 10
 // tui implements agent.TUIProvider for the /logs command.
 type tui struct{}
 
-var _ agent.TUIProvider = (*tui)(nil)
+var _ core.TUIProvider = (*tui)(nil)
 
 // TUICommands declares the /logs command.
-func (t *tui) TUICommands() []agent.TUICommand {
-	return []agent.TUICommand{
+func (t *tui) TUICommands() []core.TUICommand {
+	return []core.TUICommand{
 		{Name: "/logs", Help: "tail omega.log (-f: keep following)", Args: []string{"-f"}},
 	}
 }
@@ -38,7 +38,7 @@ func (t *tui) TUICommands() []agent.TUICommand {
 // seam only guarantees Path on the file logger - any other logger
 // (including the no-op logger of a logging-disabled install) has none
 // and /logs reports that.
-func (t *tui) HandleTUICommand(name, args string, c agent.TUIConsole) agent.TUIResult {
+func (t *tui) HandleTUICommand(name, args string, c core.TUIConsole) core.TUIResult {
 	path := ""
 	if pctx := c.Ext(); pctx != nil && pctx.Logger != nil {
 		if p, ok := pctx.Logger.(interface{ Path() string }); ok {
@@ -47,22 +47,22 @@ func (t *tui) HandleTUICommand(name, args string, c agent.TUIConsole) agent.TUIR
 	}
 	if path == "" {
 		c.Error("log file not configured")
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	fields := strings.Fields(args)
 	lines, err := tailLines(path, defaultLogLines)
 	if err != nil {
 		c.Error("tail log: " + err.Error())
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	c.Labeled("[logs: "+path+"]", "\n"+strings.Join(lines, "\n")+"\n")
 	if len(fields) == 1 && fields[0] == "-f" {
-		return agent.TUIResult{Tick: &agent.TUITick{
+		return core.TUIResult{Tick: &core.TUITick{
 			Interval: time.Second,
 			Step:     logFollowStep(path),
 		}}
 	}
-	return agent.TUIResult{}
+	return core.TUIResult{}
 }
 
 // logFollowStep returns the follow-loop step for path: append what the
@@ -70,12 +70,12 @@ func (t *tui) HandleTUICommand(name, args string, c agent.TUIConsole) agent.TUIR
 // chunk not ending on a line break is held back until the logger
 // finishes the line. Rotation (the file shrinking) restarts the read
 // from zero; a read error stops follow.
-func logFollowStep(path string) func(c agent.TUIConsole) (string, bool) {
+func logFollowStep(path string) func(c core.TUIConsole) (string, bool) {
 	offset := int64(0)
 	if st, err := os.Stat(path); err == nil {
 		offset = st.Size()
 	}
-	return func(c agent.TUIConsole) (string, bool) {
+	return func(c core.TUIConsole) (string, bool) {
 		chunk, off, err := readLogIncrement(path, offset)
 		if err != nil {
 			c.Error("log follow: " + err.Error())

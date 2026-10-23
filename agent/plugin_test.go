@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // stubProvider satisfies ai.Provider for testing.
@@ -259,8 +260,8 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		provides: []string{"cmd"},
 		mount: func(ctx *Context) error {
 			ctx.Commands = append(ctx.Commands,
-				ExtensionCommand{Name: "/foo", Description: "foo command"},
-				ExtensionCommand{Name: "/bar", Description: "bar command"},
+				core.ExtensionCommand{Name: "/foo", Description: "foo command"},
+				core.ExtensionCommand{Name: "/bar", Description: "bar command"},
 			)
 			return nil
 		},

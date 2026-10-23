@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -39,11 +39,11 @@ func contains(calls []string, substr string) bool {
 
 // drainEvents runs the loop in a goroutine and blocks until the events
 // channel is closed, returning an AgentEnd if one was observed.
-func drainEvents(t *testing.T, events chan agent.Event) agent.AgentEnd {
+func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 	t.Helper()
-	var endEvent *agent.AgentEnd
+	var endEvent *core.AgentEnd
 	for e := range events {
-		if v, ok := e.(agent.AgentEnd); ok {
+		if v, ok := e.(core.AgentEnd); ok {
 			ec := v
 			endEvent = &ec
 		}
@@ -63,10 +63,10 @@ func TestLoopWithLogger(t *testing.T) {
 	)
 	logger := &mockLogger{}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,
@@ -102,7 +102,7 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 	)
 	logger := &mockLogger{}
 
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"echo": {
 			Description: "Echo back",
 			Parameters:  map[string]any{"type": "object"},
@@ -112,10 +112,10 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("go")},
 			Tools:    tools,
@@ -142,10 +142,10 @@ func TestLoopLoggerStreamError(t *testing.T) {
 	)
 	logger := &mockLogger{}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,
@@ -177,7 +177,7 @@ func TestLoopLoggerToolError(t *testing.T) {
 	)
 	logger := &mockLogger{}
 
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"boom": {
 			Description: "Always fails",
 			Parameters:  map[string]any{"type": "object"},
@@ -187,10 +187,10 @@ func TestLoopLoggerToolError(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("go")},
 			Tools:    tools,
@@ -220,10 +220,10 @@ func TestLoopLoggerOverflowNoCompactor(t *testing.T) {
 	)
 	logger := &mockLogger{}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,

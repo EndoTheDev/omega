@@ -1,4 +1,4 @@
-// Package store provides the session persistence seam (agent.StoreProvider)
+// Package store provides the session persistence seam (core.StoreProvider)
 // via the SQLite implementation in store_impl.go, plus the sessions.search
 // tool that lets the agent search past conversations via FTS5.
 //
@@ -9,17 +9,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // searchToolProvider provides the sessions.search tool.
 type searchToolProvider struct {
-	store agent.StoreProvider
+	store core.StoreProvider
 }
 
 // Tools returns the sessions.search tool definition.
-func (p *searchToolProvider) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
+func (p *searchToolProvider) Tools() map[string]core.Tool {
+	return map[string]core.Tool{
 		"sessions.search": {
 			Description: "Search past session messages by keyword. Returns matching sessions with snippets of the matching content.",
 			Parameters: map[string]any{

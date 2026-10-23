@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"gopkg.in/yaml.v3"
@@ -55,7 +56,7 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 }
 
 // schemaKnobKeys flattens the schema groups into a path set.
-func schemaKnobKeys(groups []agent.SettingsGroup) map[string]bool {
+func schemaKnobKeys(groups []core.SettingsGroup) map[string]bool {
 	out := map[string]bool{}
 	for _, g := range groups {
 		for _, k := range g.Knobs {
@@ -261,7 +262,7 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	apiKey := func(p *agent.SettingsSchema) any {
+	apiKey := func(p *core.SettingsSchema) any {
 		for _, g := range p.Groups {
 			for _, k := range g.Knobs {
 				if k.Key == "provider.api_key" {

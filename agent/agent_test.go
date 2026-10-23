@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // testLoop is a minimal LoopProvider for agent tests. It mirrors the
@@ -20,7 +21,7 @@ import (
 // copy that avoids an import cycle.
 type testLoop struct{}
 
-func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
+func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
 		tools = map[string]Tool{}
@@ -42,7 +43,7 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 	}
 
 	messages := opts.Messages
-	start := AgentStart{Type: "agent_start", ModelName: ""}
+	start := core.AgentStart{Type: "agent_start", ModelName: ""}
 	if opts.Provider != nil {
 		start.ModelName = opts.Provider.ModelName()
 	}
@@ -52,25 +53,25 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 	overflowRetries := 0
 	for {
 		if ctx.Err() != nil {
-			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 			return nil
 		}
 		if turns >= maxTurns {
-			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
 			return nil
 		}
 
 		if opts.CompactionProvider != nil {
 			compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 			if err != nil {
-				opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+				opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 				return nil
 			}
 			messages = compacted
 		}
 
 		turns++
-		opts.Events <- TurnStart{Type: "turn_start", Turn: turns}
+		opts.Events <- core.TurnStart{Type: "turn_start", Turn: turns}
 
 		var content strings.Builder
 		var toolCalls []ai.ToolCall
@@ -78,7 +79,7 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 		streamErr := ""
 
 		if opts.Provider == nil {
-			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
 			return nil
 		}
 
@@ -92,7 +93,7 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 				finishReason = e.FinishReason
 				streamErr = e.Error
 			}
-			opts.Events <- StreamEvent{Event: event}
+			opts.Events <- core.StreamEvent{Event: event}
 		}
 
 		if streamErr != "" {
@@ -101,7 +102,7 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 				overflowRetries++
 				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 				if err != nil {
-					opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					return nil
 				}
 				messages = compacted
@@ -111,14 +112,14 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 			if isOverflowError(streamErr) && opts.CompactionProvider == nil {
 				errMsg = "context full — start a new session (/new)"
 			}
-			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
 			return nil
 		}
 
 		assistant := ai.NewAssistant(content.String())
 		assistant.ToolCalls = toolCalls
 		messages = append(messages, assistant)
-		opts.Events <- AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+		opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 
 		executed := 0
 		for _, call := range toolCalls {
@@ -126,7 +127,7 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 			if !ok {
 				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
 				messages = append(messages, msg)
-				opts.Events <- ToolResultEvent{Type: "tool_result", Message: msg}
+				opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: msg}
 				executed++
 				continue
 			}
@@ -138,14 +139,14 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 				msg = ai.NewToolResult(result, call.ID, false)
 			}
 			messages = append(messages, msg)
-			opts.Events <- ToolResultEvent{Type: "tool_result", Message: msg}
+			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: msg}
 			executed++
 		}
 
-		opts.Events <- TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+		opts.Events <- core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
 
 		if len(toolCalls) == 0 {
-			opts.Events <- AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			return nil
 		}
 	}
@@ -170,38 +171,38 @@ func isOverflowError(err string) bool {
 	return false
 }
 
-func collect(t *testing.T, events <-chan Event) []Event {
+func collect(t *testing.T, events <-chan core.Event) []core.Event {
 	t.Helper()
-	var out []Event
+	var out []core.Event
 	for e := range events {
 		out = append(out, e)
 	}
 	return out
 }
 
-func eventTypes(events []Event) []string {
+func eventTypes(events []core.Event) []string {
 	out := make([]string, 0, len(events))
 	for _, e := range events {
 		switch e.(type) {
-		case AgentStart:
+		case core.AgentStart:
 			out = append(out, "agent_start")
-		case TurnStart:
+		case core.TurnStart:
 			out = append(out, "turn_start")
-		case TurnEnd:
+		case core.TurnEnd:
 			out = append(out, "turn_end")
-		case AgentEnd:
+		case core.AgentEnd:
 			out = append(out, "agent_end")
-		case StreamEvent:
+		case core.StreamEvent:
 			out = append(out, "stream")
 		}
 	}
 	return out
 }
 
-func lastAgentEnd(events []Event) AgentEnd {
-	var end AgentEnd
+func lastAgentEnd(events []core.Event) core.AgentEnd {
+	var end core.AgentEnd
 	for _, e := range events {
-		if v, ok := e.(AgentEnd); ok {
+		if v, ok := e.(core.AgentEnd); ok {
 			end = v
 		}
 	}
@@ -357,7 +358,7 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 	)
 
 	// Use a ToolProvider to supply the extension tool.
-	extTools := DefaultToolProvider{ToolsMap: map[string]Tool{
+	extTools := core.DefaultToolProvider{ToolsMap: map[string]Tool{
 		"echo_tool": {
 			Run: func(_ context.Context, args map[string]any) (string, error) {
 				text, _ := args["text"].(string)
@@ -367,7 +368,7 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 	}}
 
 	agent := newTestAgent(provider, nil, 0)
-	agent.SetToolProviders([]ToolProvider{extTools})
+	agent.SetToolProviders([]core.ToolProvider{extTools})
 
 	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 
@@ -409,7 +410,7 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 		},
 	}
 
-	extTools := DefaultToolProvider{ToolsMap: map[string]Tool{
+	extTools := core.DefaultToolProvider{ToolsMap: map[string]Tool{
 		"echo_tool": {
 			Run: func(_ context.Context, args map[string]any) (string, error) {
 				return "extension", nil
@@ -418,7 +419,7 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 	}}
 
 	agent := newTestAgent(provider, builtIn, 0)
-	agent.SetToolProviders([]ToolProvider{extTools})
+	agent.SetToolProviders([]core.ToolProvider{extTools})
 
 	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
 

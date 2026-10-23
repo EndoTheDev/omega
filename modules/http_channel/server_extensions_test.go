@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/provider"
@@ -29,7 +30,7 @@ import (
 // MountAll → NewFromContext, scaled to a hermetic subset (the provider
 // plugin is required material - compactor lists it as its Requires seam
 // - and mounts fine on zero config). Configs point at the scratch home.
-func mountRealRegistry(t *testing.T) *agent.Agent {
+func mountRealRegistry(t *testing.T) *core.Agent {
 	t.Helper()
 	home := t.TempDir()
 	plugins := []agent.Plugin{
@@ -43,15 +44,15 @@ func mountRealRegistry(t *testing.T) *agent.Agent {
 		"logging":   logging.Config{Enabled: true, File: filepath.Join(home, "omega.log")},
 		"skills":    skills.Config{Dir: filepath.Join(home, "skills")},
 		"store":     store.Config{DBPath: filepath.Join(home, "sessions.db")},
-		"compactor": agent.CompactionConfig{},
+		"compactor": core.CompactionConfig{},
 	}
-	ctx := &agent.Context{Configs: cfgs}
+	ctx := &core.Context{Configs: cfgs}
 	if err := agent.MountAll(plugins, ctx); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	// The way the host builds it (agent.NewFromContext does
 	// SetExtensionInfos(ctx.Infos) internally).
-	return agent.NewFromContext(ctx, agent.AgentOptions{})
+	return core.NewFromContext(ctx, core.AgentOptions{})
 }
 
 func TestHandleExtensionsRealRegistry(t *testing.T) {
@@ -115,7 +116,7 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 	// Zero extensions mounted: an honest empty array, like the other
 	// inspector reads. The webui tab renders its empty state from this.
-	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
+	a := core.NewAgent(newMockProvider("mock"), nil, 0)
 	s := NewServer(a, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
@@ -135,7 +136,7 @@ func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 }
 
 func TestHandleExtensionsMethodGuard(t *testing.T) {
-	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
+	a := core.NewAgent(newMockProvider("mock"), nil, 0)
 	s := NewServer(a, nil, nil, nil)
 
 	rec := httptest.NewRecorder()

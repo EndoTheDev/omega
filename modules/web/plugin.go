@@ -1,7 +1,7 @@
 package web
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin implements agent.Plugin for the web extension.
@@ -26,7 +26,7 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the Extension from config and appends it to the
 // additive ToolProviders slice.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["web"].(Config); ok {
 		cfg = c

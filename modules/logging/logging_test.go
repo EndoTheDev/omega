@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestFileLoggerWrite(t *testing.T) {
@@ -160,7 +161,7 @@ func TestPluginMount(t *testing.T) {
 	cfg.File = filepath.Join(dir, "mount.log")
 
 	p := NewPlugin()
-	ctx := &agent.Context{Configs: map[string]any{"logging": cfg}}
+	ctx := &core.Context{Configs: map[string]any{"logging": cfg}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestPluginMountDisabled(t *testing.T) {
 	cfg.Enabled = false
 
 	p := NewPlugin()
-	ctx := &agent.Context{Configs: map[string]any{"logging": cfg}}
+	ctx := &core.Context{Configs: map[string]any{"logging": cfg}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}

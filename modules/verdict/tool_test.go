@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // toolRun runs the verdict tool in a goroutine (the request sub-action
@@ -39,7 +40,7 @@ func drainTool(t *testing.T, ch <-chan toolResult) toolResult {
 
 func interactiveCtx(session string) context.Context {
 	ctx := context.Background()
-	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	if session != "" {
 		ctx = agent.WithSessionID(ctx, session)
 	}
@@ -61,8 +62,8 @@ func TestToolRefusesBackgroundOrigins(t *testing.T) {
 	p := &verdictToolProvider{hub: h}
 	args := requestArgs(map[string]any{"options": []any{"y"}})
 
-	for _, origin := range []string{agent.RunOriginCron, agent.RunOriginDelegate} {
-		ctx := agent.WithRunOrigin(context.Background(), origin)
+	for _, origin := range []string{core.RunOriginCron, core.RunOriginDelegate} {
+		ctx := core.WithRunOrigin(context.Background(), origin)
 		_, err := p.Tools()["verdict"].Run(ctx, args)
 		if err == nil {
 			t.Fatalf("origin %q must refuse verdict.request", origin)
@@ -121,7 +122,7 @@ func TestToolBlocksAndReturnsVerdictJSON(t *testing.T) {
 	if cards[0].Title != "Approve?" {
 		t.Fatalf("Pending = %+v, want one Approve? card", cards)
 	}
-	if _, err := h.Answer("s1", "", agent.Verdict{OptionIndex: 1}); err != nil {
+	if _, err := h.Answer("s1", "", core.Verdict{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	r := drainTool(t, ch)
@@ -165,7 +166,7 @@ func TestToolParsesDescribedOptionsAndMulti(t *testing.T) {
 	if !cards[0].Multi || !cards[0].AllowText {
 		t.Fatalf("card flags multi=%v allow_text=%v, want both true", cards[0].Multi, cards[0].AllowText)
 	}
-	if _, err := h.Answer("s1", cards[0].ID, agent.Verdict{OptionIndexes: []int{1, 3}}); err != nil {
+	if _, err := h.Answer("s1", cards[0].ID, core.Verdict{OptionIndexes: []int{1, 3}}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	r := drainTool(t, ch)
@@ -193,7 +194,7 @@ func TestToolTimeoutFloorClampsTinyOverride(t *testing.T) {
 	if cards[0].TimeoutS != minTimeout {
 		t.Fatalf("clamped TimeoutS = %d, want %d (the floor)", cards[0].TimeoutS, minTimeout)
 	}
-	_, _ = h.Answer("s1", cards[0].ID, agent.Verdict{OptionIndex: 1})
+	_, _ = h.Answer("s1", cards[0].ID, core.Verdict{OptionIndex: 1})
 	_ = drainTool(t, ch)
 }
 
@@ -203,7 +204,7 @@ func TestToolAllowTextOnlyCard(t *testing.T) {
 	args := requestArgs(map[string]any{"title": "Name it", "allow_text": true})
 	ch := toolRun(t, p, interactiveCtx("s1"), args)
 	waitForPending(t, h, "s1", 1)
-	_, _ = h.Answer("s1", "", agent.Verdict{Text: "omega"})
+	_, _ = h.Answer("s1", "", core.Verdict{Text: "omega"})
 	r := drainTool(t, ch)
 	if r.err != nil {
 		t.Fatalf("tool error: %v", r.err)

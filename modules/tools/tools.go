@@ -1,5 +1,5 @@
 // Package tools provides the built-in shell and file tools as an
-// in-process agent.ToolProvider. shell.run, plus the consolidated
+// in-process core.ToolProvider. shell.run, plus the consolidated
 // files domain tool (read/write/edit under one action protocol, with
 // an atomic batch operations array). The legacy files.read /
 // files.write / files.edit names remain registered as alias shims.
@@ -19,9 +19,10 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// ToolProvider implements agent.ToolProvider. It holds per-path file
+// ToolProvider implements core.ToolProvider. It holds per-path file
 // locks so concurrent tool calls on the same file are serialized.
 type ToolProvider struct {
 	// fileLocks serializes read/write/edit on the same path.
@@ -39,7 +40,7 @@ type ToolProvider struct {
 // filesActions is the structured sub-action metadata for the consolidated
 // files tool: one source of truth for the schema enum, the prompt, and
 // the /tools inventory.
-var filesActions = []agent.ToolAction{
+var filesActions = []core.ToolAction{
 	{Name: "read", Description: "Read a file, returning its contents with line numbers."},
 	{Name: "write", Description: "Write content to a file, creating parent directories as needed."},
 	{Name: "edit", Description: "Apply a targeted find-and-replace patch to a file."},
@@ -64,8 +65,8 @@ func filesLegacyName(action string) string {
 // carries the contract (targets, atomic batch), Actions carries the
 // verbs, and the legacy files.read/files.write/files.edit names stay
 // registered as alias shims for one release.
-func (p *ToolProvider) Tools() map[string]agent.Tool {
-	tools := map[string]agent.Tool{
+func (p *ToolProvider) Tools() map[string]core.Tool {
+	tools := map[string]core.Tool{
 		"shell.run": {
 			Description: "Run a shell command and return its stdout and stderr.",
 			Parameters: map[string]any{
@@ -122,15 +123,15 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 // stay callable by the model for one release (remove next release - the
 // upgrade path) and are hidden from the prompt and /tools inventory by
 // the AliasOf marker.
-func (p *ToolProvider) fileAliasTools() map[string]agent.Tool {
-	out := make(map[string]agent.Tool, len(filesActions))
+func (p *ToolProvider) fileAliasTools() map[string]core.Tool {
+	out := make(map[string]core.Tool, len(filesActions))
 	for _, a := range filesActions {
 		legacy := filesLegacyName(a.Name)
 		if legacy == "" {
 			continue
 		}
 		action := a.Name
-		out[legacy] = agent.Tool{
+		out[legacy] = core.Tool{
 			Description: fmt.Sprintf("%s (alias for files with action %q)", a.Description, action),
 			AliasOf:     "files",
 			Run: func(ctx context.Context, args map[string]any) (string, error) {

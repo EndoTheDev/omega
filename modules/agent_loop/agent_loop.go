@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -29,10 +30,10 @@ type Loop struct{}
 // Run executes the conversation loop. It reads all inputs from opts
 // and writes events to opts.Events. The caller is responsible for
 // closing the events channel.
-func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
+func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
-		tools = map[string]agent.Tool{}
+		tools = map[string]core.Tool{}
 	}
 
 	// Merge tool providers. Existing tools take precedence over
@@ -42,7 +43,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			continue
 		}
 		extTools := tp.Tools()
-		merged := make(map[string]agent.Tool, len(tools)+len(extTools))
+		merged := make(map[string]core.Tool, len(tools)+len(extTools))
 		for name, t := range tools {
 			merged[name] = t
 		}
@@ -59,7 +60,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	// names before schemas and dispatch see them. A fresh map: the deny
 	// must never shrink a map the caller still owns.
 	if denied := agent.DeniedTools(ctx); len(denied) > 0 {
-		filtered := make(map[string]agent.Tool, len(tools))
+		filtered := make(map[string]core.Tool, len(tools))
 		for name, t := range tools {
 			if !denied[name] {
 				filtered[name] = t
@@ -79,7 +80,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	// Guidelines are appended to any non-empty prompt.
 	prompt := ""
 	if opts.PromptBuilder != nil {
-		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, agent.PromptBuildOptions{
+		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, core.PromptBuildOptions{
 			CWD:            opts.CWD,
 			Messages:       messages,
 			Extensions:     opts.ExtensionInfos,
@@ -102,7 +103,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
 	}
 
-	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
+	start := core.AgentStart{Type: "agent_start", ModelName: ""}
 	if opts.Provider != nil {
 		start.ModelName = opts.Provider.ModelName()
 	}
@@ -129,7 +130,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 	for {
 		if ctx.Err() != nil {
-			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 			opts.Events <- end
 			return nil
 		}
@@ -137,7 +138,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			if opts.Logger != nil {
 				opts.Logger.Printf("max turns reached (%d)", maxTurns)
 			}
-			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
+			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "max_turns"}
 			opts.Events <- end
 			return nil
 		}
@@ -145,7 +146,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		if opts.CompactionProvider != nil {
 			compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 			if err != nil {
-				end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+				end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 				opts.Events <- end
 				return nil
 			}
@@ -158,7 +159,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 
 		turns++
-		turnStart := agent.TurnStart{Type: "turn_start", Turn: turns}
+		turnStart := core.TurnStart{Type: "turn_start", Turn: turns}
 		opts.Events <- turnStart
 
 		// Phase meter: the persistence record's timing fields are
@@ -174,7 +175,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		streamErr := ""
 
 		if opts.Provider == nil {
-			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
+			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: "no provider configured"}
 			opts.Events <- end
 			return nil
 		}
@@ -194,7 +195,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				finishReason = e.FinishReason
 				streamErr = e.Error
 			}
-			opts.Events <- agent.StreamEvent{Event: event}
+			opts.Events <- core.StreamEvent{Event: event}
 		}
 
 		if streamErr != "" {
@@ -214,7 +215,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				}
 				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
 				if err != nil {
-					end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
+					end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					opts.Events <- end
 					return nil
 				}
@@ -230,7 +231,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 					opts.Logger.Errorf("context full, no compactor loaded")
 				}
 			}
-			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
+			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: errMsg}
 			opts.Events <- end
 			return nil
 		}
@@ -250,7 +251,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 		persistTurnMessage(ctx, sink, opts.Logger, assistant, "assistant")
 		messages = append(messages, assistant)
-		assistantEvent := agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+		assistantEvent := core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
 
 		// Execute tool calls concurrently. Results are collected in
@@ -265,7 +266,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				continue
 			}
 			wg.Add(1)
-			go func(idx int, c ai.ToolCall, t agent.Tool) {
+			go func(idx int, c ai.ToolCall, t core.Tool) {
 				defer wg.Done()
 				result, err := t.Run(ctx, c.Arguments)
 				completed[idx] = time.Now()
@@ -294,12 +295,12 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			}
 			persistTurnMessage(ctx, sink, opts.Logger, msg, "tool result")
 			messages = append(messages, msg)
-			toolResultEvent := agent.ToolResultEvent{Type: "tool_result", Message: msg}
+			toolResultEvent := core.ToolResultEvent{Type: "tool_result", Message: msg}
 			opts.Events <- toolResultEvent
 			executed++
 		}
 
-		turnEnd := agent.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
 		opts.Events <- turnEnd
 
 		// Non-blocking: drain all buffered subagent results and
@@ -343,12 +344,12 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 						continue
 					}
 				case <-ctx.Done():
-					end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+					end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 					opts.Events <- end
 					return nil
 				}
 			}
-			end := agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			opts.Events <- end
 			if opts.Logger != nil {
 				if finishReason == "error" || finishReason == "cancelled" {
@@ -379,7 +380,7 @@ func isOverflowError(err string) bool {
 // TurnSink. Persistence failures log and move on - a dead store never
 // kills a live run, the channel surfaces the reload gap instead of an
 // error frame mid-stream.
-func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger agent.LoggerProvider, msg ai.Message, stage string) {
+func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger core.LoggerProvider, msg ai.Message, stage string) {
 	if sink == nil {
 		return
 	}
@@ -451,7 +452,7 @@ func (m *phaseMeter) delta(last, now time.Time) time.Duration {
 }
 
 // toolSchemas converts a tools map to the provider schema list.
-func toolSchemas(tools map[string]agent.Tool) []ai.ToolSchema {
+func toolSchemas(tools map[string]core.Tool) []ai.ToolSchema {
 	if len(tools) == 0 {
 		return nil
 	}

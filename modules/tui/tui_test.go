@@ -12,6 +12,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/provider"
@@ -22,8 +23,8 @@ import (
 
 // testContext creates a minimal agent.Context with a real provider plugin
 // and command handler, for testing extension-routed commands.
-func testContext() *agent.Context {
-	ctx := &agent.Context{
+func testContext() *core.Context {
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"store":    store.Config{DBPath: ":memory:"},
 			"provider": provider.Default(),
@@ -49,21 +50,21 @@ func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
 // newTestCtx creates an agent.Context with the store extension's command
 // handler wired, so /sessions, /tree, /search, /insights dispatch to
 // the store extension instead of requiring the TUI to handle them.
-func newTestCtx(s agent.StoreProvider) *agent.Context {
-	pctx := &agent.Context{Store: s}
+func newTestCtx(s core.StoreProvider) *core.Context {
+	pctx := &core.Context{Store: s}
 	pctx.Commands = append(pctx.Commands,
-		agent.ExtensionCommand{Name: "/sessions", Description: "list sessions"},
-		agent.ExtensionCommand{Name: "/tree", Description: "show tree"},
-		agent.ExtensionCommand{Name: "/search", Description: "search"},
-		agent.ExtensionCommand{Name: "/insights", Description: "insights"},
-		agent.ExtensionCommand{Name: "/new", Description: "new session"},
-		agent.ExtensionCommand{Name: "/resume", Description: "resume session"},
-		agent.ExtensionCommand{Name: "/branch", Description: "branch session"},
-		agent.ExtensionCommand{Name: "/label", Description: "set label"},
-		agent.ExtensionCommand{Name: "/export", Description: "export session"},
+		core.ExtensionCommand{Name: "/sessions", Description: "list sessions"},
+		core.ExtensionCommand{Name: "/tree", Description: "show tree"},
+		core.ExtensionCommand{Name: "/search", Description: "search"},
+		core.ExtensionCommand{Name: "/insights", Description: "insights"},
+		core.ExtensionCommand{Name: "/new", Description: "new session"},
+		core.ExtensionCommand{Name: "/resume", Description: "resume session"},
+		core.ExtensionCommand{Name: "/branch", Description: "branch session"},
+		core.ExtensionCommand{Name: "/label", Description: "set label"},
+		core.ExtensionCommand{Name: "/export", Description: "export session"},
 	)
 	prev := pctx.CommandHandler
-	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	pctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		switch name {
 		case "/sessions":
 			return store.HandleSessionsCommand(c, s, args)
@@ -105,24 +106,24 @@ func newTestCtx(s agent.StoreProvider) *agent.Context {
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 	}
 	return pctx
 }
 
 func TestDrainEventsDeliversStream(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-	ch := make(chan agent.Event, 64)
+	ch := make(chan core.Event, 64)
 	m.events = ch
 
 	// Simulate the run goroutine: one event, then close.
-	ch <- agent.StreamEvent{Event: ai.ResponseChunk{Content: "hi"}}
+	ch <- core.StreamEvent{Event: ai.ResponseChunk{Content: "hi"}}
 	close(ch)
 
 	// First drain delivers the event.
 	msg := m.drainEvents()()
-	if _, ok := msg.(agent.StreamEvent); !ok {
-		t.Fatalf("expected agent.StreamEvent, got %T", msg)
+	if _, ok := msg.(core.StreamEvent); !ok {
+		t.Fatalf("expected core.StreamEvent, got %T", msg)
 	}
 
 	// Second drain sees the closed channel and signals done.
@@ -140,7 +141,7 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
 	m.textarea.SetValue("hello")
 	// Simulate a completed first run: the channel is closed.
-	ch := make(chan agent.Event, 64)
+	ch := make(chan core.Event, 64)
 	m.events = ch
 	close(ch)
 
@@ -163,11 +164,11 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 func TestHandleEventFoldsStream(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
 
-	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
-	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
-	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
-	m.handleEvent(agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hello world")})
-	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
+	m.handleEvent(core.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
+	m.handleEvent(core.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
+	m.handleEvent(core.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
+	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hello world")})
+	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	plain := ansiStrip(m.transcript)
 	if !strings.Contains(plain, "hello world") {
@@ -187,8 +188,8 @@ func TestHandleEventFoldsStream(t *testing.T) {
 // TestHandleEventError verifies a stream error is surfaced and folded.
 func TestHandleEventError(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-	m.handleEvent(agent.StreamEvent{Event: ai.StreamEnd{FinishReason: "error", Error: "boom"}})
-	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
+	m.handleEvent(core.StreamEvent{Event: ai.StreamEnd{FinishReason: "error", Error: "boom"}})
+	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
 
 	if m.err != "boom" {
 		t.Fatalf("expected err boom, got %q", m.err)
@@ -298,7 +299,7 @@ func TestCompactViaExtension(t *testing.T) {
 	comp.Mount(ctx)
 
 	// Compaction config is needed for the TUI to run the compaction.
-	compCfg := &agent.CompactionConfig{
+	compCfg := &core.CompactionConfig{
 		Threshold:     0.5,
 		KeepFirst:     2,
 		KeepLast:      10,
@@ -789,7 +790,7 @@ func TestTabComplete(t *testing.T) {
 	// highlighted. Shell built-ins are 8 now (card t_88bb7dcf moved the
 	// feature commands to the module seam), so a module provider tops
 	// the table past the maxAutocompleteRows cap.
-	pctx := &agent.Context{TUIProviders: []agent.TUIProvider{fakeTUICommands{{Name: "/zmod"}, {Name: "/amod"}}}}
+	pctx := &core.Context{TUIProviders: []core.TUIProvider{fakeTUICommands{{Name: "/zmod"}, {Name: "/amod"}}}}
 	m.commands = buildCommands(knownCommands, pctx, nil)
 	m.moduleCommands = moduleCommands(pctx)
 	m.textarea.SetValue("/")
@@ -1110,10 +1111,10 @@ func TestSegmentOrder(t *testing.T) {
 	m.thinkingLevel = "on"
 	m.showThinking = true
 
-	m.handleEvent(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "plan"}})
-	m.handleEvent(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
-	m.handleEvent(agent.StreamEvent{Event: ai.ResponseChunk{Content: "done"}})
-	m.handleEvent(agent.AgentEnd{Type: "agent_end", FinishReason: "stop"})
+	m.handleEvent(core.StreamEvent{Event: ai.ThinkingChunk{Content: "plan"}})
+	m.handleEvent(core.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
+	m.handleEvent(core.StreamEvent{Event: ai.ResponseChunk{Content: "done"}})
+	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	plain := ansiStrip(m.transcript)
 	thinkIdx := strings.Index(plain, "[thinking]")
@@ -1415,8 +1416,8 @@ func TestAutocompleteWhileBusy(t *testing.T) {
 // message injects the matching skill's content as a system message while
 // leaving the user text unchanged.
 func TestInlineSkillInvocation(t *testing.T) {
-	skill := agent.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, "dark", "", "bell", "dev", "")
+	skill := core.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []core.Skill{skill}, "dark", "", "bell", "dev", "")
 	m.textarea.SetValue("go ahead and /learn-skill from my notes")
 	updated, _ := m.submit()
 	m = updated.(model)
@@ -1446,8 +1447,8 @@ func TestInlineSkillInvocation(t *testing.T) {
 // TestInlineSkillUnknownTokenIgnored verifies non-skill "/tokens" (URLs,
 // paths) pass through without injection.
 func TestInlineSkillUnknownTokenIgnored(t *testing.T) {
-	skill := agent.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
-	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []agent.Skill{skill}, "dark", "", "bell", "dev", "")
+	skill := core.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []core.Skill{skill}, "dark", "", "bell", "dev", "")
 	m.textarea.SetValue("check /path/to/x please")
 	updated, _ := m.submit()
 	m = updated.(model)
@@ -1821,18 +1822,18 @@ func (errorModelsProvider) ModelInfo() (ai.ModelInfo, error) {
 // the numbered table with the current model marked.
 // newProviderTestCtx creates an agent.Context with the provider extension's
 // command handler wired for /models, /model, and /provider.
-func newProviderTestCtx(prov ai.Provider) *agent.Context {
-	pctx := &agent.Context{Provider: prov}
+func newProviderTestCtx(prov ai.Provider) *core.Context {
+	pctx := &core.Context{Provider: prov}
 	pctx.Commands = append(pctx.Commands,
-		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
-		agent.ExtensionCommand{Name: "/model", Description: "switch model"},
-		agent.ExtensionCommand{Name: "/thinking", Description: "set thinking level"},
-		agent.ExtensionCommand{Name: "/tools", Description: "list tools", Args: []string{"on", "off", "auto", "list"}},
-		agent.ExtensionCommand{Name: "/provider", Description: "show provider"},
+		core.ExtensionCommand{Name: "/models", Description: "list available models"},
+		core.ExtensionCommand{Name: "/model", Description: "switch model"},
+		core.ExtensionCommand{Name: "/thinking", Description: "set thinking level"},
+		core.ExtensionCommand{Name: "/tools", Description: "list tools", Args: []string{"on", "off", "auto", "list"}},
+		core.ExtensionCommand{Name: "/provider", Description: "show provider"},
 	)
 	thinkingLevel := "medium" // tracked in closure for cycle support
 	prev := pctx.CommandHandler
-	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	pctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		switch name {
 		case "/thinking":
 			level := strings.TrimSpace(args)
@@ -1854,21 +1855,21 @@ func newProviderTestCtx(prov ai.Provider) *agent.Context {
 					}
 				}
 				if !valid {
-					return agent.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
+					return core.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
 				}
 			}
 			thinkingLevel = level
-			return agent.CommandResult{
+			return core.CommandResult{
 				Text:    "[thinking " + level + "]",
-				Actions: []agent.CmdAction{{Type: "set_thinking", Value: level}},
+				Actions: []core.CmdAction{{Type: "set_thinking", Value: level}},
 			}, nil
 		case "/models":
 			models, err := prov.ListModels()
 			if err != nil {
-				return agent.CommandResult{}, fmt.Errorf("list models: %w", err)
+				return core.CommandResult{}, fmt.Errorf("list models: %w", err)
 			}
 			if len(models) == 0 {
-				return agent.CommandResult{Text: "[no models available]"}, nil
+				return core.CommandResult{Text: "[no models available]"}, nil
 			}
 			nameWidth := 4
 			for _, n := range models {
@@ -1886,15 +1887,15 @@ func newProviderTestCtx(prov ai.Provider) *agent.Context {
 				}
 				fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, n)
 			}
-			return agent.CommandResult{
+			return core.CommandResult{
 				Text:    sb.String(),
-				Actions: []agent.CmdAction{{Type: "set_model_list", List: models}},
+				Actions: []core.CmdAction{{Type: "set_model_list", List: models}},
 			}, nil
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 	}
 	return pctx
 }
@@ -2528,7 +2529,7 @@ func makeHistory(n int) []ai.Message {
 // TestHandleCompact covers every guard-clause branch and the happy path
 // of model.handleCompact.
 func TestHandleCompact(t *testing.T) {
-	compCfg := &agent.CompactionConfig{
+	compCfg := &core.CompactionConfig{
 		Threshold:     0.5,
 		KeepFirst:     2,
 		KeepLast:      10,
@@ -2593,7 +2594,7 @@ func TestHandleCompact(t *testing.T) {
 
 	t.Run("no_compactor_extension", func(t *testing.T) {
 		// Context has no Compactor set.
-		ctx := &agent.Context{}
+		ctx := &core.Context{}
 		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
 		m.history = makeHistory(3)
 		updated, cmd := m.handleCompact()

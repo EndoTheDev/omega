@@ -9,6 +9,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // selectTools and its request field were deleted: the serve host never
@@ -141,15 +142,15 @@ func TestSSEStreamEventAllCases(t *testing.T) {
 func TestEventTypeOfAllCases(t *testing.T) {
 	cases := []struct {
 		name  string
-		event agent.Event
+		event core.Event
 		want  string
 	}{
-		{"AgentStart", agent.AgentStart{Type: "agent_start", ModelName: "m"}, "agent_start"},
-		{"TurnStart", agent.TurnStart{Type: "turn_start", Turn: 1}, "turn_start"},
-		{"TurnEnd", agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}, "turn_end"},
-		{"AgentEnd", agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}, "agent_end"},
-		{"AssistantMessageEvent", agent.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hi")}, "assistant_message"},
-		{"ToolResultEvent", agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult("ok", "t1", false)}, "tool_result"},
+		{"AgentStart", core.AgentStart{Type: "agent_start", ModelName: "m"}, "agent_start"},
+		{"TurnStart", core.TurnStart{Type: "turn_start", Turn: 1}, "turn_start"},
+		{"TurnEnd", core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}, "turn_end"},
+		{"AgentEnd", core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}, "agent_end"},
+		{"AssistantMessageEvent", core.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hi")}, "assistant_message"},
+		{"ToolResultEvent", core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult("ok", "t1", false)}, "tool_result"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,18 +171,18 @@ func TestAccumulateAssistantSegments(t *testing.T) {
 	var recs []assistantRecord
 	var rec assistantRecord
 	req := chatRequest{SessionID: "seg1"}
-	feed := func(ev agent.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
+	feed := func(ev core.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
 
 	call := ai.ToolCall{ID: "c1", Name: "shell.run"}
-	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: "preamble "}})
-	feed(agent.StreamEvent{Event: ai.ToolCallEvent{ToolCall: call}})
-	feed(agent.ToolResultEvent{Message: ai.NewToolResult("out", "c1", false)})
-	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: "final answer"}})
+	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: "preamble "}})
+	feed(core.StreamEvent{Event: ai.ToolCallEvent{ToolCall: call}})
+	feed(core.ToolResultEvent{Message: ai.NewToolResult("out", "c1", false)})
+	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: "final answer"}})
 
 	if len(recs) != 1 {
 		t.Fatalf("len(recs) = %d, want 1 (final segment stays in rec)", len(recs))
 	}
-	feed(agent.StreamEvent{Event: ai.StreamEnd{FinishReason: "stop"}})
+	feed(core.StreamEvent{Event: ai.StreamEnd{FinishReason: "stop"}})
 	if rec.content != "final answer" {
 		t.Fatalf("rec.content = %q, want 'final answer'", rec.content)
 	}
@@ -208,11 +209,11 @@ func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	var recs []assistantRecord
 	var rec assistantRecord
 	req := chatRequest{SessionID: "seg2"}
-	feed := func(ev agent.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
+	feed := func(ev core.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
 
-	feed(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "hmm"}})
-	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: "one"}})
-	feed(agent.StreamEvent{Event: ai.ResponseChunk{Content: " two"}})
+	feed(core.StreamEvent{Event: ai.ThinkingChunk{Content: "hmm"}})
+	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: "one"}})
+	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: " two"}})
 
 	if len(recs) != 0 {
 		t.Fatalf("len(recs) = %d, want 0 (no tool phase, no split)", len(recs))
@@ -269,11 +270,11 @@ func TestRunMeterTick(t *testing.T) {
 	if m.started.IsZero() {
 		t.Fatalf("meter did not start its clock")
 	}
-	m.tick(agent.StreamEvent{Event: ai.ThinkingChunk{Content: "hi"}})
-	m.tick(agent.TurnStart{}) // not a chunk
-	m.tick(agent.StreamEvent{Event: ai.ResponseChunk{Content: "ab"}})
-	m.tick(agent.ToolResultEvent{}) // not a chunk
-	m.tick(agent.StreamEvent{Event: ai.StreamEnd{}})
+	m.tick(core.StreamEvent{Event: ai.ThinkingChunk{Content: "hi"}})
+	m.tick(core.TurnStart{}) // not a chunk
+	m.tick(core.StreamEvent{Event: ai.ResponseChunk{Content: "ab"}})
+	m.tick(core.ToolResultEvent{}) // not a chunk
+	m.tick(core.StreamEvent{Event: ai.StreamEnd{}})
 	if m.chunks != 2 {
 		t.Fatalf("chunks = %d, want 2", m.chunks)
 	}

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // The inspector endpoint surface (card t_db430fea, read-only v1):
@@ -21,34 +21,34 @@ import (
 
 // --- test doubles ---
 
-// fakeCronLister satisfies agent.CronProvider + agent.CronLister.
+// fakeCronLister satisfies core.CronProvider + core.CronLister.
 type fakeCronLister struct {
-	jobs []agent.CronJobInfo
+	jobs []core.CronJobInfo
 }
 
-func (*fakeCronLister) Start(_ context.Context, _ agent.CronDeps) error { return nil } //nolint:unused // interface filler
+func (*fakeCronLister) Start(_ context.Context, _ core.CronDeps) error { return nil } //nolint:unused // interface filler
 func (*fakeCronLister) Stop() error                                     { return nil }
 
-func (f *fakeCronLister) Jobs() []agent.CronJobInfo { return f.jobs }
+func (f *fakeCronLister) Jobs() []core.CronJobInfo { return f.jobs }
 
 // cronProviderNoLister satisfies CronProvider only - the handler must
 // degrade to an empty list, never panic.
 type cronProviderNoLister struct{}
 
-func (*cronProviderNoLister) Start(_ context.Context, _ agent.CronDeps) error { return nil }
+func (*cronProviderNoLister) Start(_ context.Context, _ core.CronDeps) error { return nil }
 func (*cronProviderNoLister) Stop() error                                     { return nil }
 
-// fakeSkillLister satisfies agent.SkillsProvider + agent.SkillsLister.
+// fakeSkillLister satisfies core.SkillsProvider + core.SkillsLister.
 type fakeSkillLister struct {
-	skills []agent.Skill
+	skills []core.Skill
 	err    error
 }
 
-func (*fakeSkillLister) LoadSkills(string) ([]agent.Skill, error) { return nil, nil }
+func (*fakeSkillLister) LoadSkills(string) ([]core.Skill, error) { return nil, nil }
 
-func (f *fakeSkillLister) ListSkills() ([]agent.Skill, error) { return f.skills, f.err }
+func (f *fakeSkillLister) ListSkills() ([]core.Skill, error) { return f.skills, f.err }
 
-// fakePathLogger satisfies agent.LoggerProvider with a readable path.
+// fakePathLogger satisfies core.LoggerProvider with a readable path.
 type fakePathLogger struct{ path string }
 
 func (l *fakePathLogger) Printf(string, ...any) {}
@@ -80,7 +80,7 @@ func TestCronJobsUnconfiguredIsEmptyList(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("cron/jobs = %d, want 200 (empty list, not 501)", res.StatusCode)
 	}
-	var got []agent.CronJobInfo
+	var got []core.CronJobInfo
 	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestCronJobsUnconfiguredIsEmptyList(t *testing.T) {
 
 func TestCronJobsListsRowsFromSeam(t *testing.T) {
 	s := inspectorServer(t)
-	s.Cron = &fakeCronLister{jobs: []agent.CronJobInfo{
+	s.Cron = &fakeCronLister{jobs: []core.CronJobInfo{
 		{Name: "daily-journal", Schedule: "0 8 * * *", Enabled: true, Next: "2026-10-19T08:00:00+07:00"},
 	}}
 	ts := serveInspector(t, s)
@@ -100,7 +100,7 @@ func TestCronJobsListsRowsFromSeam(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	var got []agent.CronJobInfo
+	var got []core.CronJobInfo
 	json.NewDecoder(res.Body).Decode(&got)
 	if len(got) != 1 || got[0].Name != "daily-journal" ||
 		got[0].Schedule != "0 8 * * *" || !got[0].Enabled ||
@@ -121,7 +121,7 @@ func TestCronJobsProviderWithoutListerIsEmpty(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("cron/jobs = %d", res.StatusCode)
 	}
-	var got []agent.CronJobInfo
+	var got []core.CronJobInfo
 	json.NewDecoder(res.Body).Decode(&got)
 	if len(got) != 0 {
 		t.Fatalf("jobs = %+v, want empty", got)
@@ -159,7 +159,7 @@ func TestSkillsUnconfiguredIsEmptyList(t *testing.T) {
 
 func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 	s := inspectorServer(t)
-	s.Skills = &fakeSkillLister{skills: []agent.Skill{
+	s.Skills = &fakeSkillLister{skills: []core.Skill{
 		{Name: "a-skill", Description: "first", Content: "SECRET-BODY", Dir: "/home/endo/.omega/skills/a"},
 		{Name: "b-skill", Description: "second", Content: "SECRET-BODY", Dir: "/home/endo/.omega/skills/b"},
 	}}

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // testHome is a fresh omega home per test (no OMEGA_HOME games: the
@@ -134,7 +134,7 @@ func TestCreateListDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := wireStore(t, home)
-	if _, err := s.CreateTask(context.Background(), "alpha", agent.KanbanTask{Title: "held"}); err != nil {
+	if _, err := s.CreateTask(context.Background(), "alpha", core.KanbanTask{Title: "held"}); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -172,15 +172,15 @@ func TestStoreBoardIsolation(t *testing.T) {
 	s := wireStore(t, home) // pointer on main
 
 	ctx := context.Background()
-	mainCard, err := s.CreateTask(ctx, "", agent.KanbanTask{Title: "on main"})
+	mainCard, err := s.CreateTask(ctx, "", core.KanbanTask{Title: "on main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	alphaCard, err := s.CreateTask(ctx, "alpha", agent.KanbanTask{Title: "on alpha"})
+	alphaCard, err := s.CreateTask(ctx, "alpha", core.KanbanTask{Title: "on alpha"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	betaCard, err := s.CreateTask(ctx, "beta", agent.KanbanTask{Title: "on beta"})
+	betaCard, err := s.CreateTask(ctx, "beta", core.KanbanTask{Title: "on beta"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestStoreBoardIsolation(t *testing.T) {
 		t.Fatalf("alpha card visible on default: err = %v", err)
 	}
 	// cross-board mutation is refused the same way
-	if _, err := s.UpdateTask(ctx, "beta", mainCard.ID, agent.KanbanPatch{Status: StatusDone}); err != ErrNotFound {
+	if _, err := s.UpdateTask(ctx, "beta", mainCard.ID, core.KanbanPatch{Status: StatusDone}); err != ErrNotFound {
 		t.Fatalf("cross-board move: err = %v", err)
 	}
 	if _, err := s.AddComment(ctx, "", alphaCard.ID, "t", "hi"); err != ErrNotFound {
@@ -242,7 +242,7 @@ func TestPointerSwitchMovesDefault(t *testing.T) {
 	}
 	s := wireStore(t, home)
 	ctx := context.Background()
-	alphaCard, err := s.CreateTask(ctx, "alpha", agent.KanbanTask{Title: "alpha-only"})
+	alphaCard, err := s.CreateTask(ctx, "alpha", core.KanbanTask{Title: "alpha-only"})
 	if err != nil {
 		t.Fatal(err)
 	}

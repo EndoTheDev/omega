@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin is the in-process adapter for the provider extension.
@@ -35,7 +35,7 @@ func (Plugin) Requires() []string { return nil }
 // Mount reads the provider config from Context.Configs and sets
 // ctx.Provider. If config is missing, the provider is created with
 // zero values (type defaults to ollama).
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["provider"].(Config); ok {
 		cfg = c
@@ -45,15 +45,15 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 
 	// Register /model, /models, /thinking, and /provider commands.
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/model", Description: "switch the model (line # from /models, or name)"},
-		agent.ExtensionCommand{Name: "/models", Description: "list available models"},
-		agent.ExtensionCommand{Name: "/thinking", Description: "set or cycle thinking level [none|off|on|minimal|low|medium|high|extra high|max|ultra]"},
-		agent.ExtensionCommand{Name: "/provider", Description: "show current provider and model"},
+		core.ExtensionCommand{Name: "/model", Description: "switch the model (line # from /models, or name)"},
+		core.ExtensionCommand{Name: "/models", Description: "list available models"},
+		core.ExtensionCommand{Name: "/thinking", Description: "set or cycle thinking level [none|off|on|minimal|low|medium|high|extra high|max|ultra]"},
+		core.ExtensionCommand{Name: "/provider", Description: "show current provider and model"},
 	)
 
 	// Wire command handler, chaining after any previous handler.
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		result, err := p.handleCommand(prov, name, args)
 		if err == nil {
 			return result, nil
@@ -68,18 +68,18 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 }
 
 // handleCommand handles /model and /provider commands.
-func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.CommandResult, error) {
+func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/model":
 		if args == "" {
-			return agent.CommandResult{Text: "usage: /model <name>"}, nil
+			return core.CommandResult{Text: "usage: /model <name>"}, nil
 		}
 		// Base-provider model set (single user, applied outside a run);
 		// runs themselves carry their own WithModel copy.
 		*prov = *prov.WithModel(args).(*Provider)
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text: "switched to " + args,
-			Actions: []agent.CmdAction{
+			Actions: []core.CmdAction{
 				{Type: "set_model", Value: args},
 				{Type: "refresh_title"},
 				{Type: "fetch_model_info"},
@@ -88,10 +88,10 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.Command
 	case "/models":
 		models, err := prov.ListModels()
 		if err != nil {
-			return agent.CommandResult{}, fmt.Errorf("list models: %w", err)
+			return core.CommandResult{}, fmt.Errorf("list models: %w", err)
 		}
 		if len(models) == 0 {
-			return agent.CommandResult{Text: "[no models available]"}, nil
+			return core.CommandResult{Text: "[no models available]"}, nil
 		}
 		nameWidth := 4
 		for _, n := range models {
@@ -109,9 +109,9 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.Command
 			}
 			fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, n)
 		}
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text:    sb.String(),
-			Actions: []agent.CmdAction{{Type: "set_model_list", List: models}},
+			Actions: []core.CmdAction{{Type: "set_model_list", List: models}},
 		}, nil
 	case "/thinking":
 		level := strings.TrimSpace(args)
@@ -138,18 +138,18 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (agent.Command
 				}
 			}
 			if !valid {
-				return agent.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
+				return core.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
 			}
 		}
 		prov.SetThinkingLevel(level)
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text:    "[thinking " + level + "]",
-			Actions: []agent.CmdAction{{Type: "set_thinking", Value: level}},
+			Actions: []core.CmdAction{{Type: "set_thinking", Value: level}},
 		}, nil
 	case "/provider":
-		return agent.CommandResult{
+		return core.CommandResult{
 			Text: fmt.Sprintf("provider: %s\nmodel: %s", prov.typ, prov.ModelName()),
 		}, nil
 	}
-	return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 }

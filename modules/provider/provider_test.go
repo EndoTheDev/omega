@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -404,7 +404,7 @@ func TestInitDefaults(t *testing.T) {
 // fetch_model_info CmdActions.
 func TestProviderModelCommand(t *testing.T) {
 	p := &Plugin{}
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestProviderModelCommand(t *testing.T) {
 // TestProviderModelNoArgs verifies /model with no args returns usage.
 func TestProviderModelNoArgs(t *testing.T) {
 	p := &Plugin{}
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	p.Mount(ctx)
 
 	result, err := ctx.CommandHandler(context.Background(), "/model", "")
@@ -448,7 +448,7 @@ func TestProviderModelNoArgs(t *testing.T) {
 // TestProviderInfoCommand verifies /provider returns provider + model info.
 func TestProviderInfoCommand(t *testing.T) {
 	p := &Plugin{}
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	p.Mount(ctx)
 
 	result, err := ctx.CommandHandler(context.Background(), "/provider", "")

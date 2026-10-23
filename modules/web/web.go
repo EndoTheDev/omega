@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // defaultBaseURL is the upstream mirror used when no BaseURL is
@@ -21,7 +21,7 @@ const defaultBaseURL = "https://ollama.com"
 // provider host's mirrored /api/web_search and /api/web_fetch
 // endpoints (the auth swap + key rotation happen upstream, same as
 // every other call through that host). It implements
-// agent.ToolProvider directly.
+// core.ToolProvider directly.
 type Extension struct {
 	apiKey  string
 	baseURL string
@@ -42,7 +42,7 @@ func New(cfg Config) *Extension {
 // webActions is the structured sub-action metadata for the
 // consolidated web tool: one source of truth for the schema enum, the
 // prompt, and the /tools inventory.
-var webActions = []agent.ToolAction{
+var webActions = []core.ToolAction{
 	{Name: "search", Description: "Search the web for the given query and return relevant results with titles, URLs, and content snippets."},
 	{Name: "fetch", Description: "Fetch a single web page by URL and return its title, main content, and links found on the page."},
 }
@@ -50,8 +50,8 @@ var webActions = []agent.ToolAction{
 // Tools returns the web domain tool. The two dotted verbs fold into one
 // action protocol; the legacy names stay registered as alias shims for
 // one release.
-func (e *Extension) Tools() map[string]agent.Tool {
-	tools := map[string]agent.Tool{
+func (e *Extension) Tools() map[string]core.Tool {
+	tools := map[string]core.Tool{
 		"web": {
 			Description: "Search the web and fetch pages.",
 			Actions:     webActions,
@@ -83,7 +83,7 @@ func (e *Extension) Tools() map[string]agent.Tool {
 	for _, a := range webActions {
 		legacy := map[string]string{"search": "web.search", "fetch": "web.fetch"}[a.Name]
 		action := a.Name
-		tools[legacy] = agent.Tool{
+		tools[legacy] = core.Tool{
 			Description: fmt.Sprintf("%s (alias for web with action %q)", a.Description, action),
 			AliasOf:     "web",
 			Run: func(ctx context.Context, args map[string]any) (string, error) {

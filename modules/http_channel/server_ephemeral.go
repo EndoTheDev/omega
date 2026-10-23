@@ -9,6 +9,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Ephemeral sessions (card t_d96a5cd5): a chat that never touches the
@@ -36,7 +37,7 @@ type ephemeralSession struct {
 	history   []ai.Message
 	items     []transcriptItem
 	usage     streamUsage
-	last      *agent.LastRunStats
+	last      *core.LastRunStats
 }
 
 // ephRegistry is the server-lifetime map. Concurrency: /chat sends and
@@ -169,7 +170,7 @@ func (s ephTurnSink) AppendTurnMessage(ctx context.Context, msg ai.Message) erro
 // provider history itself was written turn-by-turn through the eph
 // sink while the run streamed. Usage/last mirror the session-row
 // writes.
-func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats, now time.Time) {
+func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsage, last *core.LastRunStats, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.records[id]
@@ -193,8 +194,8 @@ func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsag
 // session synthesizes what a session row would say about the record.
 // Label stays empty: the ephemeral chat is a tab, not a sidebar row;
 // the webui names its tab client-side.
-func (s *ephemeralSession) session() agent.Session {
-	return agent.Session{
+func (s *ephemeralSession) session() core.Session {
+	return core.Session{
 		ID:               s.id,
 		CreatedAt:        s.createdAt.Format(time.RFC3339),
 		UpdatedAt:        s.updatedAt.Format(time.RFC3339),
@@ -238,11 +239,11 @@ func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 // the run context too; this copy is the registry the /chat loop passes
 // in, so the two layers agree even before the loop filter). The name
 // matches modules/memory's registered tool (targetMemory).
-func withoutMemory(tools map[string]agent.Tool) map[string]agent.Tool {
+func withoutMemory(tools map[string]core.Tool) map[string]core.Tool {
 	if _, has := tools["memory"]; !has {
 		return tools
 	}
-	out := make(map[string]agent.Tool, len(tools)-1)
+	out := make(map[string]core.Tool, len(tools)-1)
 	for name, t := range tools {
 		if name != "memory" {
 			out[name] = t

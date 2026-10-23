@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestMountWiresSeamAndCommand: a home-backed mount opens the store,
@@ -15,7 +15,7 @@ import (
 func TestMountWiresSeamAndCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	ctx := &agent.Context{Configs: map[string]any{}}
+	ctx := &core.Context{Configs: map[string]any{}}
 	bg := context.Background()
 	p := NewPlugin()
 	if err := p.Mount(ctx); err != nil {
@@ -24,7 +24,7 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	if ctx.Notifications == nil {
 		t.Fatalf("mount did not fill the seam")
 	}
-	if _, err := ctx.Notifications.Emit(agent.Notification{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished", Verdict: "failed"}); err != nil {
+	if _, err := ctx.Notifications.Emit(core.Notification{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 
@@ -60,7 +60,7 @@ func TestMountWithConfigPathOverride(t *testing.T) {
 	}
 	dbPath := dbDir + "/notifications.db"
 	t.Setenv("OMEGA_HOME", t.TempDir())
-	ctx := &agent.Context{Configs: map[string]any{"notifications": Config{DBPath: dbPath}}}
+	ctx := &core.Context{Configs: map[string]any{"notifications": Config{DBPath: dbPath}}}
 	p := NewPlugin()
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("mount: %v", err)

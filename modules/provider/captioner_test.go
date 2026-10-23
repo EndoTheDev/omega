@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -28,10 +28,10 @@ func testImage() ai.ImageContent {
 // captionTestLoop is a minimal loop: one provider stream, then done.
 type captionTestLoop struct{}
 
-func (captionTestLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+func (captionTestLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	for range opts.Provider.Stream(ctx, opts.Messages, nil) {
 	}
-	opts.Events <- agent.AgentEnd{Type: "agent_end", FinishReason: "stop"}
+	opts.Events <- core.AgentEnd{Type: "agent_end", FinishReason: "stop"}
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (p *countingProvider) lastMessages() []ai.Message {
 // again (the card's caption-once gate).
 func TestCaptionOnceAcrossTurns(t *testing.T) {
 	main := newCountingProvider("main", ai.StreamEnd{Type: "stream_end", FinishReason: "stop"})
-	ag := agent.NewAgent(main, nil, 0)
+	ag := core.NewAgent(main, nil, 0)
 	ag.SetLoopProvider(captionTestLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -132,7 +132,7 @@ func TestCaptionOnceAcrossTurns(t *testing.T) {
 	msgs := []ai.Message{ai.NewUserWithImages("what is this?", []ai.ImageContent{testImage()})}
 	for turn := 1; turn <= 2; turn++ {
 		for event := range ag.Run(context.Background(), msgs, nil) {
-			if e, ok := event.(agent.AgentEnd); ok && e.Error != "" {
+			if e, ok := event.(core.AgentEnd); ok && e.Error != "" {
 				t.Fatalf("turn %d: %s", turn, e.Error)
 			}
 		}
@@ -153,7 +153,7 @@ func TestCaptionRouting(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
-	ag := agent.NewAgent(main, nil, 0)
+	ag := core.NewAgent(main, nil, 0)
 	ag.SetLoopProvider(captionTestLoop{})
 	ag.SetCaptioner(NewCaptioner(vision, "gemma4:31b", st, nil))
 	original := ai.NewUserWithImages("what is this?", []ai.ImageContent{testImage()})

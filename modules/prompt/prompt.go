@@ -2,9 +2,9 @@
 //
 // It is a generic assembler: identity, guidelines, project context,
 // environment, user-supplied custom/append, plus whatever sections
-// other modules contribute via the agent.PromptSectioner seam. Modules
+// other modules contribute via the core.PromptSectioner seam. Modules
 // own their prompt content; this package owns only the assembly order.
-// It implements agent.PromptBuilder.
+// It implements core.PromptBuilder.
 package prompt
 
 import (
@@ -15,26 +15,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // PromptBuilder is the in-process system prompt builder.
 type PromptBuilder struct {
-	pctx *agent.Context
+	pctx *core.Context
 	now  func() time.Time // injectable clock for tests
 }
 
 // NewPromptBuilder creates a PromptBuilder. Contributing prompt
 // sections are read from the Context at build time, so every
 // PromptSectioner plugin mounted anywhere is picked up.
-func NewPromptBuilder(ctx *agent.Context) *PromptBuilder {
+func NewPromptBuilder(ctx *core.Context) *PromptBuilder {
 	return &PromptBuilder{pctx: ctx, now: time.Now}
 }
 
 // BuildPrompt assembles the full system prompt from the build options.
 // Returns (prompt, true) on success. It always returns true — the
 // prompt builder is the default source of the system prompt.
-func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOptions) (string, bool) {
+func (b *PromptBuilder) BuildPrompt(_ context.Context, opts core.PromptBuildOptions) (string, bool) {
 	var sb strings.Builder
 	sb.WriteString("You are an AI coding agent with access to tools.\n")
 
@@ -79,12 +79,12 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts agent.PromptBuildOpt
 // and renders them in stable order. Untitled sections render as raw
 // blocks with a blank line before and after; titled sections render
 // under a "## <Title>" heading.
-func (b *PromptBuilder) writeSections(sb *strings.Builder, opts agent.PromptBuildOptions) {
+func (b *PromptBuilder) writeSections(sb *strings.Builder, opts core.PromptBuildOptions) {
 	if b.pctx == nil {
 		return
 	}
 
-	var sections []agent.PromptSection
+	var sections []core.PromptSection
 	for _, s := range b.pctx.PromptSectioners {
 		if s == nil {
 			continue

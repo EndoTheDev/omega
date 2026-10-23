@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin implements agent.Plugin for the logging seam. It creates
@@ -27,7 +28,7 @@ func (p *Plugin) Provides() []string { return []string{"logging"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the logger from config and sets ctx.Logger.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["logging"].(Config); ok {
 		cfg = c

@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // tryAnswerVerdict handles the busy-Enter path. It returns handled=true
@@ -50,52 +50,52 @@ func (m *model) tryAnswerVerdict(input string) (handed bool) {
 // or typed text. An unknown answer that is neither a valid pick nor
 // allowed text is an error, not a silent no-op - "no silent dismissal"
 // applies to the typed path too.
-func verdictAnswerFromInput(card agent.VerdictPrompt, input string) (agent.Verdict, error) {
+func verdictAnswerFromInput(card core.VerdictPrompt, input string) (core.Verdict, error) {
 	input = strings.TrimSpace(input)
 	var err error
 	switch strings.ToLower(input) {
 	case "y", "yes":
 		if card.Multi {
-			return agent.Verdict{}, &verdictInputError{card.Title + ": multi-select card - type the row numbers, e.g. 1,3"}
+			return core.Verdict{}, &verdictInputError{card.Title + ": multi-select card - type the row numbers, e.g. 1,3"}
 		}
 		if len(card.Options) == 0 {
-			return agent.Verdict{}, errNoOptions()
+			return core.Verdict{}, errNoOptions()
 		}
-		return agent.Verdict{OptionIndex: 1, Option: card.Options[0].Label}, nil
+		return core.Verdict{OptionIndex: 1, Option: card.Options[0].Label}, nil
 	case "n", "no":
 		if card.Multi {
-			return agent.Verdict{}, &verdictInputError{card.Title + ": multi-select card - type the row numbers, e.g. 1,3"}
+			return core.Verdict{}, &verdictInputError{card.Title + ": multi-select card - type the row numbers, e.g. 1,3"}
 		}
 		if len(card.Options) < 2 {
-			return agent.Verdict{}, errNoOptions()
+			return core.Verdict{}, errNoOptions()
 		}
-		return agent.Verdict{OptionIndex: 2, Option: card.Options[1].Label}, nil
+		return core.Verdict{OptionIndex: 2, Option: card.Options[1].Label}, nil
 	case "skip", "dismiss", "s":
-		return agent.Verdict{Skipped: true}, nil
+		return core.Verdict{Skipped: true}, nil
 	}
 	if card.Multi {
 		if ixs, perr := parseOptionIndexes(input); perr == nil {
 			labels := make([]string, 0, len(ixs))
 			for _, ix := range ixs {
 				if ix < 1 || ix > len(card.Options) {
-					return agent.Verdict{}, &verdictInputError{card.Title + ": option " + strconv.Itoa(ix) + " is out of range (1.." + strconv.Itoa(len(card.Options)) + ")"}
+					return core.Verdict{}, &verdictInputError{card.Title + ": option " + strconv.Itoa(ix) + " is out of range (1.." + strconv.Itoa(len(card.Options)) + ")"}
 				}
 				labels = append(labels, card.Options[ix-1].Label)
 			}
-			return agent.Verdict{OptionIndexes: ixs, Options: labels}, nil
+			return core.Verdict{OptionIndexes: ixs, Options: labels}, nil
 		}
 	} else if n, cerr := strconv.Atoi(input); cerr == nil {
 		if n >= 1 && n <= len(card.Options) {
-			return agent.Verdict{OptionIndex: n, Option: card.Options[n-1].Label}, nil
+			return core.Verdict{OptionIndex: n, Option: card.Options[n-1].Label}, nil
 		}
 	}
 	if len(card.Options) > 0 && !card.AllowText {
-		return agent.Verdict{}, &verdictInputError{card.Title + ": type the option number (1.." + strconv.Itoa(len(card.Options)) + ") or 'skip'"}
+		return core.Verdict{}, &verdictInputError{card.Title + ": type the option number (1.." + strconv.Itoa(len(card.Options)) + ") or 'skip'"}
 	}
 	if input == "" {
-		return agent.Verdict{}, &verdictInputError{card.Title + ": empty answer - type an option number, text, or 'skip'"}
+		return core.Verdict{}, &verdictInputError{card.Title + ": empty answer - type an option number, text, or 'skip'"}
 	}
-	return agent.Verdict{Text: input}, err
+	return core.Verdict{Text: input}, err
 }
 
 // parseOptionIndexes parses a comma-separated pick list ("1,3"). It
@@ -126,7 +126,7 @@ func errNoOptions() error { return &verdictInputError{"this card has no y/n opti
 
 // tuiVerdictSummary is the one-line confirmation the transcript prints
 // after a typed answer lands.
-func tuiVerdictSummary(card agent.VerdictPrompt, v agent.Verdict) string {
+func tuiVerdictSummary(card core.VerdictPrompt, v core.Verdict) string {
 	switch {
 	case v.Skipped:
 		return "skipped: " + card.Title

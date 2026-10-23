@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // tuiProvider is the verdict module's TUI surface (card t_88bb7dcf):
@@ -14,12 +14,12 @@ import (
 // (modules/tui); this command covers the case the prompt is still up
 // after the run finished (a pending card whose run was cancelled).
 type tuiProvider struct {
-	hub agent.VerdictsProvider
+	hub core.VerdictsProvider
 }
 
 // TUICommands implements agent.TUIProvider.
-func (p *tuiProvider) TUICommands() []agent.TUICommand {
-	return []agent.TUICommand{
+func (p *tuiProvider) TUICommands() []core.TUICommand {
+	return []core.TUICommand{
 		{Name: "/verdict", Help: "list pending verdict cards / answer one: /verdict <N> <num|1,3|y|n|skip|text>"},
 	}
 }
@@ -33,30 +33,30 @@ func (p *tuiProvider) TUICommands() []agent.TUICommand {
 //	/verdict N y        y/n shortcuts map to the first two options
 //	/verdict N skip     record a skip
 //	/verdict N <text>   free text (only when the card allows it)
-func (p *tuiProvider) HandleTUICommand(name, args string, c agent.TUIConsole) agent.TUIResult {
+func (p *tuiProvider) HandleTUICommand(name, args string, c core.TUIConsole) core.TUIResult {
 	if name != "/verdict" {
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	if p.hub == nil {
 		c.Error("verdicts seam not mounted")
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	cards := p.hub.Pending("")
 	if len(cards) == 0 {
 		c.Labeled("verdicts", "no pending verdict cards")
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 
 	parts := strings.Fields(args)
 	if len(parts) == 0 {
 		c.Labeled("pending", formatCardList(cards))
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 
 	idx, err := strconv.Atoi(parts[0])
 	if err != nil || idx < 1 || idx > len(cards) {
 		c.Error("usage: /verdict           list pending\n       /verdict <N> <num|1,3|y|n|skip|text>")
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	card := cards[idx-1]
 
@@ -64,49 +64,49 @@ func (p *tuiProvider) HandleTUICommand(name, args string, c agent.TUIConsole) ag
 	if len(parts) == 1 {
 		c.Labeled("card "+strconv.Itoa(idx), formatCard(card))
 		c.Labeled("answer with", fmt.Sprintf("/verdict %d <option # | 1,3 (multi) | y | n | skip | text>", idx))
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 
 	v, perr := parseTUIAnswer(card, parts[1:])
 	if perr != nil {
 		c.Error(perr.Error())
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	if _, err := p.hub.Answer("", card.ID, v); err != nil {
 		c.Error(err.Error())
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	c.ClearError()
 	c.Labeled("answered", formatVerdict(card, v))
-	return agent.TUIResult{}
+	return core.TUIResult{}
 }
 
-// parseTUIAnswer maps typed tokens to an agent.Verdict, mirroring the
+// parseTUIAnswer maps typed tokens to an core.Verdict, mirroring the
 // design's option-number / comma-multi / y-n / free-text contract.
-func parseTUIAnswer(card agent.VerdictPrompt, rest []string) (agent.Verdict, error) {
+func parseTUIAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, error) {
 	tok := strings.TrimSpace(strings.Join(rest, " "))
 	if tok == "" {
-		return agent.Verdict{}, fmt.Errorf("empty answer")
+		return core.Verdict{}, fmt.Errorf("empty answer")
 	}
 	switch strings.ToLower(tok) {
 	case "skip", "dismiss", "s":
-		return agent.Verdict{Skipped: true}, nil
+		return core.Verdict{Skipped: true}, nil
 	case "y", "yes":
 		if err := ensureNotMulti(card); err != nil {
-			return agent.Verdict{}, err
+			return core.Verdict{}, err
 		}
 		if len(card.Options) == 0 {
-			return agent.Verdict{}, fmt.Errorf("this card has no y/n options")
+			return core.Verdict{}, fmt.Errorf("this card has no y/n options")
 		}
-		return agent.Verdict{OptionIndex: 1, Option: card.Options[0].Label}, nil
+		return core.Verdict{OptionIndex: 1, Option: card.Options[0].Label}, nil
 	case "n", "no":
 		if err := ensureNotMulti(card); err != nil {
-			return agent.Verdict{}, err
+			return core.Verdict{}, err
 		}
 		if len(card.Options) < 2 {
-			return agent.Verdict{}, fmt.Errorf("this card has no 'no' option")
+			return core.Verdict{}, fmt.Errorf("this card has no 'no' option")
 		}
-		return agent.Verdict{OptionIndex: 2, Option: card.Options[1].Label}, nil
+		return core.Verdict{OptionIndex: 2, Option: card.Options[1].Label}, nil
 	}
 	// a multi card takes a comma-separated pick list ("1,3"); a lone
 	// number ("2") is the one-row multi-select.
@@ -115,22 +115,22 @@ func parseTUIAnswer(card agent.VerdictPrompt, rest []string) (agent.Verdict, err
 			labels := make([]string, 0, len(ixs))
 			for _, ix := range ixs {
 				if ix < 1 || ix > len(card.Options) {
-					return agent.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", ix, len(card.Options))
+					return core.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", ix, len(card.Options))
 				}
 				labels = append(labels, card.Options[ix-1].Label)
 			}
-			return agent.Verdict{OptionIndexes: ixs, Options: labels}, nil
+			return core.Verdict{OptionIndexes: ixs, Options: labels}, nil
 		}
 	} else if n, err := strconv.Atoi(tok); err == nil {
 		if n < 1 || n > len(card.Options) {
-			return agent.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", n, len(card.Options))
+			return core.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", n, len(card.Options))
 		}
-		return agent.Verdict{OptionIndex: n, Option: card.Options[n-1].Label}, nil
+		return core.Verdict{OptionIndex: n, Option: card.Options[n-1].Label}, nil
 	}
 	if len(card.Options) > 0 && !card.AllowText {
-		return agent.Verdict{}, fmt.Errorf("this card takes an option number, not free text")
+		return core.Verdict{}, fmt.Errorf("this card takes an option number, not free text")
 	}
-	return agent.Verdict{Text: tok}, nil
+	return core.Verdict{Text: tok}, nil
 }
 
 // parseOptionIndexes parses a comma-separated pick list ("1,3"). It
@@ -152,14 +152,14 @@ func parseOptionIndexes(tok string) ([]int, error) {
 
 // ensureNotMulti rejects single-pick tokens (y/n/one number) on a
 // multi card, so a single tap can never silently under-answer.
-func ensureNotMulti(card agent.VerdictPrompt) error {
+func ensureNotMulti(card core.VerdictPrompt) error {
 	if card.Multi {
 		return fmt.Errorf("this card is multi-select: pick numbers, e.g. /verdict N 1,3")
 	}
 	return nil
 }
 
-func formatCardList(cards []agent.VerdictPrompt) string {
+func formatCardList(cards []core.VerdictPrompt) string {
 	var sb strings.Builder
 	for i, c := range cards {
 		fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, shortID(c.ID), c.Title)
@@ -176,7 +176,7 @@ func formatCardList(cards []agent.VerdictPrompt) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func formatCard(c agent.VerdictPrompt) string {
+func formatCard(c core.VerdictPrompt) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s", c.Title)
 	if c.Multi {
@@ -198,7 +198,7 @@ func formatCard(c agent.VerdictPrompt) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func formatVerdict(card agent.VerdictPrompt, v agent.Verdict) string {
+func formatVerdict(card core.VerdictPrompt, v core.Verdict) string {
 	switch {
 	case v.Skipped:
 		return "skipped: " + card.Title

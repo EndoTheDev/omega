@@ -9,12 +9,13 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compile-time interface checks.
 var (
-	_ agent.SkillsProvider = (*SkillsProvider)(nil)
-	_ agent.ToolProvider   = (*SkillsProvider)(nil)
+	_ core.SkillsProvider = (*SkillsProvider)(nil)
+	_ core.ToolProvider   = (*SkillsProvider)(nil)
 	_ agent.Plugin         = (*Plugin)(nil)
 )
 
@@ -113,7 +114,7 @@ func TestHandleCommandUnknown(t *testing.T) {
 func TestPluginMount(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
-	ctx := &agent.Context{CWD: dir}
+	ctx := &core.Context{CWD: dir}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 	// This test just verifies Mount doesn't
 	// panic with a nil Config.
 	p := NewPlugin()
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount with nil config: %v", err)
 	}
@@ -342,7 +343,7 @@ func TestHandleCommandEmptySkills(t *testing.T) {
 func TestPluginMountWithDirConfig(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"skills": Config{Dir: dir},
 		},
@@ -373,7 +374,7 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 // Available Skills section, and nil when no skills are installed.
 func TestPromptSections(t *testing.T) {
 	sp := NewSkillsProvider(makeSkillDir(t))
-	secs := sp.PromptSections(agent.PromptBuildOptions{})
+	secs := sp.PromptSections(core.PromptBuildOptions{})
 	if len(secs) != 1 {
 		t.Fatalf("expected 1 section, got %d", len(secs))
 	}
@@ -390,14 +391,14 @@ func TestPromptSections(t *testing.T) {
 	}
 
 	empty := NewSkillsProvider(t.TempDir())
-	if got := empty.PromptSections(agent.PromptBuildOptions{Extensions: nil}); got != nil {
+	if got := empty.PromptSections(core.PromptBuildOptions{Extensions: nil}); got != nil {
 		t.Errorf("expected nil sections with no skills, got %v", got)
 	}
 }
 
 // TestSkillsProviderImplementsPromptSectioner verifies the seam contract.
 func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
-	var _ agent.PromptSectioner = (*SkillsProvider)(nil)
+	var _ core.PromptSectioner = (*SkillsProvider)(nil)
 }
 
 // --- inspector snapshot (card t_db430fea) ---
@@ -435,5 +436,5 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 // Compile-time proof that the provider satisfies the read-only
 // inspector seam the http_channel asserts.
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
-	var _ agent.SkillsLister = (*SkillsProvider)(nil)
+	var _ core.SkillsLister = (*SkillsProvider)(nil)
 }

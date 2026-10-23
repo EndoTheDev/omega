@@ -13,7 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // shellCommands are the shell-owned slash commands - the input loop,
@@ -35,7 +35,7 @@ type moduleTickMsg struct{}
 // command paths render today.
 type tuiConsole struct{ m *model }
 
-var _ agent.TUIConsole = (*tuiConsole)(nil)
+var _ core.TUIConsole = (*tuiConsole)(nil)
 
 // Labeled appends the themed "[label]" paragraph + plain body and
 // redraws - the shape /cron and /logs print today.
@@ -52,7 +52,7 @@ func (c tuiConsole) ClearError() { c.m.err = "" }
 
 // Style resolves a named theme style; unknown kinds resolve to the
 // identity render.
-func (c tuiConsole) Style(kind string) agent.TUIStyle {
+func (c tuiConsole) Style(kind string) core.TUIStyle {
 	if render, ok := themeStyleFunc(c.m.theme, kind); ok {
 		return render
 	}
@@ -63,12 +63,12 @@ func (c tuiConsole) Style(kind string) agent.TUIStyle {
 func (c tuiConsole) CWD() string { return c.m.cwd }
 
 // Ext is the mounted plugin Context.
-func (c tuiConsole) Ext() *agent.Context { return c.m.extensions }
+func (c tuiConsole) Ext() *core.Context { return c.m.extensions }
 
 // console returns a fresh shell console for module writes. The model
 // is a large value; the adapter pointer keeps handler code identical
 // in shape to the receiver methods it replaced.
-func (m model) console() agent.TUIConsole { return tuiConsole{m: &m} }
+func (m model) console() core.TUIConsole { return tuiConsole{m: &m} }
 
 // themeStyleFunc maps a console style name onto the shell theme. The
 // names mirror the Theme fields modules render with.
@@ -95,8 +95,8 @@ func themeStyleFunc(t Theme, kind string) (func(string) string, bool) {
 // mounted TUI provider owns, keyed by name. A name clash between
 // providers keeps the first registered plugin (buildPlugins order) -
 // deterministic, and the conflict surfaces in the /extensions listing.
-func moduleCommands(pctx *agent.Context) map[string]agent.TUIProvider {
-	table := map[string]agent.TUIProvider{}
+func moduleCommands(pctx *core.Context) map[string]core.TUIProvider {
+	table := map[string]core.TUIProvider{}
 	if pctx == nil {
 		return table
 	}
@@ -116,8 +116,8 @@ func moduleCommands(pctx *agent.Context) map[string]agent.TUIProvider {
 // moduleTable walks the mounted TUI providers and returns their
 // commands, sorted alphabetically by name (the order is a law: shell
 // commands keep theirs, module commands get one that survives re-runs).
-func moduleTable(pctx *agent.Context) []agent.TUICommand {
-	var cmds []agent.TUICommand
+func moduleTable(pctx *core.Context) []core.TUICommand {
+	var cmds []core.TUICommand
 	if pctx == nil {
 		return nil
 	}
@@ -133,7 +133,7 @@ func moduleTable(pctx *agent.Context) []agent.TUICommand {
 
 // moduleOptions maps every command that declares first-argument
 // completions, from mounted providers and extension commands alike.
-func moduleOptions(pctx *agent.Context) map[string][]string {
+func moduleOptions(pctx *core.Context) map[string][]string {
 	opts := map[string][]string{}
 	if pctx == nil {
 		return opts

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // fakeSettings records the values a PUT carried and replays them into
@@ -22,15 +22,15 @@ type fakeSettings struct {
 	defaultValue any
 }
 
-func (f *fakeSettings) Schema() (*agent.SettingsSchema, error) {
+func (f *fakeSettings) Schema() (*core.SettingsSchema, error) {
 	if f.schemaErr != nil {
 		return nil, f.schemaErr
 	}
-	return &agent.SettingsSchema{
-		Groups: []agent.SettingsGroup{{
+	return &core.SettingsSchema{
+		Groups: []core.SettingsGroup{{
 			Key:   "compaction",
 			Label: "compaction",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{
 					Key:   "compaction.enabled",
 					Label: "enabled",
@@ -51,7 +51,7 @@ func (f *fakeSettings) Schema() (*agent.SettingsSchema, error) {
 	}, nil
 }
 
-func (f *fakeSettings) Save(values map[string]any) (*agent.SettingsSchema, error) {
+func (f *fakeSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
 	if f.saveErr != nil {
 		return nil, f.saveErr
 	}
@@ -72,7 +72,7 @@ func (f *fakeSettings) current(key string) any {
 }
 
 // settingsServer wires a server with a fake seam.
-func settingsServer(s agent.Settings) *httptest.Server {
+func settingsServer(s core.Settings) *httptest.Server {
 	return httptest.NewServer(NewServer(nil, nil, nil, s).Handler())
 }
 

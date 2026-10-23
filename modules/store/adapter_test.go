@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -103,7 +104,7 @@ func TestSearchToolNoResults(t *testing.T) {
 // sessions.search tool provider, reading DSN from Config.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"store": Config{DBPath: ":memory:"},
 		},

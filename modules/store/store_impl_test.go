@@ -11,6 +11,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -170,7 +171,7 @@ func TestGetSessionTree(t *testing.T) {
 		t.Fatalf("roots = %d, want 2", len(roots))
 	}
 	// Find the root with a child.
-	var root *agent.SessionNode
+	var root *core.SessionNode
 	for _, r := range roots {
 		if r.ID == "root" {
 			root = r
@@ -996,7 +997,7 @@ func TestSearchSessions(t *testing.T) {
 		t.Fatalf("search fib: %v", err)
 	}
 	ids := make([]string, 0, len(results))
-	var s1Hit *agent.SearchResult
+	var s1Hit *core.SearchResult
 	for i, r := range results {
 		ids = append(ids, r.SessionID)
 		if r.SessionID == "s1" {
@@ -1545,7 +1546,7 @@ func TestSetSessionLastRun(t *testing.T) {
 		t.Fatalf("unexpected state: %+v", sess)
 	}
 
-	stats := agent.LastRunStats{TokensPerSecond: 41, ChunksPerSecond: 17}
+	stats := core.LastRunStats{TokensPerSecond: 41, ChunksPerSecond: 17}
 	if err := s.SetSessionLastRun(ctx, "s1", &stats); err != nil {
 		t.Fatalf("set last run: %v", err)
 	}
@@ -1624,7 +1625,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	if old.LastRun != nil {
 		t.Fatalf("migrated last_run = %+v, want nil", old.LastRun)
 	}
-	stats := agent.LastRunStats{TokensPerSecond: 9, ChunksPerSecond: 4}
+	stats := core.LastRunStats{TokensPerSecond: 9, ChunksPerSecond: 4}
 	if err := s.SetSessionLastRun(ctx, "old", &stats); err != nil {
 		t.Fatalf("set after migration: %v", err)
 	}

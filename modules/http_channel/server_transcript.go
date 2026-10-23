@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // transcriptItem is one render-ready item of GET /sessions/{id}/transcript:
@@ -140,10 +140,10 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 // in the stream of records (system, model_change, thinking_level_change)
 // and any thin message (no content, no thinking, no calls) renders
 // nothing.
-func buildTranscriptItems(msgs []agent.StoredMessage) []transcriptItem {
+func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	items := make([]transcriptItem, 0, len(msgs))
 	for _, sm := range msgs {
-		id := agent.MsgID(sm.ID)
+		id := core.MsgID(sm.ID)
 		switch m := sm.Message.(type) {
 		case ai.User:
 			if m.Content == "" && len(m.Images) == 0 {

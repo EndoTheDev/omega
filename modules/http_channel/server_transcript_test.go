@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // transcriptFixture builds the persisted history of a segmented session:
 // user turn, assistant segment A (thinking + preamble + tool calls),
 // tool results, assistant segment B (final answer) around tool results,
 // then a second clean user/assistant exchange.
-func transcriptFixture() []agent.StoredMessage {
+func transcriptFixture() []core.StoredMessage {
 	thinking := "let me check the file"
 	preamble := "running the check"
 	answer := "all green"
@@ -26,7 +26,7 @@ func transcriptFixture() []agent.StoredMessage {
 		{ID: "tc1", Name: "go_test", Arguments: map[string]any{"pkg": "./..."}},
 	}
 	assistantB := ai.NewAssistant(answer)
-	return []agent.StoredMessage{
+	return []core.StoredMessage{
 		{Message: ai.NewUser("run tests"), CreatedAt: "2026-10-19T01:00:00Z"},
 		{Message: assistantA, CreatedAt: "2026-10-19T01:00:01Z"},
 		{Message: ai.NewToolResult("PASS", "tc1", false), CreatedAt: "2026-10-19T01:00:02Z"},
@@ -116,7 +116,7 @@ func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
 	a1.ToolCalls = []ai.ToolCall{{ID: "tc9", Name: "go_test"}}
 	a2 := ai.NewAssistant("done")
 	a2.Thinking = &thinkingB
-	msgs := []agent.StoredMessage{
+	msgs := []core.StoredMessage{
 		{Message: ai.NewUser("check"), CreatedAt: "t0"},
 		{Message: a1, CreatedAt: "t1"},
 		{Message: ai.NewToolResult("ok", "tc9", false), CreatedAt: "t2"},
@@ -147,7 +147,7 @@ func TestTranscriptItemsSkipsEmptyAndForeign(t *testing.T) {
 	empty := ai.NewAssistant("")
 	withThinking := ai.NewAssistant("")
 	withThinking.Thinking = &thinking
-	msgs := []agent.StoredMessage{
+	msgs := []core.StoredMessage{
 		{Message: ai.NewUser(""), CreatedAt: "t0"},                       // empty user: nothing
 		{Message: empty, CreatedAt: "t1"},                                // empty assistant record: nothing
 		{Message: ai.NewToolResult("", "", false), CreatedAt: "t2"},      // result without a call id: nothing
@@ -176,7 +176,7 @@ func TestTranscriptItemsSkipsEmptyAndForeign(t *testing.T) {
 func TestTranscriptItemsTimeFallback(t *testing.T) {
 	// rows saved before the store recorded created_at fall back to the
 	// message's own timestamp
-	msgs := []agent.StoredMessage{{Message: ai.NewUser("hi")}}
+	msgs := []core.StoredMessage{{Message: ai.NewUser("hi")}}
 	items := buildTranscriptItems(msgs)
 	if len(items) != 1 || items[0].Time == "" {
 		t.Fatalf("time fallback lost: %+v", items)
@@ -220,7 +220,7 @@ func TestSessionTranscriptHandler(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Session agent.Session `json:"session"`
+		Session core.Session `json:"session"`
 		Items   []transcriptItem
 		Running bool `json:"running"`
 	}
@@ -444,7 +444,7 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 // images ride the restore - thumbnails survive a reload.
 func TestTranscriptItemsUserImages(t *testing.T) {
 	imgs := []ai.ImageContent{{MediaType: "image/png", Base64: "aGk="}}
-	msgs := []agent.StoredMessage{
+	msgs := []core.StoredMessage{
 		{Message: ai.NewUserWithImages("what is this", imgs), CreatedAt: "t0"},
 		{Message: ai.NewUser("text only"), CreatedAt: "t1"},
 	}
@@ -459,7 +459,7 @@ func TestTranscriptItemsUserImages(t *testing.T) {
 		t.Fatalf("text-only user must not carry images: %+v", items[1])
 	}
 	// image-only user messages persist too (empty content, images set)
-	items = buildTranscriptItems([]agent.StoredMessage{
+	items = buildTranscriptItems([]core.StoredMessage{
 		{Message: ai.NewUserWithImages("", imgs)},
 	})
 	if len(items) != 1 || len(items[0].Images) != 1 {

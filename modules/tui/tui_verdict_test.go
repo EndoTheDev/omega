@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -39,26 +39,26 @@ func testVerdictTheme() Theme {
 // mirror of the verdict module's /verdict command parser). It must agree
 // on the option-number / comma-multi / y-n / skip / typed-text contract.
 func TestVerdictAnswerFromInput(t *testing.T) {
-	card := agent.VerdictPrompt{ID: "c1", Title: "Pick", Options: vo("yes", "no")}
+	card := core.VerdictPrompt{ID: "c1", Title: "Pick", Options: vo("yes", "no")}
 
 	cases := []struct {
 		name    string
-		card    agent.VerdictPrompt
+		card    core.VerdictPrompt
 		input   string
 		wantErr string
-		want    agent.Verdict
+		want    core.Verdict
 	}{
-		{"number", card, "2", "", agent.Verdict{OptionIndex: 2, Option: "no"}},
-		{"y", card, "y", "", agent.Verdict{OptionIndex: 1, Option: "yes"}},
-		{"yes", card, "YES", "", agent.Verdict{OptionIndex: 1, Option: "yes"}},
-		{"n", card, "n", "", agent.Verdict{OptionIndex: 2, Option: "no"}},
-		{"skip", card, "skip", "", agent.Verdict{Skipped: true}},
-		{"dismiss alias", card, "dismiss", "", agent.Verdict{Skipped: true}},
-		{"s alias", card, "s", "", agent.Verdict{Skipped: true}},
-		{"out of range", card, "9", "option number", agent.Verdict{}},
-		{"free text rejected", card, "hello", "option number", agent.Verdict{}},
-		{"free text allowed", agent.VerdictPrompt{ID: "c2", Title: "Name", AllowText: true}, "omega", "", agent.Verdict{Text: "omega"}},
-		{"empty on allowtext card", agent.VerdictPrompt{ID: "c2", Title: "Name", AllowText: true}, "  ", "empty answer", agent.Verdict{}},
+		{"number", card, "2", "", core.Verdict{OptionIndex: 2, Option: "no"}},
+		{"y", card, "y", "", core.Verdict{OptionIndex: 1, Option: "yes"}},
+		{"yes", card, "YES", "", core.Verdict{OptionIndex: 1, Option: "yes"}},
+		{"n", card, "n", "", core.Verdict{OptionIndex: 2, Option: "no"}},
+		{"skip", card, "skip", "", core.Verdict{Skipped: true}},
+		{"dismiss alias", card, "dismiss", "", core.Verdict{Skipped: true}},
+		{"s alias", card, "s", "", core.Verdict{Skipped: true}},
+		{"out of range", card, "9", "option number", core.Verdict{}},
+		{"free text rejected", card, "hello", "option number", core.Verdict{}},
+		{"free text allowed", core.VerdictPrompt{ID: "c2", Title: "Name", AllowText: true}, "omega", "", core.Verdict{Text: "omega"}},
+		{"empty on allowtext card", core.VerdictPrompt{ID: "c2", Title: "Name", AllowText: true}, "  ", "empty answer", core.Verdict{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -80,17 +80,17 @@ func TestVerdictAnswerFromInput(t *testing.T) {
 }
 
 func TestVerdictAnswerFromInputMulti(t *testing.T) {
-	card := agent.VerdictPrompt{ID: "cm", Title: "Multi", Options: vo("a", "b", "c"), Multi: true}
+	card := core.VerdictPrompt{ID: "cm", Title: "Multi", Options: vo("a", "b", "c"), Multi: true}
 	cases := []struct {
 		name    string
 		input   string
 		wantErr string
-		want    agent.Verdict
+		want    core.Verdict
 	}{
-		{"comma list", "1,3", "", agent.Verdict{OptionIndexes: []int{1, 3}, Options: []string{"a", "c"}}},
-		{"lone number", "2", "", agent.Verdict{OptionIndexes: []int{2}, Options: []string{"b"}}},
-		{"out of range member", "1,9", "out of range", agent.Verdict{}},
-		{"y rejected", "y", "multi-select", agent.Verdict{}},
+		{"comma list", "1,3", "", core.Verdict{OptionIndexes: []int{1, 3}, Options: []string{"a", "c"}}},
+		{"lone number", "2", "", core.Verdict{OptionIndexes: []int{2}, Options: []string{"b"}}},
+		{"out of range member", "1,9", "out of range", core.Verdict{}},
+		{"y rejected", "y", "multi-select", core.Verdict{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

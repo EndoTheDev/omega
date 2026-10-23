@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Delegate manages background subagent tasks. It implements ToolProvider
@@ -31,14 +32,14 @@ type Delegate struct {
 	tasks       map[string]*delegateTask
 	taskCounter int64
 	injected    chan injectedMsg
-	logger      agent.LoggerProvider
+	logger      core.LoggerProvider
 	// notifier is the finished-things seam (card t_5d9032d3), wired by
 	// the plugin at mount. Nil-safe: no seam, no notification.
-	notifier agent.NotificationsProvider
+	notifier core.NotificationsProvider
 }
 
 // injectedMsg carries a subagent result to be injected as a new turn.
-// It is converted to agent.InjectedMessage by the plugin adapter.
+// It is converted to core.InjectedMessage by the plugin adapter.
 type injectedMsg struct {
 	text   string
 	source string
@@ -65,7 +66,7 @@ func NewDelegate() *Delegate {
 // delegateActions is the structured sub-action metadata for the
 // consolidated delegate tool: one source of truth for the schema enum,
 // the prompt, and the /tools inventory.
-var delegateActions = []agent.ToolAction{
+var delegateActions = []core.ToolAction{
 	{Name: "task", Description: "Spawn a subagent to work on a task in the background."},
 	{Name: "status", Description: "Check the status of running and completed subagent tasks."},
 }
@@ -73,8 +74,8 @@ var delegateActions = []agent.ToolAction{
 // Tools returns the delegate domain tool. The two dotted verbs fold
 // into one action protocol; the legacy names stay registered as alias
 // shims for one release.
-func (d *Delegate) Tools() map[string]agent.Tool {
-	tools := map[string]agent.Tool{
+func (d *Delegate) Tools() map[string]core.Tool {
+	tools := map[string]core.Tool{
 		"delegate": {
 			Description: "Spawn subagents that run as separate omega processes with a fresh context. Results are injected automatically when a subagent finishes - do not end the conversation until all delegated tasks complete.",
 			Actions:     delegateActions,
@@ -106,7 +107,7 @@ func (d *Delegate) Tools() map[string]agent.Tool {
 	for _, a := range delegateActions {
 		legacy := map[string]string{"task": "delegate.task", "status": "delegate.status"}[a.Name]
 		action := a.Name
-		tools[legacy] = agent.Tool{
+		tools[legacy] = core.Tool{
 			Description: fmt.Sprintf("%s (alias for delegate with action %q)", a.Description, action),
 			AliasOf:     "delegate",
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
@@ -252,7 +253,7 @@ func (d *Delegate) finish(taskID string, output []byte, runErr error) {
 	if runErr != nil {
 		verdict = "failed"
 	}
-	_, _ = d.notifier.Emit(agent.Notification{
+	_, _ = d.notifier.Emit(core.Notification{
 		Kind:     "chat",
 		SourceID: taskID,
 		Title:    "chat " + taskID + " finished",

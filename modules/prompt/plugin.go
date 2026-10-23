@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin is the agent.Plugin adapter for the prompt builder.
@@ -33,7 +34,7 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount sets ctx.PromptBuilder. The builder reads prompt section
 // contributors from the Context at build time.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	ctx.PromptBuilder = NewPromptBuilder(ctx)
 	return nil
 }

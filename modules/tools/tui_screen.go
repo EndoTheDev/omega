@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -18,11 +18,11 @@ import (
 // tui implements agent.TUIProvider for the /files command.
 type tui struct{}
 
-var _ agent.TUIProvider = (*tui)(nil)
+var _ core.TUIProvider = (*tui)(nil)
 
 // TUICommands declares the /files command.
-func (t *tui) TUICommands() []agent.TUICommand {
-	return []agent.TUICommand{
+func (t *tui) TUICommands() []core.TUICommand {
+	return []core.TUICommand{
 		{Name: "/files", Help: "browse the working directory (enter opens, esc/q closes)"},
 	}
 }
@@ -31,27 +31,27 @@ func (t *tui) TUICommands() []agent.TUICommand {
 // working directory. [path] selects the starting directory (same rules
 // as the webui: relative, no dot segments); a bad path leaves no
 // browser open.
-func (t *tui) HandleTUICommand(name, args string, c agent.TUIConsole) agent.TUIResult {
+func (t *tui) HandleTUICommand(name, args string, c core.TUIConsole) core.TUIResult {
 	root, err := filesRoot(c.CWD())
 	if err != nil {
 		c.Error("resolve working directory: " + err.Error())
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
 	// The shell splits on whitespace; directory segments rejoin here.
 	rel := strings.Join(strings.Fields(args), "/")
 	b, err := openFilesBrowser(c, root, rel)
 	if err != nil {
 		c.Error("/files: " + err.Error())
-		return agent.TUIResult{}
+		return core.TUIResult{}
 	}
-	return agent.TUIResult{Overlay: b}
+	return core.TUIResult{Overlay: b}
 }
 
 // filesBrowser is the open /files view state. rel is the relative path
 // under the root ("" = root); the listing is dirs-first, one level at
 // a time, and enter opens a directory or previews a file.
 type filesBrowser struct {
-	c            agent.TUIConsole // shell console, for theme styles + errors
+	c            core.TUIConsole // shell console, for theme styles + errors
 	root         string
 	rel          string // relative path of the open directory; "" = root
 	entries      []fileEntry
@@ -67,7 +67,7 @@ type filesBrowser struct {
 // openFilesBrowser lists rel under root and returns the ready browser.
 // An empty arg or a directory error is reported as err, not a
 // half-opened browser.
-func openFilesBrowser(c agent.TUIConsole, root, rel string) (*filesBrowser, error) {
+func openFilesBrowser(c core.TUIConsole, root, rel string) (*filesBrowser, error) {
 	rel, err := validateRelPath(rel)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func openFilesBrowser(c agent.TUIConsole, root, rel string) (*filesBrowser, erro
 // Update consumes one shell message. While the browser is open it
 // takes every key; non-key messages are inert (the layout sizes from
 // the View call, the shell's own resize cycle).
-func (b *filesBrowser) Update(msg any, c agent.TUIConsole) {
+func (b *filesBrowser) Update(msg any, c core.TUIConsole) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return
@@ -174,7 +174,7 @@ func (b filesBrowser) upDir() string {
 // openFilesRel lists rel under the root and reopens the listing. On a
 // disk error the old browser state is kept and the error surfaces in
 // the status line.
-func (b *filesBrowser) openFilesRel(rel string, c agent.TUIConsole) {
+func (b *filesBrowser) openFilesRel(rel string, c core.TUIConsole) {
 	entries, err := listDirUnderRoot(b.root, rel)
 	if err != nil {
 		c.Error(err.Error())
@@ -311,4 +311,4 @@ func (b filesBrowser) current() (fileEntry, bool) {
 	return b.entries[b.cursor], true
 }
 
-var _ agent.TUIScreen = (*filesBrowser)(nil)
+var _ core.TUIScreen = (*filesBrowser)(nil)

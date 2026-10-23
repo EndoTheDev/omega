@@ -8,20 +8,21 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"gopkg.in/yaml.v3"
 )
 
 // settings.go exposes the config.yaml knobs to the webui settings pane
-// over the http_channel Settings seam (agent.Settings). The schema here
+// over the http_channel Settings seam (core.Settings). The schema here
 // is the single source of truth: one entry per Config field, grouped in
 // config-file order — no new config keys, no duplicates. Save loads the
 // current file, applies the submitted values by dotted yaml path,
 // validates through the normal LoadConfig path, persists atomically,
 // and hot-applies what the running process can use without a restart.
 
-// The knob/group shapes are agent.SettingsKnob / agent.SettingsGroup /
-// agent.SettingsSchema - the seam is typed end to end, so cmd/omega and
+// The knob/group shapes are core.SettingsKnob / core.SettingsGroup /
+// core.SettingsSchema - the seam is typed end to end, so cmd/omega and
 // modules/http_channel cannot drift apart on the wire shape. Masked
 // secrets and the config-yaml-only gate live in this file: the host
 // decides what the unauthenticated API may see and write.
@@ -50,24 +51,24 @@ func num(min, max, step float64) (*float64, *float64, *float64) {
 // knobs. Values come from the same LoadConfig path the server booted
 // with (file + env overrides + defaults), so the pane always shows the
 // effective values.
-func settingsSchema(path string) (*agent.SettingsSchema, error) {
+func settingsSchema(path string) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
 	}
 	// the whole payload is headed for the unauthenticated /settings GET
-	return &agent.SettingsSchema{Groups: settingGroups(&cfg)}, nil
+	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
 // settingGroups builds the full knob inventory from a config. Field
 // order follows the config.yaml layout (provider, server, store,
 // compaction, runtime, skills, memory, logging).
-func settingGroups(cfg *Config) []agent.SettingsGroup {
-	return []agent.SettingsGroup{
+func settingGroups(cfg *Config) []core.SettingsGroup {
+	return []core.SettingsGroup{
 		{
 			Key:   "provider",
 			Label: "provider",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "provider.type", Label: "type", Type: "select",
 					Options: []string{"ollama", "openai", "anthropic"},
 					Value:   strings.ToLower(cfg.Provider.Type),
@@ -92,7 +93,7 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 		{
 			Key:   "server",
 			Label: "server",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "server.port", Label: "port", Type: "number",
 					Min: ptrF(1), Max: ptrF(math.MaxUint16), Step: ptrF(1),
 					Value: cfg.Server.Port,
@@ -109,7 +110,7 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 		{
 			Key:   "store",
 			Label: "store",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "store.db_path", Label: "database path", Type: "text",
 					Value: cfg.Store.DBPath,
 					Help:  "SQLite file, relative to the working dir; applies on restart"},
@@ -123,7 +124,7 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 		{
 			Key:   "runtime",
 			Label: "runtime",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "system_prompt", Label: "system prompt", Type: "textarea",
 					Value: cfg.SystemPrompt,
 					Help:  "extra custom prompt lines appended to the system prompt; applies on restart"},
@@ -147,7 +148,7 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 		{
 			Key:   "skills",
 			Label: "skills",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "skills.dir", Label: "skills directory", Type: "text",
 					Value: cfg.Skills.Dir,
 					Help:  "loaded at startup; applies on restart"},
@@ -156,7 +157,7 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 		{
 			Key:   "memory",
 			Label: "memory",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "memory.enabled", Label: "enabled", Type: "toggle",
 					Value: cfg.Memory.Enabled,
 					Help:  "persistent memory system; applies on restart"},
@@ -180,7 +181,7 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 		{
 			Key:   "logging",
 			Label: "logging",
-			Knobs: []agent.SettingsKnob{
+			Knobs: []core.SettingsKnob{
 				{Key: "logging.enabled", Label: "enabled", Type: "toggle",
 					Value: cfg.Logging.Enabled,
 					Help:  "operational log; applies on restart"},
@@ -194,9 +195,9 @@ func settingGroups(cfg *Config) []agent.SettingsGroup {
 
 // compactionKnobs renders the agent.CompactionConfig section. Every
 // compaction knob is read per Compact call, so all hot-apply live.
-func compactionKnobs(cfg *Config) []agent.SettingsKnob {
+func compactionKnobs(cfg *Config) []core.SettingsKnob {
 	c := &cfg.Compaction
-	return []agent.SettingsKnob{
+	return []core.SettingsKnob{
 		{Key: "compaction.enabled", Label: "enabled", Type: "toggle",
 			Value: c.Enabled,
 			Help:  "summarize history when the token budget is exceeded", Live: true},
@@ -242,7 +243,7 @@ func notificationsValue(v string) string {
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
 // the running context. Returns the refreshed schema payload.
-func saveSettings(path string, pctx *agent.Context, values map[string]any) (*agent.SettingsSchema, error) {
+func saveSettings(path string, pctx *agent.Context, values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
@@ -257,7 +258,7 @@ func saveSettings(path string, pctx *agent.Context, values map[string]any) (*age
 		return nil, err
 	}
 	hotApply(cfg, pctx)
-	return &agent.SettingsSchema{Groups: settingGroups(&cfg)}, nil
+	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
 // applySettingValues routes each submitted value into the Config by
@@ -498,14 +499,14 @@ func hotApply(cfg Config, pctx *agent.Context) {
 	}
 }
 
-// omegaSettings implements agent.Settings for the serve host: the webui
+// omegaSettings implements core.Settings for the serve host: the webui
 // settings pane rides the http_channel through this.
 type omegaSettings struct {
 	path string
 	pctx *agent.Context
 }
 
-func (s *omegaSettings) Schema() (*agent.SettingsSchema, error) {
+func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 	schema, err := settingsSchema(s.path)
 	if err != nil {
 		return nil, err
@@ -533,9 +534,9 @@ func (s *omegaSettings) Schema() (*agent.SettingsSchema, error) {
 	return schema, nil
 }
 
-func (s *omegaSettings) Save(values map[string]any) (*agent.SettingsSchema, error) {
+func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
 	return saveSettings(s.path, s.pctx, values)
 }
 
-// Compile-time assertion that omegaSettings implements agent.Settings.
-var _ agent.Settings = (*omegaSettings)(nil)
+// Compile-time assertion that omegaSettings implements core.Settings.
+var _ core.Settings = (*omegaSettings)(nil)

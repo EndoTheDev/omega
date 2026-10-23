@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
@@ -27,7 +28,7 @@ func newTestRunner(t *testing.T, home string, jobs ...Job) *Runner {
 
 // --- test doubles ---
 
-// fakeMemory records Add calls (agent.MemoryProvider).
+// fakeMemory records Add calls (core.MemoryProvider).
 type fakeMemory struct {
 	mu    sync.Mutex
 	added []string
@@ -267,7 +268,7 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	}
 	// WithDelay spaces the scripted events so the phase meters measure
 	// real wall-clock - the zero-delay fake floors every span to 0.
-	r.ag = agent.NewAgent(ai.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]agent.Tool{
+	r.ag = core.NewAgent(ai.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
 		"nop": {
 			Description: "test no-op",
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },
@@ -492,7 +493,7 @@ func waitFor(t *testing.T, limit time.Duration, cond func() bool, trigger func()
 
 func TestPluginMountSetsCronSeam(t *testing.T) {
 	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "a", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
-	var ctx agent.Context
+	var ctx core.Context
 	if err := p.Mount(&ctx); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -510,7 +511,7 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewPluginWithConfig(nil, home)
-	var ctx agent.Context
+	var ctx core.Context
 	if err := p.Mount(&ctx); err == nil {
 		t.Fatal("invalid crons.yaml mounted silently")
 	} else if !strings.Contains(err.Error(), `job "bad"`) {
@@ -528,7 +529,7 @@ func enabledOff() *bool {
 
 // Compile-time proof that the Runner satisfies the read-only inspector
 // seam the http_channel asserts.
-var _ agent.CronLister = (*Runner)(nil)
+var _ core.CronLister = (*Runner)(nil)
 
 func TestJobsInspectorSnapshot(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(),

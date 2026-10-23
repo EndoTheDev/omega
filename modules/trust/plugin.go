@@ -1,7 +1,7 @@
 package trust
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the trust Provider to the agent.Plugin interface.
@@ -22,7 +22,7 @@ func (p *Plugin) ConfigKey() string { return "trust" }
 func (p *Plugin) Provides() []string { return []string{"trust"} }
 func (p *Plugin) Requires() []string { return nil }
 
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg, ok := ctx.Configs["trust"].(Config)
 	if !ok {
 		cfg = Default()

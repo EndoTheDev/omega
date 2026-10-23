@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // The inspector HTTP surface (card t_db430fea, read-only v1):
@@ -36,9 +36,9 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
 	}
-	out := []agent.CronJobInfo{}
+	out := []core.CronJobInfo{}
 	if s.Cron != nil {
-		if lister, ok := s.Cron.(agent.CronLister); ok {
+		if lister, ok := s.Cron.(core.CronLister); ok {
 			if jobs := lister.Jobs(); jobs != nil {
 				out = jobs
 			}
@@ -107,7 +107,7 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []skillListing{}
 	if s.Skills != nil {
-		if lister, ok := s.Skills.(agent.SkillsLister); ok {
+		if lister, ok := s.Skills.(core.SkillsLister); ok {
 			skills, err := lister.ListSkills()
 			if err != nil {
 				http.Error(w, "list skills: "+err.Error(), http.StatusInternalServerError)
@@ -172,7 +172,7 @@ func parseLogLines(raw string) int {
 // FileLogger carries its own path (modules/logging); any other logger
 // implementation, including NopLogger for logging-disabled installs,
 // has none and the /logs endpoint 404s.
-func logPathOf(logger agent.LoggerProvider) string {
+func logPathOf(logger core.LoggerProvider) string {
 	if p, ok := logger.(interface{ Path() string }); ok {
 		return p.Path()
 	}

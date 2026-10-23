@@ -10,21 +10,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // fakeModuleProvider is a TUIProvider whose handler records the calls
 // it receives and returns a configurable result.
 type fakeModuleProvider struct {
-	cmds   []agent.TUICommand
+	cmds   []core.TUICommand
 	got    []string // recorded (name, args) pairs
-	result agent.TUIResult
+	result core.TUIResult
 }
 
-func (f *fakeModuleProvider) TUICommands() []agent.TUICommand { return f.cmds }
+func (f *fakeModuleProvider) TUICommands() []core.TUICommand { return f.cmds }
 
-func (f *fakeModuleProvider) HandleTUICommand(name, args string, c agent.TUIConsole) agent.TUIResult {
+func (f *fakeModuleProvider) HandleTUICommand(name, args string, c core.TUIConsole) core.TUIResult {
 	f.got = append(f.got, name+"|"+args)
 	c.Labeled("", "ran "+name)
 	return f.result
@@ -32,12 +32,12 @@ func (f *fakeModuleProvider) HandleTUICommand(name, args string, c agent.TUICons
 
 // fakeTUICommands is a provider that only declares commands, for
 // table-shape tests.
-type fakeTUICommands []agent.TUICommand
+type fakeTUICommands []core.TUICommand
 
-func (f fakeTUICommands) TUICommands() []agent.TUICommand { return f }
+func (f fakeTUICommands) TUICommands() []core.TUICommand { return f }
 
-func (f fakeTUICommands) HandleTUICommand(_ string, _ string, _ agent.TUIConsole) agent.TUIResult {
-	return agent.TUIResult{}
+func (f fakeTUICommands) HandleTUICommand(_ string, _ string, _ core.TUIConsole) core.TUIResult {
+	return core.TUIResult{}
 }
 
 // fakeModuleScreen is a TUIScreen that closes on demand.
@@ -46,7 +46,7 @@ type fakeModuleScreen struct {
 	closed  bool
 }
 
-func (s *fakeModuleScreen) Update(msg any, c agent.TUIConsole) {
+func (s *fakeModuleScreen) Update(msg any, c core.TUIConsole) {
 	if _, isKey := msg.(tea.KeyMsg); isKey && !s.closed {
 		s.renders++
 	}
@@ -55,9 +55,9 @@ func (s *fakeModuleScreen) View(width, height int) string { return "SCREEN" }
 func (s *fakeModuleScreen) Closed() bool                  { return s.closed }
 
 // moduleTestModel builds a chat model with the given providers mounted.
-func moduleTestModel(t *testing.T, providers ...agent.TUIProvider) model {
+func moduleTestModel(t *testing.T, providers ...core.TUIProvider) model {
 	t.Helper()
-	pctx := &agent.Context{TUIProviders: providers}
+	pctx := &core.Context{TUIProviders: providers}
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", pctx, nil, "dark", "", "bell", "dev", "")
 	m.screenHeight = 40
 	return m
@@ -66,7 +66,7 @@ func moduleTestModel(t *testing.T, providers ...agent.TUIProvider) model {
 // TestModuleCommandDispatch routes a provider-owned command to its
 // provider and writes the console output into the transcript.
 func TestModuleCommandDispatch(t *testing.T) {
-	p := &fakeModuleProvider{cmds: []agent.TUICommand{{Name: "/feat", Help: "exercise"}}}
+	p := &fakeModuleProvider{cmds: []core.TUICommand{{Name: "/feat", Help: "exercise"}}}
 	m := moduleTestModel(t, p)
 
 	updated, _ := m.handleCommand("/feat alpha")
@@ -91,13 +91,13 @@ func TestModuleCommandDispatch(t *testing.T) {
 // commands first in their order, then module commands alphabetical,
 // then extension commands, then skills.
 func TestModuleCommandTableOrder(t *testing.T) {
-	p1 := &fakeModuleProvider{cmds: []agent.TUICommand{{Name: "/zeta"}, {Name: "/alpha"}}}
-	p2 := &fakeModuleProvider{cmds: []agent.TUICommand{{Name: "/mid"}}}
-	pctx := &agent.Context{
-		TUIProviders: []agent.TUIProvider{p1, p2},
-		Commands:     []agent.ExtensionCommand{{Name: "/ext"}},
+	p1 := &fakeModuleProvider{cmds: []core.TUICommand{{Name: "/zeta"}, {Name: "/alpha"}}}
+	p2 := &fakeModuleProvider{cmds: []core.TUICommand{{Name: "/mid"}}}
+	pctx := &core.Context{
+		TUIProviders: []core.TUIProvider{p1, p2},
+		Commands:     []core.ExtensionCommand{{Name: "/ext"}},
 	}
-	got := buildCommands(knownCommands, pctx, []agent.Skill{{Name: "sk"}})
+	got := buildCommands(knownCommands, pctx, []core.Skill{{Name: "sk"}})
 	want := []string{
 		"/copy", "/extensions", "/theme", "/variant", "/fork", "/retry", "/exit", "/help",
 		"/alpha", "/mid", "/zeta",
@@ -116,8 +116,8 @@ func TestModuleCommandTableOrder(t *testing.T) {
 func TestModuleOverlay(t *testing.T) {
 	screen := &fakeModuleScreen{}
 	p := &fakeModuleProvider{
-		cmds:   []agent.TUICommand{{Name: "/feat"}},
-		result: agent.TUIResult{Overlay: screen},
+		cmds:   []core.TUICommand{{Name: "/feat"}},
+		result: core.TUIResult{Overlay: screen},
 	}
 	m := moduleTestModel(t, p)
 
@@ -148,10 +148,10 @@ func TestModuleOverlay(t *testing.T) {
 func TestModuleTick(t *testing.T) {
 	steps := 0
 	p := &fakeModuleProvider{
-		cmds: []agent.TUICommand{{Name: "/feat"}},
-		result: agent.TUIResult{Tick: &agent.TUITick{
+		cmds: []core.TUICommand{{Name: "/feat"}},
+		result: core.TUIResult{Tick: &core.TUITick{
 			Interval: time.Second,
-			Step: func(c agent.TUIConsole) (string, bool) {
+			Step: func(c core.TUIConsole) (string, bool) {
 				steps++
 				c.Labeled("", "tick")
 				return "", steps < 2
@@ -178,7 +178,7 @@ func TestModuleTick(t *testing.T) {
 	}
 
 	// a keypress stops an armed loop
-	m.tick = &agent.TUITick{Step: func(agent.TUIConsole) (string, bool) { return "", true }}
+	m.tick = &core.TUITick{Step: func(core.TUIConsole) (string, bool) { return "", true }}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(model)
 	if m.tick != nil {

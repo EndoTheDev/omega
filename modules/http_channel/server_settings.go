@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Config-knob surface for the webui settings pane. Read/write of the
@@ -72,17 +72,17 @@ func writeSettingsJSON(w http.ResponseWriter, payload any) {
 // webui is the http channel's surface: knobs carrying surface "tui" are
 // config for an app this pane isn't, and an exposed setting must be a
 // usable one (Endo, 2026-10-18). Groups left empty by the filter drop
-// out too. The seam is typed (agent.SettingsSchema), so this walks the
+// out too. The seam is typed (core.SettingsSchema), so this walks the
 // structs directly - knobs copy out of the range, the input is never
 // mutated. Wire shape is unchanged: surface carries omitempty, so
 // clearing it keeps the JSON exactly what the old map round-trip served.
-func filterKnobSurface(payload *agent.SettingsSchema) *agent.SettingsSchema {
+func filterKnobSurface(payload *core.SettingsSchema) *core.SettingsSchema {
 	if payload == nil {
 		return nil
 	}
-	kept := make([]agent.SettingsGroup, 0, len(payload.Groups))
+	kept := make([]core.SettingsGroup, 0, len(payload.Groups))
 	for _, g := range payload.Groups {
-		knobs := make([]agent.SettingsKnob, 0, len(g.Knobs))
+		knobs := make([]core.SettingsKnob, 0, len(g.Knobs))
 		for _, k := range g.Knobs {
 			if k.Surface == "tui" {
 				continue
@@ -96,5 +96,5 @@ func filterKnobSurface(payload *agent.SettingsSchema) *agent.SettingsSchema {
 		g.Knobs = knobs
 		kept = append(kept, g)
 	}
-	return &agent.SettingsSchema{Groups: kept}
+	return &core.SettingsSchema{Groups: kept}
 }

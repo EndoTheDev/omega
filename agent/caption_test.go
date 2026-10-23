@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // countingCaptioner implements Captioner by returning a fixed caption
@@ -30,7 +31,7 @@ type recordingLoop struct {
 	streamCall bool
 }
 
-func (l *recordingLoop) Run(ctx context.Context, opts LoopOptions) error {
+func (l *recordingLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	l.messages = opts.Messages
 	streamErr := ""
 	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
@@ -43,7 +44,7 @@ func (l *recordingLoop) Run(ctx context.Context, opts LoopOptions) error {
 	if streamErr != "" {
 		finish = "error"
 	}
-	opts.Events <- AgentEnd{Type: "agent_end", FinishReason: finish, Error: streamErr}
+	opts.Events <- core.AgentEnd{Type: "agent_end", FinishReason: finish, Error: streamErr}
 	return nil
 }
 
@@ -56,13 +57,13 @@ func imageUserMessage(content string) ai.User {
 
 // runOnce drives one RunWithProvider to completion and returns the
 // terminal event.
-func runOnce(t *testing.T, ag *Agent, messages []ai.Message) (AgentEnd, *recordingLoop) {
+func runOnce(t *testing.T, ag *Agent, messages []ai.Message) (core.AgentEnd, *recordingLoop) {
 	t.Helper()
 	loop := &recordingLoop{}
 	ag.SetLoopProvider(loop)
-	var end AgentEnd
+	var end core.AgentEnd
 	for event := range ag.Run(context.Background(), messages, nil) {
-		if e, ok := event.(AgentEnd); ok {
+		if e, ok := event.(core.AgentEnd); ok {
 			end = e
 		}
 	}

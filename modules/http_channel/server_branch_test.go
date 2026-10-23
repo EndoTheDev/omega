@@ -8,7 +8,7 @@ package http_channel
 //     HandleBranchCommand's machinery at the store, one lineage marker
 //     row the counts and the tree both exclude).
 //   - GET /sessions rows carry parent_id (sessionPayload embeds
-//     agent.Session, which serializes it).
+//     core.Session, which serializes it).
 //   - The child's active view (and therefore its transcript + its next
 //     run's context) inherits the parent's history as a prefix.
 //   - GET /sessions/{id}/export writes the active path as one

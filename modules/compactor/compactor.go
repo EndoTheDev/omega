@@ -12,14 +12,15 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// Compactor implements agent.CompactionProvider. It holds a reference
+// Compactor implements core.CompactionProvider. It holds a reference
 // to the provider (set at Mount time) and the compaction config (read
 // from ctx.Configs at Mount time).
 type Compactor struct {
 	provider ai.Provider
-	config   agent.CompactionConfig
+	config   core.CompactionConfig
 	// autoWindow is the context window probed from the provider once
 	// at Mount (server start). The value is cached for the process
 	// lifetime - SetConfig never touches it. 0 = no usable window
@@ -31,7 +32,7 @@ type Compactor struct {
 // settings hot-apply path (WatchConfig / settings save) calls this so
 // an edited config.yaml takes effect on the running agent without a
 // restart — Compact reads the config on every call.
-func (c *Compactor) SetConfig(cfg agent.CompactionConfig) {
+func (c *Compactor) SetConfig(cfg core.CompactionConfig) {
 	c.config = cfg
 }
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -23,51 +23,51 @@ type mockStore struct {
 func (m *mockStore) Open(string) error                                        { return nil }
 func (m *mockStore) Close() error                                             { return nil }
 func (m *mockStore) CreateSession(context.Context, string, string, string) error { return nil }
-func (m *mockStore) GetSession(context.Context, string) (agent.Session, error) {
-	return agent.Session{}, nil
+func (m *mockStore) GetSession(context.Context, string) (core.Session, error) {
+	return core.Session{}, nil
 }
-func (m *mockStore) ListSessions(context.Context) ([]agent.Session, error) { return nil, nil }
+func (m *mockStore) ListSessions(context.Context) ([]core.Session, error) { return nil, nil }
 func (m *mockStore) DeleteSession(context.Context, string) error            { return nil }
 func (m *mockStore) UpdateSession(context.Context, string, string) error    { return nil }
 func (m *mockStore) AppendMessage(context.Context, string, ai.Message) error { return nil }
 func (m *mockStore) GetMessages(_ context.Context, _ string) ([]ai.Message, error) {
 	return m.messages, m.err
 }
-func (m *mockStore) GetMessagesWithTimes(context.Context, string) ([]agent.StoredMessage, error) {
+func (m *mockStore) GetMessagesWithTimes(context.Context, string) ([]core.StoredMessage, error) {
 	return nil, nil
 }
 
-var _ agent.StoreProvider = (*mockStore)(nil)
+var _ core.StoreProvider = (*mockStore)(nil)
 
-func (m *mockStore) GetActiveView(context.Context, string) (agent.ActiveView, error) {
-	return agent.ActiveView{}, m.err
+func (m *mockStore) GetActiveView(context.Context, string) (core.ActiveView, error) {
+	return core.ActiveView{}, m.err
 }
 
 func (m *mockStore) GetActiveMessages(_ context.Context, _ string) ([]ai.Message, error) {
 	return m.messages, m.err
 }
-func (m *mockStore) GetSessionTree(context.Context) ([]*agent.SessionNode, error) {
+func (m *mockStore) GetSessionTree(context.Context) ([]*core.SessionNode, error) {
 	return nil, nil
 }
 func (m *mockStore) GetAncestorMessages(context.Context, string) ([]ai.Message, error) {
 	return nil, nil
 }
-func (m *mockStore) SearchMessages(context.Context, string) ([]agent.SearchResult, error) {
+func (m *mockStore) SearchMessages(context.Context, string) ([]core.SearchResult, error) {
 	return nil, nil
 }
-func (m *mockStore) SearchSessions(context.Context, string) ([]agent.SearchResult, error) {
+func (m *mockStore) SearchSessions(context.Context, string) ([]core.SearchResult, error) {
 	return nil, nil
 }
-func (m *mockStore) ComputeInsights(context.Context, int) (*agent.Insights, error) {
+func (m *mockStore) ComputeInsights(context.Context, int) (*core.Insights, error) {
 	return nil, nil
 }
 func (m *mockStore) CountMessages(context.Context, string) (int, error) { return 0, nil }
-func (m *mockStore) SessionCounts(context.Context) (map[string]agent.SessionCounts, error) {
+func (m *mockStore) SessionCounts(context.Context) (map[string]core.SessionCounts, error) {
 	return nil, nil
 }
 func (m *mockStore) AddSessionTokens(context.Context, string, int, int) error { return nil }
 func (m *mockStore) SetSessionTitle(context.Context, string, string, bool) error { return nil }
-func (m *mockStore) SetSessionLastRun(context.Context, string, *agent.LastRunStats) error {
+func (m *mockStore) SetSessionLastRun(context.Context, string, *core.LastRunStats) error {
 	return nil
 }
 
@@ -324,19 +324,19 @@ func TestExtractImagesSkillInjection(t *testing.T) {
 	tests := []struct {
 		name   string
 		input  string
-		skills []agent.Skill
+		skills []core.Skill
 		want   string
 	}{
 		{
 			name:   "skill found",
 			input:  "use @skill:foo here",
-			skills: []agent.Skill{{Name: "foo", Content: "skill body text"}},
+			skills: []core.Skill{{Name: "foo", Content: "skill body text"}},
 			want:   "use skill body text here",
 		},
 		{
 			name:   "skill not found leaves token",
 			input:  "use @skill:bar here",
-			skills: []agent.Skill{{Name: "foo", Content: "skill body text"}},
+			skills: []core.Skill{{Name: "foo", Content: "skill body text"}},
 			want:   "use @skill:bar here",
 		},
 		{

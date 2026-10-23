@@ -14,13 +14,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
 // stubTool is a minimal agent.Tool value for registry-shape assertions.
-func stubTool() agent.Tool {
-	return agent.Tool{Description: "stub"}
+func stubTool() core.Tool {
+	return core.Tool{Description: "stub"}
 }
 
 // ephemeralChatBody builds an /chat ephemeral wire body.
@@ -263,7 +263,7 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 func TestWithoutMemory(t *testing.T) {
 	s := newTestServer()
 	// the registry carries a stub memory tool like the real mount does
-	s.tools = map[string]agent.Tool{
+	s.tools = map[string]core.Tool{
 		"memory": stubTool(),
 		"files":  stubTool(),
 	}
@@ -279,7 +279,7 @@ func TestWithoutMemory(t *testing.T) {
 		t.Fatalf("withoutMemory mutated the caller's registry")
 	}
 	// no memory in the registry: same map back, no allocation churn
-	s.tools = map[string]agent.Tool{"files": stubTool()}
+	s.tools = map[string]core.Tool{"files": stubTool()}
 	if got := withoutMemory(s.tools); got == nil {
 		t.Fatalf("withoutMemory returned nil for a memory-free registry")
 	}

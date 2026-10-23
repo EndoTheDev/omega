@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/kanban"
 )
 
@@ -69,7 +69,7 @@ func TestBoardsEndpointListsRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got struct {
-		Boards []agent.BoardInfo `json:"boards"`
+		Boards []core.BoardInfo `json:"boards"`
 	}
 	boardJSON(t, res, &got)
 	if len(got.Boards) != 3 {
@@ -95,20 +95,20 @@ func TestBoardParamIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var created agent.KanbanTask
+	var created core.KanbanTask
 	boardJSON(t, res, &created)
 	if res.StatusCode != http.StatusCreated || created.ID == "" {
 		t.Fatalf("create = %d %+v", res.StatusCode, created)
 	}
 
 	// default board never sees it
-	list := func(path string) []agent.KanbanTask {
+	list := func(path string) []core.KanbanTask {
 		res, err := http.Get(ts.URL + path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var got struct {
-			Tasks []agent.KanbanTask `json:"tasks"`
+			Tasks []core.KanbanTask `json:"tasks"`
 		}
 		boardJSON(t, res, &got)
 		return got.Tasks
@@ -148,7 +148,7 @@ func TestBoardParamIsolation(t *testing.T) {
 
 	// PATCH within the board works; unknown board fails loudly
 	res, _ = do("PATCH", ts.URL+"/tasks/"+created.ID+"?board=alpha", `{"status":"todo"}`)
-	var patched agent.KanbanTask
+	var patched core.KanbanTask
 	boardJSON(t, res, &patched)
 	if patched.Status != "todo" {
 		t.Fatalf("patch = %+v", patched)

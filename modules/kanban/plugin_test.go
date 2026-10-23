@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // mountAt mounts a fresh plugin on an existing home (OMEGA_HOME must
@@ -19,7 +19,7 @@ func mountAt(t *testing.T, home string) *Plugin {
 	t.Helper()
 	t.Setenv("OMEGA_HOME", home)
 	p := NewPlugin()
-	ctx := &agent.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
+	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -28,11 +28,11 @@ func mountAt(t *testing.T, home string) *Plugin {
 }
 
 // mountPlugin makes a fresh home and mounts on it.
-func mountPlugin(t *testing.T) (*Plugin, *agent.Context, string) {
+func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	ctx := &agent.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
+	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
 	p := NewPlugin()
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("mount: %v", err)
@@ -55,7 +55,7 @@ func TestMountResolvesPointerBoard(t *testing.T) {
 	// t.Setenv restores between; set it again for the remount.
 	t.Setenv("OMEGA_HOME", home)
 	p2 := NewPlugin()
-	ctx := &agent.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
+	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
 	if err := p2.Mount(ctx); err != nil {
 		t.Fatalf("remount: %v", err)
 	}
@@ -147,19 +147,19 @@ func TestCommandChainDelegates(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("nil context from mount")
 	}
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
-		return agent.CommandResult{}, fmt.Errorf("unreachable: %s", name)
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
+		return core.CommandResult{}, fmt.Errorf("unreachable: %s", name)
 	}
 	// rewrite the chain the way a later extension would: kanban's own
 	// /board passes through p.handleCommand, anything else falls back
-	kanbanOnly := func(c context.Context, name, args string) (agent.CommandResult, error) {
+	kanbanOnly := func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/board" || name == "/boards" {
 			return p.handleCommand(name, args)
 		}
 		if prev := ctx.CommandHandler; prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 	}
 	if _, err := kanbanOnly(context.Background(), "/other", ""); err == nil {
 		t.Fatal("prev fallback did not run")

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/kanban"
 )
 
@@ -43,7 +43,7 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("post = %d", res.StatusCode)
 	}
-	var created agent.KanbanTask
+	var created core.KanbanTask
 	json.NewDecoder(res.Body).Decode(&created)
 	res.Body.Close()
 	if created.ID == "" || created.Status != "triage" {
@@ -54,7 +54,7 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 	for _, q := range []string{"", "?status=triage"} {
 		res, _ := http.Get(ts.URL + "/tasks" + q)
 		var got struct {
-			Tasks []agent.KanbanTask `json:"tasks"`
+			Tasks []core.KanbanTask `json:"tasks"`
 		}
 		json.NewDecoder(res.Body).Decode(&got)
 		res.Body.Close()
@@ -74,7 +74,7 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 
 	// PATCH /tasks/{id}: move to running (stamps started_at), then done
 	res, _ = do("PATCH", ts.URL+"/tasks/"+created.ID, `{"status":"running"}`)
-	var patched agent.KanbanTask
+	var patched core.KanbanTask
 	json.NewDecoder(res.Body).Decode(&patched)
 	res.Body.Close()
 	if patched.Status != "running" || patched.StartedAt == "" {
@@ -99,7 +99,7 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("comment = %d", res.StatusCode)
 	}
-	var c agent.KanbanComment
+	var c core.KanbanComment
 	json.NewDecoder(res.Body).Decode(&c)
 	res.Body.Close()
 	if c.Author != "web" {
