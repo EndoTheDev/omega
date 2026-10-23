@@ -217,7 +217,7 @@ func themeNames() []string {
 // Context.TUIProviders), the extension command chain, or skills, so
 // removing a plugin takes its commands out of this list with it - the
 // same law the webui enforces through directory registration.
-var knownCommands = []string{"/copy", "/extensions", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
+var knownCommands = []string{"/copy", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
 
 // buildCommands assembles the per-model command list: shell commands,
 // then module commands from the mounted TUI providers (module_ui.go),
@@ -340,6 +340,7 @@ type model struct {
 	headParent           string          // the run's head-pin parent (retry); "" = derive leaf
 	screen               core.TUIScreen  // open module full-screen view (module seam); nil = closed
 	tick                 *core.TUITick   // active module follow loop (/logs -f pattern); nil = idle
+	canvasFeed           *canvasFeed     // canvas subscription (arc 3d); in-process deltas ride its channel
 	moduleCommands       map[string]core.TUIProvider
 }
 
@@ -469,7 +470,8 @@ func newChatModel(providerType, modelName string, compaction *core.CompactionCon
 		thinkingLevel:        "medium",
 		showToolResults:      true,
 		toolResultsAuto:      true,
-		theme:                t,
+		canvasFeed:          openCanvasFeed(pctx),
+		theme:               t,
 		trustState:           trustState,
 		notifications:        notifications,
 		version:              version,
@@ -478,11 +480,23 @@ func newChatModel(providerType, modelName string, compaction *core.CompactionCon
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.textarea.Focus(), tea.EnterAltScreen, m.titleCmd(), m.fetchModelInfoCmd())
+	cmds := []tea.Cmd{m.textarea.Focus(), tea.EnterAltScreen, m.titleCmd(), m.fetchModelInfoCmd()}
+	// Canvas subscription (arc 3d): deltas arrive on the in-process
+	// channel; the arm re-lives on the canvasDeltaMsg Update case.
+	if m.canvasFeed.hasPanels() {
+		cmds = append(cmds, m.waitForCanvas())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case canvasDeltaMsg:
+		// Canvas delta (in-process subscription, arc 3d): the open
+		// view re-snapshots on its next View; no state is stored
+		// here. Re-arm the drain so later deltas keep arriving.
+		return m, m.waitForCanvas()
+
 	case tea.WindowSizeMsg:
 		m.textarea.SetWidth(msg.Width)
 		m.screenHeight = msg.Height
@@ -699,7 +713,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		// Re-issue the drain command. Also issue a tick when
 		// subagents are running, to refresh the status bar.
-		if m.busy && m.extensions != nil && m.extensions.PendingDelegations() > 0 {
+		if m.busy && m.extensions != nil && m.extensions.PendingDelegations != nil && m.extensions.PendingDelegations() > 0 {
 			return m, tea.Batch(m.drainEvents(), m.tickCmd())
 		}
 		return m, m.drainEvents()
@@ -741,7 +755,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Keep ticking while subagents are running (idle or busy).
-		if m.extensions != nil && m.extensions.PendingDelegations() > 0 {
+		if m.extensions != nil && m.extensions.PendingDelegations != nil && m.extensions.PendingDelegations() > 0 {
 			return m, m.tickCmd()
 		}
 		return m, nil
@@ -1259,6 +1273,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExtensionCommand("/tools", strings.Join(fields[1:], " "))
 	case "/extensions":
 		return m.handleExtensions()
+	case "/panels":
+		return m.handlePanels()
 	case "/theme":
 		return m.handleTheme(fields[1:])
 	case "/help":
@@ -2595,6 +2611,7 @@ func (m model) renderHelp() string {
 		{"/insights [days]", "show cross-session usage analytics (default: 30 days)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
 		{"/extensions", "list loaded extensions"},
+		{"/panels", "canvas panels view: mounted panels render plain, 1-9 invoke an action"},
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
 		{"/help", "show this help"},
 	}

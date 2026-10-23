@@ -870,11 +870,17 @@ func TestAutocompleteLiveFilter(t *testing.T) {
 		t.Fatalf("/ index = %d, want -1 (no single match)", m.autocompleteIndex)
 	}
 
-	// "/p" narrows to a single match and auto-selects it.
+	// "/p" narrows to /panels and /provider; "/pr" then single-matches
+	// and auto-selects.
 	m.textarea.SetValue("/p")
 	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 2 || m.autocompleteMatches[0] != "/panels" || m.autocompleteMatches[1] != "/provider" {
+		t.Fatalf("/p matches = %v, want [/panels /provider]", m.autocompleteMatches)
+	}
+	m.textarea.SetValue("/pr")
+	m.updateAutocomplete()
 	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/provider" {
-		t.Fatalf("/p matches = %v, want [/provider]", m.autocompleteMatches)
+		t.Fatalf("/pr matches = %v, want [/provider]", m.autocompleteMatches)
 	}
 	if m.autocompleteIndex != 0 {
 		t.Fatalf("/p index = %d, want 0 (auto-selected single match)", m.autocompleteIndex)
