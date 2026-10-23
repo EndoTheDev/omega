@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -1300,6 +1301,91 @@ func TestComputeInsightsEmpty(t *testing.T) {
 		if d.Day == "" {
 			t.Errorf("Daily[%d].Day empty", i)
 		}
+	}
+}
+
+// TestComputeInsightsSingleUserTurn pins the Overview for the minimal
+// realistic store: one session holding exactly one persisted user turn
+// - no assistant reply, no tool calls. A real session is in exactly
+// this shape on disk while its first turn is still running, so this is
+// the boundary between the empty store's honest zeros and the
+// multi-session seed.
+func TestComputeInsightsSingleUserTurn(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "solo", "", "only turn"); err != nil {
+		t.Fatalf("create solo: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "solo", ai.NewUser("first and only user turn")); err != nil {
+		t.Fatalf("append solo u1: %v", err)
+	}
+
+	insights, err := s.ComputeInsights(ctx, 30)
+	if err != nil {
+		t.Fatalf("ComputeInsights(30): %v", err)
+	}
+
+	// Windowed run: period label and both window dates are set.
+	if insights.Period != "Last 30 days" {
+		t.Errorf("Period = %q, want %q", insights.Period, "Last 30 days")
+	}
+	if insights.PeriodStart == "" || insights.PeriodEnd == "" {
+		t.Errorf("PeriodStart/End = %q/%q, want both set", insights.PeriodStart, insights.PeriodEnd)
+	}
+
+	// The Overview: the session counts, the turn is the only message,
+	// and there are no tool calls. EstimateTokens gives
+	// len("first and only user turn") = 24 chars / 4 = 6.
+	if insights.Sessions != 1 {
+		t.Errorf("Sessions = %d, want 1", insights.Sessions)
+	}
+	if insights.Messages != 1 {
+		t.Errorf("Messages = %d, want 1", insights.Messages)
+	}
+	if insights.UserMessages != 1 {
+		t.Errorf("UserMessages = %d, want 1", insights.UserMessages)
+	}
+	if insights.ToolCalls != 0 {
+		t.Errorf("ToolCalls = %d, want 0", insights.ToolCalls)
+	}
+	if insights.TotalTokens != 6 {
+		t.Errorf("TotalTokens = %d, want 6", insights.TotalTokens)
+	}
+	if insights.AvgSessionMsgs != 1.0 {
+		t.Errorf("AvgSessionMsgs = %f, want 1.0", insights.AvgSessionMsgs)
+	}
+
+	// No tool rows: a window with no tool calls has no breakdown.
+	if len(insights.Tools) != 0 {
+		t.Errorf("Tools len = %d, want 0", len(insights.Tools))
+	}
+
+	// Exactly one activity bar - the session was created today.
+	sum := 0
+	for i, d := range insights.Daily {
+		if d.Day == "" {
+			t.Errorf("Daily[%d].Day empty", i)
+		}
+		if d.Count > 1 {
+			t.Errorf("Daily[%d].Count = %d, want <= 1", i, d.Count)
+		}
+		sum += d.Count
+	}
+	if sum != 1 {
+		t.Errorf("sum of Daily counts = %d, want 1", sum)
+	}
+
+	// The lone session owns the msgs and tokens maxima; with zero
+	// tool calls the tools notable stays at its honest zero.
+	if insights.NotableMsgs.Value != 1 || !strings.HasSuffix(insights.NotableMsgs.Detail, ", only turn") {
+		t.Errorf("NotableMsgs = %+v, want value 1, detail suffix \", only turn\"", insights.NotableMsgs)
+	}
+	if insights.NotableTokens.Value != 6 || !strings.HasSuffix(insights.NotableTokens.Detail, ", only turn") {
+		t.Errorf("NotableTokens = %+v, want value 6, detail suffix \", only turn\"", insights.NotableTokens)
+	}
+	if insights.NotableTools.Value != 0 {
+		t.Errorf("NotableTools.Value = %d, want 0", insights.NotableTools.Value)
 	}
 }
 
