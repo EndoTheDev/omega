@@ -43,8 +43,12 @@ func TestTurnCopyPersistenceLaw(t *testing.T) {
 		name := d.Name()
 		if d.IsDir() {
 			switch name {
-			case ".git", "static", "node_modules", "ui":
-				// Webui build trees and VCS internals: not Go source.
+			case ".git", ".worktrees", "static", "node_modules", "ui":
+				// Webui build trees, VCS internals, and co-worker
+				// worktree copies: not this repo's Go source.
+				// A worktree is a full repo copy - its allowlisted
+				// files appear at un-allowlisted rel paths and the
+				// walk would count them as violations.
 				// SkipDir prunes only this subtree (SkipAll would end
 				// the whole walk - a nested <module>/ui would silently
 				// hide every later path).
