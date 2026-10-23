@@ -1,0 +1,175 @@
+// The canvas runtime (arc 3a): the host-side registry behind the
+// canvas contract. It keeps current panel state per mounted module
+// (the snapshot source, settled Q3b), emits one ViewModelDelta per
+// state change onto the event spine, and routes action calls to the
+// capsule's registered handler through one seam (settled Q4b).
+//
+// The runtime is transport-blind: the TUI consumes it in-process and
+// http_channel serializes the same snapshot/deltas/action shapes over
+// SSE/REST in its own phase. Registration is declarative - modules
+// append a core.PanelProvider in Mount; the host builds the Canvas
+// after MountAll, and anything else is a wiring bug.
+package agent
+
+import (
+	"fmt"
+	"sort"
+	"sync"
+
+	"github.com/EndoTheDev/omega/core"
+)
+
+// Canvas is the current panel state across mounted modules. Safe for
+// concurrent use: module goroutines may Update while the serving
+// frontend Snapshots and Dispatches.
+type Canvas struct {
+	mu       sync.Mutex
+	state    map[string]map[string]core.Panel // module -> panel id -> current state
+	actions  map[string]map[string]bool       // module -> registered action id
+	handlers map[string]core.PanelProvider    // module -> the capsule's registered handler
+	order    []string                         // module names in mount order
+	emit     func(core.Event)                 // delta emitter, nil-safe
+}
+
+// NewCanvas builds the runtime from a mounted Context. Each
+// PanelProvider seeds its module's panel state from its declared
+// panels and its action index from those panels' Actions. The module
+// name is the one all the provider's declared actions agree on - the
+// capsule's name on its own declaration, not a host lookup. Mount
+// order sets the snapshot's module order; panel ids sort within a
+// module. emit receives one ViewModelDelta per Update - nil means
+// state changes are tracked but no deltas ride the spine (the
+// channel/rest wiring is each phase-3 frontend's job).
+func NewCanvas(ctx *core.Context, emit func(core.Event)) (*Canvas, error) {
+	c := &Canvas{
+		state:    make(map[string]map[string]core.Panel),
+		actions:  make(map[string]map[string]bool),
+		handlers: make(map[string]core.PanelProvider),
+		emit:     emit,
+	}
+	for _, p := range ctx.PanelProviders {
+		if err := c.register(p); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
+// register mounts one module's declarations.
+func (c *Canvas) register(p core.PanelProvider) error {
+	declared := p.Panels()
+	module := ""
+	seen := map[string]bool{}
+	for _, panel := range declared {
+		for _, a := range panel.Actions {
+			if a.Module == "" {
+				return fmt.Errorf("canvas register: action %q carries no module", a.ID)
+			}
+			if !seen[a.Module] {
+				seen[a.Module] = true
+				if module != "" && module != a.Module {
+					return fmt.Errorf("canvas register: one provider declares actions of %q and %q", module, a.Module)
+				}
+				module = a.Module
+			}
+		}
+	}
+	if module == "" {
+		// An actionless provider has no capsule name to route to. It
+		// contributes nothing to the canvas: registration is silent.
+		return nil
+	}
+	if _, mounted := c.handlers[module]; mounted {
+		return fmt.Errorf("canvas register: module %q registered twice", module)
+	}
+
+	panels := make(map[string]core.Panel, len(declared))
+	actionIDs := make(map[string]bool)
+	for _, panel := range declared {
+		if panel.ID == "" {
+			return fmt.Errorf("canvas register: module %q declared a panel with no id", module)
+		}
+		if _, dup := panels[panel.ID]; dup {
+			return fmt.Errorf("canvas register: panel %q declared twice in %q", panel.ID, module)
+		}
+		panels[panel.ID] = panel
+		for _, a := range panel.Actions {
+			actionIDs[a.ID] = true
+		}
+	}
+
+	c.state[module] = panels
+	c.actions[module] = actionIDs
+	c.handlers[module] = p
+	c.order = append(c.order, module)
+	return nil
+}
+
+// Snapshot returns the current panel state of every mounted module:
+// the snapshot half of the snapshot + deltas pattern. Modules come in
+// mount order, panel ids sorted within a module - deterministic
+// output for a cache, a diff, or a wire response.
+func (c *Canvas) Snapshot() []core.Panel {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]core.Panel, 0, len(c.order)*2)
+	for _, module := range c.order {
+		ids := make([]string, 0, len(c.state[module]))
+		for id := range c.state[module] {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			out = append(out, c.state[module][id])
+		}
+	}
+	return out
+}
+
+// Update replaces one panel's current state and emits a ViewModelDelta
+// carrying it. The panel's kind/title and its Actions travel with
+// every delta (descriptors are small by law, self-describing beats a
+// second message kind). The module must be mounted and the panel must
+// carry the id it updates by - an unknown module is a wiring bug, and
+// this is the runtime's front line for catching it.
+func (c *Canvas) Update(module string, panel core.Panel) error {
+	if module == "" || panel.ID == "" {
+		return fmt.Errorf("canvas update: both module and panel id are required")
+	}
+	c.mu.Lock()
+	if _, mounted := c.handlers[module]; !mounted {
+		c.mu.Unlock()
+		return fmt.Errorf("%w: %q", core.ErrUnknownModule, module)
+	}
+	panel.Actions = c.state[module][panel.ID].Actions
+	c.state[module][panel.ID] = panel
+	c.mu.Unlock()
+
+	if c.emit != nil {
+		c.emit(core.ViewModelDelta{Type: "view_model_delta", Panel: panel})
+	}
+	return nil
+}
+
+// Dispatch routes one action call through the pipe (settled Q4b): the
+// module must be mounted, the action id must be one the module
+// registered on its panels, and then the capsule's handler receives
+// the call verbatim. Route failures match the 404 sentinels
+// (core.ErrUnknownModule, core.ErrUnknownAction) via errors.Is; a
+// handler's own error passes through untouched.
+func (c *Canvas) Dispatch(call core.ActionCall) (any, error) {
+	if call.Module == "" {
+		return nil, fmt.Errorf("%w: %q", core.ErrUnknownModule, call.Module)
+	}
+	c.mu.Lock()
+	handler, mounted := c.handlers[call.Module]
+	actionOK := mounted && c.actions[call.Module][call.Action]
+	c.mu.Unlock()
+	if !mounted {
+		return nil, fmt.Errorf("%w: %q", core.ErrUnknownModule, call.Module)
+	}
+	if !actionOK {
+		return nil, fmt.Errorf("%w: %q", core.ErrUnknownAction, call.Action)
+	}
+	return handler.HandleAction(call)
+}
