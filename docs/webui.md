@@ -65,7 +65,10 @@ The gutter divider retains magnetic snap rebase mechanics
   reopening.
 - **Dockables** (`composables/dockables.ts`): the registry of openable
   domains (sidebar, inspector, chat, settings). Settings is a dock-tab
-  singleton; the menubar gear and the `+`-menu entry are gone.
+  singleton; the menubar gear and the `+`-menu entry are gone. The
+  `canvas` entry (arc 3c) is LAYOUT only: the generic host tab in the
+  inspector; panel presence inside it comes from the canvas, never a
+  hardcoded list (Q5a law).
 - **Tab drag-and-drop** moves tabs between panes; sessions stay in the
   sidebar.
 - **Module-owned UI (build-time composition)**: modules ship UI in
@@ -158,7 +161,12 @@ The gutter divider retains magnetic snap rebase mechanics
   export row actions, archived group).
 - Files: `FileTree`, `FilesTab`, `InspectorPanel` (module panels slot
   in). Settings: `SettingsTab` (the config knobs as a dock-tab
-  singleton).
+  singleton). Canvas (arc 3c): `components/canvas/CanvasPanel.vue` is
+  the GENERIC panel renderer (one descriptor: title + payload view +
+  action buttons, v1 plain render only); `composables/canvas.ts` is
+  the store - snapshot load (GET /ui/canvas) + view_model_delta merge
+  (forwarded by the chat host's `canvasDelta` dep) + the action pipe
+  POST (optimistic pending, error state on 4xx/5xx).
 
 ## Testing
 
@@ -184,7 +192,8 @@ at the production boundary or they do not exist.
 Notable suites: `interrupted.test.ts` (transport-death detection + transcript
 transitions), `composer-retry.test.ts` (the morphing button), `panemodel.test.ts`
 (the pane invariants), `dock.test.ts`/`dockables.test.ts`/`panes.test.ts`
-(tree model), `composition.test.ts` (module UI composition),
+(tree model), `canvas.test.ts` (the canvas snapshot/delta/action flow),
+`composition.test.ts` (module UI composition),
 `themes.test.ts`, `images.test.ts`, `stacked.test.ts`,
 `reattach.test.ts` (stream reattach via runHub events).
 

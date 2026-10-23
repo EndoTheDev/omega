@@ -627,6 +627,9 @@ export interface StreamHandlers {
   /** the server auto-created this chat's session - bind the id (the
       tab learns /chat/<id>, the binding lands in the dock tree) */
   onSession?: (sessionId: string) => void;
+  /** one canvas panel descriptor changed (arc 3b: the delta rides
+      every live run stream) - the caller merges it into its canvas */
+  onViewModelDelta?: (panel: CanvasPanel) => void;
 }
 
 // parseFrame extracts the JSON payload from one SSE frame
@@ -712,6 +715,14 @@ export function handlePayload(
       if (p.finish_reason === "cancelled" && p.error === "context canceled") {
         throw new StreamInterruptedError("run cancelled");
       }
+      break;
+    }
+    case "view_model_delta": {
+      // the canvas contract's delta frame (arc 3b): one panel
+      // descriptor, replace-in-place. A malformed descriptor is
+      // skipped - the snapshot is the catch-up for anything lost.
+      const panel = normalizeCanvasPanel(p.panel);
+      if (panel) handlers.onViewModelDelta?.(panel);
       break;
     }
     case "error":
@@ -1122,6 +1133,106 @@ export async function fetchInsights(days: number | null = null): Promise<Insight
     tools: p.tools ?? [],
     daily: p.daily ?? [],
   };
+}
+
+// --- canvas (view-model, arc 3c): the web half of the canvas contract ---
+
+// CanvasPanelAction is one action a panel may invoke through the action
+// pipe (POST /ui/actions). Action ids are module-qualified (settled
+// Q4b): the POST carries the action's module verbatim.
+export interface CanvasPanelAction {
+  id: string;
+  label: string;
+  module: string;
+}
+
+// CanvasPanel is one panel descriptor: schema v1 exactly (settled Q2b) -
+// id + title + kind + payload + actions. The payload is the panel
+// kind's render data, opaque to the contract; v1 renders it plain
+// (JSON display). Rich kinds land with their real migrations (phase
+// 4+) - no speculative kinds here.
+export interface CanvasPanel {
+  id: string;
+  title: string;
+  kind: string;
+  payload: unknown;
+  actions: CanvasPanelAction[];
+}
+
+// normalizeCanvasPanel guards one wire descriptor: wrong shapes drop
+// out (a malformed panel is absent, never a crashed render), label-less
+// actions fall back to their id, an absent payload normalizes to null
+// (the plain render's "no payload" state). Pure.
+export function normalizeCanvasPanel(raw: unknown): CanvasPanel | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.id !== "string" || !p.id) return null;
+  const actions: CanvasPanelAction[] = [];
+  if (Array.isArray(p.actions)) {
+    for (const a of p.actions as unknown[]) {
+      if (!a || typeof a !== "object") continue;
+      const rec = a as Record<string, unknown>;
+      if (typeof rec.id !== "string" || !rec.id) continue;
+      if (typeof rec.module !== "string" || !rec.module) continue;
+      actions.push({
+        id: rec.id,
+        module: rec.module,
+        label: typeof rec.label === "string" && rec.label ? rec.label : rec.id,
+      });
+    }
+  }
+  return {
+    id: p.id,
+    title: typeof p.title === "string" && p.title ? p.title : p.id,
+    kind: typeof p.kind === "string" && p.kind ? p.kind : "default",
+    payload: p.payload === undefined ? null : p.payload,
+    actions,
+  };
+}
+
+// fetchCanvas loads the panel snapshot (GET /ui/canvas): the
+// descriptors verbatim. Nothing mounted is a 200 with [] - a state,
+// not an error. Malformed entries drop out; the array shape stands.
+export async function fetchCanvas(): Promise<CanvasPanel[]> {
+  const r = await fetch("/ui/canvas");
+  if (!r.ok) throw new Error(`canvas: ${r.status}`);
+  const list: unknown = await r.json();
+  if (!Array.isArray(list)) return [];
+  const out: CanvasPanel[] = [];
+  for (const item of list) {
+    const p = normalizeCanvasPanel(item);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+// postCanvasAction sends one action-pipe call (POST /ui/actions).
+// Route failures (unknown module/action) are 404s; the handler's own
+// error is a 500 - both carry the server's plain-text reason, which the
+// panel's error state renders verbatim. Success resolves the
+// {"result": ...} body; the panel updates through the deltas, never
+// through this response (the call may emit none of its own).
+export async function postCanvasAction(
+  mod: string,
+  action: string,
+): Promise<unknown> {
+  const r = await fetch("/ui/actions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ module: mod, action }),
+  });
+  if (!r.ok) {
+    let msg = `action: ${r.status}`;
+    try {
+      const text = await r.text();
+      if (text) msg = text;
+    } catch {
+      // non-text failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+  const j = (await r.json()) as { result?: unknown };
+  return j.result;
 }
 
 // --- message hover timestamps ---

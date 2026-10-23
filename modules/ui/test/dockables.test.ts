@@ -154,6 +154,7 @@ describe("the dockable registry", () => {
           d.title === "Files" && d.id === "files" ||
           d.title === "Settings" && d.id === "settings" ||
           d.title === "Insights" && d.id === "insights" ||
+          d.title === "Canvas" && d.id === "canvas" ||
           d.title === d.id,
         `${d.id}: unexpected label "${d.title}"`,
       );
@@ -192,7 +193,7 @@ describe("the dockable registry", () => {
     assert.deepEqual([...closable].sort(), ["chat"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector NINE pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3)", () => {
+  it("the fixed sidebars: sidebar pinned left, the inspector TEN pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas)", () => {
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
       ["sidebar"],
@@ -203,16 +204,16 @@ describe("the dockable registry", () => {
     // insights joined the right shell at t_d7fd3ad3)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the nine",
+      "no X on any of the ten",
     );
   });
 
@@ -447,7 +448,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(tree, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "canvas", "insights"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes
@@ -482,7 +483,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -538,7 +539,7 @@ describe("dock store: the pane-model reset", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights"],
+      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "canvas", "insights"],
     );
   });
 
@@ -678,8 +679,8 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions,insights",
-      "none of the nine may close",
+      "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions,insights,canvas",
+      "none of the ten may close",
     );
     // the main class still closes through the store
     const chatPane = paneById(tree, row.children[1].id);
