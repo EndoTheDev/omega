@@ -867,6 +867,103 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   overflow-x: hidden;
 }
 
+/* ---- canvas (arc 3c): the generic panel render ---- */
+
+/* the host pane's scroll region: the stacked plain panels */
+.canvas-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.canvas-panel {
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  background: var(--z1-raised);
+  padding: 8px 10px;
+  flex-shrink: 0;
+}
+
+.canvas-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.canvas-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-kind {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* the v1 plain payload view: JSON display in the mono voice */
+.canvas-payload {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.canvas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* the action pipe's buttons: the shell's accent voice */
+.canvas-action {
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.canvas-action:hover { border-color: var(--accent); }
+.canvas-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+  border-color: var(--stroke);
+}
+
+/* the pipe's 4xx/5xx answer, verbatim from the server */
+.canvas-error {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--err);
+}
+
+.canvas-empty {
+  margin: 0;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 /* the scrolling body: entry tree (same voice as the session list rows -
    raised chip hover, mono meta on the edge) */
 .inspector-files {
