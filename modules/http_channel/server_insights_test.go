@@ -180,6 +180,93 @@ func TestInsightsParityWithTUI(t *testing.T) {
 	}
 }
 
+// seedOneUserTurn writes the minimal realistic row set: one session
+// holding exactly one persisted user turn - no assistant reply, no
+// tool calls. A live session is in exactly this shape on disk while
+// its first turn is still running.
+func seedOneUserTurn(t *testing.T, st *store.Store) {
+	t.Helper()
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "solo", "", "only turn"); err != nil {
+		t.Fatalf("create solo: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "solo", ai.NewUser("first and only user turn")); err != nil {
+		t.Fatalf("append solo u1: %v", err)
+	}
+}
+
+// TestInsightsSingleUserTurnParity: the Overview over the minimal
+// non-empty store - one session, one persisted user turn, zero tool
+// calls. The endpoint must agree with the TUI here too, the TUI must
+// print the full report (not the "[no sessions...]" special case), and
+// a window with real data but no tool calls must keep Tools a JSON
+// array (t_92f7274a's crash class: null broke the webui's boot).
+func TestInsightsSingleUserTurnParity(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	seedOneUserTurn(t, st)
+
+	payload := insightsGet(t, s, "/insights")
+	overview, tools := tuiNumbers(t, st, "")
+	endpoint := map[string]int{
+		"sessions":      payload.Sessions,
+		"messages":      payload.Messages,
+		"user_messages": payload.UserMessages,
+		"tool_calls":    payload.ToolCalls,
+		"total_tokens":  payload.TotalTokens,
+	}
+	for label, want := range overview {
+		if got := endpoint[label]; got != want {
+			t.Errorf("%s: endpoint = %d, TUI prints %d", label, got, want)
+		}
+	}
+
+	// The Overview, pinned: one session, the turn is the only
+	// message, no tool calls, 24 chars / 4 = 6 est. tokens, avg 1.0.
+	if payload.Sessions != 1 || payload.Messages != 1 || payload.UserMessages != 1 {
+		t.Errorf("counts = sessions %d, messages %d, user_messages %d, want 1/1/1",
+			payload.Sessions, payload.Messages, payload.UserMessages)
+	}
+	if payload.ToolCalls != 0 {
+		t.Errorf("tool_calls = %d, want 0", payload.ToolCalls)
+	}
+	if payload.TotalTokens != 6 {
+		t.Errorf("total_tokens = %d, want 6 (24 chars / 4 per token)", payload.TotalTokens)
+	}
+	if payload.AvgSessionMsgs != 1.0 {
+		t.Errorf("avg_session_msgs = %f, want 1.0", payload.AvgSessionMsgs)
+	}
+
+	// The TUI transcript shows the full report for this window and
+	// its Avg msgs/session line agrees with the wire.
+	res, err := store.HandleInsightsCommand(context.Background(), st, "")
+	if err != nil {
+		t.Fatalf("HandleInsightsCommand(): %v", err)
+	}
+	if strings.Contains(res.Text, "[no sessions") {
+		t.Errorf("TUI prints the empty-store special case:\n%s", res.Text)
+	}
+	m := regexp.MustCompile(`Avg msgs/session:\s+([0-9.]+)`).FindStringSubmatch(res.Text)
+	if m == nil {
+		t.Fatalf("TUI insights text missing the avg line:\n%s", res.Text)
+	}
+	avg, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		t.Fatalf("parse TUI avg %q: %v", m[1], err)
+	}
+	if avg != payload.AvgSessionMsgs {
+		t.Errorf("avg: endpoint = %f, TUI prints %s", payload.AvgSessionMsgs, m[1])
+	}
+
+	// Tools stays an array on the wire: nil after decode means the
+	// JSON was null, and the SPA dereferences tools on every boot.
+	if payload.Tools == nil || len(payload.Tools) != 0 {
+		t.Errorf("tools = %v, want non-nil empty array", payload.Tools)
+	}
+	if len(tools) != 0 {
+		t.Errorf("TUI prints tool rows %v, want none", tools)
+	}
+}
+
 // TestInsightsDefaultsAndParams: default 30; honor day>=0 (period
 // label tracks the TUI's shape); junk and negatives fall back to 30.
 func TestInsightsDefaultsAndParams(t *testing.T) {
