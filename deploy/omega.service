@@ -3,8 +3,8 @@ Description=omega agent - http_channel + webui (installed instance)
 After=network-online.target
 
 [Service]
-ExecStart=/home/endo/.omega/omega serve
-WorkingDirectory=/home/endo/.omega
+ExecStart=%h/.omega/omega serve
+WorkingDirectory=%h/.omega
 Restart=always
 RestartSec=3
 
