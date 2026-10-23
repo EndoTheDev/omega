@@ -1,7 +1,5 @@
 package core
 
-import "github.com/EndoTheDev/omega/ai"
-
 // Skill is a loaded skill from a skill directory. The YAML frontmatter
 // in the skill file provides name and description; the markdown body is
 // the skill content injected into the system prompt when invoked. Dir
@@ -89,7 +87,7 @@ type ToolInfo struct {
 // ExtensionInfo is metadata about a loaded extension, for display.
 type ExtensionInfo struct {
 	Name        string
-	Description string     // one-line purpose, from the optional Describer seam
+	Description string // one-line purpose, from the optional Describer seam
 	Tools       int
 	Commands    int
 	Seams       []string   // declared seam types ("prompt_builder", "compactor", etc.)
@@ -99,7 +97,7 @@ type ExtensionInfo struct {
 // PromptBuildOptions carries context for extension-built system prompts.
 type PromptBuildOptions struct {
 	CWD            string
-	Messages       []ai.Message
+	Messages       []Message
 	Extensions     []ExtensionInfo
 	ProjectContext string   // AGENTS.md contents, already trust-gated by Go
 	Custom         string   // user-supplied prompt from config, may be empty

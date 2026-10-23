@@ -1,10 +1,8 @@
 // Package core holds the engine's shared contracts: the agent event
-// stream and the wire/session message shapes. Zero behavior, no
-// dependencies outside stdlib and the first-party ai package
-// (factory-flow ADR, v0.11 arc).
+// stream, the wire/session message shapes, the message vocabulary, the
+// provider stream events, and the provider contract. Zero behavior, no
+// dependencies outside stdlib (factory-flow ADR, v0.11 arc 1b2).
 package core
-
-import "github.com/EndoTheDev/omega/ai"
 
 // Event is the sealed interface for all agent events.
 type Event interface {
@@ -40,18 +38,18 @@ func (TurnEnd) isEvent() {}
 // assistant response (with thinking) so the TUI can persist it without
 // reconstructing from the stream buffer.
 type AgentEnd struct {
-	Type         string        `json:"type"`
-	Turns        int           `json:"turns"`
-	FinishReason string        `json:"finish_reason"`
-	Error        string        `json:"error,omitempty"`
-	Message      ai.Assistant  `json:"message,omitempty"`
+	Type         string    `json:"type"`
+	Turns        int       `json:"turns"`
+	FinishReason string    `json:"finish_reason"`
+	Error        string    `json:"error,omitempty"`
+	Message      Assistant `json:"message,omitempty"`
 }
 
 func (AgentEnd) isEvent() {}
 
 // StreamEvent wraps an ai stream event forwarded from the provider.
 type StreamEvent struct {
-	Event ai.StreamEvent `json:"-"`
+	Event ProviderStreamEvent `json:"-"`
 }
 
 func (StreamEvent) isEvent() {}
@@ -59,8 +57,8 @@ func (StreamEvent) isEvent() {}
 // ToolResultEvent is emitted after a tool executes, carrying the result
 // message so the TUI can persist it to the session store.
 type ToolResultEvent struct {
-	Type    string        `json:"type"`
-	Message ai.ToolResult `json:"message"`
+	Type    string     `json:"type"`
+	Message ToolResult `json:"message"`
 }
 
 func (ToolResultEvent) isEvent() {}
@@ -69,8 +67,8 @@ func (ToolResultEvent) isEvent() {}
 // carrying the assistant message (with thinking and tool calls) so the
 // TUI can persist it to the session store.
 type AssistantMessageEvent struct {
-	Type    string       `json:"type"`
-	Message ai.Assistant `json:"message"`
+	Type    string    `json:"type"`
+	Message Assistant `json:"message"`
 }
 
 func (AssistantMessageEvent) isEvent() {}
