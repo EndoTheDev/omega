@@ -480,7 +480,7 @@ type toolMapping struct {
 }
 
 // Bridge manages MCP server connections and routes tool calls.
-// It implements agent.ToolProvider via the Plugin's Mount method.
+// It implements core.ToolProvider via the Plugin's Mount method.
 type Bridge struct {
 	servers  map[string]MCPConn
 	toolMap  map[string]toolMapping

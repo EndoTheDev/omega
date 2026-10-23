@@ -5,17 +5,18 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
 // Compile-time interface checks.
-var _ agent.CompactionProvider = (*Compactor)(nil)
+var _ core.CompactionProvider = (*Compactor)(nil)
 var _ agent.Plugin = (*Plugin)(nil)
 
 func TestCompactDisabled(t *testing.T) {
 	c := &Compactor{
 		provider: ai.NewFakeProvider("test"),
-		config:   agent.CompactionConfig{Enabled: false},
+		config:   core.CompactionConfig{Enabled: false},
 	}
 	msgs := []ai.Message{ai.NewUser("hello")}
 	out, err := c.Compact(context.Background(), msgs)
@@ -30,7 +31,7 @@ func TestCompactDisabled(t *testing.T) {
 func TestCompactUnderBudget(t *testing.T) {
 	c := &Compactor{
 		provider: ai.NewFakeProvider("test"),
-		config: agent.CompactionConfig{
+		config: core.CompactionConfig{
 			Enabled:       true,
 			Threshold:     0.6,
 			ContextWindow: 32768,
@@ -56,7 +57,7 @@ func TestCompactSummarizes(t *testing.T) {
 	)
 	c := &Compactor{
 		provider: provider,
-		config: agent.CompactionConfig{
+		config: core.CompactionConfig{
 			Enabled:       true,
 			Threshold:     0.6,
 			ContextWindow: 10,
@@ -106,7 +107,7 @@ func TestPluginInterface(t *testing.T) {
 // a run_compact CmdAction (the TUI interprets it).
 func TestCompactCommand(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	// Compactor requires provider seam — mount a fake provider.
 	ctx.Provider = ai.NewFakeProvider("test")
 	if err := p.Mount(ctx); err != nil {

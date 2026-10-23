@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/verdict"
 )
 
@@ -62,7 +62,7 @@ func issueCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{}
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
-		_, _ = h.Ask(context.Background(), agent.VerdictPrompt{
+		_, _ = h.Ask(context.Background(), core.VerdictPrompt{
 			ID: id, SessionID: session, Title: "Approve?", Options: vo("yes", "no"),
 		})
 		close(done)
@@ -177,7 +177,7 @@ func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
 	ts, h := verdictServer(t)
 	done := make(chan struct{})
 	go func() {
-		_, _ = h.Ask(context.Background(), agent.VerdictPrompt{
+		_, _ = h.Ask(context.Background(), core.VerdictPrompt{
 			ID: "cm", SessionID: "s1", Title: "Pick lanes", Multi: true,
 			Options: []ai.VerdictOption{{Label: "Ship", Description: "merge now"}, {Label: "Hold"}, {Label: "Stop"}},
 		})

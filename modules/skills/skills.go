@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// SkillsProvider implements agent.SkillsProvider by scanning a
+// SkillsProvider implements core.SkillsProvider by scanning a
 // directory for <name>/<name>.md skill files. SharedDir (optional) is
 // scanned before Dir and is every agent's shared skill home; Dir is
 // the agent's own. The merge is by skill NAME in scan order - first
@@ -45,7 +45,7 @@ func (sp *SkillsProvider) scanDirs(dir string) []string {
 // name with the first (shared) occurrence winning. Missing
 // directories return an empty slice, not an error. If dir is empty,
 // uses the provider's configured Dir.
-func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
+func (sp *SkillsProvider) LoadSkills(dir string) ([]core.Skill, error) {
 	if dir == "" {
 		dir = sp.Dir
 	}
@@ -54,7 +54,7 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
 		return nil, nil
 	}
 	seen := map[string]bool{}
-	var out []agent.Skill
+	var out []core.Skill
 	for _, d := range dirs {
 		skills, err := scanSkills(d)
 		if err != nil {
@@ -71,12 +71,12 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]agent.Skill, error) {
 	return out, nil
 }
 
-// ListSkills is the read-only inspector snapshot (agent.SkillsLister,
+// ListSkills is the read-only inspector snapshot (core.SkillsLister,
 // card t_db430fea): a fresh scan of the configured directory, sorted by
 // name. The directory is the live source of truth - a re-scan on every
 // listing is the point; there is no cached loader state to invalidate.
 // A missing directory is an empty inventory, not an error.
-func (sp *SkillsProvider) ListSkills() ([]agent.Skill, error) {
+func (sp *SkillsProvider) ListSkills() ([]core.Skill, error) {
 	skills, err := sp.LoadSkills("")
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ const promptSectionOrder = 20
 // usage instruction plus one line per skill. Empty when no skills are
 // installed. Owned here - the usage instruction describes this module's
 // tool, not the prompt builder's.
-func (sp *SkillsProvider) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
+func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	skills, _ := sp.LoadSkills("")
 	if len(skills) == 0 {
 		return nil
@@ -103,14 +103,14 @@ func (sp *SkillsProvider) PromptSections(opts agent.PromptBuildOptions) []agent.
 	for _, s := range skills {
 		fmt.Fprintf(&sb, "- %s: %s\n", s.Name, s.Description)
 	}
-	return []agent.PromptSection{
+	return []core.PromptSection{
 		{Title: "Available Skills", Body: sb.String(), Order: promptSectionOrder},
 	}
 }
 
 // Tools returns the skills.read tool.
-func (sp *SkillsProvider) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
+func (sp *SkillsProvider) Tools() map[string]core.Tool {
+	return map[string]core.Tool{
 		"skills.read": {
 			Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.",
 			Parameters: map[string]any{
@@ -189,14 +189,14 @@ func (sp *SkillsProvider) HandleCommand(ctx context.Context, name, args string) 
 }
 
 // Commands returns the slash command definitions.
-func (sp *SkillsProvider) Commands() []agent.ExtensionCommand {
-	return []agent.ExtensionCommand{
+func (sp *SkillsProvider) Commands() []core.ExtensionCommand {
+	return []core.ExtensionCommand{
 		{Name: "/skills", Description: "List loaded skills with name and description"},
 	}
 }
 
 // scanSkills scans a directory for <name>/<name>.md skill files.
-func scanSkills(dir string) ([]agent.Skill, error) {
+func scanSkills(dir string) ([]core.Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -204,7 +204,7 @@ func scanSkills(dir string) ([]agent.Skill, error) {
 		}
 		return nil, err
 	}
-	var skills []agent.Skill
+	var skills []core.Skill
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -225,14 +225,14 @@ func scanSkills(dir string) ([]agent.Skill, error) {
 
 // loadSkill reads a single skill .md file and parses its YAML
 // frontmatter. The frontmatter is delimited by --- lines.
-func loadSkill(path string) (agent.Skill, error) {
+func loadSkill(path string) (core.Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return agent.Skill{}, err
+		return core.Skill{}, err
 	}
 	defer f.Close()
 
-	var s agent.Skill
+	var s core.Skill
 	scanner := bufio.NewScanner(f)
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
 		s.Content = scanner.Text() + "\n" + readRemaining(scanner)
@@ -260,7 +260,7 @@ func loadSkill(path string) (agent.Skill, error) {
 	return s, scanner.Err()
 }
 
-func formatSkill(s agent.Skill) string {
+func formatSkill(s core.Skill) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Skill: %s\n", s.Name)
 	fmt.Fprintf(&sb, "Directory: %s\n\n", s.Dir)

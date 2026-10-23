@@ -1,7 +1,7 @@
 package agent_loop
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the loop into omega's plugin system. It provides
@@ -25,7 +25,7 @@ func (p *Plugin) Provides() []string { return []string{"loop"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount sets ctx.Loop to the default loop implementation.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	ctx.Loop = Loop{}
 	return nil
 }

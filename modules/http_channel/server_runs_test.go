@@ -20,6 +20,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -97,7 +98,7 @@ func finalStep(content string) []ai.StreamEvent {
 func newStepServer(t *testing.T) (*Server, *stepProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newStepProvider("step")
-	a := agent.NewAgent(prov, nil, 0)
+	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -497,32 +498,32 @@ func fetchDetail(t *testing.T, url string) map[string]any {
 // agent_end, exactly as the real loop unwinds.
 type hangLoop struct{}
 
-func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
-	opts.Events <- agent.AgentStart{Type: "agent_start"}
+func (hangLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+	opts.Events <- core.AgentStart{Type: "agent_start"}
 	turns := 0
 	for {
 		if ctx.Err() != nil {
-			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
 			return nil
 		}
 		turns++
-		opts.Events <- agent.TurnStart{Type: "turn_start", Turn: turns}
+		opts.Events <- core.TurnStart{Type: "turn_start", Turn: turns}
 		if turns > 1 {
 			// The tool returned without a deadline hit (cannot happen
 			// with hangTool, but the shape stays loop-honest).
-			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "stop"}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "stop"}
 			return nil
 		}
 		call := ai.ToolCall{ID: "c1", Name: "hang"}
-		opts.Events <- agent.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: call}}
-		opts.Events <- agent.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+		opts.Events <- core.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: call}}
+		opts.Events <- core.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
 		result, err := opts.Tools["hang"].Run(ctx, call.Arguments)
 		if err != nil {
-			opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), call.ID, true)}
+			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), call.ID, true)}
 		} else {
-			opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, call.ID, false)}
+			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, call.ID, false)}
 		}
-		opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: 1}
+		opts.Events <- core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: 1}
 	}
 }
 
@@ -534,14 +535,14 @@ func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 // and green: it covers the LIVE run, this covers the runaway one.
 func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 	prov := newStepProvider("step")
-	a := agent.NewAgent(prov, nil, 0)
+	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(hangLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := NewServer(a, map[string]agent.Tool{
+	s := NewServer(a, map[string]core.Tool{
 		"hang": {
 			Description: "blocks until its context ends",
 			Run: func(ctx context.Context, _ map[string]any) (string, error) {
@@ -603,8 +604,8 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 // stopHangTool is the hang tool the stop tests block in: it fires
 // started() on entry (the "tool is running" signal), then parks until
 // its context ends - the exact shape a cancelled long shell call takes.
-func stopHangTool(started func()) agent.Tool {
-	return agent.Tool{
+func stopHangTool(started func()) core.Tool {
+	return core.Tool{
 		Description: "blocks until its context ends",
 		Run: func(ctx context.Context, _ map[string]any) (string, error) {
 			if started != nil {
@@ -622,12 +623,12 @@ func stopHangTool(started func()) agent.Tool {
 // produces the cancelled agent_end. The cancel parks in the tool.
 type scriptedStopLoop struct{ started func() }
 
-func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
-	opts.Events <- agent.AgentStart{Type: "agent_start"}
-	opts.Events <- agent.TurnStart{Type: "turn_start", Turn: 1}
-	opts.Events <- agent.StreamEvent{Event: ai.ResponseChunk{Type: "response_chunk", Content: "par"}}
-	opts.Events <- agent.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "hang"}}}
-	opts.Events <- agent.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+func (l scriptedStopLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+	opts.Events <- core.AgentStart{Type: "agent_start"}
+	opts.Events <- core.TurnStart{Type: "turn_start", Turn: 1}
+	opts.Events <- core.StreamEvent{Event: ai.ResponseChunk{Type: "response_chunk", Content: "par"}}
+	opts.Events <- core.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "hang"}}}
+	opts.Events <- core.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
 	// Mirror the real loop: the assistant persists before the tool
 	// runs, and both survive the cancelled ctx (WithoutCancel law).
 	if sink := agent.RunTurnSink(ctx); sink != nil {
@@ -641,19 +642,19 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error
 		if sink := agent.RunTurnSink(ctx); sink != nil {
 			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewToolResult(err.Error(), "c1", true))
 		}
-		opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), "c1", true)}
+		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), "c1", true)}
 	} else {
 		if sink := agent.RunTurnSink(ctx); sink != nil {
 			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewToolResult(result, "c1", false))
 		}
-		opts.Events <- agent.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, "c1", false)}
+		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, "c1", false)}
 	}
-	opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
+	opts.Events <- core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
 	if ctx.Err() != nil {
-		opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "cancelled", Error: ctx.Err().Error()}
+		opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "cancelled", Error: ctx.Err().Error()}
 		return nil
 	}
-	opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}
+	opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}
 	return nil
 }
 
@@ -666,14 +667,14 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error
 func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	toolStarted := make(chan struct{})
 	prov := newStepProvider("step")
-	a := agent.NewAgent(prov, nil, 0)
+	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(scriptedStopLoop{started: sync.OnceFunc(func() { close(toolStarted) })})
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := NewServer(a, map[string]agent.Tool{"hang": stopHangTool(nil)}, st, nil)
+	s := NewServer(a, map[string]core.Tool{"hang": stopHangTool(nil)}, st, nil)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 

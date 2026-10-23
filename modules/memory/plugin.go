@@ -2,6 +2,7 @@ package memory
 
 import (
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin implements agent.Plugin for the memory seam. It opens the
@@ -27,7 +28,7 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the FileMemory from config and populates ctx.Memory +
 // a memory tool provider.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["memory"].(Config); ok {
 		cfg = c

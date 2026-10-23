@@ -1,7 +1,7 @@
 package delegate
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin implements agent.Plugin. It wraps a Delegate and mounts it
@@ -36,19 +36,19 @@ func (p *Plugin) Requires() []string { return []string{"notifications", "logging
 
 // Mount appends the delegate ToolProvider and sets InjectedMessages
 // and PendingDelegations on the Context.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	p.delegate.logger = ctx.Logger
 	p.delegate.notifier = ctx.Notifications
 	ctx.ToolProviders = append(ctx.ToolProviders, p.delegate)
 
-	// Bridge internal injectedMsg channel to agent.InjectedMessage.
-	agentCh := make(chan agent.InjectedMessage, 16)
+	// Bridge internal injectedMsg channel to core.InjectedMessage.
+	agentCh := make(chan core.InjectedMessage, 16)
 	ctx.InjectedMessages = agentCh
 	ctx.PendingDelegations = p.delegate.PendingCount
 
 	go func() {
 		for msg := range p.delegate.InjectedChannel() {
-			agentCh <- agent.InjectedMessage{Text: msg.text, Source: msg.source}
+			agentCh <- core.InjectedMessage{Text: msg.text, Source: msg.source}
 		}
 	}()
 

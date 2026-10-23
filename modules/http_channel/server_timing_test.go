@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -38,9 +38,9 @@ const eventDelay = 60 * time.Millisecond
 // strictly below it and well above eventDelay.
 const toolSleep = 150 * time.Millisecond
 
-func timingTestAgent(t *testing.T) (*agent.Agent, *store.Store, *httptest.Server, *http.Client) {
+func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server, *http.Client) {
 	t.Helper()
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"sleep": {
 			Description: "sleep for testing",
 			Run: func(_ context.Context, _ map[string]any) (string, error) {
@@ -70,7 +70,7 @@ func timingTestAgent(t *testing.T) (*agent.Agent, *store.Store, *httptest.Server
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 	prov := ai.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
-	a := agent.NewAgent(prov, nil, 0)
+	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(agent_loop.Loop{})
 	st, err := store.Open(":memory:")
 	if err != nil {

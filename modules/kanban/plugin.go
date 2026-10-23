@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
@@ -52,7 +53,7 @@ func (p *Plugin) Requires() []string { return []string{"notifications"} }
 // mount failure (bad dsn, unreadable path, corrupt pointer) is a
 // startup error - a board that silently does not exist is worse than
 // a crash.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["kanban"].(Config); ok {
 		cfg = c
@@ -103,20 +104,20 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 
 // wireCommands registers the /board and /boards slash commands with
 // the TUI command chain.
-func (p *Plugin) wireCommands(ctx *agent.Context) {
+func (p *Plugin) wireCommands(ctx *core.Context) {
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/board", Description: "show the active board, or switch it (/board [name])"},
-		agent.ExtensionCommand{Name: "/boards", Description: "list boards and the current pointer"},
+		core.ExtensionCommand{Name: "/board", Description: "show the active board, or switch it (/board [name])"},
+		core.ExtensionCommand{Name: "/boards", Description: "list boards and the current pointer"},
 	)
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/board" || name == "/boards" {
 			return p.handleCommand(name, args)
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 	}
 }
 
@@ -126,12 +127,12 @@ func (p *Plugin) wireCommands(ctx *agent.Context) {
 // /board main resets it. It deliberately does NOT move the global
 // pointer - that is the registry op (omega kanban board use),
 // explicit by design.
-func (p *Plugin) handleCommand(name, args string) (agent.CommandResult, error) {
+func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/boards":
 		boards, err := p.store.Boards(context.Background())
 		if err != nil {
-			return agent.CommandResult{}, err
+			return core.CommandResult{}, err
 		}
 		current := p.sessionBoard()
 		var sb strings.Builder
@@ -146,22 +147,22 @@ func (p *Plugin) handleCommand(name, args string) (agent.CommandResult, error) {
 			fmt.Fprintf(&sb, "%s %s\n", marker, b.Name)
 		}
 		sb.WriteString("\n* active in this session   = pointer target\n")
-		return agent.CommandResult{Text: sb.String()}, nil
+		return core.CommandResult{Text: sb.String()}, nil
 	case "/board":
 		rest := strings.TrimSpace(args)
 		if rest == "" {
-			return agent.CommandResult{Text: "board: " + p.sessionBoard() + " (/board <name> to switch, /board main for the default)"}, nil
+			return core.CommandResult{Text: "board: " + p.sessionBoard() + " (/board <name> to switch, /board main for the default)"}, nil
 		}
 		if rest != DefaultBoardName && !ValidBoardName(rest) {
-			return agent.CommandResult{}, fmt.Errorf("illegal board name %q", rest)
+			return core.CommandResult{}, fmt.Errorf("illegal board name %q", rest)
 		}
 		if _, err := p.store.handleFor(rest); err != nil {
-			return agent.CommandResult{}, err
+			return core.CommandResult{}, err
 		}
 		p.setSessionBoard(rest)
-		return agent.CommandResult{Text: "board: " + rest}, nil
+		return core.CommandResult{Text: "board: " + rest}, nil
 	}
-	return agent.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 }
 
 // --- session-scoped active board (small, mutexed; the TUI command
@@ -185,7 +186,7 @@ func (p *Plugin) setSessionBoard(name string) {
 // ToolProvider exposes the board as agent tools. The tools take the
 // provider seam instead of *Store so embedders can swap implementations.
 type ToolProvider struct {
-	board agent.KanbanProvider
+	board core.KanbanProvider
 
 	// active names the board the tools hit when a call omits board.
 	// "" = the default board (pointer target at mount). Mutated by the
@@ -204,7 +205,7 @@ func (p *ToolProvider) sessionBoard() string {
 // taskActions is the structured sub-action metadata for the
 // consolidated task tool: one source of truth for the schema enum, the
 // prompt, and the /tools inventory.
-var taskActions = []agent.ToolAction{
+var taskActions = []core.ToolAction{
 	{Name: "create", Description: "Create a board task (title is the short name, body carries the full spec)."},
 	{Name: "list", Description: "List board tasks, optionally filtered by status."},
 	{Name: "update", Description: "Update a task: move status (any legal transition), set assignee, retitle, or rewrite the body."},
@@ -237,9 +238,9 @@ var legacyTaskNames = map[string]string{
 // into one "task" domain tool with an action enum (derived from
 // taskActions) plus a batch operations array; the legacy task.* names
 // stay registered as alias shims for one release.
-func (p *ToolProvider) Tools() map[string]agent.Tool {
+func (p *ToolProvider) Tools() map[string]core.Tool {
 	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"task": {
 			Description: "One tool for the kanban board: create, list, update, complete, comment on, and link tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
 			Actions:     taskActions,
@@ -282,7 +283,7 @@ func (p *ToolProvider) Tools() map[string]agent.Tool {
 			continue
 		}
 		action := a.Name
-		tools[legacy] = agent.Tool{
+		tools[legacy] = core.Tool{
 			Description: fmt.Sprintf("%s (alias for task with action %q)", a.Description, action),
 			AliasOf:     "task",
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
@@ -374,7 +375,7 @@ func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (stri
 }
 
 func (p *ToolProvider) runCreate(ctx context.Context, board string, args map[string]any) (string, error) {
-	in := agent.KanbanTask{
+	in := core.KanbanTask{
 		Title:     str(args["title"]),
 		Body:      str(args["body"]),
 		Assignee:  str(args["assignee"]),
@@ -410,7 +411,7 @@ func (p *ToolProvider) runList(ctx context.Context, board string, args map[strin
 
 func (p *ToolProvider) runUpdate(ctx context.Context, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
-	patch := agent.KanbanPatch{
+	patch := core.KanbanPatch{
 		Status: str(args["status"]),
 		Title:  optStr(args["title"]),
 		Body:   optStr(args["body"]),
@@ -439,7 +440,7 @@ func (p *ToolProvider) runComment(ctx context.Context, board string, args map[st
 
 func (p *ToolProvider) runComplete(ctx context.Context, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
-	out, err := p.board.UpdateTask(ctx, board, id, agent.KanbanPatch{Status: StatusDone})
+	out, err := p.board.UpdateTask(ctx, board, id, core.KanbanPatch{Status: StatusDone})
 	if err != nil {
 		return "", err
 	}
@@ -456,7 +457,7 @@ func (p *ToolProvider) runLink(ctx context.Context, board string, args map[strin
 		return "", fmt.Errorf("no session id: pass session_id")
 	}
 	sptr := sess
-	out, err := p.board.UpdateTask(ctx, board, id, agent.KanbanPatch{SessionID: &sptr})
+	out, err := p.board.UpdateTask(ctx, board, id, core.KanbanPatch{SessionID: &sptr})
 	if err != nil {
 		return "", err
 	}

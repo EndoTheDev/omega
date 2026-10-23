@@ -15,11 +15,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // insightsPayload is the wire shape of one /insights response. It
-// mirrors agent.Insights field-for-field (minus the TUI's Bar glyphs -
+// mirrors core.Insights field-for-field (minus the TUI's Bar glyphs -
 // the webui renders bar width from Count itself). The notable stats
 // keep the TUI's honest zero-omission: a NotableStat of 0 renders as
 // nothing on the client, not as a fake row.
@@ -59,7 +59,7 @@ type insightsNotableRow struct {
 // insightsPayloadOf copies the computed Insights into the wire shape.
 // One place to map, so a future store-field addition has exactly one
 // place to surface.
-func insightsPayloadOf(in *agent.Insights) insightsPayload {
+func insightsPayloadOf(in *core.Insights) insightsPayload {
 	p := insightsPayload{
 		Period:         in.Period,
 		PeriodStart:    in.PeriodStart,

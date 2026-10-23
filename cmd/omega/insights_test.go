@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestFormatNumber(t *testing.T) {
@@ -32,7 +33,7 @@ func TestFormatNumber(t *testing.T) {
 }
 
 func TestFormatInsights(t *testing.T) {
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:         "30 days",
 		PeriodStart:    "2026-08-01",
 		PeriodEnd:      "2026-08-31",
@@ -42,17 +43,17 @@ func TestFormatInsights(t *testing.T) {
 		ToolCalls:      300,
 		TotalTokens:    1234567,
 		AvgSessionMsgs: 11.9,
-		Tools: []agent.ToolStat{
+		Tools: []core.ToolStat{
 			{Name: "bash", Count: 150},
 			{Name: "read_file", Count: 100},
 		},
-		Daily: [7]agent.DayStat{
+		Daily: [7]core.DayStat{
 			{Day: "Mon", Bar: "████", Count: 10},
 			{Day: "Tue", Bar: "██", Count: 5},
 		},
-		NotableMsgs:   agent.NotableStat{Value: 99, Detail: "2026-08-15"},
-		NotableTokens: agent.NotableStat{Value: 50000, Detail: "2026-08-20"},
-		NotableTools:  agent.NotableStat{Value: 30, Detail: "2026-08-10"},
+		NotableMsgs:   core.NotableStat{Value: 99, Detail: "2026-08-15"},
+		NotableTokens: core.NotableStat{Value: 50000, Detail: "2026-08-20"},
+		NotableTools:  core.NotableStat{Value: 30, Detail: "2026-08-10"},
 	}
 
 	out := agent.FormatInsights(in)
@@ -109,13 +110,13 @@ func TestFormatInsights(t *testing.T) {
 
 func TestFormatInsightsThroughMode(t *testing.T) {
 	// PeriodStart empty → "Through:" line instead of range.
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:      "all-time",
 		PeriodEnd:   "2026-08-31",
 		Sessions:    1,
 		Messages:    1,
 		TotalTokens: 100,
-		Daily:       [7]agent.DayStat{{Day: "Wed", Bar: "█", Count: 1}},
+		Daily:       [7]core.DayStat{{Day: "Wed", Bar: "█", Count: 1}},
 	}
 
 	out := agent.FormatInsights(in)
@@ -130,7 +131,7 @@ func TestFormatInsightsThroughMode(t *testing.T) {
 
 func TestFormatInsightsNoNotable(t *testing.T) {
 	// All NotableStats zero → section omitted.
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:    "7 days",
 		Sessions:  5,
 		Messages:  10,
@@ -145,7 +146,7 @@ func TestFormatInsightsNoNotable(t *testing.T) {
 
 func TestFormatInsightsNoTools(t *testing.T) {
 	// No tools → Top Tools section omitted.
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:    "7 days",
 		Sessions:  5,
 		Messages:  10,

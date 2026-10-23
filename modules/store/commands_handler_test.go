@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -720,7 +720,7 @@ func TestHandleExportCommandEmptySession(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Compile-time: *Store satisfies agent.StoreProvider.
+// Compile-time: *Store satisfies core.StoreProvider.
 // ---------------------------------------------------------------------------
 
-var _ agent.StoreProvider = (*Store)(nil)
+var _ core.StoreProvider = (*Store)(nil)

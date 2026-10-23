@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // promptSectionOrder places the tools list last among the contributed
@@ -20,7 +20,7 @@ const promptSectionOrder = 30
 // here because the firstLine policy for tool descriptions is
 // tools-seam knowledge - the full descriptions already reach the LLM
 // via the provider's JSON tool schemas.
-func (p *Plugin) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
+func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	var sb strings.Builder
 	for _, ext := range opts.Extensions {
 		if len(ext.ToolList) == 0 {
@@ -35,7 +35,7 @@ func (p *Plugin) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSec
 		}
 		sb.WriteString("\n")
 	}
-	return []agent.PromptSection{
+	return []core.PromptSection{
 		{Title: "Tools", Body: sb.String(), Order: promptSectionOrder},
 	}
 }

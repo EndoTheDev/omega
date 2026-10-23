@@ -11,6 +11,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -34,7 +35,7 @@ func exportMessages(messages []ai.Message, w io.Writer) error {
 // resolveSessionCLI resolves a session argument to a session ID for the
 // CLI export command. Tries exact ID match, then case-insensitive label
 // prefix match. Returns an error if multiple labels match.
-func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) {
+func resolveSessionCLI(storeDB core.StoreProvider, arg string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

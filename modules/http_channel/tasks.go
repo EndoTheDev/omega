@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // The board HTTP surface: the kanban module's provider over
@@ -34,9 +34,9 @@ func boardParam(r *http.Request) string {
 
 // taskDetail is the GET /tasks/{id} payload: the task plus its thread.
 type taskDetail struct {
-	Task     agent.KanbanTask      `json:"task"`
-	Comments []agent.KanbanComment `json:"comments"`
-	Events   []agent.KanbanEvent   `json:"events"`
+	Task     core.KanbanTask      `json:"task"`
+	Comments []core.KanbanComment `json:"comments"`
+	Events   []core.KanbanEvent   `json:"events"`
 }
 
 // handleBoards serves GET /boards: the board registry with the
@@ -47,7 +47,7 @@ func (s *Server) handleBoards(w http.ResponseWriter, r *http.Request) {
 		boardUnavailable(w)
 		return
 	}
-	lister, ok := s.Kanban.(agent.BoardLister)
+	lister, ok := s.Kanban.(core.BoardLister)
 	if !ok {
 		http.Error(w, "board registry not supported", http.StatusNotImplemented)
 		return
@@ -88,7 +88,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		out, err := s.Kanban.CreateTask(r.Context(), boardParam(r), agent.KanbanTask{
+		out, err := s.Kanban.CreateTask(r.Context(), boardParam(r), core.KanbanTask{
 			Title:    body.Title,
 			Body:     body.Body,
 			Assignee: body.Assignee,
@@ -150,7 +150,7 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		}
 		// task.update keeps a simple non-pointer Status field ("" = no
 		// change); wire it through directly
-		out, err := s.Kanban.UpdateTask(r.Context(), boardParam(r), id, agent.KanbanPatch{
+		out, err := s.Kanban.UpdateTask(r.Context(), boardParam(r), id, core.KanbanPatch{
 			Title:     body.Title,
 			Body:      body.Body,
 			Assignee:  body.Assignee,
@@ -206,7 +206,7 @@ func (s *Server) handleTaskComments(w http.ResponseWriter, r *http.Request) {
 // taskByIDError maps store errors onto status codes: missing task 404,
 // bad input 400, everything else 500.
 func taskByIDError(w http.ResponseWriter, err error) {
-	if errors.Is(err, agent.ErrTaskNotFound) {
+	if errors.Is(err, core.ErrTaskNotFound) {
 		http.Error(w, "task not found: "+err.Error(), http.StatusNotFound)
 		return
 	}

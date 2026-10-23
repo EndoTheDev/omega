@@ -19,6 +19,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -222,7 +223,7 @@ var knownCommands = []string{"/copy", "/extensions", "/theme", "/variant", "/for
 // then module commands from the mounted TUI providers (module_ui.go),
 // then extension commands, then skill names. Cloning avoids mutating
 // the package-level slice.
-func buildCommands(known []string, pctx *agent.Context, skills []agent.Skill) []string {
+func buildCommands(known []string, pctx *core.Context, skills []core.Skill) []string {
 	commands := make([]string, 0, len(known)+len(skills)+8)
 	commands = append(commands, known...)
 	for _, c := range moduleTable(pctx) {
@@ -256,7 +257,7 @@ var commandOptions = map[string][]string{
 // autocompleteOptions merges the shell-owned enum options with the
 // options module providers and extension commands declare on their
 // own commands (TUICommand.Args / ExtensionCommand.Args).
-func autocompleteOptions(pctx *agent.Context) map[string][]string {
+func autocompleteOptions(pctx *core.Context) map[string][]string {
 	merged := make(map[string][]string, len(commandOptions)+4)
 	for k, v := range commandOptions {
 		merged[k] = v
@@ -285,7 +286,7 @@ type model struct {
 	segments             []streamSegment // ordered streaming segments for the current turn
 	providerType         string
 	modelName            string
-	compaction           *agent.CompactionConfig
+	compaction           *core.CompactionConfig
 	promptCustom         string
 	promptAppend         []string
 	promptContext        string
@@ -293,53 +294,53 @@ type model struct {
 	compacting           bool               // /compact is in flight; non-blocking
 	err                  string             // last run error, shown in the status line
 	cancel               context.CancelFunc // cancels the in-flight run; nil when idle
-	events               <-chan agent.Event // run goroutine writes here; Update drains via cmd
-	store                agent.StoreProvider
-	sessionID            string           // current session; "" until the first message creates one
-	agentName            string           // agent binding for the next auto-created session (/new --agent)
-	storeErr             string           // store open/persistence error, shown in the status line
-	promptHistory        []string         // previously submitted prompts, for Up/Down recall
-	historyIndex         int              // position in promptHistory; 0 = empty/current input
-	autocompleteMatches  []string         // slash commands matching the current input
-	autocompleteIndex    int              // highlighted match; -1 = none selected
-	autocompleteOffset   int              // first visible row in the dropup window
-	autocompleteSlashPos int              // byte offset of the / triggering autocomplete, -1 = none
-	screenHeight         int              // terminal height from the last resize
-	skills               []agent.Skill    // loaded skills, for autocomplete and invocation
-	extensions           *agent.Context   // plugin context (provider, compactor, commands, etc.)
-	commands             []string         // knownCommands + skill names, per-model copy
-	showThinking         bool             // /thinking display toggle; auto-set from thinkingLevel
-	thinkingLevel        string           // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
-	showToolResults      bool             // /tools toggle; default false (collapsed)
-	toolResultsAuto      bool             // /tools auto; short results full, long ones collapsed
-	queuedInput          string           // follow-up typed while agent runs; auto-submits on done
-	userInput            chan string      // mode flag for agent loop (nil = one-shot, non-nil = TUI)
-	autoNamed            bool             // true after the first auto-name attempt
-	sessionLabel         string           // model-generated title, shown in status bar
-	autoNameGen          int              // bumped on /new; stale auto-name results are dropped
-	sessionList          []agent.Session  // cached from last /sessions, for /resume by #
-	modelList            []string         // cached from last /models, for /model <#> selection
-	ephemeral            bool             // /new --ephemeral; nothing persisted
-	theme                Theme            // active color/style theme
-	trustState           string           // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
-	notifications        string           // "bell" / "desktop" / "off", fired on turn complete
-	version              string           // build version for splash display
-	cwd                  string           // working directory passed from host
-	lastToolCall         string           // last tool call name, for syntax highlighting results
-	lastToolArgs         map[string]any   // last tool call args, for language detection
-	lastRender           time.Time        // debounce for live glamour rendering during streaming
-	lastRenderedResponse string           // cached glamour output for debounced frames
-	contextWindow        int              // auto-discovered from provider; 0 = unknown, fall back to config
-	view                 agent.ActiveView // tree view of the loaded session; /variant /fork navigation
-	forkParent           string           // row id the next send chains onto (/fork); "" = derive leaf
-	retryParent          string           // branch point the in-flight retry's head pins to; "" = none
-	headPinned           bool             // retry head already parented this run
-	retryMarker          string           // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
-	persistInput         []ai.Message     // this run's new input messages; the loop's sink persists them (t_471f6d4a)
-	headParent           string           // the run's head-pin parent (retry); "" = derive leaf
-	screen               agent.TUIScreen  // open module full-screen view (module seam); nil = closed
-	tick                 *agent.TUITick   // active module follow loop (/logs -f pattern); nil = idle
-	moduleCommands       map[string]agent.TUIProvider
+	events               <-chan core.Event  // run goroutine writes here; Update drains via cmd
+	store                core.StoreProvider
+	sessionID            string          // current session; "" until the first message creates one
+	agentName            string          // agent binding for the next auto-created session (/new --agent)
+	storeErr             string          // store open/persistence error, shown in the status line
+	promptHistory        []string        // previously submitted prompts, for Up/Down recall
+	historyIndex         int             // position in promptHistory; 0 = empty/current input
+	autocompleteMatches  []string        // slash commands matching the current input
+	autocompleteIndex    int             // highlighted match; -1 = none selected
+	autocompleteOffset   int             // first visible row in the dropup window
+	autocompleteSlashPos int             // byte offset of the / triggering autocomplete, -1 = none
+	screenHeight         int             // terminal height from the last resize
+	skills               []core.Skill    // loaded skills, for autocomplete and invocation
+	extensions           *core.Context   // plugin context (provider, compactor, commands, etc.)
+	commands             []string        // knownCommands + skill names, per-model copy
+	showThinking         bool            // /thinking display toggle; auto-set from thinkingLevel
+	thinkingLevel        string          // /thinking level: none, off, on, minimal, low, medium, high, extra high, max, ultra
+	showToolResults      bool            // /tools toggle; default false (collapsed)
+	toolResultsAuto      bool            // /tools auto; short results full, long ones collapsed
+	queuedInput          string          // follow-up typed while agent runs; auto-submits on done
+	userInput            chan string     // mode flag for agent loop (nil = one-shot, non-nil = TUI)
+	autoNamed            bool            // true after the first auto-name attempt
+	sessionLabel         string          // model-generated title, shown in status bar
+	autoNameGen          int             // bumped on /new; stale auto-name results are dropped
+	sessionList          []core.Session  // cached from last /sessions, for /resume by #
+	modelList            []string        // cached from last /models, for /model <#> selection
+	ephemeral            bool            // /new --ephemeral; nothing persisted
+	theme                Theme           // active color/style theme
+	trustState           string          // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
+	notifications        string          // "bell" / "desktop" / "off", fired on turn complete
+	version              string          // build version for splash display
+	cwd                  string          // working directory passed from host
+	lastToolCall         string          // last tool call name, for syntax highlighting results
+	lastToolArgs         map[string]any  // last tool call args, for language detection
+	lastRender           time.Time       // debounce for live glamour rendering during streaming
+	lastRenderedResponse string          // cached glamour output for debounced frames
+	contextWindow        int             // auto-discovered from provider; 0 = unknown, fall back to config
+	view                 core.ActiveView // tree view of the loaded session; /variant /fork navigation
+	forkParent           string          // row id the next send chains onto (/fork); "" = derive leaf
+	retryParent          string          // branch point the in-flight retry's head pins to; "" = none
+	headPinned           bool            // retry head already parented this run
+	retryMarker          string          // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
+	persistInput         []ai.Message    // this run's new input messages; the loop's sink persists them (t_471f6d4a)
+	headParent           string          // the run's head-pin parent (retry); "" = derive leaf
+	screen               core.TUIScreen  // open module full-screen view (module seam); nil = closed
+	tick                 *core.TUITick   // active module follow loop (/logs -f pattern); nil = idle
+	moduleCommands       map[string]core.TUIProvider
 }
 
 // streamDoneMsg signals that the run goroutine has finished.
@@ -408,20 +409,20 @@ type autoNameMsg struct {
 
 // NewModel creates the TUI model from a mounted Context and frontend
 // options. Called by the Frontend.Run method.
-func NewModel(pctx *agent.Context, opts agent.FrontendOptions) model {
+func NewModel(pctx *core.Context, opts core.FrontendOptions) model {
 	return newChatModel(opts.ProviderType, opts.ModelName, opts.Compaction, opts.PromptCustom, opts.PromptAppend, opts.PromptContext, pctx, opts.Skills, opts.ThemeName, opts.TrustState, opts.Notifications, opts.Version, opts.CWD)
 }
 
 // storeFromContext returns the StoreProvider from a Context, or nil
 // if the Context is nil.
-func storeFromContext(pctx *agent.Context) agent.StoreProvider {
+func storeFromContext(pctx *core.Context) core.StoreProvider {
 	if pctx == nil {
 		return nil
 	}
 	return pctx.Store
 }
 
-func newChatModel(providerType, modelName string, compaction *agent.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *agent.Context, skills []agent.Skill, themeName, trustState, notifications, version, cwd string) model {
+func newChatModel(providerType, modelName string, compaction *core.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *core.Context, skills []core.Skill, themeName, trustState, notifications, version, cwd string) model {
 	ta := textarea.New()
 	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 	ta.SetHeight(minTextareaHeight)
@@ -693,7 +694,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
 
-	case agent.Event:
+	case core.Event:
 		m.handleEvent(msg)
 		m.refresh()
 		// Re-issue the drain command. Also issue a tick when
@@ -905,7 +906,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 			// binding to the default agent.
 			created := false
 			if m.agentName != "" {
-				if as, ok := m.store.(agent.AgentSessionStore); ok {
+				if as, ok := m.store.(core.AgentSessionStore); ok {
 					if err := as.CreateAgentSession(context.Background(), id, "", "", m.agentName); err != nil {
 						m.storeErr = "create agent session: " + err.Error()
 						m.busy = false
@@ -957,16 +958,16 @@ func (m *model) startRun() {
 			provider = provider.WithModel(m.modelName)
 		}
 	}
-	var ag *agent.Agent
+	var ag *core.Agent
 	if m.extensions != nil {
-		ag = agent.NewFromContext(m.extensions, agent.AgentOptions{
+		ag = core.NewFromContext(m.extensions, core.AgentOptions{
 			PromptCustom:  m.promptCustom,
 			PromptAppend:  m.promptAppend,
 			PromptContext: m.promptContext,
 			CWD:           m.cwd,
 		})
 	} else {
-		ag = agent.NewAgent(provider, nil, 0)
+		ag = core.NewAgent(provider, nil, 0)
 		ag.SetCWD(m.cwd)
 		ag.SetPromptCustom(m.promptCustom)
 		ag.SetPromptAppend(m.promptAppend)
@@ -984,7 +985,7 @@ func (m *model) startRun() {
 	// Verdict cards v1 (card t_2ecf9c51): the TUI is an interactive
 	// origin - verdict.request may issue here, and the busy-Enter
 	// intercept answers it.
-	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	if m.ephemeral {
 		ctx = agent.WithDeniedTools(ctx, "memory")
 	}
@@ -1038,9 +1039,9 @@ func (m model) tickCmd() tea.Cmd {
 // handleEvent folds one agent event into the streaming segments.
 // Segments are appended in the order the model emits them, preserving
 // the narrative flow (thinking → tool → response → more thinking → ...).
-func (m *model) handleEvent(event agent.Event) {
+func (m *model) handleEvent(event core.Event) {
 	switch e := event.(type) {
-	case agent.StreamEvent:
+	case core.StreamEvent:
 		switch chunk := e.Event.(type) {
 		case ai.ResponseChunk:
 			m.appendSegment("response", chunk.Content)
@@ -1074,7 +1075,7 @@ func (m *model) handleEvent(event agent.Event) {
 				m.appendSegment("response", "\n"+m.theme.Error.Render("error: "+chunk.Error)+"\n")
 			}
 		}
-	case agent.AgentEnd:
+	case core.AgentEnd:
 		if e.Error != "" {
 			m.err = e.Error
 		}
@@ -1125,7 +1126,7 @@ func (m *model) handleEvent(event agent.Event) {
 			}
 		}
 		m.segments = nil
-	case agent.ToolResultEvent:
+	case core.ToolResultEvent:
 		m.history = append(m.history, e.Message)
 		// Persisted by the loop's sink as the turn completed
 		// (t_471f6d4a); here it only lands in history.
@@ -1157,7 +1158,7 @@ func (m *model) handleEvent(event agent.Event) {
 		default:
 			m.appendSegment("tool_result", fmt.Sprintf("[tool result: %d lines]", lines))
 		}
-	case agent.AssistantMessageEvent:
+	case core.AssistantMessageEvent:
 		// A /retry run pins its head to the branch-point user (the
 		// sibling-variant hop the store sink makes at persist time -
 		// the sink was built with the retry's headParent); the display
@@ -1524,7 +1525,7 @@ func applyForkPin(m *model, msg ai.Message) ai.Message {
 	if m.forkParent == "" {
 		return msg
 	}
-	pinned := agent.WithParentID(msg, m.forkParent)
+	pinned := core.WithParentID(msg, m.forkParent)
 	m.forkParent = ""
 	return pinned
 }
@@ -1537,7 +1538,7 @@ func (m *model) resetSession() {
 	m.history = nil
 	m.transcript = ""
 	m.segments = nil
-	m.view = agent.ActiveView{}
+	m.view = core.ActiveView{}
 	m.forkParent = ""
 	m.retryParent = ""
 	m.headPinned = false
@@ -1698,7 +1699,7 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 				m.agentName = action.List[0]
 			}
 			m.ephemeral = action.Value == "--ephemeral"
-			m.view = agent.ActiveView{}
+			m.view = core.ActiveView{}
 			m.forkParent = ""
 			m.retryParent = ""
 			m.headPinned = false
@@ -1767,7 +1768,7 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			}
 			m.sessionID = id
 			m.history = messages
-			m.view = agent.ActiveView{} // branch sessions render a flat ancestor chain, no live tree view
+			m.view = core.ActiveView{} // branch sessions render a flat ancestor chain, no live tree view
 			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme, nil)
 			m.segments = nil
 			m.err = ""
@@ -2369,7 +2370,7 @@ func (m model) statusLine() string {
 	}
 	tokens := agent.EstimateTokens(m.history)
 	// Context window priority: auto-discovered from provider > config > default.
-	window := agent.DefaultContextWindow
+	window := core.DefaultContextWindow
 	if m.compaction != nil && m.compaction.ContextWindow > 0 {
 		window = m.compaction.ContextWindow
 	}

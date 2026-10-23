@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -155,7 +156,7 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("scout sessions status %d", code)
 	}
-	var sessions []agent.Session
+	var sessions []core.Session
 	if err := json.Unmarshal(body, &sessions); err != nil {
 		t.Fatal(err)
 	}

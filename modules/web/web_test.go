@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"gopkg.in/yaml.v3"
 )
 
@@ -279,9 +280,9 @@ func TestPluginInterface(t *testing.T) {
 }
 
 // TestExtensionImplementsToolProvider verifies Extension satisfies
-// agent.ToolProvider.
+// core.ToolProvider.
 func TestExtensionImplementsToolProvider(t *testing.T) {
-	var _ agent.ToolProvider = (*Extension)(nil)
+	var _ core.ToolProvider = (*Extension)(nil)
 }
 
 // TestToolsShape checks the folded domain tool plus its alias shims
@@ -398,7 +399,7 @@ func TestFetchNoAPIKey(t *testing.T) {
 // TestMount verifies Mount appends a ToolProvider to the Context.
 func TestMount(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
@@ -415,7 +416,7 @@ func TestMount(t *testing.T) {
 // config to extension.
 func TestMountWithConfig(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"web": Config{APIKey: "sk", BaseURL: "http://host:1"},
 		},

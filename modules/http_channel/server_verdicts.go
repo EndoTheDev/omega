@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Verdict cards v1 (card t_2ecf9c51): the answer surface. The card
@@ -96,7 +96,7 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	v := agent.Verdict{
+	v := core.Verdict{
 		OptionIndexes: req.OptionIndexes,
 		OptionIndex:   req.OptionIndex,
 		Option:        req.Option,
@@ -143,7 +143,7 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 }
 
 // toVerdictWire maps one runtime card to its wire shape.
-func toVerdictWire(c agent.VerdictPrompt) verdictCardWire {
+func toVerdictWire(c core.VerdictPrompt) verdictCardWire {
 	exp := int64(0)
 	if !c.ExpiresAt.IsZero() {
 		exp = c.ExpiresAt.UnixMilli()

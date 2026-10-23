@@ -1,4 +1,4 @@
-// Package memory provides the persistent memory seam (agent.MemoryProvider)
+// Package memory provides the persistent memory seam (core.MemoryProvider)
 // backed by two markdown files (memory.md + user.md), plus the memory tool
 // that lets the agent add, replace, and remove entries.
 //
@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // entrySep is the delimiter between entries in the memory files.
@@ -30,7 +31,7 @@ const (
 	targetUser   = "user"
 )
 
-// FileMemory implements agent.MemoryProvider using two markdown files.
+// FileMemory implements core.MemoryProvider using two markdown files.
 // It is safe for concurrent use.
 type FileMemory struct {
 	mu sync.Mutex
@@ -77,9 +78,9 @@ const promptSectionOrder = 10
 // PromptSections renders the memory snapshot as an untitled prompt
 // block. Empty when both stores are disabled or hold nothing. The
 // module owns its own prompt block; the prompt builder only pastes it.
-func (fm *FileMemory) PromptSections(opts agent.PromptBuildOptions) []agent.PromptSection {
+func (fm *FileMemory) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	if snap := fm.Snapshot(); snap != "" {
-		return []agent.PromptSection{{Body: snap, Order: promptSectionOrder}}
+		return []core.PromptSection{{Body: snap, Order: promptSectionOrder}}
 	}
 	return nil
 }
@@ -387,7 +388,7 @@ type memoryToolProvider struct {
 
 // memoryActions is the structured sub-action metadata: the one source
 // of truth the schema enum, the prompt, and /tools all derive from.
-var memoryActions = []agent.ToolAction{
+var memoryActions = []core.ToolAction{
 	{Name: "add", Description: "Append a new entry (content required)."},
 	{Name: "replace", Description: "Find the entry matching old_text (unique substring) and replace it with content."},
 	{Name: "remove", Description: "Find the entry matching old_text (unique substring) and delete it."},
@@ -407,8 +408,8 @@ func memoryActionNames() []string {
 // carry the verbs. The top-level action enum derives via
 // Tool.SchemaParameters from Actions; the operations array's per-item
 // enum shares the same names list. Stateless - called per Tools().
-func (p *memoryToolProvider) buildMemoryTool() agent.Tool {
-	return agent.Tool{
+func (p *memoryToolProvider) buildMemoryTool() core.Tool {
+	return core.Tool{
 		Description: "Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.",
 		Actions:     memoryActions,
 		Parameters: map[string]any{
@@ -453,8 +454,8 @@ func (p *memoryToolProvider) buildMemoryTool() agent.Tool {
 }
 
 // Tools returns the memory tool definition.
-func (p *memoryToolProvider) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
+func (p *memoryToolProvider) Tools() map[string]core.Tool {
+	return map[string]core.Tool{
 		"memory": p.buildMemoryTool(),
 	}
 }

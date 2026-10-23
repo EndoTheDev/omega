@@ -10,22 +10,22 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeCronLister satisfies agent.CronProvider + agent.CronLister for
+// fakeCronLister satisfies core.CronProvider + core.CronLister for
 // the /cron test, the same shape the webui handler test uses.
-type fakeCronLister struct{ jobs []agent.CronJobInfo }
+type fakeCronLister struct{ jobs []core.CronJobInfo }
 
-func (f fakeCronLister) Start(context.Context, agent.CronDeps) error { return nil }
+func (f fakeCronLister) Start(context.Context, core.CronDeps) error { return nil }
 func (f fakeCronLister) Stop() error                                 { return nil }
-func (f fakeCronLister) Jobs() []agent.CronJobInfo                   { return f.jobs }
+func (f fakeCronLister) Jobs() []core.CronJobInfo                   { return f.jobs }
 
 // noListerCron is a CronProvider that is not a CronLister - the shape
 // the inspector must treat as an empty listing.
 type noListerCron struct{}
 
-func (noListerCron) Start(context.Context, agent.CronDeps) error { return nil }
+func (noListerCron) Start(context.Context, core.CronDeps) error { return nil }
 func (noListerCron) Stop() error                                 { return nil }
 
 // consoleSpy is an agent.TUIConsole that records output and renders
@@ -33,23 +33,23 @@ func (noListerCron) Stop() error                                 { return nil }
 type consoleSpy struct {
 	lines   []string
 	errs    []string
-	ext     *agent.Context
+	ext     *core.Context
 	cleared int
 }
 
 func (c *consoleSpy) Labeled(label, body string) { c.lines = append(c.lines, label+"|"+body) }
 func (c *consoleSpy) Error(msg string)           { c.errs = append(c.errs, msg) }
 func (c *consoleSpy) ClearError()                { c.cleared++ }
-func (c *consoleSpy) Style(string) agent.TUIStyle {
+func (c *consoleSpy) Style(string) core.TUIStyle {
 	return func(s string) string { return s }
 }
 func (c *consoleSpy) CWD() string            { return "" }
-func (c *consoleSpy) Ext() *agent.Context    { return c.ext }
+func (c *consoleSpy) Ext() *core.Context    { return c.ext }
 func (c *consoleSpy) transcript() string     { return strings.Join(c.lines, "\n") }
 
 // TestRenderCronTable is pure: fixtures in, table out.
 func TestRenderCronTable(t *testing.T) {
-	jobs := []agent.CronJobInfo{
+	jobs := []core.CronJobInfo{
 		{Name: "zeta", Schedule: "0 3 * * *", Enabled: true, Next: "tomorrow"},
 		{Name: "beta", Schedule: "*/5 * * * *", Enabled: true, Next: "soon"},
 		{Name: "off", Schedule: "garbage", Enabled: false},
@@ -83,7 +83,7 @@ func identity(s string) string { return s }
 // rows sorted by name, the disabled/empty variants handled, the webui's
 // empty-list semantics (unconfigured scheduler, not an error).
 func TestCronCommand(t *testing.T) {
-	jobs := []agent.CronJobInfo{
+	jobs := []core.CronJobInfo{
 		{Name: "nightly", Schedule: "0 3 * * *", Enabled: true, Next: "2026-10-22T03:00:00+07:00"},
 		{Name: "alpha", Schedule: "5 * * * *", Enabled: false},
 	}
@@ -132,7 +132,7 @@ func TestCronCommand(t *testing.T) {
 // the provider, so a cron plugin absent from a mount never surfaces
 // /cron in a TUI command table.
 func TestCronTUIRegistration(t *testing.T) {
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := (NewPluginWithConfig(&Config{}, t.TempDir())).Mount(ctx); err != nil {
 		t.Fatal(err)
 	}

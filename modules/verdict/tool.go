@@ -7,12 +7,13 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // verdictActions is the structured sub-action metadata for the verdict
 // domain tool (one source of truth for the schema enum, the prompt,
 // and the /tools inventory - same shape the delegate tool uses).
-var verdictActions = []agent.ToolAction{
+var verdictActions = []core.ToolAction{
 	{Name: "request", Description: "Issue a choice card and block until the user answers (click or type), the card expires (default 20 minutes), or the turn is cancelled. Ask when you cannot proceed without the user: approval, a pick between options, or free text. Returns the verdict as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} when multi | {verdict:\"skip\"} | {verdict:\"expired\"}."},
 }
 
@@ -21,12 +22,12 @@ var verdictActions = []agent.ToolAction{
 // blocks on the hub until the user answers, the card expires, or the
 // run's context dies.
 type verdictToolProvider struct {
-	hub agent.VerdictsProvider
+	hub core.VerdictsProvider
 }
 
-// Tools implements agent.ToolProvider.
-func (p *verdictToolProvider) Tools() map[string]agent.Tool {
-	return map[string]agent.Tool{
+// Tools implements core.ToolProvider.
+func (p *verdictToolProvider) Tools() map[string]core.Tool {
+	return map[string]core.Tool{
 		"verdict": {
 			Description: "Pause the conversation and present a choice card when a decision materially affects the user - ask when the decision needs human input and you cannot proceed without them. Never call this from a cron or delegated run; it only works in interactive turns.",
 			Actions:     verdictActions,
@@ -81,10 +82,10 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	// Issuer gate (design Q7a): cron fires and delegate subagents never
 	// hard-pause for a click. Unknown origin (tests, one-shot) is
 	// treated as interactive.
-	switch agent.RunOriginFromContext(ctx) {
-	case agent.RunOriginCron, agent.RunOriginDelegate:
+	switch core.RunOriginFromContext(ctx) {
+	case core.RunOriginCron, core.RunOriginDelegate:
 		return "", fmt.Errorf("verdict.request is not available in background turns (origin %q) - decide without the user or surface the question in the transcript",
-			agent.RunOriginFromContext(ctx))
+			core.RunOriginFromContext(ctx))
 	}
 
 	title, _ := args["title"].(string)
@@ -113,7 +114,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 		return "", fmt.Errorf("verdict.request: a card needs at least one option or allow_text=true")
 	}
 
-	card := agent.VerdictPrompt{
+	card := core.VerdictPrompt{
 		SessionID: agent.SessionIDFromContext(ctx),
 		Title:     title,
 		Body:      body,

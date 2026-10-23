@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -22,7 +23,7 @@ var atFilePattern = regexp.MustCompile(`@\S+`)
 //   @skill:<name>  — inject skill content
 // Tokens that don't resolve are left as-is in the text. Used
 // by the TUI submit path to support @file references in chat input.
-func extractImages(input string, store agent.StoreProvider, skills []agent.Skill) (prompt string, images []ai.ImageContent, err error) {
+func extractImages(input string, store core.StoreProvider, skills []core.Skill) (prompt string, images []ai.ImageContent, err error) {
 	prompt = input
 	var loadedImages []ai.ImageContent
 

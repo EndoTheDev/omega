@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,7 +42,7 @@ func seedVariants(t *testing.T, m model) model {
 	seed := []ai.Message{
 		ai.NewUser("which lane?"),
 		ai.NewAssistant("first answer"),
-		agent.WithParentID(ai.NewAssistant("second answer"), "1"),
+		core.WithParentID(ai.NewAssistant("second answer"), "1"),
 		ai.NewVariantSelect("1", "2"),
 	}
 	for _, msg := range seed {
@@ -170,8 +170,8 @@ func TestForkPersists(t *testing.T) {
 	if pinned.forkParent != "" {
 		t.Fatalf("pin not cleared after one send: %q", pinned.forkParent)
 	}
-	if agent.ParentIDOf(msg) != "1" {
-		t.Fatalf("send not chained onto the fork target: %v", agent.ParentIDOf(msg))
+	if core.ParentIDOf(msg) != "1" {
+		t.Fatalf("send not chained onto the fork target: %v", core.ParentIDOf(msg))
 	}
 	if err := pinned.store.AppendMessage(context.Background(), "seeded", msg); err != nil {
 		t.Fatalf("forked send rejected by store: %v", err)
@@ -186,8 +186,8 @@ func TestForkPersists(t *testing.T) {
 	if len(fresh.Path) != 2 { // fork target -> new user
 		t.Fatalf("forked continuation not on the active path: %d entries", len(fresh.Path))
 	}
-	if agent.ParentIDOf(fresh.Path[1].Message) != "1" {
-		t.Fatalf("new user not chained onto the fork target: %q", agent.ParentIDOf(fresh.Path[1].Message))
+	if core.ParentIDOf(fresh.Path[1].Message) != "1" {
+		t.Fatalf("new user not chained onto the fork target: %q", core.ParentIDOf(fresh.Path[1].Message))
 	}
 }
 
@@ -237,10 +237,10 @@ func TestRetrySiblingsPins(t *testing.T) {
 	// The run head pinned to the branch-point user; later messages of
 	// the same run keep their own (derived) parent. History order:
 	// user (trimmed), head assistant, tool result, follow-on assistant.
-	if got := agent.ParentIDOf(retried.history[1]); got != "1" {
+	if got := core.ParentIDOf(retried.history[1]); got != "1" {
 		t.Fatalf("head not pinned: %q", got)
 	}
-	if got := agent.ParentIDOf(retried.history[3]); got != "" {
+	if got := core.ParentIDOf(retried.history[3]); got != "" {
 		t.Fatalf("non-head message pinned: %q", got)
 	}
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func testStore(t *testing.T) *Store {
@@ -19,7 +19,7 @@ func testStore(t *testing.T) *Store {
 
 func TestCreateDefaultsAndID(t *testing.T) {
 	s := testStore(t)
-	out, err := s.CreateTask(context.Background(), "", agent.KanbanTask{Title: "write it"})
+	out, err := s.CreateTask(context.Background(), "", core.KanbanTask{Title: "write it"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -43,10 +43,10 @@ func TestCreateDefaultsAndID(t *testing.T) {
 
 func TestCreateRequiresTitle(t *testing.T) {
 	s := testStore(t)
-	if _, err := s.CreateTask(context.Background(), "", agent.KanbanTask{}); err == nil {
+	if _, err := s.CreateTask(context.Background(), "", core.KanbanTask{}); err == nil {
 		t.Fatal("empty title accepted")
 	}
-	if _, err := s.CreateTask(context.Background(), "", agent.KanbanTask{Status: "bogus"}); err == nil {
+	if _, err := s.CreateTask(context.Background(), "", core.KanbanTask{Status: "bogus"}); err == nil {
 		t.Fatal("illegal status accepted at create")
 	}
 }
@@ -61,14 +61,14 @@ func TestGetTaskNotFound(t *testing.T) {
 func TestListStatusFilter(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	if _, err := s.CreateTask(ctx, "", agent.KanbanTask{Title: "a"}); err != nil {
+	if _, err := s.CreateTask(ctx, "", core.KanbanTask{Title: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.CreateTask(ctx, "", agent.KanbanTask{Title: "b", Status: StatusTodo})
+	b, err := s.CreateTask(ctx, "", core.KanbanTask{Title: "b", Status: StatusTodo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpdateTask(ctx, "", b.ID, agent.KanbanPatch{Status: StatusRunning}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", b.ID, core.KanbanPatch{Status: StatusRunning}); err != nil {
 		t.Fatal(err)
 	}
 	all, err := s.ListTasks(ctx, "", "")
@@ -93,14 +93,14 @@ func TestListStatusFilter(t *testing.T) {
 func TestUpdateStatusStamps(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	tk, err := s.CreateTask(ctx, "", agent.KanbanTask{Title: "flow"})
+	tk, err := s.CreateTask(ctx, "", core.KanbanTask{Title: "flow"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tk.StartedAt != "" {
 		t.Fatalf("started_at pre-run: %q", tk.StartedAt)
 	}
-	running, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Status: StatusRunning})
+	running, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Status: StatusRunning})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestUpdateStatusStamps(t *testing.T) {
 	if running.CompletedAt != "" {
 		t.Error("running stamped completed_at")
 	}
-	done, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Status: StatusDone})
+	done, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Status: StatusDone})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestUpdateStatusStamps(t *testing.T) {
 		t.Error("done did not stamp completed_at")
 	}
 	// reopen: the completion stamp clears
-	reopen, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Status: StatusTodo})
+	reopen, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Status: StatusTodo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,11 +133,11 @@ func TestUpdateStatusStamps(t *testing.T) {
 func TestUpdateArchivedKeepsStamp(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	tk, _ := s.CreateTask(ctx, "", agent.KanbanTask{Title: "done first"})
-	if _, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Status: StatusDone}); err != nil {
+	tk, _ := s.CreateTask(ctx, "", core.KanbanTask{Title: "done first"})
+	if _, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatal(err)
 	}
-	arch, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Status: StatusArchived})
+	arch, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Status: StatusArchived})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,10 +149,10 @@ func TestUpdateArchivedKeepsStamp(t *testing.T) {
 func TestUpdatePatchSemantics(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	tk, _ := s.CreateTask(ctx, "", agent.KanbanTask{Title: "before"})
+	tk, _ := s.CreateTask(ctx, "", core.KanbanTask{Title: "before"})
 	body := "full spec"
 	title := "after"
-	out, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Title: &title, Body: &body})
+	out, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Title: &title, Body: &body})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,9 +175,9 @@ func TestUpdatePatchSemantics(t *testing.T) {
 func TestUpdateNoopPatch(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	tk, _ := s.CreateTask(ctx, "", agent.KanbanTask{Title: "same"})
+	tk, _ := s.CreateTask(ctx, "", core.KanbanTask{Title: "same"})
 	same := "same"
-	out, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{Title: &same})
+	out, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{Title: &same})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestUpdateNoopPatch(t *testing.T) {
 
 func TestUpdateNotFound(t *testing.T) {
 	s := testStore(t)
-	if _, err := s.UpdateTask(context.Background(), "", "t_00000000", agent.KanbanPatch{Status: StatusDone}); err != ErrNotFound {
+	if _, err := s.UpdateTask(context.Background(), "", "t_00000000", core.KanbanPatch{Status: StatusDone}); err != ErrNotFound {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
@@ -200,7 +200,7 @@ func TestUpdateNotFound(t *testing.T) {
 func TestCommentsAndEvents(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	tk, _ := s.CreateTask(ctx, "", agent.KanbanTask{Title: "t"})
+	tk, _ := s.CreateTask(ctx, "", core.KanbanTask{Title: "t"})
 	c1, err := s.AddComment(ctx, "", tk.ID, "endo", "first")
 	if err != nil {
 		t.Fatal(err)
@@ -240,9 +240,9 @@ func TestCommentsAndEvents(t *testing.T) {
 func TestSessionLinkEvent(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	tk, _ := s.CreateTask(ctx, "", agent.KanbanTask{Title: "linked"})
+	tk, _ := s.CreateTask(ctx, "", core.KanbanTask{Title: "linked"})
 	sess := "sess_abc"
-	out, err := s.UpdateTask(ctx, "", tk.ID, agent.KanbanPatch{SessionID: &sess})
+	out, err := s.UpdateTask(ctx, "", tk.ID, core.KanbanPatch{SessionID: &sess})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // fakeConn is a test MCPConn that returns canned tools and call results.
@@ -25,7 +26,7 @@ func (f fakeConn) close() {}
 // TestPluginInterface verifies Plugin satisfies agent.Plugin at compile time.
 func TestPluginInterface(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
-	var _ agent.ToolProvider = bridgeToolProvider{}
+	var _ core.ToolProvider = bridgeToolProvider{}
 }
 
 // TestEmptyBridge verifies an empty Bridge (no servers) produces zero tools
@@ -40,7 +41,7 @@ func TestEmptyBridge(t *testing.T) {
 	}
 
 	p := NewPlugin(b)
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -69,7 +70,7 @@ func TestPluginMetadata(t *testing.T) {
 // TestNilBridgePlugin verifies a nil-bridge plugin is a no-op (mounts zero providers).
 func TestNilBridgePlugin(t *testing.T) {
 	p := NewPlugin(nil)
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount with nil bridge: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestConfigParsing(t *testing.T) {
 // TestMountAllIntegration verifies the plugin integrates with MountAll.
 func TestMountAllIntegration(t *testing.T) {
 	p := NewPlugin(nil)
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := agent.MountAll([]agent.Plugin{p}, ctx); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}

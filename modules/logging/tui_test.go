@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // consoleSpy is an agent.TUIConsole that records output and renders
@@ -20,7 +20,7 @@ type consoleSpy struct {
 	labels []string
 	bodies []string
 	errs   []string
-	ext    *agent.Context
+	ext    *core.Context
 }
 
 func (c *consoleSpy) Labeled(label, body string) {
@@ -29,11 +29,11 @@ func (c *consoleSpy) Labeled(label, body string) {
 }
 func (c *consoleSpy) Error(msg string)        { c.errs = append(c.errs, msg) }
 func (c *consoleSpy) ClearError()             {}
-func (c *consoleSpy) Style(string) agent.TUIStyle {
+func (c *consoleSpy) Style(string) core.TUIStyle {
 	return func(s string) string { return s }
 }
 func (c *consoleSpy) CWD() string         { return "" }
-func (c *consoleSpy) Ext() *agent.Context { return c.ext }
+func (c *consoleSpy) Ext() *core.Context { return c.ext }
 func (c *consoleSpy) transcript() string {
 	var sb strings.Builder
 	for i, body := range c.bodies {
@@ -45,7 +45,7 @@ func (c *consoleSpy) transcript() string {
 	return sb.String()
 }
 
-// fakeFileLogger satisfies agent.LoggerProvider with a path it
+// fakeFileLogger satisfies core.LoggerProvider with a path it
 // carries, mimicking FileLogger.
 type fakeFileLogger struct{ path string }
 
@@ -107,7 +107,7 @@ func TestLogsCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &tui{}
-	c := &consoleSpy{ext: &agent.Context{Logger: fakeFileLogger{path: path}}}
+	c := &consoleSpy{ext: &core.Context{Logger: fakeFileLogger{path: path}}}
 
 	// plain /logs renders the tail
 	if res := p.HandleTUICommand("/logs", "", c); res.Tick != nil {
@@ -193,7 +193,7 @@ func TestLogsMissingLogger(t *testing.T) {
 // TUI command table.
 func TestLogsTUIRegistration(t *testing.T) {
 	cfg := Config{Enabled: true, File: filepath.Join(t.TempDir(), "omega.log")}
-	ctx := &agent.Context{Configs: map[string]any{"logging": cfg}}
+	ctx := &core.Context{Configs: map[string]any{"logging": cfg}}
 	if err := (&Plugin{}).Mount(ctx); err != nil {
 		t.Fatal(err)
 	}

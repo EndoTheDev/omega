@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -34,7 +35,7 @@ type Captioner struct {
 	prov  ai.Provider // pinned copy serving the vision model
 	sink  agent.CaptionStore
 	cache sync.Map // image id -> caption string
-	log   agent.LoggerProvider
+	log   core.LoggerProvider
 }
 
 // NewCaptioner builds the captioner from the BASE provider: a WithModel
@@ -43,7 +44,7 @@ type Captioner struct {
 // into caption calls. model empty makes Caption fail loudly - but the
 // host only wires the captioner when vision_model is set, so that is a
 // misconfiguration guard, not a mode.
-func NewCaptioner(base ai.Provider, model string, sink agent.CaptionStore, log agent.LoggerProvider) *Captioner {
+func NewCaptioner(base ai.Provider, model string, sink agent.CaptionStore, log core.LoggerProvider) *Captioner {
 	if base == nil {
 		return &Captioner{sink: sink, log: log}
 	}

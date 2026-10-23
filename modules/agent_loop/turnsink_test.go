@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -29,7 +30,7 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 	ctx := agent.WithTurnSink(context.Background(), sink)
 	ctx = agent.WithPersistInput(ctx, []ai.Message{ai.NewUser("hi")})
 
-	tool := agent.Tool{
+	tool := core.Tool{
 		Description: "test no-op",
 		Run:         func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },
 	}
@@ -45,11 +46,11 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 	}
 	prov := ai.NewFakeProviderScripts("test", script1, script2).WithDelay(5 * time.Millisecond)
 
-	events := make(chan agent.Event, 64)
-	opts := agent.LoopOptions{
+	events := make(chan core.Event, 64)
+	opts := core.LoopOptions{
 		Provider: prov,
 		Messages: []ai.Message{ai.NewUser("hi")},
-		Tools:    map[string]agent.Tool{"nop": tool},
+		Tools:    map[string]core.Tool{"nop": tool},
 		Events:   events,
 	}
 	go func() {
@@ -94,7 +95,7 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 // pinStore satisfies the store seam while recording appends. Only
 // AppendMessage is called by the store sink under test.
 type pinStore struct {
-	agent.StoreProvider
+	core.StoreProvider
 	msgs []ai.Message
 }
 
@@ -128,10 +129,10 @@ func TestStoreSinkHeadPinning(t *testing.T) {
 	if len(st.msgs) != 2 {
 		t.Fatalf("empty assistant must not write, want 2 rows, got %d", len(st.msgs))
 	}
-	if agent.ParentIDOf(st.msgs[0]) != "user-7" {
-		t.Fatalf("head not pinned: %q", agent.ParentIDOf(st.msgs[0]))
+	if core.ParentIDOf(st.msgs[0]) != "user-7" {
+		t.Fatalf("head not pinned: %q", core.ParentIDOf(st.msgs[0]))
 	}
-	if agent.ParentIDOf(st.msgs[1]) != "" {
-		t.Fatalf("second assistant must derive, got parent %q", agent.ParentIDOf(st.msgs[1]))
+	if core.ParentIDOf(st.msgs[1]) != "" {
+		t.Fatalf("second assistant must derive, got parent %q", core.ParentIDOf(st.msgs[1]))
 	}
 }

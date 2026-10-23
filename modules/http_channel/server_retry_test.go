@@ -14,7 +14,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -80,7 +80,7 @@ func (p *multiProvider) done() {
 func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newMultiProvider("step")
-	a := agent.NewAgent(prov, nil, 0)
+	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {

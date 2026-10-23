@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -31,11 +31,11 @@ func (c *recordingConsole) Labeled(label, body string) {
 }
 func (c *recordingConsole) Error(msg string) { c.errs = append(c.errs, msg) }
 func (c *recordingConsole) ClearError()      { c.errs = nil }
-func (c *recordingConsole) Style(string) agent.TUIStyle {
+func (c *recordingConsole) Style(string) core.TUIStyle {
 	return func(s string) string { return s }
 }
 func (c *recordingConsole) CWD() string         { return c.cwd }
-func (c *recordingConsole) Ext() *agent.Context { return nil }
+func (c *recordingConsole) Ext() *core.Context { return nil }
 
 // plainFilesConsole builds a recording console rooted at dir.
 func plainFilesConsole(t *testing.T, dir string) *recordingConsole {

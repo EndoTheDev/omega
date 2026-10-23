@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -96,7 +97,7 @@ func TestLegacyRowsNormalizeToDefault(t *testing.T) {
 }
 
 // ids is the test projection helper.
-func ids(sessions []agent.Session) []string {
+func ids(sessions []core.Session) []string {
 	out := make([]string, len(sessions))
 	for i, s := range sessions {
 		out[i] = s.ID

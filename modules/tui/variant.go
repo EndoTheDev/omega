@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,7 +23,7 @@ import (
 // pathMarkers returns variant markers ("[2/3]") keyed by the view
 // path index of each variant head, for path entries below upto. Only
 // branch points carrying 2+ siblings produce markers.
-func pathMarkers(view agent.ActiveView, upto int) map[int]string {
+func pathMarkers(view core.ActiveView, upto int) map[int]string {
 	if len(view.Branches) == 0 || upto <= 0 {
 		return nil
 	}
@@ -32,7 +32,7 @@ func pathMarkers(view agent.ActiveView, upto int) map[int]string {
 		if i >= upto {
 			break
 		}
-		idx[agent.MsgID(sm.ID)] = i
+		idx[core.MsgID(sm.ID)] = i
 	}
 	markers := map[int]string{}
 	for _, b := range view.Branches {
@@ -54,12 +54,12 @@ func pathMarkers(view agent.ActiveView, upto int) map[int]string {
 // branchPointsOnPath filters a view's branch points to those whose
 // parent message sits on the active path - /variant only speaks about
 // branch points the user can actually see in the transcript.
-func branchPointsOnPath(view agent.ActiveView) []agent.BranchInfo {
+func branchPointsOnPath(view core.ActiveView) []core.BranchInfo {
 	onPath := make(map[string]bool, len(view.Path))
 	for _, sm := range view.Path {
-		onPath[agent.MsgID(sm.ID)] = true
+		onPath[core.MsgID(sm.ID)] = true
 	}
-	var out []agent.BranchInfo
+	var out []core.BranchInfo
 	for _, b := range view.Branches {
 		if onPath[b.ParentID] {
 			out = append(out, b)
@@ -94,14 +94,14 @@ func (m model) variantGuards() string {
 }
 
 // loadSessionView fetches the active view of the current session.
-func (m model) loadSessionView() (agent.ActiveView, error) {
+func (m model) loadSessionView() (core.ActiveView, error) {
 	return m.store.GetActiveView(context.Background(), m.sessionID)
 }
 
 // reloadView re-renders the transcript from a freshly derived view:
 // the active path becomes history and transcript, with variant
 // markers. Shared by /variant select, /fork, and /retry.
-func (m *model) reloadView(view agent.ActiveView) {
+func (m *model) reloadView(view core.ActiveView) {
 	msgs := make([]ai.Message, 0, len(view.Path))
 	for _, sm := range view.Path {
 		msgs = append(msgs, sm.Message)
@@ -176,7 +176,7 @@ func (m model) handleVariant(args []string) (tea.Model, tea.Cmd) {
 // selectVariant persists an ai.VariantSelect for branch and reloads
 // the active path. Selecting the already-active variant writes
 // nothing (mirrors the http channel), it only re-renders.
-func (m model) selectVariant(view agent.ActiveView, branch, child string, shown, total int) (tea.Model, tea.Cmd) {
+func (m model) selectVariant(view core.ActiveView, branch, child string, shown, total int) (tea.Model, tea.Cmd) {
 	if view.ActiveHeads[branch] == child {
 		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[variant %d/%d at #%s already active]", shown, total, branch)) + "\n"
 		m.refresh()
@@ -251,9 +251,9 @@ func (m model) handleFork(args []string) (tea.Model, tea.Cmd) {
 	at := n - 1
 	target := view.Path[at]
 	m.reloadViewAt(view, at)
-	m.forkParent = agent.MsgID(target.ID)
+	m.forkParent = core.MsgID(target.ID)
 	m.transcript += "\n" + m.theme.Info.Render("[fork: next message continues from #"+
-		agent.MsgID(target.ID)+"]") + "\n"
+		core.MsgID(target.ID)+"]") + "\n"
 	m.refresh()
 	return m, nil
 }
@@ -262,7 +262,7 @@ func (m model) handleFork(args []string) (tea.Model, tea.Cmd) {
 // (inclusive) - the forked perspective. The dropped turns stay in the
 // store; they come back whenever a variant selection or fork makes
 // them part of the active path again.
-func (m *model) reloadViewAt(view agent.ActiveView, at int) {
+func (m *model) reloadViewAt(view core.ActiveView, at int) {
 	msgs := make([]ai.Message, 0, at+1)
 	for _, sm := range view.Path[:at+1] {
 		msgs = append(msgs, sm.Message)
@@ -306,7 +306,7 @@ func (m model) handleRetry() (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	}
-	branch := agent.MsgID(view.Path[end].ID)
+	branch := core.MsgID(view.Path[end].ID)
 	// The fresh response becomes active by default (last sibling in
 	// row order), unless a /variant selection still pins this branch -
 	// a dangling select entry re-derives the default, so clear it.

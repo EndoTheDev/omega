@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // newTestModel mirrors the existing tui_test.go pattern. The helper
@@ -20,13 +20,13 @@ func newTestModel(themeName string) model {
 // correctly. We set Infos directly rather than calling MountAll so the
 // tests stay focused on the TUI render path and don't depend on plugin
 // wiring.
-func ctxWithInfos(infos ...agent.ExtensionInfo) *agent.Context {
-	pctx := &agent.Context{Infos: infos}
+func ctxWithInfos(infos ...core.ExtensionInfo) *core.Context {
+	pctx := &core.Context{Infos: infos}
 	pctx.Commands = append(pctx.Commands,
-		agent.ExtensionCommand{Name: "/tools", Description: "list tools"},
+		core.ExtensionCommand{Name: "/tools", Description: "list tools"},
 	)
 	prev := pctx.CommandHandler
-	pctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	pctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/tools" {
 			arg := strings.TrimSpace(args)
 			if arg == "" || arg == "list" {
@@ -61,14 +61,14 @@ func ctxWithInfos(infos ...agent.ExtensionInfo) *agent.Context {
 				if nameWidth == 0 {
 					sb.WriteString("[no tools available]\n")
 				}
-				return agent.CommandResult{Text: sb.String()}, nil
+				return core.CommandResult{Text: sb.String()}, nil
 			}
-			return agent.CommandResult{}, fmt.Errorf("usage: /tools [on|off|auto|list]")
+			return core.CommandResult{}, fmt.Errorf("usage: /tools [on|off|auto|list]")
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 	}
 	return pctx
 }
@@ -88,9 +88,9 @@ func TestHandleToolsListNoExtensions(t *testing.T) {
 
 func TestHandleToolsListWithTools(t *testing.T) {
 	m := newTestModel("dark")
-	m.extensions = ctxWithInfos(agent.ExtensionInfo{
+	m.extensions = ctxWithInfos(core.ExtensionInfo{
 		Name: "shell",
-		ToolList: []agent.ToolInfo{
+		ToolList: []core.ToolInfo{
 			{Name: "shell.run", Description: "run a shell command"},
 			{Name: "files.read", Description: "read a file\nsecond line ignored"},
 		},
@@ -118,7 +118,7 @@ func TestHandleToolsListWithTools(t *testing.T) {
 func TestHandleToolsListEmptyToolList(t *testing.T) {
 	// Extension present but with zero tools -> [no tools available].
 	m := newTestModel("dark")
-	m.extensions = ctxWithInfos(agent.ExtensionInfo{Name: "empty"})
+	m.extensions = ctxWithInfos(core.ExtensionInfo{Name: "empty"})
 	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
 	if !strings.Contains(ansiStrip(mm.transcript), "[no tools available]") {
@@ -134,7 +134,7 @@ func TestHandleExtensionsNone(t *testing.T) {
 	// Non-nil context with empty Infos -> [no extensions loaded].
 	// (handleExtensions dereferences m.extensions.Infos directly, so a
 	// truly nil context would panic; production always has a context.)
-	m.extensions = &agent.Context{}
+	m.extensions = &core.Context{}
 	out, _ := m.handleExtensions()
 	mm := out.(model)
 	if !strings.Contains(ansiStrip(mm.transcript), "[no extensions loaded]") {
@@ -145,8 +145,8 @@ func TestHandleExtensionsNone(t *testing.T) {
 func TestHandleExtensionsWithInfos(t *testing.T) {
 	m := newTestModel("dark")
 	m.extensions = ctxWithInfos(
-		agent.ExtensionInfo{Name: "shell", Tools: 3, Commands: 1, Seams: []string{"tools"}},
-		agent.ExtensionInfo{Name: "provider", Tools: 0, Commands: 2, Seams: []string{"provider"}},
+		core.ExtensionInfo{Name: "shell", Tools: 3, Commands: 1, Seams: []string{"tools"}},
+		core.ExtensionInfo{Name: "provider", Tools: 0, Commands: 2, Seams: []string{"provider"}},
 	)
 	out, _ := m.handleExtensions()
 	mm := out.(model)

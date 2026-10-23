@@ -3,7 +3,7 @@ package tools
 import (
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestPromptSectionsRendersTools verifies the Tools section rendering:
@@ -11,11 +11,11 @@ import (
 // truncated by firstLine.
 func TestPromptSectionsRendersTools(t *testing.T) {
 	p := NewPlugin()
-	secs := p.PromptSections(agent.PromptBuildOptions{
-		Extensions: []agent.ExtensionInfo{
+	secs := p.PromptSections(core.PromptBuildOptions{
+		Extensions: []core.ExtensionInfo{
 			{
 				Name: "webui",
-				ToolList: []agent.ToolInfo{
+				ToolList: []core.ToolInfo{
 					{Name: "ui.click", Description: "Run a shell command.\nSecond line ignored."},
 				},
 			},
@@ -56,5 +56,5 @@ func TestFirstLine(t *testing.T) {
 // TestPromptSectionsImplementsSeam verifies the plugin satisfies the
 // prompt-section seam.
 func TestPromptSectionsImplementsSeam(t *testing.T) {
-	var _ agent.PromptSectioner = (*Plugin)(nil)
+	var _ core.PromptSectioner = (*Plugin)(nil)
 }

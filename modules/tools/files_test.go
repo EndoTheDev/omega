@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestFilesToolRegisteredAsDomainTool pins the consolidation: the
@@ -26,7 +26,7 @@ func TestFilesToolRegisteredAsDomainTool(t *testing.T) {
 	if want[0] != "read" || want[1] != "write" || want[2] != "edit" {
 		t.Fatalf("actions metadata wrong: %+v", files.Actions)
 	}
-	domainNames := agent.Tool{Actions: files.Actions}.ActionNames()
+	domainNames := core.Tool{Actions: files.Actions}.ActionNames()
 	if !reflect.DeepEqual(domainNames, fileActionNames()) {
 		t.Fatalf("action names %v != metadata names %v", domainNames, fileActionNames())
 	}

@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -92,14 +92,14 @@ func (s *Server) handleSessionVariants(w http.ResponseWriter, r *http.Request) {
 // branch point carry an EMPTY list (not absent) on the select surface -
 // the select endpoint is only wired for sessions with a store, so the
 // client can rely on the key existing there.
-func (s *Server) writeVariants(w http.ResponseWriter, status int, view agent.ActiveView) {
+func (s *Server) writeVariants(w http.ResponseWriter, status int, view core.ActiveView) {
 	writeJSON(w, status, map[string]any{"variants": view.Branches})
 }
 
 // variantTarget resolves the select body against the view. Branch-point
 // ids (message ids carrying sibling runs) select the given index;
 // anything else must name a conversation message whose run is selected.
-func variantTarget(view agent.ActiveView, body variantSelectRequest) (branch, child string, err error) {
+func variantTarget(view core.ActiveView, body variantSelectRequest) (branch, child string, err error) {
 	if heads, ok := view.SiblingHeads[body.MessageID]; ok {
 		idx := -1
 		if body.Select != nil {

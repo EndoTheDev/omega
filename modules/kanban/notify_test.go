@@ -5,16 +5,16 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeNotifier records Emit calls (agent.NotificationsProvider).
+// fakeNotifier records Emit calls (core.NotificationsProvider).
 type fakeNotifier struct {
 	mu  sync.Mutex
-	got []agent.Notification
+	got []core.Notification
 }
 
-func (f *fakeNotifier) Emit(n agent.Notification) (agent.Notification, error) {
+func (f *fakeNotifier) Emit(n core.Notification) (core.Notification, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n.ID = int64(len(f.got) + 1)
@@ -22,13 +22,13 @@ func (f *fakeNotifier) Emit(n agent.Notification) (agent.Notification, error) {
 	f.got = append(f.got, n)
 	return n, nil
 }
-func (f *fakeNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]agent.Notification, int, error) {
+func (f *fakeNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
 	return nil, 0, nil
 }
 func (f *fakeNotifier) MarkRead(ctx context.Context, id int64) error { return nil }
 func (f *fakeNotifier) MarkAllRead(ctx context.Context) error        { return nil }
-func (f *fakeNotifier) Subscribe() (<-chan agent.Notification, func()) {
-	ch := make(chan agent.Notification, 4)
+func (f *fakeNotifier) Subscribe() (<-chan core.Notification, func()) {
+	ch := make(chan core.Notification, 4)
 	return ch, func() {}
 }
 
@@ -40,13 +40,13 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 	s.SetNotifier(n)
 	ctx := context.Background()
 
-	in, err := s.CreateTask(ctx, "", agent.KanbanTask{Title: "wire the drawer"})
+	in, err := s.CreateTask(ctx, "", core.KanbanTask{Title: "wire the drawer"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	// a non-done move emits nothing
-	if _, err := s.UpdateTask(ctx, "", in.ID, agent.KanbanPatch{Status: "running"}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", in.ID, core.KanbanPatch{Status: "running"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	n.mu.Lock()
@@ -57,7 +57,7 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 	}
 
 	// entering done emits exactly one, metadata only
-	if _, err := s.UpdateTask(ctx, "", in.ID, agent.KanbanPatch{Status: StatusDone}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", in.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatalf("update to done: %v", err)
 	}
 	n.mu.Lock()
@@ -75,7 +75,7 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 
 	// a second done move (already settled, completed_at untouched)
 	// emits nothing - one transition, one record
-	if _, err := s.UpdateTask(ctx, "", in.ID, agent.KanbanPatch{Status: StatusDone}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", in.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatalf("re-close: %v", err)
 	}
 	count = len(n.got)

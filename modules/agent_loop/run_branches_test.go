@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -15,7 +15,7 @@ import (
 // Mock implementations for PromptBuilder and CompactionProvider
 // ---------------------------------------------------------------------------
 
-// mockPromptBuilder implements agent.PromptBuilder, returning a fixed prompt
+// mockPromptBuilder implements core.PromptBuilder, returning a fixed prompt
 // and guidelines for testing the system-prompt prepend path.
 type mockPromptBuilder struct {
 	prompt     string
@@ -23,7 +23,7 @@ type mockPromptBuilder struct {
 	called     bool
 }
 
-func (m *mockPromptBuilder) BuildPrompt(_ context.Context, _ agent.PromptBuildOptions) (string, bool) {
+func (m *mockPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOptions) (string, bool) {
 	m.called = true
 	return m.prompt, true
 }
@@ -32,7 +32,7 @@ func (m *mockPromptBuilder) Guidelines() []string {
 	return m.guidelines
 }
 
-// mockCompactionProvider implements agent.CompactionProvider, recording
+// mockCompactionProvider implements core.CompactionProvider, recording
 // calls and returning a compacted message set.
 type mockCompactionProvider struct {
 	called    bool
@@ -63,10 +63,10 @@ func TestRunContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before Run starts
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, agent.LoopOptions{
+		Loop{}.Run(ctx, core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,
@@ -100,8 +100,8 @@ func TestRunToolProvidersMerging(t *testing.T) {
 	)
 
 	toolCalled := false
-	toolProvider := agent.DefaultToolProvider{
-		ToolsMap: map[string]agent.Tool{
+	toolProvider := core.DefaultToolProvider{
+		ToolsMap: map[string]core.Tool{
 			"merged_tool": {
 				Description: "A tool from ToolProviders",
 				Parameters:  map[string]any{"type": "object"},
@@ -113,13 +113,13 @@ func TestRunToolProvidersMerging(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:      provider,
 			Messages:      []ai.Message{ai.NewUser("go")},
-			ToolProviders: []agent.ToolProvider{toolProvider},
+			ToolProviders: []core.ToolProvider{toolProvider},
 			Events:        events,
 		})
 	}()
@@ -147,10 +147,10 @@ func TestRunPromptBuilder(t *testing.T) {
 		guidelines: []string{"Be concise.", "Use tools wisely."},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:     provider,
 			Messages:     []ai.Message{ai.NewUser("hi")},
 			PromptBuilder: pb,
@@ -196,10 +196,10 @@ func TestRunCompactionProvider(t *testing.T) {
 
 	compactor := &mockCompactionProvider{}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:           provider,
 			Messages:           []ai.Message{ai.NewUser("hi"), ai.NewUser("second"), ai.NewUser("third")},
 			CompactionProvider: compactor,
@@ -243,7 +243,7 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 		},
 	)
 
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"verbose": {
 			Description: "Returns a long string",
 			Parameters:  map[string]any{"type": "object"},
@@ -253,10 +253,10 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:      provider,
 			Messages:      []ai.Message{ai.NewUser("go")},
 			Tools:         tools,
@@ -267,7 +267,7 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 
 	var toolResult *ai.ToolResult
 	for e := range events {
-		if tre, ok := e.(agent.ToolResultEvent); ok {
+		if tre, ok := e.(core.ToolResultEvent); ok {
 			tr := tre.Message
 			toolResult = &tr
 		}
@@ -304,20 +304,20 @@ func TestRunUnknownTool(t *testing.T) {
 		},
 	)
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("go")},
-			Tools:    map[string]agent.Tool{}, // empty tools map, no "nonexistent" tool
+			Tools:    map[string]core.Tool{}, // empty tools map, no "nonexistent" tool
 			Events:   events,
 		})
 	}()
 
 	var toolResult *ai.ToolResult
 	for e := range events {
-		if tre, ok := e.(agent.ToolResultEvent); ok {
+		if tre, ok := e.(core.ToolResultEvent); ok {
 			tr := tre.Message
 			toolResult = &tr
 		}
@@ -351,14 +351,14 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 		},
 	)
 
-	injected := make(chan agent.InjectedMessage, 2)
-	injected <- agent.InjectedMessage{Text: "injected message 1", Source: "test"}
-	injected <- agent.InjectedMessage{Text: "injected message 2", Source: "test"}
+	injected := make(chan core.InjectedMessage, 2)
+	injected <- core.InjectedMessage{Text: "injected message 1", Source: "test"}
+	injected <- core.InjectedMessage{Text: "injected message 2", Source: "test"}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:         provider,
 			Messages:         []ai.Message{ai.NewUser("go")},
 			Events:           events,
@@ -404,10 +404,10 @@ func TestRunThinkingChunk(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,
@@ -416,7 +416,7 @@ func TestRunThinkingChunk(t *testing.T) {
 
 	var assistantMsg *ai.Assistant
 	for e := range events {
-		if am, ok := e.(agent.AssistantMessageEvent); ok {
+		if am, ok := e.(core.AssistantMessageEvent); ok {
 			msg := am.Message
 			assistantMsg = &msg
 		}
@@ -452,8 +452,8 @@ func TestRunToolProviderSingular(t *testing.T) {
 	)
 
 	toolCalled := false
-	toolProvider := agent.DefaultToolProvider{
-		ToolsMap: map[string]agent.Tool{
+	toolProvider := core.DefaultToolProvider{
+		ToolsMap: map[string]core.Tool{
 			"singular_tool": {
 				Description: "A tool from singular ToolProvider",
 				Parameters:  map[string]any{"type": "object"},
@@ -465,13 +465,13 @@ func TestRunToolProviderSingular(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:      provider,
 			Messages:      []ai.Message{ai.NewUser("go")},
-			ToolProviders: []agent.ToolProvider{toolProvider},
+			ToolProviders: []core.ToolProvider{toolProvider},
 			Events:        events,
 		})
 	}()
@@ -495,10 +495,10 @@ func TestRunCompactionError(t *testing.T) {
 
 	compactor := &errorCompactor{}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:           provider,
 			Messages:           []ai.Message{ai.NewUser("hi")},
 			CompactionProvider: compactor,
@@ -538,10 +538,10 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 
 	compactor := &mockCompactionProvider{}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:           provider,
 			Messages:           []ai.Message{ai.NewUser("hi")},
 			CompactionProvider: compactor,
@@ -571,14 +571,14 @@ func TestRunNilToolProviderEntry(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			// Include a nil entry in ToolProviders.
-			ToolProviders: []agent.ToolProvider{nil, nil},
+			ToolProviders: []core.ToolProvider{nil, nil},
 			Events:        events,
 		})
 	}()
@@ -597,10 +597,10 @@ func TestRunNilToolsMap(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Tools:    nil, // nil tools map
@@ -626,12 +626,12 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	injected := make(chan agent.InjectedMessage)
+	injected := make(chan core.InjectedMessage)
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, agent.LoopOptions{
+		Loop{}.Run(ctx, core.LoopOptions{
 			Provider:         provider,
 			Messages:         []ai.Message{ai.NewUser("hi")},
 			Events:           events,

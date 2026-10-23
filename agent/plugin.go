@@ -196,7 +196,7 @@ func mountPlugins(ordered []Plugin, ctx *Context) error {
 		if err := p.Mount(ctx); err != nil {
 			return fmt.Errorf("mount %q: %w", p.Name(), err)
 		}
-		info := ExtensionInfo{
+		info := core.ExtensionInfo{
 			Name:  p.Name(),
 			Seams: p.Provides(),
 		}
@@ -215,7 +215,7 @@ func mountPlugins(ordered []Plugin, ctx *Context) error {
 					continue
 				}
 				info.Tools++
-				info.ToolList = append(info.ToolList, ToolInfo{
+				info.ToolList = append(info.ToolList, core.ToolInfo{
 					Name:        name,
 					Description: t.Description,
 					Actions:     t.Actions,

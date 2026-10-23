@@ -6,17 +6,17 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeNotifier records Emit calls (agent.NotificationsProvider).
+// fakeNotifier records Emit calls (core.NotificationsProvider).
 type fakeNotifier struct {
 	mu    sync.Mutex
-	got   []agent.Notification
-	subCh chan agent.Notification
+	got   []core.Notification
+	subCh chan core.Notification
 }
 
-func (f *fakeNotifier) Emit(n agent.Notification) (agent.Notification, error) {
+func (f *fakeNotifier) Emit(n core.Notification) (core.Notification, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n.ID = int64(len(f.got) + 1)
@@ -30,13 +30,13 @@ func (f *fakeNotifier) Emit(n agent.Notification) (agent.Notification, error) {
 	}
 	return n, nil
 }
-func (f *fakeNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]agent.Notification, int, error) {
+func (f *fakeNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
 	return nil, 0, nil
 }
 func (f *fakeNotifier) MarkRead(ctx context.Context, id int64) error { return nil }
 func (f *fakeNotifier) MarkAllRead(ctx context.Context) error        { return nil }
-func (f *fakeNotifier) Subscribe() (<-chan agent.Notification, func()) {
-	ch := make(chan agent.Notification, 16)
+func (f *fakeNotifier) Subscribe() (<-chan core.Notification, func()) {
+	ch := make(chan core.Notification, 16)
 	f.subCh = ch
 	return ch, func() {}
 }

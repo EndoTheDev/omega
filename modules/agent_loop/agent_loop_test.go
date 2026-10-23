@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
 // Compile-time assertions.
-var _ agent.LoopProvider = Loop{}
+var _ core.LoopProvider = Loop{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 // TestLoopBasic verifies the loop runs a simple one-turn conversation.
@@ -19,10 +20,10 @@ func TestLoopBasic(t *testing.T) {
 		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,
@@ -32,18 +33,18 @@ func TestLoopBasic(t *testing.T) {
 	var got []string
 	for e := range events {
 		switch v := e.(type) {
-		case agent.AgentStart:
+		case core.AgentStart:
 			got = append(got, "agent_start")
-		case agent.TurnStart:
+		case core.TurnStart:
 			got = append(got, "turn_start")
-		case agent.StreamEvent:
+		case core.StreamEvent:
 			switch v.Event.(type) {
 			case ai.ResponseChunk:
 				got = append(got, "response_chunk")
 			case ai.StreamEnd:
 				got = append(got, "stream_end")
 			}
-		case agent.AgentEnd:
+		case core.AgentEnd:
 			got = append(got, "agent_end")
 			if v.FinishReason != "stop" {
 				t.Errorf("FinishReason = %s, want stop", v.FinishReason)
@@ -64,10 +65,10 @@ func TestLoopBasic(t *testing.T) {
 
 // TestLoopNilProvider verifies the loop handles a nil provider gracefully.
 func TestLoopNilProvider(t *testing.T) {
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: nil,
 			Messages: []ai.Message{ai.NewUser("hi")},
 			Events:   events,
@@ -75,7 +76,7 @@ func TestLoopNilProvider(t *testing.T) {
 	}()
 
 	for e := range events {
-		if end, ok := e.(agent.AgentEnd); ok {
+		if end, ok := e.(core.AgentEnd); ok {
 			if end.FinishReason != "error" {
 				t.Errorf("FinishReason = %s, want error", end.FinishReason)
 			}
@@ -99,7 +100,7 @@ func TestPluginMount(t *testing.T) {
 		t.Errorf("Provides = %v, want [loop]", provides)
 	}
 
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestLoopWithToolCalls(t *testing.T) {
 		},
 	)
 
-	tools := map[string]agent.Tool{
+	tools := map[string]core.Tool{
 		"echo": {
 			Description: "Echo back",
 			Parameters:  map[string]any{"type": "object", "properties": map[string]any{"msg": map[string]any{"type": "string"}}},
@@ -132,10 +133,10 @@ func TestLoopWithToolCalls(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), agent.LoopOptions{
+		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("go")},
 			Tools:    tools,
@@ -146,7 +147,7 @@ func TestLoopWithToolCalls(t *testing.T) {
 	var got []string
 	for e := range events {
 		switch v := e.(type) {
-		case agent.AgentEnd:
+		case core.AgentEnd:
 			got = append(got, "agent_end")
 			if v.Turns != 2 {
 				t.Errorf("Turns = %d, want 2", v.Turns)
@@ -179,7 +180,7 @@ func TestLoopDeniedTool(t *testing.T) {
 
 	// memory rides a PROVIDER (the real mount shape): filtering the
 	// caller's Tools map alone would not reach it
-	providerTools := map[string]agent.Tool{
+	providerTools := map[string]core.Tool{
 		"memory": {
 			Description: "Save a memory",
 			Run: func(_ context.Context, _ map[string]any) (string, error) {
@@ -189,16 +190,16 @@ func TestLoopDeniedTool(t *testing.T) {
 		},
 	}
 
-	events := make(chan agent.Event, 64)
+	events := make(chan core.Event, 64)
 	ctx := agent.WithDeniedTools(context.Background(), "memory")
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, agent.LoopOptions{
+		Loop{}.Run(ctx, core.LoopOptions{
 			Provider: provider,
 			Messages: []ai.Message{ai.NewUser("go")},
-			Tools:    map[string]agent.Tool{},
-			ToolProviders: []agent.ToolProvider{
-				agent.DefaultToolProvider{ToolsMap: providerTools},
+			Tools:    map[string]core.Tool{},
+			ToolProviders: []core.ToolProvider{
+				core.DefaultToolProvider{ToolsMap: providerTools},
 			},
 			Events: events,
 		})
@@ -206,7 +207,7 @@ func TestLoopDeniedTool(t *testing.T) {
 
 	sawResult := false
 	for e := range events {
-		if te, ok := e.(agent.ToolResultEvent); ok {
+		if te, ok := e.(core.ToolResultEvent); ok {
 			sawResult = true
 			if !te.Message.IsError {
 				t.Errorf("denied tool result not an error: %+v", te.Message)

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
@@ -48,7 +49,7 @@ func (p *Plugin) Requires() []string { return nil }
 // path (exotic embeds) the plugin mounts nothing - every emitter is
 // nil-safe and the HTTP endpoints answer 501, so notifications are a
 // no-op rather than a startup failure.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["notifications"].(Config); ok {
 		cfg = c
@@ -74,36 +75,36 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 // wireCommand registers the read-only /notifications table command
 // with the TUI command chain (the /board pattern: wrap the previous
 // handler, fall through on a miss).
-func (p *Plugin) wireCommand(ctx *agent.Context) {
+func (p *Plugin) wireCommand(ctx *core.Context) {
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/notifications", Description: "list recent finished things (tasks, crons, chats)"},
+		core.ExtensionCommand{Name: "/notifications", Description: "list recent finished things (tasks, crons, chats)"},
 	)
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/notifications" {
 			return p.handleCommand(c, args)
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 	}
 }
 
 // handleCommand renders the newest records as a fixed-width table.
 // Read-only on purpose: reads happen in the webui, the terminal never
 // interrupts (no TUI toasts).
-func (p *Plugin) handleCommand(c context.Context, args string) (agent.CommandResult, error) {
+func (p *Plugin) handleCommand(c context.Context, args string) (core.CommandResult, error) {
 	unreadOnly := strings.TrimSpace(args) == "unread"
 	notes, unread, err := p.store.List(c, unreadOnly, 20, 0)
 	if err != nil {
-		return agent.CommandResult{}, err
+		return core.CommandResult{}, err
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "notifications: %d unread (latest %d)\n\n", unread, len(notes))
 	if len(notes) == 0 {
 		sb.WriteString("nothing finished yet\n")
-		return agent.CommandResult{Text: sb.String()}, nil
+		return core.CommandResult{Text: sb.String()}, nil
 	}
 	for _, n := range notes {
 		marker := " "
@@ -114,5 +115,5 @@ func (p *Plugin) handleCommand(c context.Context, args string) (agent.CommandRes
 			marker, n.ID, n.Kind, "["+n.Verdict+"]", n.CreatedAt, n.Title)
 	}
 	sb.WriteString("\n* unread\n")
-	return agent.CommandResult{Text: sb.String()}, nil
+	return core.CommandResult{Text: sb.String()}, nil
 }

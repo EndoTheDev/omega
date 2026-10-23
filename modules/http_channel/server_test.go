@@ -17,6 +17,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -140,7 +141,7 @@ func newTestServer() *Server {
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := agent.NewAgent(provider, nil, 0)
+	a := core.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, nil, nil)
 }
@@ -154,11 +155,11 @@ func newTestServer() *Server {
 type testLoop struct{}
 
 // testToolProvider is a stub ToolProvider for the /tools inventory test.
-type testToolProvider struct{ tools map[string]agent.Tool }
+type testToolProvider struct{ tools map[string]core.Tool }
 
-func (p testToolProvider) Tools() map[string]agent.Tool { return p.tools }
+func (p testToolProvider) Tools() map[string]core.Tool { return p.tools }
 
-func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
 	// Persistence outlives the run ctx - same WithoutCancel law the
 	// real loop applies, so a cancelled run still lands its copy.
@@ -172,14 +173,14 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	for _, msg := range agent.PersistInput(ctx) {
 		persist(msg)
 	}
-	start := agent.AgentStart{Type: "agent_start", ModelName: ""}
+	start := core.AgentStart{Type: "agent_start", ModelName: ""}
 	if opts.Provider != nil {
 		start.ModelName = opts.Provider.ModelName()
 	}
 	opts.Events <- start
-	opts.Events <- agent.TurnStart{Type: "turn_start", Turn: 1}
+	opts.Events <- core.TurnStart{Type: "turn_start", Turn: 1}
 	if opts.Provider == nil {
-		opts.Events <- agent.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no provider configured"}
+		opts.Events <- core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no provider configured"}
 		return nil
 	}
 	var content strings.Builder
@@ -188,16 +189,16 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		if chunk, ok := event.(ai.ResponseChunk); ok {
 			content.WriteString(chunk.Content)
 		}
-		opts.Events <- agent.StreamEvent{Event: event}
+		opts.Events <- core.StreamEvent{Event: event}
 		if end, ok := event.(ai.StreamEnd); ok && end.FinishReason == "stop" {
 			// Persist BEFORE the event, like the real loop: a reload
 			// mid-run must find the record already in the store.
 			assistant := ai.NewAssistant(content.String())
 			persist(assistant)
 			persisted = true
-			opts.Events <- agent.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
-			opts.Events <- agent.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}
-			opts.Events <- agent.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}
+			opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
+			opts.Events <- core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}
+			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}
 		}
 	}
 	// The stream unwound without a stop StreamEnd - a cancelled run
@@ -530,7 +531,7 @@ func TestSessionsCRUD(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201", rec.Code)
 	}
-	var created agent.Session
+	var created core.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
@@ -545,7 +546,7 @@ func TestSessionsCRUD(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want 200", rec.Code)
 	}
-	var list []agent.Session
+	var list []core.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
@@ -561,8 +562,8 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("get status = %d, want 200", rec.Code)
 	}
 	var detail struct {
-		Session  agent.Session `json:"session"`
-		Messages []ai.Message  `json:"messages"`
+		Session  core.Session `json:"session"`
+		Messages []ai.Message `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("decode get: %v", err)
@@ -707,7 +708,7 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 				PromptEvalCount: ptrInt(40), EvalCount: ptrInt(5)},
 		),
 	)
-	a := agent.NewAgent(provider, nil, 0)
+	a := core.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -1185,7 +1186,7 @@ func TestSessionPatchPinned(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var sess agent.Session
+	var sess core.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -1247,7 +1248,7 @@ func TestSessionPatchArchived(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var sess agent.Session
+	var sess core.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -1452,7 +1453,7 @@ func TestSessionByIDPutLabel(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("put status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var sess agent.Session
+	var sess core.Session
 	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -1558,7 +1559,7 @@ func newTitleTestServerWithStore(t *testing.T) (*Server, *store.Store, *captureP
 			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := agent.NewAgent(prov, nil, 0)
+	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -1717,9 +1718,9 @@ func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 // by name; a bare server (nil registry) answers []; any other method is
 // 405. The webui's module-owned tools panel renders this inventory.
 func TestTools(t *testing.T) {
-	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
+	a := core.NewAgent(newMockProvider("mock"), nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, map[string]agent.Tool{
+	s := NewServer(a, map[string]core.Tool{
 		"shell.run":   {Description: "run a shell command"},
 		"files.read":  {Description: "read a file"},
 		"files.write": {Description: "write a file"},
@@ -1747,7 +1748,7 @@ func TestTools(t *testing.T) {
 
 	// the real registry comes from the agent's ToolProviders (the loop
 	// merges those with the server set) - /tools must show them too
-	a.SetToolProviders([]agent.ToolProvider{testToolProvider{tools: map[string]agent.Tool{
+	a.SetToolProviders([]core.ToolProvider{testToolProvider{tools: map[string]core.Tool{
 		"web.search": {Description: "search the web"},
 	}}})
 	rec4 := httptest.NewRecorder()
@@ -1765,10 +1766,10 @@ func TestTools(t *testing.T) {
 
 	// domain tool with actions + alias: the folded row carries the
 	// actions metadata; the alias shim is hidden from the inventory.
-	a.SetToolProviders([]agent.ToolProvider{testToolProvider{tools: map[string]agent.Tool{
+	a.SetToolProviders([]core.ToolProvider{testToolProvider{tools: map[string]core.Tool{
 		"memory": {
 			Description: "domain tool",
-			Actions:     []agent.ToolAction{{Name: "add", Description: "append"}, {Name: "remove", Description: "delete"}},
+			Actions:     []core.ToolAction{{Name: "add", Description: "append"}, {Name: "remove", Description: "delete"}},
 		},
 		"files.read": {Description: "legacy shim", AliasOf: "files"},
 	}}})

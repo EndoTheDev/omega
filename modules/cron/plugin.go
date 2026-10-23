@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the cron Runner into omega's plugin system. It
@@ -13,7 +14,7 @@ import (
 type Plugin struct {
 	cfg    *Config
 	home   string
-	runner agent.CronProvider // the mounted scheduler; nil = not mounted
+	runner core.CronProvider // the mounted scheduler; nil = not mounted
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -54,7 +55,7 @@ func (p *Plugin) Requires() []string { return []string{"notifications"} }
 // Mount loads crons.yaml and mounts the Runner into ctx.Cron. A load
 // failure (invalid yaml) is a mount error - the operator sees the
 // offending job name and line at startup, not a silent skip.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	home := p.home
 	if home == "" {
 		home = cronHome()

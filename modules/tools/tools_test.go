@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestRunShellContextKill: the shell tool must run under the call ctx -
@@ -35,7 +36,7 @@ func TestRunShellContextKill(t *testing.T) {
 // self-check: compile-time interface satisfaction, plugin contract,
 // and basic tool behavior (write → read → edit → read).
 func TestToolProviderImplementsAgentToolProvider(t *testing.T) {
-	var _ agent.ToolProvider = (*ToolProvider)(nil)
+	var _ core.ToolProvider = (*ToolProvider)(nil)
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
@@ -55,7 +56,7 @@ func TestPluginContract(t *testing.T) {
 
 func TestMountAppendsToolProvider(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}

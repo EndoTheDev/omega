@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -38,10 +38,10 @@ func TestAppendDerivesLeafParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// u1, a1, u2(parent=2), a2(parent=3): linear chain materialized
-	if p := agent.ParentIDOf(rows[2].Message); p != agent.MsgID(rows[1].ID) {
+	if p := core.ParentIDOf(rows[2].Message); p != core.MsgID(rows[1].ID) {
 		t.Fatalf("u2 parent = %q, want the a1 row id", p)
 	}
-	if p := agent.ParentIDOf(rows[3].Message); p != agent.MsgID(rows[2].ID) {
+	if p := core.ParentIDOf(rows[3].Message); p != core.MsgID(rows[2].ID) {
 		t.Fatalf("a2 parent = %q, want the u2 row id", p)
 	}
 	view, err := s.GetActiveView(ctx, "t1")
@@ -67,12 +67,12 @@ func TestAppendExplicitParentValidated(t *testing.T) {
 	}
 	rows, _ := s.loadRows(ctx, "t2")
 	head := ai.NewAssistant("retry answer")
-	head.ParentID = agent.MsgID(rows[0].ID)
+	head.ParentID = core.MsgID(rows[0].ID)
 	if err := s.AppendMessage(ctx, "t2", head); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ = s.loadRows(ctx, "t2")
-	if p := agent.ParentIDOf(rows[1].Message); p != agent.MsgID(rows[0].ID) {
+	if p := core.ParentIDOf(rows[1].Message); p != core.MsgID(rows[0].ID) {
 		t.Fatalf("head parent = %q, want the user id", p)
 	}
 	// dangling: explicit pointer to a foreign row rejects
@@ -97,7 +97,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, _ := s.loadRows(ctx, "t3")
-	userID := agent.MsgID(rows[0].ID)
+	userID := core.MsgID(rows[0].ID)
 
 	retry := func(ans string) {
 		t.Helper()
@@ -122,13 +122,13 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	}
 	// select variant 1; the path flips and PERSISTS through reload
 	rows, _ = s.loadRows(ctx, "t3")
-	if err := s.AppendMessage(ctx, "t3", ai.NewVariantSelect(userID, agent.MsgID(rows[1].ID))); err != nil {
+	if err := s.AppendMessage(ctx, "t3", ai.NewVariantSelect(userID, core.MsgID(rows[1].ID))); err != nil {
 		t.Fatal(err)
 	}
 	// a CONTINUATION message from the selected branch chains off the
 	// selected leaf (the fork-send shape: explicit parent = the leaf)
 	rows, _ = s.loadRows(ctx, "t3")
-	if p := agent.ParentIDOf(rows[2].Message); p != agent.MsgID(rows[0].ID) {
+	if p := core.ParentIDOf(rows[2].Message); p != core.MsgID(rows[0].ID) {
 		t.Fatalf("retry head parent wrong: %q", p)
 	}
 	view, err = s.GetActiveView(ctx, "t3")
@@ -143,10 +143,10 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	}
 }
 
-func pathOf(v agent.ActiveView) []string {
+func pathOf(v core.ActiveView) []string {
 	out := make([]string, len(v.Path))
 	for i, sm := range v.Path {
-		out[i] = agent.MsgID(sm.ID)
+		out[i] = core.MsgID(sm.ID)
 	}
 	return out
 }

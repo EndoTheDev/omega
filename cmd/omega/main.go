@@ -16,6 +16,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/cron"
@@ -352,7 +353,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // newAgent wires config into a provider, agent, store, and extensions
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
@@ -464,13 +465,13 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	})
 	errCh := make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
-		deps := agent.ChannelDeps{
+		deps := core.ChannelDeps{
 			Ctx:      pctx,
 			Store:    store,
 			Settings: &omegaSettings{path: configFile, pctx: pctx},
 			Version:  omegaVersion,
 		}
-		go func(c agent.Channel) {
+		go func(c core.Channel) {
 			errCh <- c.Start(ctx, deps)
 		}(ch)
 	}
@@ -480,7 +481,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// the channels.
 	if pctx.Cron != nil {
 		go func() {
-			if err := pctx.Cron.Start(ctx, agent.CronDeps{Ctx: pctx, Agent: ag, Store: store}); err != nil {
+			if err := pctx.Cron.Start(ctx, core.CronDeps{Ctx: pctx, Agent: ag, Store: store}); err != nil {
 				fmt.Fprintf(os.Stderr, "omega: cron runner: %v\n", err)
 				errCh <- err
 			}
@@ -563,9 +564,9 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	// non-interactive origin - a subagent must not hard-pause
 	// waiting for a click its parent surface would have to surface.
 	if os.Getenv("OMEGA_SUBAGENT") != "" {
-		ctx = agent.WithRunOrigin(ctx, agent.RunOriginDelegate)
+		ctx = core.WithRunOrigin(ctx, core.RunOriginDelegate)
 	} else {
-		ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+		ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	}
 
 	var userMsg ai.Message
@@ -578,11 +579,11 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	var response strings.Builder
 	for event := range ag.Run(ctx, messages, nil) {
 		switch e := event.(type) {
-		case agent.StreamEvent:
+		case core.StreamEvent:
 			if chunk, ok := e.Event.(ai.ResponseChunk); ok {
 				response.WriteString(chunk.Content)
 			}
-		case agent.AgentEnd:
+		case core.AgentEnd:
 			if e.Error != "" {
 				return fmt.Errorf("agent: %s", e.Error)
 			}
@@ -640,7 +641,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 	wireCaptioner(cfg, pctx)
 
 	// Load skills.
-	var skillsList []agent.Skill
+	var skillsList []core.Skill
 	if pctx.Skills != nil {
 		skillsList, err = pctx.Skills.LoadSkills(cfg.Skills.Dir)
 		if err != nil {
@@ -659,11 +660,11 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 }
 
 // runChat launches the frontend (TUI) via the Frontend seam.
-func runChat(cfg Config, pctx *agent.Context, skills []agent.Skill, appendPrompts []string, trust trustFlags) error {
+func runChat(cfg Config, pctx *agent.Context, skills []core.Skill, appendPrompts []string, trust trustFlags) error {
 	if pctx.Frontend == nil {
 		return fmt.Errorf("no frontend extension loaded — mount a frontend plugin (e.g. tui)")
 	}
-	return pctx.Frontend.Run(context.Background(), pctx, agent.FrontendOptions{
+	return pctx.Frontend.Run(context.Background(), pctx, core.FrontendOptions{
 		ModelName:     cfg.Provider.ModelName,
 		ProviderType:  cfg.Provider.Type,
 		Compaction:    &cfg.Compaction,

@@ -1,7 +1,7 @@
 package mcp
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the MCP bridge into omega's plugin system. It provides
@@ -50,7 +50,7 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount populates the Context. Appends a ToolProvider that wraps
 // the bridge's discovered MCP tools as agent.Tool values.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	if p.bridge == nil {
 		return nil
 	}
@@ -59,17 +59,17 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 	return nil
 }
 
-// bridgeToolProvider adapts Bridge to the agent.ToolProvider interface.
+// bridgeToolProvider adapts Bridge to the core.ToolProvider interface.
 type bridgeToolProvider struct {
 	bridge *Bridge
 }
 
 // Tools returns the MCP-discovered tools as agent.Tool values.
-func (b bridgeToolProvider) Tools() map[string]agent.Tool {
+func (b bridgeToolProvider) Tools() map[string]core.Tool {
 	mcpTools := b.bridge.Tools()
-	tools := make(map[string]agent.Tool, len(mcpTools))
+	tools := make(map[string]core.Tool, len(mcpTools))
 	for name, t := range mcpTools {
-		tools[name] = agent.Tool{
+		tools[name] = core.Tool{
 			Description: t.description,
 			Parameters:  t.parameters,
 			Run:         t.run,

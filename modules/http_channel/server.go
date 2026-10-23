@@ -17,6 +17,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 //go:embed static/*
@@ -28,33 +29,33 @@ var webuiFS, _ = fs.Sub(staticFS, "static")
 
 // Server exposes the agent over HTTP with SSE streaming.
 type Server struct {
-	agent *agent.Agent
-	tools map[string]agent.Tool
+	agent *core.Agent
+	tools map[string]core.Tool
 	runs  runHub // detached /chat runs by session id (reattach surface)
 	// eph is the no-persist (ephemeral) session registry: `eph-` ids
 	// live here, never in the store - invisible to every store-derived
 	// surface, gone at restart (card t_d96a5cd5).
 	eph      ephRegistry
-	store    agent.StoreProvider
-	settings agent.Settings
+	store    core.StoreProvider
+	settings core.Settings
 	// Kanban is the optional board seam (modules/kanban). A nil value
 	// answers 501 on the /tasks endpoints - the board is optional.
-	Kanban agent.KanbanProvider
+	Kanban core.KanbanProvider
 	// Inspector seams (card t_db430fea, read-only v1). All optional:
 	// a nil Skills serves an empty list on /skills, a nil Cron an
 	// empty list on /cron/jobs, and a nil logger (or one without a
 	// path) 404s on /logs.
-	Skills agent.SkillsProvider
-	Cron   agent.CronProvider
-	logger agent.LoggerProvider
+	Skills core.SkillsProvider
+	Cron   core.CronProvider
+	logger core.LoggerProvider
 	// Notifications is the finished-things seam (card t_5d9032d3):
 	// /notifications list + read, /notifications/events SSE toasts.
 	// Nil answers 501 - the seam is optional like the board.
-	Notifications agent.NotificationsProvider
+	Notifications core.NotificationsProvider
 	// Verdicts is the interactive-question seam (verdict cards v1,
 	// card t_2ecf9c51): /verdicts listing + /sessions/{id}/verdicts
 	// answering. Nil answers 501 - optional like the board.
-	Verdicts agent.VerdictsProvider
+	Verdicts core.VerdictsProvider
 	httpSrv  *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -86,9 +87,9 @@ type Server struct {
 // optional session persistence; a nil store disables persistence and the
 // session CRUD endpoints. settings is the optional config-knobs seam
 // (/settings endpoints); a nil value answers 501 on those endpoints.
-func NewServer(a *agent.Agent, tools map[string]agent.Tool, store agent.StoreProvider, settings agent.Settings) *Server {
+func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings) *Server {
 	if tools == nil {
-		tools = map[string]agent.Tool{}
+		tools = map[string]core.Tool{}
 	}
 	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
 
@@ -371,8 +372,8 @@ type runMeter struct {
 
 // tick counts one streamed chunk (thinking or response - the webui's
 // live chunks/s meter counts both).
-func (m *runMeter) tick(event agent.Event) {
-	se, ok := event.(agent.StreamEvent)
+func (m *runMeter) tick(event core.Event) {
+	se, ok := event.(core.StreamEvent)
 	if !ok {
 		return
 	}
@@ -387,7 +388,7 @@ func (m *runMeter) tick(event agent.Event) {
 // clock. A provider that reported no completion tokens, or a run too
 // short to average honestly (same 0.2s floor the live meter applies),
 // yields nil - the caller keeps any previous block instead.
-func (m *runMeter) stats(usage streamUsage) *agent.LastRunStats {
+func (m *runMeter) stats(usage streamUsage) *core.LastRunStats {
 	if usage.completion <= 0 || m.chunks == 0 || m.lastChunk.IsZero() {
 		return nil
 	}
@@ -395,7 +396,7 @@ func (m *runMeter) stats(usage streamUsage) *agent.LastRunStats {
 	if elapsed <= 0.2 {
 		return nil
 	}
-	return &agent.LastRunStats{
+	return &core.LastRunStats{
 		TokensPerSecond: int(math.Round(float64(usage.completion) / elapsed)),
 		ChunksPerSecond: int(math.Round(float64(m.chunks) / elapsed)),
 	}
@@ -695,11 +696,11 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 			http.Error(w, "nothing to retry: session has no user message", http.StatusBadRequest)
 			return nil, false
 		}
-		req.branchParent = agent.MsgID(view.Path[end].ID)
+		req.branchParent = core.MsgID(view.Path[end].ID)
 		return storedMessages(view.Path[:end+1]), true
 	}
 	if req.Fork != "" {
-		forkID, idErr := agent.ParseMsgID(req.Fork)
+		forkID, idErr := core.ParseMsgID(req.Fork)
 		if idErr != nil {
 			http.Error(w, idErr.Error(), http.StatusBadRequest)
 			return nil, false
@@ -729,7 +730,7 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 				return nil, false
 			}
 			for i := range messages {
-				messages[i] = agent.WithParentID(messages[i], req.Fork)
+				messages[i] = core.WithParentID(messages[i], req.Fork)
 			}
 			// The fork's messages persist through the loop's sink;
 			// their explicit parent is what the store materializes.
@@ -742,7 +743,7 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 }
 
 // storedMessages strips the tree view down to plain provider context.
-func storedMessages(path []agent.StoredMessage) []ai.Message {
+func storedMessages(path []core.StoredMessage) []ai.Message {
 	out := make([]ai.Message, 0, len(path))
 	for _, sm := range path {
 		out = append(out, sm.Message)
@@ -785,13 +786,13 @@ func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
 // prov is the per-request provider (a copy carrying the request's model).
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]agent.Tool, req chatRequest) ([]assistantRecord, streamUsage, *agent.LastRunStats) {
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
 	// tools run in THIS session's context: board tools read the session
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
 	// Verdict cards v1: the no-store legacy path is still an interactive
 	// turn - verdict.request may issue from here.
-	ctx = agent.WithRunOrigin(ctx, agent.RunOriginInteractive)
+	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	// Turn copy persistence belongs to the loop (card t_471f6d4a): the
 	// sink carries the session and the head-parent pin, the run input
 	// rides req.persistInput. Channels render from the store, never
@@ -806,7 +807,7 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 		s.accumulateAssistant(&recs, &rec, event, req)
 		meter.tick(event)
 		// Usage arrives on each stream_end; sum every turn of the run.
-		if se, ok := event.(agent.StreamEvent); ok {
+		if se, ok := event.(core.StreamEvent); ok {
 			if end, ok := se.Event.(ai.StreamEnd); ok {
 				if end.PromptEvalCount != nil {
 					usage.prompt += *end.PromptEvalCount
@@ -832,14 +833,14 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 // segment accumulator when a session is active. A response chunk that
 // arrives after tool results starts a new segment - the frontend splits
 // the live view at the same boundary.
-func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantRecord, event agent.Event, req chatRequest) {
+func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantRecord, event core.Event, req chatRequest) {
 	if s.store == nil || req.SessionID == "" {
 		return
 	}
 	now := time.Now()
 	// ToolResultEvent is a top-level agent event (not wrapped in
 	// StreamEvent) - the TUI persists it the same way
-	if tre, ok := event.(agent.ToolResultEvent); ok {
+	if tre, ok := event.(core.ToolResultEvent); ok {
 		if start, ok := rec.callStarts[tre.Message.ToolCallID]; ok && !start.IsZero() {
 			tre.Message.Timing = &ai.Timing{ElapsedMs: now.Sub(start).Milliseconds()}
 			delete(rec.callStarts, tre.Message.ToolCallID)
@@ -851,12 +852,12 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 		rec.openAt = now
 		return
 	}
-	se, ok := event.(agent.StreamEvent)
+	se, ok := event.(core.StreamEvent)
 	if !ok {
 		// TurnStart opens the next provider call's window: from here
 		// until the stream's first chunk, the loop and prompt
 		// processing bill to the phase that first chunk lands in.
-		if _, ok := event.(agent.TurnStart); ok {
+		if _, ok := event.(core.TurnStart); ok {
 			rec.openAt = now
 		}
 		return
@@ -928,7 +929,7 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 // error is RETURNED, not written to a wire - the caller owns the wire
 // (the legacy request writes one error frame; the detached run
 // broadcasts one).
-func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *agent.LastRunStats) error {
+func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) error {
 	if req.Ephemeral && req.SessionID != "" {
 		// In-memory commit (card t_d96a5cd5): the run's records land in
 		// the registry (transcript items + telemetry) - the messages
@@ -1048,7 +1049,7 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
 	title := ""
 	for ev := range events {
-		se, ok := ev.(agent.StreamEvent)
+		se, ok := ev.(core.StreamEvent)
 		if !ok {
 			continue
 		}
@@ -1088,7 +1089,7 @@ func truncate(s string, n int) string {
 // stream), so it is ALWAYS present on the row - true and false alike -
 // and every tab reconciles its pulse against it.
 type sessionPayload struct {
-	agent.Session
+	core.Session
 	MessageCount int    `json:"message_count"`
 	ToolCount    int    `json:"tool_count"`
 	Model        string `json:"model,omitempty"`
@@ -1238,7 +1239,7 @@ func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		for _, sess := range sessions {
 			archived[sess.ID] = sess.Archived
 		}
-		results = slices.DeleteFunc(results, func(res agent.SearchResult) bool {
+		results = slices.DeleteFunc(results, func(res core.SearchResult) bool {
 			return archived[res.SessionID]
 		})
 	}
@@ -1430,7 +1431,7 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	}
 	inventory := s.agent.Tools()
 	if inventory == nil {
-		inventory = map[string]agent.Tool{}
+		inventory = map[string]core.Tool{}
 	}
 	for name, t := range s.tools {
 		if _, exists := inventory[name]; !exists {
@@ -1510,8 +1511,8 @@ func decodeMessages(raw []json.RawMessage) ([]ai.Message, error) {
 // sseEvent converts an agent event to an SSE (event type, data) pair.
 // StreamEvent wraps an ai event with json:"-", so it is unwrapped and
 // emitted under the inner event's own type.
-func sseEvent(event agent.Event) (string, []byte, error) {
-	if stream, ok := event.(agent.StreamEvent); ok {
+func sseEvent(event core.Event) (string, []byte, error) {
+	if stream, ok := event.(core.StreamEvent); ok {
 		return sseStreamEvent(stream.Event)
 	}
 	data, err := json.Marshal(event)
@@ -1539,19 +1540,19 @@ func sseStreamEvent(event ai.StreamEvent) (string, []byte, error) {
 	return "stream", data, nil
 }
 
-func eventTypeOf(event agent.Event) string {
+func eventTypeOf(event core.Event) string {
 	switch event.(type) {
-	case agent.AgentStart:
+	case core.AgentStart:
 		return "agent_start"
-	case agent.TurnStart:
+	case core.TurnStart:
 		return "turn_start"
-	case agent.TurnEnd:
+	case core.TurnEnd:
 		return "turn_end"
-	case agent.AgentEnd:
+	case core.AgentEnd:
 		return "agent_end"
-	case agent.AssistantMessageEvent:
+	case core.AssistantMessageEvent:
 		return "assistant_message"
-	case agent.ToolResultEvent:
+	case core.ToolResultEvent:
 		return "tool_result"
 	}
 	return "event"

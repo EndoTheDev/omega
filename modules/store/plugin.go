@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
@@ -32,7 +33,7 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount opens the store from config and populates ctx.Store + a
 // sessions.search tool provider + session slash commands.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["store"].(Config); ok {
 		cfg = c
@@ -56,22 +57,22 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 
 	// Register session commands.
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
-		agent.ExtensionCommand{Name: "/agents", Description: "list registered agent profiles"},
-		agent.ExtensionCommand{Name: "/agent", Description: "show one agent profile's detail (/agent <name>)"},
-		agent.ExtensionCommand{Name: "/tree", Description: "show session tree with nesting and message counts"},
-		agent.ExtensionCommand{Name: "/search", Description: "search past session messages by keyword"},
-		agent.ExtensionCommand{Name: "/insights", Description: "show cross-session usage analytics"},
-		agent.ExtensionCommand{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence, --agent <name> to bind it)"},
-		agent.ExtensionCommand{Name: "/resume", Description: "resume a session by #, id, or label"},
-		agent.ExtensionCommand{Name: "/branch", Description: "branch a new session from the current (or given) one"},
-		agent.ExtensionCommand{Name: "/label", Description: "set a label on the current session (no text clears it)"},
-		agent.ExtensionCommand{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
+		core.ExtensionCommand{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
+		core.ExtensionCommand{Name: "/agents", Description: "list registered agent profiles"},
+		core.ExtensionCommand{Name: "/agent", Description: "show one agent profile's detail (/agent <name>)"},
+		core.ExtensionCommand{Name: "/tree", Description: "show session tree with nesting and message counts"},
+		core.ExtensionCommand{Name: "/search", Description: "search past session messages by keyword"},
+		core.ExtensionCommand{Name: "/insights", Description: "show cross-session usage analytics"},
+		core.ExtensionCommand{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence, --agent <name> to bind it)"},
+		core.ExtensionCommand{Name: "/resume", Description: "resume a session by #, id, or label"},
+		core.ExtensionCommand{Name: "/branch", Description: "branch a new session from the current (or given) one"},
+		core.ExtensionCommand{Name: "/label", Description: "set a label on the current session (no text clears it)"},
+		core.ExtensionCommand{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
 	)
 
 	// Wire command handler, chaining after any previous handler.
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		switch name {
 		case "/sessions":
 			return HandleSessionsCommand(c, s, args)
@@ -121,7 +122,7 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 	}
 
 	return nil

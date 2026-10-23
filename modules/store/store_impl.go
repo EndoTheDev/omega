@@ -14,14 +14,15 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // ErrNotFound is returned when a session does not exist.
 var ErrNotFound = errors.New("session not found")
 
-// Compile-time assertion that Store implements agent.StoreProvider.
-var _ agent.StoreProvider = (*Store)(nil)
+// Compile-time assertion that Store implements core.StoreProvider.
+var _ core.StoreProvider = (*Store)(nil)
 
 // Store persists sessions and its message history in SQLite.
 // It is safe for concurrent use via *sql.DB.
@@ -263,8 +264,8 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 
 // scanSession scans one session row into s, tolerating a NULL parent_id
 // (which is how roots are stored).
-func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error) {
-	var sess agent.Session
+func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) {
+	var sess core.Session
 	var parent sql.NullString
 	var pinned int
 	var archived int
@@ -272,7 +273,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
 		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun); err != nil {
-		return agent.Session{}, err
+		return core.Session{}, err
 	}
 	sess.ParentID = parent.String
 	sess.Pinned = pinned != 0
@@ -286,7 +287,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (agent.Session, error)
 	// last_run is a JSON blob; empty means the session never ran. A
 	// malformed blob decodes to nil - the rates just stay blank.
 	if lastRun != "" {
-		var stats agent.LastRunStats
+		var stats core.LastRunStats
 		if err := json.Unmarshal([]byte(lastRun), &stats); err == nil {
 			sess.LastRun = &stats
 		}
@@ -300,7 +301,7 @@ const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tok
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
 // write, not activity - updated_at is untouched.
-func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *agent.LastRunStats) error {
+func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *core.LastRunStats) error {
 	encoded := ""
 	if stats != nil {
 		b, err := json.Marshal(stats)
@@ -315,14 +316,14 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 }
 
 // GetSession returns the session with the given id, or ErrNotFound.
-func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error) {
+func (s *Store) GetSession(ctx context.Context, id string) (core.Session, error) {
 	sess, err := scanSession(s.db.QueryRowContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return agent.Session{}, ErrNotFound
+		return core.Session{}, ErrNotFound
 	}
 	if err != nil {
-		return agent.Session{}, err
+		return core.Session{}, err
 	}
 	return sess, nil
 }
@@ -334,14 +335,14 @@ func (s *Store) GetSession(ctx context.Context, id string) (agent.Session, error
 // through ListAgentSessions. ComputeInsights has the same consequence
 // and shares it knowingly: agent-owned sessions are v1 shells (no chat
 // runs on them yet), so nothing measurable is missing from the numbers.
-func (s *Store) ListSessions(ctx context.Context) ([]agent.Session, error) {
+func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions WHERE agent = 'default' ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []agent.Session
+	var out []core.Session
 	for rows.Next() {
 		sess, err := scanSession(rows)
 		if err != nil {
@@ -369,7 +370,7 @@ func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
 
 // GetSessionTree returns the session forest: every root session with its
 // descendants nested under Children. Sessions are ordered by creation time.
-func (s *Store) GetSessionTree(ctx context.Context) ([]*agent.SessionNode, error) {
+func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
 		return nil, err
@@ -377,11 +378,11 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*agent.SessionNode, error
 	// ponytail: build the tree in memory from a flat list. Fine for a
 	// session store; if a session count ever grows into the thousands,
 	// switch to a recursive CTE.
-	byID := make(map[string]*agent.SessionNode, len(sessions))
+	byID := make(map[string]*core.SessionNode, len(sessions))
 	for i := range sessions {
-		byID[sessions[i].ID] = &agent.SessionNode{Session: sessions[i]}
+		byID[sessions[i].ID] = &core.SessionNode{Session: sessions[i]}
 	}
-	var roots []*agent.SessionNode
+	var roots []*core.SessionNode
 	for _, sess := range sessions {
 		node := byID[sess.ID]
 		if node.ParentID == "" {
@@ -451,7 +452,7 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Mess
 			return err
 		}
 		if parent != "" {
-			role, payload, err = ai.EncodeMessage(agent.WithParentID(msg, parent))
+			role, payload, err = ai.EncodeMessage(core.WithParentID(msg, parent))
 			if err != nil {
 				return err
 			}
@@ -492,9 +493,9 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]ai.Message
 }
 
 // GetMessagesWithTimes returns a session's messages in append order,
-// each paired with its row id (the tree identity, agent.MsgID renders
+// each paired with its row id (the tree identity, core.MsgID renders
 // it for the wire and pointers) and store-level created_at.
-func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]agent.StoredMessage, error) {
+func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	return s.loadRows(ctx, sessionID)
 }
 
@@ -516,7 +517,7 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 // (role 'system') are
 // excluded from message_count, matching the insights convention for
 // non-conversation messages.
-func (s *Store) SessionCounts(ctx context.Context) (map[string]agent.SessionCounts, error) {
+func (s *Store) SessionCounts(ctx context.Context) (map[string]core.SessionCounts, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id,
 		        SUM(role NOT IN ('model_change', 'thinking_level_change', 'variant_select', 'verdict_card', 'verdict', 'system')),
@@ -526,10 +527,10 @@ func (s *Store) SessionCounts(ctx context.Context) (map[string]agent.SessionCoun
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[string]agent.SessionCounts)
+	out := make(map[string]core.SessionCounts)
 	for rows.Next() {
 		var id string
-		var c agent.SessionCounts
+		var c core.SessionCounts
 		if err := rows.Scan(&id, &c.MessageCount, &c.ToolCount); err != nil {
 			return nil, err
 		}
@@ -680,7 +681,7 @@ func quoteFTS(term string) string {
 // SearchMessages performs a full-text search across all session messages.
 // The term is matched literally (phrase-quoted); returns matching sessions
 // with a snippet of the matching content.
-func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.SearchResult, error) {
+func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.SearchResult, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
 		 FROM messages_fts WHERE messages_fts MATCH ?
@@ -689,9 +690,9 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.Searc
 		return nil, err
 	}
 	defer rows.Close()
-	var out []agent.SearchResult
+	var out []core.SearchResult
 	for rows.Next() {
-		var r agent.SearchResult
+		var r core.SearchResult
 		if err := rows.Scan(&r.SessionID, &r.Snippet); err != nil {
 			return nil, err
 		}
@@ -709,9 +710,9 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]agent.Searc
 // Progressive typing is preserved end to end: "fib", "fibo",
 // "fibonacci" each still hit (quoteFTS trailing star, in-app comment
 // 5 2026-10-18).
-func (s *Store) SearchSessions(ctx context.Context, query string) ([]agent.SearchResult, error) {
+func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.SearchResult, error) {
 	fts := quoteFTS(query)
-	out := []agent.SearchResult{}
+	out := []core.SearchResult{}
 	seen := make(map[string]bool)
 
 	// Label hits first. The snippet is the label itself - there is no
@@ -735,7 +736,7 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]agent.Searc
 			continue
 		}
 		seen[id] = true
-		out = append(out, agent.SearchResult{SessionID: id, Snippet: label, Title: true})
+		out = append(out, core.SearchResult{SessionID: id, Snippet: label, Title: true})
 	}
 	if err := trows.Err(); err != nil {
 		trows.Close()
@@ -760,7 +761,7 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]agent.Searc
 			continue
 		}
 		seen[id] = true
-		out = append(out, agent.SearchResult{SessionID: id, Snippet: snippet})
+		out = append(out, core.SearchResult{SessionID: id, Snippet: snippet})
 	}
 	return out, crows.Err()
 }
@@ -785,7 +786,7 @@ type notableTracker struct {
 // global message counter and accumulating per-session user/tool stats.
 // Non-conversation entries (ModelChange, ThinkingLevelChange,
 // VariantSelect) are skipped.
-func countMessages(msgs []ai.Message, in *agent.Insights, st *sessionStats) {
+func countMessages(msgs []ai.Message, in *core.Insights, st *sessionStats) {
 	for _, msg := range msgs {
 		switch msg.(type) {
 		case ai.ModelChange, ai.ThinkingLevelChange, ai.VariantSelect:
@@ -806,25 +807,25 @@ func countMessages(msgs []ai.Message, in *agent.Insights, st *sessionStats) {
 
 // updateNotables updates the notable stats if the current session
 // exceeds the running maxima for messages, tokens, or tool calls.
-func updateNotables(in *agent.Insights, st *sessionStats, nt *notableTracker, detail string) {
+func updateNotables(in *core.Insights, st *sessionStats, nt *notableTracker, detail string) {
 	if st.msgs > nt.maxMsgs {
 		nt.maxMsgs = st.msgs
-		in.NotableMsgs = agent.NotableStat{Value: st.msgs, Detail: detail}
+		in.NotableMsgs = core.NotableStat{Value: st.msgs, Detail: detail}
 	}
 	if st.tokens > nt.maxTokens {
 		nt.maxTokens = st.tokens
-		in.NotableTokens = agent.NotableStat{Value: st.tokens, Detail: detail}
+		in.NotableTokens = core.NotableStat{Value: st.tokens, Detail: detail}
 	}
 	if st.toolCalls > nt.maxTools {
 		nt.maxTools = st.toolCalls
-		in.NotableTools = agent.NotableStat{Value: st.toolCalls, Detail: detail}
+		in.NotableTools = core.NotableStat{Value: st.toolCalls, Detail: detail}
 	}
 }
 
 // processSession fetches messages for one session and accumulates its
 // stats into the provided Insights and sessionStats. It returns true if
 // the session was processed, false if skipped due to parse or fetch error.
-func (s *Store) processSession(ctx context.Context, sess agent.Session, in *agent.Insights, st *sessionStats, nt *notableTracker, dayCounts *[7]int) bool {
+func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.Insights, st *sessionStats, nt *notableTracker, dayCounts *[7]int) bool {
 	t, err := time.Parse(time.RFC3339, sess.CreatedAt)
 	if err != nil {
 		return false
@@ -861,7 +862,7 @@ func (s *Store) processSession(ctx context.Context, sess agent.Session, in *agen
 
 // buildDailyActivity fills the Daily [7]DayStat array from dayCounts,
 // computing visual bar widths proportional to the maximum day count.
-func buildDailyActivity(daily *[7]agent.DayStat, dayCounts [7]int, weekdays []string) {
+func buildDailyActivity(daily *[7]core.DayStat, dayCounts [7]int, weekdays []string) {
 	maxDay := 0
 	for _, c := range dayCounts {
 		if c > maxDay {
@@ -876,13 +877,13 @@ func buildDailyActivity(daily *[7]agent.DayStat, dayCounts [7]int, weekdays []st
 				bar += "█"
 			}
 		}
-		daily[i] = agent.DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
+		daily[i] = core.DayStat{Day: weekdays[i], Count: dayCounts[i], Bar: bar}
 	}
 }
 
 // ComputeInsights aggregates session data over the last N days.
 // If days <= 0, all sessions are included.
-func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights, error) {
+func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -897,7 +898,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights,
 	weekdays := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	toolCounts := map[string]int{}
 	dayCounts := [7]int{}
-	in := &agent.Insights{Days: days}
+	in := &core.Insights{Days: days}
 	if days > 0 {
 		in.Period = fmt.Sprintf("Last %d days", days)
 	} else {
@@ -925,7 +926,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*agent.Insights,
 
 	// Build tool breakdown sorted by count desc.
 	for name, count := range toolCounts {
-		in.Tools = append(in.Tools, agent.ToolStat{Name: name, Count: count})
+		in.Tools = append(in.Tools, core.ToolStat{Name: name, Count: count})
 	}
 	sort.Slice(in.Tools, func(i, j int) bool {
 		return in.Tools[i].Count > in.Tools[j].Count

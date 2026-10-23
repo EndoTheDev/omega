@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"http_channel": Config{Port: 9999},
 		},
@@ -32,7 +32,7 @@ func TestPluginMount(t *testing.T) {
 func TestPluginMountDefaultConfig(t *testing.T) {
 	// No config on the Context — plugin falls back to defaults.
 	p := NewPlugin()
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestPluginMountDefaultConfig(t *testing.T) {
 
 func TestPluginMountMultiple(t *testing.T) {
 	// Channels are additive: two mounts produce two channels.
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"http_channel": Default(),
 		},
@@ -72,7 +72,7 @@ func TestPluginMountMultiple(t *testing.T) {
 // explicit bind list creates one channel per address; empty list falls
 // back to loopback only (TestPluginMountDefaultConfig covers that).
 func TestPluginMountBindList(t *testing.T) {
-	ctx := &agent.Context{Configs: map[string]any{
+	ctx := &core.Context{Configs: map[string]any{
 		"http_channel": Config{Port: 9999, Bind: []string{"127.0.0.1", "100.101.126.30"}},
 	}}
 	p := NewPlugin()
@@ -98,8 +98,8 @@ func TestPluginMountBindList(t *testing.T) {
 func TestStartNoProvider(t *testing.T) {
 	// A Context with no provider must fail Start, not panic.
 	ch := &HTTPChannel{addr: ":0"}
-	err := ch.Start(context.Background(), agent.ChannelDeps{
-		Ctx:   &agent.Context{},
+	err := ch.Start(context.Background(), core.ChannelDeps{
+		Ctx:   &core.Context{},
 		Store: nil,
 	})
 	if err == nil {

@@ -7,7 +7,7 @@ import (
 	"time"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func testStore(t *testing.T) *Store {
@@ -24,7 +24,7 @@ func TestEmitFillsAndValidates(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	out, err := s.Emit(agent.Notification{Kind: "task", SourceID: "t_abc", Title: "task t_abc done"})
+	out, err := s.Emit(core.Notification{Kind: "task", SourceID: "t_abc", Title: "task t_abc done"})
 	if err != nil {
 		t.Fatalf("emit: %v", err)
 	}
@@ -36,16 +36,16 @@ func TestEmitFillsAndValidates(t *testing.T) {
 	}
 
 	// verdict "" normalizes, failed survives, garbage kind and verdict reject
-	if _, err := s.Emit(agent.Notification{Kind: "cron", SourceID: "nightly", Verdict: "failed"}); err != nil {
+	if _, err := s.Emit(core.Notification{Kind: "cron", SourceID: "nightly", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit failed verdict: %v", err)
 	}
-	if _, err := s.Emit(agent.Notification{Kind: "email", SourceID: "x"}); err == nil {
+	if _, err := s.Emit(core.Notification{Kind: "email", SourceID: "x"}); err == nil {
 		t.Fatalf("bogus kind accepted")
 	}
-	if _, err := s.Emit(agent.Notification{Kind: "task", SourceID: "x", Verdict: "maybe"}); err == nil {
+	if _, err := s.Emit(core.Notification{Kind: "task", SourceID: "x", Verdict: "maybe"}); err == nil {
 		t.Fatalf("bogus verdict accepted")
 	}
-	if _, err := s.Emit(agent.Notification{Kind: "task", SourceID: "  "}); err == nil {
+	if _, err := s.Emit(core.Notification{Kind: "task", SourceID: "  "}); err == nil {
 		t.Fatalf("empty source_id accepted")
 	}
 
@@ -65,7 +65,7 @@ func TestListUnreadFilterAndCount(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	for i := range 3 {
-		if _, err := s.Emit(agent.Notification{Kind: "chat", SourceID: fmt.Sprintf("task-%d", i)}); err != nil {
+		if _, err := s.Emit(core.Notification{Kind: "chat", SourceID: fmt.Sprintf("task-%d", i)}); err != nil {
 			t.Fatalf("emit: %v", err)
 		}
 	}
@@ -101,8 +101,8 @@ func TestListUnreadFilterAndCount(t *testing.T) {
 func TestMarkReadAndAll(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	s.Emit(agent.Notification{Kind: "cron", SourceID: "j"})
-	s.Emit(agent.Notification{Kind: "cron", SourceID: "k"})
+	s.Emit(core.Notification{Kind: "cron", SourceID: "j"})
+	s.Emit(core.Notification{Kind: "cron", SourceID: "k"})
 
 	if err := s.MarkRead(ctx, 42); err == nil {
 		t.Fatalf("mark read on a ghost id must error")
@@ -119,7 +119,7 @@ func TestMarkReadAndAll(t *testing.T) {
 func TestRetentionKeeps200(t *testing.T) {
 	s := testStore(t)
 	for i := range retention + 5 {
-		if _, err := s.Emit(agent.Notification{Kind: "task", SourceID: fmt.Sprintf("t_%03d", i)}); err != nil {
+		if _, err := s.Emit(core.Notification{Kind: "task", SourceID: fmt.Sprintf("t_%03d", i)}); err != nil {
 			t.Fatalf("emit %d: %v", i, err)
 		}
 	}
@@ -146,7 +146,7 @@ func TestSubscribeBroadcastAndCancel(t *testing.T) {
 	ch, cancel := s.Subscribe()
 	defer cancel()
 
-	go func() { _, _ = s.Emit(agent.Notification{Kind: "chat", SourceID: "task-1"}) }()
+	go func() { _, _ = s.Emit(core.Notification{Kind: "chat", SourceID: "task-1"}) }()
 
 	select {
 	case n := <-ch:
@@ -161,7 +161,7 @@ func TestSubscribeBroadcastAndCancel(t *testing.T) {
 	// must not reach the closed channel
 	cancel()
 	cancel()
-	if _, err := s.Emit(agent.Notification{Kind: "chat", SourceID: "task-2"}); err != nil {
+	if _, err := s.Emit(core.Notification{Kind: "chat", SourceID: "task-2"}); err != nil {
 		t.Fatalf("emit after cancel: %v", err)
 	}
 }
@@ -173,7 +173,7 @@ func TestSubscriberOverflowDropsNotBlocks(t *testing.T) {
 
 	// flood past the buffer: emission must never block on a slow reader
 	for i := range subscriberBuf * 4 {
-		s.Emit(agent.Notification{Kind: "task", SourceID: fmt.Sprintf("t_%d", i)})
+		s.Emit(core.Notification{Kind: "task", SourceID: fmt.Sprintf("t_%d", i)})
 	}
 	// the reader drains what survived; the store never wedged
 	deadline := time.After(time.Second)
@@ -194,7 +194,7 @@ func TestEmitConcurrent(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			for j := range 10 {
-				if _, err := s.Emit(agent.Notification{Kind: "cron", SourceID: fmt.Sprintf("job-%d-%d", i, j)}); err != nil {
+				if _, err := s.Emit(core.Notification{Kind: "cron", SourceID: fmt.Sprintf("job-%d-%d", i, j)}); err != nil {
 					t.Errorf("emit: %v", err)
 				}
 			}
@@ -216,7 +216,7 @@ func TestMigrationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open 1: %v", err)
 	}
-	if _, err := s1.Emit(agent.Notification{Kind: "task", SourceID: "t_one"}); err != nil {
+	if _, err := s1.Emit(core.Notification{Kind: "task", SourceID: "t_one"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 	s1.Close()

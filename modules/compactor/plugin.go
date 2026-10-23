@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the compactor to the agent.Plugin interface.
@@ -26,9 +26,9 @@ func (p *Plugin) Requires() []string { return []string{"provider"} }
 // Mount reads CompactionConfig from ctx.Configs, wires the provider
 // from the already-mounted provider slot, sets ctx.Compactor, and
 // registers the /compact command.
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) Mount(ctx *core.Context) error {
 	var compactor *Compactor
-	if cfg, ok := ctx.Configs["compactor"].(agent.CompactionConfig); ok {
+	if cfg, ok := ctx.Configs["compactor"].(core.CompactionConfig); ok {
 		compactor = &Compactor{
 			provider: ctx.Provider,
 			config:   cfg,
@@ -55,21 +55,21 @@ func (p *Plugin) Mount(ctx *agent.Context) error {
 
 	// Register /compact command.
 	ctx.Commands = append(ctx.Commands,
-		agent.ExtensionCommand{Name: "/compact", Description: "summarize conversation history"},
+		core.ExtensionCommand{Name: "/compact", Description: "summarize conversation history"},
 	)
 
 	// Wire command handler, chaining after any previous handler.
 	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (agent.CommandResult, error) {
+	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/compact" {
-			return agent.CommandResult{
-				Actions: []agent.CmdAction{{Type: "run_compact"}},
+			return core.CommandResult{
+				Actions: []core.CmdAction{{Type: "run_compact"}},
 			}, nil
 		}
 		if prev != nil {
 			return prev(c, name, args)
 		}
-		return agent.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
 	}
 
 	return nil

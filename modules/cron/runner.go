@@ -15,6 +15,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/robfig/cron/v3"
 )
 
@@ -34,17 +35,17 @@ type cronState struct {
 	Jobs map[string]int64 `json:"jobs"` // name -> last covered scheduled time (unix)
 }
 
-// Runner implements agent.CronProvider. Safe for concurrent use.
+// Runner implements core.CronProvider. Safe for concurrent use.
 type Runner struct {
 	home   string
 	cfg    *Config // initial jobs, from Mount
-	logger agent.LoggerProvider
-	memory agent.MemoryProvider
-	ag     *agent.Agent
-	store  agent.StoreProvider
+	logger core.LoggerProvider
+	memory core.MemoryProvider
+	ag     *core.Agent
+	store  core.StoreProvider
 	// notifier is the finished-things seam, read from deps.Ctx at
 	// Start (card t_5d9032d3). Nil-safe: no seam, no emission.
-	notifier agent.NotificationsProvider
+	notifier core.NotificationsProvider
 
 	mu        sync.Mutex
 	running   map[string]bool  // per-job fire guard
@@ -84,9 +85,9 @@ func NewRunner(cfg *Config, home string) *Runner {
 }
 
 // Start runs the scheduler until the context is cancelled or Stop is
-// called. Implements agent.CronProvider. deps carries the agent,
+// called. Implements core.CronProvider. deps carries the agent,
 // store, memory seam, and logger captured at host wiring time.
-func (r *Runner) Start(ctx context.Context, deps agent.CronDeps) error {
+func (r *Runner) Start(ctx context.Context, deps core.CronDeps) error {
 	if deps.Ctx != nil {
 		r.memory = deps.Ctx.Memory
 		if r.logger == nil {
@@ -125,7 +126,7 @@ func (r *Runner) Start(ctx context.Context, deps agent.CronDeps) error {
 	return nil
 }
 
-// Stop shuts the scheduler down (agent.CronProvider). Safe to call
+// Stop shuts the scheduler down (core.CronProvider). Safe to call
 // multiple times.
 func (r *Runner) Stop() error {
 	select {
@@ -216,7 +217,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	defer cancel()
 	// Verdict cards v1 (card t_2ecf9c51): a cron fire is a background
 	// turn - verdict.request refuses to hard-pause from this origin.
-	turnCtx = agent.WithRunOrigin(turnCtx, agent.RunOriginCron)
+	turnCtx = core.WithRunOrigin(turnCtx, core.RunOriginCron)
 
 	final, runErr := r.runTurn(turnCtx, sessionID, job)
 	if runErr != nil {
@@ -242,7 +243,7 @@ func (r *Runner) emitFinished(jobName string, ok bool) {
 	if !ok {
 		verdict = "failed"
 	}
-	_, _ = r.notifier.Emit(agent.Notification{
+	_, _ = r.notifier.Emit(core.Notification{
 		Kind:     "cron",
 		SourceID: jobName,
 		Title:    "cron " + jobName + " finished",
@@ -267,9 +268,9 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 	var runErr error
 	for event := range r.ag.Run(ctx, []ai.Message{ai.NewUser(job.Prompt)}, nil) {
 		switch e := event.(type) {
-		case agent.AssistantMessageEvent:
+		case core.AssistantMessageEvent:
 			final = e.Message.Content
-		case agent.StreamEvent:
+		case core.StreamEvent:
 			if end, ok := e.Event.(ai.StreamEnd); ok {
 				if end.PromptEvalCount != nil {
 					prompt += *end.PromptEvalCount
@@ -278,7 +279,7 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 					completion += *end.EvalCount
 				}
 			}
-		case agent.AgentEnd:
+		case core.AgentEnd:
 			if e.Error != "" {
 				runErr = fmt.Errorf("%s", e.Error)
 			}
@@ -463,19 +464,19 @@ func (r *Runner) jobsSnapshot() []Job {
 	return append([]Job(nil), r.jobs...)
 }
 
-// Jobs is the read-only inspector snapshot (agent.CronLister, card
+// Jobs is the read-only inspector snapshot (core.CronLister, card
 // t_db430fea): every job in the current config with its enablement and
 // next fire time in RFC3339 local time, sorted by name. A disabled job
 // and a job whose schedule does not parse (validated at load, so
 // unexpected) report an empty Next. Works before Start - the job set
 // exists the moment the plugin mounts, whether or not the scheduler
 // has been started by the host.
-func (r *Runner) Jobs() []agent.CronJobInfo {
+func (r *Runner) Jobs() []core.CronJobInfo {
 	jobs := r.jobsSnapshot()
 	now := r.now()
-	out := make([]agent.CronJobInfo, 0, len(jobs))
+	out := make([]core.CronJobInfo, 0, len(jobs))
 	for _, j := range jobs {
-		row := agent.CronJobInfo{Name: j.Name, Schedule: j.Schedule, Enabled: j.IsEnabled()}
+		row := core.CronJobInfo{Name: j.Name, Schedule: j.Schedule, Enabled: j.IsEnabled()}
 		if row.Enabled {
 			if sched, err := scheduleParser.Parse(j.Schedule); err == nil {
 				if next := sched.Next(now); !next.IsZero() {

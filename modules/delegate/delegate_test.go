@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestCompile verifies the package compiles and the interfaces are satisfied.
 func TestCompile(t *testing.T) {
 	// ToolProvider interface.
-	var _ agent.ToolProvider = (*Delegate)(nil)
+	var _ core.ToolProvider = (*Delegate)(nil)
 	// Plugin interface.
 	var _ agent.Plugin = (*Plugin)(nil)
 }
@@ -62,7 +63,7 @@ func TestPluginMount(t *testing.T) {
 		t.Fatalf("expected name 'delegate', got %q", p.Name())
 	}
 
-	ctx := &agent.Context{}
+	ctx := &core.Context{}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}

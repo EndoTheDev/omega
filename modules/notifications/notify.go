@@ -20,7 +20,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
@@ -32,19 +32,19 @@ const retention = 200
 // a wedged SSE client must never stall a task completion.
 const subscriberBuf = 8
 
-// Store implements agent.NotificationsProvider over SQLite. Safe for
+// Store implements core.NotificationsProvider over SQLite. Safe for
 // concurrent use via *sql.DB (WAL + busy_timeout, the board/session
 // recipe). Live delivery fans out through a mutexed subscriber set.
 type Store struct {
 	db *sql.DB
 
 	mu    sync.Mutex
-	subs  map[int64]chan agent.Notification
+	subs  map[int64]chan core.Notification
 	subID int64
 }
 
 // Compile-time assertion: *Store implements the notifications seam.
-var _ agent.NotificationsProvider = (*Store)(nil)
+var _ core.NotificationsProvider = (*Store)(nil)
 
 // Open opens (creating if needed) the database at dsn and ensures the
 // schema. ":memory:" works for tests. A dsn inside a data/ directory
@@ -64,7 +64,7 @@ func Open(dsn string) (*Store, error) {
 	if dsn == ":memory:" {
 		db.SetMaxOpenConns(1)
 	}
-	s := &Store{db: db, subs: map[int64]chan agent.Notification{}}
+	s := &Store{db: db, subs: map[int64]chan core.Notification{}}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -115,38 +115,38 @@ func (s *Store) Close() error {
 // Emit inserts one record, prunes beyond retention, and broadcasts the
 // stored record to subscribers. Kind must be task, cron or chat;
 // verdict "" normalizes to ok, "failed" stays, anything else errors.
-func (s *Store) Emit(n agent.Notification) (agent.Notification, error) {
+func (s *Store) Emit(n core.Notification) (core.Notification, error) {
 	switch n.Kind {
 	case "task", "cron", "chat":
 	default:
-		return agent.Notification{}, fmt.Errorf("notification kind must be task, cron or chat, got %q", n.Kind)
+		return core.Notification{}, fmt.Errorf("notification kind must be task, cron or chat, got %q", n.Kind)
 	}
 	switch n.Verdict {
 	case "":
 		n.Verdict = "ok"
 	case "ok", "failed":
 	default:
-		return agent.Notification{}, fmt.Errorf("notification verdict must be ok or failed, got %q", n.Verdict)
+		return core.Notification{}, fmt.Errorf("notification verdict must be ok or failed, got %q", n.Verdict)
 	}
 	if strings.TrimSpace(n.SourceID) == "" {
-		return agent.Notification{}, fmt.Errorf("notification source_id is required")
+		return core.Notification{}, fmt.Errorf("notification source_id is required")
 	}
 	n.CreatedAt = now()
 	res, err := s.db.Exec(`INSERT INTO notifications (kind, source_id, title, verdict, created_at, read)
 VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, n.CreatedAt)
 	if err != nil {
-		return agent.Notification{}, err
+		return core.Notification{}, err
 	}
 	n.ID, err = res.LastInsertId()
 	if err != nil {
-		return agent.Notification{}, err
+		return core.Notification{}, err
 	}
 	// Prune beyond retention: keep the retention-row-newest set. The
 	// boundary is the retention-th newest row's id (ids only ever
 	// grow, so id order is time order even across pruned gaps).
 	if _, err := s.db.Exec(`DELETE FROM notifications WHERE id < (
 SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); err != nil {
-		return agent.Notification{}, fmt.Errorf("prune: %w", err)
+		return core.Notification{}, fmt.Errorf("prune: %w", err)
 	}
 	s.broadcast(n)
 	return n, nil
@@ -154,7 +154,7 @@ SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); 
 
 // broadcast fans one record out to every subscriber. Non-blocking: a
 // full buffer drops the frame for that subscriber only.
-func (s *Store) broadcast(n agent.Notification) {
+func (s *Store) broadcast(n core.Notification) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ch := range s.subs {
@@ -168,8 +168,8 @@ func (s *Store) broadcast(n agent.Notification) {
 // Subscribe registers a live channel of emitted records (webui SSE
 // toasts). Cancel removes the subscription and closes the channel;
 // idempotent, safe to call from a deferred or SSE-close path.
-func (s *Store) Subscribe() (<-chan agent.Notification, func()) {
-	ch := make(chan agent.Notification, subscriberBuf)
+func (s *Store) Subscribe() (<-chan core.Notification, func()) {
+	ch := make(chan core.Notification, subscriberBuf)
 	s.mu.Lock()
 	s.subID++
 	id := s.subID
@@ -192,7 +192,7 @@ func (s *Store) Subscribe() (<-chan agent.Notification, func()) {
 // List returns records newest-first. unreadOnly filters to unread
 // rows; limit <= 0 takes the server default (50); offset pages deeper.
 // unread counts over the whole set, not the page.
-func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]agent.Notification, int, error) {
+func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
 	unread := 0
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notifications WHERE read = 0`).Scan(&unread); err != nil {
 		return nil, 0, err
@@ -213,9 +213,9 @@ func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([
 		return nil, 0, err
 	}
 	defer rows.Close()
-	out := []agent.Notification{}
+	out := []core.Notification{}
 	for rows.Next() {
-		var n agent.Notification
+		var n core.Notification
 		var read int
 		if err := rows.Scan(&n.ID, &n.Kind, &n.SourceID, &n.Title, &n.Verdict, &n.CreatedAt, &read); err != nil {
 			return nil, 0, err

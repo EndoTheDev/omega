@@ -8,14 +8,15 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/skills"
 )
 
 // TestBuildPromptNoSectioners verifies the prompt builder produces a
 // valid prompt when no module contributes prompt sections.
 func TestBuildPromptNoSectioners(t *testing.T) {
-	b := NewPromptBuilder(&agent.Context{})
-	prompt, ok := b.BuildPrompt(context.Background(), agent.PromptBuildOptions{})
+	b := NewPromptBuilder(&core.Context{})
+	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{})
 	if !ok {
 		t.Fatal("BuildPrompt returned false")
 	}
@@ -41,13 +42,13 @@ func TestBuildPromptWithSkillsSection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{"skills": skills.Config{Dir: dir}},
 	}
 	if err := agent.MountAll([]agent.Plugin{skills.NewPlugin(), NewPlugin()}, ctx); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), agent.PromptBuildOptions{})
+	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), core.PromptBuildOptions{})
 	if !ok {
 		t.Fatal("BuildPrompt returned false")
 	}

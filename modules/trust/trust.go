@@ -23,7 +23,7 @@ type trustStore struct {
 	Trusted []TrustEntry `yaml:"trusted"`
 }
 
-// Provider implements agent.TrustProvider. It reads and writes
+// Provider implements core.TrustProvider. It reads and writes
 // trust.yaml in the configured home directory.
 type Provider struct {
 	home string

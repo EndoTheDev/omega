@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TurnSink is the completed-turn persistence seam. The agent run loop
@@ -67,7 +68,7 @@ type persistInputKey struct{}
 // just-persisted user message off the derived path. An all-empty
 // assistant (blank stream before an error end) writes nothing - the
 // message the provider never produced has no transcript row.
-func NewStoreTurnSink(store StoreProvider, sessionID, headParentID string) TurnSink {
+func NewStoreTurnSink(store core.StoreProvider, sessionID, headParentID string) TurnSink {
 	if store == nil || sessionID == "" {
 		return nil
 	}
@@ -75,7 +76,7 @@ func NewStoreTurnSink(store StoreProvider, sessionID, headParentID string) TurnS
 }
 
 type storeTurnSink struct {
-	store        StoreProvider
+	store        core.StoreProvider
 	sessionID    string
 	headParentID string
 	headPinned   bool
@@ -91,7 +92,7 @@ func (s *storeTurnSink) AppendTurnMessage(ctx context.Context, msg ai.Message) e
 	}
 	if isAssistant && !s.headPinned {
 		if s.headParentID != "" {
-			msg = WithParentID(msg, s.headParentID)
+			msg = core.WithParentID(msg, s.headParentID)
 		}
 		s.headPinned = true
 	}

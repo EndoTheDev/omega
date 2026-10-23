@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // contextWindowProvider wraps a provider with a forced ModelInfo
@@ -26,7 +26,7 @@ func (p *contextWindowProvider) ModelInfo() (ai.ModelInfo, error) {
 func autoTestCompactor(p *contextWindowProvider, threshold float64) *Compactor {
 	return &Compactor{
 		provider:   p,
-		config:     agent.CompactionConfig{Enabled: true, Threshold: threshold, KeepFirst: 1, KeepLast: 1},
+		config:     core.CompactionConfig{Enabled: true, Threshold: threshold, KeepFirst: 1, KeepLast: 1},
 		autoWindow: 100000,
 	}
 }
@@ -90,7 +90,7 @@ func TestAutoWindowZeroFallsBack(t *testing.T) {
 
 func TestSetConfigKeepsAutoWindow(t *testing.T) {
 	c := autoTestCompactor(&contextWindowProvider{}, 0.6)
-	c.SetConfig(agent.CompactionConfig{Enabled: true, Threshold: 1})
+	c.SetConfig(core.CompactionConfig{Enabled: true, Threshold: 1})
 	if c.AutoWindow() != 100000 {
 		t.Fatalf("AutoWindow changed by SetConfig: %d", c.AutoWindow())
 	}
@@ -113,7 +113,7 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 	}
 	c := &Compactor{
 		provider:   provider,
-		config:     agent.CompactionConfig{Enabled: true, Threshold: 1.0, KeepFirst: 1, KeepLast: 1},
+		config:     core.CompactionConfig{Enabled: true, Threshold: 1.0, KeepFirst: 1, KeepLast: 1},
 		autoWindow: 3000,
 	}
 	msgs := []ai.Message{
@@ -133,7 +133,7 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 
 func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 	p := &contextWindowProvider{info: ai.ModelInfo{ContextWindow: 123456}}
-	ctx := &agent.Context{Provider: p, Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 0}}}
+	ctx := &core.Context{Provider: p, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 0}}}
 
 	plugin := &Plugin{}
 	// Auto: config 0 -> probe runs, window cached.
@@ -150,7 +150,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 
 	// Manual: config > 0 -> no probe at all.
 	p2 := &contextWindowProvider{info: ai.ModelInfo{ContextWindow: 999999}}
-	ctx2 := &agent.Context{Provider: p2, Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 32768}}}
+	ctx2 := &core.Context{Provider: p2, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 32768}}}
 	if err := (&Plugin{}).Mount(ctx2); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 
 func TestMountProbeFailureStillBoots(t *testing.T) {
 	p := &contextWindowProvider{err: context.DeadlineExceeded}
-	ctx := &agent.Context{Provider: p, Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 0}}}
+	ctx := &core.Context{Provider: p, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 0}}}
 	if err := (&Plugin{}).Mount(ctx); err != nil {
 		t.Fatalf("Mount must not fail on probe error: %v", err)
 	}

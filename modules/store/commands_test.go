@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
@@ -215,7 +216,7 @@ func TestHandleNewCommand(t *testing.T) {
 // --- agent.FormatInsights ---
 
 func TestFormatInsightsPopulated(t *testing.T) {
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:         "30 days",
 		PeriodStart:    "2026-08-01",
 		PeriodEnd:      "2026-08-30",
@@ -226,17 +227,17 @@ func TestFormatInsightsPopulated(t *testing.T) {
 		ToolCalls:      80,
 		TotalTokens:    1234567,
 		AvgSessionMsgs: 28.75,
-		Tools: []agent.ToolStat{
+		Tools: []core.ToolStat{
 			{Name: "shell.run", Count: 40},
 			{Name: "files.read", Count: 20},
 		},
-		Daily: [7]agent.DayStat{
+		Daily: [7]core.DayStat{
 			{Day: "Mon", Count: 10, Bar: "█"},
 			{Day: "Tue", Count: 5, Bar: "▌"},
 		},
-		NotableMsgs:   agent.NotableStat{Value: 99, Detail: "2026-08-15"},
-		NotableTokens: agent.NotableStat{Value: 50000, Detail: "2026-08-15"},
-		NotableTools:  agent.NotableStat{Value: 30, Detail: "2026-08-20"},
+		NotableMsgs:   core.NotableStat{Value: 99, Detail: "2026-08-15"},
+		NotableTokens: core.NotableStat{Value: 50000, Detail: "2026-08-15"},
+		NotableTools:  core.NotableStat{Value: 30, Detail: "2026-08-20"},
 	}
 
 	got := agent.FormatInsights(in)
@@ -271,7 +272,7 @@ func TestFormatInsightsPopulated(t *testing.T) {
 
 func TestFormatInsightsEmpty(t *testing.T) {
 	// Zero-value Insights: no tools, no notable sessions, no period start.
-	in := &agent.Insights{}
+	in := &core.Insights{}
 
 	got := agent.FormatInsights(in)
 
@@ -298,7 +299,7 @@ func TestFormatInsightsEmpty(t *testing.T) {
 }
 
 func TestFormatInsightsPeriodStartEmptyUsesThrough(t *testing.T) {
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:      "all time",
 		PeriodEnd:   "2026-08-30",
 		Sessions:    1,
@@ -315,11 +316,11 @@ func TestFormatInsightsPeriodStartEmptyUsesThrough(t *testing.T) {
 
 func TestFormatInsightsToolPercentage(t *testing.T) {
 	// 40 of 80 total tool calls -> 50.0%.
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:    "30 days",
 		PeriodEnd: "2026-08-30",
 		ToolCalls: 80,
-		Tools: []agent.ToolStat{
+		Tools: []core.ToolStat{
 			{Name: "shell.run", Count: 40},
 		},
 	}
@@ -331,11 +332,11 @@ func TestFormatInsightsToolPercentage(t *testing.T) {
 
 func TestFormatInsightsToolPercentageZeroToolCalls(t *testing.T) {
 	// ToolCalls=0 should not divide-by-zero; percentage stays 0.0%.
-	in := &agent.Insights{
+	in := &core.Insights{
 		Period:    "30 days",
 		PeriodEnd: "2026-08-30",
 		ToolCalls: 0,
-		Tools: []agent.ToolStat{
+		Tools: []core.ToolStat{
 			{Name: "shell.run", Count: 5},
 		},
 	}

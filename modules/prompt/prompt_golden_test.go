@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/memory"
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/tools"
@@ -26,9 +27,9 @@ var dateLine = regexp.MustCompile(`(?m)^Date: .*$`)
 // wireContext mounts the production extension set the same way
 // cmd/omega does: memory, skills, tools, prompt, with their configs.
 // Extensions then come from ctx.Infos, exactly like the real loop.
-func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *agent.Context {
+func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Context {
 	t.Helper()
-	ctx := &agent.Context{
+	ctx := &core.Context{
 		Configs: map[string]any{
 			"memory": memCfg,
 			"skills": skills.Config{Dir: skillDir},
@@ -76,8 +77,8 @@ func seedMemory(t *testing.T, cfg memory.Config) {
 }
 
 // fullOpts exercises every prompt input: project context, custom, append.
-func fullOpts(ctx *agent.Context) agent.PromptBuildOptions {
-	return agent.PromptBuildOptions{
+func fullOpts(ctx *core.Context) core.PromptBuildOptions {
+	return core.PromptBuildOptions{
 		CWD:            "/test/cwd",
 		ProjectContext: "# AGENTS.md\n\nProject rules live here.\n",
 		Custom:         "Tone: direct.\nStay terse.",
@@ -87,8 +88,8 @@ func fullOpts(ctx *agent.Context) agent.PromptBuildOptions {
 }
 
 // minimalOpts carries only CWD and Extensions.
-func minimalOpts(ctx *agent.Context) agent.PromptBuildOptions {
-	return agent.PromptBuildOptions{
+func minimalOpts(ctx *core.Context) core.PromptBuildOptions {
+	return core.PromptBuildOptions{
 		CWD:        "/test/cwd",
 		Extensions: ctx.Infos,
 	}

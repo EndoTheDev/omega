@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // newTestMemory creates a FileMemory with temp files and small limits.
@@ -649,7 +650,7 @@ func TestPluginMount(t *testing.T) {
 	cfg.UserProfileFile = filepath.Join(dir, "user.md")
 
 	p := NewPlugin()
-	ctx := &agent.Context{Configs: map[string]any{"memory": cfg}}
+	ctx := &core.Context{Configs: map[string]any{"memory": cfg}}
 	if err := p.Mount(ctx); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -674,7 +675,7 @@ func TestPromptSections(t *testing.T) {
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Test fact one")
 
-	secs := fm.PromptSections(agent.PromptBuildOptions{})
+	secs := fm.PromptSections(core.PromptBuildOptions{})
 	if len(secs) != 1 {
 		t.Fatalf("expected 1 section, got %d", len(secs))
 	}
@@ -696,14 +697,14 @@ func TestPromptSections(t *testing.T) {
 		File:                 filepath.Join(t.TempDir(), "memory.md"),
 		UserProfileFile:      filepath.Join(t.TempDir(), "user.md"),
 	})
-	if got := empty.PromptSections(agent.PromptBuildOptions{}); got != nil {
+	if got := empty.PromptSections(core.PromptBuildOptions{}); got != nil {
 		t.Errorf("expected nil sections for empty stores, got %v", got)
 	}
 }
 
 // TestFileMemoryImplementsPromptSectioner verifies the seam contract.
 func TestFileMemoryImplementsPromptSectioner(t *testing.T) {
-	var _ agent.PromptSectioner = (*FileMemory)(nil)
+	var _ core.PromptSectioner = (*FileMemory)(nil)
 }
 
 // TestFileMemoryEntrySepRoundTrip pins the delimiter contract: an

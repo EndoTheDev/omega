@@ -7,7 +7,7 @@ package store
 // core StoreProvider: ListSessions filters to agent='default', so the
 // pre-agent session list, tree and search see exactly what they always
 // saw. Everything agent-scoped lives here and opts in through the
-// agent.AgentSessionStore optional interface.
+// core.AgentSessionStore optional interface.
 
 import (
 	"context"
@@ -16,10 +16,11 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
 )
 
-var _ agent.AgentSessionStore = (*Store)(nil)
+var _ core.AgentSessionStore = (*Store)(nil)
 
 // CreateAgentSession creates a session bound to agentName - the binding
 // is written on the row itself, never inferred later. parentID links
@@ -47,14 +48,14 @@ func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, age
 // ListAgentSessions returns the sessions bound to the given agent,
 // ordered by creation time. Unknown agents come back empty - an empty
 // list is honest data, not an error.
-func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]agent.Session, error) {
+func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions WHERE agent = ? ORDER BY created_at`, agentName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []agent.Session
+	var out []core.Session
 	for rows.Next() {
 		sess, err := scanSession(rows)
 		if err != nil {
@@ -72,7 +73,7 @@ func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]agen
 // - the same env main sets for every process - and an AgentSessionStore
 // (a store without the optional interface renders zero counts, which is
 // exactly how many sessions such a store can attribute).
-func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (agent.CommandResult, error) {
+func HandleAgentsCommand(ctx context.Context, st core.StoreProvider) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	profiles := agent.LoadProfiles(home)
 	fillProfileSessions(ctx, st, profiles)
@@ -91,20 +92,20 @@ func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (agent.Com
 		fmt.Fprintf(&sb, "  %-*s  %-*s  %6d  %6d  %s\n", width, p.Name, 24, desc,
 			p.SkillCount, p.SessionCount, model)
 	}
-	return agent.CommandResult{Text: sb.String()}, nil
+	return core.CommandResult{Text: sb.String()}, nil
 }
 
 // HandleAgentDetailCommand renders the TUI's /agent <name>: config
 // summary, skills, memory size, and this agent's own sessions.
-func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg string) (agent.CommandResult, error) {
+func HandleAgentDetailCommand(ctx context.Context, st core.StoreProvider, arg string) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
-		return agent.CommandResult{}, fmt.Errorf("usage: /agent <name>")
+		return core.CommandResult{}, fmt.Errorf("usage: /agent <name>")
 	}
 	p, err := agent.LoadProfile(home, arg)
 	if err != nil {
-		return agent.CommandResult{}, err
+		return core.CommandResult{}, err
 	}
 	fillProfileSessions(ctx, st, []agent.Profile{p})
 	var sb strings.Builder
@@ -121,14 +122,14 @@ func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg s
 	if p.LastActivity != "" {
 		fmt.Fprintf(&sb, "  last act:   %s\n", p.LastActivity)
 	}
-	return agent.CommandResult{Text: sb.String()}, nil
+	return core.CommandResult{Text: sb.String()}, nil
 }
 
 // fillProfileSessions writes per-agent session counts and the most
 // recent updated_at into the profiles. Store-free callers (nil or a
 // store without the optional surface) keep the zero values.
-func fillProfileSessions(ctx context.Context, st agent.StoreProvider, profiles []agent.Profile) {
-	as, ok := st.(agent.AgentSessionStore)
+func fillProfileSessions(ctx context.Context, st core.StoreProvider, profiles []agent.Profile) {
+	as, ok := st.(core.AgentSessionStore)
 	if !ok {
 		return
 	}
