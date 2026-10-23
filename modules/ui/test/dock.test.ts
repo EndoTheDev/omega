@@ -50,6 +50,7 @@ import {
   expandInspectorTabs,
   rehomeInsightsTab,
   ensurePinnedEdges,
+  bottomShellPane,
   forceSessionsLeft,
   restoreInspectorSet,
   deriveEdgeMarkers,
@@ -716,6 +717,28 @@ describe("pane-model reset", () => {
     assert.equal(right.fixed, 240);
   });
 
+  it("a closed sidebar reopens ABOVE the bottom band, not beside it (card t_556ee727)", () => {
+    // the aligned-bottom tree: a root COLUMN whose last child is the
+    // bottom shell (card t_67fc1905's graft). With the sidebar closed,
+    // the reopen insert must target the head row - wrapping the whole
+    // column would seat the sidebar next to a squashed half-width band
+    // and drag the band into the row's shrink math.
+    const t: DockNode = makeSplit("column", [
+      makePane("chat", null),
+      bottomShellPane(),
+    ]);
+    const out = asSplit(ensurePinnedEdges(t));
+    // the root stays the column and the band stays its LAST child,
+    // full row-width (nothing wrapped around it)
+    assert.equal(out.direction, "column");
+    assert.equal(out.children.length, 2);
+    assert.equal(asPane(out.children[1]).edge, "bottom");
+    // the reopen lands in the head row, sidebar before chat
+    const head = asSplit(out.children[0]);
+    assert.equal(head.direction, "row");
+    assert.equal(asPane(head.children[0]).tabs[0]!.component, "sidebar");
+    assert.equal(asPane(head.children[1]).tabs[0]!.component, "chat");
+  });
   it("rehomeInsightsTab lifts the main-pane strand; the loader seats it in the right shell (t_d7fd3ad3)", () => {
     // a tree persisted while insights' home was "main" (t_e1e61680): a
     // closable insights tab opened into the MAIN pane. The right shell
