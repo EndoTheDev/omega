@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -55,20 +55,80 @@ func urlHost(raw string) string {
 	return u.Hostname()
 }
 
-// isInternalHost reports whether host is an IP literal inside the box
-// itself or the private rings: loopback, link-local (incl. cloud
-// metadata), RFC1918, and the Tailscale CGNAT 100.64/10 range.
-func isInternalHost(host string) bool {
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false // hostname, not an IP literal
+// internalRings is the deny list of IP rings that point back into the
+// box or its private networks: the loopback and unspecified-address
+// rings (0.0.0.0/8, ::/128 - dialing the unspecified address lands on
+// the box), RFC1918, link-local (incl. cloud metadata), the Tailscale
+// CGNAT 100.64/10 range, and the IPv6 local rings (ULA fc00::/7,
+// link-local fe80::/10).
+var internalRings = func() []netip.Prefix {
+	rings := []string{
+		"127.0.0.0/8", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12",
+		"100.64.0.0/10", "0.0.0.0/8", "169.254.0.0/16",
+		"::1/128", "::/128", "fe80::/10", "fc00::/7", "fd00::/8",
 	}
-	for _, ring := range []string{"127.0.0.0/8", "::1/128", "169.254.0.0/16", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12", "100.64.0.0/10"} {
-		if _, net4, err := net.ParseCIDR(ring); err == nil && net4.Contains(ip) {
+	out := make([]netip.Prefix, 0, len(rings))
+	for _, spec := range rings {
+		out = append(out, netip.MustParsePrefix(spec))
+	}
+	return out
+}()
+
+func addrInInternalRing(addr netip.Addr) bool {
+	// A zone ("fe80::1%eth0") would fail every prefix membership check:
+	// Contains compares zones too. Drop it, then unmap to plain v4 so
+	// the v4 rings catch 4-in-6 spellings ("::ffff:127.0.0.1").
+	addr = addr.WithZone("").Unmap()
+	for _, ring := range internalRings {
+		if ring.Contains(addr) {
 			return true
 		}
 	}
 	return false
+}
+
+// looksLikeNumericIPv4 reports whether host is a numeric IPv4 spelling
+// the OS dialer accepts but netip (and so any ring check on the parsed
+// result) cannot express: a combined decimal form ("2130706433",
+// "127.1" - single- or two-label all-decimal hosts dial the 32-bit
+// value), hex-marked labels ("0x7f.0.0.1"), or zero-padded octal-ish
+// labels ("0177.0.0.1"). These are refused, not treated as hostnames.
+// Real hostnames keep working: they carry a non-numeric label
+// somewhere, and zero-padded labels stopped resolving as hostnames
+// years ago.
+func looksLikeNumericIPv4(host string) bool {
+	// A trailing root dot is legal DNS for a real hostname; drop it so
+	// the trailing "." cannot smuggle a numeric spelling through.
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if strings.Contains(host, "0x") {
+		return true
+	}
+	allDigits := true
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || (len(label) > 1 && label[0] == '0') {
+			// empty label (malformed) or a zero-padded label
+			return true
+		}
+		for _, c := range label {
+			if c < '0' || c > '9' {
+				allDigits = false
+				break
+			}
+		}
+	}
+	return allDigits
+}
+
+// isInternalHost reports whether host is an IP literal pointing back
+// into the box itself or the private rings (internalRings), or a
+// non-canonical numeric IPv4 spelling (looksLikeNumericIPv4). Canonical
+// literals parse through netip; a zoned v6 literal ("fe80::1%eth0")
+// parses where net.ParseIP refuses it.
+func isInternalHost(host string) bool {
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addrInInternalRing(addr)
+	}
+	return looksLikeNumericIPv4(host)
 }
 
 // internalHostGuard is the seam the fetch-flow tests stub out (httptest

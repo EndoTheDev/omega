@@ -57,11 +57,24 @@ func openStore(dsn string) (*Store, error) {
 	// WAL mode allows concurrent readers + one writer across multiple
 	// processes (e.g. parent + subagents). busy_timeout retries on lock
 	// instead of returning SQLITE_BUSY immediately.
+	//
+	// foreign_keys rides the DSN, not a post-open PRAGMA: a SQLite
+	// pragma is per-connection, so a one-shot `PRAGMA foreign_keys = ON`
+	// covered a single connection out of the pool and left the rest (the
+	// majority under concurrent writers) with enforcement off - orphaned
+	// message rows in, missed ON DELETE CASCADE out. A DSN pragma is
+	// applied by the driver at every connect.
+	const pragmaFK = "_pragma=foreign_keys(1)"
 	dsnParams := dsn
-	if !strings.Contains(dsn, "?") {
-		dsnParams += "?_journal_mode=WAL&_busy_timeout=5000"
-	} else if !strings.Contains(dsn, "_journal_mode=") {
-		dsnParams += "&_journal_mode=WAL&_busy_timeout=5000"
+	switch {
+	case !strings.Contains(dsn, "?"):
+		dsnParams += "?" + pragmaFK + "&_journal_mode=WAL&_busy_timeout=5000"
+	case strings.Contains(dsn, "_pragma=foreign_keys"):
+		// the caller's DSN already carries the FK pragma
+	case strings.Contains(dsn, "_journal_mode="):
+		dsnParams += "&" + pragmaFK
+	default:
+		dsnParams += "&" + pragmaFK + "&_journal_mode=WAL&_busy_timeout=5000"
 	}
 	db, err := sql.Open("sqlite", dsnParams)
 	if err != nil {
@@ -76,12 +89,6 @@ func openStore(dsn string) (*Store, error) {
 		db.SetMaxOpenConns(1)
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	// SQLite disables foreign keys by default; the messages->sessions
-	// cascade needs them on.
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		db.Close()
 		return nil, err
 	}
