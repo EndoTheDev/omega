@@ -34,6 +34,13 @@ jobs:
           ref: refs/heads/dev
           fetch-depth: 0
           fetch-tags: true
+          # persist-credentials OFF: checkout's persisted GITHUB_TOKEN
+          # extraheader overrides the token embedded in a push URL, so
+          # the PAT push below authenticated as GITHUB_TOKEN and the
+          # anti-recursion rule silently blocked release.yml (proven:
+          # v0.9.1-nightly tags landed with no Release run). With
+          # persistence off, the URL credential is the only one.
+          persist-credentials: false
 
       - uses: actions/setup-go@v5
         with:
@@ -98,8 +105,8 @@ jobs:
           if [ -n "$PAT_PUSH" ]; then
             git push "https://x-access-token:${PAT_PUSH}@github.com/EndoTheDev/omega.git" "$TAG"
           else
-            echo "::warning::NIGHTLY_TAG_PAT secret absent - GITHUB_TOKEN push used; GITHUB_TOKEN pushes never trigger release.yml, so tonight's tag gets NO prebuilt assets (anti-recursion rule)"
-            git push origin "$TAG"
+            echo "::warning::NIGHTLY_TAG_PAT secret absent - github.token push used; GITHUB_TOKEN pushes never trigger release.yml, so tonight's tag gets NO prebuilt assets (anti-recursion rule)"
+            git push "https://x-access-token:${{ github.token }}@github.com/EndoTheDev/omega.git" "$TAG"
           fi
           {
             echo "## :white_check_mark: Nightly tagged: \`$TAG\`"
@@ -135,6 +142,11 @@ jobs:
           ref: refs/heads/master
           fetch-depth: 0
           fetch-tags: true
+          # persist-credentials OFF for the same reason as the nightly
+          # job: the master ff push below must authenticate with the
+          # PAT, not checkout's persisted GITHUB_TOKEN (a GITHUB_TOKEN
+          # push would not fire CI on master after the ff).
+          persist-credentials: false
 
       - name: Pick the newest nightly tag
         id: pick
@@ -239,7 +251,13 @@ jobs:
       - name: Fast-forward master to the soak point + print the release prompt
         if: env.FF == 'true'
         run: |
-          git push origin "refs/tags/$TAG:refs/heads/master"
+          PAT_FF="${{ secrets.NIGHTLY_TAG_PAT }}"
+          if [ -n "$PAT_FF" ]; then
+            git push "https://x-access-token:${PAT_FF}@github.com/EndoTheDev/omega.git" "refs/tags/$TAG:refs/heads/master"
+          else
+            echo "::warning::NIGHTLY_TAG_PAT secret absent - ff push uses github.token; CI on master will NOT fire for it (anti-recursion rule)"
+            git push "https://x-access-token:${{ github.token }}@github.com/EndoTheDev/omega.git" "refs/tags/$TAG:refs/heads/master"
+          fi
           echo "::notice::master fast-forwarded to $TAG"
           {
             echo "## :white_check_mark: SOAK GREEN - master fast-forwarded to \`$TAG\`"
