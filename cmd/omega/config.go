@@ -9,6 +9,15 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	httpchannel "github.com/EndoTheDev/omega/modules/http_channel"
+	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
+	"github.com/EndoTheDev/omega/modules/logging"
+	"github.com/EndoTheDev/omega/modules/memory"
+	"github.com/EndoTheDev/omega/modules/provider"
+	"github.com/EndoTheDev/omega/modules/skills"
+	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/modules/trust"
+	"github.com/EndoTheDev/omega/modules/web"
 	"gopkg.in/yaml.v3"
 	"time"
 )
@@ -17,11 +26,11 @@ import (
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider      ProviderConfig         `yaml:"provider"`
-	Server        ServerConfig           `yaml:"server"`
-	Store         StoreConfig            `yaml:"store"`
-	Compaction    agent.CompactionConfig `yaml:"compaction"`
-	SystemPrompt  string                 `yaml:"system_prompt"`
+	Provider     ProviderConfig         `yaml:"provider"`
+	Server       ServerConfig           `yaml:"server"`
+	Store        StoreConfig            `yaml:"store"`
+	Compaction   agent.CompactionConfig `yaml:"compaction"`
+	SystemPrompt string                 `yaml:"system_prompt"`
 	// VisionModel is the auxiliary captioner (vision_model knob): when
 	// set, image-carrying user messages are described once with this
 	// model and the main model sees the caption as text. Empty keeps
@@ -31,21 +40,22 @@ type Config struct {
 	// TitleModel is the auxiliary title generator (title_model knob):
 	// maybeTitleSession's cheap calls (provisional + final) route
 	// through it when set. Empty = the main model (today's behavior).
-	TitleModel string `yaml:"title_model"`
-	HTTPTimeout   int                    `yaml:"http_timeout"`
-	MaxTurns      int                    `yaml:"max_turns"`
-	Theme         string                 `yaml:"theme"`
-	Notifications string                 `yaml:"notifications"`
-	Skills        SkillsConfig           `yaml:"skills"`
-	Memory        MemoryConfig           `yaml:"memory"`
-	Logging       LoggingConfig          `yaml:"logging"`
-	Web           WebConfig              `yaml:"web"`
-	Kanban        KanbanConfig           `yaml:"kanban"`
+	TitleModel    string        `yaml:"title_model"`
+	HTTPTimeout   int           `yaml:"http_timeout"`
+	MaxTurns      int           `yaml:"max_turns"`
+	Theme         string        `yaml:"theme"`
+	Notifications string        `yaml:"notifications"`
+	Skills        SkillsConfig  `yaml:"skills"`
+	Memory        MemoryConfig  `yaml:"memory"`
+	Logging       LoggingConfig `yaml:"logging"`
+	Web           WebConfig     `yaml:"web"`
+	Kanban        KanbanConfig  `yaml:"kanban"`
 }
 
 // WebConfig carries optional overrides for the web tools. BaseURL, when
-// set, overrides the web.search/web.fetch endpoint host; otherwise both
-// derive from provider.host (see buildConfigs).
+// set, overrides the web.search/web.fetch endpoint host; otherwise
+// ConfigSection derives both from provider.host (arc 2b: the host
+// exposes sections, the router pulls what each plugin declared).
 type WebConfig struct {
 	BaseURL string `yaml:"base_url"`
 }
@@ -309,4 +319,46 @@ func WatchConfig(path string, onChange func(Config)) {
 			}
 		}
 	}()
+}
+
+// ConfigSection implements agent.ConfigSource (arc 2b, t_889388cc):
+// the host exposes its raw sections by name; agent.RouteConfigs pulls
+// each plugin's declared section into ctx.Configs. Section names are
+// the keys the plugins read ("ctx.Configs[\"<name>\"].(<mod>.Config)").
+func (c Config) ConfigSection(name string) (any, bool) {
+	switch name {
+	case "store":
+		return store.Config{DBPath: c.Store.DBPath}, true
+	case "provider":
+		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
+	case "http_channel":
+		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel}, true
+	case "skills":
+		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir}, true
+	case "memory":
+		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
+	case "logging":
+		return logging.Config{Enabled: c.Logging.Enabled, File: c.Logging.File}, true
+	case "compactor":
+		return c.Compaction, true
+	case "web":
+		return web.Config{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c)}, true
+	case "trust":
+		return trust.Config{Home: omegaHome()}, true
+	case "kanban":
+		return kanbanModule.Config{DBPath: c.Kanban.DBPath}, true
+	}
+	return nil, false
+}
+
+// webBaseURL returns the host the web tools target: the explicit
+// web.base_url override when set, otherwise the provider host (with a
+// trailing /v1 stripped, mirroring provider.go's probe), so the
+// keypool mirror serves /api/web_search and /api/web_fetch with the
+// same auth swap + rotation as every other call.
+func webBaseURL(cfg Config) string {
+	if cfg.Web.BaseURL != "" {
+		return cfg.Web.BaseURL
+	}
+	return strings.TrimSuffix(cfg.Provider.Host, "/v1")
 }

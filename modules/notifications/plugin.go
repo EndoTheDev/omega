@@ -36,6 +36,10 @@ func (p *Plugin) Name() string { return "notifications" }
 func (p *Plugin) Description() string {
 	return "notifications: the finished-things store behind the bell (tasks, crons, chats)"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "notifications" }
+
 func (p *Plugin) Provides() []string { return []string{"notifications"} }
 func (p *Plugin) Requires() []string { return nil }
 

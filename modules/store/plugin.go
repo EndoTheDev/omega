@@ -23,6 +23,10 @@ func (p *Plugin) Name() string       { return "store" }
 func (p *Plugin) Description() string {
 	return "session persistence: SQLite-backed message and session store"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "store" }
+
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 

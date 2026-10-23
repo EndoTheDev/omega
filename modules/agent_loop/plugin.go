@@ -17,6 +17,10 @@ func (p *Plugin) Name() string       { return "agent-loop" }
 func (p *Plugin) Description() string {
 	return "the agent loop: model turns, tool dispatch, retries, and streaming"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "" }
+
 func (p *Plugin) Provides() []string { return []string{"loop"} }
 func (p *Plugin) Requires() []string { return nil }
 

@@ -23,6 +23,10 @@ func (p *Plugin) Name() string       { return "skills" }
 func (p *Plugin) Description() string {
 	return "skills: reusable procedure files agents can invoke in a sub-agent"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "skills" }
+
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 

@@ -23,6 +23,10 @@ func (Plugin) Description() string {
 }
 
 // Provides lists the seam names this plugin mounts.
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "provider" }
+
 func (Plugin) Provides() []string { return []string{"provider"} }
 
 // Requires lists seam names that must be mounted before this plugin.

@@ -15,6 +15,10 @@ func (p *Plugin) Name() string       { return "trust" }
 func (p *Plugin) Description() string {
 	return "trust: gates project context (AGENTS.md) and shell approval"
 }
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "trust" }
+
 func (p *Plugin) Provides() []string { return []string{"trust"} }
 func (p *Plugin) Requires() []string { return nil }
 

@@ -38,6 +38,10 @@ func (p *Plugin) Description() string {
 
 // Provides lists the seams this plugin mounts. MCP provides tools
 // (additive — multiple plugins can contribute tools).
+// ConfigKey names the config section this plugin reads from
+// ctx.Configs (see agent.Describer). Empty = reads no section.
+func (p *Plugin) ConfigKey() string { return "" }
+
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 
 // Requires lists seams that must be mounted before this plugin.
