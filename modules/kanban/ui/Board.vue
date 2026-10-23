@@ -184,6 +184,37 @@
     fetchBoard();
   }
 
+  // --- notification board select (card t_556ee727) ---
+  // The shell's task-notification click focuses this tab and wants the
+  // task's board picked. The seam is a window event + a pending stash
+  // (module UI imports no shell code: no prop, no shell import) - the
+  // shell publishes both (composables/notifications.ts). The stash
+  // covers the mount race: the tab focus mounts the board component on
+  // the tick AFTER the shell published, so the mount consumes the stash
+  // once; the event covers the already-mounted case (the consumer
+  // clears the stash it supersedes).
+  const BOARD_SELECT_EVENT = "omega-select-board";
+  function consumeBoardStash(): string | undefined {
+    const w = window as unknown as { __omegaBoardSelect?: string };
+    const stashed = w.__omegaBoardSelect;
+    delete w.__omegaBoardSelect;
+    return stashed;
+  }
+  function applyBoardSelect(board: string | undefined | null) {
+    if (typeof board === "string" && board) switchBoard(board);
+  }
+  function onBoardSelect(ev: Event) {
+    consumeBoardStash(); // a live event supersedes any in-flight intent
+    applyBoardSelect((ev as CustomEvent<{ board?: string }>).detail?.board);
+  }
+  onMounted(() => {
+    window.addEventListener(BOARD_SELECT_EVENT, onBoardSelect);
+    applyBoardSelect(consumeBoardStash());
+  });
+  onUnmounted(() => {
+    window.removeEventListener(BOARD_SELECT_EVENT, onBoardSelect);
+  });
+
   const POLLS_MS = 5000;
   let timer: ReturnType<typeof setInterval> | undefined;
 
