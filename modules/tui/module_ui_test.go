@@ -99,7 +99,7 @@ func TestModuleCommandTableOrder(t *testing.T) {
 	}
 	got := buildCommands(knownCommands, pctx, []core.Skill{{Name: "sk"}})
 	want := []string{
-		"/copy", "/extensions", "/theme", "/variant", "/fork", "/retry", "/exit", "/help",
+		"/copy", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/exit", "/help",
 		"/alpha", "/mid", "/zeta",
 		"/ext",
 		"/sk",
