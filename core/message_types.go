@@ -268,3 +268,28 @@ func NewVerdictRecord(cardID string, optionIndexes []int, options []string, text
 	}
 	return v
 }
+
+// MessageRole returns the role string for a message ("user", "assistant",
+// "system", "tool", or "unknown"). Lived in ai until messagetree moved
+// into core (arc 1c, t_483de955) and dragged its closure: tree
+// derivation classifies rows by role, and the law test forbids core
+// importing omega/ai. Shared by export, store commands, the TUI, and
+// the transcript surfaces to avoid duplicating the type switch.
+func MessageRole(m Message) string {
+	switch m.(type) {
+	case System:
+		return "system"
+	case User:
+		return "user"
+	case Assistant:
+		return "assistant"
+	case ToolResult:
+		return "tool"
+	case VerdictCard:
+		return "verdict_card"
+	case VerdictRecord:
+		return "verdict"
+	default:
+		return "unknown"
+	}
+}
