@@ -183,6 +183,27 @@
             v-if="!isMobile"
             class="pane" />
         </template>
+        <!-- arc 3c: the canvas host - the generic panel renderer mounts
+             INSIDE this outlet per panel the canvas store holds. The
+             store (snapshot boot fetch + run-stream deltas) is the only
+             source of panel presence (Q5a); the dock never knows one. -->
+        <template #pane-canvas>
+          <div
+            v-if="!isMobile"
+            class="pane canvas-pane">
+            <CanvasPanel
+              v-for="p in canvas.panels"
+              :key="p.id"
+              :panel="p"
+              :state-of="canvas.actionState"
+              @invoke="canvas.invoke" />
+            <p
+              v-if="canvas.panels.length === 0"
+              class="canvas-empty">
+              no panels mounted
+            </p>
+          </div>
+        </template>
       </DockSplit>
     </div>
 
@@ -273,6 +294,24 @@
       <InsightsTab
         v-else-if="inspectorDrawerActiveId === 'insights'"
         class="pane" />
+      <!-- arc 3c: the canvas joins the mobile drawer like every
+           inspector tab - before the module catch-all, which would try
+           InspectorPanel(module="canvas") and render empty -->
+      <div
+        v-else-if="inspectorDrawerActiveId === 'canvas'"
+        class="pane canvas-pane">
+        <CanvasPanel
+          v-for="p in canvas.panels"
+          :key="p.id"
+          :panel="p"
+          :state-of="canvas.actionState"
+          @invoke="canvas.invoke" />
+        <p
+          v-if="canvas.panels.length === 0"
+          class="canvas-empty">
+          no panels mounted
+        </p>
+      </div>
       <InspectorPanel
         v-else-if="inspectorDrawerActiveId"
         class="pane"
@@ -406,6 +445,12 @@
     createComposerFocusSignal,
     shouldCaptureTyping,
   } from "./composables/focus";
+  // arc 3c: the canvas store - the webui's one view-model state. The
+  // snapshot lands at boot; the deltas ride the run streams through the
+  // host's canvasDelta dep. Panel presence lives in the store, never a
+  // hardcoded list (Q5a).
+  import { createCanvasStore } from "./composables/canvas";
+  import CanvasPanel from "./components/canvas/CanvasPanel.vue";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
   // card t_5d9032d3: notification open intents route here from the bell;
@@ -590,6 +635,11 @@
     () => nextTick(applyNarrowSqueeze),
   );
 
+  // arc 3c: the canvas - one store per page (panels are global state,
+  // settled Q10a). Boot fetches the snapshot below; live runs feed it
+  // deltas through the host's canvasDelta dep.
+  const canvas = createCanvasStore();
+
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
   // session (the runHub run slot is per session). ---
@@ -599,6 +649,9 @@
     sessionRow: (id) => sessions.value.find((s) => s.id === id),
     markRead: (id) => markRead(id),
     isFocused: (key) => focusedKey.value === key,
+    // arc 3c: canvas panel deltas ride every run stream - the app's
+    // canvas store is where they merge
+    canvasDelta: (panel) => canvas.applyDelta(panel),
   });
 
   // --- main-view: chat vs the module-owned board (kanban). Ported
@@ -1349,6 +1402,10 @@
     refreshSessions();
     // running-state poller: every tab reconciles against the rows
     runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
+    // the canvas snapshot: the load-time catch-up (settled Q3b) - the
+    // panels mounted before this page loaded arrive here; everything
+    // later rides the run-stream deltas
+    void canvas.refresh();
 
     // boot focus: the URL's session owns it ("reload lands on the
     // focused session") - an existing chat tab bound to that id is
