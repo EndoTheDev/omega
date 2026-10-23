@@ -1,51 +1,24 @@
 package ai
 
-// StreamEvent is the sealed interface for all stream event types.
-// Consumers dispatch on the concrete type via a type switch.
-type StreamEvent interface {
-	isStreamEvent()
-}
+import "github.com/EndoTheDev/omega/core"
 
-// ThinkingChunk is a chunk of the model's thinking content.
-type ThinkingChunk struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
-}
-
-func (ThinkingChunk) isStreamEvent() {}
-
-// ResponseChunk is a chunk of the model's response content.
-type ResponseChunk struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
-}
-
-func (ResponseChunk) isStreamEvent() {}
-
-// ToolCall is a tool invocation request from the model.
-type ToolCall struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
-}
-
-// ToolCallEvent carries a tool call parsed from the stream.
-type ToolCallEvent struct {
-	Type     string   `json:"type"`
-	ToolCall ToolCall `json:"tool_call"`
-}
-
-func (ToolCallEvent) isStreamEvent() {}
-
-// StreamEnd is emitted at the end of a stream. Errors are encoded
-// here (FinishReason="error", Error set), not returned as Go errors.
-type StreamEnd struct {
-	Type            string `json:"type"`
-	FinishReason    string `json:"finish_reason"`
-	PromptEvalCount *int   `json:"prompt_eval_count,omitempty"`
-	EvalCount       *int   `json:"eval_count,omitempty"`
-	CachedCount     *int   `json:"cached_count,omitempty"`
-	Error           string `json:"error,omitempty"`
-}
-
-func (StreamEnd) isStreamEvent() {}
+// Compatibility aliases: the provider stream event contract now lives
+// in core (arc 1b2, t_d16468fd). Every provider lane and module import
+// of ai.* keeps compiling; the aliases disappear when modules rewire
+// in phase 2. The sealed interface is named ProviderStreamEvent in
+// core because the agent-event contract already carries core.StreamEvent.
+//
+// DO NOT add new types here - new stream events belong in core.
+type (
+	// StreamEvent is the sealed interface for all provider stream event
+	// types.
+	StreamEvent = core.ProviderStreamEvent
+	// ThinkingChunk is a chunk of the model's thinking content.
+	ThinkingChunk = core.ThinkingChunk
+	// ResponseChunk is a chunk of the model's response content.
+	ResponseChunk = core.ResponseChunk
+	// ToolCallEvent carries a tool call parsed from the stream.
+	ToolCallEvent = core.ToolCallEvent
+	// StreamEnd is emitted at the end of a stream.
+	StreamEnd = core.StreamEnd
+)

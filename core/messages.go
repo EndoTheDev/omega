@@ -1,7 +1,5 @@
 package core
 
-import "github.com/EndoTheDev/omega/ai"
-
 // Session is a persisted conversation with optional parent linking
 // for branching.
 type Session struct {
@@ -77,7 +75,7 @@ type SessionNode struct {
 // string so clients can address branch points.
 type StoredMessage struct {
 	ID        int64
-	Message   ai.Message
+	Message   Message
 	CreatedAt string
 }
 

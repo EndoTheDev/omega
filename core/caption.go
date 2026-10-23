@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // Captioner describes images for models that cannot see them. When the
@@ -21,7 +19,7 @@ import (
 // vision_model is empty).
 type Captioner interface {
 	// Caption returns a factual description of one image.
-	Caption(ctx context.Context, img ai.ImageContent) (string, error)
+	Caption(ctx context.Context, img ImageContent) (string, error)
 }
 
 // applyCaptions rewrites image-carrying user messages for the MAIN
@@ -34,13 +32,13 @@ type Captioner interface {
 // A captioning failure is loud and attributed: the run ends with an
 // error naming the captioner, not a provider 400 masquerading as a
 // model refusal.
-func (a *Agent) applyCaptions(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
+func (a *Agent) applyCaptions(ctx context.Context, messages []Message) ([]Message, error) {
 	if a.captioner == nil {
 		return messages, nil
 	}
 	hasImages := false
 	for _, m := range messages {
-		if u, ok := m.(ai.User); ok && len(u.Images) > 0 {
+		if u, ok := m.(User); ok && len(u.Images) > 0 {
 			hasImages = true
 			break
 		}
@@ -48,10 +46,10 @@ func (a *Agent) applyCaptions(ctx context.Context, messages []ai.Message) ([]ai.
 	if !hasImages {
 		return messages, nil
 	}
-	out := make([]ai.Message, len(messages))
+	out := make([]Message, len(messages))
 	copy(out, messages)
 	for i, m := range out {
-		u, ok := m.(ai.User)
+		u, ok := m.(User)
 		if !ok || len(u.Images) == 0 {
 			continue
 		}

@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // Context is the shared service container that extensions mount into.
@@ -15,7 +13,7 @@ import (
 // additive: multiple plugins contribute.
 type Context struct {
 	// Seam slots (exclusive — one plugin per slot).
-	Provider      ai.Provider
+	Provider      Provider
 	Compactor     CompactionProvider
 	Store         StoreProvider
 	Skills        SkillsProvider

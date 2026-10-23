@@ -12,11 +12,11 @@ var imageMagic = []struct {
 	MediaType string
 	prefix    []byte
 }{
-	{"image/png", []byte{0x89, 0x50, 0x4e, 0x47}},       // \x89PNG
-	{"image/jpeg", []byte{0xff, 0xd8, 0xff}},              // \xff\xd8\xff
-	{"image/gif", []byte{'G', 'I', 'F', '8'}},            // GIF8
-	{"image/webp", []byte{'R', 'I', 'F', 'F'}},           // RIFF....WEBP (check WEBP at offset 8)
-	{"image/bmp", []byte{'B', 'M'}},                      // BM
+	{"image/png", []byte{0x89, 0x50, 0x4e, 0x47}}, // \x89PNG
+	{"image/jpeg", []byte{0xff, 0xd8, 0xff}},      // \xff\xd8\xff
+	{"image/gif", []byte{'G', 'I', 'F', '8'}},     // GIF8
+	{"image/webp", []byte{'R', 'I', 'F', 'F'}},    // RIFF....WEBP (check WEBP at offset 8)
+	{"image/bmp", []byte{'B', 'M'}},               // BM
 }
 
 // MaxImageBytes is the maximum image file size accepted by DetectImage

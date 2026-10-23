@@ -3,8 +3,6 @@ package core
 import (
 	"context"
 	"time"
-
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // LoopProvider drives the multi-turn conversation. The default
@@ -19,8 +17,8 @@ type LoopProvider interface {
 // LoopOptions carries everything the loop needs to run one agent
 // session. The Agent struct builds this from its configured fields.
 type LoopOptions struct {
-	Provider           ai.Provider
-	Messages           []ai.Message
+	Provider           Provider
+	Messages           []Message
 	Tools              map[string]Tool
 	ToolProviders      []ToolProvider // additive tool sources (extensions)
 	CompactionProvider CompactionProvider
@@ -47,7 +45,7 @@ type CompactionProvider interface {
 	// Compact compacts the message history. Returns the compacted
 	// history, or the original if no compaction is needed. A nil
 	// CompactionProvider means compaction is disabled.
-	Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error)
+	Compact(ctx context.Context, messages []Message) ([]Message, error)
 }
 
 // ToolProvider supplies tools to the agent. Called once per Run to
@@ -76,8 +74,8 @@ type StoreProvider interface {
 	ListSessions(ctx context.Context) ([]Session, error)
 	DeleteSession(ctx context.Context, id string) error
 	UpdateSession(ctx context.Context, id, label string) error
-	AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error
-	GetMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
+	AppendMessage(ctx context.Context, sessionID string, msg Message) error
+	GetMessages(ctx context.Context, sessionID string) ([]Message, error)
 
 	// GetMessagesWithTimes returns a session's messages in append
 	// order, each paired with its row id (the tree identity) and
@@ -93,10 +91,10 @@ type StoreProvider interface {
 
 	// GetActiveMessages returns the active path as plain messages -
 	// the session-load seam (TUI resume, exports).
-	GetActiveMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
+	GetActiveMessages(ctx context.Context, sessionID string) ([]Message, error)
 
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
-	GetAncestorMessages(ctx context.Context, sessionID string) ([]ai.Message, error)
+	GetAncestorMessages(ctx context.Context, sessionID string) ([]Message, error)
 	SearchMessages(ctx context.Context, query string) ([]SearchResult, error)
 
 	// SearchSessions is the unified search behind /sessions/search:
@@ -387,7 +385,7 @@ type VerdictPrompt struct {
 	SessionID string
 	Title     string
 	Body      string
-	Options   []ai.VerdictOption
+	Options   []VerdictOption
 	Multi     bool
 	AllowText bool
 	TimeoutS  int

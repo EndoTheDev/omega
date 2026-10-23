@@ -3,8 +3,6 @@ package core
 import (
 	"context"
 	"maps"
-
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // ToolAction is one named sub-action of a domain tool. A tool that
@@ -86,7 +84,7 @@ func (t Tool) SchemaParameters() map[string]any {
 // The loop is not set by default — the host must wire one (e.g. via
 // the agent-loop plugin in modules/agent_loop/).
 type Agent struct {
-	provider       ai.Provider
+	provider       Provider
 	tools          map[string]Tool
 	toolProviders  []ToolProvider
 	maxTurns       int
@@ -109,7 +107,7 @@ type Agent struct {
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 // The agent starts with no loop — the host must wire one via
 // SetLoopProvider or by mounting the agent-loop plugin.
-func NewAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
+func NewAgent(provider Provider, tools map[string]Tool, maxTurns int) *Agent {
 	return &Agent{
 		provider: provider,
 		tools:    tools,
@@ -289,12 +287,12 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 
 // Provider returns the agent's base provider, so callers can derive
 // per-run copies via WithModel without mutating shared state.
-func (a *Agent) Provider() ai.Provider {
+func (a *Agent) Provider() Provider {
 	return a.provider
 }
 
 // ModelInfo returns the current model's metadata (context window).
-func (a *Agent) ModelInfo() (ai.ModelInfo, error) {
+func (a *Agent) ModelInfo() (ModelInfo, error) {
 	return a.provider.ModelInfo()
 }
 
@@ -322,14 +320,14 @@ func (a *Agent) ListModels() ([]string, error) {
 // arbitrary active run - fine at single-user load. Upgrade path: a
 // per-run injected channel (a config-defined agent registry builds on
 // that later).
-func (a *Agent) Run(ctx context.Context, messages []ai.Message, tools map[string]Tool) <-chan Event {
+func (a *Agent) Run(ctx context.Context, messages []Message, tools map[string]Tool) <-chan Event {
 	return a.RunWithProvider(ctx, a.provider, messages, tools)
 }
 
 // RunWithProvider starts a run on the given provider - typically a copy
 // derived from Provider() via WithModel, carrying a per-request model.
 // Returns a channel of events, closed when the run ends.
-func (a *Agent) RunWithProvider(ctx context.Context, provider ai.Provider, messages []ai.Message, tools map[string]Tool) <-chan Event {
+func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages []Message, tools map[string]Tool) <-chan Event {
 	events := make(chan Event)
 	go func() {
 		defer close(events)
