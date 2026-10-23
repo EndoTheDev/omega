@@ -107,6 +107,22 @@ func TestUpdateGate(t *testing.T) {
 	if got := decide("v0.1.0", "dev", false); got != "install" {
 		t.Errorf("dev current offered older: %q, want install (no gate)", got)
 	}
+	// Short-stamped running versions (tag-hash, card t_8acdfe17): the
+	// hash is build metadata, invisible to the gate. A same-tag nightly
+	// offered is "skip", the next nightly installs, an older one still
+	// refuses.
+	if got := decide("v0.9.1-nightly.20261022", "v0.9.1-nightly.20261022-c268097e", false); got != "skip" {
+		t.Errorf("offered the running build's own tag: %q, want skip", got)
+	}
+	if got := decide("v0.9.1-nightly.20261023", "v0.9.1-nightly.20261022-c268097e", false); got != "install" {
+		t.Errorf("next nightly offered: %q, want install (hash must not read as downgrade)", got)
+	}
+	if got := decide("v0.9.1-nightly.20261021", "v0.9.1-nightly.20261022-c268097e", false); got == "install" {
+		t.Error("older nightly offered: installed, want refuse")
+	}
+	if got := decide("v0.9.2", "v0.9.1-c268097e", false); got != "install" {
+		t.Errorf("stable offered to short-stamped nightly running version: %q, want install", got)
+	}
 }
 
 func TestParseUpdateFlags(t *testing.T) {

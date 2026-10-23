@@ -81,6 +81,14 @@ func parseUpdateFlags(args []string) (updateOptions, error) {
 	return opts, nil
 }
 
+// trimBuildHash strips a trailing short build hash ("-c268097e") from a
+// version string: the hash is build metadata, invisible to semver
+// ordering. The shape regex is anchored, so tags and hash-less versions
+// match nothing and pass through unchanged.
+func trimBuildHash(v string) string {
+	return versionShapeRe.ReplaceAllString(v, "$1")
+}
+
 // updateGate decides whether the channel's offered tag may be
 // installed when the running version is omegaVersion. Returns:
 //
@@ -88,7 +96,10 @@ func parseUpdateFlags(args []string) (updateOptions, error) {
 //	"install" — offered is newer, or a downgrade was explicitly allowed
 //	"refuse"  — offered is older than current (stale mirror protection)
 func updateGate(offeredTag, current string, allowDowngrade bool) (string, error) {
-	cmp, ok := compareVersions(offeredTag, current)
+	// The running version carries build metadata the offered tags never
+	// have ("-c268097e"): order the tag part, not the hash, or the
+	// newest nightly reads like a downgrade and the gate refuses it.
+	cmp, ok := compareVersions(offeredTag, trimBuildHash(current))
 	if !ok {
 		// Unparseable current version (dev build, foreign stamp):
 		// can't order the versions, so don't gate.

@@ -131,8 +131,10 @@ executing `omega --version` before declaring success. Unknown flags
 after `update` are errors, not silent falls through to a plain update.
 
 Version resolution: builds carry the version via ldflags
-(`-X main.omegaVersion=...`); `go install` builds use the module
-version; a bare `go build` reports `dev`.
+(`-X main.omegaVersion=<tag>-<shorthash>`, per build.sh); `go install`
+builds fall back to the module version Go stamps, already collapsed to
+the same short tag-hash shape (`v0.9.1-nightly.20261022-c268097e`); a
+bare `go build` reports `dev`.
 
 ### `omega health`
 

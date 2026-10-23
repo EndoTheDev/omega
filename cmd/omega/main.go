@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -703,10 +704,11 @@ func runChat(cfg Config, pctx *agent.Context, skills []agent.Skill, appendPrompt
 
 // omegaVersion is set via ldflags at build time:
 //
-//	go build -ldflags "-X main.omegaVersion=v0.1.0"
+//	go build -ldflags "-X main.omegaVersion=v0.9.1-3c2ab0db" ./cmd/omega
 //
 // go install builds carry no ldflags, so init() falls back to the module
-// version Go stamps into module-built binaries (debug.ReadBuildInfo).
+// version Go stamps into module-built binaries (debug.ReadBuildInfo),
+// already trimmed to the short tag-hash shape.
 var omegaVersion = ""
 
 func init() {
@@ -715,12 +717,42 @@ func init() {
 	}
 }
 
+// versionShapeRe is the one shape a version string may take: a semver
+// tag with an optional -nightly.DATE prerelease, optionally followed by
+// a dash and an 8-char commit hash ("v0.9.1", "v0.9.1-nightly.20261022",
+// "v0.9.1-nightly.20261022-c268097e"). Anything else is not a version.
+var versionShapeRe = regexp.MustCompile(`^(v[0-9.]+(-nightly\.[0-9]+)?)(-[0-9a-f]{8})?$`)
+
+// tagShapeRe is versionShapeRe without the hash suffix.
+var tagShapeRe = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)(-nightly\.[0-9]+)?$`)
+
+// pseudoVersionRe matches the pseudo-versions the go command stamps
+// into module-built binaries ("<tag>.<n>.<yyyymmddhhmmss>-<12 hex>",
+// e.g. v0.9.1-nightly.20261022.0.20261023012859-c268097e2689): group 1
+// is the base tag, group 2 the commit revision.
+var pseudoVersionRe = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+(?:-nightly\.[0-9]+)?)\.[0-9]+\.[0-9]+-([0-9a-f]+)$`)
+
+// shortBuildVersion trims a version to the short shape (tag-hash):
+// a pseudo-version collapses to its base tag plus the first 8 hash
+// chars, a plain tag passes through, anything else ("dev", "(devel)")
+// is not a version and reports dev.
+func shortBuildVersion(v string) string {
+	if m := pseudoVersionRe.FindStringSubmatch(v); m != nil && len(m[2]) >= 8 {
+		return m[1] + "-" + m[2][:8]
+	}
+	if tagShapeRe.MatchString(v) {
+		return v
+	}
+	return "dev"
+}
+
 // resolveVersionFromBuildInfo picks the module version for go install
-// builds; returns "dev" for bare go builds (no ldflags, no module stamp).
+// builds, trimmed to the short tag-hash shape; returns "dev" for bare
+// go builds (no ldflags, no module stamp).
 func resolveVersionFromBuildInfo() string {
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		if v := bi.Main.Version; v != "" && v != "(devel)" {
-			return v
+			return shortBuildVersion(v)
 		}
 	}
 	return "dev"
