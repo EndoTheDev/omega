@@ -127,7 +127,10 @@ for c in "${CAND[@]:-}"; do
       RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r"; done | sort -u | tr '\n' ',')
       CC=$(class_of "$c")
       case "$CC" in
-        go)  [[ "$RC" == *webui* && "$RC" == *go,* ]] && { HOLD=1; WHY="go-class beside go/webui mix: $RC"; };;
+        # go beside go: forbidden (sanctioned pairs are go+webui only).
+        # Comma-wrapped containment: ",go," matches the go class exactly,
+        # never "docs" (the old *go,* form missed a lone go runner).
+        go)  [[ ",$RC," == *,go,* ]] && { HOLD=1; WHY="go-class beside running go: $RC"; };;
         *)   : ;;  # webui+webui legal since embed-lane proof; docs collides with nothing
       esac
   fi
