@@ -13,10 +13,11 @@ set -euo pipefail
 #
 #   scripts/embed-lane.sh [--base <rev>] "<context>"
 #
-#   --base <rev>  the pre-merge tip, for the change gate. Defaults to
-#                 HEAD^1, which is the pre-landing tip for both a real
-#                 merge commit and a fast-forward; only a root commit
-#                 (no parent) must pass --base.
+#   --base <rev>  the pre-merge tip, for the change gate. Without it the
+#                 base is selected by select_base (below): HEAD^1 for a
+#                 real merge commit, origin/dev for a fast-forward
+#                 result, and an UNPROVEN fallback that bypasses the
+#                 gate rather than risk skipping a needed regen.
 #
 # Guards:
 #   - change gate: if <base>..HEAD touches no webui source (modules/ui/
@@ -86,6 +87,61 @@ lint_static() {
 	fi
 }
 
+# Base selection - the change gate is only as good as its base.
+#
+# HEAD^1 is the pre-landing tip only for a real merge commit. After a
+# fast-forward of a MULTI-commit branch, HEAD^1 is the branch's
+# second-to-last card commit, and the gate reads just that one commit's
+# diff - a needed regen then reads as a Go-only merge (seen live,
+# 2026-10-23: a 5-commit ff skipped the webui bundle regen).
+#
+# The default therefore never trusts HEAD^1 on a plain commit:
+#   - merge commit -> HEAD^1 (first parent is the pre-landing tip).
+#   - plain commit + origin/dev a STRICT ancestor of HEAD -> origin/dev.
+#     A diff against an older base is a SUPERSET of the true diff; a
+#     wider diff can only over-trigger a regen, which the hash gate
+#     absorbs. Strictness also closes the empty-diff trap: origin/dev
+#     == HEAD would make every gate read "nothing changed".
+#   - plain commit with no such marker -> the pre-merge tip is not
+#     provable, so the gate is BYPASSED: the regen runs unconditionally
+#     and the hash gate decides. The fail direction that matters is a
+#     needed regen that reads as Go-only - never silently skipping.
+REMOTE_BASE="origin/dev"
+
+# select_base <explicit-or-empty>: sets BASE (a commit), BASE_TRUST
+# (human-readable reason for the log) and GATE_TRUSTED (1 = the gate's
+# skip verdicts are safe; 0 = never let the gate skip). Sourced runs
+# call this directly; the assertions live in embed-lane-base-test.sh.
+select_base() {
+	BASE="" BASE_TRUST="none" GATE_TRUSTED=0
+	if [ -n "$1" ]; then
+		if ! BASE="$(git rev-parse -q --verify "$1^{commit}")"; then
+			echo "FATAL: embed-lane: --base '$1' is not a commit" >&2
+			exit 1
+		fi
+		BASE_TRUST="explicit (--base)"
+		GATE_TRUSTED=1
+	elif git rev-parse -q --verify HEAD^2 >/dev/null 2>&1; then
+		BASE="$(git rev-parse HEAD^1)"
+		BASE_TRUST="merge parent HEAD^1"
+		GATE_TRUSTED=1
+	else
+		local origin_tip
+		if origin_tip="$(git rev-parse -q --verify "$REMOTE_BASE^{commit}" 2>/dev/null)" \
+			&& [ "$origin_tip" != "$(git rev-parse HEAD)" ] \
+			&& git merge-base --is-ancestor "$origin_tip" HEAD; then
+			BASE="$origin_tip"
+			BASE_TRUST="$REMOTE_BASE (at or behind the pre-merge tip; superset diff)"
+			GATE_TRUSTED=1
+		elif git rev-parse -q --verify HEAD^1 >/dev/null 2>&1; then
+			BASE="$(git rev-parse HEAD^1)"
+			BASE_TRUST="UNPROVEN HEAD^1 (plain commit)"
+		else
+			fail_no_base # root commit: no parent, no marker - loud stop
+		fi
+	fi
+}
+
 fail_no_base() {
 	echo "FATAL: embed-lane: HEAD has no parent commit - the change gate needs" >&2
 	echo "       the pre-landing tip. Pass: embed-lane.sh --base <pre-landing-tip> \"<context>\"" >&2
@@ -151,16 +207,16 @@ main() {
 
 	cd "$(git rev-parse --show-toplevel)"
 
-	if [ -z "$base" ]; then
-		if git rev-parse -q --verify HEAD^1 >/dev/null 2>&1; then
-			base="$(git rev-parse HEAD^1)"
-		else
-			fail_no_base
-		fi
-	fi
+	select_base "$base"
+	echo "==> embed-lane: change gate base $(git rev-parse --short "$BASE") [${BASE_TRUST}]"
 
-	if [ -z "$(ui_changed "$base" HEAD)" ]; then
-		echo "==> embed-lane: change gate: no webui source in the diff - skip (Go-only merge pays nothing)"
+	if [ "$GATE_TRUSTED" != 1 ]; then
+		echo "==> embed-lane: WARNING: pre-merge tip unprovable - a multi-commit fast-forward" >&2
+		echo "       cannot be ruled out, so the change gate is BYPASSED: regenerating" >&2
+		echo "       unconditionally and letting the hash gate decide." >&2
+		echo "       Pass --base <pre-merge-tip> for a normal gate run." >&2
+	elif [ -z "$(ui_changed "$BASE" HEAD)" ]; then
+		echo "==> embed-lane: change gate: no webui source in $(git rev-parse --short "$BASE")..HEAD - skip (Go-only merge pays nothing)"
 		return 0
 	fi
 
