@@ -30,6 +30,13 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	}
 	ag := core.NewFromContext(deps.Ctx, core.AgentOptions{})
 	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
+	// Canvas transport (arc 3b): the runtime is built from the fully
+	// mounted Context after MountAll - the same registration point
+	// every other seam reads (card t_058edeb3). Deltas fan out through
+	// the server's run hub (server_canvas.go).
+	if err := c.srv.newCanvas(deps.Ctx); err != nil {
+		return fmt.Errorf("http_channel: canvas: %w", err)
+	}
 	c.srv.Kanban = deps.Ctx.Kanban
 	// Inspector seams (card t_db430fea): read-only views for the
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
