@@ -20,6 +20,10 @@ type HTTPChannel struct {
 	runTimeout time.Duration // detached-run wall-clock cap from config
 	titleModel string        // title_model knob from config
 	srv        *Server
+	// chat is the canvas capsule the plugin registered (chat-last 1/3):
+	// Start binds it to this channel's server before the canvas runtime
+	// builds - the snapshot and the action pipe meet the served state.
+	chat *chatCapsule
 }
 
 // Start creates an agent from deps.Ctx and serves HTTP/SSE until the
@@ -30,6 +34,14 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	}
 	ag := core.NewFromContext(deps.Ctx, core.AgentOptions{})
 	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
+	// Chat panel (chat-last 1/3): bind the plugin's registered capsule
+	// to THIS server before the canvas runtime builds over the
+	// providers. Multi-bind binds: the last started server serves the
+	// capsule - one frontend is live per process.
+	if c.chat != nil {
+		c.srv.chat = c.chat
+		c.srv.chat.srv = c.srv
+	}
 	// Canvas transport (arc 3b): the runtime is built from the fully
 	// mounted Context after MountAll - the same registration point
 	// every other seam reads (card t_058edeb3). Deltas fan out through

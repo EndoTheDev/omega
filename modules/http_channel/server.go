@@ -60,7 +60,13 @@ type Server struct {
 	// panel snapshot source and the one action pipe (server_canvas.go).
 	// Nil means nothing mounted - /ui/canvas serves [] and /ui/actions
 	// answers the unknown-module 404.
-	canvas  *agent.Canvas
+	canvas *agent.Canvas
+	// chat is the conversation's canvas capsule (chat-last 1/3,
+	// chat_panel.go): the 'chat' panel's snapshot source, the run-loop
+	// push hooks and the action-pipe chat verbs. Default-wired on the
+	// server; the plugin's Mount-instanced capsule replaces it at
+	// channel start (the registered one and the served one meet there).
+	chat    *chatCapsule
 	httpSrv *http.Server
 	// runTimeout caps each detached /chat run's wall-clock time. The
 	// LLM call carries the HTTP timeout, but a hung tool call would
@@ -97,6 +103,11 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 		tools = map[string]core.Tool{}
 	}
 	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
+	// Chat panel capsule (chat-last 1/3): default-wired so a directly
+	// constructed Server (tests, embedding) has the push hooks and the
+	// panel even without the plugin's channel-start handoff.
+	s.chat = newChatCapsule()
+	s.chat.srv = s
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -372,6 +383,118 @@ func newRunMeter() *runMeter {
 	return &runMeter{started: time.Now()}
 }
 
+// replayGuards validates the replay-turn request shapes (retry/fork).
+// They belong BEFORE auto-create (both re-play an EXISTING session's
+// persisted tree - a sessionless replay has nothing to replay, and
+// messages alongside a replay-turn are a client bug), and BOTH entry
+// paths share them (chat-last 1/3): handleChat and the chat panel's
+// retry action through the pipe (chat_panel.go).
+func replayGuards(req *chatRequest, hasStore bool) error {
+	if req.Retry && (!hasStore || req.SessionID == "") {
+		return &runError{http.StatusBadRequest, "retry requires a session"}
+	}
+	if req.Retry && len(req.Messages) > 0 {
+		return &runError{http.StatusBadRequest, "retry takes no messages"}
+	}
+	if req.Fork != "" && (!hasStore || req.SessionID == "") {
+		return &runError{http.StatusBadRequest, "fork requires a session"}
+	}
+	if req.Fork != "" && req.Retry {
+		return &runError{http.StatusBadRequest, "fork and retry are mutually exclusive"}
+	}
+	// Replay turns need the persisted tree; an ephemeral session never
+	// has one. The webui hides both affordances on an ephemeral tab -
+	// this is the wire-level backstop.
+	if req.Ephemeral && (req.Retry || req.Fork != "") {
+		return &runError{http.StatusBadRequest, "retry/fork are not available in ephemeral sessions"}
+	}
+	return nil
+}
+
+// runError is one chat run's start failure with its HTTP status: the
+// /chat handler writes it verbatim (status + message), the action pipe
+// surfaces only the message on its own error contract.
+type runError struct {
+	code int
+	msg  string
+}
+
+func (e *runError) Error() string { return e.msg }
+
+// chatPrepare is one prepared detached run: the acquired slot, the
+// pinned provider and tool set, and the resolved context messages.
+type chatPrepare struct {
+	run      *activeRun
+	prov     ai.Provider
+	messages []ai.Message
+	tools    map[string]core.Tool
+}
+
+// prepareRun performs the shared pre-launch steps of a session-backed
+// chat run (chat-last 1/3): the replay guards, the run-slot
+// acquisition, the active-path history load (retry/fork branch
+// resolution included), the per-run provider pin and the tool
+// selection - everything handleChat did between its decode and its
+// subscribe-before-launch, and everything the chat panel's retry
+// action runs with no response body. On any failure the run's slot is
+// released and the error carries the same status + message the handler
+// wrote before the refactor. The provisional title kick stays here
+// too: it fires before any streaming for both entry paths.
+func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []ai.Message) (*chatPrepare, error) {
+	// Replay-turn guards: store presence is enforced here too - the
+	// handler's early replayGuards ran before auto-create, this one
+	// holds the same wall for the action pipe's entry.
+	if err := replayGuards(req, s.store != nil); err != nil {
+		return nil, err
+	}
+	// The pipe's entry needs nothing else here - the guards above
+	// carried the store wall for both entry paths now.
+
+	// Run-slot acquisition comes BEFORE any persistence: a second /chat
+	// for a session with a live run is a 409 that must not leave the
+	// incoming user message appended - the next successful send would
+	// double it.
+	run, live := s.runs.start(req.SessionID)
+	if !live {
+		return nil, &runError{http.StatusConflict, "session already running"}
+	}
+
+	messages, err := s.sessionHistory(ctx, req, incoming)
+	if err != nil {
+		s.runs.finish(run)
+		return nil, err
+	}
+
+	// Per-run provider pin: model override + thinking level (shared
+	// with the legacy inline path).
+	prov, pinErr := s.pinProvider(req)
+	if pinErr != nil {
+		s.runs.finish(run)
+		return nil, pinErr
+	}
+
+	// Provisional title: one cheap GetSession at request start, and the
+	// title call fires detached before any streaming, so the sidebar
+	// leaves the raw session id while the model is still thinking.
+	// maybeTitleSession re-reads the session and enforces the state
+	// machine before anything is written.
+	if s.store != nil && req.SessionID != "" {
+		if sess, err := s.store.GetSession(ctx, req.SessionID); err == nil && sess.TitleState == 0 {
+			go s.maybeTitleSession(context.WithoutCancel(ctx), prov, *req, "", false)
+		}
+	}
+
+	tools := s.tools
+	if req.Ephemeral {
+		// No-persist contract: the memory tool never runs in an
+		// ephemeral session (nothing it writes outlives the session).
+		// The run context carries the deny too, so extension-merged
+		// providers cannot reintroduce it (the loop filters post-merge).
+		tools = withoutMemory(tools)
+	}
+	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools}, nil
+}
+
 // runMeter tallies the chunks and streaming wall clock one run
 // produced. Chunk counts are not persisted anywhere else - the meter
 // is the live-run state the last-known rates are computed from at
@@ -434,44 +557,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Retry/fork guards run BEFORE auto-create: both re-play an
-	// EXISTING session's persisted tree - a sessionless replay has
-	// nothing to replay (auto-creating an empty session to 400 into
-	// would be noise), and messages alongside a replay-turn are a
-	// client bug (the retry replays the turn verbatim).
-	if req.Retry && (s.store == nil || req.SessionID == "") {
-		http.Error(w, "retry requires a session", http.StatusBadRequest)
+	// Replay guards run BEFORE auto-create: both re-play an EXISTING
+	// session's persisted tree - a sessionless replay has nothing to
+	// replay (auto-creating an empty session to 400 into would be
+	// noise), and messages alongside a replay-turn are a client bug.
+	// The same wall holds for the action pipe's entry (prepareRun).
+	if err := replayGuards(&req, s.store != nil); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.Retry && len(messages) > 0 {
-		http.Error(w, "retry takes no messages", http.StatusBadRequest)
-		return
-	}
-	if req.Fork != "" && (s.store == nil || req.SessionID == "") {
-		http.Error(w, "fork requires a session", http.StatusBadRequest)
-		return
-	}
-	if req.Fork != "" && req.Retry {
-		http.Error(w, "fork and retry are mutually exclusive", http.StatusBadRequest)
-		return
-	}
-	// Replay turns need the persisted tree; an ephemeral session never
-	// has one. The webui hides both affordances on an ephemeral tab -
-	// this is the wire-level backstop.
-	if req.Ephemeral && (req.Retry || req.Fork != "") {
-		http.Error(w, "retry/fork are not available in ephemeral sessions", http.StatusBadRequest)
-		return
-	}
-
-	// Auto-create: a /chat without session_id IS a new session now
-	// (Endo 2026-10-18: /chat is always durable, the webui's
-	// create-then-send dance is gone). Generate the id here and ride
-	// the normal session-backed path - persistence, provisional title,
-	// live reattach all behave exactly as for a POST /sessions id.
-	// This runs BEFORE the run-slot acquisition and loadSessionMessages:
-	// the new session must exist and carry its id for both, and the
-	// incoming user messages persist through the same path as for a
-	// pre-created id.
 	autoCreated := false
 	if req.Ephemeral && req.SessionID == "" {
 		// Ephemeral mint: an `eph-` id backed by the in-memory
@@ -505,110 +599,76 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		autoCreated = true
 	}
 
-	// Run-slot acquisition comes BEFORE any persistence: a second /chat
-	// for a session with a live run is a 409 that must not leave the
-	// incoming user message appended - the next successful send would
-	// double it. The slot releases if anything below fails before
-	// launchRun takes ownership (runStarted flips once it does).
-	runStarted := false
-	var run *activeRun
-	if req.Ephemeral || (s.store != nil && req.SessionID != "") {
-		var live bool
-		run, live = s.runs.start(req.SessionID)
-		if !live {
-			http.Error(w, "session already running", http.StatusConflict)
-			return
-		}
-		defer func() {
-			if !runStarted {
-				s.runs.finish(run) // cur==run guard: no-op once launched
+	// The legacy no-store path runs inline AFTER the SSE headers (the
+	// client's presence gates the run); session-backed runs - durable
+	// AND ephemeral - flow through prepareRun: slot, history, provider
+	// and title kick are one path for all detached entries (the
+	// handler and the chat panel's retry action).
+	if s.store != nil || req.Ephemeral {
+		cr, prepErr := s.prepareRun(r.Context(), &req, messages)
+		if prepErr != nil {
+			code := http.StatusInternalServerError
+			if re, ok := prepErr.(*runError); ok {
+				code = re.code
 			}
-		}()
-	}
-
-	messages, ok := s.loadSessionMessages(r.Context(), w, &req, messages)
-	if !ok {
-		return
-	}
-
-	// Per-run provider: base copy with a model override when the request
-	// carries one, plus a thinking level from the shared ladder.
-	// thinking_level 0 ("none") is skipped: no parameter sent, the
-	// provider keeps its default. The copy rides LoopOptions - no
-	// shared state mutated.
-	prov := s.agent.Provider()
-	if req.Model != "" {
-		prov = prov.WithModel(req.Model)
-	}
-	if req.ThinkingLevel != 0 {
-		if req.ThinkingLevel < 0 || req.ThinkingLevel >= len(ai.ThinkingLevels) {
-			http.Error(w, fmt.Sprintf("invalid thinking_level: %d (0..%d)",
-				req.ThinkingLevel, len(ai.ThinkingLevels)-1), http.StatusBadRequest)
+			http.Error(w, prepErr.Error(), code)
 			return
 		}
-		prov = prov.WithThinkingLevel(ai.ThinkingLevels[req.ThinkingLevel])
-	}
-
-	// Provisional title: one cheap GetSession at request start, and the
-	// title call fires detached before any streaming, so the sidebar
-	// leaves the raw session id while the model is still thinking.
-	// maybeTitleSession re-reads the session and enforces the state
-	// machine before anything is written.
-	if s.store != nil && req.SessionID != "" {
-		if sess, err := s.store.GetSession(r.Context(), req.SessionID); err == nil && sess.TitleState == 0 {
-			go s.maybeTitleSession(context.WithoutCancel(r.Context()), prov, req, "", false)
+		flusher, ok := setupSSE(w)
+		if !ok {
+			s.runs.finish(cr.run)
+			return
 		}
-	}
-
-	flusher, ok := setupSSE(w)
-	if !ok {
+		// Tell the client its session id before any run frames: the
+		// webui re-keys its stream state from this frame (it no longer
+		// POSTs /sessions first). Only the auto-created origin stream
+		// carries it - reattach subscribers already know the id from
+		// their URL.
+		if autoCreated {
+			writeSSE(w, "session", []byte(fmt.Sprintf(`{"id":%q}`, req.SessionID)))
+			flusher.Flush()
+		}
+		// Session-backed chats run DETACHED (the cron runner's
+		// detached-turn shape): the run consumes the agent event channel
+		// itself on a context that outlives this request, so a client
+		// disconnect - a page refresh mid-generation - no longer cancels
+		// the run. This response becomes just another subscriber of the
+		// run's live frames; reattach is GET /sessions/{id}/events
+		// (handleSessionEvents). Subscribe BEFORE launch: the origin
+		// client must see the run's first frame, so the consumer channel
+		// exists before the run broadcasts.
+		ch := s.runs.subscribe(cr.run)
+		s.launchRun(context.WithoutCancel(r.Context()), cr.run, cr.prov, cr.messages, cr.tools, req)
+		s.serveRunFrames(w, flusher, cr.run, ch, r.Context())
 		return
 	}
 
-	// Tell the client its session id before any run frames: the webui
-	// re-keys its stream state from this frame (it no longer POSTs
-	// /sessions first). Only the auto-created origin stream carries it -
-	// reattach subscribers already know the id from their URL.
-	if autoCreated {
-		writeSSE(w, "session", []byte(fmt.Sprintf(`{"id":%q}`, req.SessionID)))
-		flusher.Flush()
-	}
-
-	tools := s.tools
-	if req.Ephemeral {
-		// No-persist contract: the memory tool never runs in an
-		// ephemeral session (nothing it writes outlives the session).
-		// The run context carries the deny too, so extension-merged
-		// providers cannot reintroduce it (the loop filters post-merge).
-		tools = withoutMemory(tools)
-	}
-
-	// No store: the legacy ephemeral path. The stream still rides this
-	// request, client presence still gates the run.
+	// No store: the legacy path. The run IS the request - inline, the
+	// client's presence gates it, no run slot, no chat panel (no
+	// session to cover). Same provider pin and eph-id wall the
+	// prepareRun path enforces.
 	if s.store == nil && !req.Ephemeral {
-		recs, usage, last := s.streamAgentEvents(r.Context(), w, flusher, prov, messages, tools, req)
+		if isEphemeralID(req.SessionID) {
+			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
+			return
+		}
+		messageIn := messages
+		prov, pinErr := s.pinProvider(&req)
+		if pinErr != nil {
+			http.Error(w, pinErr.Error(), pinErr.code)
+			return
+		}
+		flusher, ok := setupSSE(w)
+		if !ok {
+			return
+		}
+		recs, usage, last := s.streamAgentEvents(r.Context(), w, flusher, prov, messageIn, s.tools, req)
 		if err := s.persistAssistant(r.Context(), prov, req, recs, usage, last); err != nil {
 			writeSSE(w, "error", []byte(err.Error()))
 			flusher.Flush()
 		}
 		return
 	}
-
-	// Session-backed chats run DETACHED (the cron runner's detached-turn
-	// shape): the run consumes the agent event channel itself on a
-	// context that outlives this request, so a client disconnect - a page
-	// refresh mid-generation - no longer cancels the run. This response
-	// becomes just another subscriber of the run's live frames; reattach
-	// is GET /sessions/{id}/events (handleSessionEvents).
-	// Subscribe BEFORE launch: the origin client must see the run's first
-	// frame, so the consumer channel exists before the run broadcasts.
-	// The slot was taken up top (before persistence); launchRun owns it
-	// from here - the deferred release above sees runStarted and stands
-	// down. A launchRun failure keeps the unwind through its own path.
-	runStarted = true
-	ch := s.runs.subscribe(run)
-	s.launchRun(context.WithoutCancel(r.Context()), run, prov, messages, tools, req)
-	s.serveRunFrames(w, flusher, run, ch, r.Context())
 }
 
 // handleSessionStop serves POST /sessions/{id}/stop: cancels the live
@@ -645,12 +705,14 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"cancelling"}`)) //nolint:errcheck // constant body
 }
 
-// loadSessionMessages loads persisted history for a session and returns
-// it with the incoming messages appended. The incoming messages ride
+// sessionHistory loads the session's persisted history and returns it
+// with the incoming messages appended. The incoming messages ride
 // req.persistInput - the loop persists them through its sink before the
 // first turn; nothing here writes the store. When no session is
 // configured (nil store or empty ID), messages are returned unchanged.
-// On failure an HTTP error is written to w and ok is false.
+// Failures come back as runErrors - the caller owns its error surface
+// (chat-last 1/3: one history load for the /chat entry AND the chat
+// panel's retry action; the status codes are the old handler's).
 //
 // History is the ACTIVE PATH (t_17365247), not the linear list: sibling
 // variants stay out of the provider's context, and the persisted tree is
@@ -663,7 +725,7 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 // its target: user-turn targets pin the head like a retry (no messages);
 // assistant/tool targets continue FROM them - context truncates at the
 // target inclusive and the fork's message chains onto it.
-func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter, req *chatRequest, messages []ai.Message) ([]ai.Message, bool) {
+func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming []ai.Message) ([]ai.Message, error) {
 	if isEphemeralID(req.SessionID) {
 		// Ephemeral context (card t_d96a5cd5): the registry's in-memory
 		// history IS the conversation - the store is never read. The
@@ -673,28 +735,24 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 		// session frame the client reattaches with always accompanies
 		// the flag).
 		if !req.Ephemeral {
-			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
-			return nil, false
+			return nil, &runError{http.StatusBadRequest, "ephemeral session id requires the ephemeral flag"}
 		}
 		if s.eph.get(req.SessionID) == nil {
-			http.Error(w, "ephemeral session not found: expired or restarted", http.StatusNotFound)
-			return nil, false
+			return nil, &runError{http.StatusNotFound, "ephemeral session not found: expired or restarted"}
 		}
-		s.eph.appendUser(req.SessionID, messages, time.Now())
-		req.persistInput = messages
-		return append(s.eph.history(req.SessionID), messages...), true
+		s.eph.appendUser(req.SessionID, incoming, time.Now())
+		req.persistInput = incoming
+		return append(s.eph.history(req.SessionID), incoming...), nil
 	}
 	if s.store == nil || req.SessionID == "" {
-		return messages, true
+		return incoming, nil
 	}
 	if _, err := s.store.GetSession(ctx, req.SessionID); err != nil {
-		http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
-		return nil, false
+		return nil, &runError{http.StatusNotFound, "session not found: " + err.Error()}
 	}
 	view, err := s.store.GetActiveView(ctx, req.SessionID)
 	if err != nil {
-		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
-		return nil, false
+		return nil, &runError{http.StatusInternalServerError, "load history: " + err.Error()}
 	}
 	if req.Retry {
 		end := -1
@@ -705,17 +763,15 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 		if end == -1 {
-			http.Error(w, "nothing to retry: session has no user message", http.StatusBadRequest)
-			return nil, false
+			return nil, &runError{http.StatusBadRequest, "nothing to retry: session has no user message"}
 		}
 		req.branchParent = core.MsgID(view.Path[end].ID)
-		return storedMessages(view.Path[:end+1]), true
+		return storedMessages(view.Path[:end+1]), nil
 	}
 	if req.Fork != "" {
 		forkID, idErr := core.ParseMsgID(req.Fork)
 		if idErr != nil {
-			http.Error(w, idErr.Error(), http.StatusBadRequest)
-			return nil, false
+			return nil, &runError{http.StatusBadRequest, idErr.Error()}
 		}
 		at := -1
 		for i, sm := range view.Path {
@@ -725,33 +781,30 @@ func (s *Server) loadSessionMessages(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 		if at == -1 {
-			http.Error(w, "fork target is not on the active path (select its variant via /sessions/{id}/variants first, then fork)", http.StatusBadRequest)
-			return nil, false
+			return nil, &runError{http.StatusBadRequest, "fork target is not on the active path (select its variant via /sessions/{id}/variants first, then fork)"}
 		}
 		switch view.Path[at].Message.(type) {
 		case ai.User:
-			if len(messages) > 0 {
-				http.Error(w, "fork of a user turn takes no messages (retry semantics)", http.StatusBadRequest)
-				return nil, false
+			if len(incoming) > 0 {
+				return nil, &runError{http.StatusBadRequest, "fork of a user turn takes no messages (retry semantics)"}
 			}
 			req.branchParent = req.Fork
-			return storedMessages(view.Path[:at+1]), true
+			return storedMessages(view.Path[:at+1]), nil
 		default:
-			if len(messages) == 0 {
-				http.Error(w, "fork requires a message to run from the forked point", http.StatusBadRequest)
-				return nil, false
+			if len(incoming) == 0 {
+				return nil, &runError{http.StatusBadRequest, "fork requires a message to run from the forked point"}
 			}
-			for i := range messages {
-				messages[i] = core.WithParentID(messages[i], req.Fork)
+			for i := range incoming {
+				incoming[i] = core.WithParentID(incoming[i], req.Fork)
 			}
 			// The fork's messages persist through the loop's sink;
 			// their explicit parent is what the store materializes.
-			req.persistInput = messages
-			return append(storedMessages(view.Path[:at+1]), messages...), true
+			req.persistInput = incoming
+			return append(storedMessages(view.Path[:at+1]), incoming...), nil
 		}
 	}
-	req.persistInput = messages
-	return append(storedMessages(view.Path), messages...), true
+	req.persistInput = incoming
+	return append(storedMessages(view.Path), incoming...), nil
 }
 
 // storedMessages strips the tree view down to plain provider context.
@@ -775,6 +828,27 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 		return nil, false
 	}
 	return flusher, true
+}
+
+// pinProvider pins the per-run provider copy: base with a model
+// override when the request carries one, plus a thinking level from
+// the shared ladder. thinking_level 0 ("none") is skipped: no
+// parameter sent, the provider keeps its default. The copy rides
+// LoopOptions - no shared state mutated. Shared by the prepareRun
+// detach path and the legacy inline path (chat-last 1/3).
+func (s *Server) pinProvider(req *chatRequest) (ai.Provider, *runError) {
+	prov := s.agent.Provider()
+	if req.Model != "" {
+		prov = prov.WithModel(req.Model)
+	}
+	if req.ThinkingLevel != 0 {
+		if req.ThinkingLevel < 0 || req.ThinkingLevel >= len(ai.ThinkingLevels) {
+			return nil, &runError{http.StatusBadRequest, fmt.Sprintf("invalid thinking_level: %d (0..%d)",
+				req.ThinkingLevel, len(ai.ThinkingLevels)-1)}
+		}
+		prov = prov.WithThinkingLevel(ai.ThinkingLevels[req.ThinkingLevel])
+	}
+	return prov, nil
 }
 
 // turnSinkFor builds the run's TurnSink (card t_471f6d4a) - the loop

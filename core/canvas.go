@@ -80,6 +80,81 @@ type PanelUpdateSink interface {
 	SetPanelUpdate(update func(panel Panel) error)
 }
 
+// The chat kind vocabulary (chat-last 1/3, card t_ec45b670): the
+// conversation itself as a canvas surface. Panel kind 'chat' is the
+// first NEW kind since the canvas contract - grown by a real migration
+// (the http channel's chat runs), never on paper ahead of a consumer.
+// Both frontends render chat from these types (card 2a webui, 2b TUI),
+// so the vocabulary lives here beside Panel - not in one module's
+// namespace, where the import law would strand the other frontend.
+// Zero behavior: the row composition is each module's concern.
+
+// PanelKindChat is the chat panel kind.
+const PanelKindChat = "chat"
+
+// ChatRow statuses: streaming while any block of the row is still in
+// flight, complete otherwise.
+const (
+	ChatStatusStreaming = "streaming"
+	ChatStatusComplete  = "complete"
+)
+
+// Roles of a chat row: the user bubble, an assistant bubble (its
+// blocks split thinking/text/calls), and a tool's result row.
+const (
+	ChatRoleUser      = "user"
+	ChatRoleAssistant = "assistant"
+	ChatRoleTool      = "tool"
+)
+
+// Content-block kinds of a chat row. One block per row in v1 - the
+// same granularity the conversation's transcript renders; rows grow
+// more blocks only when a real renderer needs them.
+const (
+	ChatBlockText       = "text"
+	ChatBlockThinking   = "thinking"
+	ChatBlockToolCall   = "tool_call"
+	ChatBlockToolResult = "tool_result"
+)
+
+// ChatBlock is one content block of a chat row. Content carries text
+// and thinking bodies, and the tool_result body; a tool_call block
+// carries the call verbatim (id, name, arguments). Running marks the
+// in-flight blocks of a live stream - the block the frontend keeps
+// appending to until a later delta closes the row; persisted rows
+// never carry it.
+type ChatBlock struct {
+	Type       string         `json:"type"`
+	Content    string         `json:"content,omitempty"`
+	Images     []ImageContent `json:"images,omitempty"`
+	Running    bool           `json:"running,omitempty"`
+	ToolCall   *ToolCall      `json:"tool_call,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	IsError    bool           `json:"is_error,omitempty"`
+	ElapsedMs  int64          `json:"elapsed_ms,omitempty"`
+}
+
+// ChatRow is one message row of a chat panel: role, its content
+// blocks and the row's status. ID is the store row id when the row is
+// persisted (the branch-point address variants address); a live
+// stream's in-flight rows carry none.
+type ChatRow struct {
+	ID     string      `json:"id,omitempty"`
+	Role   string      `json:"role"`
+	Status string      `json:"status"`
+	Blocks []ChatBlock `json:"blocks,omitempty"`
+}
+
+// ChatPayload is the chat panel's view-model: the session the rows
+// cover (the session ref), whether a live run is streaming it right
+// now, and the newest message rows. Deltas carry the whole payload -
+// rows are small, and self-describing beats a second message kind.
+type ChatPayload struct {
+	Session string    `json:"session,omitempty"`
+	Running bool      `json:"running,omitempty"`
+	Rows    []ChatRow `json:"rows,omitempty"`
+}
+
 // PanelProvider is the additive canvas registration seam (settled
 // Q5a/Q4b): a module declares its panels and registers their action
 // handlers through the same interface, appended to

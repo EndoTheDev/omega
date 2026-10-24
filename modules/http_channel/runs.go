@@ -44,6 +44,14 @@ type activeRun struct {
 	// a fresh slice, never mutated in place), so a reader racing the next
 	// rebuild sees either the old or the new complete slice.
 	tail []transcriptItem
+	// openTail is the run's OPEN segment only (the accumulator's
+	// in-flight record, rebuilt after each event) - the chat panel's
+	// composition (chat_panel.go): persisted history + the open
+	// segment is duplicate-free, because every closed segment is
+	// already persisted the moment it closes (the loop's TurnSink),
+	// which a full-tail merge would double-render. Same h.mu, same
+	// replace semantics.
+	openTail []transcriptItem
 }
 
 // runHub tracks detached runs by session id. It is the reattach
@@ -122,6 +130,45 @@ func (h *runHub) setTail(run *activeRun, items []transcriptItem) {
 	if cur, ok := h.runs[run.id]; ok && cur == run {
 		run.tail = items
 	}
+}
+
+// setOpenTail stores the run's open-segment items (the chat panel's
+// composition source; runs.go comment on activeRun.openTail). The same
+// cur == run guard.
+func (h *runHub) setOpenTail(run *activeRun, items []transcriptItem) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cur, ok := h.runs[run.id]; ok && cur == run {
+		run.openTail = items
+	}
+}
+
+// openItems returns the session's live run's open-segment items. ok is
+// false when no run holds the session's slot.
+func (h *runHub) openItems(id string) ([]transcriptItem, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	run, ok := h.runs[id]
+	if !ok {
+		return nil, false
+	}
+	return run.openTail, true
+}
+
+// firstActive returns one live session id - the chat panel's focus
+// seed (chat_panel.go). Among concurrent runs the pick is
+// lexicographically first for determinism; per-session concurrency is
+// one run each, so realistically the map holds one.
+func (h *runHub) firstActive() (string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	first := ""
+	for id := range h.runs {
+		if first == "" || id < first {
+			first = id
+		}
+	}
+	return first, first != ""
 }
 
 // tailItems returns the session's live run's transcript tail, for the
@@ -240,6 +287,9 @@ func (h *runHub) finish(run *activeRun) {
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
 func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []ai.Message, tools map[string]core.Tool, req chatRequest) {
+	// Chat panel (chat-last 1/3): NewServer always wires the capsule;
+	// no nil guard needed here.
+	s.chat.beginRun(req.SessionID)
 	ctx, cancel := context.WithTimeout(runCtx, s.runTimeout)
 	// Register the internal cancel BEFORE the goroutine starts: a stop
 	// request arriving during launch must find the run cancellable, not
@@ -247,6 +297,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 	s.runs.registerCancel(run, cancel)
 	go func() {
 		defer s.runs.finish(run)
+		// The chat panel's exit hook runs BEFORE the hub releases the
+		// slot: the ephemeral final rows still read the live tail.
+		defer s.chat.endRun(req.SessionID)
 		defer cancel()
 		// detached runs carry the session id too: task tools in the detached
 		// loop link to the same conversation the request started
@@ -270,14 +323,21 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		meter := newRunMeter()
 		for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
+			// Chat panel hook (chat-last 1/3): one call per event -
+			// token chunks batch, structural events flush.
+			s.chat.runEvent(req.SessionID, event)
 			meter.tick(event)
-			// Live-tail snapshot (card t_692254f7): the accumulator's state
-			// right after this event becomes the transcript endpoint's
-			// reattach merge - a refresh mid-run restores the open thinking
-			// block, the running tool call (elapsed ticking from the call's
-			// own start) and the segments not persisted yet. Built on this
-			// goroutine after accumulate; the hub only swaps the slice.
+			// Live-tail snapshot (card t_692254f7): the accumulator's
+			// state right after this event becomes the transcript
+			// endpoint's reattach merge - a refresh mid-run restores
+			// the open thinking block, the running tool call (elapsed
+			// ticking from the call's own start) and the segments not
+			// persisted yet. Built on this goroutine after accumulate;
+			// the hub only swaps the slice. The open segment rides the
+			// same rebuild into the hub (runs.go openTail) - the chat
+			// panel composes persisted history + open.
 			s.runs.setTail(run, liveTranscriptItems(recs, rec, time.Now()))
+			s.runs.setOpenTail(run, liveTranscriptItems(nil, rec, time.Now()))
 			// Usage arrives on each stream_end; sum every turn of the run.
 			if se, ok := event.(core.StreamEvent); ok {
 				if end, ok := se.Event.(ai.StreamEnd); ok {
