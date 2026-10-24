@@ -20,6 +20,12 @@ type HTTPChannel struct {
 	runTimeout time.Duration // detached-run wall-clock cap from config
 	titleModel string        // title_model knob from config
 	srv        *Server
+	// hub is the process-wide run registry (t_c6f13a82): one per
+	// plugin, shared by every bind's server. A second bind must not get
+	// a second hub - the action pipe's launchRun registers on the
+	// capsule's pinned last-started server, and with per-bind hubs the
+	// transcript/events reads on the other mirrors go blind to that run.
+	hub *runHub
 	// chat is the canvas capsule the plugin registered (chat-last 1/3):
 	// Start binds it to this channel's server before the canvas runtime
 	// builds - the snapshot and the action pipe meet the served state.
@@ -41,6 +47,14 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	if c.chat != nil {
 		c.srv.chat = c.chat
 		c.srv.chat.srv = c.srv
+	}
+	// Multi-bind mirror (t_c6f13a82): every bind's server joins the one
+	// process-wide run registry, so a run launched through the action
+	// pipe on any mirror is visible to the transcript/events reads and
+	// the SSE attach on every other - the runHub is the reattach
+	// surface's source of truth and it is per-process, not per-bind.
+	if c.hub != nil {
+		c.srv.runs = c.hub
 	}
 	// Canvas transport (arc 3b): the runtime is built from the fully
 	// mounted Context after MountAll - the same registration point
