@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -669,4 +670,230 @@ func TestMemoryRemovalProof(t *testing.T) {
 	// them; layers never import modules). Compile-time proof:
 	_ = core.MemoryProvider(nil)
 	t.Log("PROOF removed: seam nil, no memory-shaped tools, no memory prompt block, the action pipe answers ErrUnknownModule, cron keeps mounting (deliver=memory degrades through its nil-guard), the store files stay on disk - data is not code; core/seams.go memory types remain - documented as intentional")
+}
+
+// TestDelegateRemovalProof is the arc 6 delegate-capsule proof (card
+// t_47675b6a), the fifth worked proof in this file. Delegate is another
+// born-capsule, but the wired kind: the inject seam (ctx.InjectedMessages
+// + ctx.PendingDelegations), the consolidated delegate tool and its two
+// alias shims, and the finished-things emitter capture all ship from the
+// plugin's single Mount, and the module ships nothing else - no command,
+// no REST route, no skills, and no canvas panel (nothing rendered
+// delegate before the arc; adding one is a behavior change, not a
+// migration). The two mounts are the proof:
+//
+//  1. WITH delegate: the inject seam and pending count are mounted, the
+//     registry carries the delegate tool plus the task/status alias
+//     shims, a status call answers the live listing, and a real spawn
+//     (OMEGA_BIN -> /bin/echo: the child `run`s, echo just prints) pushes
+//     the result through the inject channel and emits one finished-things
+//     record through the notifications edge - the wiring the
+//     notifications proof exercises from the receive side.
+//  2. WITHOUT delegate: the inject seam and pending count are nil, no
+//     delegate-shaped tool is left, no delegate-qualified action or panel
+//     exists, and the notifications seam still mounts - the Requires edge
+//     points from delegate AT notifications, not the reverse, so the
+//     removal takes no dependents with it. Delegate keeps no disk state
+//     (its task map is in-memory), so data-is-not-code holds vacuously.
+//
+// The core types stay (core/messages.go InjectedMessage, core/seams.go's
+// ctx.InjectedMessages / PendingDelegations fields) - the seam signature
+// references them and layers never import modules. Intentional residue,
+// documented: this test compiles them to prove it. The OMEGA_SUBAGENT
+// recursion guard is the tool's own env wiring on the spawn - nothing
+// outside the module implements the guard.
+func TestDelegateRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// declared data, recipe step 1: no other plugin's Requires may
+	// name delegate - a hit here is the removal recipe's stop signal
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if req == "delegate" {
+				t.Fatalf("FULL MOUNT precondition: %q requires delegate - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.InjectedMessages == nil {
+		t.Fatal("FULL MOUNT: inject seam nil - the capsule did not mount")
+	}
+	if ctx.PendingDelegations == nil {
+		t.Fatal("FULL MOUNT: pending-delegations func nil - the capsule did not mount")
+	}
+	if n := ctx.PendingDelegations(); n != 0 {
+		t.Fatalf("FULL MOUNT: pending delegations = %d, want 0 on a fresh mount", n)
+	}
+	t.Log("PROOF mount=full: inject seam mounted (ctx.InjectedMessages + ctx.PendingDelegations), pending count 0")
+
+	// the tool face: the registry carries the consolidated delegate tool
+	// with its task/status actions and the two alias shims
+	var delegateTool core.Tool
+	foundTool, foundTaskShim, foundStatusShim := false, false, false
+	for _, tp := range ctx.ToolProviders {
+		for name, tool := range tp.Tools() {
+			switch name {
+			case "delegate":
+				delegateTool, foundTool = tool, true
+			case "delegate.task":
+				foundTaskShim = foundTaskShim || tool.AliasOf == "delegate"
+			case "delegate.status":
+				foundStatusShim = foundStatusShim || tool.AliasOf == "delegate"
+			}
+		}
+	}
+	if !foundTool {
+		t.Fatal("FULL MOUNT: the delegate tool is missing from the registry")
+	}
+	if !foundTaskShim || !foundStatusShim {
+		t.Fatalf("FULL MOUNT: alias shims missing (task=%v status=%v)", foundTaskShim, foundStatusShim)
+	}
+	t.Log("PROOF tool wiring: registry carries the delegate tool + the delegate.task / delegate.status alias shims")
+
+	// the status arm answers the live listing
+	res, runErr := delegateTool.Run(context.Background(), map[string]any{"action": "status"})
+	if runErr != nil || !strings.Contains(res, "Running: 0") || !strings.Contains(res, "No tasks.") {
+		t.Fatalf("FULL MOUNT: delegate status failed (res=%s err=%v)", res, runErr)
+	}
+
+	// the spawn arm, end to end: OMEGA_BIN -> /bin/echo, the child
+	// `run`s, echo just prints the prompt back. The result must ride
+	// the inject channel and the finished-things edge must emit one
+	// chat record (echo exits 0, so verdict ok).
+	echo := "/bin/echo"
+	if _, err := os.Stat(echo); err != nil {
+		echo = "/usr/bin/echo"
+		if _, err := os.Stat(echo); err != nil {
+			t.Skip("no /bin/echo or /usr/bin/echo on this host")
+		}
+	}
+	t.Setenv("OMEGA_BIN", echo)
+	drained := make(chan core.InjectedMessage, 1)
+	go func() {
+		select {
+		case m := <-ctx.InjectedMessages:
+			drained <- m
+		case <-time.After(10 * time.Second):
+		}
+	}()
+	res, runErr = delegateTool.Run(context.Background(), map[string]any{"action": "task", "prompt": "arc 6 proof"})
+	if runErr != nil || !strings.Contains(res, "task-1") {
+		t.Fatalf("FULL MOUNT: delegate task spawn failed (res=%s err=%v)", res, runErr)
+	}
+	select {
+	case m := <-drained:
+		if m.Source != "delegate:task-1" {
+			t.Fatalf("FULL MOUNT: injected message source = %q, want delegate:task-1", m.Source)
+		}
+		if !strings.Contains(m.Text, "run arc 6 proof") {
+			t.Fatalf("FULL MOUNT: injected result lost the child output: %.80q", m.Text)
+		}
+	case <-time.After(9 * time.Second):
+		t.Fatal("FULL MOUNT: the spawn result never landed on the inject channel")
+	}
+	// finish() emits after it injects - the record may land a beat
+	// after the drain, so poll the store briefly
+	sawFinish := false
+	for i := 0; i < 50 && !sawFinish; i++ {
+		notes, _, err := ctx.Notifications.List(context.Background(), false, 10, 0)
+		if err != nil {
+			t.Fatalf("notifications list: %v", err)
+		}
+		for _, n := range notes {
+			if n.Kind == "chat" && n.SourceID == "task-1" && n.Verdict == "ok" {
+				sawFinish = true
+			}
+		}
+		if !sawFinish {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	if !sawFinish {
+		notes, _, _ := ctx.Notifications.List(context.Background(), false, 10, 0)
+		t.Fatalf("FULL MOUNT: no chat/task-1/ok finished-things record from the spawn: %+v", notes)
+	}
+	t.Log("PROOF spawn: the echo child's result rode the inject channel; one chat finished-things record emitted through the notifications edge")
+
+	// the action pipe: delegate ships no panel and no actions - even
+	// the full mount has nothing to route
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	for _, p := range canvas.Snapshot() {
+		if p.ID == "delegate" {
+			t.Fatalf("FULL MOUNT: unexpected delegate panel in the snapshot: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "delegate" {
+				t.Fatalf("FULL MOUNT: unexpected delegate-qualified action on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := canvas.Dispatch(core.ActionCall{Module: "delegate", Action: "status"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("FULL MOUNT: dispatch answered %v, want ErrUnknownModule (delegate declares no actions)", err)
+	}
+	t.Log("PROOF action-pipe: no panel, no actions - the pipe answers ErrUnknownModule on the full mount (module ships no canvas surface by design)")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "delegate" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctx2.InjectedMessages != nil {
+		t.Fatal("REMOVED MOUNT: inject seam still mounted")
+	}
+	if ctx2.PendingDelegations != nil {
+		t.Fatal("REMOVED MOUNT: pending-delegations func still mounted")
+	}
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.Contains(name, "delegate") {
+				t.Fatalf("REMOVED MOUNT: delegate-shaped tool %q survived the removal", name)
+			}
+		}
+	}
+	// the emitter edge points from delegate AT notifications, not the
+	// reverse: the notifications seam must still mount (its own proof
+	// removes the emitters with it - that is the counter-case)
+	if ctx2.Notifications == nil {
+		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it depends on")
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	for _, p := range noCanvas.Snapshot() {
+		if p.ID == "delegate" {
+			t.Fatalf("REMOVED MOUNT: delegate panel survived the removal: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "delegate" {
+				t.Fatalf("REMOVED MOUNT: delegate-qualified action survived on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "delegate", Action: "status"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
+	}
+	// core types remain - intentional (the seam signature references
+	// them; layers never import modules). Compile-time proof:
+	_ = core.InjectedMessage{Text: "proof", Source: "delegate:task-1"}
+	t.Log("PROOF removed: inject seam nil, no pending-delegations func, no delegate-shaped tools, no delegate panel or actions, notifications seam still mounted (the Requires edge points at it, not from it); delegate keeps no disk state (in-memory task map) - data is not code holds vacuously; core.InjectedMessage + the ctx seam fields remain - documented as intentional")
 }
