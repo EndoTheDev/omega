@@ -105,14 +105,18 @@ func (h *Hub) Ask(ctx context.Context, card core.VerdictPrompt) (core.Verdict, e
 	card.ExpiresAt = time.Now().Add(timeout)
 
 	state := &cardState{prompt: card, answer: make(chan core.Verdict, 1)}
+
+	// Persist the card BEFORE the pause - and before the card enters
+	// the pending list - so the audit trail always reads
+	// [verdict_card, verdict]: a surface only learns the card exists
+	// through Pending, which starts below. The session is card.SessionID
+	// (persistAs never scans); best effort, the question itself never
+	// fails on a persistence problem.
+	h.persistAs(card.SessionID, ai.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
+
 	h.mu.Lock()
 	h.cards = append(h.cards, state)
 	h.mu.Unlock()
-
-	// Persist the card BEFORE the pause completes the audit trail even
-	// if the process dies mid-question. Best effort: persistence must
-	// never block or fail the question itself.
-	h.persist(ai.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
 
 	timer := time.AfterFunc(timeout, func() { h.expire(card.ID) })
 	defer timer.Stop()
@@ -146,13 +150,17 @@ func (h *Hub) expire(cardID string) {
 	c.settled = true
 	c.expired = true
 	record := ai.NewVerdict(cardID, nil, nil, "", false, true)
-	c.answer <- core.Verdict{CardID: cardID, Expired: true}
 	h.mu.Unlock()
+
+	// The record persists before Ask wakes: same contract as Answer -
+	// the waiter (the tool result) sees the expiry only after the audit
+	// row exists.
+	h.persist(record)
+	c.answer <- core.Verdict{CardID: cardID, Expired: true}
 
 	if h.logger != nil {
 		h.logger.Printf("verdict card %s expired with no answer", cardID)
 	}
-	h.persist(record)
 }
 
 // Answer implements core.VerdictsProvider. cardID empty means the
@@ -275,10 +283,14 @@ func (h *Hub) Answer(sessionID, cardID string, v core.Verdict) (core.Verdict, er
 		labels = []string{v.Option}
 	}
 	record := ai.NewVerdict(cardID, ixs, labels, v.Text, v.Skipped, false)
-	c.answer <- v
 	h.mu.Unlock()
 
+	// The record persists before Ask wakes (the seam contract): the
+	// first answer returns - and the blocked turn resumes - only after
+	// its audit row exists, so the transcript can never read
+	// [verdict, verdict_card].
 	h.persist(record)
+	c.answer <- v
 	return v, nil
 }
 
@@ -337,7 +349,16 @@ func (h *Hub) persist(msg ai.Message) {
 		}
 	}
 	h.mu.Unlock()
-	if session == "" {
+	h.persistAs(session, msg)
+}
+
+// persistAs is persist with the session already known - the Ask path
+// uses it so the card row lands before the card becomes answerable
+// (registration), not just before the pause. An empty session (a card
+// the hub never registered under a session) persists nothing.
+func (h *Hub) persistAs(session string, msg ai.Message) {
+	cardID := cardOf(msg)
+	if h.store == nil || session == "" || cardID == "" {
 		return
 	}
 	// Ephemeral sessions (the `eph-` namespace minted by the HTTP
