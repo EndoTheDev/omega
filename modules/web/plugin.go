@@ -26,6 +26,17 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the Extension from config and appends it to the
 // additive ToolProviders slice.
+//
+// This Mount is the module's whole surface (arc 6 capsule, card
+// t_23f42712): the consolidated web tool with its one-release alias
+// shims (web.search, web.fetch) and the web config stanza (routed to
+// ctx.Configs["web"] via ConfigKey; the base_url override and the
+// provider-host mirror fallback derive in the host's ConfigSection)
+// all ship from here, and the module ships nothing else - no command,
+// no REST route, no skills, no exclusive seam, no canvas panel (nothing
+// rendered web before the arc). Web Requires nothing and nothing
+// Requires web. Removal proof: TestWebRemovalProof
+// (cmd/omega/removal_test.go).
 func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["web"].(Config); ok {
