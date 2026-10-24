@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -896,4 +897,221 @@ func TestDelegateRemovalProof(t *testing.T) {
 	// them; layers never import modules). Compile-time proof:
 	_ = core.InjectedMessage{Text: "proof", Source: "delegate:task-1"}
 	t.Log("PROOF removed: inject seam nil, no pending-delegations func, no delegate-shaped tools, no delegate panel or actions, notifications seam still mounted (the Requires edge points at it, not from it); delegate keeps no disk state (in-memory task map) - data is not code holds vacuously; core.InjectedMessage + the ctx seam fields remain - documented as intentional")
+}
+
+// TestMCPRemovalProof is the arc 6 mcp-capsule proof (card
+// t_cf6b7795), the sixth worked proof in this file. MCP is the
+// additive-seam born-capsule: the bridge (stdio + Streamable HTTP MCP
+// servers), its server-qualified discovered tools ("server.tool"), and
+// the whole env/mcp.yaml config load ship from files in modules/mcp,
+// and the single Mount is the module's whole surface - no command, no
+// REST route, no skills, no prompt section, no canvas panel (nothing
+// rendered mcp before the arc; adding one is a behavior change, not a
+// migration). The additive tools seam (ctx.ToolProviders) is core
+// vocabulary every tool module shares, not an mcp-owned seam slot, so
+// the module keeps no core types of its own. The two mounts are the
+// proof:
+//
+//  1. WITH mcp: MCP_SERVERS points at a fake stdio MCP server (the
+//     same fixture style the module's own tests use) and the registry
+//     carries the discovered proof.echo tool; a real call round-trips
+//     through the JSON-RPC stdio bridge. The action pipe answers
+//     ErrUnknownModule because the module declares no actions.
+//  2. WITHOUT mcp: with MCP_SERVERS still set - nothing outside the
+//     module reads it - no mcp-shaped tool is left, no /mcp command
+//     exists, the action pipe still answers ErrUnknownModule, and the
+//     other modules mount unchanged. MCP names no Requires edge and
+//     nothing requires mcp, so the removal takes no dependents with
+//     it.
+//
+// The bridge discovers tools live at mount time and persists no state
+// (mcp.yaml/mcp.json is user config, owned by the user): data is not
+// code holds vacuously. The additive seam types (core.Tool,
+// core.ToolProvider, ctx.ToolProviders) remain regardless - shared
+// vocabulary, not mcp residue; this test compiles them to prove it.
+func TestMCPRemovalProof(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	cfg := DefaultConfig()
+
+	// the fake MCP server: stdio JSON-RPC, one echo tool. The proof
+	// makes exactly one tools/call, so the script exits after it - a
+	// subprocess the bridge holds open must never outlive the test.
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		if python, err = exec.LookPath("python"); err != nil {
+			t.Skip("no python3/python on this host")
+		}
+	}
+	script := `import sys, json
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        req = json.loads(line)
+    except Exception:
+        continue
+    if "id" not in req:
+        continue  # notification (e.g. notifications/initialized)
+    method = req.get("method", "")
+    if method == "initialize":
+        result = {"protocolVersion": "2025-11-25",
+                  "serverInfo": {"name": "proof-mcp", "version": "0.1.0"},
+                  "capabilities": {}}
+    elif method == "tools/list":
+        result = {"tools": [
+            {"name": "echo", "description": "Removal proof echo tool",
+             "inputSchema": {"type": "object"}},
+        ]}
+    elif method == "tools/call":
+        args = req.get("params", {}).get("arguments", {})
+        result = {"content": [{"type": "text", "text": "echoed:" + json.dumps(args, sort_keys=True)}],
+                  "isError": False}
+    else:
+        continue
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n")
+    sys.stdout.flush()
+    if method == "tools/call":
+        sys.exit(0)  # the bridge made its one call; do not outlive the test
+`
+	scriptPath := filepath.Join(home, "removal_proof_mcp_server.py")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o644); err != nil {
+		t.Fatalf("write fake mcp server: %v", err)
+	}
+	servers, err := json.Marshal(map[string]any{
+		"servers": []map[string]any{{
+			"name":    "proof",
+			"command": python,
+			"args":    []string{scriptPath},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("mcp servers json: %v", err)
+	}
+	t.Setenv("MCP_SERVERS", string(servers))
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// recipe step 1, declared data: mcp requires nothing - and no other
+	// plugin's Requires may name mcp - a hit here is the removal
+	// recipe's stop signal
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if req == "mcp" {
+				t.Fatalf("FULL MOUNT precondition: %q requires mcp - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+
+	// the tool face: the registry carries the server-qualified tool the
+	// bridge discovered at mount time (buildPlugins -> NewPluginFromEnv
+	// -> the JSON-RPC discovery round-trip), and a real call answers
+	// through the same bridge
+	echoTool, err := pluginTool(ctx, "proof.echo")
+	if err != nil {
+		fatalTools := ""
+		for _, tp := range ctx.ToolProviders {
+			for name := range tp.Tools() {
+				fatalTools += " " + name
+			}
+		}
+		t.Fatalf("FULL MOUNT: the proof.echo tool is missing from the registry (tools:%s)", fatalTools)
+	}
+	res, runErr := echoTool(context.Background(), map[string]any{"msg": "arc 6 proof"})
+	if runErr != nil || !strings.Contains(res, "echoed:") || !strings.Contains(res, "arc 6 proof") {
+		t.Fatalf("FULL MOUNT: proof.echo round-trip failed (res=%s err=%v)", res, runErr)
+	}
+	t.Logf("PROOF mount=full: bridge mounted as an additive tool provider, proof.echo answered the call (%s)", strings.TrimSpace(res))
+
+	// the action pipe: mcp ships no panel and no actions - even the
+	// full mount has nothing to route
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	for _, p := range canvas.Snapshot() {
+		if p.ID == "mcp" {
+			t.Fatalf("FULL MOUNT: unexpected mcp panel in the snapshot: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "mcp" {
+				t.Fatalf("FULL MOUNT: unexpected mcp-qualified action on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := canvas.Dispatch(core.ActionCall{Module: "mcp", Action: "list_servers"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("FULL MOUNT: dispatch answered %v, want ErrUnknownModule (mcp declares no actions)", err)
+	}
+	// the TUI surface: the module registers no command
+	for _, cmd := range ctx.Commands {
+		if cmd.Name == "/mcp" {
+			t.Fatal("FULL MOUNT: an /mcp command exists - the module ships none")
+		}
+	}
+	t.Log("PROOF action-pipe: no panel, no actions, no /mcp - the pipe answers ErrUnknownModule on the full mount (module ships no canvas surface by design)")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "mcp" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	// the tool registry: no proof.* tool, and nothing answered the env
+	// that still points at the fake server - nothing outside the module
+	// reads MCP_SERVERS
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.HasPrefix(name, "proof.") || strings.Contains(name, "mcp") {
+				t.Fatalf("REMOVED MOUNT: mcp-shaped tool %q survived the removal", name)
+			}
+		}
+	}
+	for _, cmd := range ctx2.Commands {
+		if cmd.Name == "/mcp" {
+			t.Fatal("REMOVED MOUNT: an /mcp command survived the removal")
+		}
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	for _, p := range noCanvas.Snapshot() {
+		if p.ID == "mcp" {
+			t.Fatalf("REMOVED MOUNT: an mcp panel survived the removal: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "mcp" {
+				t.Fatalf("REMOVED MOUNT: an mcp-qualified action survived on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "mcp", Action: "list_servers"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
+	}
+	// the neighbors keep mounting: the removal takes no dependents
+	// (mcp requires nothing, nothing requires mcp)
+	if ctx2.Notifications == nil {
+		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
+	}
+	// the additive tools seam remains - shared vocabulary, not mcp
+	// residue (layers never import modules; core has no mcp types at
+	// all). Compile-time proof:
+	_ = core.Tool{}
+	_ = core.ToolProvider(nil)
+	t.Log("PROOF removed: no mcp-shaped tools (MCP_SERVERS still set, nothing outside the module reads it), no /mcp command, no mcp panel or actions, the action pipe answers ErrUnknownModule, the other modules mount unchanged; the bridge persists no state (tools are discovered live, mcp.yaml is user config) - data is not code holds vacuously; the additive tools seam (core.Tool / core.ToolProvider / ctx.ToolProviders) remains - shared vocabulary, documented as intentional")
 }
