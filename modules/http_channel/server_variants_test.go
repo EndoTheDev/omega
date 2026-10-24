@@ -185,6 +185,14 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 		t.Fatalf("user item carries no id: %+v", items)
 	}
 
+	// PIN (t_c6f13a82, chat-last 2a): the sink goes in BEFORE the
+	// select so the capture sees only the select's repaint.
+	var selPainted []core.Panel
+	s.chat.SetPanelUpdate(func(p core.Panel) error {
+		selPainted = append(selPainted, p)
+		return nil
+	})
+
 	// select variant 1 (the first response)
 	code, sel := postJSON(t, ts.URL+"/sessions/vr2/variants",
 		fmt.Sprintf(`{"message_id": %q, "select": 0}`, userID))
@@ -195,6 +203,24 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	b, _ := variants[0].(map[string]any)
 	if active, _ := b["active"].(float64); int(active) != 0 {
 		t.Fatalf("select response = %+v, want active 0", b)
+	}
+	// PIN (t_c6f13a82, chat-last 2a): a select is not a run - no run
+	// event or delta carries the swap, and the canvas snapshot serves
+	// the last PUSHED panel state. The select handler must repaint the
+	// focused panel; otherwise the webui's post-select snapshot
+	// refetch keeps the OLD variant rows forever (journey 30 red).
+	if len(selPainted) == 0 {
+		t.Fatal("variant select never repainted the chat panel")
+	}
+	last := selPainted[len(selPainted)-1].Payload.(core.ChatPayload)
+	painted := ""
+	for _, row := range last.Rows {
+		for _, blk := range row.Blocks {
+			painted += blk.Content + "|"
+		}
+	}
+	if !strings.Contains(painted, "first answer") || strings.Contains(painted, "second answer") {
+		t.Fatalf("panel after select = %q, want the selected variant (first answer) only", painted)
 	}
 	// PERSISTENCE: a fresh reload still selects variant 1
 	_, tx = transcriptOf(t, ts, "vr2")
