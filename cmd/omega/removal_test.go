@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -152,4 +154,186 @@ func payloadJSON(v any) string {
 		return ""
 	}
 	return string(b)
+}
+
+// TestKanbanRemovalProof is the arc 5 removal proof (card t_7bd3dc06,
+// the flagship reference the removal recipe doc is written against):
+// kanban is the biggest module - tools, commands, panels, the REST
+// surface. The two mounts are the proof:
+//
+//  1. WITH kanban: the canvas carries the task panel and the board
+//     switcher, the task tool's mutations push through the same
+//     registration that declares the panels, and the action pipe
+//     completes a task and runs a board switch.
+//  2. WITHOUT kanban: the seam is nil (the REST routes' 501 guard),
+//     the canvas carries no kanban panel, the tool registry has no
+//     task tools, and the /board commands are unregistered. Nothing
+//     else in the tree depends on the module - no Requires edge names
+//     kanban, so the removal takes no dependents with it.
+//
+// The core types stay (core/kanban.go, the KanbanProvider seam
+// signature references them; layers never import modules) - that is
+// documented as intentional, and this test compiles a core.KanbanTask
+// to prove it.
+func TestKanbanRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.Kanban == nil {
+		t.Fatal("FULL MOUNT: kanban seam nil - the module did not mount")
+	}
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	foundTasks, foundBoards := false, false
+	for _, p := range canvas.Snapshot() {
+		hasModule := false
+		for _, a := range p.Actions {
+			if a.Module == "kanban" {
+				hasModule = true
+			}
+		}
+		if hasModule && p.ID == "tasks" {
+			foundTasks = true
+		}
+		if hasModule && p.ID == "boards" {
+			foundBoards = true
+		}
+	}
+	if !foundTasks || !foundBoards {
+		t.Fatalf("FULL MOUNT: capsule panels missing (tasks=%v boards=%v): %+v", foundTasks, foundBoards, canvas.Snapshot())
+	}
+	t.Log("PROOF mount=full: seam mounted, canvas carries the task panel + the board switcher, module-qualified")
+
+	// the task tool mutates: its panel refresh pushes through the
+	// registration - the wiring lives in the module, not any transport
+	var deltas []core.Panel
+	live, err := agent.NewCanvas(ctx, func(ev core.Event) {
+		if d, ok := ev.(core.ViewModelDelta); ok {
+			deltas = append(deltas, d.Panel)
+		}
+	})
+	if err != nil {
+		t.Fatalf("canvas 2: %v", err)
+	}
+	taskRun, err := pluginTool(ctx, "task")
+	if err != nil {
+		t.Fatalf("task tool: %v", err)
+	}
+	cctx := context.Background()
+	out, err := taskRun(cctx, map[string]any{"action": "create", "title": "removal proof task"})
+	if err != nil {
+		t.Fatalf("task create: %v", err)
+	}
+	fields := strings.Fields(out)
+	if len(fields) < 2 || !strings.HasPrefix(fields[0], "created") {
+		t.Fatalf("create result shape: %q", out)
+	}
+	id := fields[1]
+	found := false
+	for _, d := range deltas {
+		if d.ID == "tasks" && strings.Contains(payloadJSON(d.Payload), "removal proof task") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("FULL MOUNT: the tool's create pushed no task panel (deltas=%d)", len(deltas))
+	}
+	t.Log("PROOF tool wiring: task create pushed the task panel through the live canvas")
+
+	// the action pipe completes the task - the same grammar the tool
+	// uses, routed by module + action id
+	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "complete_task", Args: json.RawMessage(`{"id": "` + id + `"}`)}); err != nil {
+		t.Fatalf("dispatch complete_task: %v", err)
+	}
+	kt, err := ctx.Kanban.GetTask(cctx, "", id)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if kt.Status != "done" {
+		t.Fatalf("FULL MOUNT: complete_task left %s at %q", id, kt.Status)
+	}
+	// and the switcher runs the /board equivalence
+	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "switch_board", Args: json.RawMessage(`{"board": "main"}`)}); err != nil {
+		t.Fatalf("dispatch switch_board: %v", err)
+	}
+	t.Logf("PROOF action-pipe: complete_task closed %s, switch_board answered the switcher", id)
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "kanban" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctx2.Kanban != nil {
+		t.Fatal("REMOVED MOUNT: kanban seam still mounted")
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	for _, p := range noCanvas.Snapshot() {
+		hasModule := false
+		for _, a := range p.Actions {
+			if a.Module == "kanban" {
+				hasModule = true
+			}
+		}
+		if hasModule || p.ID == "tasks" || p.ID == "boards" {
+			t.Fatalf("REMOVED MOUNT: capsule surface survived: panel %+v", p)
+		}
+	}
+	// the tool registry: no task tool, no alias shims
+	names := map[string]bool{}
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			names[name] = true
+		}
+	}
+	if names["task"] {
+		t.Fatal("REMOVED MOUNT: the task tool survived the removal")
+	}
+	for name := range names {
+		if strings.HasPrefix(name, "task.") {
+			t.Fatalf("REMOVED MOUNT: legacy shim %q survived the removal", name)
+		}
+	}
+	// the commands: /board and /boards are unregistered
+	for _, cmd := range ctx2.Commands {
+		if cmd.Name == "/board" || cmd.Name == "/boards" {
+			t.Fatalf("REMOVED MOUNT: command %q survived the removal", cmd.Name)
+		}
+	}
+	// core types remain - intentional (the seam signature references
+	// them; layers never import modules). Compile-time proof:
+	_ = core.KanbanTask{}
+	_ = core.KanbanProvider(nil)
+	t.Log("PROOF removed: seam nil (REST routes fall through to their 501 guard), canvas carries no kanban panel, no task tools, no /board commands; core/kanban.go types remain - documented as intentional")
+}
+
+// pluginTool finds one registered tool by name across the mounted
+// ToolProviders and returns its Run.
+func pluginTool(ctx *core.Context, name string) (func(context.Context, map[string]any) (string, error), error) {
+	for _, tp := range ctx.ToolProviders {
+		if tool, ok := tp.Tools()[name]; ok && tool.AliasOf == "" && tool.Run != nil {
+			return tool.Run, nil
+		}
+	}
+	return nil, fmt.Errorf("tool %q not registered", name)
 }
