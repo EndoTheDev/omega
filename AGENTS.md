@@ -65,11 +65,24 @@ Terse operational rules. Layer references live in `docs/` (map below);
 - **Plugin contract.** Every extension implements `agent.Plugin`
   (`Name`, `Provides`, `Requires`, `Mount`). Exclusive seams take one
   plugin per slot (`provider`, `compactor`, `store`, `skills`, `loop`,
-  `logging`, `memory`, `prompt_builder`, `frontend`, `trust`, `cron`).
+  `logging`, `memory`, `prompt_builder`, `frontend`, `trust`, `cron`,
+  `kanban`, `notifications`, `verdicts`).
   `tools` and `channel` are additive. Commands register via
   `ctx.Commands` + `ctx.CommandHandler` (chain the previous handler on
   miss); a handler returns `CommandResult` with optional `CmdAction`
   directives - the host interprets actions, extensions declare intent.
+- **Mount order.** Mount order is declared data: an extension whose
+  `Mount()` reads a seam another plugin owns needs a `Requires()` edge
+  naming that seam (delegate, kanban and cron require `notifications`).
+  `MountAll`'s topoSort is the only ordering - slice position in
+  `buildPlugins()` is a stable tiebreak (prompt-section authoring order
+  among independent plugins) and carries no dependency semantics.
+  Comment-law ordering is retired (card t_13a2af8a).
+- **Import law.** Modules import `core/` for contracts (types, events,
+  seams, messagetree); `agent/` is for the loop runtime and real helpers
+  only (`Plugin`, `MountAll`, `TurnSink`, profiles, `NewSessionID`).
+  No module imports another module - shared shapes live in core
+  (card t_fb49d5cf).
 - **New extension recipe.** Create `modules/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
   `buildPlugins()` in `cmd/omega/main.go`; append tools to
@@ -148,6 +161,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
 | ---- | ---------- | ---- |
 | `ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
 | `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAll`), events, shared types | `docs/architecture.md` |
+| `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
 | `modules/` | In-process extension packages (one `agent.Plugin` each) | `docs/architecture.md` (table), `modules/README.md` (authoring) |
 | `modules/ui/` | Nuxt 4 webui SPA, built output embedded into the binary | `docs/webui.md` |
 | `modules/http_channel/` | HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
@@ -194,6 +208,7 @@ go vet ./...      # no suspicious constructs
 - `docs/troubleshooting.md` - known failure modes
 - `docs/project-trust.md` - trust gate
 - `docs/pipeline.md` - the landing pipeline (merge train)
+- `docs/removing-a-module.md` - the module removal recipe (capsule law)
 - `modules/README.md` - extension authoring guide
 - `.agents/COMMIT.md` - commit convention and voice
 
