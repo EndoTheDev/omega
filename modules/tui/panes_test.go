@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -58,14 +60,19 @@ func TestPaneGeometry(t *testing.T) {
 	if geo.left != (paneRect{x: 0, y: 0, w: leftPaneWidth, h: geo.colH}) {
 		t.Fatalf("left = %+v", geo.left)
 	}
-	if geo.main.w != 120-leftPaneWidth-rightPaneWidth || geo.main.x != leftPaneWidth {
-		t.Fatalf("main = %+v", geo.main)
+	if geo.main.w != 120-leftPaneWidth-rightPaneWidth-2*gutterWidth || geo.main.x != leftPaneWidth+gutterWidth {
+		t.Fatalf("main = %+v (want x=%d w=%d)", geo.main, leftPaneWidth+gutterWidth, 120-leftPaneWidth-rightPaneWidth-2*gutterWidth)
 	}
 	if geo.right.x != 120-rightPaneWidth || geo.right.w != rightPaneWidth {
 		t.Fatalf("right = %+v", geo.right)
 	}
-	if geo.bottom != (paneRect{x: 0, y: geo.colH, w: 120, h: runPaneRows + 1}) {
+	if geo.bottom != (paneRect{x: 0, y: geo.colH + 1, w: 120, h: runPaneRows + 1}) {
 		t.Fatalf("bottom = %+v", geo.bottom)
+	}
+	// The two separator columns belong to no pane: gutters take no
+	// clicks (and the status rows hit nothing either).
+	if geo.paneAt(leftPaneWidth, 2) != "" || geo.paneAt(leftPaneWidth+gutterWidth+geo.main.w, 2) != "" {
+		t.Fatal("gutter columns must not map to a pane")
 	}
 	if paneGeometryFor(80, 24).active {
 		t.Fatal("80x24 must stay on the legacy layout")
@@ -117,6 +124,155 @@ func findLineIndex(lines []string, substr string) int {
 		}
 	}
 	return -1
+}
+
+// listPaneFake builds a notifications-shaped list panel: unread rows
+// with long titles - the shape the canvas list renderer serves.
+func listPaneFake() *fakePanelProvider {
+	long := strings.Repeat("pipeline stage ", 10) + "done"
+	return &fakePanelProvider{panels: []core.Panel{{
+		ID:    "notifications",
+		Title: "Notifications",
+		Kind:  "list",
+		Payload: map[string]any{
+			"unread": 1,
+			"rows": []any{
+				map[string]any{"id": 7, "kind": "kanban", "source_id": "src-a",
+					"title": long, "created_at": "2026-10-24T01:02:03Z", "read": false,
+					"action": map[string]any{"action": "mark_read", "label": "mark read"}},
+				map[string]any{"id": 6, "kind": "cron", "source_id": "src-b",
+					"title": "nightly sync", "read": true},
+			},
+		},
+		Actions: []core.PanelAction{
+			{ID: "mark_read", Label: "mark read", Module: "notifications"},
+			{ID: "mark_all", Label: "mark all read", Module: "notifications"},
+		},
+	}}}
+}
+
+// TestPaneRightRowsTruncateToPaneWidth: the right pane serves the row
+// renderer - unread/read markers with key fields, every row clipped to
+// the pane width with an ellipsis, no JSON dump, and the composed view
+// never overruns the terminal edge (t_c5b98609 fixes 1 and 2).
+func TestPaneRightRowsTruncateToPaneWidth(t *testing.T) {
+	fake := listPaneFake()
+	m := paneTestModel(t, &core.Context{PanelProviders: []core.PanelProvider{fake}})
+	paneSizedGeometry(t, m)
+
+	rows := renderCanvasPanels(rightPaneWidth, fake.panels)
+	for _, l := range strings.Split(rows, "\n") {
+		if got := lipgloss.Width(l); got > rightPaneWidth {
+			t.Fatalf("row overruns the pane width: %d %q", got, l)
+		}
+	}
+	if !strings.Contains(rows, "● ") || !strings.Contains(rows, "○ ") {
+		t.Fatalf("rows lost the read-state markers: %q", rows)
+	}
+	if strings.Contains(rows, "created_at") {
+		t.Fatalf("pane rows dump the payload JSON: %q", rows)
+	}
+	if !strings.Contains(rows, "…") {
+		t.Fatalf("long row not truncated with an ellipsis: %q", rows)
+	}
+
+	// Composed shell: no line exceeds the terminal edge.
+	view := m.View()
+	for i, l := range strings.Split(view, "\n") {
+		if got := lipgloss.Width(ansiStrip(l)); got > 120 {
+			t.Fatalf("view line %d overruns the terminal: %d %q", i, got, ansiStrip(l))
+		}
+	}
+	if !strings.Contains(ansiStrip(view), "1 unread") {
+		t.Fatalf("pane header shows no unread badge: %q", ansiStrip(view))
+	}
+	if !strings.Contains(ansiStrip(view), "nightly sync") {
+		t.Fatal("read row missing from the panels pane")
+	}
+}
+
+// TestPaneVisibleBoundaries: the four regions separate visibly - one
+// vertical separator column between each pair of columns, one
+// separator row between the columns and the run band, and the status
+// band as an inverted full-width floor (t_c5b98609 fix 3 and 5).
+func TestPaneVisibleBoundaries(t *testing.T) {
+	m := paneTestModel(t, &core.Context{PanelProviders: []core.PanelProvider{kanbanFake()}})
+	geo := paneSizedGeometry(t, m)
+	// The status-band inversion check needs real codes under a test
+	// run (the detected profile is otherwise plain); the profile is
+	// restored on the way out (every other suite strips ANSI).
+	oldProfile := lipgloss.DefaultRenderer().ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	defer lipgloss.SetColorProfile(oldProfile)
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	// The composition lands exactly on the screen height.
+	if len(lines) != 42 {
+		t.Fatalf("view rows = %d, want 42", len(lines))
+	}
+
+	// Gutter columns ride at the fixed offsets; each pair of columns
+	// is divided by a vertical rule.
+	for _, y := range []int{1, 5} {
+		r := []rune(ansiStrip(lines[y]))
+		if len(r) < geo.right.x+geo.right.w {
+			t.Fatalf("row %d too short for position checks: %q", y, ansiStrip(lines[y]))
+		}
+		if r[leftPaneWidth] != '│' || r[leftPaneWidth+gutterWidth+geo.main.w] != '│' {
+			t.Fatalf("row %d lost the vertical separators: %q", y, ansiStrip(lines[y]))
+		}
+	}
+
+	// The separator row sits between the columns and the run band; a
+	// full-width rule the run band's header rides below.
+	sep := ansiStrip(lines[geo.colH])
+	if sep != strings.Repeat("─", 120) {
+		t.Fatalf("separator row shape wrong: %q", sep)
+	}
+	if !strings.Contains(ansiStrip(lines[geo.colH+1]), "run") {
+		t.Fatalf("run band header not right below the separator: %q", ansiStrip(lines[geo.colH+1]))
+	}
+
+	// The status band is inverted (reverse video) and full width.
+	statusIdx := len(lines) - 1
+	if idx := strings.Index(lines[statusIdx], "\x1b[7"); idx < 0 {
+		t.Fatalf("status band not inverted: %q", lines[statusIdx])
+	}
+	if got := lipgloss.Width(ansiStrip(lines[statusIdx])); got != 120 {
+		t.Fatalf("status band width = %d, want 120", got)
+	}
+}
+
+// TestChatHintRowSeparatesRegions: the hint text lives on its own dim
+// row above the input - the cursor block never sits on it, the
+// textarea keeps no placeholder, and a queued-input note takes the row
+// while the run is busy (t_c5b98609 fix 4).
+func TestChatHintRowSeparatesRegions(t *testing.T) {
+	m := paneTestModel(t, nil)
+	if m.textarea.Placeholder != "" {
+		t.Fatalf("textarea still carries a placeholder: %q", m.textarea.Placeholder)
+	}
+	lines := strings.Split(ansiStrip(m.View()), "\n")
+	idx := findLineIndex(lines, "enter to send · ctrl+j newline · /help commands")
+	if idx < 0 {
+		t.Fatalf("hint row missing from the chat column: %v", lines)
+	}
+	if !strings.Contains(lines[idx+1], "┃") {
+		t.Fatalf("input prompt not directly below the hint row: %q", lines[idx+1])
+	}
+	if strings.Contains(lines[idx], "┃") {
+		t.Fatalf("hint row shares a line with the prompt: %q", lines[idx])
+	}
+
+	m.queuedInput = "check the flaky test"
+	view := ansiStrip(m.View())
+	if !strings.Contains(view, "queued: check the flaky test") {
+		t.Fatalf("queued note missing from the hint row: %q", view)
+	}
+	if strings.Contains(view, "enter to send") {
+		t.Fatalf("generic hint still visible while queued: %q", view)
+	}
 }
 
 // TestPaneFocusRing covers the focus grammar: tab walks left->main->right

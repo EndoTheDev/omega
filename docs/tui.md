@@ -98,6 +98,15 @@ the cron module (`modules/cron/`).
 | Esc       | Cancel running turn / close autocomplete          |
 | Ctrl+C    | Quit                                              |
 
+Pane shell keys (active above the minimum size; 100x22 and larger):
+
+| Key       | Action                                            |
+| --------- | --------------------------------------------------|
+| Tab       | Cycle pane focus (left -> chat -> panels -> run) with a sidebar or the run band focused |
+| Shift+Tab | Cycle pane focus backward                          |
+| 1-4       | Jump pane focus (1 sessions, 2 chat, 3 panels, 4 run) |
+| d         | /panels only: toggle the raw payload JSON view     |
+
 File paths pasted or dragged into the terminal are inserted into the
 prompt as text (bracketed paste support). See [cli.md](cli.md) for the
 binary's subcommands and [configuration.md](configuration.md) for the
