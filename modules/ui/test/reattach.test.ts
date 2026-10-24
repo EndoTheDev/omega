@@ -12,11 +12,6 @@ import {
 import type { StreamHandlers } from "../app/composables/omega.ts";
 
 const silent: StreamHandlers = {
-  onThinking: () => {},
-  onResponse: () => {},
-  onToolCall: () => {},
-  onToolResult: () => {},
-  onStatus: () => {},
   onUsage: () => {},
 };
 

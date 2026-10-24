@@ -3,7 +3,9 @@
 // create-then-send dance is dead). Covers the wire half (omega.ts:
 // bare body, the leading `event: session` frame names the created id)
 // and the host half (chat.ts submit binds the arriving id onto the
-// state + the dock tree). Run: node --test test/
+// state + the dock tree; the conversation itself paints through the
+// canvas chat panel's deltas - no transcript is built here).
+// Run: node --test test/
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -18,11 +20,6 @@ import {
 } from "../app/composables/chat.ts";
 
 const silent: StreamHandlers = {
-  onThinking: () => {},
-  onResponse: () => {},
-  onToolCall: () => {},
-  onToolResult: () => {},
-  onStatus: () => {},
   onUsage: () => {},
 };
 
@@ -65,7 +62,6 @@ describe("streamChat: the auto-create wire half", () => {
     );
     const handlers: StreamHandlers = {
       ...silent,
-      onResponse: (c) => seen.push(c),
       onSession: (id) => seen.push(`session:${id}`),
     };
     await assert.doesNotReject(() =>
@@ -73,7 +69,7 @@ describe("streamChat: the auto-create wire half", () => {
     );
     assert.equal(captured.length, 1);
     assert.equal("session_id" in (captured[0] as object), false, "bare body, no session_id");
-    assert.deepEqual(seen, ["session:sess-created", "hi"], "session frame first, run frames follow");
+    assert.deepEqual(seen, ["session:sess-created"], "the session frame binds, render frames are canvas-only now");
   });
 
   it("a session-keyed send carries session_id and never sees session frames", async () => {
@@ -88,14 +84,13 @@ describe("streamChat: the auto-create wire half", () => {
     );
     const handlers: StreamHandlers = {
       ...silent,
-      onResponse: (c) => seen.push(c),
       onSession: (id) => seen.push(`session:${id}`),
     };
     await assert.doesNotReject(() =>
       streamChat([{ role: "user", content: "q" }], "s1", handlers),
     );
     assert.equal((captured[0] as { session_id: string }).session_id, "s1");
-    assert.deepEqual(seen, ["hi"]);
+    assert.deepEqual(seen, []);
   });
 
   it("a session frame without an onSession handler is skipped harmlessly", async () => {
@@ -139,10 +134,8 @@ describe("chat host: auto-create bind half", () => {
     const st = host.states.get("c1")!;
     assert.equal(st.sessionId, "sess-created", "the state binds the created id");
     assert.deepEqual(bound, [["c1", "sess-created"]], "the dock tree binds it too");
-    // the transcript kept the user bubble + the streamed reply
-    assert.equal(st.transcript.length, 2);
-    assert.equal(st.transcript[0]?.kind, "message");
-    assert.equal(st.transcript[1]?.kind, "message");
+    // the canvas panel paints the conversation - the host builds none
+    assert.equal(st.restored.length, 0);
   });
 
   it("submit on a SAVED tab still POSTs session_id and binds nothing new", async () => {

@@ -13,7 +13,7 @@ import {
   renderTranscriptItems,
 } from "../app/composables/omega.ts";
 
-import type { TranscriptItem } from "../app/composables/chat.ts";
+import type { TranscriptItem } from "../app/composables/omega.ts";
 import type { TranscriptWireItem } from "../app/composables/omega.ts";
 
 // item builders keep the tests shape-honest: they are the same items the

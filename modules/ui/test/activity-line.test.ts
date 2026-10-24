@@ -6,7 +6,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { activityPhase } from "../app/composables/chat.ts";
-import type { TranscriptItem } from "../app/composables/chat.ts";
+import type { TranscriptItem } from "../app/composables/omega.ts";
 
 // same builders the live stream and the restore path produce
 const user = (content: string): TranscriptItem => ({

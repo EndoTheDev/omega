@@ -19,10 +19,10 @@
       {{ formatCtx }} ctx
     </span>
     <span
-      v-if="streaming && liveChunksPerSecond"
+      v-if="streaming && liveDeltasPerSecond"
       class="seg"
-      title="chunks received per second (live)">
-      {{ liveChunksPerSecond }} ch/s
+      title="canvas delta repaints per second (live)">
+      {{ liveDeltasPerSecond }} d/s
     </span>
     <span
       v-else-if="lastChunksPerSecond"
@@ -69,7 +69,7 @@
     tokens: number;
     contextSize: number;
     tokensPerSecond: number;
-    liveChunksPerSecond: number;
+    liveDeltasPerSecond: number;
     // last-known chunks/s (persisted last_run block, or the run that
     // just ended) - shown while no stream is live
     lastChunksPerSecond: number;

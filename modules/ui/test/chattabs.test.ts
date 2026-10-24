@@ -200,15 +200,17 @@ function setBusy(host: ReturnType<typeof createChatHost>, keys: string[]): void 
 }
 
 describe("chat host: per-tab states", () => {
-  it("two tabs on one session hold SEPARATE transcripts", () => {
+  it("two tabs on one session hold SEPARATE restoration state (the canvas paints both)", () => {
     const host = createChatHost(deps());
     host.ensureState("c1", "s1");
     host.ensureState("c2", "s1");
     const a = host.states.get("c1")!;
     const b = host.states.get("c2")!;
     assert.notEqual(a, b);
-    a.transcript.push({ kind: "message", role: "user", content: "tab a only" });
-    assert.equal(b.transcript.length, 0);
+    // the fallback transcript is per state: the canvas panel is the
+    // shared view, the restore keeps whatever each tab loaded itself
+    a.restored.push({ kind: "message", role: "user", content: "tab a only" });
+    assert.equal(b.restored.length, 0);
   });
 
   it("ensureState adopts a session id the create path binds onto its key", () => {
@@ -269,10 +271,10 @@ describe("chat host: the 409 and the busy affordance", () => {
     setBusy(host, ["c2"]); // same session busy from the OTHER tab
     const ok = await host.submit("c1", "hello");
     assert.equal(ok, false);
-    assert.equal(host.states.get("c1")!.transcript.length, 0, "nothing appended");
+    assert.equal(host.states.get("c1")!.restored.length, 0, "nothing fetched, nothing painted");
   });
 
-  it("a 409 POST /chat lands as the busy line, not an error bubble", async () => {
+  it("a 409 POST /chat lands as the busy status line, not transcript state", async () => {
     const savedFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
       new Response("session already running", { status: 409 })) as typeof fetch;
@@ -280,13 +282,12 @@ describe("chat host: the 409 and the busy affordance", () => {
       const host = createChatHost(deps());
       host.ensureState("c1", "s1");
       await host.submit("c1", "hello", "glm-5.3");
-      const items = host.states.get("c1")!.transcript;
-      assert.equal(items.length, 2, "user bubble + the busy line");
-      assert.equal(items[0]!.kind, "message");
-      const last = items[1]! as { kind: string; label?: string };
-      assert.equal(last.kind, "interrupted");
-      assert.match(last.label ?? "", /busy/);
-      // the session frees: the affordance reads (composer retry path)
+      const st = host.states.get("c1")!;
+      // the transcript belongs to the canvas panel - a refused send
+      // paints NOTHING; the status line above the composer carries it
+      // and the composer's retry face is the affordance once it frees
+      assert.equal(st.restored.length, 0);
+      assert.match(st.statusLine, /busy/);
       assert.equal(host.composerBusy("c1"), false);
     } finally {
       globalThis.fetch = savedFetch;

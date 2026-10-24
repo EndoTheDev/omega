@@ -169,15 +169,12 @@ export interface ToolItem {
   // transcript's live-run merge): the meter counts on from here
   elapsedMs?: number;
 }
-// inline "stream interrupted" marker: appears only when the SSE
-// transport died mid-run (never on a clean end). Carries the resume
-// affordance - see retryStream.
-export interface InterruptedItem {
-  kind: "interrupted";
-}
+// inline transport markers do not exist anymore (chat-last 2a): a dead
+// stream's reason renders in the statusLine above the composer; the
+// transcript belongs to the canvas panel never to transport state.
 // Verdict cards v1 (card t_2ecf9c51): a request_verdict tool call
 // renders as an interactive card, NOT a tool line. Live items come from
-// the tool_call frame's arguments; restored items from the persisted
+// the chat panel's tool_call rows; restored items from the persisted
 // assistant tool_call row. The matching tool_result's JSON content
 // (built by modules/verdict resultMap) carries the settled verdict.
 export interface VerdictItem {
@@ -219,7 +216,6 @@ export type TranscriptItem =
   | MessageItem
   | ThinkingItem
   | ToolItem
-  | InterruptedItem
   | VerdictItem;
 
 // TranscriptWireItem is one server-rendered transcript item, in the
@@ -358,6 +354,211 @@ export function renderTranscriptItems(
     }
   }
   return out;
+}
+
+// --- the chat panel's wire vocabulary (chat-last 2a) --------------------
+//
+// The conversation itself rides the canvas (card t_ec45b670): one chat
+// panel whose payload is core.ChatPayload verbatim. The webui chat
+// renderer consumes it - snapshot at load, deltas after - and maps the
+// rows onto the SAME component contract renderTranscriptItems serves
+// for the persisted-restore path. One component contract, two wire
+// sources, zero per-frontend streaming logic.
+
+// ChatBlockWire mirrors core.ChatBlock's json shape. A tool_call block
+// carries the call verbatim; content blocks carry their text body.
+export interface ChatBlockWire {
+  type: string; // text | thinking | tool_call | tool_result
+  content?: string;
+  images?: OmegaImage[];
+  running?: boolean; // the in-flight block of a live stream
+  tool_call?: { id?: string; name?: string; arguments?: unknown };
+  tool_call_id?: string;
+  is_error?: boolean;
+  elapsed_ms?: number;
+}
+
+// ChatRowWire mirrors core.ChatRow: one message row (role + its blocks
+// + the row status). Status streaming while any block is still in
+// flight, complete otherwise.
+export interface ChatRowWire {
+  id?: string; // store row id when persisted; live rows carry none
+  role: string; // user | assistant | tool
+  status: string; // streaming | complete
+  blocks?: ChatBlockWire[];
+}
+
+// ChatPayloadWire mirrors core.ChatPayload: the session the rows cover,
+// whether a live run streams it now, and the newest rows (40 max - the
+// panel is small by law, the store keeps the rest).
+export interface ChatPayloadWire {
+  session?: string;
+  running?: boolean;
+  rows?: ChatRowWire[];
+}
+
+// normalizeChatPayload guards one chat-kind panel's payload: wrong
+// shapes degrade to null (the panel is absent from the render, never a
+// crashed pane). Rows drop malformed entries; fields guard like every
+// wire guard here does. Pure.
+export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const p = payload as Record<string, unknown>;
+  const rows: ChatRowWire[] = [];
+  if (Array.isArray(p.rows)) {
+    for (const raw of p.rows) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const r = raw as Record<string, unknown>;
+      if (typeof r.role !== "string" || !r.role) continue;
+      if (typeof r.status !== "string" || !r.status) continue;
+      // the payload vocabulary is closed: unknown roles/statuses drop
+      // (a future core kind arrives with this guard knowing it)
+      if (r.role !== "user" && r.role !== "assistant" && r.role !== "tool") continue;
+      if (r.status !== "streaming" && r.status !== "complete") continue;
+      const blocks: ChatBlockWire[] = [];
+      if (Array.isArray(r.blocks)) {
+        for (const bRaw of r.blocks) {
+          if (!bRaw || typeof bRaw !== "object" || Array.isArray(bRaw)) continue;
+          const b = bRaw as Record<string, unknown>;
+          if (typeof b.type !== "string" || !b.type) continue;
+          blocks.push({
+            type: b.type,
+            content: typeof b.content === "string" ? b.content : undefined,
+            images: Array.isArray(b.images) ? (b.images as OmegaImage[]) : undefined,
+            running: b.running === true ? true : undefined,
+            tool_call:
+              b.tool_call && typeof b.tool_call === "object"
+                ? (b.tool_call as ChatBlockWire["tool_call"])
+                : undefined,
+            tool_call_id: typeof b.tool_call_id === "string" ? b.tool_call_id : undefined,
+            is_error: b.is_error === true ? true : undefined,
+            elapsed_ms: typeof b.elapsed_ms === "number" ? b.elapsed_ms : undefined,
+          });
+        }
+      }
+      rows.push({
+        id: typeof r.id === "string" && r.id ? r.id : undefined,
+        role: r.role,
+        status: r.status,
+        blocks,
+      });
+    }
+  }
+  return {
+    session: typeof p.session === "string" && p.session ? p.session : undefined,
+    running: p.running === true ? true : undefined,
+    rows,
+  };
+}
+
+// chatRowToWireItem maps one chat row onto its transcript wire shape -
+// the exact item shapes renderTranscriptItems consumes for the restore
+// path. A row's block count is one in v1; extra blocks (a future
+// vocabulary growth) map through in row order anyway. Pure.
+export function chatRowToWireItem(row: ChatRowWire): TranscriptWireItem | null {
+  const running = row.status === "streaming";
+  const block = row.blocks?.[0];
+  if (!block) return null;
+  switch (row.role) {
+    case "user":
+      return {
+        kind: "user",
+        id: row.id,
+        content: block.content ?? "",
+        images: block.images,
+      };
+    case "assistant":
+      if (block.type === "thinking")
+        return {
+          kind: "thinking",
+          content: block.content ?? "",
+          running: running && block.running,
+        };
+      if (block.type === "tool_call") {
+        const tc = block.tool_call;
+        const args = tc?.arguments;
+        return {
+          kind: "tool_call",
+          tool_call: tc
+            ? {
+                id: tc.id,
+                name: tc.name,
+                arguments: args && typeof args === "object" ? (args as Record<string, unknown>) : undefined,
+              }
+            : undefined,
+          running: running && block.running,
+          elapsed_ms: block.elapsed_ms,
+        };
+      }
+      // text (the assistant prose row)
+      return {
+        kind: "message",
+        id: row.id,
+        content: block.content ?? "",
+        // the in-flight text block streams from its renderer - a
+        // streaming row whose block closed does not run the cursor
+        running: running && block.running,
+      };
+    case "tool":
+      return {
+        kind: "tool_result",
+        tool_call_id: block.tool_call_id,
+        content: block.content ?? "",
+        is_error: block.is_error,
+        elapsed_ms: block.elapsed_ms,
+      };
+  }
+  return null;
+}
+
+// renderChatPanel maps a chat panel payload into the components' item
+// shapes: identical contract to the restore path, one row per item in
+// wire order (a call row followed by its result row merges exactly like
+// the restore merge does). Pure.
+export function renderChatPanel(payload: ChatPayloadWire): TranscriptItem[] {
+  const items: TranscriptWireItem[] = [];
+  for (const row of payload.rows ?? []) {
+    const item = chatRowToWireItem(row);
+    if (item) items.push(item);
+  }
+  return renderTranscriptItems(items);
+}
+
+// chatPanelOf finds the chat panel descriptor among the canvas panels.
+// Pure.
+export function chatPanelOf(panels: CanvasPanel[] | null | undefined): CanvasPanel | null {
+  for (const p of panels ?? []) {
+    if (p.kind === "chat") return p;
+  }
+  return null;
+}
+
+// chatPanelContent sums the assistant prose + thinking content a chat
+// panel's rows carry - the streaming token estimate (chars/4, the same
+// shape the wire meter ran) for the statusbar while a run streams
+// through deltas. Pure.
+export function chatPanelContent(payload: ChatPayloadWire): number {
+  let total = 0;
+  for (const row of payload.rows ?? []) {
+    if (row.role !== "assistant") continue;
+    for (const b of row.blocks ?? []) {
+      if (b.type === "text" || b.type === "thinking") total += b.content?.length ?? 0;
+    }
+  }
+  return total;
+}
+
+// chatPanelMessageCount counts the conversation's message rows the
+// panel's payload carries (user bubbles + assistant prose) - the
+// statusbar's message count reads it while the canvas covers the
+// session. Pure.
+export function chatPanelMessageCount(payload: ChatPayloadWire): number {
+  let total = 0;
+  for (const row of payload.rows ?? []) {
+    if (row.role === "user") total++;
+    else if (row.role === "assistant" && row.blocks?.[0]?.type === "text") total++;
+  }
+  return total;
 }
 
 // --- verdict cards v1 (card t_2ecf9c51) ---
@@ -607,19 +808,16 @@ export interface ModelsInfo {
   context_window?: number;
 }
 
-// StreamEvents the chat renderer needs, normalized from SSE payloads.
-// onSession is OPTIONAL - only the auto-create origin stream (a /chat
-// sent with NO session_id) carries a `session` frame; the attach path
-// and session-keyed send streams never do.
+// Stream handlers the composer transport paths consume. The
+// conversation's RENDER data no longer rides these callbacks at all
+// (chat-last 2a): streaming renders through the canvas chat panel's
+// view_model_delta frames; what remains is the composer transport
+// itself. onUsage/onViewModelDelta are the live ones on every stream;
+// onSession only fires on the auto-create origin stream (a /chat sent
+// with NO session_id - the attach path and session-keyed send streams
+// never do).
 export interface StreamHandlers {
-  onThinking: (content: string) => void;
-  onResponse: (content: string) => void;
-  onToolCall: (tool: { id?: string; name: string; status: string; output?: string }) => void;
-  // toolCallId is the result's call id - the materialize path reads it
-  // when no running tool line exists (orphaned result, reattach race)
-  onToolResult: (result: { content: string; isError: boolean; toolCallId?: string }) => void;
-  onStatus: (status: "reasoning" | "responding" | "tools") => void;
-  onUsage: (usage: {
+  onUsage?: (usage: {
     promptTokens: number;
     completionTokens: number;
     cachedTokens: number;
@@ -658,40 +856,22 @@ export function handlePayload(
   const p = payload as Record<string, unknown>;
   switch (p.type) {
     case "thinking_chunk":
-      if (p.content) handlers.onThinking(p.content as string);
+      // render frames (thinking/response/tool) no longer carry handlers:
+      // the chat renderer consumes the canvas panel's deltas (chat-last
+      // 2a). The frames are skipped here, the delta frames carry the
+      // view-model the component paints.
       break;
     case "response_chunk":
-      if (!state.seenResponse) {
-        state.seenResponse = true;
-        handlers.onStatus("responding");
-      }
-      if (p.content) handlers.onResponse(p.content as string);
+      if (!state.seenResponse) state.seenResponse = true;
       break;
-    case "tool_call": {
-      handlers.onStatus("tools");
-      // wire shape: {"type":"tool_call","tool_call":{"id","name","arguments"}}
-      const tc = (p.tool_call || {}) as Record<string, unknown>;
-      handlers.onToolCall({
-        id: tc.id as string | undefined,
-        name: (tc.name as string) || (p.name as string) || "tool",
-        status: "running",
-        output: JSON.stringify(tc.arguments, null, 2),
-      });
+    case "tool_call":
+    case "tool_result":
+      // render frames: no transport consumer anymore (chat-last 2a) -
+      // the canvas delta frames carry the rows the renderer paints.
       break;
-    }
-    case "tool_result": {
-      // {"type":"tool_result","message":{"content","tool_call_id"}}
-      const tr = (p.message || {}) as Record<string, unknown>;
-      handlers.onToolResult({
-        content: (tr.content as string) || "",
-        isError: tr.is_error === true,
-        toolCallId: tr.tool_call_id as string | undefined,
-      });
-      break;
-    }
     case "stream_end":
       if (p.prompt_eval_count != null || p.eval_count != null) {
-        handlers.onUsage({
+        handlers.onUsage?.({
           promptTokens: (p.prompt_eval_count as number) || 0,
           completionTokens: (p.eval_count as number) || 0,
           cachedTokens: (p.cached_count as number) || 0,
@@ -2054,19 +2234,9 @@ export function mediaTypeFromBase64(base64: string): string | null {
   }
 }
 
-// hasInterruptedMarker reports whether an interrupted-stream marker is
-// still live in this transcript.
-export function hasInterruptedMarker(items: TranscriptItemLike[]): boolean {
-  return items.some((item) => item?.kind === "interrupted");
-}
-
-// withoutMarkers strips interrupted-stream markers, keeps order. Used
-// when a fresh send retires a stale resume affordance.
-export function withoutMarkers<T extends TranscriptItemLike>(
-  items: T[],
-): T[] {
-  return items.filter((item) => item?.kind !== "interrupted");
-}
+// hasInterruptedMarker/withoutMarkers are gone with the interrupted
+// transcript marker (chat-last 2a): the statusLine carries a dead
+// stream's reason, the composer's retry face is the resume affordance.
 
 // createItemKeySource gives transcript items a stable key surviving the
 // two identity-breaking operations the transcript goes through (card
@@ -2205,13 +2375,12 @@ export function thinkingLevelWire(selection: string): number | undefined {
 
 // streamChat POSTs messages to /chat and drives the handler callbacks from
 // the SSE stream. Error payloads throw - the caller surfaces them.
-// retry swaps the body for the server's replay flag (t_357cbe9c): no
-// messages ride the wire, the server re-runs the session's persisted
-// last user turn and the fresh response appends below the prior one.
 // fork (t_a62eeb43): sends chained onto a historical message - the
 // server truncates context at the target and parents the run there.
 // fork of a user turn is replay semantics - no messages ride the wire
-// there either.
+// there either (the caller passes none). Retries are NOT a /chat flag
+// on this path anymore: the retry face rides the chat panel's action
+// pipe (chat-last 2a).
 // ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no store
 // row, nothing on disk; the server mints the `eph-` id (or continues
 // the in-memory session when sessionId carries one) and the memory
@@ -2222,11 +2391,10 @@ export async function streamChat(
   handlers: StreamHandlers,
   model?: string,
   thinkingLevel?: number,
-  retry?: boolean,
   fork?: string,
   ephemeral?: boolean,
 ): Promise<void> {
-  const body: Record<string, unknown> = retry ? { retry: true } : { messages };
+  const body: Record<string, unknown> = { messages };
   if (sessionId) body.session_id = sessionId;
   if (ephemeral) body.ephemeral = true;
   if (model) body.model = model;
@@ -2242,26 +2410,17 @@ export async function streamChat(
   await consumeSSE(resp, handlers);
 }
 
-// stopSession asks the server to cancel the session's live run
-// (POST /sessions/<id>/stop). The run unwinds through its normal loop
-// path - partial output persists, the cancelled agent_end goes out over
-// every subscriber's wire. A miss is a benign race, not an error: 404
-// means the run already ended, 409 that it has not started yet.
-export async function stopSession(id: string): Promise<void> {
-  const r = await fetch(`/sessions/${encodeURIComponent(id)}/stop`, {
-    method: "POST",
-  });
-  if (!r.ok && r.status !== 404 && r.status !== 409) {
-    throw new Error(`stop: ${r.status}`);
-  }
-}
-
+// stopSession is gone with the REST stop affordance (chat-last 2a): the
+// stop face dispatches the chat panel's stop action through the action
+// pipe (POST /ui/actions, module http_channel). The backend surface
+// POST /sessions/{id}/stop stays - it is the capsule's public REST
+// route, no frontend rides it anymore.
 // attachSession subscribes to a session's LIVE server-side run and
-// drives the same handlers the send stream uses (card t_2f9b6110: the
-// run is detached server-side, so a page refresh mid-generation lands
-// back in the live stream). Returns false when the session has no live
-// run (404 "session not active") - the caller renders settled history
-// instead. Everything else streams like streamChat: terminal agent_end
+// drives the transport handlers the composer paths use (usage +
+// canvas delta forwarding - the conversation renders from the panel's
+// deltas). Returns false when the session has no live run (404
+// "session not active") - the caller renders settled history instead.
+// Everything else streams like streamChat: terminal agent_end
 // means clean, its absence throws StreamInterruptedError.
 export async function attachSession(
   sessionId: string,

@@ -1,7 +1,7 @@
-// webui unit tests for the interrupted-stream marker + retry affordance:
-// transport-death detection in streamChat, the server-side cancel path
-// (agent_end "cancelled" reads as interrupted), the stopSession POST,
-// and the pure transcript transitions the marker/retry are built from.
+// webui unit tests for transport-death detection in streamChat, the
+// server-side cancel path (agent_end "cancelled" reads as interrupted),
+// and the stop affordance through the chat panel's action pipe
+// (chat-last 2a: no transcript markers, no REST stop client side).
 // Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -9,23 +9,15 @@ import assert from "node:assert/strict";
 import {
   handlePayload,
   streamChat,
-  stopSession,
   lastCompleteUserIndex,
   lastUserText,
-  hasInterruptedMarker,
-  withoutMarkers,
   createItemKeySource,
   StreamInterruptedError,
 } from "../app/composables/omega.ts";
-
+import { createChatHost, type ChatHostDeps } from "../app/composables/chat.ts";
 import type { StreamHandlers, TranscriptItemLike } from "../app/composables/omega.ts";
 
 const silent: StreamHandlers = {
-  onThinking: () => {},
-  onResponse: () => {},
-  onToolCall: () => {},
-  onToolResult: () => {},
-  onStatus: () => {},
   onUsage: () => {},
 };
 
@@ -69,7 +61,7 @@ function stubFetch(resp: Response, captured?: unknown[]) {
 }
 
 describe("streamChat: clean end vs transport death", () => {
-  it("stream ending with agent_end resolves - clean end, NO marker", async () => {
+  it("stream ending with agent_end resolves - clean end", async () => {
     stubFetch(
       sseResponse([
         'event: response_chunk\ndata: {"type":"response_chunk","content":"hi"}\n\n',
@@ -166,34 +158,59 @@ describe("server-side cancel reads as interrupted", () => {
   });
 });
 
-describe("stopSession", () => {
-  it("POSTs /sessions/<id>/stop", async () => {
-    const calls: { url: RequestInfo | URL; init?: RequestInit }[] = [];
+describe("host.cancel: the stop face rides the action pipe", () => {
+  function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
+    return {
+      setTabSessionRef: () => {},
+      refreshSessions: () => {},
+      sessionRow: () => undefined,
+      markRead: () => {},
+      isFocused: () => false,
+      ...over,
+    };
+  }
+
+  it("POSTs /ui/actions with the chat panel's stop action + the session arg", async () => {
+    const calls: { url: RequestInfo | URL; body: Record<string, unknown> }[] = [];
     savedFetch = globalThis.fetch;
     globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url, init });
+      calls.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return { ok: true, json: async () => ({}) } as unknown as Response;
+    }) as typeof globalThis.fetch;
+    const host = createChatHost(deps());
+    host.ensureState("c1", "s1");
+    host.cancel("c1");
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(calls.length, 1);
+    assert.equal(String(calls[0]!.url), "/ui/actions");
+    assert.equal(calls[0]!.body.module, "http_channel");
+    assert.equal(calls[0]!.body.action, "stop");
+    assert.deepEqual(calls[0]!.body.args, { session: "s1" });
+  });
+
+  it("an unsaved tab (no session binding yet) fires nothing", async () => {
+    const calls: unknown[] = [];
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = (async (..._args: unknown[]) => {
+      calls.push(_args);
       return { ok: true } as unknown as Response;
     }) as typeof globalThis.fetch;
-    await stopSession("s1");
-    assert.equal(calls.length, 1);
-    assert.equal(String(calls[0].url), "/sessions/s1/stop");
-    assert.equal(calls[0].init?.method, "POST");
+    const host = createChatHost(deps());
+    host.ensureState("c1");
+    host.cancel("c1");
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(calls, []);
   });
 
-  it("404 (run already ended) and 409 (not started yet) stay silent", async () => {
-    savedFetch = globalThis.fetch;
-    for (const status of [404, 409]) {
-      globalThis.fetch = (async () =>
-        ({ ok: false, status }) as unknown as Response) as typeof globalThis.fetch;
-      await assert.doesNotReject(() => stopSession("s1"));
-    }
-  });
-
-  it("an unexpected failure throws", async () => {
+  it("a failed pipe stop surfaces in the status line, never a throw", async () => {
     savedFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      ({ ok: false, status: 500 }) as unknown as Response) as typeof globalThis.fetch;
-    await assert.rejects(() => stopSession("s1"), /stop: 500/);
+      ({ ok: false, status: 500, text: async () => "session not active" }) as unknown as Response) as typeof globalThis.fetch;
+    const host = createChatHost(deps());
+    host.ensureState("c1", "s1");
+    host.cancel("c1");
+    await new Promise((r) => setTimeout(r, 0));
+    assert.match(host.states.get("c1")!.statusLine, /stop failed/);
   });
 });
 
@@ -206,10 +223,9 @@ describe("last complete user message", () => {
     { kind: "message", role: "user", content: "retry me" },
     { kind: "thinking", content: "hm" },
     { kind: "message", role: "assistant", content: "partial out" },
-    { kind: "interrupted" },
   ];
 
-  it("finds the LAST user message, skipping markers and assistant items", () => {
+  it("finds the LAST user message, skipping assistant items and blocks", () => {
     assert.equal(lastCompleteUserIndex(transcript), 4);
     assert.equal(lastUserText(transcript), "retry me");
   });
@@ -217,77 +233,6 @@ describe("last complete user message", () => {
   it("null when the transcript has no user message", () => {
     assert.equal(lastUserText([{ kind: "message", role: "assistant", content: "x" }]), null);
     assert.equal(lastCompleteUserIndex([]), -1);
-  });
-});
-
-describe("retry transcript transitions (server replay semantics, t_357cbe9c)", () => {
-  // the retry is SERVER-side now: POST /chat {"retry": true} re-runs
-  // the PERSISTED last user turn - the client pushes NO user bubble,
-  // performs no transcript surgery, and only retires its stale marker
-  // (the fresh response appends on its own as the stream runs)
-  it("retry keeps one user bubble - the client only strips the marker", () => {
-    const st: TranscriptItemLike[] = [
-      { kind: "message", role: "user", content: "old q" },
-      { kind: "message", role: "assistant", content: "old a" },
-      { kind: "message", role: "user", content: "kick off" },
-      { kind: "thinking", content: "hm" },
-      { kind: "tool" },
-      { kind: "message", role: "assistant", content: "partial" },
-      { kind: "interrupted" },
-    ];
-    // lastUserText is the presence check behind the affordance: text
-    // exists to replay, the text itself never re-rides the wire
-    assert.equal(lastUserText(st), "kick off");
-    const after = withoutMarkers(st);
-    // every pre-retry item survives untouched, in order, NOTHING pushed
-    assert.deepEqual(
-      after.map((i) => [i.kind, i.role, i.content]),
-      [
-        ["message", "user", "old q"],
-        ["message", "assistant", "old a"],
-        ["message", "user", "kick off"],
-        ["thinking", undefined, "hm"],
-        ["tool", undefined, undefined],
-        ["message", "assistant", "partial"],
-      ],
-    );
-    assert.equal(hasInterruptedMarker(after), false);
-  });
-
-  it("retry of a clean exchange touches nothing (no marker to retire)", () => {
-    const st: TranscriptItemLike[] = [
-      { kind: "message", role: "user", content: "q" },
-      { kind: "message", role: "assistant", content: "a" },
-    ];
-    assert.equal(lastUserText(st), "q");
-    assert.equal(withoutMarkers(st).length, 2);
-    assert.equal(hasInterruptedMarker(st), false);
-  });
-
-  it("retry without a user message does nothing (composer hides the affordance)", () => {
-    const st: TranscriptItemLike[] = [
-      { kind: "message", role: "assistant", content: "x" },
-      { kind: "interrupted" },
-    ];
-    assert.equal(lastUserText(st), null);
-    assert.equal(hasInterruptedMarker(st), true);
-  });
-
-  it("markers only: withoutMarkers strips them, keeping order", () => {
-    const st: TranscriptItemLike[] = [
-      { kind: "message", role: "user", content: "q" },
-      { kind: "interrupted" },
-      { kind: "message", role: "assistant", content: "a" },
-      { kind: "interrupted" },
-    ];
-    const after = withoutMarkers(st);
-    assert.deepEqual(
-      after,
-      [
-        { kind: "message", role: "user", content: "q" },
-        { kind: "message", role: "assistant", content: "a" },
-      ].map((i) => i as TranscriptItemLike),
-    );
   });
 });
 
@@ -311,27 +256,5 @@ describe("createItemKeySource", () => {
     const first = { kind: "message", content: "hello" };
     const second = { kind: "message", content: "hello" };
     assert.notEqual(keyOf(first), keyOf(second));
-  });
-
-  it("retryStream: kept head items keep keys, the retried exchange mounts fresh", () => {
-    const keyOf = createItemKeySource();
-    const head: TranscriptItemLike[] = [
-      { kind: "message", role: "user", content: "old q" },
-      { kind: "tool", name: "sh", status: "done" },
-    ];
-    const headKeys = head.map(keyOf);
-    // a retry's APPENDED stream (and stripped-stale-marker rebuilds)
-    // push NEW objects - each must mount as a new bubble, not reuse
-    // head keys
-    const retried: TranscriptItemLike = {
-      kind: "tool",
-      name: "sh",
-      status: "running",
-    };
-    assert.notEqual(keyOf(retried), headKeys[0]);
-    assert.notEqual(keyOf(retried), headKeys[1]);
-    // and the dropped tail's key never collides with the next attempt's
-    // (fresh-object keys keep increasing per source)
-    assert.ok(keyOf(retried) > headKeys[1]);
   });
 });

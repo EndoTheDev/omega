@@ -397,9 +397,13 @@ test("chat.ts: canvas deltas forward from every stream handler set", () => {
   const chat = read("modules", "ui", "app", "composables", "chat.ts");
   assert.match(
     chat,
-    /onViewModelDelta:\s*\(panel\)\s*=>\s*deps\.canvasDelta\?\.\(panel\)/,
-    "the stream driver forwards the delta to the app's canvas",
+    /onViewModelDelta[^\n]*deps\.canvasDelta\?\.\(panel\)/,
+    "the transport handlers forward the delta to the app's canvas",
   );
+  // chat-last 2a: the chat panel is also the chat pane's render source -
+  // the view reads it through the host accessor, the meter repaints
+  assert.match(chat, /chatPanel\(\): CanvasPanel \| null/, "the host exposes the panel descriptor");
+  assert.match(chat, /normalizeChatPayload\(panel\.payload\)/, "the payload guards at the paint site");
 });
 
 test("dockables: canvas is a layout-only registry entry (Q5a law)", () => {
