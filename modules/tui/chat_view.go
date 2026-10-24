@@ -120,8 +120,8 @@ func turnStartOf(rows []core.ChatRow) int {
 // shell keeps live text in the main pane and the other live blocks in
 // the run band).
 type chatLine struct {
-	at    int
-	text  string
+	at     int
+	text   string
 	isText bool
 }
 

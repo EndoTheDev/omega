@@ -201,10 +201,12 @@ func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	}
 }
 
-// TestChatPanelRegistersThroughTheMountSeam: the plugin's Mount
-// appends the capsule and the canvas runtime registers the chat panel
-// with its module-qualified actions; the pipe routes to the capsule's
-// handler.
+// TestChatPanelRegistersThroughTheStartSeam (chat-last 2b ruling): the
+// plugin's Mount only CREATES the capsule - registration is gated on
+// the channel actually starting. One chat panel per live frontend: a
+// TUI-only process never reaches Start, so its canvas carries no dead
+// http chat panel; here the channel-start handoff registers it with
+// the canvas seam, and the pipe routes to the capsule's handler.
 func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	plugin := &Plugin{}
@@ -212,12 +214,15 @@ func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	if err := plugin.Mount(pctx); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
-	if len(pctx.PanelProviders) != 1 {
-		t.Fatalf("panel providers = %d, want 1", len(pctx.PanelProviders))
+	// Mount registers nothing: the panel exists only once a live
+	// frontend starts.
+	if len(pctx.PanelProviders) != 0 {
+		t.Fatalf("panel providers = %d, want 0 (registration is Start-gated)", len(pctx.PanelProviders))
 	}
 	// The channel-start handoff (HTTPChannel.Start): bind the capsule
-	// to its server before the canvas runtime builds.
+	// to its server and register it before the canvas runtime builds.
 	plugin.chat.srv = s
+	plugin.chat.registerAt(pctx)
 	canvas, err := agent.NewCanvas(pctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)

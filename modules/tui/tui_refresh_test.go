@@ -1,9 +1,16 @@
 package tui
 
+// Tests for the chat-pane refresh pipeline over the chat capsule
+// (chat-last 2b): content renders FROM the panel payload the capsule
+// pushes - completed rows via setConversation/commit, live rows via
+// the stream events, notices via their row anchors.
+
 import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 // newRefreshModel returns a model configured the same way the existing
@@ -13,23 +20,46 @@ func newRefreshModel() *model {
 	return &m
 }
 
-// TestRefreshEmptySegments verifies that refresh with no segments writes
-// only the transcript into the viewport.
-func TestRefreshEmptySegments(t *testing.T) {
+// TestRefreshFromPayload verifies refresh renders the committed rows:
+// the conversation composes from the capsule's payload, not any local
+// transcript string.
+func TestRefreshFromPayload(t *testing.T) {
 	m := newRefreshModel()
-	m.transcript = "transcript-only"
-	m.segments = nil
+	m.chatCanvas.setConversation("sess", []core.Message{
+		core.NewUser("hello there"),
+		core.NewAssistant("hello world"),
+	})
 	m.refresh()
 	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "transcript-only") {
-		t.Fatalf("viewport missing transcript; got %q", got)
+	if !strings.Contains(got, "> hello there") {
+		t.Fatalf("viewport missing the user row; got %q", got)
+	}
+	if !strings.Contains(got, "hello world") {
+		t.Fatalf("viewport missing the assistant row; got %q", got)
 	}
 }
 
-// TestRefreshThinkingSegment verifies the [thinking] header is rendered.
-func TestRefreshThinkingSegment(t *testing.T) {
+// TestRefreshNoticeAnchor verifies shell notices re-insert at their
+// pinned row anchors: a notice appended before the next exchange stays
+// between the rows it separates.
+func TestRefreshNoticeAnchor(t *testing.T) {
 	m := newRefreshModel()
-	m.segments = []streamSegment{{kind: "thinking", content: "pondering the universe"}}
+	m.addNotice("[model: llama3]\n")
+	m.chatCanvas.setConversation("sess", []core.Message{core.NewUser("hi")})
+	m.refresh()
+	got := ansiStrip(m.viewport.View())
+	modelAt, userAt := strings.Index(got, "[model: llama3]"), strings.Index(got, "> hi")
+	if modelAt < 0 || userAt < 0 || modelAt > userAt {
+		t.Fatalf("notice order wrong: model@%d user@%d in %q", modelAt, userAt, got)
+	}
+}
+
+// TestRefreshThinkingRow verifies the [thinking] header renders from a
+// thinking row (the display toggle hides it when off).
+func TestRefreshThinkingRow(t *testing.T) {
+	m := newRefreshModel()
+	m.chatCanvas.setRun("sess", func() {})
+	m.chatCanvas.streamThinking("pondering the universe")
 	m.refresh()
 	got := ansiStrip(m.viewport.View())
 	if !strings.Contains(got, "[thinking]") {
@@ -38,119 +68,136 @@ func TestRefreshThinkingSegment(t *testing.T) {
 	if !strings.Contains(got, "pondering the universe") {
 		t.Fatalf("viewport missing thinking content; got %q", got)
 	}
-}
-
-// TestRefreshToolSegment verifies tool content is written directly.
-func TestRefreshToolSegment(t *testing.T) {
-	m := newRefreshModel()
-	m.segments = []streamSegment{{kind: "tool", content: "running grep"}}
+	m.showThinking = false
 	m.refresh()
-	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "running grep") {
-		t.Fatalf("viewport missing tool content; got %q", got)
+	if strings.Contains(ansiStrip(m.viewport.View()), "[thinking]") {
+		t.Fatal("showThinking off still rendered the thinking row")
 	}
 }
 
-// TestRefreshToolResultSegment verifies tool_result content is rendered.
-func TestRefreshToolResultSegment(t *testing.T) {
+// TestRefreshToolCallRow verifies the live tool call row renders its
+// label and arguments in the main viewport.
+func TestRefreshToolCallRow(t *testing.T) {
 	m := newRefreshModel()
-	m.segments = []streamSegment{{kind: "tool_result", content: "file.txt:42:match"}}
+	m.chatCanvas.setRun("sess", func() {})
+	m.chatCanvas.streamCall(core.ToolCall{ID: "call1", Name: "files.read", Arguments: map[string]any{"path": "/tmp/x"}})
 	m.refresh()
 	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "file.txt:42:match") {
-		t.Fatalf("viewport missing tool_result content; got %q", got)
+	if !strings.Contains(got, "[tool: files.read]") {
+		t.Fatalf("viewport missing tool label; got %q", got)
+	}
+	if !strings.Contains(got, "path: /tmp/x") {
+		t.Fatalf("viewport missing tool args; got %q", got)
 	}
 }
 
-// TestRefreshToolResultHighlightedSegment verifies highlighted tool result
-// content is written directly (no theme overlay needed for assertion).
-func TestRefreshToolResultHighlightedSegment(t *testing.T) {
+// TestRefreshToolResultRow verifies the live tool result renders full
+// content (a short result under auto).
+func TestRefreshToolResultRow(t *testing.T) {
 	m := newRefreshModel()
-	m.segments = []streamSegment{{kind: "tool_result_highlighted", content: "HIGHLIGHTED_CODE"}}
+	m.chatCanvas.setRun("sess", func() {})
+	m.chatCanvas.streamCall(core.ToolCall{ID: "call1", Name: "files.read"})
+	m.chatCanvas.streamResult(core.NewToolResult("file.txt:42:match", "call1", false))
 	m.refresh()
-	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "HIGHLIGHTED_CODE") {
-		t.Fatalf("viewport missing highlighted content; got %q", got)
+	if got := ansiStrip(m.viewport.View()); !strings.Contains(got, "file.txt:42:match") {
+		t.Fatalf("viewport missing the tool result; got %q", got)
 	}
 }
 
-// TestRefreshResponseSegmentNotBusy verifies that a response segment when
-// not busy is rendered through renderMarkdown (full glamour pass).
-func TestRefreshResponseSegmentNotBusy(t *testing.T) {
+// TestRefreshToolResultCollapsed verifies the auto-collapse law: a
+// long result renders as the line count, re-expanded when the toggle
+// lifts (one display law, re-rendered from the payload).
+func TestRefreshToolResultCollapsed(t *testing.T) {
 	m := newRefreshModel()
-	m.busy = false
-	m.segments = []streamSegment{{kind: "response", content: "# Hello World"}}
+	m.toolResultsAuto = true
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "call1", Name: "files.read"}}
+	m.chatCanvas.setConversation("", []core.Message{
+		assistant,
+		core.NewToolResult(strings.Repeat("long line\n", 25), "call1", false),
+	})
 	m.refresh()
-	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "Hello World") {
-		t.Fatalf("viewport missing rendered response; got %q", got)
+	if got := ansiStrip(m.viewport.View()); !strings.Contains(got, "[tool result: 26 lines]") {
+		t.Fatalf("long result not collapsed; got %q", got)
 	}
-	// renderMarkdown should have been invoked and the cache populated.
-	if m.lastRenderedResponse == "" {
-		t.Fatalf("lastRenderedResponse not cached after non-busy render")
+	m.toolResultsAuto = false
+	m.refresh()
+	if !strings.Contains(ansiStrip(m.viewport.View()), "long line") {
+		t.Fatal("toolResultsAuto off did not re-expand the result")
 	}
 }
 
-// TestRefreshResponseSegmentBusyDebounce verifies the debounce path: when
-// busy and the last render was <80ms ago, the cached lastRenderedResponse
-// is used instead of re-rendering.
-func TestRefreshResponseSegmentBusyDebounce(t *testing.T) {
+// TestRefreshResponseMarkdown verifies assistant text renders through
+// the markdown pipeline.
+func TestRefreshResponseMarkdown(t *testing.T) {
 	m := newRefreshModel()
-	m.busy = true
-	m.lastRender = time.Now()
-	m.lastRenderedResponse = "cached-output"
-	m.segments = []streamSegment{{kind: "response", content: "fresh raw content"}}
+	m.chatCanvas.setConversation("", []core.Message{core.NewAssistant("# Hello World")})
 	m.refresh()
-	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "cached-output") {
-		t.Fatalf("debounce path did not use cached output; got %q", got)
+	if !strings.Contains(ansiStrip(m.viewport.View()), "Hello World") {
+		t.Fatal("viewport missing rendered response")
 	}
 }
 
-// TestRefreshResponseSegmentBusyNoCache verifies that when busy and within
-// the debounce window but no cached output exists, raw content is shown.
-func TestRefreshResponseSegmentBusyNoCache(t *testing.T) {
+// TestRefreshResponseDebounce verifies the 80ms live debounce: a frame
+// just rendered replays the cached glamour output; a cold frame
+// renders raw.
+func TestRefreshResponseDebounce(t *testing.T) {
 	m := newRefreshModel()
-	m.busy = true
-	m.lastRender = time.Now()
-	m.lastRenderedResponse = ""
-	m.segments = []streamSegment{{kind: "response", content: "raw-fallback"}}
+	m.chatCanvas.setRun("sess", func() {})
+	m.chatCanvas.streamResponse("fresh raw content")
+	m.renderCache.at = time.Now() // just rendered
+	m.renderCache.rendered = "cached-output"
 	m.refresh()
-	got := ansiStrip(m.viewport.View())
-	if !strings.Contains(got, "raw-fallback") {
-		t.Fatalf("debounce no-cache path did not show raw content; got %q", got)
+	if got := ansiStrip(m.viewport.View()); !strings.Contains(got, "cached-output") {
+		t.Fatalf("debounced frame did not replay the cache; got %q", got)
+	}
+	m.renderCache.at = time.Time{}
+	m.renderCache.rendered = ""
+	m.refresh()
+	if got := ansiStrip(m.viewport.View()); !strings.Contains(got, "fresh raw content") {
+		t.Fatalf("cold frame did not render raw; got %q", got)
 	}
 }
 
-// TestRefreshMultipleSegments verifies segments render in order.
-func TestRefreshMultipleSegments(t *testing.T) {
+// TestRefreshStreamingOrder verifies the live rows render in emit
+// order: thinking, tool call, streamed text - the narrative law the
+// segment machinery preserved.
+func TestRefreshStreamingOrder(t *testing.T) {
 	m := newRefreshModel()
-	m.segments = []streamSegment{
-		{kind: "thinking", content: "FIRST_THINK"},
-		{kind: "tool", content: "SECOND_TOOL"},
-		{kind: "tool_result", content: "THIRD_RESULT"},
-		{kind: "tool_result_highlighted", content: "FOURTH_HL"},
-		{kind: "response", content: "FIFTH_RESP"},
-	}
+	m.chatCanvas.setConversation("sess", []core.Message{core.NewUser("hi")})
+	m.chatCanvas.setRun("sess", func() {})
+	m.chatCanvas.streamThinking("FIRST_THINK")
+	m.chatCanvas.streamCall(core.ToolCall{ID: "c1", Name: "files.read"})
+	m.chatCanvas.streamResult(core.NewToolResult("THIRD_RESULT", "c1", false))
+	m.chatCanvas.streamResponse("FIFTH_RESP")
 	m.refresh()
 	got := ansiStrip(m.viewport.View())
-
-	for _, want := range []string{"FIRST_THINK", "SECOND_TOOL", "THIRD_RESULT", "FOURTH_HL", "FIFTH_RESP"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("viewport missing %q; got %q", want, got)
-		}
-	}
-
-	// Verify ordering: each marker should appear after the previous one.
 	prev := -1
-	for _, marker := range []string{"FIRST_THINK", "SECOND_TOOL", "THIRD_RESULT", "FOURTH_HL", "FIFTH_RESP"} {
+	for _, marker := range []string{"FIRST_THINK", "files.read", "THIRD_RESULT", "FIFTH_RESP"} {
 		idx := strings.Index(got, marker)
 		if idx < 0 {
-			t.Fatalf("marker %q not found (shouldn't happen, checked above)", marker)
+			t.Fatalf("marker %q missing from %q", marker, got)
 		}
 		if idx < prev {
 			t.Errorf("marker %q at %d before previous at %d (ordering broken)", marker, idx, prev)
 		}
 		prev = idx
+	}
+}
+
+// TestRefreshErrorLine verifies the committed run's stream error rides
+// one dim line after the rows until the next run recomposes.
+func TestRefreshErrorLine(t *testing.T) {
+	m := newRefreshModel()
+	m.chatCanvas.setConversation("sess", []core.Message{core.NewUser("hi")})
+	m.chatCanvas.commit([]core.Message{core.NewUser("hi")}, "boom")
+	m.refresh()
+	if got := ansiStrip(m.viewport.View()); !strings.Contains(got, "error: boom") {
+		t.Fatalf("viewport missing the error line; got %q", got)
+	}
+	m.chatCanvas.setRun("sess", func() {})
+	m.refresh()
+	if strings.Contains(ansiStrip(m.viewport.View()), "error: boom") {
+		t.Fatal("error line survived the next run")
 	}
 }

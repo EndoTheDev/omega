@@ -395,14 +395,19 @@ func TestPanelsScreenJSONPayload(t *testing.T) {
 	}
 }
 
-// TestPanelsScreenNoPanels covers the empty registration (Q5a: the
-// snapshot lists whatever is mounted - here nothing).
-func TestPanelsScreenNoPanels(t *testing.T) {
+// TestPanelsScreenChatMounted pins the one-live-frontend law: any TUI
+// model carries the module-owned chat panel, so the panels screen is
+// never empty - the Chat panel rides the registration with an action
+// vocabulary of its own (stop, retry, module-qualified tui).
+func TestPanelsScreenChatMounted(t *testing.T) {
 	m := panelModel(t, &core.Context{})
 	out, _ := m.handlePanels()
 	view := out.(model).screen.(*canvasScreen).View(80, 24)
-	if !strings.Contains(view, "(no panels mounted)") {
-		t.Fatalf("empty view = %q", view)
+	if !strings.Contains(view, "Chat  [chat]") {
+		t.Fatalf("chat panel missing from the panels view: %q", view)
+	}
+	if !strings.Contains(view, "tui.stop") || !strings.Contains(view, "tui.retry") {
+		t.Fatalf("chat actions missing from the panels view: %q", view)
 	}
 }
 

@@ -331,16 +331,24 @@ The per-module REST routes stay; these two endpoints are additive.
   handler's own error is a **500**; success returns the handler's
   result as `{"result": ...}`. Non-POST/GET method mismatches are 405.
 
-The chat panel (chat-last 1/3): the conversation itself is a canvas
-surface. One `chat` panel rides the snapshot (`GET /ui/canvas`) and
-`view_model_delta` frames on the run streams: its payload is the focus
-session's message rows (`session`, `running`, `rows` - role, content
-block, status per row), snapshots cover the newest 40 rows, streaming
-tokens batch onto `view_model_delta` at the cadence and structural
-stream events flush immediately. Its actions (`stop`, `retry`,
-module `http_channel`) route through the pipe and serve the same faces
-the REST routes serve. The `/chat` REST + SSE API surface stays
-untouched - the panel is additive for canvas renderers.
+The chat panel (chat-last 1/3, sharpened by 2b): the conversation itself
+is a canvas surface - one chat panel per live frontend, module-owned.
+In a `serve` process the `chat` panel (module `http_channel`) rides the
+snapshot (`GET /ui/canvas`) and `view_model_delta` frames on the run
+streams: its payload is the focus session's message rows (`session`,
+`running`, `rows` - role, content block, status per row), snapshots
+cover the newest 40 rows, streaming tokens batch onto
+`view_model_delta` at the cadence and structural stream events flush
+immediately. Its actions (`stop`, `retry`, module `http_channel`) route
+through the pipe and serve the same faces the REST routes serve. The
+registration is Start-gated: the panel exists only once a channel
+actually starts - a TUI-only process carries no dead http chat panel.
+In a TUI process the module-owned capsule from `modules/tui` (module
+`tui`, same panel id and kind, the same `ChatPayload` vocabulary)
+covers the conversation: the chat pane renders from the canvas
+snapshot and its deltas natively, the stop/retry actions wrap the
+native cancel/retry through the same pipe. The `/chat` REST + SSE API
+surface stays untouched - the panel is additive for canvas renderers.
 
 ## SPA catch-all
 

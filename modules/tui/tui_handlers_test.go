@@ -81,8 +81,8 @@ func TestHandleToolsListNoExtensions(t *testing.T) {
 	m.extensions = ctxWithInfos()
 	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
-	if !strings.Contains(ansiStrip(mm.transcript), "[no tools available]") {
-		t.Fatalf("expected [no tools available], got: %q", ansiStrip(mm.transcript))
+	if !strings.Contains(transcriptOf(mm), "[no tools available]") {
+		t.Fatalf("expected [no tools available], got: %q", transcriptOf(mm))
 	}
 }
 
@@ -97,7 +97,7 @@ func TestHandleToolsListWithTools(t *testing.T) {
 	})
 	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
-	plain := ansiStrip(mm.transcript)
+	plain := transcriptOf(mm)
 	if !strings.Contains(plain, "shell") {
 		t.Fatalf("expected extension name 'shell' in transcript, got: %q", plain)
 	}
@@ -121,9 +121,9 @@ func TestHandleToolsListEmptyToolList(t *testing.T) {
 	m.extensions = ctxWithInfos(core.ExtensionInfo{Name: "empty"})
 	out, _ := m.handleCommand("/tools")
 	mm := out.(model)
-	if !strings.Contains(ansiStrip(mm.transcript), "[no tools available]") {
+	if !strings.Contains(transcriptOf(mm), "[no tools available]") {
 		t.Fatalf("expected [no tools available] for tool-less extension, got: %q",
-			ansiStrip(mm.transcript))
+			transcriptOf(mm))
 	}
 }
 
@@ -137,8 +137,8 @@ func TestHandleExtensionsNone(t *testing.T) {
 	m.extensions = &core.Context{}
 	out, _ := m.handleExtensions()
 	mm := out.(model)
-	if !strings.Contains(ansiStrip(mm.transcript), "[no extensions loaded]") {
-		t.Fatalf("expected [no extensions loaded], got: %q", ansiStrip(mm.transcript))
+	if !strings.Contains(transcriptOf(mm), "[no extensions loaded]") {
+		t.Fatalf("expected [no extensions loaded], got: %q", transcriptOf(mm))
 	}
 }
 
@@ -150,7 +150,7 @@ func TestHandleExtensionsWithInfos(t *testing.T) {
 	)
 	out, _ := m.handleExtensions()
 	mm := out.(model)
-	plain := ansiStrip(mm.transcript)
+	plain := transcriptOf(mm)
 	for _, want := range []string{"NAME", "TOOLS", "COMMANDS", "SEAMS", "shell", "provider"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected %q in transcript, got: %q", want, plain)
@@ -168,7 +168,7 @@ func TestHandleThemeListNoArgs(t *testing.T) {
 	m := newTestModel("dark")
 	out, _ := m.handleTheme(nil)
 	mm := out.(model)
-	plain := ansiStrip(mm.transcript)
+	plain := transcriptOf(mm)
 	if !strings.Contains(plain, "dark") || !strings.Contains(plain, "light") {
 		t.Fatalf("expected theme names dark+light, got: %q", plain)
 	}
@@ -196,8 +196,8 @@ func TestHandleThemeSwitchLight(t *testing.T) {
 	if mm.theme.Name != "light" {
 		t.Fatalf("expected theme.Name=light, got %q", mm.theme.Name)
 	}
-	if !strings.Contains(ansiStrip(mm.transcript), "[theme: light]") {
-		t.Fatalf("expected [theme: light] in transcript, got: %q", ansiStrip(mm.transcript))
+	if !strings.Contains(transcriptOf(mm), "[theme: light]") {
+		t.Fatalf("expected [theme: light] in transcript, got: %q", transcriptOf(mm))
 	}
 }
 
@@ -220,7 +220,7 @@ func TestHandleThemeAuto(t *testing.T) {
 	if mm.theme.Name != "auto" {
 		t.Fatalf("expected theme.Name=auto, got %q", mm.theme.Name)
 	}
-	plain := ansiStrip(mm.transcript)
+	plain := transcriptOf(mm)
 	if !strings.Contains(plain, "[theme: auto") {
 		t.Fatalf("expected [theme: auto ...] in transcript, got: %q", plain)
 	}

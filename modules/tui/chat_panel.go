@@ -73,19 +73,21 @@ func newChatCanvas() *chatCanvas {
 
 // registerChatCanvas creates the TUI chat capsule and registers it
 // with the canvas seam - gated on the frontend actually running:
-// only the live Frontend.Run path (NewModel) calls this. A re-run in
-// the same process reuses the instance (one live panel, "tui"
-// registered once).
+// only the live Frontend.Run path (NewModel) calls this. A nil context
+// (models built outside a host) still gets the capsule - it carries
+// the panel state; there is just no canvas to register it into. A
+// re-run in the same process reuses the instance (one live panel,
+// "tui" registered once).
 func registerChatCanvas(pctx *core.Context) *chatCanvas {
+	c := newChatCanvas()
 	if pctx == nil {
-		return nil
+		return c
 	}
 	for _, p := range pctx.PanelProviders {
-		if c, ok := p.(*chatCanvas); ok {
-			return c
+		if cc, ok := p.(*chatCanvas); ok {
+			return cc
 		}
 	}
-	c := newChatCanvas()
 	pctx.PanelProviders = append(pctx.PanelProviders, c)
 	return c
 }
