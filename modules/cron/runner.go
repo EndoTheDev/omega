@@ -47,6 +47,11 @@ type Runner struct {
 	// Start (card t_5d9032d3). Nil-safe: no seam, no emission.
 	notifier core.NotificationsProvider
 
+	// panels is the capsule's canvas surface, set by the plugin at
+	// Mount (arc 6). Nil-safe: no canvas, no push - a reload still
+	// works, frontends catch up on their next snapshot.
+	panels *capsule
+
 	mu        sync.Mutex
 	running   map[string]bool  // per-job fire guard
 	jobs      []Job            // current job set
@@ -620,6 +625,12 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 
 	r.stopScheduler()
 	r.scheduleEnabled(ctx)
+	// The panel refresh rides the same reload: the watcher is the
+	// module's one internal mutation face, so its change pushes the
+	// refreshed jobs panel through the canvas sink (arc 6 push law).
+	// Nil-safe; a failed push never fails the reload - the job set is
+	// already rescheduled, the snapshot is the catch-up.
+	r.panels.push()
 }
 
 // --- helpers ---
