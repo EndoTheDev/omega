@@ -75,7 +75,7 @@ reference: `docs/tui.md`, module-owned command owners.
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block. The born-capsule: seam + tool + prompt section all ship from the same Mount; no command, REST route or canvas panel exists. Removal proof `TestMemoryRemovalProof` - arc 6 capsule |
 | `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
 | `tools/`        | tools, prompt_sections, TUI | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools); /files browser + /tools command |
-| `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
+| `mcp/`          | tools          | MCP bridge (stdio + Streamable HTTP servers, MCP_SERVERS env or mcp.yaml). The additive born-capsule: the bridge tool provider is the whole surface - every discovered server tool ships server-qualified from the single Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestMCPRemovalProof` - arc 6 capsule |
 | `delegate/`     | tools          | Subagent delegation (consolidated `delegate` tool with task/status actions + one-release alias shims, the ctx.InjectedMessages/PendingDelegations seam, notifications emitter). The wired born-capsule: seam + tool + emitter capture all ship from the same Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestDelegateRemovalProof` - arc 6 capsule |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |

@@ -50,6 +50,15 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount populates the Context. Appends a ToolProvider that wraps
 // the bridge's discovered MCP tools as agent.Tool values.
+//
+// This Mount is the module's whole surface (arc 6 capsule, card
+// t_cf6b7795): the bridge tool provider - every discovered MCP server
+// tool, server-qualified - ships from here, and the module ships
+// nothing else - no command, no REST route, no skills, no canvas panel
+// (nothing rendered mcp before the arc). The env/mcp.yaml config load
+// lives in the module too; buildPlugins' construction falls back to a
+// no-op bridge on config failure. Removal proof:
+// TestMCPRemovalProof (cmd/omega/removal_test.go).
 func (p *Plugin) Mount(ctx *core.Context) error {
 	if p.bridge == nil {
 		return nil
