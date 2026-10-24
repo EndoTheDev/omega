@@ -1349,3 +1349,209 @@ func TestVerdictRemovalProof(t *testing.T) {
 	_ = core.Verdict{}
 	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core/seams.go verdict types remain - documented as intentional")
 }
+
+// TestTrustRemovalProof is the arc 6 trust-capsule proof (card
+// t_e1efb979), the eighth worked proof in this file. Trust is the
+// gating capsule: the trust seam (ctx.Trust - ResolveContext gates the
+// AGENTS.md project context behind trust.yaml, State feeds the status
+// bar) is the whole surface, shipped from the one Mount. No tool, no
+// slash command, no REST route, no skills, no canvas panel and no
+// module-qualified actions exist, and none did before the arc: the
+// frontends consume two strings the host computes from the seam before
+// launch (PromptContext + TrustState on FrontendOptions), the CLI
+// flags (--approve/--no-approve) parse in the host and ride the same
+// seam, and the boot-time store migration (trust.Bootstrap) is host
+// wiring firing a module-owned function - no mounted surface rides it.
+// The two mounts are the proof:
+//
+//  1. WITH trust: the seam is mounted and the gate answers through it -
+//     an untrusted project under a noninteractive run loads no context
+//     (skip + warning, the run/serve path), the approve path persists
+//     the project root into trust.yaml and returns the AGENTS.md text,
+//     and State reads trusted off the persisted store with --no-approve
+//     still winning.
+//  2. WITHOUT trust: the seam is nil - the host entry paths answer
+//     empty through their nil-guard (serve and run start, both
+//     frontends stay alive), no trust tool, and the other modules mount
+//     unchanged (trust Requires nothing and nothing Requires trust).
+//
+// Data is not code: trust.yaml and its trusted entries stay on disk
+// after a removal. The core type stays too (core/seams.go:
+// TrustProvider) - the seam signature references it and layers never
+// import modules. Intentional residue, documented: this test compiles
+// it to prove it.
+func TestTrustRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// recipe step 1, declared data: nothing requires trust. Trust ships
+	// no seam others read and no dependent emitter rides its mount.
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if req == "trust" {
+				t.Fatalf("FULL MOUNT precondition: %q requires trust - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.Trust == nil {
+		t.Fatal("FULL MOUNT: trust seam nil - capsule did not mount")
+	}
+	t.Log("PROOF mount=full: trust seam mounted (ctx.Trust - the trust.yaml gate), the whole surface ships from the one Mount")
+
+	// a real project directory with a real AGENTS.md, in a home
+	// (OMEGA_HOME) that keeps the trust store; the gate walks the
+	// project directory and writes the store under config/
+	proj := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatalf("mkdir proj: %v", err)
+	}
+	const marker = "arc 6 trust-capsule proof context"
+	if err := os.WriteFile(filepath.Join(proj, "AGENTS.md"), []byte(marker), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+
+	// the run/serve face: an untrusted project outside an --approve run
+	// loads no context (skip + warning)
+	if got := trustGate(ctx.Trust, proj, trustFlags{}, false); got != "" {
+		t.Fatalf("FULL MOUNT: untrusted project loaded context anyway: %q", got)
+	}
+	// the --approve face: the gate persists the project root into
+	// trust.yaml and returns the AGENTS.md text
+	approved := trustGate(ctx.Trust, proj, trustFlags{approve: true}, false)
+	if !strings.Contains(approved, marker) {
+		t.Fatalf("FULL MOUNT: the approve path did not load the project context (got %.80q)", approved)
+	}
+	store, err := os.ReadFile(filepath.Join(os.Getenv("OMEGA_HOME"), "config", "trust.yaml"))
+	if err != nil || !strings.Contains(string(store), proj) {
+		t.Fatalf("FULL MOUNT: the approve path did not persist %s into the trust store (err=%v yaml=%q)", proj, err, store)
+	}
+	t.Log("PROOF gate wiring: --approve persisted the project root into trust.yaml and the same call returned the AGENTS.md context")
+	// the status-bar face: State reads trusted off the persisted store
+	if st := trustStatus(ctx.Trust, proj, trustFlags{}); st != "trusted" {
+		t.Fatalf("FULL MOUNT: State = %q, want trusted", st)
+	}
+	// --no-approve wins, on both faces, by the seam's own rule
+	if st := trustStatus(ctx.Trust, proj, trustFlags{noApprove: true}); st != "untrusted" {
+		t.Fatalf("FULL MOUNT: State with --no-approve = %q, want untrusted", st)
+	}
+	if got := trustGate(ctx.Trust, proj, trustFlags{noApprove: true}, false); got != "" {
+		t.Fatalf("FULL MOUNT: --no-approve loaded context anyway: %.80q", got)
+	}
+	t.Log("PROOF gate faces: untrusted skip, approve + persist + load, trusted status, --no-approve wins - all answered through the seam")
+
+	// trust ships no registry faces by design: no tool, no /trust
+	// command, no canvas panel, no module-qualified action
+	for _, tp := range ctx.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.Contains(name, "trust") {
+				t.Fatalf("FULL MOUNT: trust-shaped tool %q in the registry (the capsule ships no tools)", name)
+			}
+		}
+	}
+	for _, tp := range ctx.TUIProviders {
+		for _, c := range tp.TUICommands() {
+			if c.Name == "/trust" {
+				t.Fatal("FULL MOUNT: unexpected /trust command (the capsule ships no commands)")
+			}
+		}
+	}
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	for _, p := range canvas.Snapshot() {
+		if p.ID == "trust" {
+			t.Fatalf("FULL MOUNT: unexpected trust panel in the snapshot: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "trust" {
+				t.Fatalf("FULL MOUNT: unexpected trust-qualified action on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := canvas.Dispatch(core.ActionCall{Module: "trust", Action: "trust"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("FULL MOUNT: dispatch answered %v, want ErrUnknownModule (trust declares no actions)", err)
+	}
+	t.Log("PROOF surface posture: no tool, no /trust command, no canvas panel or trust-qualified action - the action pipe answers ErrUnknownModule on the full mount (the module ships no canvas surface by design)")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "trust" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctx2.Trust != nil {
+		t.Fatal("REMOVED MOUNT: trust seam still mounted")
+	}
+	// the frontends stay alive: the host entry paths are nil-guarded -
+	// serve and run answer an empty gate and the status line stays bare
+	if got := trustGate(nil, proj, trustFlags{approve: true}, true); got != "" {
+		t.Fatalf("REMOVED MOUNT: the guarded host gate answered %q with a nil seam", got)
+	}
+	if st := trustStatus(nil, proj, trustFlags{}); st != "" {
+		t.Fatalf("REMOVED MOUNT: the guarded status path answered %q with a nil seam", st)
+	}
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.Contains(name, "trust") {
+				t.Fatalf("REMOVED MOUNT: trust-shaped tool %q survived the removal", name)
+			}
+		}
+	}
+	for _, tp := range ctx2.TUIProviders {
+		for _, c := range tp.TUICommands() {
+			if c.Name == "/trust" {
+				t.Fatal("REMOVED MOUNT: the /trust command survived the removal")
+			}
+		}
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	for _, p := range noCanvas.Snapshot() {
+		if p.ID == "trust" {
+			t.Fatalf("REMOVED MOUNT: a trust panel survived the removal: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "trust" {
+				t.Fatalf("REMOVED MOUNT: a trust-qualified action survived on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "trust", Action: "trust"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
+	}
+	// the neighbors keep mounting: the removal takes no dependents
+	// (trust requires nothing, nothing requires trust)
+	if ctx2.Notifications == nil {
+		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
+	}
+	if ctx2.Kanban == nil {
+		t.Fatal("REMOVED MOUNT: kanban seam lost - the removal must not take a module it does not own")
+	}
+	// data is not code: the persisted trust store (and its entries)
+	// stays on disk after the removal
+	if _, err := os.Stat(filepath.Join(os.Getenv("OMEGA_HOME"), "config", "trust.yaml")); err != nil {
+		t.Fatalf("REMOVED MOUNT: the trust store vanished from disk (data is not code): %v", err)
+	}
+	// core types remain - intentional (the seam signature references
+	// them; layers never import modules). Compile-time proof:
+	_ = core.TrustProvider(nil)
+	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core/seams.go TrustProvider remains - documented as intentional")
+}
