@@ -82,7 +82,7 @@ reference: `docs/tui.md`, module-owned command owners.
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
 | `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
 | `notifications/` | notifications, panels | Finished-things store (SQLite, the bell) + the first module capsule: list panel with row mark-read actions through the action pipe, the toast as a canvas event, emitter wiring via the same registration (arc 4b) |
-| `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
+| `http_channel/` | channel, panels | HTTP/SSE delivery channel (omega serve transport) + the chat canvas panel (chat-last 1/3): the conversation rides the snapshot + deltas + action pipe contract; the /chat REST + SSE wire stays untouched |
 | `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before the frontends launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
 | `cron/`         | cron, TUI, panels | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron, the jobs canvas panel - arc 6 capsule) |
