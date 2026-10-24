@@ -114,10 +114,16 @@ func (m model) toastExpireCmd(failed bool) tea.Cmd {
 // so the value itself is not stored anywhere.
 type canvasDeltaMsg struct{ panel core.Panel }
 
-// waitForCanvas returns the cmd that blocks on the next delta. The
-// re-arm lives on the canvasDeltaMsg Update case.
-func (m model) waitForCanvas() tea.Cmd {
-	return func() tea.Msg { return canvasDeltaMsg{panel: <-m.canvasFeed.events} }
+// waitForCanvas returns the cmd that blocks on the next delta, with
+// any extra follow-ups batched in (callers that drain pipe actions
+// carry the re-arm alongside their own command). The re-arm lives on
+// the canvasDeltaMsg Update case.
+func (m model) waitForCanvas(extra ...tea.Cmd) tea.Cmd {
+	cmd := func() tea.Msg { return canvasDeltaMsg{panel: <-m.canvasFeed.events} }
+	if len(extra) == 0 {
+		return cmd
+	}
+	return tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
 }
 
 // canvasRow is one numbered key-binding entry: panel + action in flat

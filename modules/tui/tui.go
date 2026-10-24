@@ -269,22 +269,28 @@ func autocompleteOptions(pctx *core.Context) map[string][]string {
 	return merged
 }
 
-// streamSegment is one ordered piece of a streaming turn. Segments are
-// appended in the order the model emits them, preserving the narrative
-// flow (thinking → tool → response → more thinking → ...).
-type streamSegment struct {
-	kind    string // "thinking", "tool", "response"
-	content string
+// noticeLine is one non-conversation shell line (command results,
+// module console writes, status chatter): the canvas chat payload
+// covers the conversation only, notices pin to the current row count
+// and re-insert there on every rebuild - the same append-order the
+// transcript kept, minus the conversation it no longer carries.
+type noticeLine struct {
+	after int    // render after this payload row index (-1 = top)
+	text  string // rendered + styled already
 }
 
+// chatCanvas is the TUI chat capsule (chat_panel.go): the shell chat
+// pane renders the conversation FROM the panel payload it pushes.
+
 // model is the Bubble Tea state for the chat TUI. It owns the message
-// history, the streaming buffer, and the two widgets (viewport + textarea).
+// history, the chat canvas capsule (the renderable conversation), and
+// the two widgets (viewport + textarea).
 type model struct {
 	textarea             textarea.Model
 	viewport             viewport.Model
-	history              []core.Message  // full conversation fed to the agent each turn
-	transcript           string          // rendered content of completed exchanges
-	segments             []streamSegment // ordered streaming segments for the current turn
+	history              []core.Message // full conversation fed to the agent each turn
+	notices              []noticeLine   // non-conversation shell lines, pin to payload rows
+	chatCanvas           *chatCanvas    // the module-owned chat panel capsule (nil: tests)
 	providerType         string
 	modelName            string
 	compaction           *core.CompactionConfig
@@ -330,8 +336,7 @@ type model struct {
 	cwd                  string          // working directory passed from host
 	lastToolCall         string          // last tool call name, for syntax highlighting results
 	lastToolArgs         map[string]any  // last tool call args, for language detection
-	lastRender           time.Time       // debounce for live glamour rendering during streaming
-	lastRenderedResponse string          // cached glamour output for debounced frames
+	renderCache          *renderCache    // live glamour debounce state, shared across value copies
 	contextWindow        int             // auto-discovered from provider; 0 = unknown, fall back to config
 	view                 core.ActiveView // tree view of the loaded session; /variant /fork navigation
 	forkParent           string          // row id the next send chains onto (/fork); "" = derive leaf
@@ -465,9 +470,16 @@ func newChatModel(providerType, modelName string, compaction *core.CompactionCon
 			t.Name = "auto"
 		}
 	}
+	// Chat capsule (chat-last 2b): the module-owned chat panel gates on
+	// the frontend actually running - registration rides NewModel,
+	// which only the live Frontend.Run reaches. Registered before the
+	// canvas builds over the providers (openCanvasFeed below wires the
+	// push sink).
+	chat := registerChatCanvas(pctx)
 	return model{
 		textarea:             ta,
 		viewport:             vp,
+		renderCache:          &renderCache{},
 		providerType:         providerType,
 		modelName:            modelName,
 		compaction:           compaction,
@@ -485,6 +497,7 @@ func newChatModel(providerType, modelName string, compaction *core.CompactionCon
 		thinkingLevel:        "medium",
 		showToolResults:      true,
 		toolResultsAuto:      true,
+		chatCanvas:           chat,
 		canvasFeed:           openCanvasFeed(pctx),
 		focus:                paneMainID,
 		leftVP:               viewport.New(1, 1),
@@ -511,6 +524,18 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case canvasDeltaMsg:
+		// Pipe-invoked actions that need the model loop (the retry
+		// request drops into the capsule's queue; the delta its push
+		// emitted wakes the drain) apply here, on the live model.
+		if m.chatCanvas != nil {
+			if action := m.chatCanvas.drainRequest(); action != "" {
+				switch action {
+				case chatActionRetry:
+					mo, cmd := m.handleRetry()
+					return mo, tea.Batch(m.waitForCanvas(cmd))
+				}
+			}
+		}
 		// Canvas delta (in-process subscription, arc 3d): the open
 		// view re-snapshots on its next View; no state is stored
 		// here. Toast-kinded panels (arc 4b) are the transient
@@ -550,9 +575,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen.Update(msg, tuiConsole{m: &out})
 			m = out
 		}
-		if len(m.history) > 0 && !m.busy {
-			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
-		}
+		// Row-based rendering is width-independent per refresh: this
+		// message's refresh() re-renders at the new width.
 		m.refresh()
 		return m, m.textarea.Focus()
 
@@ -601,10 +625,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.busy {
-			// Escape cancels the in-flight run; the agent loop observes
-			// ctx.Err() and emits AgentEnd("cancelled"), which clears busy.
+			// Escape stops the in-flight run - routed through the one
+			// action pipe, module-qualified (the stop action wraps the
+			// native cancel); no canvas degrades to the native face.
+			// The agent loop observes ctx.Err() and emits
+			// AgentEnd("cancelled"), which clears busy.
 			if msg.String() == "esc" && m.cancel != nil {
-				m.cancel()
+				_ = m.dispatchChatAction(chatActionStop)
 				m.queuedInput = ""
 			}
 			// Enter queues the current input to auto-submit when the
@@ -645,7 +672,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Ctrl+P cycles to the next model in modelList. If the list
 			// is empty, fetch it from the provider first.
 			if len(m.modelList) == 0 {
-				m.transcript += "\n" + m.theme.Info.Render("[fetching models...]") + "\n"
+				m.addNotice("\n" + m.theme.Info.Render("[fetching models...]") + "\n")
 				m.refresh()
 				return m, m.fetchModelsCmd()
 			}
@@ -662,7 +689,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				next = 0
 			}
 			m.modelName = m.modelList[next]
-			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
+			m.addNotice("\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n")
 			m.refresh()
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
 		}
@@ -808,10 +835,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// The injected result is this run's input; the
 					// loop's sink persists it (t_471f6d4a).
 					m.persistInput = []core.Message{m.history[len(m.history)-1]}
-					m.busy = true
-					m.segments = nil
+						m.busy = true
 					m.err = ""
-					m.lastRenderedResponse = ""
+					m.resetRenderCache()
+					m.chatCanvas.setConversation(m.sessionID, m.history)
 					m.startRun()
 					return m, tea.Batch(m.drainEvents(), m.titleCmd())
 				}
@@ -873,8 +900,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.history = msg.messages
-		m.transcript += "\n" + m.theme.Info.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", msg.before, len(msg.messages))+"]") + "\n"
+		m.addNotice("\n" + m.theme.Info.Render("[compacted: "+fmt.Sprintf("%d messages → %d messages", msg.before, len(msg.messages))+"]") + "\n")
 		m.err = ""
+		m.chatCanvas.setConversation(m.sessionID, m.history)
 		m.refresh()
 		return m, nil
 
@@ -889,7 +917,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.models) > 0 {
 			m.modelName = msg.models[0]
 			m.persistEntry(core.NewModelChange(m.modelName))
-			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
+			m.addNotice("\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n")
 			m.err = ""
 			m.refresh()
 			return m, tea.Batch(m.titleCmd(), m.fetchModelInfoCmd())
@@ -926,9 +954,6 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.promptHistory = append(m.promptHistory, input)
 	m.historyIndex = 0
 
-	// Echo the input as a user message in the transcript.
-	m.transcript += "\n" + m.theme.User.Render("> "+wordWrap(input, m.viewport.Width)) + "\n"
-
 	// Slash commands run locally and never hit the agent.
 	if strings.HasPrefix(input, "/") {
 		return m.handleCommand(input)
@@ -943,11 +968,11 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// Extract @file references: load images as base64, inline text files.
 	prompt, images, imgErr := extractImages(input, m.store, m.skills)
 	if imgErr != nil {
-		m.transcript += "\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n"
+		m.addNotice("\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n")
 	}
 	var msg core.Message
 	if len(images) > 0 {
-		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[loaded %d image(s)]", len(images))) + "\n"
+		m.addNotice("\n" + m.theme.Info.Render(fmt.Sprintf("[loaded %d image(s)]", len(images))) + "\n")
 		msg = core.NewUserWithImages(prompt, images)
 	} else {
 		msg = core.NewUser(prompt)
@@ -960,10 +985,11 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// before the first turn (t_471f6d4a). Ephemeral sessions have
 	// no store, so the sink is nil and nothing persists.
 	m.persistInput = []core.Message{msg}
+	// The user row lands on the panel now (the run's streaming follows).
+	m.chatCanvas.setConversation(m.sessionID, m.history)
 	m.busy = true
-	m.segments = nil
 	m.err = ""
-	m.lastRenderedResponse = ""
+	m.resetRenderCache()
 
 	// Auto-create a session on the first send. Ephemeral sessions
 	// skip the store entirely.
@@ -1007,6 +1033,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 			}
 			m.sessionID = id
 			m.storeErr = ""
+			m.chatCanvas.setSession(id)
 		}
 	}
 
@@ -1086,6 +1113,9 @@ func (m *model) startRun() {
 	} else {
 		m.events = ag.Run(ctx, m.history, nil)
 	}
+	// The panel runs this conversation now: the running flag flips on
+	// and the stop action wraps this run's cancel.
+	m.chatCanvas.setRun(m.sessionID, cancel)
 }
 
 // drainEvents returns a command that reads one event from the channel and
@@ -1112,128 +1142,61 @@ func (m model) tickCmd() tea.Cmd {
 	})
 }
 
-// handleEvent folds one agent event into the streaming segments.
-// Segments are appended in the order the model emits them, preserving
-// the narrative flow (thinking → tool → response → more thinking → ...).
+// handleEvent folds one agent event into the chat capsule's panel
+// state. The model keeps the conversation bookkeeping (history,
+// retry/tree state); every stream mutation lands on the capsule and
+// pushes through the sink - streaming renders through deltas.
 func (m *model) handleEvent(event core.Event) {
 	switch e := event.(type) {
 	case core.StreamEvent:
 		switch chunk := e.Event.(type) {
 		case core.ResponseChunk:
-			m.appendSegment("response", chunk.Content)
+			m.chatCanvas.streamResponse(chunk.Content)
 		case core.ThinkingChunk:
-			m.appendSegment("thinking", chunk.Content)
+			m.chatCanvas.streamThinking(chunk.Content)
 		case core.ToolCallEvent:
 			m.lastToolCall = chunk.ToolCall.Name
 			m.lastToolArgs = chunk.ToolCall.Arguments
-			var sb strings.Builder
-			if chunk.ToolCall.Name == "verdict" {
-				// Verdict cards v1: the question banner replaces the raw
-				// args dump. The user answers by typing 1/y/n/skip/text +
-				// Enter while the run blocks (busy-Enter intercept).
-				sb.WriteString(verdictBanner(chunk.ToolCall.Arguments, m.viewport.Width, m.theme))
-				m.segments = append(m.segments, streamSegment{kind: "tool", content: sb.String()})
-				break
-			}
-			sb.WriteString("\n")
-			sb.WriteString(m.theme.Tool.Render("[tool: " + chunk.ToolCall.Name + "]"))
-			sb.WriteString("\n")
-			if len(chunk.ToolCall.Arguments) > 0 {
-				for k, v := range chunk.ToolCall.Arguments {
-					sb.WriteString(wordWrap(fmt.Sprintf("  %s: %v", k, v), m.viewport.Width))
-					sb.WriteString("\n")
-				}
-				sb.WriteString("\n")
-			}
-			m.segments = append(m.segments, streamSegment{kind: "tool", content: sb.String()})
+			m.chatCanvas.streamCall(chunk.ToolCall)
 		case core.StreamEnd:
 			if chunk.Error != "" {
-				m.appendSegment("response", "\n"+m.theme.Error.Render("error: "+chunk.Error)+"\n")
+				m.err = chunk.Error
 			}
 		}
 	case core.AgentEnd:
 		if e.Error != "" {
 			m.err = e.Error
 		}
-		// Fold segments into the transcript in order. Thinking and tool
-		// segments are lipgloss-styled; response segments go through
-		// glamour for markdown rendering.
-		var responseBuf strings.Builder
-		for _, seg := range m.segments {
-			switch seg.kind {
-			case "thinking":
-				if m.showThinking {
-					m.transcript += "\n" + m.theme.Thinking.Render("[thinking]") + "\n"
-					m.transcript += m.theme.Thinking.Render(wordWrap(seg.content, m.viewport.Width)) + "\n"
-				}
-			case "tool":
-				m.transcript += seg.content
-			case "tool_result":
-				m.transcript += "\n" + m.theme.Tool.Render(seg.content) + "\n"
-			case "tool_result_highlighted":
-				m.transcript += "\n" + seg.content + "\n"
-			case "response":
-				responseBuf.WriteString(seg.content)
-			}
+		// Exit flush: the payload recomputes from the full history -
+		// the persisted truth paints, the live tail empties. The
+		// retried response's variant marker survives one commit; a
+		// payload-cap trim shifts the notice anchors down with it.
+		m.chatCanvas.commit(m.history, e.Error)
+		if m.retryMarker != "" {
+			m.chatCanvas.setMarker(m.retryMarker)
+			m.retryMarker = ""
 		}
-		if responseBuf.Len() > 0 {
-			response := e.Message
-			if response.Content == "" {
-				response.Content = strings.TrimSuffix(responseBuf.String(), "\n")
-			}
-			rendered := renderMarkdown(response.Content, m.viewport.Width, m.theme)
-			if m.retryMarker != "" {
-				// The retry's fresh response carries its variant
-				// marker (computed at /retry time from the pre-run
-				// sibling count).
-				m.transcript += "\n" + m.theme.Info.Render(m.retryMarker) + " " + rendered + "\n"
-			} else {
-				m.transcript += "\n" + rendered + "\n"
+		if trim := m.chatCanvas.consumeTrim(); trim > 0 {
+			for i := range m.notices {
+				m.notices[i].after -= trim
 			}
 		}
 		// The run's tree state changed: refresh the view so the next
 		// /variant or /fork sees the fresh branch points.
 		m.retryParent = ""
-		m.retryMarker = ""
 		m.headPinned = false
 		if m.store != nil && m.sessionID != "" && !m.ephemeral {
 			if v, err := m.store.GetActiveView(context.Background(), m.sessionID); err == nil {
 				m.view = v
 			}
 		}
-		m.segments = nil
 	case core.ToolResultEvent:
 		m.history = append(m.history, e.Message)
 		// Persisted by the loop's sink as the turn completed
 		// (t_471f6d4a); here it only lands in history.
-		// Append as a segment so it renders in order with thinking
-		// and tool calls at AgentEnd, not out of sequence.
-		lines := strings.Count(e.Message.Content, "\n") + 1
-		// Determine language for syntax highlighting from the last tool call.
-		lang := ""
-		if !e.Message.IsError {
-			lang = langForTool(m.lastToolCall, m.lastToolArgs)
-		}
-		switch {
-		case m.showToolResults && !m.toolResultsAuto:
-			content := e.Message.Content
-			if lang != "" {
-				content = highlightCode(content, lang, m.theme.Name)
-				m.appendSegment("tool_result_highlighted", wordWrap(content, m.viewport.Width))
-			} else {
-				m.appendSegment("tool_result", wordWrap(content, m.viewport.Width))
-			}
-		case m.toolResultsAuto && lines <= toolResultAutoThreshold:
-			content := e.Message.Content
-			if lang != "" {
-				content = highlightCode(content, lang, m.theme.Name)
-				m.appendSegment("tool_result_highlighted", wordWrap(content, m.viewport.Width))
-			} else {
-				m.appendSegment("tool_result", wordWrap(content, m.viewport.Width))
-			}
-		default:
-			m.appendSegment("tool_result", fmt.Sprintf("[tool result: %d lines]", lines))
-		}
+		// The result paints live on the panel, in narrative order
+		// between the call and the answer; the exit flush recomposes.
+		m.chatCanvas.streamResult(e.Message)
 	case core.AssistantMessageEvent:
 		// A /retry run pins its head to the branch-point user (the
 		// sibling-variant hop the store sink makes at persist time -
@@ -1244,19 +1207,8 @@ func (m *model) handleEvent(event core.Event) {
 			m.headPinned = true
 		}
 		m.history = append(m.history, e.Message)
-		// Persisted by the loop's sink as the turn completed
-		// (t_471f6d4a); here it only lands in history.
-	}
-}
-
-// appendSegment appends content to the last segment if it has the same
-// kind, or creates a new segment. This keeps consecutive chunks of the
-// same type (e.g. multiple ResponseChunks) in one segment.
-func (m *model) appendSegment(kind, content string) {
-	if len(m.segments) > 0 && m.segments[len(m.segments)-1].kind == kind {
-		m.segments[len(m.segments)-1].content += content
-	} else {
-		m.segments = append(m.segments, streamSegment{kind: kind, content: content})
+		// The live text row streams through the chunk deltas; the
+		// exit flush recomposes the persisted truth at AgentEnd.
 	}
 }
 
@@ -1340,7 +1292,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/theme":
 		return m.handleTheme(fields[1:])
 	case "/help":
-		m.transcript += m.renderHelp()
+		m.addNotice(m.renderHelp())
 		m.refresh()
 		return m, nil
 	case "/model":
@@ -1393,7 +1345,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		// Check if the command matches a loaded skill.
 		for _, s := range m.skills {
 			if "/"+s.Name == cmd {
-				m.transcript += "\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n"
+				m.addNotice("\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n")
 				m.history = append(m.history, core.NewSystem(s.Content))
 				m.refresh()
 				return m, nil
@@ -1421,7 +1373,7 @@ func (m model) invokeInlineSkills(input string) model {
 		for _, s := range m.skills {
 			if s.Name == name {
 				m.history = append(m.history, core.NewSystem(s.Content))
-				m.transcript += "\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n"
+				m.addNotice("\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n")
 				break
 			}
 		}
@@ -1591,7 +1543,7 @@ func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
 			m.resetSession()
 		}
 	}
-	m.transcript += "\n" + m.theme.Info.Render("[deleted: "+name+"]") + "\n"
+	m.addNotice("\n" + m.theme.Info.Render("[deleted: "+name+"]") + "\n")
 	m.refresh()
 	return m, nil
 }
@@ -1614,8 +1566,8 @@ func (m *model) resetSession() {
 	m.sessionLabel = ""
 	m.autoNamed = false
 	m.history = nil
-	m.transcript = ""
-	m.segments = nil
+	m.notices = nil
+	m.chatCanvas.setConversation("", nil)
 	m.view = core.ActiveView{}
 	m.forkParent = ""
 	m.retryParent = ""
@@ -1638,7 +1590,7 @@ func (m *model) persistEntry(msg core.Message) {
 func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 	infos := m.extensions.Infos
 	if len(infos) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no extensions loaded]") + "\n"
+		m.addNotice("\n" + m.theme.Info.Render("[no extensions loaded]") + "\n")
 		m.refresh()
 		return m, nil
 	}
@@ -1659,7 +1611,7 @@ func (m model) handleExtensions() (tea.Model, tea.Cmd) {
 		seams := strings.Join(info.Seams, ", ")
 		fmt.Fprintf(&sb, "%-*s  %5d  %8d  %s\n", nameWidth, info.Name, info.Tools, info.Commands, seams)
 	}
-	m.transcript += sb.String()
+	m.addNotice(sb.String())
 	m.refresh()
 	return m, nil
 }
@@ -1680,7 +1632,7 @@ func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
 			}
 			fmt.Fprintf(&sb, "%s%s\n", marker, name)
 		}
-		m.transcript += sb.String()
+		m.addNotice(sb.String())
 		m.refresh()
 		return m, nil
 	}
@@ -1693,13 +1645,11 @@ func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
 		}
 		t.Name = "auto"
 		m.theme = t
-		if len(m.history) > 0 {
-			m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
-			// Re-add the user's echo line: slash commands are not in
-			// m.history, so renderTranscript omits them.
-			m.transcript += "\n" + m.theme.User.Render("> /theme "+strings.Join(args, " ")) + "\n"
-		}
-		m.transcript += "\n" + m.theme.Info.Render("[theme: auto ("+resolved+")]") + "\n"
+		// The payload re-renders with the new theme on the next
+		// frame; the notice anchors reset with the theme switch
+		// (the point the old transcript rebuild lived at).
+		m.notices = nil
+		m.addNotice("\n" + m.theme.Info.Render("[theme: auto ("+resolved+")]") + "\n")
 		m.refresh()
 		return m, nil
 	}
@@ -1710,11 +1660,8 @@ func (m model) handleTheme(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.theme = t
-	if len(m.history) > 0 {
-		m.transcript = renderTranscript(m.history, m.viewport.Width, m.theme, m.markersForHistory())
-		m.transcript += "\n" + m.theme.User.Render("> /theme "+strings.Join(args, " ")) + "\n"
-	}
-	m.transcript += "\n" + m.theme.Info.Render("[theme: "+name+"]") + "\n"
+	m.notices = nil
+	m.addNotice("\n" + m.theme.Info.Render("[theme: "+name+"]") + "\n")
 	m.refresh()
 	return m, nil
 }
@@ -1733,7 +1680,7 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if result.Text != "" {
-		m.transcript += "\n" + m.theme.Info.Render(result.Text) + "\n"
+		m.addNotice("\n" + m.theme.Info.Render(result.Text) + "\n")
 	}
 	m.refresh()
 	// Process TUI actions declared by the extension.
@@ -1763,8 +1710,8 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.persistEntry(core.NewThinkingLevelChange(m.thinkingLevel))
 		case "new_session":
 			m.history = nil
-			m.transcript = ""
-			m.segments = nil
+			m.notices = nil
+			m.chatCanvas.setConversation(m.sessionID, nil)
 			m.err = ""
 			m.sessionLabel = ""
 			m.autoNamed = false
@@ -1812,8 +1759,8 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.history = messageList
 			m.view = sessionView
 			m.forkParent = "" // dead pin: nothing forked in the freshly loaded session
-			m.transcript = renderTranscript(messageList, m.viewport.Width, m.theme, pathMarkers(sessionView, len(messageList)))
-			m.segments = nil
+			m.notices = nil
+			m.chatCanvas.setConversation(id, messageList)
 			m.err = ""
 			m.storeErr = ""
 			for _, sm := range times {
@@ -1847,8 +1794,8 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.sessionID = id
 			m.history = messages
 			m.view = core.ActiveView{} // branch sessions render a flat ancestor chain, no live tree view
-			m.transcript = renderTranscript(messages, m.viewport.Width, m.theme, nil)
-			m.segments = nil
+			m.notices = nil
+			m.chatCanvas.setConversation(id, messages)
 			m.err = ""
 			m.refresh()
 		case "set_label":
@@ -2000,156 +1947,15 @@ func (m *model) resizeTextarea() {
 	m.viewport.Height = vpHeight
 }
 
-// renderTranscript renders a message history as the TUI transcript.
-// Assistant messages render thinking, tool calls, and content in order
-// (matching the live AgentEnd path); tool results render full; compacted
-// summaries render dimmed. Other system messages (skills, injected
-// prompts) are not persisted and never appear here. markers maps a
-// message index to a variant marker ("[2/3]") rendered at the head of
-// its assistant block (t_7337870a).
-func renderTranscript(messages []core.Message, width int, t Theme, markers map[int]string) string {
-	var sb strings.Builder
-	// Track the last assistant's tool calls so we can infer the
-	// language for syntax highlighting tool results by ToolCallID.
-	toolCallsByID := make(map[string]core.ToolCall)
-	for i, msg := range messages {
-		switch m := msg.(type) {
-		case core.User:
-			sb.WriteString("\n")
-			sb.WriteString(t.User.Render("> " + wordWrap(m.Content, width)))
-			sb.WriteString("\n")
-		case core.Assistant:
-			// Register tool calls for matching with subsequent results.
-			for _, call := range m.ToolCalls {
-				toolCallsByID[call.ID] = call
-			}
-			sb.WriteString("\n")
-			if markers != nil && markers[i] != "" {
-				sb.WriteString(t.Info.Render(markers[i]) + " ")
-			}
-			if m.Thinking != nil && *m.Thinking != "" {
-				sb.WriteString(t.Thinking.Render("[thinking]"))
-				sb.WriteString("\n")
-				sb.WriteString(t.Thinking.Render(wordWrap(*m.Thinking, width)))
-				sb.WriteString("\n")
-			}
-			for _, call := range m.ToolCalls {
-				sb.WriteString(t.Tool.Render("[tool: " + call.Name + "]"))
-				sb.WriteString("\n")
-				if len(call.Arguments) > 0 {
-					for k, v := range call.Arguments {
-						sb.WriteString(wordWrap(fmt.Sprintf("  %s: %v", k, v), width))
-						sb.WriteString("\n")
-					}
-					sb.WriteString("\n")
-				}
-			}
-			if m.Content != "" {
-				sb.WriteString(renderMarkdown(m.Content, width, t))
-				sb.WriteString("\n")
-			}
-		case core.ToolResult:
-			sb.WriteString("\n")
-			if m.IsError {
-				sb.WriteString(t.Error.Render("[tool result: error]"))
-			} else {
-				sb.WriteString(t.Tool.Render("[tool result]"))
-			}
-			sb.WriteString("\n")
-			content := m.Content
-			hasHighlight := false
-			if !m.IsError {
-				if call, ok := toolCallsByID[m.ToolCallID]; ok {
-					lang := langForTool(call.Name, call.Arguments)
-					if lang != "" {
-						content = highlightCode(content, lang, t.Name)
-						hasHighlight = true
-					}
-				}
-			}
-			if hasHighlight {
-				// Don't wrap highlighted content in tool color;
-				// let chroma's colors stand on their own.
-				sb.WriteString(wordWrap(content, width))
-			} else {
-				sb.WriteString(t.Tool.Render(wordWrap(content, width)))
-			}
-			sb.WriteString("\n")
-		case core.System:
-			// Only compaction summaries are persisted; render them so
-			// the user sees the history was summarized.
-			if strings.HasPrefix(m.Content, "[compacted:") {
-				sb.WriteString("\n")
-				sb.WriteString(t.Info.Render(m.Content))
-				sb.WriteString("\n")
-			}
-		}
-	}
-	return sb.String()
-}
-
-// refresh re-renders the viewport content from the transcript and segments.
-// Response segments render through glamour (markdown + syntax highlighting)
-// during streaming, debounced to 80ms to prevent CPU thrashing. The final
-// AgentEnd render is always a clean full glamour pass.
+// refresh re-renders the viewport content from the canvas panel
+// payload (chat_view.go): the conversation renders from the capsule's
+// panel state - the state the runs push deltas into - and the shell
+// notices re-insert at their pinned row anchors. Content re-set only
+// here and on the module-screen paths; the pane shell's band re-sets
+// per frame at View (its width is its own).
 func (m *model) refresh() {
-	// Pane mode (arc 4a): the in-flight run's tool+thinking output
-	// renders in the run band below the columns; the main viewport
-	// keeps only responses so a busy turn never interleaves the two.
-	paneMode := m.geometry().active
-	var sb strings.Builder
-	sb.WriteString(m.transcript)
-	for _, seg := range m.segments {
-		switch seg.kind {
-		case "thinking":
-			if paneMode {
-				continue
-			}
-			sb.WriteString("\n")
-			sb.WriteString(m.theme.Thinking.Render("[thinking]"))
-			sb.WriteString("\n")
-			sb.WriteString(m.theme.Thinking.Render(wordWrap(seg.content, m.viewport.Width)))
-			sb.WriteString("\n")
-		case "tool":
-			if paneMode {
-				continue
-			}
-			sb.WriteString(seg.content)
-		case "tool_result":
-			if paneMode {
-				continue
-			}
-			sb.WriteString("\n")
-			sb.WriteString(m.theme.Tool.Render(seg.content))
-			sb.WriteString("\n")
-		case "tool_result_highlighted":
-			if paneMode {
-				continue
-			}
-			sb.WriteString("\n")
-			sb.WriteString(seg.content)
-			sb.WriteString("\n")
-		case "response":
-			if m.busy && time.Since(m.lastRender) < 80*time.Millisecond {
-				// Debounce: show the last glamour-rendered output
-				// instead of raw text to avoid flicker.
-				if m.lastRenderedResponse != "" {
-					sb.WriteString(m.lastRenderedResponse)
-				} else {
-					sb.WriteString(seg.content)
-				}
-			} else {
-				m.lastRender = time.Now()
-				m.lastRenderedResponse = renderMarkdown(seg.content, m.viewport.Width, m.theme)
-				sb.WriteString(m.lastRenderedResponse)
-			}
-		}
-	}
-	m.viewport.SetContent(sb.String())
+	m.viewport.SetContent(m.chatBody(m.viewport.Width))
 	m.viewport.GotoBottom()
-	if paneMode {
-		m.bottomVP.SetContent(m.bottomPaneBody())
-	}
 }
 
 // extLexers maps file extensions to chroma lexer names for syntax
@@ -2362,7 +2168,7 @@ func (m model) View() string {
 // autocomplete dropup, input hint, textarea - one full-width column.
 func (m model) legacyView() string {
 	var sb strings.Builder
-	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
+	if m.chatEmpty() {
 		sb.WriteString(m.splashView())
 	} else {
 		sb.WriteString(m.viewport.View())
@@ -2460,6 +2266,125 @@ func (m model) notifyTurnComplete() {
 	default: // "bell" or unset
 		fmt.Print("\x07")
 	}
+}
+
+// addNotice pins one non-conversation shell line to the current
+// payload row count: it re-inserts there on every rebuild, in append
+// order. A payload-cap trim shifts the anchors (the AgentEnd commit
+// reports the trim count).
+func (m *model) addNotice(text string) {
+	after := -1
+	if m.chatCanvas != nil {
+		after = m.chatCanvas.RowCount() - 1
+	}
+	m.notices = append(m.notices, noticeLine{after: after, text: text})
+}
+
+// resetRenderCache clears the live glamour debounce state (a fresh run
+// must not replay the previous response's rendered frame).
+func (m *model) resetRenderCache() {
+	if m.renderCache != nil {
+		*m.renderCache = renderCache{}
+	}
+}
+
+// chatPayload returns the chat panel's view-model from the canvas
+// snapshot - the shell renders the conversation FROM the panel (the
+// 2b deliverable). No canvas renders empty.
+func (m model) chatPayload() core.ChatPayload {
+	if m.canvasFeed == nil || !m.canvasFeed.hasPanels() {
+		return core.ChatPayload{}
+	}
+	payload, ok := chatPayloadOf(m.canvasFeed.canvas.Snapshot())
+	if !ok {
+		return core.ChatPayload{}
+	}
+	return payload
+}
+
+// chatEmpty reports the conversation surface holds nothing: no rows,
+// no notices, no history (the splash's empty-conversation check).
+func (m model) chatEmpty() bool {
+	return len(m.chatPayload().Rows) == 0 && len(m.notices) == 0 && len(m.history) == 0
+}
+
+// chatOpts assembles the renderer options: the display toggles, the
+// variant markers (view-derived, row-index aligned), the pinned
+// marker of a just-retried response, the live-turn boundary, and the
+// committed run's stream error.
+func (m model) chatOpts(payload core.ChatPayload) chatRenderOpts {
+	opts := chatRenderOpts{
+		showThinking:    m.showThinking,
+		showToolResults: m.showToolResults,
+		toolResultsAuto: m.toolResultsAuto,
+		markers:         m.rowMarkers(),
+		liveFrom:        chatRenderNoLive,
+		running:         payload.Running,
+	}
+	if payload.Running {
+		opts.liveFrom = turnStartOf(payload.Rows)
+	}
+	if m.chatCanvas == nil {
+		return opts
+	}
+	if !payload.Running {
+		opts.errText = m.chatCanvas.legErrOf()
+		opts.tailMarker = m.chatCanvas.markerOf()
+	}
+	return opts
+}
+
+// chatBody renders the chat pane body from the panel payload, merging
+// the pinned shell notices into the line stream (a notice renders
+// after the row it anchored to). Value receiver: the glamour debounce
+// cache lives behind a pointer, shared across copies. In pane mode the
+// in-flight turn's thinking/tool rows detour into the run band
+// (bottomPaneBody); live text stays here - the same split the segment
+// renderer kept.
+func (m model) chatBody(width int) string {
+	payload := m.chatPayload()
+	liveFrom := -1
+	if payload.Running {
+		liveFrom = turnStartOf(payload.Rows)
+	}
+	lines := renderChatLines(width, m.theme, payload.Rows, m.chatOpts(payload), m.renderCache)
+	var sb strings.Builder
+	ni := 0
+	nextNotice := func(at int) {
+		for ni < len(m.notices) && m.notices[ni].after < at {
+			sb.WriteString(m.notices[ni].text)
+			ni++
+		}
+	}
+	for _, line := range lines {
+		nextNotice(line.at)
+		if payload.Running && line.at >= liveFrom && !line.isText {
+			continue // the run band renders this row
+		}
+		sb.WriteString(line.text)
+	}
+	// Notices anchored beyond the newest row (the error line included).
+	nextNotice(1 << 30)
+	return sb.String()
+}
+
+// dispatchChatAction routes a chat action through the one action pipe,
+// module-qualified (the panel's declared actions). No canvas mounted
+// degrades to the native face for stop (the run's cancel closure);
+// dispatch failures surface to the caller.
+func (m model) dispatchChatAction(action string) error {
+	if m.canvasFeed != nil && m.canvasFeed.hasPanels() {
+		_, err := m.canvasFeed.canvas.Dispatch(core.ActionCall{
+			Module: tuiChatModule,
+			Action: action,
+		})
+		return err
+	}
+	if action == chatActionStop && m.cancel != nil {
+		m.cancel()
+		return nil
+	}
+	return fmt.Errorf("chat action %s: no canvas mounted", action)
 }
 
 // statusLine returns the bottom status bar text.

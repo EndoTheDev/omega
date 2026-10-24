@@ -40,7 +40,7 @@ var _ core.TUIConsole = (*tuiConsole)(nil)
 // Labeled appends the themed "[label]" paragraph + plain body and
 // redraws - the shape /cron and /logs print today.
 func (c tuiConsole) Labeled(label, body string) {
-	c.m.transcript += "\n" + c.m.theme.Info.Render(label) + body
+	c.m.addNotice("\n" + c.m.theme.Info.Render(label) + body)
 	c.m.refresh()
 }
 

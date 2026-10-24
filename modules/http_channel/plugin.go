@@ -52,16 +52,14 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	if port <= 0 {
 		port = 8099
 	}
-	// Chat panel (chat-last 1/3, card t_ec45b670): the conversation's
-	// canvas surface rides the same registration seam - one capsule,
-	// appended here, bound to its server at channel start (the Server
-	// exists from then on, and newCanvas runs after the handoff).
+	// Chat panel (chat-last 1/3, chat-last 2b ruling): the conversation's
+	// canvas surface. The capsule is created here (one instance, carried
+	// on every bind) but NOT registered with the canvas seam at Mount -
+	// registration is gated on the frontend actually starting
+	// (HTTPChannel.Start, below). One chat panel per live frontend: a
+	// TUI-only process never reaches Start, so its canvas stays free of
+	// the dead "chat channel not started" duplicate.
 	p.chat = newChatCapsule()
-	ctx.PanelProviders = append(ctx.PanelProviders, p.chat)
-	// Chat panel (chat-last 1/3, card t_ec45b670): the conversation's
-	// canvas surface rides the same registration seam. The capsule is
-	// declared at Mount and appended to ctx.PanelProviders; the channel
-	// carries it so Start's handoff binds it (see below).
 
 	// Bind loopback only by default: the API is unauthenticated and /chat
 	// can execute shell commands via the tool registry — it must not be
@@ -87,11 +85,6 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 			hub:        p.hub,
 		})
 	}
-	// Chat panel (chat-last 1/3, card t_ec45b670): the conversation's
-	// canvas surface rides the same registration seam. The capsule is
-	// declared HERE (one instance) and bound to its server at channel
-	// start, which is when the Server exists - newCanvas runs after
-	// the handoff, so the snapshot and the action pipe route to it.
 	return nil
 }
 
