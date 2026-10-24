@@ -388,7 +388,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		MaxToolOutput: cfg.Compaction.MaxToolOutput,
 		PromptCustom:  cfg.SystemPrompt,
 		PromptAppend:  appendPrompts,
-		PromptContext: ctx.Trust.ResolveContext(cwd(), trust.approve, trust.noApprove, false),
+		PromptContext: trustGate(ctx.Trust, cwd(), trust, false),
 		CWD:           cwd(),
 	})
 
@@ -670,10 +670,10 @@ func runChat(cfg Config, pctx *agent.Context, skills []core.Skill, appendPrompts
 		Compaction:    &cfg.Compaction,
 		PromptCustom:  cfg.SystemPrompt,
 		PromptAppend:  appendPrompts,
-		PromptContext: pctx.Trust.ResolveContext(cwd(), trust.approve, trust.noApprove, true),
+		PromptContext: trustGate(pctx.Trust, cwd(), trust, true),
 		Skills:        skills,
 		ThemeName:     cfg.Theme,
-		TrustState:    pctx.Trust.State(cwd(), trust.approve, trust.noApprove),
+		TrustState:    trustStatus(pctx.Trust, cwd(), trust),
 		Notifications: cfg.Notifications,
 		CWD:           cwd(),
 		Version:       omegaVersion,

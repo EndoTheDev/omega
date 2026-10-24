@@ -1,6 +1,10 @@
 package main
 
-import "os"
+import (
+	"os"
+
+	"github.com/EndoTheDev/omega/core"
+)
 
 // cwd returns the current working directory, or "." if it cannot be
 // resolved.
@@ -10,6 +14,27 @@ func cwd() string {
 		return "."
 	}
 	return dir
+}
+
+// trustGate walks the trust seam's ResolveContext on behalf of the
+// host entry paths. Nil-guarded by capsule law: an unmounted trust
+// plugin answers "" (the gate simply does not exist) instead of panics
+// at serve/run startup - proof: TestTrustRemovalProof (removal_test.go,
+// eighth).
+func trustGate(seam core.TrustProvider, dir string, flags trustFlags, interactive bool) string {
+	if seam == nil {
+		return ""
+	}
+	return seam.ResolveContext(dir, flags.approve, flags.noApprove, interactive)
+}
+
+// trustStatus is trustGate for the frontend status bar: the same
+// nil-guard, an unmounted seam leaves the status line bare.
+func trustStatus(seam core.TrustProvider, dir string, flags trustFlags) string {
+	if seam == nil {
+		return ""
+	}
+	return seam.State(dir, flags.approve, flags.noApprove)
 }
 
 // trustFlags holds the trust-related CLI flags. CLI-only: no YAML or
