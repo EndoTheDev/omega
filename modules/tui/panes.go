@@ -36,13 +36,16 @@ var paneRing = []string{paneLeftID, paneMainID, paneRightID, paneBottomID}
 // paneDigits maps the jump keys onto the ring - the same spatial order.
 var paneDigits = map[string]string{"1": paneLeftID, "2": paneMainID, "3": paneRightID, "4": paneBottomID}
 
-// Fixed v1 geometry (settled Q: fixed; resize arrives later). The run
-// band takes runPaneRows body rows plus its header. Below minPaneWidth
-// or minPaneHeight the shell keeps the single-column legacy layout -
-// sidebars need a terminal that can host them.
+// Fixed v1 geometry (settled Q: fixed; resize arrives later). One
+// vertical separator column rides between the three columns (gutter
+// width); the run band takes runPaneRows body rows plus its header.
+// Below minPaneWidth or minPaneHeight the shell keeps the
+// single-column legacy layout - sidebars need a terminal that can
+// host them.
 const (
 	leftPaneWidth  = 24
 	rightPaneWidth = 28
+	gutterWidth    = 1
 	runPaneRows    = 7
 	minPaneWidth   = 100
 	minPaneHeight  = 22
@@ -73,14 +76,17 @@ type paneGeometry struct {
 // paneGeometryFor computes the layout for a terminal size. Inactive
 // below the minimum size or when the main column would be unusably
 // narrow - the caller falls back to the legacy single-column view.
+// The two separator columns between the panes belong to no pane.
 func paneGeometryFor(width, height int) paneGeometry {
 	if width < minPaneWidth || height < minPaneHeight {
 		return paneGeometry{}
 	}
-	mainW := width - leftPaneWidth - rightPaneWidth
+	mainW := width - leftPaneWidth - rightPaneWidth - 2*gutterWidth
 	if mainW < 30 {
 		return paneGeometry{}
 	}
+	// Row budget: the three columns (colH rows), one separator row,
+	// the run band (header + runPaneRows), the status band.
 	colH := height - (runPaneRows + 1) - 2 // run band + the two separator rows
 	if colH < 6 {
 		return paneGeometry{}
@@ -89,9 +95,9 @@ func paneGeometryFor(width, height int) paneGeometry {
 		active: true,
 		colH:   colH,
 		left:   paneRect{x: 0, y: 0, w: leftPaneWidth, h: colH},
-		main:   paneRect{x: leftPaneWidth, y: 0, w: mainW, h: colH},
+		main:   paneRect{x: leftPaneWidth + gutterWidth, y: 0, w: mainW, h: colH},
 		right:  paneRect{x: width - rightPaneWidth, y: 0, w: rightPaneWidth, h: colH},
-		bottom: paneRect{x: 0, y: colH, w: width, h: runPaneRows + 1},
+		bottom: paneRect{x: 0, y: colH + 1, w: width, h: runPaneRows + 1},
 	}
 }
 
@@ -264,14 +270,19 @@ func (m model) paneHeader(id, label string) string {
 // viewport of the body, exactly h rows tall and w columns wide. The
 // viewport value is the caller's copy - scroll offsets persist on the
 // model, content is re-set every frame the way the full-screen views
-// re-snapshot.
+// re-snapshot. The finished column clips to the pane width: no pane
+// content may run past its edge (t_c5b98609 fix 2).
 func (m model) paneColumn(id, label string, r paneRect, vp viewport.Model, body string) string {
 	vp.Width = r.w
 	vp.Height = max(1, r.h-1)
 	vp.SetContent(body)
 	lines := []string{m.paneHeader(id, label)}
 	lines = append(lines, vp.View())
-	return strings.Join(lines, "\n")
+	col := strings.Join(lines, "\n")
+	if r.w > 0 {
+		col = lipgloss.NewStyle().MaxWidth(r.w).Render(col)
+	}
+	return col
 }
 
 // leftPaneContent builds the sessions/module list: the live session
@@ -337,8 +348,13 @@ func (m model) rightPaneContent(w int) string {
 // bottomPaneBody builds the run band's body: the in-flight turn's
 // tool+thinking output while the agent runs, a dim idle line when it
 // does not. Completed folds land in the transcript as before - the
-// band never re-renders them.
+// band never re-renders them. Thinking wraps at the band's own width,
+// not the terminal width.
 func (m model) bottomPaneBody() string {
+	wrap := m.termWidth
+	if geo := paneGeometryFor(m.termWidth, m.screenHeight); geo.active {
+		wrap = geo.bottom.w
+	}
 	if !m.busy || len(m.segments) == 0 {
 		return m.theme.Thinking.Render("(no active run)")
 	}
@@ -347,7 +363,7 @@ func (m model) bottomPaneBody() string {
 		switch seg.kind {
 		case "thinking":
 			sb.WriteString(m.theme.Thinking.Render("[thinking]") + "\n")
-			sb.WriteString(m.theme.Thinking.Render(wordWrap(seg.content, m.termWidth)) + "\n")
+			sb.WriteString(m.theme.Thinking.Render(wordWrap(seg.content, wrap)) + "\n")
 		case "tool":
 			sb.WriteString(seg.content)
 		case "tool_result":
@@ -362,10 +378,35 @@ func (m model) bottomPaneBody() string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
+// inputHintLine renders the input grammar on its own dim row: the
+// prompt and the cursor keep the input cells, the hint text never
+// rides beneath the cursor block (t_c5b98609 fix 4). A queued-input
+// note takes the row while a run is busy.
+func (m model) inputHintLine(w int) string {
+	text := "enter to send · ctrl+j newline · /help commands"
+	if m.queuedInput != "" {
+		text = "queued: " + m.queuedInput
+	}
+	return m.theme.Status.Render(truncateLine(text, w))
+}
+
+// statusBand renders the status line as a full-width inverted band -
+// the shell's visual floor, set apart from the run band above it
+// (t_c5b98609 fix 5).
+func (m model) statusBand() string {
+	style := m.theme.Status.Reverse(true)
+	if m.termWidth > 0 {
+		style = style.Width(m.termWidth)
+	}
+	return style.Render(m.statusLine())
+}
+
 // paneView composes the full pane shell: the three columns, the run
-// band, the status line. The chat column keeps the main viewport,
-// autocomplete panel and textarea - the exact vertical rhythm the
-// legacy layout had, wrapped in its column.
+// band, the status line. One separator column rides between the
+// columns and one separator row between the columns and the run band
+// - four visible regions (t_c5b98609 fix 3). The chat column keeps
+// the main viewport, autocomplete panel, hint row and textarea - the
+// exact vertical rhythm the legacy layout had, wrapped in its column.
 func (m model) paneView(geo paneGeometry) string {
 	taH := m.textarea.Height()
 	if taH < 1 {
@@ -376,7 +417,8 @@ func (m model) paneView(geo paneGeometry) string {
 	if acH > 0 {
 		sep = 1
 	}
-	vh := max(3, geo.colH-1-acH-sep-taH)
+	// One row above the textarea hosts the input hint line.
+	vh := max(3, geo.colH-1-acH-sep-taH-1)
 
 	m.viewport.Width = geo.main.w
 	m.viewport.Height = vh
@@ -391,18 +433,27 @@ func (m model) paneView(geo paneGeometry) string {
 	if panel := m.autocompletePanel(); panel != "" {
 		mainLines = append(mainLines, panel)
 	}
+	mainLines = append(mainLines, m.inputHintLine(geo.main.w))
 	mainLines = append(mainLines, m.textarea.View())
 	mainCol := strings.Join(mainLines, "\n")
+	if geo.main.w > 0 {
+		mainCol = lipgloss.NewStyle().MaxWidth(geo.main.w).Render(mainCol)
+	}
 
 	leftCol := m.paneColumn(paneLeftID, "sessions", geo.left, m.leftVP, m.leftPaneContent(geo.left.w))
 	rightCol := m.paneColumn(paneRightID, "panels", geo.right, m.rightVP, m.rightPaneContent(geo.right.w))
 	bottom := m.paneColumn(paneBottomID, "run", geo.bottom, m.bottomVP, m.bottomPaneBody())
 
+	vsep := m.theme.CodeBorder.Render(strings.TrimRight(strings.Repeat("│\n", geo.colH), "\n"))
+	totalW := geo.right.x + geo.right.w
+
 	var sb strings.Builder
-	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftCol, mainCol, rightCol))
+	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftCol, vsep, mainCol, vsep, rightCol))
+	sb.WriteString("\n")
+	sb.WriteString(m.theme.CodeBorder.Render(strings.Repeat("─", totalW)))
 	sb.WriteString("\n")
 	sb.WriteString(bottom)
 	sb.WriteString("\n")
-	sb.WriteString(m.theme.Status.Render(m.statusLine()))
+	sb.WriteString(m.statusBand())
 	return sb.String()
 }

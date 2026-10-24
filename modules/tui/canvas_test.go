@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -153,8 +154,134 @@ func TestPanelsScreenRendersRegistration(t *testing.T) {
 	}
 }
 
-// TestPanelsScreenJSONPayload covers the non-string payload branch:
-// plain v1 renders it as indented JSON.
+// TestCanvasRowsTruncateToWidth: the list-kind renderer's row proof -
+// one line per row, key fields only, every line clipped to the width
+// with an ellipsis. The JSON dump never appears as the default body.
+func TestCanvasRowsTruncateToWidth(t *testing.T) {
+	long := strings.Repeat("deploy step ", 12) + "final"
+	panels := []core.Panel{{
+		ID:    "notifications",
+		Title: "Notifications",
+		Kind:  "list",
+		Payload: map[string]any{
+			"unread": 2,
+			"rows": []any{
+				map[string]any{"id": 7, "kind": "kanban", "source_id": "src-a",
+					"title": long, "created_at": "2026-10-24T01:02:03Z", "read": false,
+					"action": map[string]any{"action": "mark_read", "label": "mark read", "args": map[string]any{"id": 7}}},
+				map[string]any{"id": 6, "kind": "cron", "source_id": "src-b",
+					"title": "nightly sync", "read": true},
+			},
+		},
+		Actions: []core.PanelAction{
+			{ID: "mark_read", Label: "mark read", Module: "notifications"},
+			{ID: "mark_all", Label: "mark all read", Module: "notifications"},
+		},
+	}}
+
+	// Full fields with room to spare: the row line carries every key
+	// field - title, id, kind, read-state, binding hint.
+	body := renderCanvasPanels(200, panels)
+	if strings.Contains(body, "source_id") || strings.Contains(body, `"created_at"`) {
+		t.Fatalf("list body still carries the JSON dump: %q", body)
+	}
+	if !strings.Contains(body, "2 unread") {
+		t.Fatalf("list header lost the unread badge: %q", body)
+	}
+	if !strings.Contains(body, "● "+long+" #7 · kanban · mark read") {
+		t.Fatalf("unread row not rendered with fields: %q", body)
+	}
+	if !strings.Contains(body, "○ nightly sync #6 · cron") {
+		t.Fatalf("read row not rendered with fields: %q", body)
+	}
+
+	// At the pane's width the same body clips to the width with an
+	// ellipsis; every line fits, and nothing past the width rides.
+	body = renderCanvasPanels(28, panels)
+	lines := strings.Split(body, "\n")
+	for _, l := range lines {
+		if got := lipgloss.Width(l); got > 28 {
+			t.Fatalf("row line overruns the width: %d %q", got, l)
+		}
+	}
+	if !strings.Contains(body, "● deploy step") || !strings.Contains(body, "…") {
+		t.Fatalf("long title not truncated with an ellipsis: %q", body)
+	}
+	if strings.Contains(body, "#7 · kanban") || strings.Contains(body, "final") {
+		t.Fatalf("truncation kept content beyond the width: %q", body)
+	}
+}
+
+// TestPanelsScreenRawJSONToggle: the JSON dump is a debug view behind
+// the 'd' key - default body renders rows, 'd' flips to raw, 'd' back.
+func TestPanelsScreenRawJSONToggle(t *testing.T) {
+	fake := kanbanFake()
+	fake.panels[0].Kind = "list"
+	fake.panels[0].Payload = map[string]any{
+		"unread": 1,
+		"rows": []any{
+			map[string]any{"id": 3, "kind": "kanban", "source_id": "src-c", "title": "row three", "read": false},
+		},
+	}
+	m := panelModel(t, &core.Context{PanelProviders: []core.PanelProvider{fake}})
+	out, _ := m.handlePanels()
+	cs := out.(model).screen.(*canvasScreen)
+
+	view := cs.View(80, 24)
+	if !strings.Contains(view, "· 1 unread") {
+		t.Fatalf("default body not the rows view: %q", view)
+	}
+	if !strings.Contains(view, "● row three #3 · kanban") {
+		t.Fatalf("unread row missing from the rows view: %q", view)
+	}
+	if strings.Contains(view, "source_id") {
+		t.Fatalf("raw JSON visible before 'd': %q", view)
+	}
+
+	cs.Update(runeKey("d"), &panelConsole{})
+	raw := cs.View(80, 24)
+	if !strings.Contains(raw, `"source_id"`) {
+		t.Fatalf("'d' did not flip to the raw JSON view: %q", raw)
+	}
+	if !strings.Contains(raw, "1-9 invoke · j/k scroll · d raw · q/esc close") {
+		t.Fatalf("hint footer lost the raw key: %q", raw)
+	}
+
+	cs.Update(runeKey("d"), &panelConsole{})
+	if got := cs.View(80, 24); strings.Contains(got, "source_id") || !strings.Contains(got, "● row three") {
+		t.Fatalf("second 'd' did not flip back to rows: %q", got)
+	}
+}
+
+// TestToastPanelRendersRowLine: the toast body is the notice row, not
+// a JSON dump of one record.
+func TestToastPanelRendersRowLine(t *testing.T) {
+	fake := kanbanFake()
+	fake.panels[0].Kind = "toast"
+	fake.panels[0].Payload = map[string]any{
+		"id": 6, "kind": "cron", "source_id": "nightly-insights",
+		"title": "insights run finished: 12 sessions", "read": true,
+	}
+	m := panelModel(t, &core.Context{PanelProviders: []core.PanelProvider{fake}})
+	out, _ := m.handlePanels()
+	view := out.(model).screen.(*canvasScreen).View(80, 24)
+	if !strings.Contains(view, "○ insights run finished: 12 sessions #6 · cron") {
+		t.Fatalf("toast body not the notice row: %q", view)
+	}
+	if strings.Contains(view, "source_id") {
+		t.Fatalf("toast body dumped the record JSON: %q", view)
+	}
+	// An empty toast payload (nothing emitted yet) degrades to the
+	// plain branch instead of a fake row.
+	empty := core.Panel{ID: "toast", Title: "Toast", Kind: "toast"}
+	body := renderCanvasPanels(80, []core.Panel{empty})
+	if body != strings.TrimSpace("Toast  [toast]") {
+		t.Fatalf("empty toast body = %q", body)
+	}
+}
+
+// TestPanelsScreenJSONPayload covers the non-string, non-list payload
+// branch: plain v1 renders it as indented JSON even with a kind set.
 func TestPanelsScreenJSONPayload(t *testing.T) {
 	fake := kanbanFake()
 	m := panelModel(t, &core.Context{PanelProviders: []core.PanelProvider{fake}})

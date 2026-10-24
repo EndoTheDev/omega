@@ -37,6 +37,7 @@ const (
 	minTextareaHeight = 1
 	maxTextareaHeight = 8
 	statusLines       = 1 // status bar only; autocomplete panel is dynamic
+	inputHintRows     = 1 // the dim input-grammar row (inputHintLine)
 
 	// maxAutocompleteRows caps the dropup panel so a loaded skill
 	// directory cannot eat the whole viewport. ponytail: fixed cap;
@@ -431,7 +432,15 @@ func storeFromContext(pctx *core.Context) core.StoreProvider {
 
 func newChatModel(providerType, modelName string, compaction *core.CompactionConfig, promptCustom string, promptAppend []string, promptContext string, pctx *core.Context, skills []core.Skill, themeName, trustState, notifications, version, cwd string) model {
 	ta := textarea.New()
-	ta.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
+	// The input hint rides its own dim row above the input
+	// (inputHintLine): the cursor block must never sit on the hint
+	// text, and the cursor line keeps no background band (t_c5b98609
+	// fix 4). The prompt and cursor keep the input cells.
+	ta.Placeholder = ""
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.CursorLineNumber = lipgloss.NewStyle()
+	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	ta.BlurredStyle.CursorLineNumber = lipgloss.NewStyle()
 	ta.SetHeight(minTextareaHeight)
 	ta.ShowLineNumbers = false
 	vp := viewport.New(80, 20)
@@ -611,14 +620,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.tryAnswerVerdict(queue) {
 					m.textarea.SetValue("")
-					if m.err == "" {
-						m.textarea.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
-					}
 					return m, nil
 				}
 				m.queuedInput = queue
 				m.textarea.SetValue("")
-				m.textarea.Placeholder = "message (queued: " + truncate(m.queuedInput, 40) + ")"
+				// The queued note rides the input hint row (inputHintLine).
 				return m, nil
 			}
 			// Allow typing while busy; just don't submit.
@@ -821,7 +827,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notifyTurnComplete()
 		m.busy = false
 		m.cancel = nil
-		m.textarea.Placeholder = "message (enter to send, ctrl+j for newline, /help for commands)"
 		m.refresh()
 		// Auto-submit queued input from while the agent was running.
 		if m.queuedInput != "" {
@@ -1986,7 +1991,9 @@ func (m *model) resizeTextarea() {
 		lines = maxTextareaHeight
 	}
 	m.textarea.SetHeight(lines)
-	vpHeight := m.screenHeight - m.textarea.Height() - statusLines - m.autocompleteHeight()
+	// The legacy column carries one hint row between the status band
+	// and the input (inputHintLine), like the pane shell does.
+	vpHeight := m.screenHeight - m.textarea.Height() - statusLines - inputHintRows - m.autocompleteHeight()
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
@@ -2352,7 +2359,7 @@ func (m model) View() string {
 }
 
 // legacyView is the pre-pane composition: transcript, status line,
-// autocomplete dropup, textarea - one full-width column.
+// autocomplete dropup, input hint, textarea - one full-width column.
 func (m model) legacyView() string {
 	var sb strings.Builder
 	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
@@ -2361,12 +2368,17 @@ func (m model) legacyView() string {
 		sb.WriteString(m.viewport.View())
 	}
 	sb.WriteString("\n")
-	sb.WriteString(m.theme.Status.Render(m.statusLine()))
+	sb.WriteString(m.statusBand())
 	sb.WriteString("\n")
 	if panel := m.autocompletePanel(); panel != "" {
 		sb.WriteString(panel)
 		sb.WriteString("\n")
 	}
+	// The hint row keeps the input grammar out of the input cells
+	// (t_c5b98609 fix 4); the status band reads as its own region
+	// (fix 5). Both mirror the pane shell's rows.
+	sb.WriteString(m.inputHintLine(m.termWidth))
+	sb.WriteString("\n")
 	sb.WriteString(m.textarea.View())
 	return sb.String()
 }
