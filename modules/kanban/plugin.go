@@ -15,10 +15,13 @@ import (
 // Plugin adapts the kanban Store into omega's plugin system. It owns
 // the exclusive "kanban" seam (the board provider the HTTP channel
 // serves /tasks from) and contributes the board tools ("tools" seam,
-// additive) so the agent manages the board natively in chat.
+// additive) so the agent manages the board natively in chat. The
+// canvas panels (arc 5, t_7bd3dc06) ride the same Mount - the
+// registration IS the plugin (see capsule, panel.go).
 type Plugin struct {
-	store *Store
-	tools *ToolProvider
+	store   *Store
+	tools   *ToolProvider
+	capsule *capsule
 }
 
 // Compile-time assertions: *Plugin is a Plugin, *Store a KanbanProvider.
@@ -96,6 +99,16 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	// store. The Requires edge on "notifications" guarantees the seam
 	// is mounted by the time this runs; nil is legal.
 	p.store.SetNotifier(ctx.Notifications)
+	// Capsule law (arc 5, t_7bd3dc06): the module ships its view-model
+	// with its store. The task panel and the board switcher ride the
+	// same Mount - an unregistered plugin ships no store, no tools, no
+	// commands, no panels. The session board is the tools' active
+	// board: the panels mirror the one truth the tools and /board
+	// already share, and the swap hands the switcher its /board
+	// equivalence.
+	p.capsule = newCapsule(p.store, p.tools.sessionBoard, p.setSessionBoard)
+	p.tools.capsule = p.capsule
+	ctx.PanelProviders = append(ctx.PanelProviders, p.capsule)
 	p.wireCommands(ctx)
 	ctx.Kanban = p.store
 	ctx.ToolProviders = append(ctx.ToolProviders, p.tools)
@@ -160,6 +173,11 @@ func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 			return core.CommandResult{}, err
 		}
 		p.setSessionBoard(rest)
+		// the switch moved the active marker AND the covered board:
+		// both canvas panels follow (arc 5, the switcher's wiring)
+		if p.capsule != nil {
+			p.capsule.refreshAll()
+		}
 		return core.CommandResult{Text: "board: " + rest}, nil
 	}
 	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
@@ -187,6 +205,11 @@ func (p *Plugin) setSessionBoard(name string) {
 // provider seam instead of *Store so embedders can swap implementations.
 type ToolProvider struct {
 	board core.KanbanProvider
+
+	// capsule is the module's canvas surface (panel.go, arc 5). Set at
+	// Mount; every tool mutation refreshes the task panel through it.
+	// Nil-safe: a nil capsule silently ships no push.
+	capsule *capsule
 
 	// active names the board the tools hit when a call omits board.
 	// "" = the default board (pointer target at mount). Mutated by the
@@ -336,14 +359,32 @@ func (p *ToolProvider) runTask(ctx context.Context, args map[string]any) (string
 		for i, op := range ops {
 			res, err := p.runTaskOp(ctx, op)
 			if err != nil {
+				// earlier ops still applied: the panel refresh below
+				// is exactly the catch-up the partial batch needs
+				p.refreshCapsule()
 				return sb.String() + fmt.Sprintf("failed at operations[%d]: %v", i, err), nil
 			}
 			fmt.Fprintf(&sb, "%d: %s\n", i+1, res)
 		}
+		p.refreshCapsule()
 		fmt.Fprintf(&sb, "%d operations applied", len(ops))
 		return sb.String(), nil
 	}
-	return p.runTaskOp(ctx, args)
+	res, err := p.runTaskOp(ctx, args)
+	if err == nil {
+		p.refreshCapsule()
+	}
+	return res, err
+}
+
+// refreshCapsule pushes the task panel through the module's canvas
+// surface after a tool mutation (arc 5). Nil-safe: the capsule is
+// nil only when Mount was never reached - and then nothing pushed.
+func (p *ToolProvider) refreshCapsule() {
+	if p.capsule == nil {
+		return
+	}
+	p.capsule.refreshTasks()
 }
 
 // runTaskOp executes one task operation by its action. Every op
