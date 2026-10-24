@@ -123,7 +123,7 @@ for c in "${CAND[@]:-}"; do
   # beside a running go card, no matter what tokens it carries (proven:
   # t_7bd3dc06 spawned beside running t_c5b98609 because token-bearing
   # candidates skipped the class check entirely).
-  RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r"; done | sort -u | tr '\n' ',')
+  RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r" || true; done | sort -u | tr '\n' ',')
   CC=$(class_of "$c")
   if [ "$RUN_HAS_SURFACE" = 1 ] && [ "$CC" = go ] && [[ ",$RC," == *,go,* ]]; then
     HOLD=1; WHY="go-class beside running go: $RC (sanctioned pairs are go+webui only)"
