@@ -1,8 +1,8 @@
 <template>
   <div class="shell">
     <MenuBar
-      :sidebar-open="sidebarDocked"
-      :inspector-open="inspectorDocked"
+      :sidebar-open="isMobile ? drawerOpen : sidebarDocked"
+      :inspector-open="isMobile ? inspectorOpen : inspectorDocked"
       @toggle-sidebar="toggleSidebar"
       @toggle-inspector="toggleInspector"
       @open-notification="openNotification" />
@@ -538,7 +538,8 @@
   provide(DOCK_API_KEY, dock);
   // the sidebars are FIXED panes (card t_4ae27e0d): no open/close state
   // exists on desktop. drawerOpen/inspectorOpen are the MOBILE overlay
-  // flags only; the MenuBar drawer buttons surface on mobile only.
+  // flags only; the MenuBar toggles surface at every breakpoint (card
+  // t_aca53fee) - below 768px they drive these drawer ref flags.
 
   // --- card t_d7fd3ad3 item 6: the bottom panel's width modes ---
   // aligned (the default): the panel's width matches the MAIN panes'

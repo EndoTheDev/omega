@@ -214,7 +214,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, h, inject, onBeforeUnmount, onMounted, ref } from "vue";
+  import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
@@ -414,6 +414,39 @@
   const menuOpen = ref(false); // the pane-actions (split / remove) menu
   const tabsEl = ref<HTMLElement | null>(null);
   const paneEl = ref<HTMLElement | null>(null); // the pane root (zone-math measurements)
+
+  // --- active-tab reachability (card t_aca53fee): the tab strip scrolls
+  // at narrow pane widths (css overflow-x on .dock-tabs), so a selection
+  // can land on a tab sitting outside the visible band - the ACTIVE tab
+  // must never clip or strand off-viewport. Keep it honest: whenever the
+  // active tab (or the tab list) changes, scroll the strip just enough
+  // to bring the chip fully into view - never scrollLeft further than
+  // the fix needs (no centering churn), and never touch the vertical
+  // axis. flush:'post' runs after the DOM reflects the new active tab.
+  function scrollActiveIntoView(): void {
+    const bar = tabsEl.value;
+    if (!bar) return;
+    // the scroll box is the strip (.dock-tabs), not the bar hosting it -
+    // the bar is full-width chrome, the strip is what clips + scrolls
+    const strip = bar.querySelector<HTMLElement>(".dock-tabs");
+    if (!strip || strip.scrollWidth <= strip.clientWidth) return;
+    const el = strip.querySelector<HTMLElement>(".dock-tab.active");
+    if (!el) return;
+    const sr = strip.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    if (r.left < sr.left) strip.scrollLeft += r.left - sr.left;
+    else if (r.right > sr.right) strip.scrollLeft += r.right - sr.right;
+  }
+  watch(
+    () => [props.node.active, props.node.tabs.map((t) => t.component).join("\u0000")],
+    () => scrollActiveIntoView(),
+    { flush: "post" },
+  );
+  onMounted(() => {
+    // a remount restores a persisted tree whose active tab may open out
+    // of view - measure once the first layout settles
+    scrollActiveIntoView();
+  });
 
   // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
   // (the window dragend/drop cleanup clears the gesture record)

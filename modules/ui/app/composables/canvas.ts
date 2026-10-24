@@ -60,6 +60,27 @@ export function formatCanvasPayload(payload: unknown): string {
   }
 }
 
+// toastRowOf is the toast panel's body (card t_aca53fee): kind "toast"
+// panels carry ONE record row as the payload (the arc 4b wire shape the
+// notifications capsule sends - id/kind/source_id/title/verdict/
+// created_at/read). The renderer must show that record read-only, like
+// one list-panel line (kind + title fields, width-truncated) - the raw
+// JSON dump is debug output, not a panel body. The toast itself still
+// pops transiently through the bell's stack; only the persistent
+// canvas-panel view changes. Pure: returns the payload object (rendered
+// through the row pipeline) or null when there is nothing row-shaped to
+// show (every other kind, a junk payload, an empty seeded toast).
+export function toastRowOf(kind: string, payload: unknown): Record<string, unknown> | null {
+  if (kind !== "toast" || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const p = payload as Record<string, unknown>;
+  if (typeof p.id === "undefined" && typeof p.kind === "undefined" && typeof p.title === "undefined") {
+    return null;
+  }
+  return p;
+}
+
 // createCanvasStore holds the app's canvas. One per page - panels are
 // global state (settled Q10a: panel state is not per-session).
 export function createCanvasStore(): CanvasStore {
