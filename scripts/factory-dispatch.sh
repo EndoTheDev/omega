@@ -56,9 +56,18 @@ surface_of_card() {  # id -> file tokens: worktree diff against dev + body
   sqlite3 "$DB" "SELECT body FROM tasks WHERE id='$id';" | tokens_of
 }
 
-class_of() {  # id -> webui | go | docs  (from body/title text)
-  local t; t=$(sqlite3 "$DB" "SELECT lower(title||' '||body) FROM tasks WHERE id='$1';")
-  if grep -q "docs/\|documentation" <<<"$t" && ! grep -q "modules/ui" <<<"$t"; then echo docs
+class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
+              # only classifies when FILES is absent - out-of-scope prose
+              # mentions misclassify cards, proven: a pure-Go TUI card
+              # classed webui because its OUT OF SCOPE line said "webui")
+  local t files
+  t=$(sqlite3 "$DB" "SELECT lower(title||' '||body) FROM tasks WHERE id='$1';")
+  files=$(grep -o 'files:.*' <<<"$t" | head -1)
+  if [ -n "$files" ]; then
+    if grep -q "modules/ui\|\.ts\|\.vue\|nuxt" <<<"$files"; then echo webui
+    elif grep -oE '[^ ]+' <<<"$files" | sed 's/^files://' | grep -qv '^docs/'; then echo go
+    else echo docs; fi
+  elif grep -q "docs/\|documentation" <<<"$t" && ! grep -q "modules/ui" <<<"$t"; then echo docs
   elif grep -q "webui\|modules/ui\|nuxt\|spa" <<<"$t"; then echo webui
   else echo go; fi
 }
@@ -110,7 +119,15 @@ for c in "${CAND[@]:-}"; do
     git -C ".worktrees/$c" status --short 2>/dev/null | awk '{print $NF}' || true   # ...and UNCOMMITTED files (proven: t_88bb7dcf's uncommitted journey script was invisible without this)
   } >"$CTOK"
   HOLD=0; WHY=""; MATCHF=""
-  if grep -q . "$CTOK"; then
+  # class law FIRST and unconditionally: a go-class candidate never spawns
+  # beside a running go card, no matter what tokens it carries (proven:
+  # t_7bd3dc06 spawned beside running t_c5b98609 because token-bearing
+  # candidates skipped the class check entirely).
+  RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r"; done | sort -u | tr '\n' ',')
+  CC=$(class_of "$c")
+  if [ "$RUN_HAS_SURFACE" = 1 ] && [ "$CC" = go ] && [[ ",$RC," == *,go,* ]]; then
+    HOLD=1; WHY="go-class beside running go: $RC (sanctioned pairs are go+webui only)"
+  elif grep -q . "$CTOK"; then
     if [ "$RUN_HAS_SURFACE" = 1 ] && overlaps "$CTOK" "$SURF"; then
       HOLD=1; MATCHF="$SURF"
     elif grep -q . "$PASS_SURF" && overlaps "$CTOK" "$PASS_SURF"; then
@@ -122,17 +139,6 @@ for c in "${CAND[@]:-}"; do
         [ -n "$MATCHF" ] && grep -qE "^${ct}(/|$)" "$MATCHF" && { WHY="same-file: $ct"; break; }
       done <"$CTOK"
     fi
-  elif [ "$RUN_HAS_SURFACE" = 1 ]; then
-      # no tokens in body/worktree -> class fallback
-      RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r"; done | sort -u | tr '\n' ',')
-      CC=$(class_of "$c")
-      case "$CC" in
-        # go beside go: forbidden (sanctioned pairs are go+webui only).
-        # Comma-wrapped containment: ",go," matches the go class exactly,
-        # never "docs" (the old *go,* form missed a lone go runner).
-        go)  [[ ",$RC," == *,go,* ]] && { HOLD=1; WHY="go-class beside running go: $RC"; };;
-        *)   : ;;  # webui+webui legal since embed-lane proof; docs collides with nothing
-      esac
   fi
   rm -f "$CTOK"
   if [ "$HOLD" = 1 ]; then
