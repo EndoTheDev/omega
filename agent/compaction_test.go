@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestEstimateTokens(t *testing.T) {
-	history := []ai.Message{
-		ai.NewUser("hello world"), // 11 chars -> 2 tokens
-		ai.NewAssistant("a longer assistant response here"), // 32 chars -> 8 tokens
+	history := []core.Message{
+		core.NewUser("hello world"),                           // 11 chars -> 2 tokens
+		core.NewAssistant("a longer assistant response here"), // 32 chars -> 8 tokens
 	}
 	got := EstimateTokens(history)
 	if got != 10 { // (11+32)/4 = 10
@@ -21,35 +22,35 @@ func TestEstimateTokens(t *testing.T) {
 }
 
 func TestBuildCompactedMessages(t *testing.T) {
-	history := []ai.Message{
-		ai.NewSystem("sys"),
-		ai.NewUser("u1"),
-		ai.NewUser("u2"),
-		ai.NewUser("u3"),
-		ai.NewUser("u4"),
-		ai.NewUser("u5"),
+	history := []core.Message{
+		core.NewSystem("sys"),
+		core.NewUser("u1"),
+		core.NewUser("u2"),
+		core.NewUser("u3"),
+		core.NewUser("u4"),
+		core.NewUser("u5"),
 	}
 	got := BuildCompactedMessages(history, "summary text", 2, 2)
 	if len(got) != 5 {
 		t.Fatalf("len = %d, want 5 (2 first + 1 summary + 2 last)", len(got))
 	}
 	// First two preserved verbatim.
-	if got[0].(ai.System).Content != "sys" || got[1].(ai.User).Content != "u1" {
+	if got[0].(core.System).Content != "sys" || got[1].(core.User).Content != "u1" {
 		t.Fatalf("first messages not preserved: %+v", got[:2])
 	}
 	// Middle replaced with a system summary.
-	sys, ok := got[2].(ai.System)
+	sys, ok := got[2].(core.System)
 	if !ok || !strings.Contains(sys.Content, "summary text") {
 		t.Fatalf("middle not replaced with summary: %+v", got[2])
 	}
 	// Last two preserved verbatim.
-	if got[3].(ai.User).Content != "u4" || got[4].(ai.User).Content != "u5" {
+	if got[3].(core.User).Content != "u4" || got[4].(core.User).Content != "u5" {
 		t.Fatalf("last messages not preserved: %+v", got[3:])
 	}
 }
 
 func TestBuildCompactedMessagesNoOpWhenNothingToCompact(t *testing.T) {
-	history := []ai.Message{ai.NewUser("a"), ai.NewUser("b")}
+	history := []core.Message{core.NewUser("a"), core.NewUser("b")}
 	got := BuildCompactedMessages(history, "summary", 1, 1)
 	if len(got) != 3 {
 		t.Fatalf("len = %d, want 3 (1 first + 1 summary + 1 last)", len(got))
@@ -113,48 +114,48 @@ func TestBudgetThresholdOne(t *testing.T) {
 }
 
 func TestMessageTextSystem(t *testing.T) {
-	got := MessageText(ai.NewSystem("system prompt"))
+	got := MessageText(core.NewSystem("system prompt"))
 	if got != "system prompt" {
 		t.Fatalf("MessageText(System) = %q, want %q", got, "system prompt")
 	}
 }
 
 func TestMessageTextUser(t *testing.T) {
-	got := MessageText(ai.NewUser("user text"))
+	got := MessageText(core.NewUser("user text"))
 	if got != "user text" {
 		t.Fatalf("MessageText(User) = %q, want %q", got, "user text")
 	}
 }
 
 func TestMessageTextAssistant(t *testing.T) {
-	got := MessageText(ai.NewAssistant("assistant reply"))
+	got := MessageText(core.NewAssistant("assistant reply"))
 	if got != "assistant reply" {
 		t.Fatalf("MessageText(Assistant) = %q, want %q", got, "assistant reply")
 	}
 }
 
 func TestMessageTextToolResult(t *testing.T) {
-	got := MessageText(ai.NewToolResult("tool output", "call-1", false))
+	got := MessageText(core.NewToolResult("tool output", "call-1", false))
 	if got != "tool output" {
 		t.Fatalf("MessageText(ToolResult) = %q, want %q", got, "tool output")
 	}
 }
 
 func TestMessageTextModelChange(t *testing.T) {
-	got := MessageText(ai.NewModelChange("model-name"))
+	got := MessageText(core.NewModelChange("model-name"))
 	if got != "" {
 		t.Fatalf("MessageText(ModelChange) = %q, want empty", got)
 	}
 }
 
 func TestMessageTextThinkingLevelChange(t *testing.T) {
-	got := MessageText(ai.NewThinkingLevelChange("high"))
+	got := MessageText(core.NewThinkingLevelChange("high"))
 	if got != "" {
 		t.Fatalf("MessageText(ThinkingLevelChange) = %q, want empty", got)
 	}
 }
 
-func (m mockCompactionProvider) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
+func (m mockCompactionProvider) Compact(ctx context.Context, messages []core.Message) ([]core.Message, error) {
 	if m.Config == nil || !m.Config.Enabled {
 		return messages, nil
 	}
@@ -163,11 +164,11 @@ func (m mockCompactionProvider) Compact(ctx context.Context, messages []ai.Messa
 	}
 	// Stream a summary from the fake provider.
 	var summary strings.Builder
-	for event := range m.Provider.Stream(ctx, []ai.Message{ai.NewUser("summarize")}, nil) {
+	for event := range m.Provider.Stream(ctx, []core.Message{core.NewUser("summarize")}, nil) {
 		switch e := event.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			summary.WriteString(e.Content)
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			if e.FinishReason == "error" {
 				return nil, fmt.Errorf("summarize: %s", e.Error)
 			}

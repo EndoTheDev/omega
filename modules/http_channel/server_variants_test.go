@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // transcriptOf fetches the transcript envelope: status + body of the
@@ -93,13 +93,13 @@ func startExchange(t *testing.T, prov *multiProvider, s *Server, ts *httptest.Se
 }
 
 // skeleton flattens provider-context messages the way assertions read.
-func skeleton(msgs []ai.Message) []string {
+func skeleton(msgs []core.Message) []string {
 	var out []string
 	for _, m := range msgs {
 		switch v := m.(type) {
-		case ai.User:
+		case core.User:
 			out = append(out, "user:"+v.Content)
-		case ai.Assistant:
+		case core.Assistant:
 			out = append(out, "assistant:"+v.Content)
 		}
 	}
@@ -152,7 +152,7 @@ func TestRetryCreatesSiblingAndVariantsBlock(t *testing.T) {
 	}
 	users := 0
 	for _, m := range msgs {
-		if _, ok := m.(ai.User); ok {
+		if _, ok := m.(core.User); ok {
 			users++
 		}
 	}
@@ -235,7 +235,7 @@ func TestPartialBecomesVariant(t *testing.T) {
 	// a retry that gets cancelled mid-stream
 	rr := postRetry(t, ts, "vr3")
 	defer rr.Body.Close()
-	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "kept partial"})
+	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "kept partial"})
 	stop, err := http.Post(ts.URL+"/sessions/vr3/stop", "application/json", nil)
 	if err != nil {
 		t.Fatalf("stop: %v", err)
@@ -319,7 +319,7 @@ func TestForkOfUserTurnCreatesVariant(t *testing.T) {
 	msgs := messagesOf(t, st, "vr5")
 	users := 0
 	for _, m := range msgs {
-		if _, ok := m.(ai.User); ok {
+		if _, ok := m.(core.User); ok {
 			users++
 		}
 	}

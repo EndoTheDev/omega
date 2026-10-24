@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Provider implements ai.Provider for Ollama, OpenAI, and Anthropic.
@@ -78,8 +79,8 @@ func (p *Provider) initDefaults() {
 // Stream sends a completion request to the provider and streams
 // events on the returned channel. The channel is closed when the
 // stream ends. Errors are encoded as StreamEnd (FinishReason="error").
-func (p *Provider) Stream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
-	events := make(chan ai.StreamEvent, 64)
+func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	events := make(chan core.ProviderStreamEvent, 64)
 	go func() {
 		defer close(events)
 		// Only the OpenAI wire encodes tool-call arguments as a JSON
@@ -92,7 +93,7 @@ func (p *Provider) Stream(ctx context.Context, messages []ai.Message, tools []ai
 			imagesToOllamaWire(msgJSON)
 		}
 		toolJSON := toolSchemasToJSON(tools)
-		var end ai.StreamEnd
+		var end core.StreamEnd
 		switch p.typ {
 		case "ollama":
 			end = p.streamOllama(ctx, events, msgJSON, toolJSON)
@@ -101,7 +102,7 @@ func (p *Provider) Stream(ctx context.Context, messages []ai.Message, tools []ai
 		case "anthropic":
 			end = p.streamAnthropic(ctx, events, msgJSON, toolJSON)
 		default:
-			end = ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("unknown provider type: %s", p.typ)}
+			end = core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("unknown provider type: %s", p.typ)}
 		}
 		select {
 		case <-ctx.Done():
@@ -154,31 +155,31 @@ func (p *Provider) ModelInfo() (ai.ModelInfo, error) {
 
 // --- message/tool serialization ---
 
-// messagesToJSON serializes ai.Message values to maps with a role
+// messagesToJSON serializes core.Message values to maps with a role
 // field added based on the concrete message type. The timestamp
 // field is dropped (not needed by the provider API). stringArgs
 // selects the tool_calls argument encoding: the OpenAI wire requires
 // a JSON string, the ollama native path and Anthropic expect the
 // argument object.
-func messagesToJSON(messages []ai.Message, stringArgs bool) []map[string]any {
+func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
 	msgJSON := make([]map[string]any, len(messages))
 	for i, msg := range messages {
 		data, _ := json.Marshal(msg)
 		var m map[string]any
 		json.Unmarshal(data, &m)
 		switch msg.(type) {
-		case ai.System:
+		case core.System:
 			m["role"] = "system"
-		case ai.User:
+		case core.User:
 			m["role"] = "user"
-		case ai.Assistant:
+		case core.Assistant:
 			m["role"] = "assistant"
-		case ai.ToolResult:
+		case core.ToolResult:
 			m["role"] = "tool"
 		}
 		// The OpenAI wire format requires each tool_calls entry to be
 		// {"id","type":"function","function":{"name","arguments":"<json>"}}
-		// while ai.ToolCall marshals flat with map arguments. The
+		// while core.ToolCall marshals flat with map arguments. The
 		// OpenAI wire needs arguments as a JSON string; ollama's
 		// native path and Anthropic require the object itself.
 		if calls, ok := m["tool_calls"].([]any); ok {
@@ -223,7 +224,7 @@ func messagesToJSON(messages []ai.Message, stringArgs bool) []map[string]any {
 }
 
 // imagesToOllamaWire rewrites user-message images from the generic
-// object shape ai.User marshals ({media_type, base64}) to the raw
+// object shape core.User marshals ({media_type, base64}) to the raw
 // base64-string array ollama's /api/chat expects. In place over the
 // message maps: an object list sent to ollama 400s with "cannot
 // unmarshal object into Alias.images.0" - verified live 2026-10-20.
@@ -268,7 +269,7 @@ func toolSchemasToJSON(tools []ai.ToolSchema) []map[string]any {
 
 // --- Ollama ---
 
-func sendEvent(ctx context.Context, events chan<- ai.StreamEvent, event ai.StreamEvent) {
+func sendEvent(ctx context.Context, events chan<- core.ProviderStreamEvent, event core.ProviderStreamEvent) {
 	select {
 	case <-ctx.Done():
 	case events <- event:
@@ -278,7 +279,7 @@ func sendEvent(ctx context.Context, events chan<- ai.StreamEvent, event ai.Strea
 // flushToolCalls sends accumulated tool-call events in index order.
 // The accessor functions extract the id, name, and raw JSON string
 // from each pending entry (field names differ between providers).
-func flushToolCalls[T any](ctx context.Context, events chan<- ai.StreamEvent, pending map[int]*T, idFn func(*T) string, nameFn func(*T) string, jsonFn func(*T) string) {
+func flushToolCalls[T any](ctx context.Context, events chan<- core.ProviderStreamEvent, pending map[int]*T, idFn func(*T) string, nameFn func(*T) string, jsonFn func(*T) string) {
 	if len(pending) == 0 {
 		return
 	}
@@ -293,9 +294,9 @@ func flushToolCalls[T any](ctx context.Context, events chan<- ai.StreamEvent, pe
 		if err := json.Unmarshal([]byte(jsonFn(entry)), &args); err != nil {
 			args = map[string]any{}
 		}
-		sendEvent(ctx, events, ai.ToolCallEvent{
+		sendEvent(ctx, events, core.ToolCallEvent{
 			Type:     "tool_call",
-			ToolCall: ai.ToolCall{ID: idFn(entry), Name: nameFn(entry), Arguments: args},
+			ToolCall: core.ToolCall{ID: idFn(entry), Name: nameFn(entry), Arguments: args},
 		})
 	}
 }

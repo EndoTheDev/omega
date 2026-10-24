@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // atFilePattern matches @<non-space> tokens in a text string.
@@ -18,14 +18,16 @@ var atFilePattern = regexp.MustCompile(`@\S+`)
 
 // extractImages scans a text string for @path tokens, loads any image
 // files as base64 ImageContent, and inlines text files. Also supports:
-//   @*.go          — glob patterns (expand all matches, inline text files)
-//   @session:<id>  — inject session message history as context
-//   @skill:<name>  — inject skill content
+//
+//	@*.go          — glob patterns (expand all matches, inline text files)
+//	@session:<id>  — inject session message history as context
+//	@skill:<name>  — inject skill content
+//
 // Tokens that don't resolve are left as-is in the text. Used
 // by the TUI submit path to support @file references in chat input.
-func extractImages(input string, store core.StoreProvider, skills []core.Skill) (prompt string, images []ai.ImageContent, err error) {
+func extractImages(input string, store core.StoreProvider, skills []core.Skill) (prompt string, images []core.ImageContent, err error) {
 	prompt = input
-	var loadedImages []ai.ImageContent
+	var loadedImages []core.ImageContent
 
 	prompt = atFilePattern.ReplaceAllStringFunc(input, func(token string) string {
 		path := token[1:] // strip @
@@ -52,7 +54,7 @@ func extractImages(input string, store core.StoreProvider, skills []core.Skill) 
 			}
 			var sb strings.Builder
 			for _, msg := range msgs {
-				role := ai.MessageRole(msg)
+				role := core.MessageRole(msg)
 				sb.WriteString(fmt.Sprintf("[%s] %s\n", role, agent.MessageText(msg)))
 			}
 			return sb.String()

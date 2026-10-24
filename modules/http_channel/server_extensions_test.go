@@ -50,7 +50,7 @@ func mountRealRegistry(t *testing.T) *core.Agent {
 	if err := agent.MountAll(plugins, ctx); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	// The way the host builds it (agent.NewFromContext does
+	// The way the host builds it (core.NewFromContext does
 	// SetExtensionInfos(ctx.Infos) internally).
 	return core.NewFromContext(ctx, core.AgentOptions{})
 }

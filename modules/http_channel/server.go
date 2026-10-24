@@ -327,7 +327,7 @@ type chatRequest struct {
 	// copy the LOOP persists through its sink before the first turn
 	// (fork parents already applied). Unexported: never part of the
 	// request wire.
-	persistInput []ai.Message
+	persistInput []core.Message
 	// Ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no
 	// store row, nothing on disk; the `eph-` id (carried on the leading
 	// `session` frame) lives in the server's in-memory registry until
@@ -344,8 +344,8 @@ type chatRequest struct {
 // the final answer. records() returns them in order.
 type assistantRecord struct {
 	thinking  string
-	toolCalls []ai.ToolCall
-	results   []ai.ToolResult
+	toolCalls []core.ToolCall
+	results   []core.ToolResult
 	content   string
 	// server-side timing so reloaded sessions render real durations
 	// (client meters die with the SSE stream). Durations accumulate raw
@@ -426,7 +426,7 @@ func (e *runError) Error() string { return e.msg }
 type chatPrepare struct {
 	run      *activeRun
 	prov     ai.Provider
-	messages []ai.Message
+	messages []core.Message
 	tools    map[string]core.Tool
 }
 
@@ -440,7 +440,7 @@ type chatPrepare struct {
 // released and the error carries the same status + message the handler
 // wrote before the refactor. The provisional title kick stays here
 // too: it fires before any streaming for both entry paths.
-func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []ai.Message) (*chatPrepare, error) {
+func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []core.Message) (*chatPrepare, error) {
 	// Replay-turn guards: store presence is enforced here too - the
 	// handler's early replayGuards ran before auto-create, this one
 	// holds the same wall for the action pipe's entry.
@@ -513,7 +513,7 @@ func (m *runMeter) tick(event core.Event) {
 		return
 	}
 	switch se.Event.(type) {
-	case ai.ThinkingChunk, ai.ResponseChunk:
+	case core.ThinkingChunk, core.ResponseChunk:
 		m.chunks++
 		m.lastChunk = time.Now()
 	}
@@ -725,7 +725,7 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 // its target: user-turn targets pin the head like a retry (no messages);
 // assistant/tool targets continue FROM them - context truncates at the
 // target inclusive and the fork's message chains onto it.
-func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming []ai.Message) ([]ai.Message, error) {
+func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming []core.Message) ([]core.Message, error) {
 	if isEphemeralID(req.SessionID) {
 		// Ephemeral context (card t_d96a5cd5): the registry's in-memory
 		// history IS the conversation - the store is never read. The
@@ -757,7 +757,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 	if req.Retry {
 		end := -1
 		for i := len(view.Path) - 1; i >= 0; i-- {
-			if _, ok := view.Path[i].Message.(ai.User); ok {
+			if _, ok := view.Path[i].Message.(core.User); ok {
 				end = i
 				break
 			}
@@ -784,7 +784,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 			return nil, &runError{http.StatusBadRequest, "fork target is not on the active path (select its variant via /sessions/{id}/variants first, then fork)"}
 		}
 		switch view.Path[at].Message.(type) {
-		case ai.User:
+		case core.User:
 			if len(incoming) > 0 {
 				return nil, &runError{http.StatusBadRequest, "fork of a user turn takes no messages (retry semantics)"}
 			}
@@ -808,8 +808,8 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 }
 
 // storedMessages strips the tree view down to plain provider context.
-func storedMessages(path []core.StoredMessage) []ai.Message {
-	out := make([]ai.Message, 0, len(path))
+func storedMessages(path []core.StoredMessage) []core.Message {
+	out := make([]core.Message, 0, len(path))
 	for _, sm := range path {
 		out = append(out, sm.Message)
 	}
@@ -872,7 +872,7 @@ func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
 // prov is the per-request provider (a copy carrying the request's model).
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []ai.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
 	// tools run in THIS session's context: board tools read the session
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
@@ -894,7 +894,7 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 		meter.tick(event)
 		// Usage arrives on each stream_end; sum every turn of the run.
 		if se, ok := event.(core.StreamEvent); ok {
-			if end, ok := se.Event.(ai.StreamEnd); ok {
+			if end, ok := se.Event.(core.StreamEnd); ok {
 				if end.PromptEvalCount != nil {
 					usage.prompt += *end.PromptEvalCount
 				}
@@ -928,7 +928,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 	// StreamEvent) - the TUI persists it the same way
 	if tre, ok := event.(core.ToolResultEvent); ok {
 		if start, ok := rec.callStarts[tre.Message.ToolCallID]; ok && !start.IsZero() {
-			tre.Message.Timing = &ai.Timing{ElapsedMs: now.Sub(start).Milliseconds()}
+			tre.Message.Timing = &core.Timing{ElapsedMs: now.Sub(start).Milliseconds()}
 			delete(rec.callStarts, tre.Message.ToolCallID)
 		}
 		rec.results = append(rec.results, tre.Message)
@@ -949,7 +949,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 		return
 	}
 	switch ev := se.Event.(type) {
-	case ai.ThinkingChunk:
+	case core.ThinkingChunk:
 		if len(rec.results) > 0 {
 			// thinking after tool results is turn 2's - persist it
 			// with the next message (the live view splits there
@@ -963,7 +963,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 		rec.thinkDur += phaseDelta(rec.lastThink, rec.openAt, now)
 		rec.lastThink = now
 		rec.openAt = now
-	case ai.ResponseChunk:
+	case core.ResponseChunk:
 		if len(rec.results) > 0 {
 			// tool phase ended the current segment - the frontend
 			// renders a fresh bubble for what follows, so we persist
@@ -975,7 +975,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 		rec.respDur += phaseDelta(rec.lastResp, rec.openAt, now)
 		rec.lastResp = now
 		rec.openAt = now
-	case ai.ToolCallEvent:
+	case core.ToolCallEvent:
 		rec.toolCalls = append(rec.toolCalls, ev.ToolCall)
 		// a tool call closes both spans - the gap while the tool runs
 		// belongs to nobody
@@ -1132,14 +1132,14 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 	// merge, the same mechanism the ephemeral path denies memory with.
 	ctx = agent.WithDeniedTools(ctx, "verdict")
 
-	events := s.agent.RunWithProvider(ctx, prov, []ai.Message{ai.NewUser(prompt)}, nil)
+	events := s.agent.RunWithProvider(ctx, prov, []core.Message{core.NewUser(prompt)}, nil)
 	title := ""
 	for ev := range events {
 		se, ok := ev.(core.StreamEvent)
 		if !ok {
 			continue
 		}
-		chunk, ok := se.Event.(ai.ResponseChunk)
+		chunk, ok := se.Event.(core.ResponseChunk)
 		if !ok {
 			continue
 		}
@@ -1370,8 +1370,8 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
 			return
 		}
-		// Typed messages marshal without a role field (ai.User/ai.Assistant
-		// only carry content) - inject ai.MessageRole so the UI can tell
+		// Typed messages marshal without a role field (core.User/core.Assistant
+		// only carry content) - inject core.MessageRole so the UI can tell
 		// user and assistant apart when restoring history. GetMessagesWithTimes
 		// additionally pairs each message with its store-level created_at,
 		// injected the same way so the UI can show message times.
@@ -1385,7 +1385,7 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(sm.Message)
 			var mm map[string]any
 			json.Unmarshal(data, &mm)
-			mm["role"] = ai.MessageRole(sm.Message)
+			mm["role"] = core.MessageRole(sm.Message)
 			mm["created_at"] = sm.CreatedAt
 			msgs[i] = mm
 		}
@@ -1551,10 +1551,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// decodeMessages decodes polymorphic ai.Message values from JSON using a
+// decodeMessages decodes polymorphic core.Message values from JSON using a
 // role discriminator: system, user, assistant, or tool.
-func decodeMessages(raw []json.RawMessage) ([]ai.Message, error) {
-	messages := make([]ai.Message, 0, len(raw))
+func decodeMessages(raw []json.RawMessage) ([]core.Message, error) {
+	messages := make([]core.Message, 0, len(raw))
 	for _, item := range raw {
 		var header struct {
 			Role string `json:"role"`
@@ -1564,25 +1564,25 @@ func decodeMessages(raw []json.RawMessage) ([]ai.Message, error) {
 		}
 		switch header.Role {
 		case "system":
-			var m ai.System
+			var m core.System
 			if err := json.Unmarshal(item, &m); err != nil {
 				return nil, err
 			}
 			messages = append(messages, m)
 		case "user":
-			var m ai.User
+			var m core.User
 			if err := json.Unmarshal(item, &m); err != nil {
 				return nil, err
 			}
 			messages = append(messages, m)
 		case "assistant":
-			var m ai.Assistant
+			var m core.Assistant
 			if err := json.Unmarshal(item, &m); err != nil {
 				return nil, err
 			}
 			messages = append(messages, m)
 		case "tool":
-			var m ai.ToolResult
+			var m core.ToolResult
 			if err := json.Unmarshal(item, &m); err != nil {
 				return nil, err
 			}
@@ -1608,19 +1608,19 @@ func sseEvent(event core.Event) (string, []byte, error) {
 	return eventTypeOf(event), data, nil
 }
 
-func sseStreamEvent(event ai.StreamEvent) (string, []byte, error) {
+func sseStreamEvent(event core.ProviderStreamEvent) (string, []byte, error) {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return "", nil, err
 	}
 	switch event.(type) {
-	case ai.ThinkingChunk:
+	case core.ThinkingChunk:
 		return "thinking_chunk", data, nil
-	case ai.ResponseChunk:
+	case core.ResponseChunk:
 		return "response_chunk", data, nil
-	case ai.ToolCallEvent:
+	case core.ToolCallEvent:
 		return "tool_call", data, nil
-	case ai.StreamEnd:
+	case core.StreamEnd:
 		return "stream_end", data, nil
 	}
 	return "stream", data, nil

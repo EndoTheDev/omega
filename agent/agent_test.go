@@ -24,7 +24,7 @@ type testLoop struct{}
 func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
-		tools = map[string]Tool{}
+		tools = map[string]core.Tool{}
 	}
 	for _, tp := range opts.ToolProviders {
 		if tp == nil {
@@ -74,7 +74,7 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 		opts.Events <- core.TurnStart{Type: "turn_start", Turn: turns}
 
 		var content strings.Builder
-		var toolCalls []ai.ToolCall
+		var toolCalls []core.ToolCall
 		finishReason := "stop"
 		streamErr := ""
 
@@ -85,11 +85,11 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 
 		for event := range opts.Provider.Stream(ctx, messages, nil) {
 			switch e := event.(type) {
-			case ai.ResponseChunk:
+			case core.ResponseChunk:
 				content.WriteString(e.Content)
-			case ai.ToolCallEvent:
+			case core.ToolCallEvent:
 				toolCalls = append(toolCalls, e.ToolCall)
-			case ai.StreamEnd:
+			case core.StreamEnd:
 				finishReason = e.FinishReason
 				streamErr = e.Error
 			}
@@ -116,7 +116,7 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 			return nil
 		}
 
-		assistant := ai.NewAssistant(content.String())
+		assistant := core.NewAssistant(content.String())
 		assistant.ToolCalls = toolCalls
 		messages = append(messages, assistant)
 		opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
@@ -125,18 +125,18 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 		for _, call := range toolCalls {
 			tool, ok := tools[call.Name]
 			if !ok {
-				msg := ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
+				msg := core.NewToolResult("unknown tool: "+call.Name, call.ID, true)
 				messages = append(messages, msg)
 				opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: msg}
 				executed++
 				continue
 			}
 			result, err := tool.Run(ctx, call.Arguments)
-			var msg ai.ToolResult
+			var msg core.ToolResult
 			if err != nil {
-				msg = ai.NewToolResult(err.Error(), call.ID, true)
+				msg = core.NewToolResult(err.Error(), call.ID, true)
 			} else {
-				msg = ai.NewToolResult(result, call.ID, false)
+				msg = core.NewToolResult(result, call.ID, false)
 			}
 			messages = append(messages, msg)
 			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: msg}
@@ -152,9 +152,9 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	}
 }
 
-// newTestAgent creates an Agent with the test loop pre-wired.
-func newTestAgent(provider ai.Provider, tools map[string]Tool, maxTurns int) *Agent {
-	a := NewAgent(provider, tools, maxTurns)
+// newTestAgent creates an core.Agent with the test loop pre-wired.
+func newTestAgent(provider ai.Provider, tools map[string]core.Tool, maxTurns int) *core.Agent {
+	a := core.NewAgent(provider, tools, maxTurns)
 	a.SetLoopProvider(testLoop{})
 	return a
 }
@@ -211,11 +211,11 @@ func lastAgentEnd(events []core.Event) core.AgentEnd {
 
 func TestRunSingleTurn(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 
 	types := eventTypes(events)
 	want := []string{"agent_start", "turn_start", "stream", "stream", "turn_end", "agent_end"}
@@ -231,16 +231,16 @@ func TestRunSingleTurn(t *testing.T) {
 
 func TestRunMultiTurnToolLoop(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	tools := map[string]Tool{
+	tools := map[string]core.Tool{
 		"echo": {
 			Description: "echo text",
 			Parameters:  map[string]any{"type": "object"},
@@ -250,7 +250,7 @@ func TestRunMultiTurnToolLoop(t *testing.T) {
 		},
 	}
 	agent := newTestAgent(provider, tools, 0)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	types := eventTypes(events)
 	want := []string{"agent_start", "turn_start", "stream", "stream", "turn_end", "turn_start", "stream", "stream", "turn_end", "agent_end"}
@@ -266,18 +266,18 @@ func TestRunMultiTurnToolLoop(t *testing.T) {
 
 func TestRunMaxTurnsCap(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 	)
-	tools := map[string]Tool{
+	tools := map[string]core.Tool{
 		"echo": {
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
 		},
 	}
 	agent := newTestAgent(provider, tools, 2)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	end := lastAgentEnd(events)
 	if end.Turns != 2 || end.FinishReason != "max_turns" {
@@ -287,10 +287,10 @@ func TestRunMaxTurnsCap(t *testing.T) {
 
 func TestRunContextCancellation(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+		core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 	)
-	tools := map[string]Tool{
+	tools := map[string]core.Tool{
 		"echo": {
 			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
 		},
@@ -299,7 +299,7 @@ func TestRunContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancelled before the loop starts
 
-	events := collect(t, agent.Run(ctx, []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(ctx, []core.Message{core.NewUser("go")}, nil))
 
 	end := lastAgentEnd(events)
 	if end.FinishReason != "cancelled" || end.Error == "" {
@@ -309,35 +309,35 @@ func TestRunContextCancellation(t *testing.T) {
 
 func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
-	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 
 	// With no extensions loaded, no system prompt is prepended.
 	// The agent sees only the user message.
 	if len(provider.LastMessages) != 1 {
 		t.Fatalf("messages = %d, want 1 (user only, no system prompt)", len(provider.LastMessages))
 	}
-	if _, ok := provider.LastMessages[0].(ai.User); !ok {
+	if _, ok := provider.LastMessages[0].(core.User); !ok {
 		t.Fatalf("first message = %#v, want user", provider.LastMessages[0])
 	}
 }
 
 func TestRunUnknownTool(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nope", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nope", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 	agent := newTestAgent(provider, nil, 0)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	end := lastAgentEnd(events)
 	if end.Turns != 2 || end.FinishReason != "stop" {
@@ -347,18 +347,18 @@ func TestRunUnknownTool(t *testing.T) {
 
 func TestRunExtensionToolInLoop(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "hello"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "hello"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
 	// Use a ToolProvider to supply the extension tool.
-	extTools := core.DefaultToolProvider{ToolsMap: map[string]Tool{
+	extTools := core.DefaultToolProvider{ToolsMap: map[string]core.Tool{
 		"echo_tool": {
 			Run: func(_ context.Context, args map[string]any) (string, error) {
 				text, _ := args["text"].(string)
@@ -370,12 +370,12 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetToolProviders([]core.ToolProvider{extTools})
 
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	// Extension tool result must reach the provider as a ToolResult message.
 	var found bool
 	for _, m := range provider.LastMessages {
-		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && strings.Contains(tr.Content, "echo: hello") && !tr.IsError {
+		if tr, ok := m.(core.ToolResult); ok && tr.ToolCallID == "c1" && strings.Contains(tr.Content, "echo: hello") && !tr.IsError {
 			found = true
 		}
 	}
@@ -391,18 +391,18 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 
 func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "x"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "x"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
 	// Built-in "echo_tool" should shadow the extension "echo_tool".
-	builtIn := map[string]Tool{
+	builtIn := map[string]core.Tool{
 		"echo_tool": {
 			Run: func(_ context.Context, args map[string]any) (string, error) {
 				return "built-in", nil
@@ -410,7 +410,7 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 		},
 	}
 
-	extTools := core.DefaultToolProvider{ToolsMap: map[string]Tool{
+	extTools := core.DefaultToolProvider{ToolsMap: map[string]core.Tool{
 		"echo_tool": {
 			Run: func(_ context.Context, args map[string]any) (string, error) {
 				return "extension", nil
@@ -421,11 +421,11 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 	agent := newTestAgent(provider, builtIn, 0)
 	agent.SetToolProviders([]core.ToolProvider{extTools})
 
-	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	var found bool
 	for _, m := range provider.LastMessages {
-		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "built-in" {
+		if tr, ok := m.(core.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "built-in" {
 			found = true
 		}
 	}
@@ -436,23 +436,23 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 
 func TestRunEventStreamCompletes(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	agent := newTestAgent(provider, nil, 0)
 
-	collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 }
 
 func TestRunNoExtensionsCompletes(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
 
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 	if len(events) == 0 {
 		t.Fatal("expected events with no extensions")
 	}
@@ -460,16 +460,16 @@ func TestRunNoExtensionsCompletes(t *testing.T) {
 
 func TestRunToolExecutionLifecycle(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	tools := map[string]Tool{
+	tools := map[string]core.Tool{
 		"echo": {
 			Run: func(_ context.Context, args map[string]any) (string, error) {
 				return args["text"].(string), nil
@@ -477,13 +477,13 @@ func TestRunToolExecutionLifecycle(t *testing.T) {
 		},
 	}
 	agent := newTestAgent(provider, tools, 0)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	// The tool result must be appended to the history fed to the second turn.
 	// LastMessages holds the messages from the most recent (second) Stream call.
 	var found bool
 	for _, m := range provider.LastMessages {
-		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "x" && !tr.IsError {
+		if tr, ok := m.(core.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "x" && !tr.IsError {
 			found = true
 		}
 	}
@@ -499,16 +499,16 @@ func TestRunToolExecutionLifecycle(t *testing.T) {
 
 func TestRunToolErrorHandling(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	tools := map[string]Tool{
+	tools := map[string]core.Tool{
 		"boom": {
 			Run: func(_ context.Context, _ map[string]any) (string, error) {
 				return "", errors.New("kaboom")
@@ -516,12 +516,12 @@ func TestRunToolErrorHandling(t *testing.T) {
 		},
 	}
 	agent := newTestAgent(provider, tools, 0)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	// The error result must be fed back to the model as a tool result.
 	var found bool
 	for _, m := range provider.LastMessages {
-		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "kaboom" && tr.IsError {
+		if tr, ok := m.(core.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "kaboom" && tr.IsError {
 			found = true
 		}
 	}
@@ -537,19 +537,19 @@ func TestRunToolErrorHandling(t *testing.T) {
 
 func TestRunConcurrentPromptRejection(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "first"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "first"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
 
-	first := agent.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil)
+	first := agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil)
 	if first == nil {
 		t.Fatal("first Run() returned nil, want a live channel")
 	}
 
 	// Second Run() while the first is active must spawn too - a nil
 	// here used to hang a server goroutine ranging over the channel.
-	second := agent.Run(context.Background(), []ai.Message{ai.NewUser("again")}, nil)
+	second := agent.Run(context.Background(), []core.Message{core.NewUser("again")}, nil)
 	if second == nil {
 		t.Fatal("second Run() returned nil, want a live channel")
 	}
@@ -560,10 +560,10 @@ func TestRunConcurrentPromptRejection(t *testing.T) {
 
 func TestRunErrorBodyPassthrough(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
 	agent := newTestAgent(provider, nil, 0)
-	events := collect(t, agent.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 
 	end := lastAgentEnd(events)
 	if end.FinishReason != "error" || end.Error != "upstream exploded" {
@@ -585,17 +585,17 @@ func compactionConfig() *CompactionConfig {
 
 // bigHistory returns 20 user messages of 20 chars each: 400 chars = 100
 // tokens, well over the 50-token budget.
-func bigHistory() []ai.Message {
-	history := make([]ai.Message, 0, 20)
+func bigHistory() []core.Message {
+	history := make([]core.Message, 0, 20)
 	for i := 0; i < 20; i++ {
-		history = append(history, ai.NewUser("message number "+fmt.Sprint(i)))
+		history = append(history, core.NewUser("message number "+fmt.Sprint(i)))
 	}
 	return history
 }
 
-func hasCompactedSystem(history []ai.Message) bool {
+func hasCompactedSystem(history []core.Message) bool {
 	for _, m := range history {
-		if s, ok := m.(ai.System); ok && strings.Contains(s.Content, "[compacted:") {
+		if s, ok := m.(core.System); ok && strings.Contains(s.Content, "[compacted:") {
 			return true
 		}
 	}
@@ -604,8 +604,8 @@ func hasCompactedSystem(history []ai.Message) bool {
 
 func TestRunCompactionTriggersAtThreshold(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
@@ -618,12 +618,12 @@ func TestRunCompactionTriggersAtThreshold(t *testing.T) {
 
 func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
-	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // ~10 tokens < 50
+	history := []core.Message{core.NewUser("hi"), core.NewUser("there")} // ~10 tokens < 50
 	collect(t, agent.Run(context.Background(), history, nil))
 
 	if hasCompactedSystem(provider.LastMessages) {
@@ -633,8 +633,8 @@ func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
 
 func TestRunCompactionDisabled(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	cfg := compactionConfig()
@@ -651,12 +651,12 @@ func TestRunCompactionErrorPropagates(t *testing.T) {
 	// The first Stream call (the turn) succeeds; the second (the
 	// summarize call inside compact) fails.
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
-		[]ai.StreamEvent{
-			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "summarize boom"},
+		[]core.ProviderStreamEvent{
+			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "summarize boom"},
 		},
 	)
 	agent := newTestAgent(provider, nil, 0)
@@ -673,17 +673,17 @@ func TestRunOverflowTriggersRetry(t *testing.T) {
 	// First call overflows; second call succeeds. Small history so the
 	// threshold compaction does not consume the first script.
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		[]core.ProviderStreamEvent{
+			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
-	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")} // below budget
+	history := []core.Message{core.NewUser("hi"), core.NewUser("there")} // below budget
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
 	if provider.Calls() != 2 {
@@ -697,10 +697,10 @@ func TestRunOverflowTriggersRetry(t *testing.T) {
 
 func TestRunOverflowNoRetryWhenCompactionDisabled(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 	)
 	agent := newTestAgent(provider, nil, 0) // no compaction set
-	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
+	history := []core.Message{core.NewUser("hi"), core.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
 	if provider.Calls() != 1 {
@@ -717,11 +717,11 @@ func TestRunOverflowNoRetryWhenCompactionDisabled(t *testing.T) {
 
 func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
 	provider := ai.NewFakeProvider("fake",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
-	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
+	history := []core.Message{core.NewUser("hi"), core.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
 	if provider.Calls() != 1 {
@@ -737,20 +737,20 @@ func TestRunOverflowRetryCap(t *testing.T) {
 	// Two overflow scripts then success; the retry cap (1) must surface
 	// the second overflow as an error.
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		[]core.ProviderStreamEvent{
+			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 		},
-		[]ai.StreamEvent{
-			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
+		[]core.ProviderStreamEvent{
+			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
-	history := []ai.Message{ai.NewUser("hi"), ai.NewUser("there")}
+	history := []core.Message{core.NewUser("hi"), core.NewUser("there")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
 	if provider.Calls() != 2 {
@@ -767,19 +767,19 @@ func TestRunOverflowRetryCap(t *testing.T) {
 // user saw the partial output and retrying would duplicate it.
 func TestRunOverflowNoRetryAfterContent(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("fake",
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "partial "},
-			ai.ResponseChunk{Type: "response_chunk", Content: "response"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "partial "},
+			core.ResponseChunk{Type: "response_chunk", Content: "response"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "should not appear"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "should not appear"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 	agent := newTestAgent(provider, nil, 0)
 	agent.SetCompactionProvider(mockCompactionProvider{Provider: provider, Config: compactionConfig()})
-	history := []ai.Message{ai.NewUser("hi")}
+	history := []core.Message{core.NewUser("hi")}
 	events := collect(t, agent.Run(context.Background(), history, nil))
 
 	if provider.Calls() != 1 {
@@ -818,14 +818,14 @@ func (r *modelRecord) snapshot() []string {
 	return append([]string(nil), r.models...)
 }
 
-func (p *modelRecorder) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+func (p *modelRecorder) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
 	if p.delay > 0 {
 		time.Sleep(p.delay)
 	}
 	p.sink.add(p.modelName)
-	events := make(chan ai.StreamEvent, 2)
-	events <- ai.ResponseChunk{Type: "response_chunk", Content: "ok"}
-	events <- ai.StreamEnd{Type: "stream_end", FinishReason: "stop"}
+	events := make(chan core.ProviderStreamEvent, 2)
+	events <- core.ResponseChunk{Type: "response_chunk", Content: "ok"}
+	events <- core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
 	close(events)
 	return events
 }
@@ -853,7 +853,7 @@ func TestConcurrentRunsServeTheirOwnModel(t *testing.T) {
 	a := newTestAgent(base, nil, 2)
 
 	ctx := context.Background()
-	messages := []ai.Message{ai.NewUser("hi")}
+	messages := []core.Message{core.NewUser("hi")}
 	first := a.RunWithProvider(ctx, a.Provider().WithModel("model-a"), messages, nil)
 	second := a.RunWithProvider(ctx, a.Provider().WithModel("model-b"), messages, nil)
 	if first == nil || second == nil {
@@ -884,8 +884,8 @@ func TestRunNonNilWhileRunActive(t *testing.T) {
 	a := newTestAgent(p, nil, 2)
 
 	ctx := context.Background()
-	first := a.Run(ctx, []ai.Message{ai.NewUser("one")}, nil)
-	second := a.Run(ctx, []ai.Message{ai.NewUser("two")}, nil)
+	first := a.Run(ctx, []core.Message{core.NewUser("one")}, nil)
+	second := a.Run(ctx, []core.Message{core.NewUser("two")}, nil)
 	if first == nil || second == nil {
 		t.Fatalf("Run must always return a non-nil channel")
 	}

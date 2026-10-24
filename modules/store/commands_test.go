@@ -7,7 +7,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // --- sessionDisplayName ---
@@ -97,28 +96,28 @@ func TestNewSessionID(t *testing.T) {
 func TestMessageRole(t *testing.T) {
 	cases := []struct {
 		name string
-		m    ai.Message
+		m    core.Message
 		want string
 	}{
-		{"user", ai.User{Content: "hi"}, "user"},
-		{"assistant", ai.Assistant{Content: "hi"}, "assistant"},
-		{"system", ai.System{Content: "sys"}, "system"},
-		{"tool result", ai.ToolResult{Content: "ok"}, "tool"},
+		{"user", core.User{Content: "hi"}, "user"},
+		{"assistant", core.Assistant{Content: "hi"}, "assistant"},
+		{"system", core.System{Content: "sys"}, "system"},
+		{"tool result", core.ToolResult{Content: "ok"}, "tool"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := ai.MessageRole(c.m)
+			got := core.MessageRole(c.m)
 			if got != c.want {
-				t.Fatalf("ai.MessageRole(%T) = %q, want %q", c.m, got, c.want)
+				t.Fatalf("core.MessageRole(%T) = %q, want %q", c.m, got, c.want)
 			}
 		})
 	}
 
 	// Unknown message type returns "unknown".
 	t.Run("unknown", func(t *testing.T) {
-		got := ai.MessageRole(ai.ModelChange{Model: "x"})
+		got := core.MessageRole(core.ModelChange{Model: "x"})
 		if got != "unknown" {
-			t.Fatalf("ai.MessageRole(unknown) = %q, want unknown", got)
+			t.Fatalf("core.MessageRole(unknown) = %q, want unknown", got)
 		}
 	})
 }
@@ -128,14 +127,14 @@ func TestMessageRole(t *testing.T) {
 func TestMessageContent(t *testing.T) {
 	cases := []struct {
 		name string
-		m    ai.Message
+		m    core.Message
 		want string
 	}{
-		{"user", ai.User{Content: "hello"}, "hello"},
-		{"assistant", ai.Assistant{Content: "world"}, "world"},
-		{"system", ai.System{Content: "prompt"}, "prompt"},
-		{"tool result", ai.ToolResult{Content: "result"}, "result"},
-		{"empty user content", ai.User{Content: ""}, ""},
+		{"user", core.User{Content: "hello"}, "hello"},
+		{"assistant", core.Assistant{Content: "world"}, "world"},
+		{"system", core.System{Content: "prompt"}, "prompt"},
+		{"tool result", core.ToolResult{Content: "result"}, "result"},
+		{"empty user content", core.User{Content: ""}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -148,7 +147,7 @@ func TestMessageContent(t *testing.T) {
 
 	// Unknown message type returns empty string.
 	t.Run("unknown", func(t *testing.T) {
-		got := agent.MessageText(ai.ModelChange{Model: "x"})
+		got := agent.MessageText(core.ModelChange{Model: "x"})
 		if got != "" {
 			t.Fatalf("agent.MessageText(unknown) = %q, want empty", got)
 		}
@@ -300,10 +299,10 @@ func TestFormatInsightsEmpty(t *testing.T) {
 
 func TestFormatInsightsPeriodStartEmptyUsesThrough(t *testing.T) {
 	in := &core.Insights{
-		Period:      "all time",
-		PeriodEnd:   "2026-08-30",
-		Sessions:    1,
-		Messages:    1,
+		Period:    "all time",
+		PeriodEnd: "2026-08-30",
+		Sessions:  1,
+		Messages:  1,
 	}
 	got := agent.FormatInsights(in)
 	if !strings.Contains(got, "Through: 2026-08-30") {

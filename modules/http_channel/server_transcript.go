@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -30,17 +29,17 @@ import (
 // address branch points on the variants surface; live-tail items (the
 // run still holds the row) carry none.
 type transcriptItem struct {
-	Kind       string            `json:"kind"`
-	ID         string            `json:"id,omitempty"`
-	Content    string            `json:"content,omitempty"`
-	Time       string            `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
-	ResponseMs int64             `json:"response_ms,omitempty"`
-	ThinkingMs int64             `json:"thinking_ms,omitempty"`
-	ToolCall   *ai.ToolCall      `json:"tool_call,omitempty"`
-	ToolCallID string            `json:"tool_call_id,omitempty"`
-	IsError    bool              `json:"is_error,omitempty"`
-	ElapsedMs  int64             `json:"elapsed_ms,omitempty"`
-	Images     []ai.ImageContent `json:"images,omitempty"` // user: ai.User.Images rides the restore
+	Kind       string              `json:"kind"`
+	ID         string              `json:"id,omitempty"`
+	Content    string              `json:"content,omitempty"`
+	Time       string              `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
+	ResponseMs int64               `json:"response_ms,omitempty"`
+	ThinkingMs int64               `json:"thinking_ms,omitempty"`
+	ToolCall   *core.ToolCall      `json:"tool_call,omitempty"`
+	ToolCallID string              `json:"tool_call_id,omitempty"`
+	IsError    bool                `json:"is_error,omitempty"`
+	ElapsedMs  int64               `json:"elapsed_ms,omitempty"`
+	Images     []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
 	// running marks the LIVE tail's in-flight items (the transcript-refs
 	// merge): an open thinking/response block streams from the restored
 	// item, and a tool call without its result yet renders as the
@@ -145,7 +144,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	for _, sm := range msgs {
 		id := core.MsgID(sm.ID)
 		switch m := sm.Message.(type) {
-		case ai.User:
+		case core.User:
 			if m.Content == "" && len(m.Images) == 0 {
 				continue
 			}
@@ -155,12 +154,12 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 				Content: m.Content,
 				Time:    transcriptTime(sm.CreatedAt, m.Timestamp),
 				// images ride the restore (scope add 2026-10-20): the
-				// persisted payload carries ai.User.Images, the client
+				// persisted payload carries core.User.Images, the client
 				// renders the thumbnails - without this the attach
 				// pipeline's image messages come back as text-only
 				Images: m.Images,
 			})
-		case ai.Assistant:
+		case core.Assistant:
 			if m.Thinking != nil && *m.Thinking != "" {
 				it := transcriptItem{
 					Kind:    "thinking",
@@ -189,7 +188,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 				tc := m.ToolCalls[i]
 				items = append(items, transcriptItem{Kind: "tool_call", ToolCall: &tc})
 			}
-		case ai.ToolResult:
+		case core.ToolResult:
 			if m.ToolCallID == "" {
 				continue
 			}

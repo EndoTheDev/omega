@@ -214,7 +214,7 @@ func themeNames() []string {
 
 // knownCommands are the shell-owned built-in slash commands - utility
 // first, conversation control last. Feature commands are NOT here:
-// they ride the module seam (agent.TUIProvider in
+// they ride the module seam (core.TUIProvider in
 // Context.TUIProviders), the extension command chain, or skills, so
 // removing a plugin takes its commands out of this list with it - the
 // same law the webui enforces through directory registration.
@@ -282,7 +282,7 @@ type streamSegment struct {
 type model struct {
 	textarea             textarea.Model
 	viewport             viewport.Model
-	history              []ai.Message    // full conversation fed to the agent each turn
+	history              []core.Message  // full conversation fed to the agent each turn
 	transcript           string          // rendered content of completed exchanges
 	segments             []streamSegment // ordered streaming segments for the current turn
 	providerType         string
@@ -338,7 +338,7 @@ type model struct {
 	retryParent          string          // branch point the in-flight retry's head pins to; "" = none
 	headPinned           bool            // retry head already parented this run
 	retryMarker          string          // marker (e.g. "[3/3]") prefixed to the retry response at AgentEnd
-	persistInput         []ai.Message    // this run's new input messages; the loop's sink persists them (t_471f6d4a)
+	persistInput         []core.Message  // this run's new input messages; the loop's sink persists them (t_471f6d4a)
 	headParent           string          // the run's head-pin parent (retry); "" = derive leaf
 	screen               core.TUIScreen  // open module full-screen view (module seam); nil = closed
 	tick                 *core.TUITick   // active module follow loop (/logs -f pattern); nil = idle
@@ -356,7 +356,7 @@ type streamDoneMsg struct{}
 
 // compactionResultMsg carries the result of an async /compact call.
 type compactionResultMsg struct {
-	messages []ai.Message
+	messages []core.Message
 	err      error
 	before   int
 }
@@ -804,10 +804,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if combined != "" {
-					m.history = append(m.history, ai.NewUser(combined))
+					m.history = append(m.history, core.NewUser(combined))
 					// The injected result is this run's input; the
 					// loop's sink persists it (t_471f6d4a).
-					m.persistInput = []ai.Message{m.history[len(m.history)-1]}
+					m.persistInput = []core.Message{m.history[len(m.history)-1]}
 					m.busy = true
 					m.segments = nil
 					m.err = ""
@@ -888,7 +888,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modelList = msg.models
 		if len(msg.models) > 0 {
 			m.modelName = msg.models[0]
-			m.persistEntry(ai.NewModelChange(m.modelName))
+			m.persistEntry(core.NewModelChange(m.modelName))
 			m.transcript += "\n" + m.theme.Info.Render("[model: "+m.modelName+"]") + "\n"
 			m.err = ""
 			m.refresh()
@@ -945,12 +945,12 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if imgErr != nil {
 		m.transcript += "\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n"
 	}
-	var msg ai.Message
+	var msg core.Message
 	if len(images) > 0 {
 		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[loaded %d image(s)]", len(images))) + "\n"
-		msg = ai.NewUserWithImages(prompt, images)
+		msg = core.NewUserWithImages(prompt, images)
 	} else {
-		msg = ai.NewUser(prompt)
+		msg = core.NewUser(prompt)
 	}
 	// A /fork pin chains this send onto the forked row id; the store's
 	// derived leaf would otherwise ignore the forked perspective.
@@ -959,7 +959,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	// The send is this run's input; the loop's sink persists it
 	// before the first turn (t_471f6d4a). Ephemeral sessions have
 	// no store, so the sink is nil and nothing persists.
-	m.persistInput = []ai.Message{msg}
+	m.persistInput = []core.Message{msg}
 	m.busy = true
 	m.segments = nil
 	m.err = ""
@@ -1119,11 +1119,11 @@ func (m *model) handleEvent(event core.Event) {
 	switch e := event.(type) {
 	case core.StreamEvent:
 		switch chunk := e.Event.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			m.appendSegment("response", chunk.Content)
-		case ai.ThinkingChunk:
+		case core.ThinkingChunk:
 			m.appendSegment("thinking", chunk.Content)
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			m.lastToolCall = chunk.ToolCall.Name
 			m.lastToolArgs = chunk.ToolCall.Arguments
 			var sb strings.Builder
@@ -1146,7 +1146,7 @@ func (m *model) handleEvent(event core.Event) {
 				sb.WriteString("\n")
 			}
 			m.segments = append(m.segments, streamSegment{kind: "tool", content: sb.String()})
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			if chunk.Error != "" {
 				m.appendSegment("response", "\n"+m.theme.Error.Render("error: "+chunk.Error)+"\n")
 			}
@@ -1377,7 +1377,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExtensionCommand("/model", arg)
 	default:
 		// Module-owned commands first: the provider that registered the
-		// command executes it (agent.TUIProvider, the module seam).
+		// command executes it (core.TUIProvider, the module seam).
 		if _, ok := m.moduleCommands[fields[0]]; ok {
 			return m.handleModuleCommand(fields[0], strings.Join(fields[1:], " "))
 		}
@@ -1394,7 +1394,7 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		for _, s := range m.skills {
 			if "/"+s.Name == cmd {
 				m.transcript += "\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n"
-				m.history = append(m.history, ai.NewSystem(s.Content))
+				m.history = append(m.history, core.NewSystem(s.Content))
 				m.refresh()
 				return m, nil
 			}
@@ -1420,7 +1420,7 @@ func (m model) invokeInlineSkills(input string) model {
 		name := match[1]
 		for _, s := range m.skills {
 			if s.Name == name {
-				m.history = append(m.history, ai.NewSystem(s.Content))
+				m.history = append(m.history, core.NewSystem(s.Content))
 				m.transcript += "\n" + m.theme.Info.Render("[skill: "+s.Name+"]") + "\n"
 				break
 			}
@@ -1599,7 +1599,7 @@ func (m model) handleSessionDelete(args []string) (tea.Model, tea.Cmd) {
 // applyForkPin chains a fresh user message onto the /fork pin and
 // clears it (one pin, one send). The store validates the pointer
 // against the session's rows on write.
-func applyForkPin(m *model, msg ai.Message) ai.Message {
+func applyForkPin(m *model, msg core.Message) core.Message {
 	if m.forkParent == "" {
 		return msg
 	}
@@ -1626,7 +1626,7 @@ func (m *model) resetSession() {
 // persistEntry appends a non-conversation entry (model change, thinking
 // level change) to the session store. No-op for ephemeral sessions or
 // when no store is available.
-func (m *model) persistEntry(msg ai.Message) {
+func (m *model) persistEntry(msg core.Message) {
 	if m.store == nil || m.sessionID == "" || m.ephemeral {
 		return
 	}
@@ -1742,7 +1742,7 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 		switch action.Type {
 		case "set_model":
 			m.modelName = action.Value
-			m.persistEntry(ai.NewModelChange(m.modelName))
+			m.persistEntry(core.NewModelChange(m.modelName))
 		case "set_model_list":
 			m.modelList = action.List
 		case "set_tool_display":
@@ -1760,7 +1760,7 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 		case "set_thinking":
 			m.thinkingLevel = action.Value
 			m.showThinking = ai.ThinkingEnabled(m.thinkingLevel)
-			m.persistEntry(ai.NewThinkingLevelChange(m.thinkingLevel))
+			m.persistEntry(core.NewThinkingLevelChange(m.thinkingLevel))
 		case "new_session":
 			m.history = nil
 			m.transcript = ""
@@ -1818,9 +1818,9 @@ func (m model) handleExtensionCommand(name, args string) (tea.Model, tea.Cmd) {
 			m.storeErr = ""
 			for _, sm := range times {
 				switch v := sm.Message.(type) {
-				case ai.ModelChange:
+				case core.ModelChange:
 					m.modelName = v.Model
-				case ai.ThinkingLevelChange:
+				case core.ThinkingLevelChange:
 					m.thinkingLevel = v.Level
 					m.showThinking = ai.ThinkingEnabled(v.Level)
 				}
@@ -1917,11 +1917,11 @@ func (m model) handleCopy() (tea.Model, tea.Cmd) {
 	last := m.history[len(m.history)-1]
 	var text string
 	switch msg := last.(type) {
-	case ai.User:
+	case core.User:
 		text = msg.Content
-	case ai.Assistant:
+	case core.Assistant:
 		text = msg.Content
-	case ai.ToolResult:
+	case core.ToolResult:
 		text = msg.Content
 	}
 	if text == "" {
@@ -1940,13 +1940,13 @@ func (m model) handleCopy() (tea.Model, tea.Cmd) {
 // summarizeForBranch trims a long message history for a branch by
 // keeping the first keepFirst messages, a synthetic summary placeholder,
 // and the last keepLast messages.
-func summarizeForBranch(messages []ai.Message, keepFirst, keepLast int) []ai.Message {
+func summarizeForBranch(messages []core.Message, keepFirst, keepLast int) []core.Message {
 	if keepFirst+keepLast >= len(messages) {
 		return messages
 	}
 	head := messages[:keepFirst]
 	tail := messages[len(messages)-keepLast:]
-	summary := ai.NewSystem(fmt.Sprintf("[branch summary: %d messages omitted from parent session]", len(messages)-keepFirst-keepLast))
+	summary := core.NewSystem(fmt.Sprintf("[branch summary: %d messages omitted from parent session]", len(messages)-keepFirst-keepLast))
 	return append(append(head, summary), tail...)
 }
 
@@ -2007,18 +2007,18 @@ func (m *model) resizeTextarea() {
 // prompts) are not persisted and never appear here. markers maps a
 // message index to a variant marker ("[2/3]") rendered at the head of
 // its assistant block (t_7337870a).
-func renderTranscript(messages []ai.Message, width int, t Theme, markers map[int]string) string {
+func renderTranscript(messages []core.Message, width int, t Theme, markers map[int]string) string {
 	var sb strings.Builder
 	// Track the last assistant's tool calls so we can infer the
 	// language for syntax highlighting tool results by ToolCallID.
-	toolCallsByID := make(map[string]ai.ToolCall)
+	toolCallsByID := make(map[string]core.ToolCall)
 	for i, msg := range messages {
 		switch m := msg.(type) {
-		case ai.User:
+		case core.User:
 			sb.WriteString("\n")
 			sb.WriteString(t.User.Render("> " + wordWrap(m.Content, width)))
 			sb.WriteString("\n")
-		case ai.Assistant:
+		case core.Assistant:
 			// Register tool calls for matching with subsequent results.
 			for _, call := range m.ToolCalls {
 				toolCallsByID[call.ID] = call
@@ -2048,7 +2048,7 @@ func renderTranscript(messages []ai.Message, width int, t Theme, markers map[int
 				sb.WriteString(renderMarkdown(m.Content, width, t))
 				sb.WriteString("\n")
 			}
-		case ai.ToolResult:
+		case core.ToolResult:
 			sb.WriteString("\n")
 			if m.IsError {
 				sb.WriteString(t.Error.Render("[tool result: error]"))
@@ -2075,7 +2075,7 @@ func renderTranscript(messages []ai.Message, width int, t Theme, markers map[int
 				sb.WriteString(t.Tool.Render(wordWrap(content, width)))
 			}
 			sb.WriteString("\n")
-		case ai.System:
+		case core.System:
 			// Only compaction summaries are persisted; render them so
 			// the user sees the history was summarized.
 			if strings.HasPrefix(m.Content, "[compacted:") {
@@ -2536,11 +2536,11 @@ func (m model) autoNameSession() tea.Cmd {
 	firstAssistant := ""
 	for _, msg := range m.history {
 		switch msg := msg.(type) {
-		case ai.User:
+		case core.User:
 			if firstUser == "" {
 				firstUser = msg.Content
 			}
-		case ai.Assistant:
+		case core.Assistant:
 			if firstAssistant == "" {
 				firstAssistant = msg.Content
 			}
@@ -2565,15 +2565,15 @@ func (m model) autoNameSession() tea.Cmd {
 
 	return func() tea.Msg {
 		provider := extensions.Provider
-		messages := []ai.Message{
-			ai.NewUser(prompt),
+		messages := []core.Message{
+			core.NewUser(prompt),
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		events := provider.Stream(ctx, messages, nil)
 		var title strings.Builder
 		for event := range events {
-			if chunk, ok := event.(ai.ResponseChunk); ok {
+			if chunk, ok := event.(core.ResponseChunk); ok {
 				title.WriteString(chunk.Content)
 			}
 		}

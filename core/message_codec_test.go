@@ -1,4 +1,4 @@
-package ai
+package core
 
 import (
 	"testing"
@@ -30,11 +30,11 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{"thinking_level_change", ThinkingLevelChange{Level: "high", Timestamp: "2026-01-01T00:00:00Z"}, "thinking_level_change"},
 		{"verdict_card", NewVerdictCard("c1", "Approve?", "ship it?", []VerdictOption{{Label: "yes", Description: "do it"}, {Label: "no"}}, true, false, 0), "verdict_card"},
 		{"verdict_card_allowtext", NewVerdictCard("c2", "Name?", "", nil, false, true, 90), "verdict_card"},
-		{"verdict_pick", NewVerdict("c1", []int{1}, []string{"yes"}, "", false, false), "verdict"},
-		{"verdict_multi_pick", NewVerdict("c3", []int{1, 3}, []string{"a", "c"}, "", false, false), "verdict"},
-		{"verdict_skip", NewVerdict("c1", nil, nil, "", true, false), "verdict"},
-		{"verdict_expired", NewVerdict("c1", nil, nil, "", false, true), "verdict"},
-		{"verdict_text", NewVerdict("c2", nil, nil, "omega", false, false), "verdict"},
+		{"verdict_pick", NewVerdictRecord("c1", []int{1}, []string{"yes"}, "", false, false), "verdict"},
+		{"verdict_multi_pick", NewVerdictRecord("c3", []int{1, 3}, []string{"a", "c"}, "", false, false), "verdict"},
+		{"verdict_skip", NewVerdictRecord("c1", nil, nil, "", true, false), "verdict"},
+		{"verdict_expired", NewVerdictRecord("c1", nil, nil, "", false, true), "verdict"},
+		{"verdict_text", NewVerdictRecord("c2", nil, nil, "omega", false, false), "verdict"},
 	}
 
 	for _, tc := range cases {

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -92,10 +91,10 @@ func chatRowRoles(rows []core.ChatRow) []string {
 // off the item's kind and running hint.
 func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	rows := chatRows([]transcriptItem{
-		{Kind: "user", ID: "u1", Content: "hi", Images: []ai.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
+		{Kind: "user", ID: "u1", Content: "hi", Images: []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
 		{Kind: "thinking", ID: "a1", Content: "hmm", Running: true},
 		{Kind: "message", ID: "a2", Content: "answer"},
-		{Kind: "tool_call", ToolCall: &ai.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 		{Kind: "tool_result", ID: "r1", ToolCallID: "tcl", Content: "out", IsError: true, ElapsedMs: 7},
 	})
 	if len(rows) != 5 {
@@ -132,16 +131,16 @@ func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 	persisted := []transcriptItem{
 		{Kind: "user", ID: "u1", Content: "hi"},
 		{Kind: "message", ID: "a1", Content: "hello"},
-		{Kind: "tool_call", ToolCall: &ai.ToolCall{ID: "tcl", Name: "shell.run"}},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 	}
 	composed := composeItems(persisted, []transcriptItem{
 		// already persisted twins (AssistantMessageEvent landed, the
 		// accumulator's split has not)
 		{Kind: "message", Content: "hello"},
-		{Kind: "tool_call", ToolCall: &ai.ToolCall{ID: "tcl", Name: "shell.run"}},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 		// genuinely in-flight: the next turn's fresh call and its
 		// growing answer prefix
-		{Kind: "tool_call", ToolCall: &ai.ToolCall{ID: "tcl2", Name: "shell.run"}, Running: true},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl2", Name: "shell.run"}, Running: true},
 		{Kind: "message", Content: "hel"},
 	})
 	kinds := make([]string, len(composed))
@@ -166,10 +165,10 @@ func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	if err := st.CreateSession(ctx, "new", "", "New"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "new", ai.NewUser("hi")); err != nil {
+	if err := st.AppendMessage(ctx, "new", core.NewUser("hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "new", ai.NewAssistant("hello")); err != nil {
+	if err := st.AppendMessage(ctx, "new", core.NewAssistant("hello")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	panels := s.chat.Panels()
@@ -254,9 +253,9 @@ func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 // structural flushes plus the exit one, no token deltas in between.
 func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 	prov := newMockProvider("mock", scripted(
-		ai.ResponseChunk{Type: "response_chunk", Content: "hel"},
-		ai.ResponseChunk{Type: "response_chunk", Content: "lo"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
+		core.ResponseChunk{Type: "response_chunk", Content: "lo"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	))
 	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
@@ -471,8 +470,8 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 // same variant hop /chat's retry body drives.
 func TestChatActionRetryThroughThePipe(t *testing.T) {
 	a := core.NewAgent(newMockProvider("mock", scripted(
-		ai.ResponseChunk{Type: "response_chunk", Content: "first answer"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "first answer"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)), nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil)
@@ -533,7 +532,7 @@ func TestChatPanelEphemeralRowsFromRegistry(t *testing.T) {
 	s := newTestServer()
 	s.chat.batch = time.Hour
 	s.eph.create("eph-panel")
-	s.eph.appendUser("eph-panel", []ai.Message{ai.NewUser("hi")}, time.Now())
+	s.eph.appendUser("eph-panel", []core.Message{core.NewUser("hi")}, time.Now())
 	items := s.chat.sessionItems("eph-panel", false)
 	if len(items) != 1 || items[0].Kind != "user" || items[0].Content != "hi" {
 		t.Fatalf("eph items = %+v", items)
@@ -571,9 +570,9 @@ func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 // already rides - no new transport.
 func TestChatDeltaRidesTheRunStream(t *testing.T) {
 	a := core.NewAgent(newMockProvider("mock", scripted(
-		ai.ResponseChunk{Type: "response_chunk", Content: "hel"},
-		ai.ResponseChunk{Type: "response_chunk", Content: "lo"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
+		core.ResponseChunk{Type: "response_chunk", Content: "lo"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)), nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil)

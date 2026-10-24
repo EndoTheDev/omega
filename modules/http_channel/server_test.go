@@ -27,7 +27,7 @@ import (
 // mutex - title generation streams concurrently with the main run.
 type mockProvider struct {
 	modelName string
-	scripts   [][]ai.StreamEvent
+	scripts   [][]core.ProviderStreamEvent
 	mu        *sync.Mutex
 	calls     *int
 	// thinkingLevel is the ladder value a WithThinkingLevel copy
@@ -43,7 +43,7 @@ type mockProvider struct {
 	seenModels *[]string
 }
 
-func newMockProvider(modelName string, scripts ...[]ai.StreamEvent) *mockProvider {
+func newMockProvider(modelName string, scripts ...[]core.ProviderStreamEvent) *mockProvider {
 	calls := 0
 	levels := []string{}
 	models := []string{}
@@ -85,12 +85,12 @@ func (m *mockProvider) ModelInfo() (ai.ModelInfo, error) {
 	return ai.ModelInfo{}, nil
 }
 
-func (m *mockProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+func (m *mockProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
 	m.mu.Lock()
 	*m.seenLevels = append(*m.seenLevels, m.thinkingLevel)
 	*m.seenModels = append(*m.seenModels, m.modelName)
 	m.mu.Unlock()
-	events := make(chan ai.StreamEvent)
+	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)
 		index := m.nextIndex()
@@ -132,13 +132,13 @@ func (m *mockProvider) streamCalls() int {
 	return *m.calls
 }
 
-func scripted(events ...ai.StreamEvent) []ai.StreamEvent { return events }
+func scripted(events ...core.ProviderStreamEvent) []core.ProviderStreamEvent { return events }
 
 func newTestServer() *Server {
 	provider := newMockProvider("mock",
 		scripted(
-			ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+			core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
 	a := core.NewAgent(provider, nil, 0)
@@ -164,7 +164,7 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	// Persistence outlives the run ctx - same WithoutCancel law the
 	// real loop applies, so a cancelled run still lands its copy.
 	persistCtx := context.WithoutCancel(ctx)
-	persist := func(msg ai.Message) {
+	persist := func(msg core.Message) {
 		if sink == nil {
 			return
 		}
@@ -186,14 +186,14 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	var content strings.Builder
 	persisted := false
 	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
-		if chunk, ok := event.(ai.ResponseChunk); ok {
+		if chunk, ok := event.(core.ResponseChunk); ok {
 			content.WriteString(chunk.Content)
 		}
 		opts.Events <- core.StreamEvent{Event: event}
-		if end, ok := event.(ai.StreamEnd); ok && end.FinishReason == "stop" {
+		if end, ok := event.(core.StreamEnd); ok && end.FinishReason == "stop" {
 			// Persist BEFORE the event, like the real loop: a reload
 			// mid-run must find the record already in the store.
-			assistant := ai.NewAssistant(content.String())
+			assistant := core.NewAssistant(content.String())
 			persist(assistant)
 			persisted = true
 			opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
@@ -206,7 +206,7 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	// persists as the turn's partial: the transcript keeps the copy
 	// the user already saw rendered.
 	if !persisted && content.Len() > 0 {
-		persist(ai.NewAssistant(content.String()))
+		persist(core.NewAssistant(content.String()))
 	}
 	return nil
 }
@@ -326,7 +326,7 @@ func TestChatSSE(t *testing.T) {
 	}
 
 	// The response_chunk data must carry the streamed content.
-	var chunk ai.ResponseChunk
+	var chunk core.ResponseChunk
 	if err := json.Unmarshal(events[2].data, &chunk); err != nil {
 		t.Fatalf("decode response_chunk: %v", err)
 	}
@@ -562,8 +562,8 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("get status = %d, want 200", rec.Code)
 	}
 	var detail struct {
-		Session  core.Session `json:"session"`
-		Messages []ai.Message `json:"messages"`
+		Session  core.Session   `json:"session"`
+		Messages []core.Message `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("decode get: %v", err)
@@ -595,10 +595,10 @@ func TestSessionMessagesCarryCreatedAt(t *testing.T) {
 	if err := store.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := store.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+	if err := store.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
-	if err := store.AppendMessage(ctx, "s1", ai.NewAssistant("hello")); err != nil {
+	if err := store.AppendMessage(ctx, "s1", core.NewAssistant("hello")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 
@@ -654,13 +654,13 @@ func TestSessionsListCounts(t *testing.T) {
 	}
 	// s1 carries messages; the tool calls ride the assistant, the
 	// results are separate tool-role rows.
-	s1 := []ai.Message{
-		ai.NewUser("hi"),
-		ai.NewAssistant("working"),
-		ai.ToolResult{Content: "r1"},
-		ai.ToolResult{Content: "r2"},
-		ai.NewUser("again"),
-		ai.NewAssistant("done"),
+	s1 := []core.Message{
+		core.NewUser("hi"),
+		core.NewAssistant("working"),
+		core.ToolResult{Content: "r1"},
+		core.ToolResult{Content: "r2"},
+		core.NewUser("again"),
+		core.NewAssistant("done"),
 	}
 	for _, m := range s1 {
 		if err := st.AppendMessage(ctx, "s1", m); err != nil {
@@ -698,13 +698,13 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 	// first so the detached title run never fires).
 	provider := newMockProvider("mock",
 		scripted(
-			ai.ResponseChunk{Type: "response_chunk", Content: "one"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
+			core.ResponseChunk{Type: "response_chunk", Content: "one"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop",
 				PromptEvalCount: ptrInt(100), EvalCount: ptrInt(20)},
 		),
 		scripted(
-			ai.ResponseChunk{Type: "response_chunk", Content: "two"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop",
+			core.ResponseChunk{Type: "response_chunk", Content: "two"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop",
 				PromptEvalCount: ptrInt(40), EvalCount: ptrInt(5)},
 		),
 	)
@@ -798,12 +798,12 @@ func TestChatWithSessionPersists(t *testing.T) {
 	if len(messages) != 2 {
 		t.Fatalf("len = %d, want 2 (user + assistant)", len(messages))
 	}
-	if _, ok := messages[0].(ai.User); !ok {
-		t.Fatalf("messages[0] = %T, want ai.User", messages[0])
+	if _, ok := messages[0].(core.User); !ok {
+		t.Fatalf("messages[0] = %T, want core.User", messages[0])
 	}
-	assistant, ok := messages[1].(ai.Assistant)
+	assistant, ok := messages[1].(core.Assistant)
 	if !ok {
-		t.Fatalf("messages[1] = %T, want ai.Assistant", messages[1])
+		t.Fatalf("messages[1] = %T, want core.Assistant", messages[1])
 	}
 	if assistant.Content != "hello" {
 		t.Fatalf("assistant content = %q, want hello", assistant.Content)
@@ -865,8 +865,8 @@ func TestChatWithoutSessionAutoCreates(t *testing.T) {
 	if len(messages) != 2 {
 		t.Fatalf("len = %d, want 2 (user + assistant)", len(messages))
 	}
-	if _, ok := messages[1].(ai.Assistant); !ok {
-		t.Fatalf("messages[1] = %T, want ai.Assistant", messages[1])
+	if _, ok := messages[1].(core.Assistant); !ok {
+		t.Fatalf("messages[1] = %T, want core.Assistant", messages[1])
 	}
 
 	// and it shows up in the list like any other session
@@ -1031,12 +1031,12 @@ func TestSessionSearch(t *testing.T) {
 	// title-independent content match; s3 stays silent.
 	for _, m := range []struct {
 		id string
-		m  ai.Message
+		m  core.Message
 	}{
-		{"s1", ai.NewUser("the harbor hides at midnight")},
-		{"s1", ai.NewAssistant("harbor confirmed")},
-		{"s2", ai.NewUser("weather bulletin: harbor closed")},
-		{"s3", ai.NewUser("nothing to see here")},
+		{"s1", core.NewUser("the harbor hides at midnight")},
+		{"s1", core.NewAssistant("harbor confirmed")},
+		{"s2", core.NewUser("weather bulletin: harbor closed")},
+		{"s3", core.NewUser("nothing to see here")},
 	} {
 		if err := st.AppendMessage(ctx, m.id, m.m); err != nil {
 			t.Fatalf("append: %v", err)
@@ -1315,7 +1315,7 @@ func TestSessionSearchArchivedFilter(t *testing.T) {
 		if err := st.CreateSession(ctx, id, "", ""); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
-		if err := st.AppendMessage(ctx, id, ai.NewUser("quiet harbor town")); err != nil {
+		if err := st.AppendMessage(ctx, id, core.NewUser("quiet harbor town")); err != nil {
 			t.Fatalf("append %s: %v", id, err)
 		}
 	}
@@ -1362,7 +1362,7 @@ func TestSessionPatchRead(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	// Output lands after birth - the session reads unread at the API.
-	if err := st.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 
@@ -1516,15 +1516,15 @@ type captureProvider struct {
 	prompts []string
 }
 
-func newCaptureProvider(scripts ...[]ai.StreamEvent) *captureProvider {
+func newCaptureProvider(scripts ...[]core.ProviderStreamEvent) *captureProvider {
 	return &captureProvider{mockProvider: *newMockProvider("mock", scripts...)}
 }
 
-func (c *captureProvider) Stream(ctx context.Context, msgs []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
+func (c *captureProvider) Stream(ctx context.Context, msgs []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
 	c.mu.Lock()
 	for _, m := range msgs {
-		if ai.MessageRole(m) == "user" {
-			if u, ok := m.(ai.User); ok {
+		if core.MessageRole(m) == "user" {
+			if u, ok := m.(core.User); ok {
 				c.prompts = append(c.prompts, u.Content)
 			}
 		}
@@ -1551,12 +1551,12 @@ func newTitleTestServerWithStore(t *testing.T) (*Server, *store.Store, *captureP
 	t.Helper()
 	prov := newCaptureProvider(
 		scripted(
-			ai.ResponseChunk{Type: "response_chunk", Content: "prov title"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+			core.ResponseChunk{Type: "response_chunk", Content: "prov title"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 		scripted(
-			ai.ResponseChunk{Type: "response_chunk", Content: "final title"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+			core.ResponseChunk{Type: "response_chunk", Content: "final title"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
 	a := core.NewAgent(prov, nil, 0)

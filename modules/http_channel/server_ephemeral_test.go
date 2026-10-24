@@ -15,10 +15,9 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
-// stubTool is a minimal agent.Tool value for registry-shape assertions.
+// stubTool is a minimal core.Tool value for registry-shape assertions.
 func stubTool() core.Tool {
 	return core.Tool{Description: "stub"}
 }
@@ -104,9 +103,9 @@ func TestChatEphemeralNeverTouchesTheStore(t *testing.T) {
 		t.Fatalf("transcript status = %d, want 200", rec.Code)
 	}
 	var detail struct {
-		Session map[string]any `json:"session"`
-		Items   []map[string]any `json:"items"`
-		Running bool           `json:"running"`
+		Session  map[string]any   `json:"session"`
+		Items    []map[string]any `json:"items"`
+		Running  bool             `json:"running"`
 		Variants *json.RawMessage `json:"variants"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
@@ -143,11 +142,11 @@ func TestChatEphemeralAccumulatesContext(t *testing.T) {
 	if len(history) != 4 {
 		t.Fatalf("history len = %d, want 4 (two exchanges)", len(history))
 	}
-	if _, ok := history[0].(ai.User); !ok {
-		t.Fatalf("history[0] = %T, want ai.User", history[0])
+	if _, ok := history[0].(core.User); !ok {
+		t.Fatalf("history[0] = %T, want core.User", history[0])
 	}
-	if _, ok := history[1].(ai.Assistant); !ok {
-		t.Fatalf("history[1] = %T, want ai.Assistant", history[1])
+	if _, ok := history[1].(core.Assistant); !ok {
+		t.Fatalf("history[1] = %T, want core.Assistant", history[1])
 	}
 
 	// restart kills: dropping the record empties the conversation for

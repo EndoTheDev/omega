@@ -3,6 +3,7 @@ package ai
 import (
 	"encoding/base64"
 	"fmt"
+	"github.com/EndoTheDev/omega/core"
 	"os"
 	"strings"
 )
@@ -23,10 +24,10 @@ var imageMagic = []struct {
 // and DetectImageBytes.
 const MaxImageBytes = 20 * 1024 * 1024 // 20 MB
 
-// DetectImage reads a file and returns ImageContent if it's a supported
+// DetectImage reads a file and returns core.ImageContent if it's a supported
 // image format, or nil if it's not an image. Returns an error on read
 // failure or if the file exceeds MaxImageBytes.
-func DetectImage(path string) (*ImageContent, error) {
+func DetectImage(path string) (*core.ImageContent, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -38,12 +39,12 @@ func DetectImage(path string) (*ImageContent, error) {
 	return img, nil
 }
 
-// DetectImageBytes sniffs raw image bytes and returns ImageContent if
+// DetectImageBytes sniffs raw image bytes and returns core.ImageContent if
 // they carry a supported image format, or nil if they don't. The
 // byte-level counterpart of DetectImage - same magic checks, same
 // MaxImageBytes cap - shared by file loading and the webui's remote
 // URL attachment.
-func DetectImageBytes(data []byte) (*ImageContent, error) {
+func DetectImageBytes(data []byte) (*core.ImageContent, error) {
 	if len(data) > MaxImageBytes {
 		return nil, fmt.Errorf("image too large (%d bytes, max %d)", len(data), MaxImageBytes)
 	}
@@ -69,7 +70,7 @@ func DetectImageBytes(data []byte) (*ImageContent, error) {
 		return nil, nil // not an image
 	}
 
-	return &ImageContent{
+	return &core.ImageContent{
 		MediaType: mediaType,
 		Base64:    base64.StdEncoding.EncodeToString(data),
 	}, nil

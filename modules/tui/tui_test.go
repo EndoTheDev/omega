@@ -117,7 +117,7 @@ func TestDrainEventsDeliversStream(t *testing.T) {
 	m.events = ch
 
 	// Simulate the run goroutine: one event, then close.
-	ch <- core.StreamEvent{Event: ai.ResponseChunk{Content: "hi"}}
+	ch <- core.StreamEvent{Event: core.ResponseChunk{Content: "hi"}}
 	close(ch)
 
 	// First drain delivers the event.
@@ -164,10 +164,10 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 func TestHandleEventFoldsStream(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
 
-	m.handleEvent(core.StreamEvent{Event: ai.ResponseChunk{Content: "hello"}})
-	m.handleEvent(core.StreamEvent{Event: ai.ResponseChunk{Content: " world"}})
-	m.handleEvent(core.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
-	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hello world")})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "hello"}})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: " world"}})
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{Name: "shell.run"}}})
+	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: core.NewAssistant("hello world")})
 	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	plain := ansiStrip(m.transcript)
@@ -188,7 +188,7 @@ func TestHandleEventFoldsStream(t *testing.T) {
 // TestHandleEventError verifies a stream error is surfaced and folded.
 func TestHandleEventError(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-	m.handleEvent(core.StreamEvent{Event: ai.StreamEnd{FinishReason: "error", Error: "boom"}})
+	m.handleEvent(core.StreamEvent{Event: core.StreamEnd{FinishReason: "error", Error: "boom"}})
 	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
 
 	if m.err != "boom" {
@@ -226,7 +226,7 @@ func TestSlashCommands(t *testing.T) {
 	}
 
 	// /new wipes history and transcript.
-	m.history = append(m.history, ai.NewUser("hi"))
+	m.history = append(m.history, core.NewUser("hi"))
 	m.transcript = "some old text"
 	updated, _ = m.handleCommand("/new")
 	m = updated.(model)
@@ -309,9 +309,9 @@ func TestCompactViaExtension(t *testing.T) {
 	m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
 
 	// Add enough history for compaction to work (needs >= 3 messages).
-	m.history = append(m.history, ai.NewUser("hello"))
-	m.history = append(m.history, ai.NewAssistant("hi there"))
-	m.history = append(m.history, ai.NewUser("how are you?"))
+	m.history = append(m.history, core.NewUser("hello"))
+	m.history = append(m.history, core.NewAssistant("hi there"))
+	m.history = append(m.history, core.NewUser("how are you?"))
 
 	// /compact should route to extension command handler.
 	// It returns run_compact action — the TUI handles the actual
@@ -399,9 +399,9 @@ func TestRenderAssistant(t *testing.T) {
 // output (escape codes present) with the text preserved, while a User
 // message stays plain-styled.
 func TestRenderTranscriptRendersAssistant(t *testing.T) {
-	messages := []ai.Message{
-		ai.NewUser("hi"),
-		ai.NewAssistant("**bold** `code`"),
+	messages := []core.Message{
+		core.NewUser("hi"),
+		core.NewAssistant("**bold** `code`"),
 	}
 	out := renderTranscript(messages, 80, themes["dark"], nil)
 
@@ -495,20 +495,20 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 persisted messages, got %d", len(msgs))
 	}
-	u, ok := msgs[0].(ai.User)
+	u, ok := msgs[0].(core.User)
 	if !ok || u.Content != "hello" {
 		t.Fatalf("first message = %#v, want user 'hello'", msgs[0])
 	}
-	if a, ok := msgs[1].(ai.Assistant); !ok || a.Content != "ok" {
+	if a, ok := msgs[1].(core.Assistant); !ok || a.Content != "ok" {
 		t.Fatalf("second message = %#v, want assistant 'ok'", msgs[1])
 	}
 }
 
 // scriptedResponse builds the one-turn script a test run needs.
-func scriptedResponse(content string) []ai.StreamEvent {
-	return []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: content},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+func scriptedResponse(content string) []core.ProviderStreamEvent {
+	return []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: content},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 }
 
@@ -523,7 +523,7 @@ func TestClearStartsFreshSession(t *testing.T) {
 
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
 	m.sessionID = "sess1"
-	m.history = append(m.history, ai.NewUser("hi"))
+	m.history = append(m.history, core.NewUser("hi"))
 	m.transcript = "old text"
 
 	updated, _ := m.handleCommand("/new")
@@ -553,10 +553,10 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 	if err := s.CreateSession(ctx, "abc123", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "abc123", ai.NewUser("first")); err != nil {
+	if err := s.AppendMessage(ctx, "abc123", core.NewUser("first")); err != nil {
 		t.Fatalf("append user: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "abc123", ai.NewAssistant("reply")); err != nil {
+	if err := s.AppendMessage(ctx, "abc123", core.NewAssistant("reply")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
 
@@ -613,7 +613,7 @@ func TestBranchCommand(t *testing.T) {
 	if err := s.CreateSession(ctx, "parent", "", ""); err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "parent", ai.NewUser("root msg")); err != nil {
+	if err := s.AppendMessage(ctx, "parent", core.NewUser("root msg")); err != nil {
 		t.Fatalf("append parent: %v", err)
 	}
 
@@ -727,7 +727,7 @@ func TestTreeCommand(t *testing.T) {
 	if err := s.UpdateSession(ctx, "root", "main"); err != nil {
 		t.Fatalf("set label: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "root", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "root", core.NewUser("hi")); err != nil {
 		t.Fatalf("append root: %v", err)
 	}
 
@@ -1117,9 +1117,9 @@ func TestSegmentOrder(t *testing.T) {
 	m.thinkingLevel = "on"
 	m.showThinking = true
 
-	m.handleEvent(core.StreamEvent{Event: ai.ThinkingChunk{Content: "plan"}})
-	m.handleEvent(core.StreamEvent{Event: ai.ToolCallEvent{ToolCall: ai.ToolCall{Name: "shell.run"}}})
-	m.handleEvent(core.StreamEvent{Event: ai.ResponseChunk{Content: "done"}})
+	m.handleEvent(core.StreamEvent{Event: core.ThinkingChunk{Content: "plan"}})
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{Name: "shell.run"}}})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "done"}})
 	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
 	plain := ansiStrip(m.transcript)
@@ -1432,10 +1432,10 @@ func TestInlineSkillInvocation(t *testing.T) {
 	foundUser := false
 	foundSystem := false
 	for _, msg := range m.history {
-		if u, ok := msg.(ai.User); ok && u.Content == "go ahead and /learn-skill from my notes" {
+		if u, ok := msg.(core.User); ok && u.Content == "go ahead and /learn-skill from my notes" {
 			foundUser = true
 		}
-		if s, ok := msg.(ai.System); ok && s.Content == "skill body here" {
+		if s, ok := msg.(core.System); ok && s.Content == "skill body here" {
 			foundSystem = true
 		}
 	}
@@ -1460,7 +1460,7 @@ func TestInlineSkillUnknownTokenIgnored(t *testing.T) {
 	m = updated.(model)
 
 	for _, msg := range m.history {
-		if s, ok := msg.(ai.System); ok && s.Content == "skill body here" {
+		if s, ok := msg.(core.System); ok && s.Content == "skill body here" {
 			t.Fatal("unknown token injected a skill")
 		}
 	}
@@ -1474,14 +1474,14 @@ func TestInlineSkillUnknownTokenIgnored(t *testing.T) {
 // content, in order, with no blank blocks.
 func TestRenderTranscriptToolResults(t *testing.T) {
 	thinking := "let me check the time"
-	assistant := ai.NewAssistant("")
+	assistant := core.NewAssistant("")
 	assistant.Thinking = &thinking
-	assistant.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "shell.run", Arguments: map[string]any{"command": "date"}}}
-	messages := []ai.Message{
-		ai.NewUser("whats the time rn?"),
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "shell.run", Arguments: map[string]any{"command": "date"}}}
+	messages := []core.Message{
+		core.NewUser("whats the time rn?"),
 		assistant,
-		ai.NewToolResult("11:12 AM", "c1", false),
-		ai.NewAssistant("It's 11:12 AM."),
+		core.NewToolResult("11:12 AM", "c1", false),
+		core.NewAssistant("It's 11:12 AM."),
 	}
 	out := ansiStrip(renderTranscript(messages, 80, themes["dark"], nil))
 
@@ -1510,10 +1510,10 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 // TestRenderTranscriptCompacted verifies compaction summaries render
 // while other system messages are skipped.
 func TestRenderTranscriptCompacted(t *testing.T) {
-	messages := []ai.Message{
-		ai.NewSystem("[compacted: user asked about the time]"),
-		ai.NewSystem("injected prompt - never persisted, skip"),
-		ai.NewUser("continue"),
+	messages := []core.Message{
+		core.NewSystem("[compacted: user asked about the time]"),
+		core.NewSystem("injected prompt - never persisted, skip"),
+		core.NewUser("continue"),
 	}
 	out := ansiStrip(renderTranscript(messages, 80, themes["dark"], nil))
 	if !strings.Contains(out, "[compacted:") {
@@ -1548,7 +1548,7 @@ func TestSessionsDeleteCommand(t *testing.T) {
 	if err := s.CreateSession(ctx, "abc123", "", "old name"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "abc123", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "abc123", core.NewUser("hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 
@@ -1688,7 +1688,7 @@ func TestSplashReappearsAfterNew(t *testing.T) {
 	defer s.Close()
 	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
 	m.transcript = "some content"
-	m.history = append(m.history, ai.NewUser("hi"))
+	m.history = append(m.history, core.NewUser("hi"))
 	// Not showing splash (has content).
 	view := ansiStrip(m.View())
 	if strings.Contains(view, `#"""#`) {
@@ -1789,8 +1789,8 @@ func TestModelsCommand(t *testing.T) {
 // handleModels.
 type emptyModelsProvider struct{}
 
-func (emptyModelsProvider) Stream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
-	ch := make(chan ai.StreamEvent)
+func (emptyModelsProvider) Stream(ctx context.Context, messages []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	ch := make(chan core.ProviderStreamEvent)
 	go close(ch)
 	return ch
 }
@@ -1807,8 +1807,8 @@ func (emptyModelsProvider) ModelInfo() (ai.ModelInfo, error) {
 // fails, exercising the error branch of handleModels.
 type errorModelsProvider struct{}
 
-func (errorModelsProvider) Stream(ctx context.Context, messages []ai.Message, tools []ai.ToolSchema) <-chan ai.StreamEvent {
-	ch := make(chan ai.StreamEvent)
+func (errorModelsProvider) Stream(ctx context.Context, messages []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	ch := make(chan core.ProviderStreamEvent)
 	go close(ch)
 	return ch
 }
@@ -2134,7 +2134,7 @@ func TestHandleSearchResults(t *testing.T) {
 	if err := s.CreateSession(ctx, "sess1", "", "Test Session"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("golang concurrency patterns")); err != nil {
+	if err := s.AppendMessage(ctx, "sess1", core.NewUser("golang concurrency patterns")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
@@ -2161,7 +2161,7 @@ func TestHandleSearchNoResults(t *testing.T) {
 	if err := s.CreateSession(ctx, "sess1", "", "Test"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("hello world")); err != nil {
+	if err := s.AppendMessage(ctx, "sess1", core.NewUser("hello world")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
@@ -2225,10 +2225,10 @@ func TestHandleInsightsWithSessions(t *testing.T) {
 	if err := s.CreateSession(ctx, "sess1", "", "My Session"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "sess1", ai.NewUser("hello there")); err != nil {
+	if err := s.AppendMessage(ctx, "sess1", core.NewUser("hello there")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "sess1", ai.NewAssistant("hi back")); err != nil {
+	if err := s.AppendMessage(ctx, "sess1", core.NewAssistant("hi back")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
@@ -2268,7 +2268,7 @@ func TestHandleCopyNothing(t *testing.T) {
 // empty sets an error (the message type is recognized but content is blank).
 func TestHandleCopyEmptyText(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-	m.history = []ai.Message{ai.NewAssistant("")}
+	m.history = []core.Message{core.NewAssistant("")}
 	up, _ := m.handleCopy()
 	m = up.(model)
 	if m.err == "" {
@@ -2287,7 +2287,7 @@ func TestHandleCopyUserMessage(t *testing.T) {
 		t.Skipf("clipboard not available in test environment: %v", err)
 	}
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-	m.history = []ai.Message{ai.NewUser("copy me please")}
+	m.history = []core.Message{core.NewUser("copy me please")}
 	up, _ := m.handleCopy()
 	m = up.(model)
 	if m.err != "" {
@@ -2339,10 +2339,10 @@ func TestHandleExportWrites(t *testing.T) {
 	if err := s.CreateSession(ctx, "exp1", "", "Export Test"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "exp1", ai.NewUser("export this")); err != nil {
+	if err := s.AppendMessage(ctx, "exp1", core.NewUser("export this")); err != nil {
 		t.Fatalf("append user message: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "exp1", ai.NewAssistant("ok exported")); err != nil {
+	if err := s.AppendMessage(ctx, "exp1", core.NewAssistant("ok exported")); err != nil {
 		t.Fatalf("append assistant message: %v", err)
 	}
 	outPath := filepath.Join(t.TempDir(), "export.jsonl")
@@ -2519,15 +2519,15 @@ func TestRenderMarkdownZeroWidth(t *testing.T) {
 // It returns a fixed compacted message set regardless of input.
 type stubCompactor struct{}
 
-func (stubCompactor) Compact(_ context.Context, _ []ai.Message) ([]ai.Message, error) {
-	return []ai.Message{ai.NewAssistant("compacted summary")}, nil
+func (stubCompactor) Compact(_ context.Context, _ []core.Message) ([]core.Message, error) {
+	return []core.Message{core.NewAssistant("compacted summary")}, nil
 }
 
 // makeHistory returns n messages suitable for compaction tests.
-func makeHistory(n int) []ai.Message {
-	var h []ai.Message
+func makeHistory(n int) []core.Message {
+	var h []core.Message
 	for i := 0; i < n; i++ {
-		h = append(h, ai.NewUser("msg"))
+		h = append(h, core.NewUser("msg"))
 	}
 	return h
 }

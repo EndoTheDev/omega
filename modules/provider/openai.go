@@ -11,11 +11,12 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
-func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEvent, messages, tools []map[string]any) ai.StreamEnd {
+func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	if p.apiKey == "" {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "openai: OPENAI_API_KEY not set"}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "openai: OPENAI_API_KEY not set"}
 	}
 
 	payload := map[string]any{
@@ -45,25 +46,25 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(payloadBytes))
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	resp, err := ai.RetryHTTP(req)
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
 	}
 
 	reader := bufio.NewReader(resp.Body)
@@ -83,9 +84,9 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 				break
 			}
 			if ctx.Err() != nil {
-				return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
 			}
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: readErr.Error()}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: readErr.Error()}
 		}
 		if !ok {
 			continue
@@ -123,10 +124,10 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(payloadLine), &chunk); err != nil {
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: parse error: %v", err)}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: parse error: %v", err)}
 		}
 		if chunk.Error != nil {
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: %s", chunk.Error.Message)}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("openai: %s", chunk.Error.Message)}
 		}
 		if chunk.Usage != nil {
 			sawUsage = true
@@ -152,10 +153,10 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 			reasoning = *choice.Delta.ReasoningContent
 		}
 		if reasoning != "" {
-			sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: reasoning})
+			sendEvent(ctx, events, core.ThinkingChunk{Type: "thinking_chunk", Content: reasoning})
 		}
 		if choice.Delta.Content != nil && *choice.Delta.Content != "" {
-			sendEvent(ctx, events, ai.ResponseChunk{Type: "response_chunk", Content: *choice.Delta.Content})
+			sendEvent(ctx, events, core.ResponseChunk{Type: "response_chunk", Content: *choice.Delta.Content})
 		}
 
 		for _, tc := range choice.Delta.ToolCalls {
@@ -200,9 +201,9 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- ai.StreamEven
 	// Parity with the ollama native path: when the host never sent a
 	// usage chunk, report absent counters (nil) instead of fake zeros.
 	if !sawUsage {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason}
+		return core.StreamEnd{Type: "stream_end", FinishReason: finishReason}
 	}
-	return ai.StreamEnd{
+	return core.StreamEnd{
 		Type:            "stream_end",
 		FinishReason:    finishReason,
 		PromptEvalCount: &pt,
@@ -220,7 +221,6 @@ type pendingTool struct {
 	inputJSON string
 }
 
-
 func openaiReasoningEffort(level string) string {
 	switch level {
 	case "minimal", "low":
@@ -233,4 +233,3 @@ func openaiReasoningEffort(level string) string {
 		return ""
 	}
 }
-

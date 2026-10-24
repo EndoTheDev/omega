@@ -39,15 +39,15 @@ func (s *stubLogger) Errorf(format string, args ...any) {
 
 func (s *stubLogger) Close() error { return nil }
 
-// TestNewFromContextFull verifies that NewFromContext wires every field
-// from a fully-populated Context and AgentOptions into the resulting Agent.
+// TestNewFromContextFull verifies that core.NewFromContext wires every field
+// from a fully-populated Context and core.AgentOptions into the resulting core.Agent.
 func TestNewFromContextFull(t *testing.T) {
 	prov := &stubProvider{name: "full-model"}
 	comp := stubCompactor{}
 	loop := testLoop{}
 	pb := &stubPromptBuilder{prompt: "system prompt", guidelines: []string{"g1"}}
 	logger := &stubLogger{}
-	tp := stubToolProvider{tools: map[string]Tool{"alpha": {
+	tp := stubToolProvider{tools: map[string]core.Tool{"alpha": {
 		Description: "alpha",
 		Run:         func(_ context.Context, _ map[string]any) (string, error) { return "alpha-ok", nil },
 	}}}
@@ -56,18 +56,18 @@ func TestNewFromContextFull(t *testing.T) {
 	pending := func() int { return 3 }
 
 	ctx := &Context{
-		Provider:          prov,
-		Compactor:         comp,
-		Loop:              loop,
-		PromptBuilder:     pb,
-		Logger:            logger,
-		ToolProviders:     []core.ToolProvider{tp},
-		Infos:             infos,
-		InjectedMessages:  injected,
+		Provider:           prov,
+		Compactor:          comp,
+		Loop:               loop,
+		PromptBuilder:      pb,
+		Logger:             logger,
+		ToolProviders:      []core.ToolProvider{tp},
+		Infos:              infos,
+		InjectedMessages:   injected,
 		PendingDelegations: pending,
 	}
 
-	opts := AgentOptions{
+	opts := core.AgentOptions{
 		MaxTurns:      5,
 		MaxToolOutput: 4096,
 		PromptCustom:  "custom-prompt",
@@ -76,7 +76,7 @@ func TestNewFromContextFull(t *testing.T) {
 		CWD:           "/work/dir",
 	}
 
-	ag := NewFromContext(ctx, opts)
+	ag := core.NewFromContext(ctx, opts)
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil")
 	}
@@ -89,7 +89,7 @@ func TestNewFromContextFull(t *testing.T) {
 	// Loop wired — Run must not surface "no loop configured".
 	runCtx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately so the loop exits without calling the provider
-	events := collect(t, ag.Run(runCtx, []ai.Message{ai.NewUser("hi")}, nil))
+	events := collect(t, ag.Run(runCtx, []core.Message{core.NewUser("hi")}, nil))
 	end := lastAgentEnd(events)
 	if strings.Contains(end.Error, "no loop configured") {
 		t.Fatalf("loop not wired: %v", end)
@@ -104,27 +104,27 @@ func TestNewFromContextFull(t *testing.T) {
 	// ToolProviders wired — run with a provider that streams a tool call
 	// for "alpha" and confirm the extension tool is available.
 	prov2 := ai.NewFakeProviderScripts("full-model",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "alpha", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "alpha", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 	// Swap the provider for this agent without mutating the shared context.
 	ctxSwap := *ctx
 	ctxSwap.Provider = prov2
-	ag2 := NewFromContext(&ctxSwap, opts)
-	ev2 := collect(t, ag2.Run(context.Background(), []ai.Message{ai.NewUser("go")}, nil))
+	ag2 := core.NewFromContext(&ctxSwap, opts)
+	ev2 := collect(t, ag2.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 	end2 := lastAgentEnd(ev2)
 	if end2.Turns != 2 || end2.FinishReason != "stop" {
 		t.Fatalf("extension tool not wired: AgentEnd = %+v", end2)
 	}
 	var foundAlpha bool
 	for _, m := range prov2.LastMessages {
-		if tr, ok := m.(ai.ToolResult); ok && tr.ToolCallID == "c1" && !tr.IsError {
+		if tr, ok := m.(core.ToolResult); ok && tr.ToolCallID == "c1" && !tr.IsError {
 			foundAlpha = true
 		}
 	}
@@ -142,35 +142,35 @@ func TestNewFromContextFull(t *testing.T) {
 	// pending func is distinguishable; the agent stores it for the loop.
 	pendingCalled := false
 	ctx2 := &Context{
-		Provider:          prov,
-		Loop:              testLoop{},
+		Provider:           prov,
+		Loop:               testLoop{},
 		PendingDelegations: func() int { pendingCalled = true; return 7 },
 	}
-	ag3 := NewFromContext(ctx2, opts)
+	ag3 := core.NewFromContext(ctx2, opts)
 	_ = ag3 // pendingDeleg is internal; the nil-safety test covers the path.
 	_ = pendingCalled
 }
 
-// TestNewFromContextMinimal verifies that NewFromContext with an empty
-// Context and zero-value AgentOptions creates an Agent without panicking,
+// TestNewFromContextMinimal verifies that core.NewFromContext with an empty
+// Context and zero-value core.AgentOptions creates an core.Agent without panicking,
 // and that Run returns a "no loop configured" error (Loop is nil).
 func TestNewFromContextMinimal(t *testing.T) {
 	ctx := &Context{}
-	opts := AgentOptions{}
+	opts := core.AgentOptions{}
 
-	ag := NewFromContext(ctx, opts)
+	ag := core.NewFromContext(ctx, opts)
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil for empty Context")
 	}
 
-	events := collect(t, ag.Run(context.Background(), []ai.Message{ai.NewUser("hi")}, nil))
+	events := collect(t, ag.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 	end := lastAgentEnd(events)
 	if !strings.Contains(end.Error, "no loop configured") {
 		t.Fatalf("expected 'no loop configured' error, got AgentEnd = %+v", end)
 	}
 }
 
-// TestNewFromContextNilOptional verifies that NewFromContext does not
+// TestNewFromContextNilOptional verifies that core.NewFromContext does not
 // panic when Compactor, InjectedMessages, and PendingDelegations are nil
 // — the function has nil checks for these three before calling Set*.
 func TestNewFromContextNilOptional(t *testing.T) {
@@ -182,7 +182,7 @@ func TestNewFromContextNilOptional(t *testing.T) {
 		// InjectedMessages and PendingDelegations left nil.
 	}
 
-	ag := NewFromContext(ctx, AgentOptions{})
+	ag := core.NewFromContext(ctx, core.AgentOptions{})
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil with nil optionals")
 	}
@@ -191,7 +191,7 @@ func TestNewFromContextNilOptional(t *testing.T) {
 	// loop (proving Compactor=nil did not break wiring).
 	runCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	events := collect(t, ag.Run(runCtx, []ai.Message{ai.NewUser("hi")}, nil))
+	events := collect(t, ag.Run(runCtx, []core.Message{core.NewUser("hi")}, nil))
 	end := lastAgentEnd(events)
 	if strings.Contains(end.Error, "no loop configured") {
 		t.Fatalf("loop not wired: %v", end)

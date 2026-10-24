@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -214,10 +213,10 @@ func TestGetAncestorMessages(t *testing.T) {
 	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "root", ai.NewUser("root msg")); err != nil {
+	if err := s.AppendMessage(ctx, "root", core.NewUser("root msg")); err != nil {
 		t.Fatalf("append root: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "child", ai.NewUser("child msg")); err != nil {
+	if err := s.AppendMessage(ctx, "child", core.NewUser("child msg")); err != nil {
 		t.Fatalf("append child: %v", err)
 	}
 	got, err := s.GetAncestorMessages(ctx, "child")
@@ -238,11 +237,11 @@ func TestAppendAndGetMessages(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	messages := []ai.Message{
-		ai.NewSystem("you are helpful"),
-		ai.NewUser("hello"),
-		ai.NewAssistant("hi there"),
-		ai.NewToolResult("ok", "call_1", false),
+	messages := []core.Message{
+		core.NewSystem("you are helpful"),
+		core.NewUser("hello"),
+		core.NewAssistant("hi there"),
+		core.NewToolResult("ok", "call_1", false),
 	}
 	for _, m := range messages {
 		if err := s.AppendMessage(ctx, "s1", m); err != nil {
@@ -270,9 +269,9 @@ func TestGetMessagesWithTimes(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	messages := []ai.Message{
-		ai.NewUser("hello"),
-		ai.NewAssistant("hi there"),
+	messages := []core.Message{
+		core.NewUser("hello"),
+		core.NewAssistant("hi there"),
 	}
 	for _, m := range messages {
 		if err := s.AppendMessage(ctx, "s1", m); err != nil {
@@ -316,7 +315,7 @@ func TestMessagesPersistAcrossStoreReopen(t *testing.T) {
 	if err := s1.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s1.AppendMessage(ctx, "s1", ai.NewUser("persist me")); err != nil {
+	if err := s1.AppendMessage(ctx, "s1", core.NewUser("persist me")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 	s1.Close()
@@ -342,7 +341,7 @@ func TestDeleteSessionCascadesMessages(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("bye")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("bye")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 	if err := s.DeleteSession(ctx, "s1"); err != nil {
@@ -366,7 +365,7 @@ func TestCountMessages(t *testing.T) {
 	if n, err := s.CountMessages(ctx, "s1"); err != nil || n != 0 {
 		t.Fatalf("count empty = %d, err %v; want 0", n, err)
 	}
-	for _, m := range []ai.Message{ai.NewUser("a"), ai.NewAssistant("b"), ai.NewUser("c")} {
+	for _, m := range []core.Message{core.NewUser("a"), core.NewAssistant("b"), core.NewUser("c")} {
 		if err := s.AppendMessage(ctx, "s1", m); err != nil {
 			t.Fatalf("append: %v", err)
 		}
@@ -390,14 +389,14 @@ func TestSessionCounts(t *testing.T) {
 	}
 	// s1: 5 stored messages (2 user, 1 assistant, 2 tool results) + 2
 	// bookkeeping entries -> message_count 5, tool_count 2.
-	for _, m := range []ai.Message{
-		ai.NewUser("a"),
-		ai.NewAssistant("b"),
-		ai.ToolResult{Content: "t1"},
-		ai.ToolResult{Content: "t2"},
-		ai.NewUser("c"),
-		ai.ModelChange{Model: "m"},
-		ai.ThinkingLevelChange{Level: "high"},
+	for _, m := range []core.Message{
+		core.NewUser("a"),
+		core.NewAssistant("b"),
+		core.ToolResult{Content: "t1"},
+		core.ToolResult{Content: "t2"},
+		core.NewUser("c"),
+		core.ModelChange{Model: "m"},
+		core.ThinkingLevelChange{Level: "high"},
 	} {
 		if err := s.AppendMessage(ctx, "s1", m); err != nil {
 			t.Fatalf("append: %v", err)
@@ -713,7 +712,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 
 	// A message landing after last_read_at flips unread on.
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	sess, err = s.GetSession(ctx, "s1")
@@ -768,16 +767,16 @@ func TestSessionModels(t *testing.T) {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewModelChange("glm-5.2")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewModelChange("glm-5.2")); err != nil {
 		t.Fatalf("append model change: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewModelChange("glm-5.3-flash")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewModelChange("glm-5.3-flash")); err != nil {
 		t.Fatalf("append model change 2: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s2", ai.NewUser("untouched")); err != nil {
+	if err := s.AppendMessage(ctx, "s2", core.NewUser("untouched")); err != nil {
 		t.Fatalf("append s2: %v", err)
 	}
 	models, err := s.SessionModels(ctx)
@@ -793,33 +792,33 @@ func TestSessionModels(t *testing.T) {
 	}
 }
 
-func assertUser(t *testing.T, m ai.Message, want string) {
+func assertUser(t *testing.T, m core.Message, want string) {
 	t.Helper()
-	u, ok := m.(ai.User)
+	u, ok := m.(core.User)
 	if !ok {
-		t.Fatalf("type = %T, want ai.User", m)
+		t.Fatalf("type = %T, want core.User", m)
 	}
 	if u.Content != want {
 		t.Fatalf("content = %q, want %q", u.Content, want)
 	}
 }
 
-func assertAssistant(t *testing.T, m ai.Message, want string) {
+func assertAssistant(t *testing.T, m core.Message, want string) {
 	t.Helper()
-	a, ok := m.(ai.Assistant)
+	a, ok := m.(core.Assistant)
 	if !ok {
-		t.Fatalf("type = %T, want ai.Assistant", m)
+		t.Fatalf("type = %T, want core.Assistant", m)
 	}
 	if a.Content != want {
 		t.Fatalf("content = %q, want %q", a.Content, want)
 	}
 }
 
-func assertToolResult(t *testing.T, m ai.Message, wantContent, wantID string, wantErr bool) {
+func assertToolResult(t *testing.T, m core.Message, wantContent, wantID string, wantErr bool) {
 	t.Helper()
-	tr, ok := m.(ai.ToolResult)
+	tr, ok := m.(core.ToolResult)
 	if !ok {
-		t.Fatalf("type = %T, want ai.ToolResult", m)
+		t.Fatalf("type = %T, want core.ToolResult", m)
 	}
 	if tr.Content != wantContent || tr.ToolCallID != wantID || tr.IsError != wantErr {
 		t.Fatalf("tool result = %+v, want content=%q id=%q is_error=%v",
@@ -839,10 +838,10 @@ func TestDeleteSessionCascades(t *testing.T) {
 	if err := s.CreateSession(ctx, "child", "root", "child"); err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "root", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "root", core.NewUser("hi")); err != nil {
 		t.Fatalf("append root: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "child", ai.NewUser("yo")); err != nil {
+	if err := s.AppendMessage(ctx, "child", core.NewUser("yo")); err != nil {
 		t.Fatalf("append child: %v", err)
 	}
 
@@ -881,10 +880,10 @@ func TestSearchMessages(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("the quick brown fox jumps")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("the quick brown fox jumps")); err != nil {
 		t.Fatalf("append user: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewAssistant("the lazy dog sleeps")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewAssistant("the lazy dog sleeps")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
 
@@ -892,7 +891,7 @@ func TestSearchMessages(t *testing.T) {
 	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatalf("create session 2: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s2", ai.NewUser("completely unrelated content here")); err != nil {
+	if err := s.AppendMessage(ctx, "s2", core.NewUser("completely unrelated content here")); err != nil {
 		t.Fatalf("append s2: %v", err)
 	}
 
@@ -925,7 +924,7 @@ func TestSearchMessages(t *testing.T) {
 	}
 
 	// Apostrophe in the term is a literal, not FTS syntax.
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("what's the plan for today")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("what's the plan for today")); err != nil {
 		t.Fatalf("append apostrophe msg: %v", err)
 	}
 	results, err = s.SearchMessages(ctx, "what's")
@@ -937,7 +936,7 @@ func TestSearchMessages(t *testing.T) {
 	}
 
 	// A term containing FTS keywords is matched literally.
-	if err := s.AppendMessage(ctx, "s2", ai.NewUser("we say foo AND bar out loud")); err != nil {
+	if err := s.AppendMessage(ctx, "s2", core.NewUser("we say foo AND bar out loud")); err != nil {
 		t.Fatalf("append AND msg: %v", err)
 	}
 	results, err = s.SearchMessages(ctx, "foo AND bar")
@@ -949,7 +948,7 @@ func TestSearchMessages(t *testing.T) {
 	}
 
 	// Embedded double quotes are escaped, not a syntax error.
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser(`the "quoted" section`)); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser(`the "quoted" section`)); err != nil {
 		t.Fatalf("append quote msg: %v", err)
 	}
 	results, err = s.SearchMessages(ctx, `"quoted"`)
@@ -967,7 +966,7 @@ func helperSessionWithContent(t *testing.T, s *Store, id, label, content string)
 	if err := s.CreateSession(context.Background(), id, "", label); err != nil {
 		t.Fatalf("create session %s: %v", id, err)
 	}
-	if err := s.AppendMessage(context.Background(), id, ai.NewUser(content)); err != nil {
+	if err := s.AppendMessage(context.Background(), id, core.NewUser(content)); err != nil {
 		t.Fatalf("append message to %s: %v", id, err)
 	}
 }
@@ -1077,8 +1076,8 @@ func TestSearchSessions(t *testing.T) {
 }
 
 // helperAssistantWithTools builds an Assistant message with tool calls.
-func helperAssistantWithTools(content string, calls ...ai.ToolCall) ai.Assistant {
-	a := ai.NewAssistant(content)
+func helperAssistantWithTools(content string, calls ...core.ToolCall) core.Assistant {
+	a := core.NewAssistant(content)
 	a.ToolCalls = calls
 	return a
 }
@@ -1091,15 +1090,15 @@ func TestComputeInsightsAllTime(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", "first session"); err != nil {
 		t.Fatalf("create s1: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello world one")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hello world one")); err != nil {
 		t.Fatalf("append s1 u1: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello world two")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hello world two")); err != nil {
 		t.Fatalf("append s1 u2: %v", err)
 	}
 	if err := s.AppendMessage(ctx, "s1", helperAssistantWithTools("response one",
-		ai.ToolCall{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"cmd": "ls"}},
-		ai.ToolCall{ID: "tc2", Name: "files.read", Arguments: map[string]any{"path": "x.go"}},
+		core.ToolCall{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"cmd": "ls"}},
+		core.ToolCall{ID: "tc2", Name: "files.read", Arguments: map[string]any{"path": "x.go"}},
 	)); err != nil {
 		t.Fatalf("append s1 a1: %v", err)
 	}
@@ -1108,17 +1107,17 @@ func TestComputeInsightsAllTime(t *testing.T) {
 	if err := s.CreateSession(ctx, "s2", "", "second session"); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s2", ai.NewUser("another message here")); err != nil {
+	if err := s.AppendMessage(ctx, "s2", core.NewUser("another message here")); err != nil {
 		t.Fatalf("append s2 u1: %v", err)
 	}
 	if err := s.AppendMessage(ctx, "s2", helperAssistantWithTools("response two",
-		ai.ToolCall{ID: "tc3", Name: "shell.run", Arguments: map[string]any{"cmd": "pwd"}},
+		core.ToolCall{ID: "tc3", Name: "shell.run", Arguments: map[string]any{"cmd": "pwd"}},
 	)); err != nil {
 		t.Fatalf("append s2 a1: %v", err)
 	}
 
 	// Add a metadata entry to verify it's skipped from message counts.
-	if err := s.AppendMessage(ctx, "s1", ai.NewModelChange("gpt-4o")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewModelChange("gpt-4o")); err != nil {
 		t.Fatalf("append s1 model change: %v", err)
 	}
 
@@ -1223,7 +1222,7 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 		`UPDATE sessions SET created_at = ? WHERE id = ?`, tenDaysAgo, "old"); err != nil {
 		t.Fatalf("update old session time: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "old", ai.NewUser("old message")); err != nil {
+	if err := s.AppendMessage(ctx, "old", core.NewUser("old message")); err != nil {
 		t.Fatalf("append old: %v", err)
 	}
 
@@ -1231,7 +1230,7 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 	if err := s.CreateSession(ctx, "recent", "", "recent session"); err != nil {
 		t.Fatalf("create recent: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "recent", ai.NewUser("recent message")); err != nil {
+	if err := s.AppendMessage(ctx, "recent", core.NewUser("recent message")); err != nil {
 		t.Fatalf("append recent: %v", err)
 	}
 
@@ -1318,7 +1317,7 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 	if err := s.CreateSession(ctx, "solo", "", "only turn"); err != nil {
 		t.Fatalf("create solo: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "solo", ai.NewUser("first and only user turn")); err != nil {
+	if err := s.AppendMessage(ctx, "solo", core.NewUser("first and only user turn")); err != nil {
 		t.Fatalf("append solo u1: %v", err)
 	}
 

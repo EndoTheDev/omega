@@ -350,6 +350,7 @@ func TestRunReadFileNonStringPath(t *testing.T) {
 		t.Fatal("expected error for non-string path, got nil")
 	}
 }
+
 // The CI failure shape generalized: a FORKED child (not exec-optimized)
 // holds the output pipe. Killing only the direct child leaves the run
 // blocked until the grandchild exits - the group kill is what ends it.

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -20,7 +19,7 @@ const DefaultContextWindow = core.DefaultContextWindow
 type CompactionConfig = core.CompactionConfig
 
 // EstimateTokens returns a rough token count for the message history.
-func EstimateTokens(history []ai.Message) int {
+func EstimateTokens(history []core.Message) int {
 	total := 0
 	for _, m := range history {
 		total += len(MessageText(m))
@@ -30,15 +29,15 @@ func EstimateTokens(history []ai.Message) int {
 
 // MessageText returns the user-visible text of a message, used for token
 // estimation, summary rendering, and export.
-func MessageText(m ai.Message) string {
+func MessageText(m core.Message) string {
 	switch v := m.(type) {
-	case ai.System:
+	case core.System:
 		return v.Content
-	case ai.User:
+	case core.User:
 		return v.Content
-	case ai.Assistant:
+	case core.Assistant:
 		return v.Content
-	case ai.ToolResult:
+	case core.ToolResult:
 		return v.Content
 	}
 	return ""
@@ -47,10 +46,10 @@ func MessageText(m ai.Message) string {
 // BuildCompactedMessages assembles the compacted message list from a
 // pre-computed summary. Shared by the branch summary feature and the
 // compactor plugin.
-func BuildCompactedMessages(history []ai.Message, summary string, keepFirst, keepLast int) []ai.Message {
-	result := make([]ai.Message, 0, keepFirst+keepLast+1)
+func BuildCompactedMessages(history []core.Message, summary string, keepFirst, keepLast int) []core.Message {
+	result := make([]core.Message, 0, keepFirst+keepLast+1)
 	result = append(result, history[:keepFirst]...)
-	result = append(result, ai.NewSystem("[compacted: "+summary+"]"))
+	result = append(result, core.NewSystem("[compacted: "+summary+"]"))
 	result = append(result, history[len(history)-keepLast:]...)
 	return result
 }

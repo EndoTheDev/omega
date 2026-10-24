@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/robfig/cron/v3"
 )
@@ -267,16 +266,16 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 	// The turn-copy sink: store-backed, cron:<name> session, no head
 	// pin (fresh session, the derived leaf starts empty).
 	ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(r.store, sessionID, ""))
-	ctx = agent.WithPersistInput(ctx, []ai.Message{ai.NewUser(job.Prompt)})
+	ctx = agent.WithPersistInput(ctx, []core.Message{core.NewUser(job.Prompt)})
 	var prompt, completion int
 	var final string
 	var runErr error
-	for event := range r.ag.Run(ctx, []ai.Message{ai.NewUser(job.Prompt)}, nil) {
+	for event := range r.ag.Run(ctx, []core.Message{core.NewUser(job.Prompt)}, nil) {
 		switch e := event.(type) {
 		case core.AssistantMessageEvent:
 			final = e.Message.Content
 		case core.StreamEvent:
-			if end, ok := e.Event.(ai.StreamEnd); ok {
+			if end, ok := e.Event.(core.StreamEnd); ok {
 				if end.PromptEvalCount != nil {
 					prompt += *end.PromptEvalCount
 				}

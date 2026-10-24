@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -148,13 +147,13 @@ func verdictBanner(toolArgs map[string]any, width int, theme Theme) string {
 	body, _ := toolArgs["body"].(string)
 	multi, _ := toolArgs["multi"].(bool)
 	allowText, _ := toolArgs["allow_text"].(bool)
-	var options []ai.VerdictOption
+	var options []core.VerdictOption
 	if raw, ok := toolArgs["options"].([]any); ok {
 		for _, v := range raw {
 			switch o := v.(type) {
 			case string:
 				if o != "" {
-					options = append(options, ai.VerdictOption{Label: o})
+					options = append(options, core.VerdictOption{Label: o})
 				}
 			case map[string]any:
 				label, _ := o["label"].(string)
@@ -162,7 +161,7 @@ func verdictBanner(toolArgs map[string]any, width int, theme Theme) string {
 					continue
 				}
 				desc, _ := o["description"].(string)
-				options = append(options, ai.VerdictOption{Label: label, Description: desc})
+				options = append(options, core.VerdictOption{Label: label, Description: desc})
 			}
 		}
 	}

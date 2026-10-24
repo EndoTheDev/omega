@@ -10,12 +10,13 @@ import (
 // Plugin adapts the compactor to the agent.Plugin interface.
 type Plugin struct{}
 
-func (p *Plugin) Name() string       { return "compactor" }
+func (p *Plugin) Name() string { return "compactor" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "context compaction: keeps the transcript head and tail, summarizes the middle when the token budget is exceeded"
 }
+
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "compactor" }

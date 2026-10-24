@@ -169,4 +169,3 @@ func TestCommandChainDelegates(t *testing.T) {
 		t.Fatalf("/board on chain: %q %v", res.Text, err)
 	}
 }
-

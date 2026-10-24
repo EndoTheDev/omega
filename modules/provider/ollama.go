@@ -11,9 +11,10 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
-func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEvent, messages, tools []map[string]any) ai.StreamEnd {
+func (p *Provider) streamOllama(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	payload := map[string]any{
 		"model":    p.modelName,
 		"messages": messages,
@@ -39,12 +40,12 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/api/chat", bytes.NewReader(payloadBytes))
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
@@ -53,13 +54,13 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 
 	resp, err := ai.RetryHTTP(req)
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("ollama: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("ollama: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
 	}
 
 	phase := ""
@@ -75,7 +76,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 		if line != "" {
 			var chunk map[string]any
 			if jsonErr := json.Unmarshal([]byte(line), &chunk); jsonErr != nil {
-				return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}
 			}
 
 			// In-stream error payloads surface as an error StreamEnd
@@ -84,11 +85,11 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 			switch eval := chunk["error"].(type) {
 			case string:
 				if eval != "" {
-					return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: eval}
+					return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: eval}
 				}
 			case map[string]any:
 				if msg, ok := eval["message"].(string); ok && msg != "" {
-					return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: msg}
+					return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: msg}
 				}
 			}
 
@@ -113,7 +114,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 				} else if dr, ok := chunk["done_reason"].(string); ok && dr != "" {
 					finishReason = dr
 				}
-				return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev, CachedCount: ca}
+				return core.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev, CachedCount: ca}
 			}
 
 			message, _ := chunk["message"].(map[string]any)
@@ -122,12 +123,12 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 
 			if thinking != "" {
 				phase = "thinking"
-				sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: thinking})
+				sendEvent(ctx, events, core.ThinkingChunk{Type: "thinking_chunk", Content: thinking})
 			}
 
 			if content != "" {
 				phase = "response"
-				sendEvent(ctx, events, ai.ResponseChunk{Type: "response_chunk", Content: content})
+				sendEvent(ctx, events, core.ResponseChunk{Type: "response_chunk", Content: content})
 			}
 
 			toolCallsRaw, _ := message["tool_calls"].([]any)
@@ -151,9 +152,9 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 						toolCallSeq++
 						callID = fmt.Sprintf("call_%d", toolCallSeq)
 					}
-					sendEvent(ctx, events, ai.ToolCallEvent{
+					sendEvent(ctx, events, core.ToolCallEvent{
 						Type:     "tool_call",
-						ToolCall: ai.ToolCall{ID: callID, Name: name, Arguments: args},
+						ToolCall: core.ToolCall{ID: callID, Name: name, Arguments: args},
 					})
 				}
 				phase = "tool_call"
@@ -162,12 +163,12 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- ai.StreamEven
 
 		if readErr != nil {
 			if readErr == io.EOF {
-				return ai.StreamEnd{Type: "stream_end", FinishReason: "stop"}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
 			}
 			if ctx.Err() != nil {
-				return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
 			}
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: readErr.Error()}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: readErr.Error()}
 		}
 	}
 }

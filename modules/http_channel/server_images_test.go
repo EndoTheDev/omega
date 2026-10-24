@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // onePNG is a minimal valid PNG header (enough for the magic sniff, not
@@ -21,7 +21,7 @@ func TestCheckImageSizes(t *testing.T) {
 	// exact-cap boundary sits just under: a multiple of 3 raw bytes is
 	// the largest representation under 10MB.
 	ok := make([]byte, maxChatImageBytes-maxChatImageBytes%3)
-	messages := []ai.Message{ai.NewUserWithImages("look", []ai.ImageContent{
+	messages := []core.Message{core.NewUserWithImages("look", []core.ImageContent{
 		{MediaType: "image/png", Base64: base64.StdEncoding.EncodeToString(ok)},
 	})}
 	if err := checkImageSizes(messages); err != nil {
@@ -30,7 +30,7 @@ func TestCheckImageSizes(t *testing.T) {
 
 	// just over the cap -> error names the message/image indexes
 	big := make([]byte, maxChatImageBytes+1)
-	messages[0] = ai.NewUserWithImages("look", []ai.ImageContent{
+	messages[0] = core.NewUserWithImages("look", []core.ImageContent{
 		{MediaType: "image/png", Base64: base64.StdEncoding.EncodeToString(big)},
 	})
 	err := checkImageSizes(messages)
@@ -42,7 +42,7 @@ func TestCheckImageSizes(t *testing.T) {
 	}
 
 	// non-user messages and imageless users never trip it
-	if err := checkImageSizes([]ai.Message{ai.NewUser("no images"), ai.NewAssistant("hi")}); err != nil {
+	if err := checkImageSizes([]core.Message{core.NewUser("no images"), core.NewAssistant("hi")}); err != nil {
 		t.Fatalf("imageless check: %v", err)
 	}
 }
@@ -52,7 +52,7 @@ func TestChatOversizeImageRejected(t *testing.T) {
 	big := make([]byte, maxChatImageBytes+1)
 	body, _ := json.Marshal(map[string]any{
 		"messages": []map[string]any{{
-			"role": "user",
+			"role":    "user",
 			"content": "look",
 			"images": []map[string]string{
 				{"media_type": "image/png", "base64": base64.StdEncoding.EncodeToString(big)},
@@ -92,7 +92,7 @@ func TestAttachImage(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	var img ai.ImageContent
+	var img core.ImageContent
 	if err := json.Unmarshal(rec.Body.Bytes(), &img); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestStoreImagesRoundTrip(t *testing.T) {
 	if err := st.CreateSession(t.Context(), "s-img", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	orig := ai.NewUserWithImages("what is this", []ai.ImageContent{
+	orig := core.NewUserWithImages("what is this", []core.ImageContent{
 		{MediaType: "image/png", Base64: "iVBORw0KGgo="},
 	})
 	if err := st.AppendMessage(t.Context(), "s-img", orig); err != nil {
@@ -207,15 +207,16 @@ func TestStoreImagesRoundTrip(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("messages = %d, want 1", len(got))
 	}
-	user, ok := got[0].(ai.User)
+	user, ok := got[0].(core.User)
 	if !ok {
-		t.Fatalf("type = %T, want ai.User", got[0])
+		t.Fatalf("type = %T, want core.User", got[0])
 	}
 	if len(user.Images) != 1 || user.Images[0].MediaType != "image/png" || user.Images[0].Base64 != "iVBORw0KGgo=" {
 		t.Fatalf("images round-trip mismatch: %+v", user.Images)
 	}
 	_ = s
 }
+
 // TestAttachImageRefusesInternal exercises the wire contract itself: IP
 // literals inside the box, the LAN, and the Tailscale ring are refused
 // before any fetch happens; a public literal is allowed through the guard.

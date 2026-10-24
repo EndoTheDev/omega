@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -257,21 +257,21 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	// The real loop persists the turn copies now (t_471f6d4a): run the
 	// default agentTurn against a scripted provider - one tool turn,
 	// then the final answer.
-	script := []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: "thinking"},
-		ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nop"}},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	script := []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: "thinking"},
+		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nop"}},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
-	final := []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: "final answer"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	final := []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: "final answer"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 	// WithDelay spaces the scripted events so the phase meters measure
 	// real wall-clock - the zero-delay fake floors every span to 0.
 	r.ag = core.NewAgent(ai.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
 		"nop": {
 			Description: "test no-op",
-			Run: func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },
+			Run:         func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },
 		},
 	}, 0)
 	r.ag.SetLoopProvider(agent_loop.Loop{})
@@ -298,17 +298,17 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	if len(msgs) != 4 {
 		t.Fatalf("want prompt+assistant+result+answer persisted, got %d messages", len(msgs))
 	}
-	if u, ok := msgs[0].(ai.User); !ok || u.Content != "hello" {
+	if u, ok := msgs[0].(core.User); !ok || u.Content != "hello" {
 		t.Fatalf("first message not the prompt: %v", msgs[0])
 	}
-	a, isAssistant := msgs[1].(ai.Assistant)
+	a, isAssistant := msgs[1].(core.Assistant)
 	if !isAssistant || len(a.ToolCalls) != 1 {
 		t.Fatalf("second message not the assistant-with-calls: %v", msgs[1])
 	}
-	if _, ok := msgs[2].(ai.ToolResult); !ok {
+	if _, ok := msgs[2].(core.ToolResult); !ok {
 		t.Fatalf("third message not the tool result: %v", msgs[2])
 	}
-	if b, ok := msgs[3].(ai.Assistant); !ok || agent.MessageText(b) != "final answer" {
+	if b, ok := msgs[3].(core.Assistant); !ok || agent.MessageText(b) != "final answer" {
 		t.Fatalf("fourth message not the answer: %v", msgs[3])
 	}
 	if a.Timing == nil {
@@ -518,6 +518,7 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 		t.Fatalf("mount error missing job name: %v", err)
 	}
 }
+
 // --- inspector snapshot (card t_db430fea) ---
 
 // enabledOff returns the disabled flag a crons.yaml `enabled: false`

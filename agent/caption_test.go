@@ -18,7 +18,7 @@ type countingCaptioner struct {
 	err     error
 }
 
-func (c *countingCaptioner) Caption(ctx context.Context, img ai.ImageContent) (string, error) {
+func (c *countingCaptioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {
 	c.calls++
 	return c.caption, c.err
 }
@@ -27,7 +27,7 @@ func (c *countingCaptioner) Caption(ctx context.Context, img ai.ImageContent) (s
 // handed and streams one assistant response, so tests can inspect what
 // the loop would send to the main model.
 type recordingLoop struct {
-	messages   []ai.Message
+	messages   []core.Message
 	streamCall bool
 }
 
@@ -35,7 +35,7 @@ func (l *recordingLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	l.messages = opts.Messages
 	streamErr := ""
 	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
-		if e, ok := event.(ai.StreamEnd); ok {
+		if e, ok := event.(core.StreamEnd); ok {
 			streamErr = e.Error
 		}
 	}
@@ -49,15 +49,15 @@ func (l *recordingLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 }
 
 // imageUserMessage mirrors the webui shape: user text plus one image.
-func imageUserMessage(content string) ai.User {
-	return ai.NewUserWithImages(content, []ai.ImageContent{
+func imageUserMessage(content string) core.User {
+	return core.NewUserWithImages(content, []core.ImageContent{
 		{MediaType: "image/png", Base64: "iVBORw0KGgo="},
 	})
 }
 
 // runOnce drives one RunWithProvider to completion and returns the
 // terminal event.
-func runOnce(t *testing.T, ag *Agent, messages []ai.Message) (core.AgentEnd, *recordingLoop) {
+func runOnce(t *testing.T, ag *core.Agent, messages []core.Message) (core.AgentEnd, *recordingLoop) {
 	t.Helper()
 	loop := &recordingLoop{}
 	ag.SetLoopProvider(loop)
@@ -75,15 +75,15 @@ func runOnce(t *testing.T, ag *Agent, messages []ai.Message) (core.AgentEnd, *re
 // while the caller's original message keeps its images untouched
 // (channels persist and re-render the originals).
 func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
-	ag := NewAgent(ai.NewFakeProvider("main", []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: "ok"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	captioner := &countingCaptioner{caption: "an 8x8 solid red square"}
 	ag.SetCaptioner(captioner)
 
 	original := imageUserMessage("what is this?")
-	end, loop := runOnce(t, ag, []ai.Message{original})
+	end, loop := runOnce(t, ag, []core.Message{original})
 	if end.Error != "" {
 		t.Fatalf("run ended with error: %s", end.Error)
 	}
@@ -95,9 +95,9 @@ func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 	if len(loop.messages) != 1 {
 		t.Fatalf("loop messages = %d, want 1", len(loop.messages))
 	}
-	u, ok := loop.messages[0].(ai.User)
+	u, ok := loop.messages[0].(core.User)
 	if !ok {
-		t.Fatalf("loop message type = %T, want ai.User", loop.messages[0])
+		t.Fatalf("loop message type = %T, want core.User", loop.messages[0])
 	}
 	if len(u.Images) != 0 {
 		t.Fatalf("loop-visible message still carries %d images", len(u.Images))
@@ -114,13 +114,13 @@ func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 
 // A text-only turn never consults the captioner, even when set.
 func TestRunTextOnlySkipsCaptioner(t *testing.T) {
-	ag := NewAgent(ai.NewFakeProvider("main", []ai.StreamEvent{
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	captioner := &countingCaptioner{caption: "unused"}
 	ag.SetCaptioner(captioner)
 
-	end, _ := runOnce(t, ag, []ai.Message{ai.NewUser("just words")})
+	end, _ := runOnce(t, ag, []core.Message{core.NewUser("just words")})
 	if end.Error != "" {
 		t.Fatalf("run ended with error: %s", end.Error)
 	}
@@ -133,11 +133,11 @@ func TestRunTextOnlySkipsCaptioner(t *testing.T) {
 // the run ends with a LOUD, captioner-attributed error before any
 // streaming - not a provider 400 about unseen pixels.
 func TestRunCaptionFailureEndsRun(t *testing.T) {
-	ag := NewAgent(ai.NewFakeProvider("main", []ai.StreamEvent{
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	ag.SetCaptioner(&countingCaptioner{err: context.DeadlineExceeded})
-	end, loop := runOnce(t, ag, []ai.Message{imageUserMessage("look")})
+	end, loop := runOnce(t, ag, []core.Message{imageUserMessage("look")})
 	if !strings.Contains(end.Error, "image captioner") {
 		t.Fatalf("error = %q, want a captioner-attributed error", end.Error)
 	}
@@ -153,11 +153,11 @@ func TestRunCaptionFailureEndsRun(t *testing.T) {
 // behavior, byte for byte - images ride to the main provider, which
 // surfaces its own refusal.
 func TestRunNoCaptionerKeepsImages(t *testing.T) {
-	ag := NewAgent(ai.NewFakeProvider("main", []ai.StreamEvent{
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model does not support images (400)"},
+	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model does not support images (400)"},
 	}...), nil, 0)
-	end, loop := runOnce(t, ag, []ai.Message{imageUserMessage("look")})
-	u, ok := loop.messages[0].(ai.User)
+	end, loop := runOnce(t, ag, []core.Message{imageUserMessage("look")})
+	u, ok := loop.messages[0].(core.User)
 	if !ok || len(u.Images) != 1 {
 		t.Fatalf("no-captioner fallback must pass images through unchanged, got %#v", loop.messages)
 	}

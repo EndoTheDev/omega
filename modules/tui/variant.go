@@ -4,7 +4,7 @@ package tui
 // tree backend (t_17365247). /variant flips the active sibling variant
 // of an assistant run, /fork pins the historical point the next
 // message continues from, /retry re-runs the last user turn as a
-// sibling variant. Selects persist as ai.VariantSelect bookkeeping
+// sibling variant. Selects persist as core.VariantSelect bookkeeping
 // entries - the same store surface the http channel's
 // /sessions/{id}/variants writes - so the TUI and the webui share one
 // branch state per session.
@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -102,7 +101,7 @@ func (m model) loadSessionView() (core.ActiveView, error) {
 // the active path becomes history and transcript, with variant
 // markers. Shared by /variant select, /fork, and /retry.
 func (m *model) reloadView(view core.ActiveView) {
-	msgs := make([]ai.Message, 0, len(view.Path))
+	msgs := make([]core.Message, 0, len(view.Path))
 	for _, sm := range view.Path {
 		msgs = append(msgs, sm.Message)
 	}
@@ -173,7 +172,7 @@ func (m model) handleVariant(args []string) (tea.Model, tea.Cmd) {
 	return m.selectVariant(view, last.ParentID, last.Siblings[which], which+1, last.Count)
 }
 
-// selectVariant persists an ai.VariantSelect for branch and reloads
+// selectVariant persists an core.VariantSelect for branch and reloads
 // the active path. Selecting the already-active variant writes
 // nothing (mirrors the http channel), it only re-renders.
 func (m model) selectVariant(view core.ActiveView, branch, child string, shown, total int) (tea.Model, tea.Cmd) {
@@ -183,7 +182,7 @@ func (m model) selectVariant(view core.ActiveView, branch, child string, shown, 
 		return m, nil
 	}
 	ctx := context.Background()
-	if err := m.store.AppendMessage(ctx, m.sessionID, ai.NewVariantSelect(branch, child)); err != nil {
+	if err := m.store.AppendMessage(ctx, m.sessionID, core.NewVariantSelect(branch, child)); err != nil {
 		m.storeErr = "select variant: " + err.Error()
 		m.refresh()
 		return m, nil
@@ -226,14 +225,14 @@ func (m model) handleFork(args []string) (tea.Model, tea.Cmd) {
 		var sb strings.Builder
 		sb.WriteString("\n")
 		for i, sm := range view.Path {
-			role := ai.MessageRole(sm.Message)
+			role := core.MessageRole(sm.Message)
 			text := ""
 			switch msg := sm.Message.(type) {
-			case ai.User:
+			case core.User:
 				text = msg.Content
-			case ai.Assistant:
+			case core.Assistant:
 				text = msg.Content
-			case ai.ToolResult:
+			case core.ToolResult:
 				text = msg.Content
 			}
 			fmt.Fprintf(&sb, "  %d  %-9s  %s\n", i+1, role, truncate(wordWrap(text, m.viewport.Width), 60))
@@ -263,7 +262,7 @@ func (m model) handleFork(args []string) (tea.Model, tea.Cmd) {
 // store; they come back whenever a variant selection or fork makes
 // them part of the active path again.
 func (m *model) reloadViewAt(view core.ActiveView, at int) {
-	msgs := make([]ai.Message, 0, at+1)
+	msgs := make([]core.Message, 0, at+1)
 	for _, sm := range view.Path[:at+1] {
 		msgs = append(msgs, sm.Message)
 	}
@@ -296,7 +295,7 @@ func (m model) handleRetry() (tea.Model, tea.Cmd) {
 	}
 	end := -1
 	for i := len(view.Path) - 1; i >= 0; i-- {
-		if _, ok := view.Path[i].Message.(ai.User); ok {
+		if _, ok := view.Path[i].Message.(core.User); ok {
 			end = i
 			break
 		}
@@ -313,8 +312,8 @@ func (m model) handleRetry() (tea.Model, tea.Cmd) {
 	times, err := m.store.GetMessagesWithTimes(context.Background(), m.sessionID)
 	if err == nil {
 		for _, sm := range times {
-			if vs, ok := sm.Message.(ai.VariantSelect); ok && vs.Branch == branch {
-				_ = m.store.AppendMessage(context.Background(), m.sessionID, ai.NewVariantSelect(branch, ""))
+			if vs, ok := sm.Message.(core.VariantSelect); ok && vs.Branch == branch {
+				_ = m.store.AppendMessage(context.Background(), m.sessionID, core.NewVariantSelect(branch, ""))
 				break
 			}
 		}

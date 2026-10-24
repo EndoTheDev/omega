@@ -14,12 +14,13 @@ type Plugin struct{}
 
 var _ agent.Plugin = (*Plugin)(nil)
 
-func (Plugin) Name() string       { return "tui" }
+func (Plugin) Name() string { return "tui" }
 
 // Description implements agent.Describer.
 func (Plugin) Description() string {
 	return "terminal UI: the Bubble Tea frontend with slash commands"
 }
+
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "" }

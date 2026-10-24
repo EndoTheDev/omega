@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
 func TestExportMessages(t *testing.T) {
-	messages := []ai.Message{
-		ai.NewUser("hello"),
-		ai.NewAssistant("hi there"),
+	messages := []core.Message{
+		core.NewUser("hello"),
+		core.NewAssistant("hi there"),
 	}
 	var buf bytes.Buffer
 	if err := exportMessages(messages, &buf); err != nil {
@@ -132,17 +132,17 @@ func TestResolveSessionCLIMultipleMatches(t *testing.T) {
 
 func TestMessageRole(t *testing.T) {
 	tests := []struct {
-		msg  ai.Message
+		msg  core.Message
 		want string
 	}{
-		{ai.NewUser("x"), "user"},
-		{ai.NewAssistant("x"), "assistant"},
-		{ai.NewSystem("x"), "system"},
-		{ai.ToolResult{Content: "x"}, "tool"},
+		{core.NewUser("x"), "user"},
+		{core.NewAssistant("x"), "assistant"},
+		{core.NewSystem("x"), "system"},
+		{core.ToolResult{Content: "x"}, "tool"},
 	}
 	for _, tt := range tests {
-		if got := ai.MessageRole(tt.msg); got != tt.want {
-			t.Errorf("ai.MessageRole(%T) = %q, want %q", tt.msg, got, tt.want)
+		if got := core.MessageRole(tt.msg); got != tt.want {
+			t.Errorf("core.MessageRole(%T) = %q, want %q", tt.msg, got, tt.want)
 		}
 	}
 }
@@ -174,10 +174,10 @@ func setupExportEnv(t *testing.T) (home, sessionID string) {
 	if err := s.CreateSession(ctx, sessionID, "", "export-test"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := s.AppendMessage(ctx, sessionID, ai.NewUser("hello world")); err != nil {
+	if err := s.AppendMessage(ctx, sessionID, core.NewUser("hello world")); err != nil {
 		t.Fatalf("append user message: %v", err)
 	}
-	if err := s.AppendMessage(ctx, sessionID, ai.NewAssistant("hi there")); err != nil {
+	if err := s.AppendMessage(ctx, sessionID, core.NewAssistant("hi there")); err != nil {
 		t.Fatalf("append assistant message: %v", err)
 	}
 	return home, sessionID

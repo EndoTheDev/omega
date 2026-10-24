@@ -2,20 +2,21 @@ package ai
 
 import (
 	"context"
+	"github.com/EndoTheDev/omega/core"
 	"testing"
 	"time"
 )
 
 func TestFakeProviderEmitsInOrder(t *testing.T) {
-	script := []StreamEvent{
-		ResponseChunk{Type: "response", Content: "hel"},
-		ResponseChunk{Type: "response", Content: "lo"},
-		StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	script := []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response", Content: "hel"},
+		core.ResponseChunk{Type: "response", Content: "lo"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 	p := NewFakeProvider("fake", script...)
 	events := p.Stream(context.Background(), nil, nil)
 
-	var got []StreamEvent
+	var got []core.ProviderStreamEvent
 	for e := range events {
 		got = append(got, e)
 	}
@@ -44,8 +45,8 @@ func TestFakeProviderEmptyScriptClosesImmediately(t *testing.T) {
 func TestFakeProviderContextCancellationStopsEmission(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := NewFakeProvider("fake",
-		ResponseChunk{Type: "response", Content: "a"},
-		ResponseChunk{Type: "response", Content: "b"},
+		core.ResponseChunk{Type: "response", Content: "a"},
+		core.ResponseChunk{Type: "response", Content: "b"},
 	).WithDelay(50 * time.Millisecond)
 	events := p.Stream(ctx, nil, nil)
 

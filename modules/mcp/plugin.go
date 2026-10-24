@@ -49,7 +49,7 @@ func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // Mount populates the Context. Appends a ToolProvider that wraps
-// the bridge's discovered MCP tools as agent.Tool values.
+// the bridge's discovered MCP tools as core.Tool values.
 //
 // This Mount is the module's whole surface (arc 6 capsule, card
 // t_cf6b7795): the bridge tool provider - every discovered MCP server
@@ -73,7 +73,7 @@ type bridgeToolProvider struct {
 	bridge *Bridge
 }
 
-// Tools returns the MCP-discovered tools as agent.Tool values.
+// Tools returns the MCP-discovered tools as core.Tool values.
 func (b bridgeToolProvider) Tools() map[string]core.Tool {
 	mcpTools := b.bridge.Tools()
 	tools := make(map[string]core.Tool, len(mcpTools))

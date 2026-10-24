@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -30,17 +29,17 @@ func TestDecodeMessagesAllRoles(t *testing.T) {
 	if len(msgs) != len(raw) {
 		t.Fatalf("expected %d messages, got %d", len(raw), len(msgs))
 	}
-	if _, ok := msgs[0].(ai.System); !ok {
-		t.Errorf("expected first message to be ai.System, got %T", msgs[0])
+	if _, ok := msgs[0].(core.System); !ok {
+		t.Errorf("expected first message to be core.System, got %T", msgs[0])
 	}
-	if _, ok := msgs[1].(ai.User); !ok {
-		t.Errorf("expected second message to be ai.User, got %T", msgs[1])
+	if _, ok := msgs[1].(core.User); !ok {
+		t.Errorf("expected second message to be core.User, got %T", msgs[1])
 	}
-	if _, ok := msgs[2].(ai.Assistant); !ok {
-		t.Errorf("expected third message to be ai.Assistant, got %T", msgs[2])
+	if _, ok := msgs[2].(core.Assistant); !ok {
+		t.Errorf("expected third message to be core.Assistant, got %T", msgs[2])
 	}
-	if _, ok := msgs[3].(ai.ToolResult); !ok {
-		t.Errorf("expected fourth message to be ai.ToolResult, got %T", msgs[3])
+	if _, ok := msgs[3].(core.ToolResult); !ok {
+		t.Errorf("expected fourth message to be core.ToolResult, got %T", msgs[3])
 	}
 }
 
@@ -103,18 +102,18 @@ func TestNewSessionIDFormat(t *testing.T) {
 
 // TestSSEStreamEventAllCases exercises every type-switch arm in
 // sseStreamEvent, including the default fallback for an unrecognized
-// ai.StreamEvent implementation.
+// core.ProviderStreamEvent implementation.
 func TestSSEStreamEventAllCases(t *testing.T) {
 	cases := []struct {
 		name    string
-		event   ai.StreamEvent
+		event   core.ProviderStreamEvent
 		want    string
 		wantErr bool
 	}{
-		{"ThinkingChunk", ai.ThinkingChunk{Type: "thinking", Content: "hmm"}, "thinking_chunk", false},
-		{"ResponseChunk", ai.ResponseChunk{Type: "response", Content: "hi"}, "response_chunk", false},
-		{"ToolCallEvent", ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "t1", Name: "shell"}}, "tool_call", false},
-		{"StreamEnd", ai.StreamEnd{Type: "stream_end", FinishReason: "stop"}, "stream_end", false},
+		{"ThinkingChunk", core.ThinkingChunk{Type: "thinking", Content: "hmm"}, "thinking_chunk", false},
+		{"ResponseChunk", core.ResponseChunk{Type: "response", Content: "hi"}, "response_chunk", false},
+		{"ToolCallEvent", core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "t1", Name: "shell"}}, "tool_call", false},
+		{"StreamEnd", core.StreamEnd{Type: "stream_end", FinishReason: "stop"}, "stream_end", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -149,8 +148,8 @@ func TestEventTypeOfAllCases(t *testing.T) {
 		{"TurnStart", core.TurnStart{Type: "turn_start", Turn: 1}, "turn_start"},
 		{"TurnEnd", core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 0}, "turn_end"},
 		{"AgentEnd", core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop"}, "agent_end"},
-		{"AssistantMessageEvent", core.AssistantMessageEvent{Type: "assistant_message", Message: ai.NewAssistant("hi")}, "assistant_message"},
-		{"ToolResultEvent", core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult("ok", "t1", false)}, "tool_result"},
+		{"AssistantMessageEvent", core.AssistantMessageEvent{Type: "assistant_message", Message: core.NewAssistant("hi")}, "assistant_message"},
+		{"ToolResultEvent", core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult("ok", "t1", false)}, "tool_result"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -173,16 +172,16 @@ func TestAccumulateAssistantSegments(t *testing.T) {
 	req := chatRequest{SessionID: "seg1"}
 	feed := func(ev core.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
 
-	call := ai.ToolCall{ID: "c1", Name: "shell.run"}
-	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: "preamble "}})
-	feed(core.StreamEvent{Event: ai.ToolCallEvent{ToolCall: call}})
-	feed(core.ToolResultEvent{Message: ai.NewToolResult("out", "c1", false)})
-	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: "final answer"}})
+	call := core.ToolCall{ID: "c1", Name: "shell.run"}
+	feed(core.StreamEvent{Event: core.ResponseChunk{Content: "preamble "}})
+	feed(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: call}})
+	feed(core.ToolResultEvent{Message: core.NewToolResult("out", "c1", false)})
+	feed(core.StreamEvent{Event: core.ResponseChunk{Content: "final answer"}})
 
 	if len(recs) != 1 {
 		t.Fatalf("len(recs) = %d, want 1 (final segment stays in rec)", len(recs))
 	}
-	feed(core.StreamEvent{Event: ai.StreamEnd{FinishReason: "stop"}})
+	feed(core.StreamEvent{Event: core.StreamEnd{FinishReason: "stop"}})
 	if rec.content != "final answer" {
 		t.Fatalf("rec.content = %q, want 'final answer'", rec.content)
 	}
@@ -211,9 +210,9 @@ func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	req := chatRequest{SessionID: "seg2"}
 	feed := func(ev core.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
 
-	feed(core.StreamEvent{Event: ai.ThinkingChunk{Content: "hmm"}})
-	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: "one"}})
-	feed(core.StreamEvent{Event: ai.ResponseChunk{Content: " two"}})
+	feed(core.StreamEvent{Event: core.ThinkingChunk{Content: "hmm"}})
+	feed(core.StreamEvent{Event: core.ResponseChunk{Content: "one"}})
+	feed(core.StreamEvent{Event: core.ResponseChunk{Content: " two"}})
 
 	if len(recs) != 0 {
 		t.Fatalf("len(recs) = %d, want 0 (no tool phase, no split)", len(recs))
@@ -270,11 +269,11 @@ func TestRunMeterTick(t *testing.T) {
 	if m.started.IsZero() {
 		t.Fatalf("meter did not start its clock")
 	}
-	m.tick(core.StreamEvent{Event: ai.ThinkingChunk{Content: "hi"}})
+	m.tick(core.StreamEvent{Event: core.ThinkingChunk{Content: "hi"}})
 	m.tick(core.TurnStart{}) // not a chunk
-	m.tick(core.StreamEvent{Event: ai.ResponseChunk{Content: "ab"}})
+	m.tick(core.StreamEvent{Event: core.ResponseChunk{Content: "ab"}})
 	m.tick(core.ToolResultEvent{}) // not a chunk
-	m.tick(core.StreamEvent{Event: ai.StreamEnd{}})
+	m.tick(core.StreamEvent{Event: core.StreamEnd{}})
 	if m.chunks != 2 {
 		t.Fatalf("chunks = %d, want 2", m.chunks)
 	}

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -33,13 +32,13 @@ type recorded struct {
 
 func newFakeStore() *fakeStore { return &fakeStore{appendOK: true} }
 
-func (s *fakeStore) AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error {
+func (s *fakeStore) AppendMessage(ctx context.Context, sessionID string, msg core.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.appendOK {
 		return errors.New("store down")
 	}
-	role, payload, err := ai.EncodeMessage(msg)
+	role, payload, err := core.EncodeMessage(msg)
 	if err != nil {
 		return err
 	}
@@ -65,11 +64,11 @@ func (s *fakeStore) roles() []string {
 }
 
 // vo builds pick rows from labels: the test shorthand for
-// []ai.VerdictOption (label only, no description).
-func vo(labels ...string) []ai.VerdictOption {
-	out := make([]ai.VerdictOption, len(labels))
+// []core.VerdictOption (label only, no description).
+func vo(labels ...string) []core.VerdictOption {
+	out := make([]core.VerdictOption, len(labels))
 	for i, l := range labels {
-		out[i] = ai.VerdictOption{Label: l}
+		out[i] = core.VerdictOption{Label: l}
 	}
 	return out
 }
@@ -238,7 +237,7 @@ func TestMultiAnswerStoresEveryIndex(t *testing.T) {
 	h := NewHub(st, nil)
 	card := core.VerdictPrompt{
 		ID: "cm1", SessionID: "s1", Title: "which modules?",
-		Options: []ai.VerdictOption{{Label: "a", Description: "first"}, {Label: "b"}, {Label: "c"}},
+		Options: []core.VerdictOption{{Label: "a", Description: "first"}, {Label: "b"}, {Label: "c"}},
 		Multi:   true,
 	}
 	ch := askAsync(t, h, card)
@@ -265,7 +264,7 @@ func TestMultiAnswerStoresEveryIndex(t *testing.T) {
 	if len(roles) != 2 || roles[1] != "verdict" {
 		t.Fatalf("roles = %v, want [verdict_card verdict]", roles)
 	}
-	var rec ai.Verdict
+	var rec core.VerdictRecord
 	if err := json.Unmarshal(st.snapshot()[1].payload, &rec); err != nil {
 		t.Fatalf("decode verdict row: %v", err)
 	}
@@ -426,7 +425,7 @@ func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 	if recs[0].session != "s9" || recs[1].session != "s9" {
 		t.Fatalf("transcript sessions = %v, want both s9", []string{recs[0].session, recs[1].session})
 	}
-	var v ai.Verdict
+	var v core.VerdictRecord
 	if err := json.Unmarshal(recs[1].payload, &v); err != nil {
 		t.Fatalf("decode verdict row: %v", err)
 	}
@@ -446,7 +445,7 @@ func TestExpiryPersisted(t *testing.T) {
 		t.Fatalf("transcript roles = %v, want [verdict_card verdict]", roles)
 	}
 	recs := st.snapshot()
-	var v ai.Verdict
+	var v core.VerdictRecord
 	_ = json.Unmarshal(recs[1].payload, &v)
 	if !v.Expired {
 		t.Fatalf("persisted verdict row not expired: %+v", v)

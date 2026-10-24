@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Session-fork + export surface (t_6bf696e4): the webui parity batch for
@@ -59,7 +59,7 @@ func (s *Server) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 	if parent.Label != "" {
 		summary = "branched from " + parent.Label + " (" + id + ")"
 	}
-	if err := s.store.AppendMessage(r.Context(), childID, ai.NewSystem(summary)); err != nil {
+	if err := s.store.AppendMessage(r.Context(), childID, core.NewSystem(summary)); err != nil {
 		http.Error(w, "summary message: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -121,10 +121,9 @@ func (s *Server) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, msg := range messages {
-		line := exportLine{Role: ai.MessageRole(msg), Content: agent.MessageText(msg)}
+		line := exportLine{Role: core.MessageRole(msg), Content: agent.MessageText(msg)}
 		if _, err := fmt.Fprintf(w, "{\"role\":%q,\"content\":%q}\n", line.Role, line.Content); err != nil {
 			return
 		}
 	}
 }
-

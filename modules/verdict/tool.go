@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -134,17 +133,17 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 // plain strings for one-word picks) out of the untyped tool args map.
 // Non-conforming entries are skipped (the model sends objects;
 // anything else is malformed and dropped, not fatal).
-func argOptions(args map[string]any, key string) []ai.VerdictOption {
+func argOptions(args map[string]any, key string) []core.VerdictOption {
 	raw, ok := args[key].([]any)
 	if !ok {
 		return nil
 	}
-	out := make([]ai.VerdictOption, 0, len(raw))
+	out := make([]core.VerdictOption, 0, len(raw))
 	for _, v := range raw {
 		switch o := v.(type) {
 		case string:
 			if s := strings.TrimSpace(o); s != "" {
-				out = append(out, ai.VerdictOption{Label: s})
+				out = append(out, core.VerdictOption{Label: s})
 			}
 		case map[string]any:
 			label, _ := o["label"].(string)
@@ -153,7 +152,7 @@ func argOptions(args map[string]any, key string) []ai.VerdictOption {
 				continue
 			}
 			desc, _ := o["description"].(string)
-			out = append(out, ai.VerdictOption{Label: label, Description: strings.TrimSpace(desc)})
+			out = append(out, core.VerdictOption{Label: label, Description: strings.TrimSpace(desc)})
 		}
 	}
 	return out

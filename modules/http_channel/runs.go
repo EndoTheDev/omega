@@ -286,7 +286,7 @@ func (h *runHub) finish(run *activeRun) {
 // path (the tool result errors out, the next turn boundary emits a
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
-func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []ai.Message, tools map[string]core.Tool, req chatRequest) {
+func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
 	// Chat panel (chat-last 1/3): NewServer always wires the capsule;
 	// no nil guard needed here.
 	s.chat.beginRun(req.SessionID)
@@ -340,7 +340,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 			s.runs.setOpenTail(run, liveTranscriptItems(nil, rec, time.Now()))
 			// Usage arrives on each stream_end; sum every turn of the run.
 			if se, ok := event.(core.StreamEvent); ok {
-				if end, ok := se.Event.(ai.StreamEnd); ok {
+				if end, ok := se.Event.(core.StreamEnd); ok {
 					if end.PromptEvalCount != nil {
 						usage.prompt += *end.PromptEvalCount
 					}

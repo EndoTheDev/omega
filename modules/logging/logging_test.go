@@ -187,6 +187,7 @@ func TestPluginMountDisabled(t *testing.T) {
 		t.Errorf("expected NopLogger when disabled, got %T", ctx.Logger)
 	}
 }
+
 // Path reports the file the logger writes to (card t_db430fea - the
 // /logs endpoint tails exactly this path against the exact open file).
 func TestFileLoggerPath(t *testing.T) {

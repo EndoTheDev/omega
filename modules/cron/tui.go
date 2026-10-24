@@ -14,7 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// tui implements agent.TUIProvider for the /cron command.
+// tui implements core.TUIProvider for the /cron command.
 type tui struct{ p *Plugin }
 
 var _ core.TUIProvider = (*tui)(nil)

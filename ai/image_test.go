@@ -51,7 +51,7 @@ func TestDetectImage(t *testing.T) {
 				t.Fatalf("DetectImage: unexpected error: %v", err)
 			}
 			if img == nil {
-				t.Fatal("DetectImage returned nil, want ImageContent")
+				t.Fatal("DetectImage returned nil, want core.ImageContent")
 			}
 			if img.MediaType != tc.mediaType {
 				t.Errorf("MediaType = %q, want %q", img.MediaType, tc.mediaType)

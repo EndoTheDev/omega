@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
 )
 
 func TestParseFileArgsTextOnly(t *testing.T) {

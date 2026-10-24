@@ -7,7 +7,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // TestPluginImplementsInterface verifies the Plugin type satisfies
@@ -29,7 +28,7 @@ func TestOpenOpensAndSearches(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", "test session"); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello searchable world")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hello searchable world")); err != nil {
 		t.Fatalf("AppendMessage: %v", err)
 	}
 
@@ -56,7 +55,7 @@ func TestSearchTool(t *testing.T) {
 
 	ctx := context.Background()
 	s.CreateSession(ctx, "s1", "", "my labeled session")
-	s.AppendMessage(ctx, "s1", ai.NewUser("unique searchable content"))
+	s.AppendMessage(ctx, "s1", core.NewUser("unique searchable content"))
 
 	tp := &searchToolProvider{store: s}
 	tools := tp.Tools()
@@ -125,4 +124,3 @@ func TestPluginMount(t *testing.T) {
 		t.Fatal("expected sessions.search tool from mounted provider")
 	}
 }
-

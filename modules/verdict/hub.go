@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -29,7 +28,7 @@ import (
 const DefaultTimeout = 20 * time.Minute
 
 // Hub is the in-memory registry of verdict cards. Cards live in issued
-// order; the transcript persistence (ai.VerdictCard / ai.Verdict rows,
+// order; the transcript persistence (core.VerdictCard / core.VerdictRecord rows,
 // via the store) is the durable audit trail - the hub itself survives
 // only for the process. A restart with still-pending cards leaves the
 // transcript's card unreconciled (no tool result) - the next run is not
@@ -87,7 +86,7 @@ func (h *Hub) Close() {
 }
 
 // Ask implements core.VerdictsProvider: registers the card, persists
-// the ai.VerdictCard record, arms the expiry timer, and blocks until
+// the core.VerdictCard record, arms the expiry timer, and blocks until
 // an answer, the expiry, or ctx cancellation. ctx cancellation (run
 // stop / shutdown) settles the card; Close is the host-wide sweep.
 func (h *Hub) Ask(ctx context.Context, card core.VerdictPrompt) (core.Verdict, error) {
@@ -112,7 +111,7 @@ func (h *Hub) Ask(ctx context.Context, card core.VerdictPrompt) (core.Verdict, e
 	// through Pending, which starts below. The session is card.SessionID
 	// (persistAs never scans); best effort, the question itself never
 	// fails on a persistence problem.
-	h.persistAs(card.SessionID, ai.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
+	h.persistAs(card.SessionID, core.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
 
 	h.mu.Lock()
 	h.cards = append(h.cards, state)
@@ -149,7 +148,7 @@ func (h *Hub) expire(cardID string) {
 	}
 	c.settled = true
 	c.expired = true
-	record := ai.NewVerdict(cardID, nil, nil, "", false, true)
+	record := core.NewVerdictRecord(cardID, nil, nil, "", false, true)
 	h.mu.Unlock()
 
 	// The record persists before Ask wakes: same contract as Answer -
@@ -282,7 +281,7 @@ func (h *Hub) Answer(sessionID, cardID string, v core.Verdict) (core.Verdict, er
 	if labels == nil && v.Option != "" {
 		labels = []string{v.Option}
 	}
-	record := ai.NewVerdict(cardID, ixs, labels, v.Text, v.Skipped, false)
+	record := core.NewVerdictRecord(cardID, ixs, labels, v.Text, v.Skipped, false)
 	h.mu.Unlock()
 
 	// The record persists before Ask wakes (the seam contract): the
@@ -332,7 +331,7 @@ func (h *Hub) byIDLocked(cardID string) *cardState {
 // has a store and knows the session. Best effort: a persistence
 // failure logs and moves on - the question itself must not fail
 // because the audit row could not be written.
-func (h *Hub) persist(msg ai.Message) {
+func (h *Hub) persist(msg core.Message) {
 	if h.store == nil {
 		return
 	}
@@ -356,7 +355,7 @@ func (h *Hub) persist(msg ai.Message) {
 // uses it so the card row lands before the card becomes answerable
 // (registration), not just before the pause. An empty session (a card
 // the hub never registered under a session) persists nothing.
-func (h *Hub) persistAs(session string, msg ai.Message) {
+func (h *Hub) persistAs(session string, msg core.Message) {
 	cardID := cardOf(msg)
 	if h.store == nil || session == "" || cardID == "" {
 		return
@@ -373,16 +372,16 @@ func (h *Hub) persistAs(session string, msg ai.Message) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := h.store.AppendMessage(ctx, session, msg); err != nil && h.logger != nil {
-		h.logger.Errorf("verdict %s: persist %s record: %v", cardID, ai.MessageRole(msg), err)
+		h.logger.Errorf("verdict %s: persist %s record: %v", cardID, core.MessageRole(msg), err)
 	}
 }
 
 // cardOf extracts the CardID from the two record kinds persist carries.
-func cardOf(msg ai.Message) string {
+func cardOf(msg core.Message) string {
 	switch m := msg.(type) {
-	case ai.VerdictCard:
+	case core.VerdictCard:
 		return m.CardID
-	case ai.Verdict:
+	case core.VerdictRecord:
 		return m.CardID
 	}
 	return ""

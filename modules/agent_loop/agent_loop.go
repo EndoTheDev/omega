@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
@@ -100,7 +100,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 		}
 	}
 	if prompt != "" {
-		messages = append([]ai.Message{ai.NewSystem(prompt)}, messages...)
+		messages = append([]core.Message{core.NewSystem(prompt)}, messages...)
 	}
 
 	start := core.AgentStart{Type: "agent_start", ModelName: ""}
@@ -170,7 +170,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 		// follows; the loop's numbers are the persisted ones.
 		meter := newPhaseMeter()
 		var content, thinking strings.Builder
-		var toolCalls []ai.ToolCall
+		var toolCalls []core.ToolCall
 		finishReason := "stop"
 		streamErr := ""
 
@@ -182,16 +182,16 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 
 		for event := range opts.Provider.Stream(ctx, messages, toolSchemas(tools)) {
 			switch e := event.(type) {
-			case ai.ResponseChunk:
+			case core.ResponseChunk:
 				meter.response(time.Now())
 				content.WriteString(e.Content)
-			case ai.ThinkingChunk:
+			case core.ThinkingChunk:
 				meter.thinking(time.Now())
 				thinking.WriteString(e.Content)
-			case ai.ToolCallEvent:
+			case core.ToolCallEvent:
 				meter.toolCall(e.ToolCall.ID, time.Now())
 				toolCalls = append(toolCalls, e.ToolCall)
-			case ai.StreamEnd:
+			case core.StreamEnd:
 				finishReason = e.FinishReason
 				streamErr = e.Error
 			}
@@ -236,7 +236,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 			return nil
 		}
 
-		assistant := ai.NewAssistant(content.String())
+		assistant := core.NewAssistant(content.String())
 		if thinking.Len() > 0 {
 			text := thinking.String()
 			assistant.Thinking = &text
@@ -247,7 +247,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 		// TUI, export) sees thinking/response spans - not only the
 		// sessions the http channel used to meter.
 		if thinkMs, respMs := meter.spans(); thinkMs > 0 || respMs > 0 {
-			assistant.Timing = &ai.Timing{ThinkingMs: thinkMs, ResponseMs: respMs}
+			assistant.Timing = &core.Timing{ThinkingMs: thinkMs, ResponseMs: respMs}
 		}
 		persistTurnMessage(ctx, sink, opts.Logger, assistant, "assistant")
 		messages = append(messages, assistant)
@@ -256,22 +256,22 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 
 		// Execute tool calls concurrently. Results are collected in
 		// order so the message history stays deterministic.
-		results := make([]ai.ToolResult, len(toolCalls))
+		results := make([]core.ToolResult, len(toolCalls))
 		completed := make([]time.Time, len(toolCalls))
 		var wg sync.WaitGroup
 		for i, call := range toolCalls {
 			tool, ok := tools[call.Name]
 			if !ok {
-				results[i] = ai.NewToolResult("unknown tool: "+call.Name, call.ID, true)
+				results[i] = core.NewToolResult("unknown tool: "+call.Name, call.ID, true)
 				continue
 			}
 			wg.Add(1)
-			go func(idx int, c ai.ToolCall, t core.Tool) {
+			go func(idx int, c core.ToolCall, t core.Tool) {
 				defer wg.Done()
 				result, err := t.Run(ctx, c.Arguments)
 				completed[idx] = time.Now()
 				if err != nil {
-					results[idx] = ai.NewToolResult(err.Error(), c.ID, true)
+					results[idx] = core.NewToolResult(err.Error(), c.ID, true)
 					if opts.Logger != nil {
 						opts.Logger.Errorf("tool %s error: %v", c.Name, err)
 					}
@@ -279,7 +279,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 					if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
 						result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
 					}
-					results[idx] = ai.NewToolResult(result, c.ID, false)
+					results[idx] = core.NewToolResult(result, c.ID, false)
 				}
 			}(i, call, tool)
 		}
@@ -291,7 +291,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 			// event) to completion. Unknown tools report none - they
 			// never ran.
 			if start, ok := meter.callStart(toolCalls[i].ID); ok && !completed[i].IsZero() {
-				msg.Timing = &ai.Timing{ElapsedMs: completed[i].Sub(start).Milliseconds()}
+				msg.Timing = &core.Timing{ElapsedMs: completed[i].Sub(start).Milliseconds()}
 			}
 			persistTurnMessage(ctx, sink, opts.Logger, msg, "tool result")
 			messages = append(messages, msg)
@@ -324,7 +324,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 				}
 			}
 			if combined != "" {
-				injected := ai.NewUser(combined)
+				injected := core.NewUser(combined)
 				persistTurnMessage(ctx, sink, opts.Logger, injected, "user input")
 				messages = append(messages, injected)
 				continue
@@ -338,7 +338,7 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 				select {
 				case msg, ok := <-opts.InjectedMessages:
 					if ok {
-						injected := ai.NewUser(msg.Text)
+						injected := core.NewUser(msg.Text)
 						persistTurnMessage(ctx, sink, opts.Logger, injected, "user input")
 						messages = append(messages, injected)
 						continue
@@ -380,7 +380,7 @@ func isOverflowError(err string) bool {
 // TurnSink. Persistence failures log and move on - a dead store never
 // kills a live run, the channel surfaces the reload gap instead of an
 // error frame mid-stream.
-func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger core.LoggerProvider, msg ai.Message, stage string) {
+func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger core.LoggerProvider, msg core.Message, stage string) {
 	if sink == nil {
 		return
 	}
@@ -408,8 +408,16 @@ func newPhaseMeter() *phaseMeter {
 	return &phaseMeter{openAt: time.Now()}
 }
 
-func (m *phaseMeter) thinking(now time.Time) { m.thinkDur += m.delta(m.lastThink, now); m.lastThink = now; m.openAt = now }
-func (m *phaseMeter) response(now time.Time) { m.respDur += m.delta(m.lastResp, now); m.lastResp = now; m.openAt = now }
+func (m *phaseMeter) thinking(now time.Time) {
+	m.thinkDur += m.delta(m.lastThink, now)
+	m.lastThink = now
+	m.openAt = now
+}
+func (m *phaseMeter) response(now time.Time) {
+	m.respDur += m.delta(m.lastResp, now)
+	m.lastResp = now
+	m.openAt = now
+}
 
 // toolCall records a call's dispatch instant and closes both stream
 // spans - the gap while the tool runs belongs to nobody.

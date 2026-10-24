@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // sseAnthropicServer serves a canned anthropic SSE stream shaped like
@@ -46,14 +47,14 @@ func TestStreamAnthropicThinking(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("2+2?")}, nil))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("2+2?")}, nil))
 
 	var thinking, response string
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ThinkingChunk:
+		case core.ThinkingChunk:
 			thinking += ev.Content
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			response += ev.Content
 		}
 	}
@@ -78,8 +79,8 @@ func TestStreamAnthropicUsage(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
-	end := got[len(got)-1].(ai.StreamEnd)
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.FinishReason != "end_turn" {
 		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "end_turn")
 	}
@@ -100,8 +101,8 @@ func TestStreamAnthropicUsage(t *testing.T) {
 	)
 	defer srv2.Close()
 	p2 := &Provider{typ: "anthropic", baseURL: srv2.URL, modelName: "glm-5.3", apiKey: "k"}
-	got2 := collectEvents(t, p2.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
-	end2 := got2[len(got2)-1].(ai.StreamEnd)
+	got2 := collectEvents(t, p2.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	end2 := got2[len(got2)-1].(core.StreamEnd)
 	if end2.PromptEvalCount == nil || *end2.PromptEvalCount != 7 {
 		t.Errorf("PromptEvalCount = %v, want 7", end2.PromptEvalCount)
 	}
@@ -125,7 +126,7 @@ func TestStreamAnthropicMaxTokensWithBudget(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k", thinkingLevel: "ultra"}
-	collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 
 	var sent map[string]any
 	if err := json.Unmarshal(gotBody, &sent); err != nil {
@@ -142,7 +143,7 @@ func TestStreamAnthropicMaxTokensWithBudget(t *testing.T) {
 
 	// No thinking level: plain 4096.
 	p2 := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	collectEvents(t, p2.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	collectEvents(t, p2.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	sent = nil
 	if err := json.Unmarshal(gotBody, &sent); err != nil {
 		t.Fatalf("request body is not JSON: %v", err)
@@ -204,14 +205,14 @@ func TestStreamOpenAIReasoningContent(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 
 	var thinking, response string
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ThinkingChunk:
+		case core.ThinkingChunk:
 			thinking += ev.Content
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			response += ev.Content
 		}
 	}
@@ -259,11 +260,11 @@ func TestStreamOpenAISynthesizesToolCallIDs(t *testing.T) {
 
 	tools := []ai.ToolSchema{{Name: "get_weather", Description: "d", Parameters: map[string]any{"type": "object"}}}
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, tools))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, tools))
 
-	var calls []ai.ToolCallEvent
+	var calls []core.ToolCallEvent
 	for _, e := range got {
-		if ev, ok := e.(ai.ToolCallEvent); ok {
+		if ev, ok := e.(core.ToolCallEvent); ok {
 			calls = append(calls, ev)
 		}
 	}
@@ -298,8 +299,8 @@ func TestStreamOpenAIAbsentUsage(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
-	end := got[len(got)-1].(ai.StreamEnd)
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.PromptEvalCount != nil {
 		t.Errorf("PromptEvalCount = %v, want nil", *end.PromptEvalCount)
 	}
@@ -325,8 +326,8 @@ func TestStreamOpenAIUsageReported(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
-	end := got[len(got)-1].(ai.StreamEnd)
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.PromptEvalCount == nil || *end.PromptEvalCount != 25 {
 		t.Errorf("PromptEvalCount = %v, want 25", end.PromptEvalCount)
 	}

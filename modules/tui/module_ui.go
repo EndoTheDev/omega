@@ -1,7 +1,7 @@
 package tui
 
 // Module-owned TUI plumbing (card t_88bb7dcf): the shell side of the
-// agent.TUIProvider seam. The shell owns only the machinery here - the
+// core.TUIProvider seam. The shell owns only the machinery here - the
 // input loop routes, the command table breathes with the mounted
 // providers, and the console translates writes into transcript
 // paragraphs. Feature logic lives in the owning module.
@@ -30,7 +30,7 @@ var shellCommands = []string{"/copy", "/extensions", "/panels", "/theme", "/vari
 // while the loop is active.
 type moduleTickMsg struct{}
 
-// tuiConsole adapts the shell into the agent.TUIConsole the module
+// tuiConsole adapts the shell into the core.TUIConsole the module
 // handlers write through. It renders exactly the way the shell's own
 // command paths render today.
 type tuiConsole struct{ m *model }

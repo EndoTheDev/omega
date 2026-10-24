@@ -2,16 +2,17 @@ package ai
 
 import (
 	"context"
+	"github.com/EndoTheDev/omega/core"
 	"time"
 )
 
-// FakeProvider implements Provider and emits a scripted sequence of
+// FakeProvider implements core.Provider and emits a scripted sequence of
 // StreamEvents instead of calling a real API. It unlocks deterministic
 // agent loop testing.
 type FakeProvider struct {
 	modelName string
-	script    []StreamEvent
-	scripts   [][]StreamEvent // per-call scripts; the last repeats
+	script    []core.ProviderStreamEvent
+	scripts   [][]core.ProviderStreamEvent // per-call scripts; the last repeats
 	delay     time.Duration
 	calls     int
 	// lastRequestedLevel records the thinking level this provider
@@ -20,19 +21,19 @@ type FakeProvider struct {
 	lastRequestedLevel string
 	// LastMessages records the messages passed to the most recent Stream
 	// call, so tests can assert on the history the agent built up.
-	LastMessages []Message
+	LastMessages []core.Message
 }
 
 // NewFakeProvider creates a FakeProvider that replays script in order
 // on each Stream call. A non-zero delay is applied before each event.
-func NewFakeProvider(model string, script ...StreamEvent) *FakeProvider {
+func NewFakeProvider(model string, script ...core.ProviderStreamEvent) *FakeProvider {
 	return &FakeProvider{modelName: model, script: script}
 }
 
 // NewFakeProviderScripts creates a FakeProvider that replays each script
 // in order on successive Stream calls; the last script repeats. Use it
 // for multi-turn loops where each turn needs different events.
-func NewFakeProviderScripts(model string, scripts ...[]StreamEvent) *FakeProvider {
+func NewFakeProviderScripts(model string, scripts ...[]core.ProviderStreamEvent) *FakeProvider {
 	return &FakeProvider{modelName: model, scripts: scripts}
 }
 
@@ -67,7 +68,7 @@ func (p *FakeProvider) ThinkingLevel() string { return p.lastRequestedLevel }
 
 // WithModel returns a copy of the provider serving model. The copy
 // shares the scripts so it streams the same sequence.
-func (p *FakeProvider) WithModel(model string) Provider {
+func (p *FakeProvider) WithModel(model string) core.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -76,7 +77,7 @@ func (p *FakeProvider) WithModel(model string) Provider {
 // WithThinkingLevel returns a copy of the provider at the given
 // thinking level. Same copy discipline as WithModel: shares the
 // scripts, leaves the receiver unchanged.
-func (p *FakeProvider) WithThinkingLevel(level string) Provider {
+func (p *FakeProvider) WithThinkingLevel(level string) core.Provider {
 	cp := *p
 	cp.lastRequestedLevel = level
 	return &cp
@@ -95,9 +96,9 @@ func (p *FakeProvider) ModelInfo() (ModelInfo, error) {
 // Stream replays the scripted events on a channel, respecting context
 // cancellation, and closes the channel when done. An empty script
 // closes the channel immediately.
-func (p *FakeProvider) Stream(ctx context.Context, messages []Message, _ []ToolSchema) <-chan StreamEvent {
+func (p *FakeProvider) Stream(ctx context.Context, messages []core.Message, _ []core.ToolSchema) <-chan core.ProviderStreamEvent {
 	p.LastMessages = messages
-	events := make(chan StreamEvent)
+	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)
 		script := p.script
