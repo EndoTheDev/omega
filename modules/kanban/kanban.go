@@ -29,11 +29,6 @@ var statuses = []string{
 	StatusRunning, StatusBlocked, StatusReview, StatusDone, StatusArchived,
 }
 
-// Statuses returns the ordered status list.
-func Statuses() []string {
-	return slices.Clone(statuses)
-}
-
 // IsStatus reports whether s is a legal board status. The empty string
 // is NOT a status: callers mean "no change" separately.
 func IsStatus(s string) bool {
