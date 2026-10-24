@@ -310,48 +310,125 @@ func (s *canvasScreen) View(width, height int) string {
 	return sb.String()
 }
 
-// The list wire shape (t_c5b98609): list-kind panels decode their
-// payload through the generic row vocabulary - the shell holds no
-// module types (layer law), the JSON wire shape is the shared seam,
-// the same decode the toast line rides.
+// The list wire shape (t_c5b98609, extended t_985670d3): list-kind
+// panels decode their payload through the generic row vocabulary - the
+// shell holds no module types (layer law), the JSON wire shape is the
+// shared seam, the same decode the toast line rides. The vocabulary
+// carries both id dialects the wire has produced (arc 4b numbers, arc 5
+// "t_xxx" strings) and a status field beside the verdict, so a row
+// renders whatever it declared.
 type wireRowAction struct {
 	Label string `json:"label"`
 }
 
+// wireID is a row id that decodes as a JSON number or string - a row
+// is rendered through whichever dialect it carries.
+type wireID struct {
+	num int64
+	str string
+}
+
+func (w *wireID) UnmarshalJSON(b []byte) error {
+	var n int64
+	if err := json.Unmarshal(b, &n); err == nil {
+		w.num, w.str = n, ""
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		w.num, w.str = 0, s
+		return nil
+	}
+	return fmt.Errorf("id: number or string required, got %s", b)
+}
+
+// set reports the id carries anything renderable.
+func (w wireID) set() bool { return w.num != 0 || w.str != "" }
+
+// idLine renders the id the way its dialect reads: a bare int gains
+// the # marker; a string id (arc 5 "t_xxx") rides verbatim.
+func (w wireID) idLine() string {
+	if w.num != 0 {
+		return fmt.Sprintf(" #%d", w.num)
+	}
+	if w.str != "" {
+		return " " + w.str
+	}
+	return ""
+}
+
 type wireRow struct {
-	ID        int64          `json:"id"`
+	ID        wireID         `json:"id"`
 	Kind      string         `json:"kind"`
 	SourceID  string         `json:"source_id"`
 	Title     string         `json:"title"`
+	Status    string         `json:"status"`
 	Verdict   string         `json:"verdict"`
 	CreatedAt string         `json:"created_at"`
-	Read      bool           `json:"read"`
+	Read      *bool          `json:"read"`
 	RowAction *wireRowAction `json:"action,omitempty"`
+}
+
+// rowRead is the read state driving the row marker. A declared read
+// field wins (arc 4b always sends one); a payload with no read field
+// derives it from the status - settled rows read, live rows unread
+// (the t_985670d3 fallback: the wire vocabulary already ties bindings
+// to unsettled rows, the marker follows the same line).
+func (r wireRow) rowRead() bool {
+	if r.Read != nil {
+		return *r.Read
+	}
+	return r.Status == "done" || r.Status == "archived"
+}
+
+// renderable reports a decoded row can produce a real line. A payload
+// that decodes but shares no vocabulary field with the wire (the
+// kanban board switcher: name/current/active, no title, no id, no
+// status) is not a list body - the JSON dump stays its default view.
+func renderable(r wireRow) bool {
+	return r.Title != "" || r.SourceID != "" || r.ID.set() || r.Verdict != ""
 }
 
 type wireListPayload struct {
 	Unread int       `json:"unread"`
+	Total  int       `json:"total"`
 	Rows   []wireRow `json:"rows"`
 }
 
+// wireListView is a decoded list payload: the rows plus the badge
+// counts the header may show. ok reports the payload decoded into
+// renderable rows.
+type wireListView struct {
+	Rows   []wireRow
+	Unread int
+	Total  int
+	OK     bool
+}
+
 // decodeListRows decodes a list-kind payload through the wire shape.
-// The bool reports the panel is a list: its body becomes one line per
-// row instead of the JSON dump. Struct payloads and JSON maps decode
+// OK reports the panel is a list: its body becomes one line per row
+// instead of the JSON dump. Struct payloads and JSON maps decode
 // alike (the in-process spine carries the module's typed payload, the
-// same field tags the wire carries).
-func decodeListRows(kind string, payload any) ([]wireRow, int, bool) {
+// same field tags the wire carries). A payload that decodes to rows
+// with no renderable field falls back to the dump, not to empty lines.
+func decodeListRows(kind string, payload any) wireListView {
 	if kind != "list" || payload == nil {
-		return nil, 0, false
+		return wireListView{}
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return nil, 0, false
+		return wireListView{}
 	}
 	var lp wireListPayload
 	if err := json.Unmarshal(b, &lp); err != nil {
-		return nil, 0, false
+		return wireListView{}
 	}
-	return lp.Rows, lp.Unread, true
+	for _, r := range lp.Rows {
+		if renderable(r) {
+			return wireListView{Rows: lp.Rows, Unread: lp.Unread, Total: lp.Total, OK: true}
+		}
+	}
+	return wireListView{}
 }
 
 // decodeToastRow decodes a toast-kind payload: one wire row, the same
@@ -393,11 +470,13 @@ func truncateLines(s string, width int) string {
 }
 
 // listRowLine renders one list row as a single line: the read-state
-// marker, the title, the record id and kind, and the row's binding
-// hint when it is unread (t_c5b98609 fix 1: key fields only).
+// marker, the title, the record id (number or string dialect), the
+// kind or status field, and the row's binding hint when it is unread
+// (t_c5b98609 fix 1, t_985670d3: key fields only, whatever decoded).
 func listRowLine(r wireRow) string {
+	read := r.rowRead()
 	marker := "○ " // read
-	if !r.Read {
+	if !read {
 		marker = "● "
 	}
 	title := r.Title
@@ -405,16 +484,18 @@ func listRowLine(r wireRow) string {
 		title = r.SourceID
 	}
 	line := marker + title
-	if r.ID != 0 {
-		line += fmt.Sprintf(" #%d", r.ID)
-	}
+	line += r.ID.idLine()
 	if r.Kind != "" {
 		line += " · " + r.Kind
 	}
-	if r.Verdict != "" {
-		line += " · " + r.Verdict
+	field := r.Status
+	if field == "" {
+		field = r.Verdict
 	}
-	if !r.Read && r.RowAction != nil && r.RowAction.Label != "" {
+	if field != "" {
+		line += " · " + field
+	}
+	if !read && r.RowAction != nil && r.RowAction.Label != "" {
 		line += " · " + r.RowAction.Label
 	}
 	return line
@@ -438,22 +519,24 @@ func renderCanvasPanels(width int, panels []core.Panel) string {
 		if head == "" {
 			head = p.ID
 		}
-		rows, unread, isList := decodeListRows(p.Kind, p.Payload)
+		view := decodeListRows(p.Kind, p.Payload)
 		toast, isToast := decodeToastRow(p.Kind, p.Payload)
-		if isList && unread > 0 {
-			head += fmt.Sprintf("  · %d unread", unread)
+		if view.OK && view.Unread > 0 {
+			head += fmt.Sprintf("  · %d unread", view.Unread)
+		} else if view.OK && view.Total > 0 {
+			head += fmt.Sprintf("  · %d total", view.Total)
 		} else if p.Kind != "" {
 			head += "  [" + p.Kind + "]"
 		}
 		sb.WriteString(truncateLine(head, width))
 		sb.WriteString("\n")
 		switch {
-		case isList:
-			if len(rows) == 0 {
+		case view.OK:
+			if len(view.Rows) == 0 {
 				sb.WriteString("(empty)")
 				sb.WriteString("\n")
 			}
-			for _, r := range rows {
+			for _, r := range view.Rows {
 				sb.WriteString(truncateLine(listRowLine(r), width))
 				sb.WriteString("\n")
 			}
