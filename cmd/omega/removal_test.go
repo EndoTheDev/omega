@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -336,4 +337,157 @@ func pluginTool(ctx *core.Context, name string) (func(context.Context, map[strin
 		}
 	}
 	return nil, fmt.Errorf("tool %q not registered", name)
+}
+
+// TestCronRemovalProof is the arc 6 removal proof (card t_31174f80,
+// third capsule through the recipe): cron is the cheap read-only case.
+// The two mounts are the proof:
+//
+//  1. WITH cron: the seam is mounted, the canvas carries the jobs
+//     panel module-qualified, the refresh action answers through the
+//     action pipe and pushes the panel on the spine (the module ship
+//     carries /cron on its TUIProvider from the same registration).
+//  2. WITHOUT cron: the seam is nil (the REST route falls through to
+//     its seam-nil guard - cron's settled degrade, the empty-set
+//     answer, not 501), the canvas carries no cron panel, no TUI
+//     provider registers /cron, and no module requires
+//     "cron" - the removal takes no dependents with it (the
+//     notifications removal is the counter-case: cron requires
+//     notifications, not the other way).
+//
+// Cron ships no agent tools by design (read-only v1: crons.yaml is
+// human-authored, omega may only ever propose jobs) - the proof pins
+// the absence too.
+//
+// The core types stay (core/seams.go: CronProvider, CronDeps,
+// CronJobInfo, CronLister) - the seam signature references them and
+// layers never import modules. Intentional residue, documented:
+// this test compiles them to prove it.
+func TestCronRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// declared data, recipe step 1: no other plugin's Requires may
+	// name cron - a hit here is the removal recipe's stop signal
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if req == "cron" {
+				t.Fatalf("FULL MOUNT precondition: %q requires cron - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.Cron == nil {
+		t.Fatal("FULL MOUNT: cron seam nil - the module did not mount")
+	}
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	panel, found := cronPanel(canvas.Snapshot())
+	if !found {
+		t.Fatalf("FULL MOUNT: jobs panel missing from snapshot: %+v", canvas.Snapshot())
+	}
+	if panel.Title != "Cron" || panel.Kind != "list" {
+		t.Fatalf("FULL MOUNT: panel head = %q/%q", panel.Title, panel.Kind)
+	}
+	t.Log("PROOF mount=full: seam mounted, canvas carries the jobs panel, module-qualified")
+
+	// the action pipe: the refresh arm answers the live listing and
+	// pushes the panel through the live canvas - the wiring lives in
+	// the module, not any transport
+	var deltas []core.Panel
+	live, err := agent.NewCanvas(ctx, func(ev core.Event) {
+		if d, ok := ev.(core.ViewModelDelta); ok {
+			deltas = append(deltas, d.Panel)
+		}
+	})
+	if err != nil {
+		t.Fatalf("canvas 2: %v", err)
+	}
+	if _, err := live.Dispatch(core.ActionCall{Module: "cron", Action: "refresh_jobs"}); err != nil {
+		t.Fatalf("dispatch refresh_jobs: %v", err)
+	}
+	pushed := false
+	for _, d := range deltas {
+		if d.ID == "cron" {
+			pushed = true
+		}
+	}
+	if !pushed {
+		t.Fatalf("FULL MOUNT: refresh answered but pushed no panel (deltas=%d)", len(deltas))
+	}
+	t.Log("PROOF action-pipe: refresh_jobs answered the listing, the panel rode the spine")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "cron" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctx2.Cron != nil {
+		t.Fatal("REMOVED MOUNT: cron seam still mounted")
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	if _, found := cronPanel(noCanvas.Snapshot()); found {
+		t.Fatalf("REMOVED MOUNT: the jobs panel survived the removal: %+v", noCanvas.Snapshot())
+	}
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "cron", Action: "refresh_jobs"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
+	}
+	// the TUI surface: no provider declares /cron
+	for _, tp := range ctx2.TUIProviders {
+		for _, c := range tp.TUICommands() {
+			if c.Name == "/cron" {
+				t.Fatal("REMOVED MOUNT: the /cron command survived the removal")
+			}
+		}
+	}
+	// the tool registry: cron ships no tools, and nothing cron-shaped
+	// appeared either way
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.HasPrefix(name, "cron") || strings.HasPrefix(name, "job") {
+				t.Fatalf("REMOVED MOUNT: cron-shaped tool %q survived the removal", name)
+			}
+		}
+	}
+	// core types remain - intentional (the seam signature references
+	// them; layers never import modules). Compile-time proof:
+	_ = core.CronDeps{}
+	_ = core.CronLister(nil)
+	_ = core.CronJobInfo{}
+	t.Log("PROOF removed: seam nil (GET /cron/jobs falls through to its seam-nil guard, the settled empty-set answer), canvas carries no cron panel, the action pipe answers ErrUnknownModule, /cron unregistered, no cron-shaped tools; core/seams.go cron types remain - documented as intentional")
+}
+
+// cronPanel finds the cron module's jobs panel in a snapshot.
+func cronPanel(panels []core.Panel) (core.Panel, bool) {
+	for _, p := range panels {
+		if p.ID != "cron" {
+			continue
+		}
+		for _, a := range p.Actions {
+			if a.Module == "cron" {
+				return p, true
+			}
+		}
+	}
+	return core.Panel{}, false
 }

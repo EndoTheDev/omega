@@ -84,7 +84,7 @@ reference: `docs/tui.md`, module-owned command owners.
 | `http_channel/` | channel        | HTTP/SSE delivery channel (omega serve transport)    |
 | `tui/`          | frontend       | Terminal frontend (Bubble Tea TUI, themes, @file)    |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading)   |
-| `cron/`         | cron, TUI      | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron) |
+| `cron/`         | cron, TUI, panels | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron, the jobs canvas panel - arc 6 capsule) |
 
 ## Writing an module
 
