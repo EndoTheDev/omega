@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -490,4 +492,181 @@ func cronPanel(panels []core.Panel) (core.Panel, bool) {
 		}
 	}
 	return core.Panel{}, false
+}
+
+// TestMemoryRemovalProof is the arc 6 memory-capsule proof (card
+// t_da1fcc76), the fourth worked proof in this file. Memory is the
+// capsule that was born one: the seam (ctx.Memory), the memory tool and
+// the prompt section all ship from the plugin's single Mount, and the
+// module ships nothing else - no command, no REST route, and no canvas
+// panel (nothing rendered memory before the arc; adding one is a
+// behavior change, not a migration). The two mounts are the proof:
+//
+//  1. WITH memory: the seam is mounted, the registry carries the
+//     memory tool and a tool add lands in the store, the prompt section
+//     rides the sectioner seam, and the action pipe answers
+//     ErrUnknownModule - the module declares no actions, so the pipe
+//     has nothing to route even on the full mount.
+//  2. WITHOUT memory: the seam is nil, no memory-shaped tool is left,
+//     no sectioner renders the memory block, the pipe still answers
+//     ErrUnknownModule, and cron (the one module that reads
+//     ctx.Memory, for deliver=memory jobs) still mounts - its
+//     "no memory extension loaded" guard is the documented degrade,
+//     so no Requires edge exists and none is needed. The two store
+//     files stay on disk: data is not code.
+//
+// The core.MemoryProvider type compiles in the proof on purpose - the
+// seam vocabulary lives in core/ and layers never import modules (the
+// recipe's intentional residue). The tool-name references the host
+// carries for the ephemeral deny lists (modules/http_channel,
+// modules/tui) are name-based guards, not module surfaces: they see a
+// registry without the tool and do nothing.
+func TestMemoryRemovalProof(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	cfg := DefaultConfig()
+	// the store files default to home-root-relative names that resolve
+	// against the process CWD in a test - point them into the proof's
+	// own home explicitly
+	cfg.Memory.File = filepath.Join(home, "memory.md")
+	cfg.Memory.UserProfileFile = filepath.Join(home, "user.md")
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// recipe step 1, declared data: no other plugin's Requires may name
+	// memory - a hit here is the removal recipe's stop signal
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if req == "memory" {
+				t.Fatalf("FULL MOUNT precondition: %q requires memory - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.Memory == nil {
+		t.Fatal("FULL MOUNT: memory seam nil - capsule did not mount")
+	}
+	t.Log("PROOF mount=full: seam mounted (ctx.Memory), tool + prompt section from the same Mount")
+
+	// the tool face: the registry carries the memory tool and a real
+	// add lands in the store
+	var memTool core.Tool
+	foundTool := false
+	for _, tp := range ctx.ToolProviders {
+		for name, tool := range tp.Tools() {
+			if name == "memory" {
+				memTool, foundTool = tool, true
+			}
+		}
+	}
+	if !foundTool {
+		t.Fatal("FULL MOUNT: the memory tool is missing from the registry")
+	}
+	res, runErr := memTool.Run(context.Background(), map[string]any{
+		"action": "add", "target": "memory", "content": "arc 6 proof entry",
+	})
+	if runErr != nil || !strings.Contains(res, `"success":true`) {
+		t.Fatalf("FULL MOUNT: memory tool add failed (res=%s err=%v)", res, runErr)
+	}
+	t.Log("PROOF tool wiring: memory add pushed the entry into the store - " + res)
+
+	// the user target is the same tool's second store
+	res, runErr = memTool.Run(context.Background(), map[string]any{
+		"action": "add", "target": "user", "content": "proof user row",
+	})
+	if runErr != nil || !strings.Contains(res, `"success":true`) {
+		t.Fatalf("FULL MOUNT: memory tool user add failed (res=%s err=%v)", res, runErr)
+	}
+
+	// the prompt-section face: the same store renders as the snapshot
+	// block through the sectioner seam
+	secs := ctx.Memory.(core.PromptSectioner).PromptSections(core.PromptBuildOptions{})
+	if len(secs) != 1 {
+		t.Fatalf("FULL MOUNT: prompt sections = %d, want the one memory block", len(secs))
+	}
+	if body := secs[0].Body; !strings.Contains(body, "MEMORY (your personal notes)") || !strings.Contains(body, "arc 6 proof entry") {
+		t.Fatalf("FULL MOUNT: prompt section lost the entry: %.120q", body)
+	}
+	t.Log("PROOF prompt face: the snapshot block carries the entry verbatim")
+
+	// the action pipe: memory ships no panel and no actions - even the
+	// full mount has nothing to route, and every capsule that ships a
+	// panel rides the snapshot + deltas + action pipe instead
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	for _, p := range canvas.Snapshot() {
+		if p.ID == "memory" {
+			t.Fatalf("FULL MOUNT: unexpected memory panel in the snapshot: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "memory" {
+				t.Fatalf("FULL MOUNT: unexpected memory-qualified action on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := canvas.Dispatch(core.ActionCall{Module: "memory", Action: "list_entries"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("FULL MOUNT: dispatch answered %v, want ErrUnknownModule (memory declares no actions)", err)
+	}
+	t.Log("PROOF action-pipe: no panel, no actions - the pipe answers ErrUnknownModule on the full mount (module ships no canvas surface by design)")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "memory" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctx2.Memory != nil {
+		t.Fatal("REMOVED MOUNT: memory seam still mounted")
+	}
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.Contains(name, "memory") {
+				t.Fatalf("REMOVED MOUNT: memory-shaped tool %q survived the removal", name)
+			}
+		}
+	}
+	for _, ps := range ctx2.PromptSectioners {
+		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
+			if strings.Contains(s.Body, "MEMORY (your personal notes)") || strings.Contains(s.Body, "USER PROFILE (") {
+				t.Fatalf("REMOVED MOUNT: the memory prompt block survived the removal: %.120q", s.Body)
+			}
+		}
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "memory", Action: "list_entries"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
+	}
+	// the dependent that reads the seam without a Requires edge: cron
+	// mounts still, and its deliver=memory jobs degrade through the
+	// documented nil-guard ("no memory extension loaded") at fire time
+	if ctx2.Cron == nil {
+		t.Fatal("REMOVED MOUNT: cron did not mount - the memory removal must not take a dependent")
+	}
+	// data is not code: the two store files stay on disk
+	for _, f := range []string{cfg.Memory.File, cfg.Memory.UserProfileFile} {
+		if _, err := os.Stat(f); err != nil {
+			t.Fatalf("REMOVED MOUNT: store file %s vanished - data is not code", f)
+		}
+	}
+	// core types remain - intentional (the seam signature references
+	// them; layers never import modules). Compile-time proof:
+	_ = core.MemoryProvider(nil)
+	t.Log("PROOF removed: seam nil, no memory-shaped tools, no memory prompt block, the action pipe answers ErrUnknownModule, cron keeps mounting (deliver=memory degrades through its nil-guard), the store files stay on disk - data is not code; core/seams.go memory types remain - documented as intentional")
 }
