@@ -481,6 +481,9 @@
   // A hidden tab skips its ticks; an in-flight poll never overlaps.
   const RUNNING_POLL_MS = 2000;
   let runningTimer: ReturnType<typeof setInterval> | null = null;
+  // canvas snapshot poll: the between-runs catch-up (arc 4b toast law)
+  const CANVAS_POLL_MS = 15_000;
+  let canvasTimer: ReturnType<typeof setInterval> | null = null;
   let runningPollInFlight = false;
   function tickRunningPoll() {
     if (typeof document !== "undefined" && document.hidden) return;
@@ -1404,8 +1407,13 @@
     runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
     // the canvas snapshot: the load-time catch-up (settled Q3b) - the
     // panels mounted before this page loaded arrive here; everything
-    // later rides the run-stream deltas
+    // later rides the run-stream deltas. Deltas only flow while a run
+    // is live, so a modest snapshot poll is the canvas' between-runs
+    // catch-up too (arc 4b: a toast emitted while nothing runs arrives
+    // here, fingerprint-deduped) - the same poll shape the dock keeps
+    // for its REST list.
     void canvas.refresh();
+    canvasTimer = setInterval(() => { void canvas.refresh(); }, CANVAS_POLL_MS);
 
     // boot focus: the URL's session owns it ("reload lands on the
     // focused session") - an existing chat tab bound to that id is
@@ -1449,6 +1457,7 @@
     window.removeEventListener("popstate", onPop);
     if (healthTimer) clearInterval(healthTimer);
     if (runningTimer) clearInterval(runningTimer);
+    if (canvasTimer) clearInterval(canvasTimer);
     if (spinnerTimer) clearInterval(spinnerTimer);
     if (typeof document !== "undefined" && savedTitle !== null)
       document.title = savedTitle;

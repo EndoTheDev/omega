@@ -58,8 +58,8 @@ func (c *panelConsole) ClearError()                {}
 func (c *panelConsole) Style(kind string) core.TUIStyle {
 	return func(s string) string { return s }
 }
-func (c *panelConsole) CWD() string            { return "" }
-func (c *panelConsole) Ext() *core.Context     { return nil }
+func (c *panelConsole) CWD() string        { return "" }
+func (c *panelConsole) Ext() *core.Context { return nil }
 
 // runeKey wraps a rune press for screen driving.
 func runeKey(s string) tea.KeyMsg {
@@ -318,5 +318,57 @@ func TestTUIPanelRoundTrip(t *testing.T) {
 	shell2.screen.Update(runeKey("1"), &panelConsole{})
 	if len(fake.calls) != 1 || fake.calls[0].Action != "toggle" {
 		t.Fatalf("round-trip calls = %+v", fake.calls)
+	}
+}
+
+// TestToastLineFromCanvasDelta: the toast panel (arc 4b) renders its
+// payload row through the wire shape - title rides the bar, empty
+// payload and wrong kinds are plain panel deltas. The failed verdict
+// drives the longer lifetime.
+func TestToastLineFromCanvasDelta(t *testing.T) {
+	row := map[string]any{"title": "task t9 done", "verdict": "ok"}
+	p := core.Panel{ID: "toast", Title: "Toast", Kind: "toast", Payload: row}
+	line, failed := toastLine(p)
+	if line != "task t9 done" || failed {
+		t.Fatalf("ok toast: %q failed=%v", line, failed)
+	}
+	p.Payload = map[string]any{"title": "cron n2 finished", "verdict": "failed"}
+	if line, failed = toastLine(p); line != "cron n2 finished" || !failed {
+		t.Fatalf("failed toast: %q failed=%v", line, failed)
+	}
+	// a list panel is a persistent surface, not a toast
+	p = core.Panel{ID: "notifications", Kind: "list", Payload: row}
+	if line, _ := toastLine(p); line != "" {
+		t.Fatalf("list panel must not toast: %q", line)
+	}
+	// empty toast payload (nothing emitted yet): plain delta path
+	p = core.Panel{ID: "toast", Kind: "toast"}
+	if line, _ := toastLine(p); line != "" {
+		t.Fatalf("empty toast must render nothing: %q", line)
+	}
+}
+
+// TestCanvasDeltaToastRunsStatusLine: the model Update consumes a toast
+// delta - the status line carries the notice until the tick clears it.
+func TestCanvasDeltaToastRunsStatusLine(t *testing.T) {
+	m := model{}
+	p := core.Panel{ID: "toast", Title: "Toast", Kind: "toast",
+		Payload: map[string]any{"title": "chat s1 finished", "verdict": "ok"}}
+	next, cmd := m.Update(canvasDeltaMsg{panel: p})
+	m = next.(model)
+	if !strings.Contains(m.statusLine(), "toast: chat s1 finished") {
+		t.Fatalf("toast did not land on the status line: %q", m.statusLine())
+	}
+	if cmd == nil {
+		t.Fatalf("toast must arm its expire tick")
+	}
+	// the drain re-arms in the same batch: the tick batch carries both
+	next, cmd2 := m.Update(toastExpiredMsg{})
+	m = next.(model)
+	if strings.Contains(m.statusLine(), "toast:") {
+		t.Fatalf("expired toast still on the status line: %q", m.statusLine())
+	}
+	if cmd2 != nil {
+		t.Fatalf("expiry carries no arm")
 	}
 }

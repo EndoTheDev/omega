@@ -68,8 +68,8 @@ func TestMountWithConfigPathOverride(t *testing.T) {
 	if ctx.Notifications == nil {
 		t.Fatalf("seam not mounted on a config path")
 	}
-	s, ok := ctx.Notifications.(*Store)
-	if !ok || s.db == nil {
+	e, ok := ctx.Notifications.(*emittingStore)
+	if !ok || e.store.db == nil {
 		t.Fatalf("unexpected seam implementation: %T", ctx.Notifications)
 	}
 }

@@ -124,11 +124,11 @@
     markNotificationRead,
     markAllNotificationsRead,
     notificationAge,
-    subscribeNotifications,
     upsertRecord,
     toastLifetime,
     type OmegaNotification,
   } from "../../composables/notifications";
+  import { onToastPanel } from "../../composables/canvas";
   import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
 
   const emit = defineEmits<{
@@ -150,7 +150,28 @@
 
   let toastKey = 0;
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  let closeStream: (() => void) | null = null;
+  let closeToasts: (() => void) | null = null;
+
+  // decodeToastScreen is the dock's toast decoder: the canvas feed hands
+  // the payload verbatim (the contract never knows the record shape);
+  // this screen owns the OmegaNotification read. An unusable payload is
+  // skipped - a toast that never fires is cleaner than a broken frame.
+  function decodeToast(payload: unknown): OmegaNotification | null {
+    if (!payload || typeof payload !== "object") return null;
+    const p = payload as Record<string, unknown>;
+    if (typeof p.id !== "number") return null;
+    const kind = p.kind;
+    if (kind !== "task" && kind !== "cron" && kind !== "chat") return null;
+    return {
+      id: p.id,
+      kind,
+      source_id: typeof p.source_id === "string" ? p.source_id : "",
+      title: typeof p.title === "string" ? p.title : "",
+      verdict: p.verdict === "failed" ? "failed" : "ok",
+      created_at: typeof p.created_at === "string" ? p.created_at : "",
+      read: p.read === true,
+    };
+  }
 
   // badge sums unread finished-things and pending agent questions: the
   // bell is the one place a user looks for "something needs me".
@@ -264,7 +285,15 @@
   onMounted(async () => {
     void refresh();
     document.addEventListener("click", onDocClick);
-    closeStream = subscribeNotifications((n) => {
+    // Toasts are canvas events (arc 4b): the notification capsule ships
+    // its toast panel and this screen renders from the canvas - deltas
+    // (instant, in-run) plus the snapshot catch-up (poll cadence) feed
+    // the same funnel; the fingerprint upstream dedupes replays. The
+    // list itself refreshes on open + the poll below - no private SSE
+    // stream stays open for a surface the canvas carries.
+    closeToasts = onToastPanel((payload) => {
+      const n = decodeToast(payload);
+      if (!n) return;
       // reload truth stays with the server's unread count; this client
       // counts only NEW unread frames (a read record seen live just
       // re-renders its row)
@@ -282,7 +311,7 @@
     document.removeEventListener("click", onDocClick);
     for (const id of timers) clearTimeout(id);
     if (verdictPoll) clearInterval(verdictPoll);
-    closeStream?.();
+    closeToasts?.();
   });
 </script>
 

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -60,6 +61,51 @@ func openCanvasFeed(pctx *core.Context) *canvasFeed {
 // can actually arrive - the drain cmd blocks otherwise).
 func (f *canvasFeed) hasPanels() bool {
 	return f != nil && f.canvas != nil
+}
+
+// The TUI toast (arc 4b): a panel of kind "toast" is a finished-thing
+// notice, not a persistent panel surface. The payload row is decoded
+// through its wire shape (the shell holds no module types - layer law)
+// and renders one status-bar line for the toast lifetime.
+
+// toastLifetime is how long a toast rides the status bar. failed
+// verdicts stay longer - the same asymmetry the webui's stack keeps.
+const tuiToastLifetime = 6 * time.Second
+const tuiToastFailedLifetime = 12 * time.Second
+
+// toastExpiredMsg clears the transient toast line.
+type toastExpiredMsg struct{}
+
+// toastLine renders one toast panel's payload as a status-bar line.
+// The bool reports a failed verdict (the failed lifetime is longer).
+// Empty payload or a toast-shaped payload that cannot decode returns ""
+// and the delta is treated like any other panel delta.
+func toastLine(p core.Panel) (string, bool) {
+	if p.Kind != "toast" || p.Payload == nil {
+		return "", false
+	}
+	b, err := json.Marshal(p.Payload)
+	if err != nil {
+		return "", false
+	}
+	var r struct {
+		Title   string `json:"title"`
+		Verdict string `json:"verdict"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil || r.Title == "" {
+		return "", false
+	}
+	return r.Title, r.Verdict == "failed"
+}
+
+// toastExpireCmd arms the lifetime tick; the re-arm lives on the
+// canvasDeltaMsg case (a newer toast resets the clock by re-arming).
+func (m model) toastExpireCmd(failed bool) tea.Cmd {
+	lifetime := tuiToastLifetime
+	if failed {
+		lifetime = tuiToastFailedLifetime
+	}
+	return tea.Tick(lifetime, func(time.Time) tea.Msg { return toastExpiredMsg{} })
 }
 
 // canvasDeltaMsg is one canvas delta delivered into the model loop.

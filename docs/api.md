@@ -29,6 +29,9 @@ documented below that is not in that mux is not real.
 | `/tasks`                             | GET, POST  | kanban board (list/create, `?board=` picker)    |
 | `/tasks/{id}`                        | GET, PATCH | task detail (task+comments+events) / edits     |
 | `/tasks/{id}/comments`               | POST       | add a comment (author default: `web`)          |
+| `/notifications`                     | GET        | finished-things list + unread (`?unread=1`, `?limit/?offset`) |
+| `/notifications/read`                | POST       | mark one (`{"id": N}`) or all (`{"all": true}`) |
+| `/notifications/events`              | GET        | SSE record stream (the public API surface; the webui's toasts ride the canvas) |
 | `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector |
 | `/tools`                             | GET        | tool inventory                                 |
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501) |
@@ -256,6 +259,25 @@ window help reports what startup auto-probed).
   comment.
 
 All answer 501 when the kanban seam is not mounted.
+
+### Finished things (notifications)
+
+- `GET /notifications` — records newest-first (`?unread=1` filter,
+  `?limit/?offset` paging, default 50, cap 200); the payload carries the
+  live unread count over the whole set, not the page.
+- `POST /notifications/read` — mark one (`{"id": N}`; a ghost id 404s)
+  or everything (`{"all": true}`).
+- `GET /notifications/events` — SSE: each subsequent emit becomes one
+  `notification` frame.
+
+These routes STAY (settled Q6a): they are the capsule's public REST
+surface. The module's view-model rides the canvas (arc 4b): the list
+panel and the toast panel appear on `GET /ui/canvas`, every emit pushes
+a toast delta, and row mark-read actions dispatch through
+`POST /ui/actions` with `{"id": N}` args. The webui renders toasts from
+the canvas, not from this SSE route. All answer 501 when the
+notifications seam is not mounted - removing the module removes the
+panels, the toast events and this surface together.
 
 ### POST /attach-image
 

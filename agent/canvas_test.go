@@ -271,3 +271,107 @@ func TestConcurrentSnapshotUpdateDispatch(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// sinkProviderStub is a module whose panel state changes outside the
+// action pipe: it records the update closure NewCanvas installs.
+type sinkProviderStub struct {
+	*panelProviderStub
+	mu     sync.Mutex
+	update func(core.Panel) error
+	got    bool
+}
+
+func (s *sinkProviderStub) SetPanelUpdate(update func(core.Panel) error) {
+	s.mu.Lock()
+	s.update, s.got = update, update != nil
+	s.mu.Unlock()
+}
+
+// TestSinkInstallationAndRoute: a PanelUpdateSink provider gets the
+// update closure installed at registration, bound to its own module
+// namespace - a push updates the snapshot and rides the delta emitter
+// exactly like an action-pipe refresh.
+func TestSinkInstallationAndRoute(t *testing.T) {
+	s := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "notifications", panels: []core.Panel{
+		panel("notifications", "list", act("mark_all", "notifications")),
+	}}}
+	var deltas []core.Panel
+	c, err := mountedCtx(t, []core.PanelProvider{s}, func(ev core.Event) {
+		if d, ok := ev.(core.ViewModelDelta); ok {
+			deltas = append(deltas, d.Panel)
+		}
+	})
+	if err != nil {
+		t.Fatalf("new canvas: %v", err)
+	}
+	s.mu.Lock()
+	got, update := s.got, s.update
+	s.mu.Unlock()
+	if !got || update == nil {
+		t.Fatalf("sink not installed at registration")
+	}
+	if err := update(core.Panel{ID: "notifications", Kind: "list", Payload: "pushed"}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	snap := c.Snapshot()
+	if len(snap) != 1 || snap[0].Payload != "pushed" {
+		t.Fatalf("push did not land in the namespace: %+v", snap)
+	}
+	if len(deltas) != 1 || deltas[0].Payload != "pushed" {
+		t.Fatalf("push did not emit a delta: %+v", deltas)
+	}
+}
+
+// TestSinksStayInTheirNamespace: each sink's closure is bound to its
+// own module namespace - two providers pushing the same panel id land
+// as two distinct panels, not one shared slot.
+func TestSinksStayInTheirNamespace(t *testing.T) {
+	mk := func(name string) *sinkProviderStub {
+		return &sinkProviderStub{panelProviderStub: &panelProviderStub{name: name, panels: []core.Panel{
+			panel("status", "plain", act("refresh", name)),
+		}}}
+	}
+	a, b := mk("notifications"), mk("kanban")
+	c, err := mountedCtx(t, []core.PanelProvider{a, b}, nil)
+	if err != nil {
+		t.Fatalf("new canvas: %v", err)
+	}
+	a.mu.Lock()
+	updateA := a.update
+	a.mu.Unlock()
+	b.mu.Lock()
+	updateB := b.update
+	b.mu.Unlock()
+	if updateA == nil || updateB == nil {
+		t.Fatalf("sinks not installed")
+	}
+	_ = updateA(core.Panel{ID: "status", Kind: "plain", Payload: "from-a"})
+	_ = updateB(core.Panel{ID: "status", Kind: "plain", Payload: "from-b"})
+	snap := c.Snapshot()
+	if len(snap) != 2 {
+		t.Fatalf("two namespaces, two panels: %+v", snap)
+	}
+	// snapshot order: mount order - notifications' seed panel replaced
+	// by its push, kanban's likewise; the payloads must not cross
+	if snap[0].Payload != "from-a" || snap[1].Payload != "from-b" {
+		t.Fatalf("namespace closures leaked: %+v", snap)
+	}
+}
+
+// TestActionlessProviderGetsNoSink: a provider without actions
+// contributes nothing (silent registration) and is not handed a sink -
+// no namespace exists to bind to.
+func TestActionlessProviderGetsNoSink(t *testing.T) {
+	s := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "silent", panels: []core.Panel{
+		panel("muted", "plain"),
+	}}}
+	if _, err := mountedCtx(t, []core.PanelProvider{s}, nil); err != nil {
+		t.Fatalf("new canvas: %v", err)
+	}
+	s.mu.Lock()
+	got := s.got
+	s.mu.Unlock()
+	if got {
+		t.Fatalf("actionless provider must not receive a sink")
+	}
+}

@@ -324,6 +324,7 @@ type model struct {
 	theme                Theme           // active color/style theme
 	trustState           string          // "trusted" / "untrusted" / "" (no AGENTS.md), shown in status bar
 	notifications        string          // "bell" / "desktop" / "off", fired on turn complete
+	toastText            string          // transient canvas toast line (arc 4b); "" = none
 	version              string          // build version for splash display
 	cwd                  string          // working directory passed from host
 	lastToolCall         string          // last tool call name, for syntax highlighting results
@@ -503,8 +504,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case canvasDeltaMsg:
 		// Canvas delta (in-process subscription, arc 3d): the open
 		// view re-snapshots on its next View; no state is stored
-		// here. Re-arm the drain so later deltas keep arriving.
+		// here. Toast-kinded panels (arc 4b) are the transient
+		// exception: a finished-thing notice rides the status bar
+		// for its lifetime, rendered from the canvas by both
+		// frontends - no per-frontend toast chrome. Re-arm the drain
+		// so later deltas keep arriving.
+		if line, failed := toastLine(msg.panel); line != "" {
+			m.toastText = line
+			return m, tea.Batch(m.waitForCanvas(), m.toastExpireCmd(failed))
+		}
 		return m, m.waitForCanvas()
+
+	case toastExpiredMsg:
+		m.toastText = ""
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.termWidth = msg.Width
@@ -2472,6 +2485,13 @@ func (m model) statusLine() string {
 		line += " | thinking: " + m.thinkingLevel
 	}
 	line += fmt.Sprintf(" | tokens: %d/%d | %s", tokens, window, sess)
+	if m.toastText != "" {
+		// The canvas toast (arc 4b): a finished-thing notice rides the
+		// status bar for its lifetime, then the tick clears it. It
+		// appends here instead of a line appearing and breaking the
+		// fixed pane geometry.
+		line += fmt.Sprintf(" | toast: %s", m.toastText)
+	}
 	// Show subagent count if any are running.
 	if m.extensions != nil && m.extensions.PendingDelegations != nil {
 		if pending := m.extensions.PendingDelegations(); pending > 0 {

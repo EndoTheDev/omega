@@ -264,3 +264,27 @@ test("selectBoardFor publishes the stash + the event, skips the empty pick", () 
   if (typeof window === "undefined") return; // node: the guard is the pin
   assert.equal(selectBoardFor(""), undefined);
 });
+// --- arc 4b (t_9339ad05): the toast is a canvas event ---
+
+test("NotificationCenter renders toasts from the canvas - no per-frontend SSE stream", () => {
+  const dock = read("modules", "ui", "app", "components", "notifications", "NotificationCenter.vue");
+  const compo = read("modules", "ui", "app", "composables", "notifications.ts");
+  // the dock subscribes to the canvas feed, not its own EventSource
+  assert.ok(dock.includes("onToastPanel("), "the dock consumes the canvas toast feed");
+  assert.ok(dock.includes("decodeToast("), "the dock owns the record-shape read");
+  // the per-frontend toast code is gone from composable + dock
+  assert.ok(!compo.includes("subscribeNotifications") && !dock.includes("subscribeNotifications"),
+    "the private SSE toast client is deleted, not just unused");
+  assert.ok(!compo.includes("/notifications/events"), "no SSE toast stream stays reachable from the shell");
+});
+
+test("canvas.ts: the toast feed rides both transports, deduped by the fingerprint", () => {
+  const src = read("modules", "ui", "app", "composables", "canvas.ts");
+  assert.ok(src.includes("function feedToastPanel("), "the funnel exists");
+  assert.ok(/applyDelta\(raw: unknown\)[\s\S]*feedToastPanel\(p\)/.test(src), "deltas feed the funnel");
+  assert.ok(/applySnapshot\(list: unknown\)[\s\S]*feedToastPanel\(p\)/.test(src), "snapshots feed the funnel (the between-runs catch-up)");
+  assert.ok(src.includes('p.kind !== "toast"'), "only toast-kinded panels pass");
+  assert.ok(src.includes("lastToastFingerprint"), "the fingerprint dedupes replays");
+  // the contract stays record-blind: handlers get the payload verbatim
+  assert.ok(!src.includes("OmegaNotification"), "canvas.ts knows no record shape");
+});

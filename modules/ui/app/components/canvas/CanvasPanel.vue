@@ -4,7 +4,27 @@
       <span class="canvas-title">{{ panel.title }}</span>
       <span class="canvas-kind">{{ panel.kind }}</span>
     </header>
-    <pre class="canvas-payload">{{ payloadText }}</pre>
+    <div
+      v-if="rows.length"
+      class="canvas-rows">
+      <div
+        v-for="(r, i) in rows"
+        :key="i"
+        class="canvas-row"
+        :class="{ 'canvas-row-read': r.read === true }">
+        <span class="canvas-row-text">{{ rowText(r, i) }}</span>
+        <button
+          v-if="rowBinding(panel, r)"
+          class="canvas-row-action"
+          :disabled="stateOf(panel.id, rowBinding(panel, r)!.action.id).status === 'pending'"
+          @click="$emit('invoke', panel, rowBinding(panel, r)!.action, rowBinding(panel, r)!.args)">
+          {{ rowBinding(panel, r)!.action.label }}
+        </button>
+      </div>
+    </div>
+    <pre
+      v-else
+      class="canvas-payload">{{ payloadText }}</pre>
     <div
       v-if="panel.actions.length"
       class="canvas-actions">
@@ -41,11 +61,67 @@
   }>();
 
   defineEmits<{
-    invoke: [panel: CanvasPanel, action: CanvasPanelAction];
+    invoke: [panel: CanvasPanel, action: CanvasPanelAction, args?: unknown];
   }>();
 
   const payloadText = computed(() => formatCanvasPayload(props.panel.payload));
   const pendingLabel = "pending";
+
+  // Rows (arc 4b vocabulary growth): a payload carrying a `rows` array
+  // renders row lines instead of the JSON dump; a row may carry one
+  // action binding (`action: {action, label, args}`) - the renderer
+  // stays dumb: it renders the declared label, resolves the call
+  // against the panel's declared actions (module comes from the
+  // descriptor, never from the row) and passes the declared args.
+  // Notifications is the first consumer; nothing here knows the word.
+  interface CanvasRowBinding {
+    action: string;
+    label?: string;
+    args?: unknown;
+  }
+  interface CanvasRow {
+    id?: unknown;
+    kind?: unknown;
+    title?: unknown;
+    verdict?: unknown;
+    read?: unknown;
+    action?: unknown;
+  }
+  const rows = computed<CanvasRow[]>(() => {
+    const p = props.panel.payload;
+    if (!p || typeof p !== "object") return [];
+    const rs = (p as { rows?: unknown }).rows;
+    if (!Array.isArray(rs)) return [];
+    return rs.filter((r): r is CanvasRow => !!r && typeof r === "object");
+  });
+
+  function bindingOf(r: CanvasRow): CanvasRowBinding | null {
+    const b = r.action;
+    if (!b || typeof b !== "object") return null;
+    const cast = b as CanvasRowBinding;
+    if (typeof cast.action !== "string" || !cast.action) return null;
+    return cast;
+  }
+
+  // rowBinding resolves the row's declared call against the panel's
+  // actions: the descriptor owns module + state key, the row owns
+  // args. An unknown action id renders no button (the row binding
+  // cannot invent a module).
+  function rowBinding(panel: CanvasPanel, r: CanvasRow): { action: CanvasPanelAction; args?: unknown } | null {
+    const b = bindingOf(r);
+    if (!b) return null;
+    const a = panel.actions.find((x) => x.id === b.action);
+    if (!a) return null;
+    return { action: a, args: b.args };
+  }
+
+  function rowText(r: CanvasRow, i: number): string {
+    const kind = typeof r.kind === "string" && r.kind ? r.kind : "";
+    const title = typeof r.title === "string" ? r.title : "";
+    const verdict = r.verdict === "failed" ? " (failed)" : "";
+    const id = typeof r.id === "number" || typeof r.id === "string" ? String(r.id) : String(i + 1);
+    return `#${id} ${kind ? kind + ": " : ""}${title}${verdict}`.trim() || `#${id}`;
+  }
 
   // the LAST errored action's reason renders - actions are independent
   // pipe calls; each failed button's error shows under the action row
