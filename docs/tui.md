@@ -77,6 +77,10 @@ the cron module (`modules/cron/`).
    registers `/cron` - the command is absent from `knownCommands`
    successors, `/help`, and dispatch. Gate:
    `go test ./cmd/omega/ -run TestModuleOmissionDropsTUICommands`.
+   The canvas carries no cron panel either - the jobs panel rides the
+   same `Mount()` as the command (arc 6 capsule); the canvas host tab
+   simply renders the other modules. Removal proof:
+   `go test ./cmd/omega/ -run TestCronRemovalProof`.
 3. webui end: the serve host mounts no `CronProvider`, so `GET
    /cron/jobs` reads an empty listing and `modules/cron/`'s
    `ui/CronJobs.vue` panel has no rows to render. A full removal
