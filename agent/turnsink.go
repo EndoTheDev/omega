@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -18,7 +17,7 @@ import (
 type TurnSink interface {
 	// AppendTurnMessage persists one finished message in run order.
 	// ctx is the loop's run context.
-	AppendTurnMessage(ctx context.Context, msg ai.Message) error
+	AppendTurnMessage(ctx context.Context, msg core.Message) error
 }
 
 // WithTurnSink returns a child context carrying the run's TurnSink.
@@ -42,16 +41,16 @@ func RunTurnSink(ctx context.Context) TurnSink {
 // inputs, whose explicit parents the sink honors). The loop persists
 // them through the TurnSink before the first turn; the already
 // persisted history in Messages is never rewritten.
-func WithPersistInput(ctx context.Context, messages []ai.Message) context.Context {
+func WithPersistInput(ctx context.Context, messages []core.Message) context.Context {
 	if len(messages) == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, persistInputKey{}, append([]ai.Message(nil), messages...))
+	return context.WithValue(ctx, persistInputKey{}, append([]core.Message(nil), messages...))
 }
 
 // PersistInput returns the run's new input messages, or nil.
-func PersistInput(ctx context.Context) []ai.Message {
-	msgs, _ := ctx.Value(persistInputKey{}).([]ai.Message)
+func PersistInput(ctx context.Context) []core.Message {
+	msgs, _ := ctx.Value(persistInputKey{}).([]core.Message)
 	return msgs
 }
 
@@ -82,8 +81,8 @@ type storeTurnSink struct {
 	headPinned   bool
 }
 
-func (s *storeTurnSink) AppendTurnMessage(ctx context.Context, msg ai.Message) error {
-	a, isAssistant := msg.(ai.Assistant)
+func (s *storeTurnSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
+	a, isAssistant := msg.(core.Assistant)
 	if isAssistant &&
 		a.Content == "" &&
 		(a.Thinking == nil || *a.Thinking == "") &&

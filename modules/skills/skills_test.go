@@ -16,7 +16,7 @@ import (
 var (
 	_ core.SkillsProvider = (*SkillsProvider)(nil)
 	_ core.ToolProvider   = (*SkillsProvider)(nil)
-	_ agent.Plugin         = (*Plugin)(nil)
+	_ agent.Plugin        = (*Plugin)(nil)
 )
 
 // makeSkillDir creates a temp skills directory with one skill.
@@ -370,6 +370,7 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 		t.Fatalf("expected 1 skill from configured dir, got %d", len(skills))
 	}
 }
+
 // TestPromptSections verifies the skills provider contributes the
 // Available Skills section, and nil when no skills are installed.
 func TestPromptSections(t *testing.T) {

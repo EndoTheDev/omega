@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // variantSelectRequest is the select body: message_id is EITHER a
@@ -76,7 +75,7 @@ func (s *Server) handleSessionVariants(w http.ResponseWriter, r *http.Request) {
 		s.writeVariants(w, http.StatusOK, view)
 		return
 	}
-	if err := s.store.AppendMessage(r.Context(), id, ai.NewVariantSelect(branch, child)); err != nil {
+	if err := s.store.AppendMessage(r.Context(), id, core.NewVariantSelect(branch, child)); err != nil {
 		http.Error(w, "persist selection: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -61,7 +61,7 @@ func SSEData(reader *bufio.Reader) (string, bool, error) {
 	}
 }
 
-// Compatibility aliases: the provider contract (ToolSchema, Provider,
+// Compatibility aliases: the provider contract (core.ToolSchema, core.Provider,
 // ModelInfo) now lives in core (arc 1b2, t_d16468fd). Every provider
 // lane and module import of ai.* keeps compiling; the aliases
 // disappear when modules rewire in phase 2.

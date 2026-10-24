@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compile-time assertions.
@@ -16,8 +16,8 @@ var _ agent.Plugin = (*Plugin)(nil)
 // TestLoopBasic verifies the loop runs a simple one-turn conversation.
 func TestLoopBasic(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	events := make(chan core.Event, 64)
@@ -25,7 +25,7 @@ func TestLoopBasic(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 		})
 	}()
@@ -39,9 +39,9 @@ func TestLoopBasic(t *testing.T) {
 			got = append(got, "turn_start")
 		case core.StreamEvent:
 			switch v.Event.(type) {
-			case ai.ResponseChunk:
+			case core.ResponseChunk:
 				got = append(got, "response_chunk")
-			case ai.StreamEnd:
+			case core.StreamEnd:
 				got = append(got, "stream_end")
 			}
 		case core.AgentEnd:
@@ -70,7 +70,7 @@ func TestLoopNilProvider(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: nil,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 		})
 	}()
@@ -112,13 +112,13 @@ func TestPluginMount(t *testing.T) {
 // TestLoopWithToolCalls verifies a two-turn loop with a tool call.
 func TestLoopWithToolCalls(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -138,7 +138,7 @@ func TestLoopWithToolCalls(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("go")},
+			Messages: []core.Message{core.NewUser("go")},
 			Tools:    tools,
 			Events:   events,
 		})
@@ -161,6 +161,7 @@ func TestLoopWithToolCalls(t *testing.T) {
 		t.Fatal("no events received")
 	}
 }
+
 // TestLoopDeniedTool pins the run-scoped tool deny (agent.WithDeniedTools):
 // a provider-merged registry drops the denied name BEFORE the model sees
 // schemas or dispatch - a memory tool riding a ToolProvider vanishes for
@@ -168,13 +169,13 @@ func TestLoopWithToolCalls(t *testing.T) {
 // an IsError result instead of executing.
 func TestLoopDeniedTool(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "memory", Arguments: map[string]any{"action": "add"}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "memory", Arguments: map[string]any{"action": "add"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -196,7 +197,7 @@ func TestLoopDeniedTool(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(ctx, core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("go")},
+			Messages: []core.Message{core.NewUser("go")},
 			Tools:    map[string]core.Tool{},
 			ToolProviders: []core.ToolProvider{
 				core.DefaultToolProvider{ToolsMap: providerTools},

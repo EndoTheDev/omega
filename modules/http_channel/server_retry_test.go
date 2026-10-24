@@ -14,8 +14,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -25,16 +25,16 @@ import (
 // each run's Stream holds ITS channel by value at call time.
 type multiProvider struct {
 	modelName string
-	next      chan []ai.StreamEvent
+	next      chan []core.ProviderStreamEvent
 }
 
 func newMultiProvider(modelName string) *multiProvider {
-	return &multiProvider{modelName: modelName, next: make(chan []ai.StreamEvent)}
+	return &multiProvider{modelName: modelName, next: make(chan []core.ProviderStreamEvent)}
 }
 
-func (p *multiProvider) arm() { p.next = make(chan []ai.StreamEvent) }
+func (p *multiProvider) arm() { p.next = make(chan []core.ProviderStreamEvent) }
 
-func (p *multiProvider) ModelName() string { return p.modelName }
+func (p *multiProvider) ModelName() string             { return p.modelName }
 func (p *multiProvider) SetThinkingLevel(level string) {}
 func (p *multiProvider) WithThinkingLevel(level string) ai.Provider {
 	cp := *p
@@ -52,8 +52,8 @@ func (p *multiProvider) ModelInfo() (ai.ModelInfo, error) {
 	return ai.ModelInfo{}, nil
 }
 
-func (p *multiProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
-	events := make(chan ai.StreamEvent)
+func (p *multiProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	events := make(chan core.ProviderStreamEvent)
 	next := p.next
 	go func() {
 		defer close(events)
@@ -66,7 +66,7 @@ func (p *multiProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSch
 	return events
 }
 
-func (p *multiProvider) send(batch ...ai.StreamEvent) { p.next <- batch }
+func (p *multiProvider) send(batch ...core.ProviderStreamEvent) { p.next <- batch }
 
 // done closes the current script (run ends without a StreamEnd) and
 // re-arms for the next run.
@@ -111,7 +111,7 @@ func postRetry(t *testing.T, ts *httptest.Server, id string) *http.Response {
 }
 
 // messagesOf fetches the session's messages through the store.
-func messagesOf(t *testing.T, st *store.Store, id string) []ai.Message {
+func messagesOf(t *testing.T, st *store.Store, id string) []core.Message {
 	t.Helper()
 	msgs, err := st.GetMessages(context.Background(), id)
 	if err != nil {
@@ -156,22 +156,22 @@ func TestChatRetryAppendsBelowLastUserTurn(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("after retry len = %d, want 3 (user + two assistants)", len(msgs))
 	}
-	if _, ok := msgs[0].(ai.User); !ok {
-		t.Fatalf("messages[0] = %T, want ai.User", msgs[0])
+	if _, ok := msgs[0].(core.User); !ok {
+		t.Fatalf("messages[0] = %T, want core.User", msgs[0])
 	}
 	users := 0
 	for _, m := range msgs {
-		if _, ok := m.(ai.User); ok {
+		if _, ok := m.(core.User); ok {
 			users++
 		}
 	}
 	if users != 1 {
 		t.Fatalf("user turns = %d, want 1 (no duplicate user bubble)", users)
 	}
-	if msgs[1].(ai.Assistant).Content != "first answer" ||
-		msgs[2].(ai.Assistant).Content != "second answer" {
+	if msgs[1].(core.Assistant).Content != "first answer" ||
+		msgs[2].(core.Assistant).Content != "second answer" {
 		t.Fatalf("responses = %q/%q, want first answer/second answer (appended, not replaced)",
-			msgs[1].(ai.Assistant).Content, msgs[2].(ai.Assistant).Content)
+			msgs[1].(core.Assistant).Content, msgs[2].(core.Assistant).Content)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestChatRetryGatesOnLiveRun(t *testing.T) {
 	resp, cancel, sc := postChatStream(t, ts, "s9")
 	defer cancel()
 	defer resp.Body.Close()
-	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "busy"})
+	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "busy"})
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s9") })
 
@@ -227,7 +227,7 @@ func TestChatRetryCancelMidRunKeepsPartial(t *testing.T) {
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("retry status = %d, want 200", resp2.StatusCode)
 	}
-	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "kept partial"})
+	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "kept partial"})
 	stop, err := http.Post(ts.URL+"/sessions/s7/stop", "application/json", nil)
 	if err != nil {
 		t.Fatalf("stop: %v", err)
@@ -242,13 +242,13 @@ func TestChatRetryCancelMidRunKeepsPartial(t *testing.T) {
 	msgs := messagesOf(t, st, "s7")
 	users := 0
 	for _, m := range msgs {
-		if _, ok := m.(ai.User); ok {
+		if _, ok := m.(core.User); ok {
 			users++
 		}
 	}
 	var contents []string
 	for _, m := range msgs {
-		if a, ok := m.(ai.Assistant); ok && a.Content != "" {
+		if a, ok := m.(core.Assistant); ok && a.Content != "" {
 			contents = append(contents, a.Content)
 		}
 	}

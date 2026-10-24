@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // ---------------------------------------------------------------------------
@@ -51,16 +50,16 @@ func TestHandleSessionsCommandPopulated(t *testing.T) {
 		t.Fatalf("create s2: %v", err)
 	}
 	// Add messages so counts are non-zero.
-	for _, m := range []ai.Message{
-		ai.NewUser("hello one"),
-		ai.NewAssistant("hi one"),
-		ai.NewUser("hello two"),
+	for _, m := range []core.Message{
+		core.NewUser("hello one"),
+		core.NewAssistant("hi one"),
+		core.NewUser("hello two"),
 	} {
 		if err := s.AppendMessage(ctx, "s1", m); err != nil {
 			t.Fatalf("append s1: %v", err)
 		}
 	}
-	if err := s.AppendMessage(ctx, "s2", ai.NewUser("solo")); err != nil {
+	if err := s.AppendMessage(ctx, "s2", core.NewUser("solo")); err != nil {
 		t.Fatalf("append s2: %v", err)
 	}
 
@@ -139,7 +138,7 @@ func TestHandleTreeCommandWithParentChild(t *testing.T) {
 		t.Fatalf("create other: %v", err)
 	}
 	// Add a message to root so count > 0.
-	if err := s.AppendMessage(ctx, "root", ai.NewUser("root msg")); err != nil {
+	if err := s.AppendMessage(ctx, "root", core.NewUser("root msg")); err != nil {
 		t.Fatalf("append root: %v", err)
 	}
 
@@ -205,7 +204,7 @@ func TestHandleSearchCommandNoResults(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create s1: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello world")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hello world")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	res, err := HandleSearchCommand(ctx, s, "nonexistentterm12345")
@@ -223,7 +222,7 @@ func TestHandleSearchCommandMatchingWithLabel(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", "mylabel"); err != nil {
 		t.Fatalf("create s1: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("the quick brown fox")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("the quick brown fox")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	res, err := HandleSearchCommand(ctx, s, "fox")
@@ -279,17 +278,17 @@ func TestHandleInsightsCommandPopulated(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", "first"); err != nil {
 		t.Fatalf("create s1: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello world one")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hello world one")); err != nil {
 		t.Fatalf("append s1 u1: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewAssistant("response one")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewAssistant("response one")); err != nil {
 		t.Fatalf("append s1 a1: %v", err)
 	}
 
 	if err := s.CreateSession(ctx, "s2", "", "second"); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s2", ai.NewUser("hello world two")); err != nil {
+	if err := s.AppendMessage(ctx, "s2", core.NewUser("hello world two")); err != nil {
 		t.Fatalf("append s2 u1: %v", err)
 	}
 
@@ -605,10 +604,10 @@ func TestHandleExportCommandDefaultPath(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("hello")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("hello")); err != nil {
 		t.Fatalf("append user: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewAssistant("world")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewAssistant("world")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
 
@@ -662,7 +661,7 @@ func TestHandleExportCommandCustomPath(t *testing.T) {
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := s.AppendMessage(ctx, "s1", ai.NewUser("custom export")); err != nil {
+	if err := s.AppendMessage(ctx, "s1", core.NewUser("custom export")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 

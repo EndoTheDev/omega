@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -20,16 +19,16 @@ func transcriptFixture() []core.StoredMessage {
 	thinking := "let me check the file"
 	preamble := "running the check"
 	answer := "all green"
-	assistantA := ai.NewAssistant(preamble)
+	assistantA := core.NewAssistant(preamble)
 	assistantA.Thinking = &thinking
-	assistantA.ToolCalls = []ai.ToolCall{
+	assistantA.ToolCalls = []core.ToolCall{
 		{ID: "tc1", Name: "go_test", Arguments: map[string]any{"pkg": "./..."}},
 	}
-	assistantB := ai.NewAssistant(answer)
+	assistantB := core.NewAssistant(answer)
 	return []core.StoredMessage{
-		{Message: ai.NewUser("run tests"), CreatedAt: "2026-10-19T01:00:00Z"},
+		{Message: core.NewUser("run tests"), CreatedAt: "2026-10-19T01:00:00Z"},
 		{Message: assistantA, CreatedAt: "2026-10-19T01:00:01Z"},
-		{Message: ai.NewToolResult("PASS", "tc1", false), CreatedAt: "2026-10-19T01:00:02Z"},
+		{Message: core.NewToolResult("PASS", "tc1", false), CreatedAt: "2026-10-19T01:00:02Z"},
 		{Message: assistantB, CreatedAt: "2026-10-19T01:00:03Z"},
 	}
 }
@@ -39,23 +38,23 @@ func TestTranscriptItemsWireOrder(t *testing.T) {
 	// attach realistic timing: segment A thinking+response spans, the
 	// result's elapsed, segment B's response span
 	// (indices into transcriptFixture)
-	aa, ok := msgs[1].Message.(ai.Assistant)
+	aa, ok := msgs[1].Message.(core.Assistant)
 	if !ok {
 		t.Fatalf("msgs[1] not assistant")
 	}
-	aa.Timing = &ai.Timing{ThinkingMs: 1500, ResponseMs: 200}
+	aa.Timing = &core.Timing{ThinkingMs: 1500, ResponseMs: 200}
 	msgs[1].Message = aa
-	ab, ok := msgs[3].Message.(ai.Assistant)
+	ab, ok := msgs[3].Message.(core.Assistant)
 	if !ok {
 		t.Fatalf("msgs[3] not assistant")
 	}
-	ab.Timing = &ai.Timing{ResponseMs: 500}
+	ab.Timing = &core.Timing{ResponseMs: 500}
 	msgs[3].Message = ab
-	res, ok := msgs[2].Message.(ai.ToolResult)
+	res, ok := msgs[2].Message.(core.ToolResult)
 	if !ok {
 		t.Fatalf("msgs[2] not tool result")
 	}
-	res.Timing = &ai.Timing{ElapsedMs: 3000}
+	res.Timing = &core.Timing{ElapsedMs: 3000}
 	msgs[2].Message = res
 
 	items := buildTranscriptItems(msgs)
@@ -112,14 +111,14 @@ func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
 	// A [thinking? no - plain assistant with calls], results, segment B
 	// thinking + answer.
 	thinkingB := "now I can answer"
-	a1 := ai.NewAssistant("")
-	a1.ToolCalls = []ai.ToolCall{{ID: "tc9", Name: "go_test"}}
-	a2 := ai.NewAssistant("done")
+	a1 := core.NewAssistant("")
+	a1.ToolCalls = []core.ToolCall{{ID: "tc9", Name: "go_test"}}
+	a2 := core.NewAssistant("done")
 	a2.Thinking = &thinkingB
 	msgs := []core.StoredMessage{
-		{Message: ai.NewUser("check"), CreatedAt: "t0"},
+		{Message: core.NewUser("check"), CreatedAt: "t0"},
 		{Message: a1, CreatedAt: "t1"},
-		{Message: ai.NewToolResult("ok", "tc9", false), CreatedAt: "t2"},
+		{Message: core.NewToolResult("ok", "tc9", false), CreatedAt: "t2"},
 		{Message: a2, CreatedAt: "t3"},
 	}
 	items := buildTranscriptItems(msgs)
@@ -144,19 +143,19 @@ func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
 
 func TestTranscriptItemsSkipsEmptyAndForeign(t *testing.T) {
 	thinking := "hmm"
-	empty := ai.NewAssistant("")
-	withThinking := ai.NewAssistant("")
+	empty := core.NewAssistant("")
+	withThinking := core.NewAssistant("")
 	withThinking.Thinking = &thinking
 	msgs := []core.StoredMessage{
-		{Message: ai.NewUser(""), CreatedAt: "t0"},                       // empty user: nothing
-		{Message: empty, CreatedAt: "t1"},                                // empty assistant record: nothing
-		{Message: ai.NewToolResult("", "", false), CreatedAt: "t2"},      // result without a call id: nothing
-		{Message: empty, CreatedAt: "t3"},                                // empty assistant record: nothing
-		{Message: ai.NewSystem("sysprompt"), CreatedAt: "t4"},            // system: nothing
-		{Message: ai.ModelChange{Model: "glm-5.3"}, CreatedAt: "t5"},     // model switch: nothing
-		{Message: ai.ThinkingLevelChange{}, CreatedAt: "t6"},             // level switch: nothing
-		{Message: withThinking, CreatedAt: "t7"},                         // thinking-only assistant: one item
-		{Message: ai.NewToolResult("out", "tcX", true), CreatedAt: "t8"}, // error result with id: kept, flagged
+		{Message: core.NewUser(""), CreatedAt: "t0"},                       // empty user: nothing
+		{Message: empty, CreatedAt: "t1"},                                  // empty assistant record: nothing
+		{Message: core.NewToolResult("", "", false), CreatedAt: "t2"},      // result without a call id: nothing
+		{Message: empty, CreatedAt: "t3"},                                  // empty assistant record: nothing
+		{Message: core.NewSystem("sysprompt"), CreatedAt: "t4"},            // system: nothing
+		{Message: core.ModelChange{Model: "glm-5.3"}, CreatedAt: "t5"},     // model switch: nothing
+		{Message: core.ThinkingLevelChange{}, CreatedAt: "t6"},             // level switch: nothing
+		{Message: withThinking, CreatedAt: "t7"},                           // thinking-only assistant: one item
+		{Message: core.NewToolResult("out", "tcX", true), CreatedAt: "t8"}, // error result with id: kept, flagged
 	}
 	items := buildTranscriptItems(msgs)
 	if got := kindsOf(items); len(got) != 2 || got[0] != "thinking" || got[1] != "tool_result" {
@@ -176,12 +175,12 @@ func TestTranscriptItemsSkipsEmptyAndForeign(t *testing.T) {
 func TestTranscriptItemsTimeFallback(t *testing.T) {
 	// rows saved before the store recorded created_at fall back to the
 	// message's own timestamp
-	msgs := []core.StoredMessage{{Message: ai.NewUser("hi")}}
+	msgs := []core.StoredMessage{{Message: core.NewUser("hi")}}
 	items := buildTranscriptItems(msgs)
 	if len(items) != 1 || items[0].Time == "" {
 		t.Fatalf("time fallback lost: %+v", items)
 	}
-	if items[0].Time != msgs[0].Message.(ai.User).Timestamp {
+	if items[0].Time != msgs[0].Message.(core.User).Timestamp {
 		t.Fatalf("time = %q, want the message timestamp", items[0].Time)
 	}
 	// and a real created_at wins over the message stamp
@@ -199,14 +198,14 @@ func TestSessionTranscriptHandler(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	thinking := "check first"
-	asst := ai.NewAssistant("")
+	asst := core.NewAssistant("")
 	asst.Thinking = &thinking
-	asst.ToolCalls = []ai.ToolCall{{ID: "tc1", Name: "go_test"}}
-	for _, m := range []ai.Message{
-		ai.NewUser("run tests"),
+	asst.ToolCalls = []core.ToolCall{{ID: "tc1", Name: "go_test"}}
+	for _, m := range []core.Message{
+		core.NewUser("run tests"),
 		asst,
-		ai.NewToolResult("PASS", "tc1", false),
-		ai.NewAssistant("all green"),
+		core.NewToolResult("PASS", "tc1", false),
+		core.NewAssistant("all green"),
 	} {
 		if err := st.AppendMessage(ctx, "s1", m); err != nil {
 			t.Fatalf("append: %v", err)
@@ -311,10 +310,10 @@ func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
 	closed := assistantRecord{
 		thinking: "check first",
 		content:  "running the check",
-		toolCalls: []ai.ToolCall{
+		toolCalls: []core.ToolCall{
 			{ID: "tc1", Name: "go_test", Arguments: map[string]any{"pkg": "./..."}},
 		},
-		results:  []ai.ToolResult{ai.NewToolResult("PASS", "tc1", false)},
+		results:  []core.ToolResult{core.NewToolResult("PASS", "tc1", false)},
 		thinkDur: 1500 * time.Millisecond,
 		respDur:  200 * time.Millisecond,
 	}
@@ -323,11 +322,11 @@ func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
 	start := time.Now().Add(-2 * time.Second)
 	open := assistantRecord{
 		thinking: "and again",
-		toolCalls: []ai.ToolCall{
+		toolCalls: []core.ToolCall{
 			{ID: "tc2", Name: "go_test", Arguments: map[string]any{"pkg": "./modules/ui"}},
 			{ID: "tc3", Name: "shell.run"},
 		},
-		results:    []ai.ToolResult{ai.NewToolResult("OK", "tc2", false)},
+		results:    []core.ToolResult{core.NewToolResult("OK", "tc2", false)},
 		callStarts: map[string]time.Time{"tc2": start, "tc3": start},
 	}
 	items := liveTranscriptItems([]assistantRecord{closed}, open, time.Now())
@@ -395,7 +394,7 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	if err := st.CreateSession(ctx, "s1", "", "Live run"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "s1", ai.NewUser("count to 30")); err != nil {
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("count to 30")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	run, ok := s.runs.start("s1")
@@ -405,7 +404,7 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	// what launchRun snaps after each event: the open thinking block and
 	// the running tool call
 	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
-		toolCalls:  []ai.ToolCall{{ID: "tcl", Name: "shell.run"}},
+		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
 		callStarts: map[string]time.Time{"tcl": time.Now().Add(-5 * time.Second)},
 	}, time.Now()))
 
@@ -443,10 +442,10 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 // TestTranscriptItemsUserImages (scope add 2026-10-20): persisted user
 // images ride the restore - thumbnails survive a reload.
 func TestTranscriptItemsUserImages(t *testing.T) {
-	imgs := []ai.ImageContent{{MediaType: "image/png", Base64: "aGk="}}
+	imgs := []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}
 	msgs := []core.StoredMessage{
-		{Message: ai.NewUserWithImages("what is this", imgs), CreatedAt: "t0"},
-		{Message: ai.NewUser("text only"), CreatedAt: "t1"},
+		{Message: core.NewUserWithImages("what is this", imgs), CreatedAt: "t0"},
+		{Message: core.NewUser("text only"), CreatedAt: "t1"},
 	}
 	items := buildTranscriptItems(msgs)
 	if len(items) != 2 {
@@ -460,7 +459,7 @@ func TestTranscriptItemsUserImages(t *testing.T) {
 	}
 	// image-only user messages persist too (empty content, images set)
 	items = buildTranscriptItems([]core.StoredMessage{
-		{Message: ai.NewUserWithImages("", imgs)},
+		{Message: core.NewUserWithImages("", imgs)},
 	})
 	if len(items) != 1 || len(items[0].Images) != 1 {
 		t.Fatalf("image-only user dropped: %+v", items)

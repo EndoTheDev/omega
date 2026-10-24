@@ -353,7 +353,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // newAgent wires config into a provider, agent, store, and extensions
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
@@ -383,7 +383,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	}
 	wireCaptioner(cfg, ctx)
 
-	ag := agent.NewFromContext(ctx, agent.AgentOptions{
+	ag := core.NewFromContext(ctx, core.AgentOptions{
 		MaxTurns:      cfg.MaxTurns,
 		MaxToolOutput: cfg.Compaction.MaxToolOutput,
 		PromptCustom:  cfg.SystemPrompt,
@@ -569,18 +569,18 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	}
 
-	var userMsg ai.Message
+	var userMsg core.Message
 	if len(images) > 0 {
-		userMsg = ai.NewUserWithImages(prompt, images)
+		userMsg = core.NewUserWithImages(prompt, images)
 	} else {
-		userMsg = ai.NewUser(prompt)
+		userMsg = core.NewUser(prompt)
 	}
-	messages := []ai.Message{userMsg}
+	messages := []core.Message{userMsg}
 	var response strings.Builder
 	for event := range ag.Run(ctx, messages, nil) {
 		switch e := event.(type) {
 		case core.StreamEvent:
-			if chunk, ok := e.Event.(ai.ResponseChunk); ok {
+			if chunk, ok := e.Event.(core.ResponseChunk); ok {
 				response.WriteString(chunk.Content)
 			}
 		case core.AgentEnd:

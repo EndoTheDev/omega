@@ -13,7 +13,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
@@ -247,7 +246,7 @@ INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 // returns an error if a session with that id already exists or the parent
 // does not.
 func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) error {
-	now := ai.NowISO()
+	now := core.NowISO()
 	// An empty parentID is stored as NULL so the FK constraint does not
 	// try to match a session with id "".
 	var parent any
@@ -364,7 +363,7 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET label = ?, updated_at = ? WHERE id = ?`,
-		label, ai.NowISO(), id)
+		label, core.NowISO(), id)
 	return err
 }
 
@@ -402,7 +401,7 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error)
 // GetAncestorMessages returns the messages of a session and all its
 // ancestors up to the root, in root-to-leaf order. A branch therefore
 // inherits its parent's history as a prefix.
-func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]ai.Message, error) {
+func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Message, error) {
 	// ponytail: walk the parent chain one query per hop. Fine for a
 	// session store; a recursive CTE would collapse it to one query if
 	// deep trees ever matter.
@@ -417,7 +416,7 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]ai.Messag
 		cur = sess.ParentID
 	}
 	// chain is leaf-to-root; reverse to root-to-leaf.
-	var out []ai.Message
+	var out []core.Message
 	for i := len(chain) - 1; i >= 0; i-- {
 		messages, err := s.GetMessages(ctx, chain[i])
 		if err != nil {
@@ -441,8 +440,8 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]ai.Messag
 // conversation currently ends at. Bookkeeping entries
 // (model_change/thinking_level_change/variant_select) persist
 // pointerless; they live outside the tree.
-func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Message) error {
-	role, payload, err := ai.EncodeMessage(msg)
+func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg core.Message) error {
+	role, payload, err := core.EncodeMessage(msg)
 	if err != nil {
 		return err
 	}
@@ -452,13 +451,13 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Mess
 			return err
 		}
 		if parent != "" {
-			role, payload, err = ai.EncodeMessage(core.WithParentID(msg, parent))
+			role, payload, err = core.EncodeMessage(core.WithParentID(msg, parent))
 			if err != nil {
 				return err
 			}
 		}
 	}
-	now := ai.NowISO()
+	now := core.NowISO()
 	if _, err = s.db.ExecContext(ctx,
 		`INSERT INTO messages (session_id, role, payload, created_at) VALUES (?, ?, ?, ?)`,
 		sessionID, role, string(payload), now); err != nil {
@@ -470,20 +469,20 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg ai.Mess
 }
 
 // GetMessages returns a session's messages in append order.
-func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]ai.Message, error) {
+func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Message, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT role, payload FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ai.Message
+	var out []core.Message
 	for rows.Next() {
 		var role, payload string
 		if err := rows.Scan(&role, &payload); err != nil {
 			return nil, err
 		}
-		msg, err := ai.DecodeMessage(role, []byte(payload))
+		msg, err := core.DecodeMessage(role, []byte(payload))
 		if err != nil {
 			return nil, err
 		}
@@ -563,7 +562,7 @@ func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archiv
 // updated_at is untouched.
 func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET last_read_at = ? WHERE id = ?`, ai.NowISO(), sessionID)
+		`UPDATE sessions SET last_read_at = ? WHERE id = ?`, core.NowISO(), sessionID)
 	return err
 }
 
@@ -605,7 +604,7 @@ func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 		if err := rows.Scan(&id, &payload); err != nil {
 			return nil, err
 		}
-		var mc ai.ModelChange
+		var mc core.ModelChange
 		if json.Unmarshal([]byte(payload), &mc) != nil || mc.Model == "" {
 			continue
 		}
@@ -638,7 +637,7 @@ func (s *Store) SaveImageCaption(ctx context.Context, imageID, caption string) e
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO image_captions (image_id, caption, created_at) VALUES (?, ?, ?)
 		 ON CONFLICT(image_id) DO NOTHING`,
-		imageID, caption, ai.NowISO())
+		imageID, caption, core.NowISO())
 	return err
 }
 
@@ -786,17 +785,17 @@ type notableTracker struct {
 // global message counter and accumulating per-session user/tool stats.
 // Non-conversation entries (ModelChange, ThinkingLevelChange,
 // VariantSelect) are skipped.
-func countMessages(msgs []ai.Message, in *core.Insights, st *sessionStats) {
+func countMessages(msgs []core.Message, in *core.Insights, st *sessionStats) {
 	for _, msg := range msgs {
 		switch msg.(type) {
-		case ai.ModelChange, ai.ThinkingLevelChange, ai.VariantSelect:
+		case core.ModelChange, core.ThinkingLevelChange, core.VariantSelect:
 			continue
 		}
 		in.Messages++
 		switch m := msg.(type) {
-		case ai.User:
+		case core.User:
 			st.userMsgs++
-		case ai.Assistant:
+		case core.Assistant:
 			st.toolCalls += len(m.ToolCalls)
 			for _, tc := range m.ToolCalls {
 				st.toolCounts[tc.Name]++

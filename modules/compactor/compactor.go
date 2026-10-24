@@ -52,7 +52,7 @@ func (c *Compactor) window() int {
 
 // Compact compacts the message history. If disabled or under budget,
 // returns the original messages unchanged.
-func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Message, error) {
+func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]core.Message, error) {
 	if !c.config.Enabled {
 		return messages, nil
 	}
@@ -79,19 +79,19 @@ func (c *Compactor) Compact(ctx context.Context, messages []ai.Message) ([]ai.Me
 // summarize calls the provider to summarize a slice of messages. It
 // streams the response, collects text chunks, and returns the trimmed
 // summary.
-func (c *Compactor) summarize(ctx context.Context, middle []ai.Message) (string, error) {
+func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
 	b.WriteString("Summarize the following conversation concisely, preserving key facts, decisions, and context. Output only the summary.\n\n")
 	for _, m := range middle {
 		b.WriteString("- [")
 		switch m.(type) {
-		case ai.System:
+		case core.System:
 			b.WriteString("system")
-		case ai.User:
+		case core.User:
 			b.WriteString("user")
-		case ai.Assistant:
+		case core.Assistant:
 			b.WriteString("assistant")
-		case ai.ToolResult:
+		case core.ToolResult:
 			b.WriteString("tool")
 		}
 		b.WriteString("] ")
@@ -99,13 +99,13 @@ func (c *Compactor) summarize(ctx context.Context, middle []ai.Message) (string,
 		b.WriteString("\n")
 	}
 
-	events := c.provider.Stream(ctx, []ai.Message{ai.NewUser(b.String())}, nil)
+	events := c.provider.Stream(ctx, []core.Message{core.NewUser(b.String())}, nil)
 	var summary strings.Builder
 	for ev := range events {
 		switch e := ev.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			summary.WriteString(e.Content)
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			if e.FinishReason == "error" {
 				return "", fmt.Errorf("summarize: %s", e.Error)
 			}

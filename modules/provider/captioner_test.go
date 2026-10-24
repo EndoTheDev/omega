@@ -16,13 +16,13 @@ import (
 const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
 // captionScript is what the vision model streams for one image.
-var captionScript = []ai.StreamEvent{
-	ai.ResponseChunk{Type: "response_chunk", Content: "Red."},
-	ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+var captionScript = []core.ProviderStreamEvent{
+	core.ResponseChunk{Type: "response_chunk", Content: "Red."},
+	core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 }
 
-func testImage() ai.ImageContent {
-	return ai.ImageContent{MediaType: "image/png", Base64: tinyPNG}
+func testImage() core.ImageContent {
+	return core.ImageContent{MediaType: "image/png", Base64: tinyPNG}
 }
 
 // captionTestLoop is a minimal loop: one provider stream, then done.
@@ -42,16 +42,16 @@ type countingProvider struct {
 	mu      *sync.Mutex
 	seen    *countingSeen
 	name    string
-	scripts []ai.StreamEvent
+	scripts []core.ProviderStreamEvent
 }
 
 type countingSeen struct {
 	calls    int
 	models   []string
-	messages [][]ai.Message
+	messages [][]core.Message
 }
 
-func newCountingProvider(model string, script ...ai.StreamEvent) *countingProvider {
+func newCountingProvider(model string, script ...core.ProviderStreamEvent) *countingProvider {
 	return &countingProvider{mu: &sync.Mutex{}, seen: &countingSeen{}, name: model, scripts: script}
 }
 
@@ -71,13 +71,13 @@ func (p *countingProvider) ModelInfo() (ai.ModelInfo, error) {
 	return ai.ModelInfo{}, nil
 }
 
-func (p *countingProvider) Stream(ctx context.Context, messages []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+func (p *countingProvider) Stream(ctx context.Context, messages []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
 	p.mu.Lock()
 	p.seen.calls++
 	p.seen.models = append(p.seen.models, p.name)
-	p.seen.messages = append(p.seen.messages, append([]ai.Message(nil), messages...))
+	p.seen.messages = append(p.seen.messages, append([]core.Message(nil), messages...))
 	p.mu.Unlock()
-	events := make(chan ai.StreamEvent)
+	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)
 		for _, e := range p.scripts {
@@ -104,7 +104,7 @@ func (p *countingProvider) servedModels() []string {
 	return append([]string(nil), p.seen.models...)
 }
 
-func (p *countingProvider) lastMessages() []ai.Message {
+func (p *countingProvider) lastMessages() []core.Message {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.seen.messages) == 0 {
@@ -117,7 +117,7 @@ func (p *countingProvider) lastMessages() []ai.Message {
 // and persists, turn 2 is a memo hit - the vision model is never called
 // again (the card's caption-once gate).
 func TestCaptionOnceAcrossTurns(t *testing.T) {
-	main := newCountingProvider("main", ai.StreamEnd{Type: "stream_end", FinishReason: "stop"})
+	main := newCountingProvider("main", core.StreamEnd{Type: "stream_end", FinishReason: "stop"})
 	ag := core.NewAgent(main, nil, 0)
 	ag.SetLoopProvider(captionTestLoop{})
 	st, err := store.Open(":memory:")
@@ -129,7 +129,7 @@ func TestCaptionOnceAcrossTurns(t *testing.T) {
 	vision := newCountingProvider("gemma4:31b", captionScript...)
 	ag.SetCaptioner(NewCaptioner(vision, "gemma4:31b", st, nil))
 
-	msgs := []ai.Message{ai.NewUserWithImages("what is this?", []ai.ImageContent{testImage()})}
+	msgs := []core.Message{core.NewUserWithImages("what is this?", []core.ImageContent{testImage()})}
 	for turn := 1; turn <= 2; turn++ {
 		for event := range ag.Run(context.Background(), msgs, nil) {
 			if e, ok := event.(core.AgentEnd); ok && e.Error != "" {
@@ -146,7 +146,7 @@ func TestCaptionOnceAcrossTurns(t *testing.T) {
 // "[image: Red.]" with the binary stripped, and the caption prompt went
 // through the vision model, not the main one.
 func TestCaptionRouting(t *testing.T) {
-	main := newCountingProvider("main", ai.StreamEnd{Type: "stream_end", FinishReason: "stop"})
+	main := newCountingProvider("main", core.StreamEnd{Type: "stream_end", FinishReason: "stop"})
 	vision := newCountingProvider("gemma4:31b", captionScript...)
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -156,8 +156,8 @@ func TestCaptionRouting(t *testing.T) {
 	ag := core.NewAgent(main, nil, 0)
 	ag.SetLoopProvider(captionTestLoop{})
 	ag.SetCaptioner(NewCaptioner(vision, "gemma4:31b", st, nil))
-	original := ai.NewUserWithImages("what is this?", []ai.ImageContent{testImage()})
-	for event := range ag.Run(context.Background(), []ai.Message{original}, nil) {
+	original := core.NewUserWithImages("what is this?", []core.ImageContent{testImage()})
+	for event := range ag.Run(context.Background(), []core.Message{original}, nil) {
 		_ = event
 	}
 	if got := vision.callCount(); got != 1 {
@@ -169,7 +169,7 @@ func TestCaptionRouting(t *testing.T) {
 	// The caption prompt is deterministic and carries exactly one image.
 	if msgs := vision.lastMessages(); len(msgs) != 1 {
 		t.Fatalf("caption call messages = %d, want 1", len(msgs))
-	} else if u, ok := msgs[0].(ai.User); !ok || len(u.Images) != 1 || u.Content != captionPrompt {
+	} else if u, ok := msgs[0].(core.User); !ok || len(u.Images) != 1 || u.Content != captionPrompt {
 		t.Fatalf("caption call shape: %#v", msgs[0])
 	}
 	if mains := main.servedModels(); len(mains) != 1 || mains[0] != "main" {
@@ -230,7 +230,7 @@ func TestCaptionerMemoizes(t *testing.T) {
 // A vision-model failure is loud and attributed to the captioner.
 func TestCaptionerVisionFailure(t *testing.T) {
 	fake := newCountingProvider("vision",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model not found"})
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model not found"})
 	c := NewCaptioner(fake, "vision", nil, nil)
 	_, err := c.Caption(context.Background(), testImage())
 	if err == nil || !strings.Contains(err.Error(), "vision model") {
@@ -242,11 +242,11 @@ func TestCaptionerVisionFailure(t *testing.T) {
 // (payload or media type) splits it.
 func TestImageIDIsContentAddressed(t *testing.T) {
 	a := ImageID(testImage())
-	b := ImageID(ai.ImageContent{MediaType: "image/png", Base64: tinyPNG})
+	b := ImageID(core.ImageContent{MediaType: "image/png", Base64: tinyPNG})
 	if a != b {
 		t.Fatalf("same bytes hashed apart: %s vs %s", a, b)
 	}
-	c := ImageID(ai.ImageContent{MediaType: "image/jpeg", Base64: tinyPNG})
+	c := ImageID(core.ImageContent{MediaType: "image/jpeg", Base64: tinyPNG})
 	if c == a {
 		t.Fatal("different media types must hash apart")
 	}

@@ -1,16 +1,17 @@
 package agent
 
 import (
+	"github.com/EndoTheDev/omega/core"
 	"reflect"
 	"testing"
 )
 
 // fakeProvider is a ToolProvider stub for mount tests.
 type fakeProvider struct {
-	tools map[string]Tool
+	tools map[string]core.Tool
 }
 
-func (f fakeProvider) Tools() map[string]Tool { return f.tools }
+func (f fakeProvider) Tools() map[string]core.Tool { return f.tools }
 
 // fakeMountPlugin mounts one provider plus its alias entries.
 type fakeMountPlugin struct {
@@ -34,13 +35,13 @@ func mountAllHelper(t *testing.T, ps []Plugin, ctx *Context) {
 
 // TestActionNames pins the action name list, in declaration order.
 func TestActionNames(t *testing.T) {
-	tool := Tool{Actions: []ToolAction{{Name: "add"}, {Name: "replace"}, {Name: "remove"}}}
+	tool := core.Tool{Actions: []core.ToolAction{{Name: "add"}, {Name: "replace"}, {Name: "remove"}}}
 	got := tool.ActionNames()
 	if !reflect.DeepEqual(got, []string{"add", "replace", "remove"}) {
 		t.Fatalf("ActionNames = %v", got)
 	}
 	// A tool without Actions reports nil, not an empty slice.
-	var empty Tool
+	var empty core.Tool
 	got = empty.ActionNames()
 	if got != nil {
 		t.Fatalf("ActionNames without Actions = %v, want nil", got)
@@ -51,11 +52,11 @@ func TestActionNames(t *testing.T) {
 // enum in the JSON schema comes from the Actions metadata, so a schema
 // that hand-maintains its enum cannot drift out of sync.
 func TestSchemaParametersDerivesActionEnum(t *testing.T) {
-	tool := Tool{
-		Actions: []ToolAction{{Name: "add"}, {Name: "replace"}, {Name: "remove"}},
+	tool := core.Tool{
+		Actions: []core.ToolAction{{Name: "add"}, {Name: "replace"}, {Name: "remove"}},
 		Parameters: map[string]any{
-			"type":             "object",
-			"required":         []string{"action", "target"},
+			"type":     "object",
+			"required": []string{"action", "target"},
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
@@ -92,8 +93,8 @@ func TestSchemaParametersDerivesActionEnum(t *testing.T) {
 // declares Actions but forgot the property in its schema: the enum is
 // still derived, the property appears.
 func TestSchemaParametersInjectsActionProperty(t *testing.T) {
-	tool := Tool{
-		Actions:    []ToolAction{{Name: "task"}, {Name: "status"}},
+	tool := core.Tool{
+		Actions:    []core.ToolAction{{Name: "task"}, {Name: "status"}},
 		Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
 	}
 	got := tool.SchemaParameters()
@@ -113,7 +114,7 @@ func TestSchemaParametersInjectsActionProperty(t *testing.T) {
 // returned untouched when no Actions are declared.
 func TestSchemaParametersPassthrough(t *testing.T) {
 	params := map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}}}
-	tool := Tool{Parameters: params}
+	tool := core.Tool{Parameters: params}
 	if tool.SchemaParameters() == nil {
 		t.Fatal("nil schema returned")
 	}
@@ -133,8 +134,8 @@ func TestMountAllAliasesHiddenFromInventory(t *testing.T) {
 		name:     "tools",
 		provides: []string{"tools"},
 		mount: func(ctx *Context) error {
-			ctx.ToolProviders = append(ctx.ToolProviders, fakeProvider{tools: map[string]Tool{
-				"files":      {Description: "domain tool", Actions: []ToolAction{{Name: "write"}}},
+			ctx.ToolProviders = append(ctx.ToolProviders, fakeProvider{tools: map[string]core.Tool{
+				"files":      {Description: "domain tool", Actions: []core.ToolAction{{Name: "write"}}},
 				"files.read": {Description: "legacy read", AliasOf: "files"},
 			}})
 			return nil

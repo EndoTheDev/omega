@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
 // TestAppendDerivesLeafParent: a plain send's appends chain off the
@@ -21,16 +20,16 @@ func TestAppendDerivesLeafParent(t *testing.T) {
 	if err := s.CreateSession(ctx, "t1", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendMessage(ctx, "t1", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "t1", core.NewUser("hi")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendMessage(ctx, "t1", ai.NewAssistant("one")); err != nil {
+	if err := s.AppendMessage(ctx, "t1", core.NewAssistant("one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendMessage(ctx, "t1", ai.NewUser("q2")); err != nil {
+	if err := s.AppendMessage(ctx, "t1", core.NewUser("q2")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendMessage(ctx, "t1", ai.NewAssistant("two")); err != nil {
+	if err := s.AppendMessage(ctx, "t1", core.NewAssistant("two")); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.loadRows(ctx, "t1")
@@ -62,11 +61,11 @@ func TestAppendExplicitParentValidated(t *testing.T) {
 	if err := s.CreateSession(ctx, "t2", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendMessage(ctx, "t2", ai.NewUser("hi")); err != nil {
+	if err := s.AppendMessage(ctx, "t2", core.NewUser("hi")); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := s.loadRows(ctx, "t2")
-	head := ai.NewAssistant("retry answer")
+	head := core.NewAssistant("retry answer")
 	head.ParentID = core.MsgID(rows[0].ID)
 	if err := s.AppendMessage(ctx, "t2", head); err != nil {
 		t.Fatal(err)
@@ -76,7 +75,7 @@ func TestAppendExplicitParentValidated(t *testing.T) {
 		t.Fatalf("head parent = %q, want the user id", p)
 	}
 	// dangling: explicit pointer to a foreign row rejects
-	bad := ai.NewAssistant("bad")
+	bad := core.NewAssistant("bad")
 	bad.ParentID = "9999"
 	err := s.AppendMessage(ctx, "t2", bad)
 	if err == nil || !strings.Contains(err.Error(), "parent message 9999") {
@@ -93,7 +92,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 		t.Fatal(err)
 	}
 	// user + first run
-	if err := s.AppendMessage(ctx, "t3", ai.NewUser("who")); err != nil {
+	if err := s.AppendMessage(ctx, "t3", core.NewUser("who")); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := s.loadRows(ctx, "t3")
@@ -101,7 +100,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 
 	retry := func(ans string) {
 		t.Helper()
-		h := ai.NewAssistant(ans)
+		h := core.NewAssistant(ans)
 		h.ParentID = userID
 		if err := s.AppendMessage(ctx, "t3", h); err != nil {
 			t.Fatal(err)
@@ -114,7 +113,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Path) != 2 || view.Path[1].Message.(ai.Assistant).Content != "second" {
+	if len(view.Path) != 2 || view.Path[1].Message.(core.Assistant).Content != "second" {
 		t.Fatalf("default path = %+v, want [user, second]", view.Path)
 	}
 	if len(view.Branches) == 0 || view.Branches[0].Count != 2 || view.Branches[0].ActiveIndex != 1 {
@@ -122,7 +121,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	}
 	// select variant 1; the path flips and PERSISTS through reload
 	rows, _ = s.loadRows(ctx, "t3")
-	if err := s.AppendMessage(ctx, "t3", ai.NewVariantSelect(userID, core.MsgID(rows[1].ID))); err != nil {
+	if err := s.AppendMessage(ctx, "t3", core.NewVariantSelect(userID, core.MsgID(rows[1].ID))); err != nil {
 		t.Fatal(err)
 	}
 	// a CONTINUATION message from the selected branch chains off the
@@ -135,7 +134,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Path[1].Message.(ai.Assistant).Content != "first" {
+	if view.Path[1].Message.(core.Assistant).Content != "first" {
 		t.Fatalf("path after select = %v content %+v, want [user, first]", pathOf(view), view.Path[1])
 	}
 	if view.Branches[0].ActiveIndex != 0 {
@@ -160,10 +159,10 @@ func TestLegacyRowsRenderLinear(t *testing.T) {
 		t.Fatal(err)
 	}
 	// seed raw rows the way the pre-pointer store wrote them
-	if err := s.AppendMessageRow(ctx, "t4", "user", `{"content":"legacy q"}`, ai.NowISO()); err != nil {
+	if err := s.AppendMessageRow(ctx, "t4", "user", `{"content":"legacy q"}`, core.NowISO()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendMessageRow(ctx, "t4", "assistant", `{"content":"legacy a"}`, ai.NowISO()); err != nil {
+	if err := s.AppendMessageRow(ctx, "t4", "assistant", `{"content":"legacy a"}`, core.NowISO()); err != nil {
 		t.Fatal(err)
 	}
 	view, err := s.GetActiveView(ctx, "t4")
@@ -173,8 +172,8 @@ func TestLegacyRowsRenderLinear(t *testing.T) {
 	if len(view.Path) != 2 || len(view.Branches) != 0 {
 		t.Fatalf("legacy view = path %d branches %+v, want 2 and none", len(view.Path), view.Branches)
 	}
-	if view.Path[0].Message.(ai.User).Content != "legacy q" ||
-		view.Path[1].Message.(ai.Assistant).Content != "legacy a" {
+	if view.Path[0].Message.(core.User).Content != "legacy q" ||
+		view.Path[1].Message.(core.Assistant).Content != "legacy a" {
 		t.Fatalf("legacy order broken: %+v", view.Path)
 	}
 }

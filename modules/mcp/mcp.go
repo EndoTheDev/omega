@@ -545,7 +545,7 @@ func (b *Bridge) connect(cfg *mcpConfig) error {
 	return nil
 }
 
-// Tools builds the agent.Tool map from discovered MCP tools. Each tool
+// Tools builds the core.Tool map from discovered MCP tools. Each tool
 // wraps a call to the appropriate MCP server.
 func (b *Bridge) Tools() map[string]agentTool {
 	tools := make(map[string]agentTool, len(b.toolDefs))
@@ -579,7 +579,7 @@ func (b *Bridge) Tools() map[string]agentTool {
 }
 
 // agentTool is the local representation of an agent tool. The plugin
-// adapter converts these to agent.Tool values via the ToolProvider
+// adapter converts these to core.Tool values via the ToolProvider
 // interface. Kept as a struct to avoid importing agent in mcp.go.
 type agentTool struct {
 	description string

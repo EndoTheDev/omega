@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 )
 
@@ -142,7 +142,7 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 	}
 }
 
-func listBoardTasks(t *testing.T, home, board string) []agent.KanbanTask {
+func listBoardTasks(t *testing.T, home, board string) []core.KanbanTask {
 	t.Helper()
 	s := openBoardStore(t, home)
 	tasks, err := s.ListTasks(context.Background(), board, "")

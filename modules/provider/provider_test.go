@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // testContext returns a background context for tests.
@@ -22,10 +22,10 @@ func testContext() context.Context { return context.Background() }
 // drainEvents reads all events from a stream channel and returns
 // the final StreamEnd. Fails the test if the last event is not a
 // StreamEnd.
-func drainEvents(events <-chan ai.StreamEvent) ai.StreamEnd {
-	var end ai.StreamEnd
+func drainEvents(events <-chan core.ProviderStreamEvent) core.StreamEnd {
+	var end core.StreamEnd
 	for e := range events {
-		if se, ok := e.(ai.StreamEnd); ok {
+		if se, ok := e.(core.StreamEnd); ok {
 			end = se
 		}
 	}
@@ -113,11 +113,11 @@ func TestUnknownProviderStreamError(t *testing.T) {
 // TestMessagesToJSON verifies role fields are added and timestamps
 // are stripped for each message type.
 func TestMessagesToJSON(t *testing.T) {
-	msgs := []ai.Message{
-		ai.NewSystem("sys"),
-		ai.NewUser("hello"),
-		ai.NewAssistant("hi"),
-		ai.NewToolResult("result", "t1", false),
+	msgs := []core.Message{
+		core.NewSystem("sys"),
+		core.NewUser("hello"),
+		core.NewAssistant("hi"),
+		core.NewToolResult("result", "t1", false),
 	}
 	result := messagesToJSON(msgs, false)
 	if len(result) != 4 {
@@ -629,12 +629,12 @@ func TestModelInfo(t *testing.T) {
 // and the channel is full.
 func TestSendEvent(t *testing.T) {
 	// buffered channel: event is delivered.
-	events := make(chan ai.StreamEvent, 1)
-	sendEvent(testContext(), events, ai.StreamEnd{FinishReason: "stop"})
+	events := make(chan core.ProviderStreamEvent, 1)
+	sendEvent(testContext(), events, core.StreamEnd{FinishReason: "stop"})
 	ev := <-events
-	end, ok := ev.(ai.StreamEnd)
+	end, ok := ev.(core.StreamEnd)
 	if !ok {
-		t.Fatalf("received event type %T, want ai.StreamEnd", ev)
+		t.Fatalf("received event type %T, want core.StreamEnd", ev)
 	}
 	if end.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "stop")
@@ -646,7 +646,7 @@ func TestSendEvent(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		sendEvent(ctx, make(chan ai.StreamEvent), ai.StreamEnd{FinishReason: "stop"})
+		sendEvent(ctx, make(chan core.ProviderStreamEvent), core.StreamEnd{FinishReason: "stop"})
 	}()
 	select {
 	case <-done:
@@ -668,7 +668,7 @@ type testToolCall struct {
 // order with their argument JSON unmarshalled.
 func TestFlushToolCalls(t *testing.T) {
 	// empty pending: no events.
-	events := make(chan ai.StreamEvent, 4)
+	events := make(chan core.ProviderStreamEvent, 4)
 	flushToolCalls(testContext(), events, map[int]*testToolCall{},
 		func(tc *testToolCall) string { return tc.ID },
 		func(tc *testToolCall) string { return tc.Name },
@@ -688,7 +688,10 @@ func TestFlushToolCalls(t *testing.T) {
 		func(tc *testToolCall) string { return tc.Name },
 		func(tc *testToolCall) string { return tc.JSON })
 
-	wantOrder := []struct{ id, name string; n float64 }{
+	wantOrder := []struct {
+		id, name string
+		n        float64
+	}{
 		{"c1", "first", 1},
 		{"c2", "second", 2},
 		{"c3", "third", 3},
@@ -698,9 +701,9 @@ func TestFlushToolCalls(t *testing.T) {
 			t.Fatalf("event %d: channel empty, want ToolCallEvent", i)
 		}
 		ev := <-events
-		tce, ok := ev.(ai.ToolCallEvent)
+		tce, ok := ev.(core.ToolCallEvent)
 		if !ok {
-			t.Fatalf("event %d: got type %T, want ai.ToolCallEvent", i, ev)
+			t.Fatalf("event %d: got type %T, want core.ToolCallEvent", i, ev)
 		}
 		if tce.Type != "tool_call" {
 			t.Errorf("event %d: Type = %q, want %q", i, tce.Type, "tool_call")
@@ -723,17 +726,17 @@ func TestFlushToolCalls(t *testing.T) {
 // collectEvents reads all events from a stream channel and returns
 // them in order. Fails the test if no events arrive or the last
 // event is not a StreamEnd.
-func collectEvents(t *testing.T, events <-chan ai.StreamEvent) []ai.StreamEvent {
+func collectEvents(t *testing.T, events <-chan core.ProviderStreamEvent) []core.ProviderStreamEvent {
 	t.Helper()
-	var out []ai.StreamEvent
+	var out []core.ProviderStreamEvent
 	for e := range events {
 		out = append(out, e)
 	}
 	if len(out) == 0 {
 		t.Fatal("no events received")
 	}
-	if _, ok := out[len(out)-1].(ai.StreamEnd); !ok {
-		t.Fatalf("last event type %T, want ai.StreamEnd", out[len(out)-1])
+	if _, ok := out[len(out)-1].(core.StreamEnd); !ok {
+		t.Fatalf("last event type %T, want core.StreamEnd", out[len(out)-1])
 	}
 	return out
 }
@@ -756,7 +759,7 @@ func TestStreamOllama(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	<-bodies // drain the default-level request body
 
 	if gotPath != "/api/chat" {
@@ -766,7 +769,7 @@ func TestStreamOllama(t *testing.T) {
 	wantContents := []string{"Hello ", "world"}
 	chunks := 0
 	for _, e := range got {
-		rc, ok := e.(ai.ResponseChunk)
+		rc, ok := e.(core.ResponseChunk)
 		if !ok {
 			continue
 		}
@@ -782,7 +785,7 @@ func TestStreamOllama(t *testing.T) {
 		t.Fatalf("got %d ResponseChunk events, want %d", chunks, len(wantContents))
 	}
 
-	end := got[len(got)-1].(ai.StreamEnd)
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "stop")
 	}
@@ -795,7 +798,7 @@ func TestStreamOllama(t *testing.T) {
 
 	// thinking level "high" maps to "think":"high" in the request body.
 	p = &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3", thinkingLevel: "high"}
-	collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	var sent map[string]any
 	if err := json.Unmarshal(<-bodies, &sent); err != nil {
 		t.Fatalf("request body is not JSON: %v", err)
@@ -806,7 +809,7 @@ func TestStreamOllama(t *testing.T) {
 
 	// thinking level "none" omits the "think" key entirely.
 	p = &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3", thinkingLevel: "none"}
-	collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	sent = nil
 	if err := json.Unmarshal(<-bodies, &sent); err != nil {
 		t.Fatalf("request body is not JSON: %v", err)
@@ -836,7 +839,7 @@ func TestStreamOllamaToolCalls(t *testing.T) {
 
 	tools := []ai.ToolSchema{{Name: "get_weather", Description: "Get current weather", Parameters: map[string]any{"type": "object"}}}
 	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("weather?")}, tools))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("weather?")}, tools))
 
 	var sent map[string]any
 	if err := json.Unmarshal(gotBody, &sent); err != nil {
@@ -851,14 +854,14 @@ func TestStreamOllamaToolCalls(t *testing.T) {
 		t.Errorf("tool function name = %v, want get_weather", fn["name"])
 	}
 
-	var calls []ai.ToolCallEvent
+	var calls []core.ToolCallEvent
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ThinkingChunk:
+		case core.ThinkingChunk:
 			if ev.Content != "checking weather" {
 				t.Errorf("thinking chunk = %q, want %q", ev.Content, "checking weather")
 			}
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			calls = append(calls, ev)
 		}
 	}
@@ -879,7 +882,7 @@ func TestStreamOllamaToolCalls(t *testing.T) {
 		t.Errorf("call 1 args city = %v, want Oslo (arguments as JSON string)", calls[1].ToolCall.Arguments["city"])
 	}
 
-	end := got[len(got)-1].(ai.StreamEnd)
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.FinishReason != "tool_call" {
 		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_call")
 	}
@@ -907,12 +910,12 @@ func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	assistant := ai.NewAssistant("")
-	assistant.ToolCalls = []ai.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
-	messages := []ai.Message{
-		ai.NewUser("weather?"),
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	messages := []core.Message{
+		core.NewUser("weather?"),
 		assistant,
-		ai.NewToolResult("30C and sunny", "call_ext", false),
+		core.NewToolResult("30C and sunny", "call_ext", false),
 	}
 	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
 	collectEvents(t, p.Stream(testContext(), messages, nil))
@@ -961,8 +964,8 @@ func TestStreamOllamaDoneReason(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "m"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
-	end := got[len(got)-1].(ai.StreamEnd)
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.FinishReason != "length" {
 		t.Errorf("FinishReason = %q, want wire done_reason %q", end.FinishReason, "length")
 	}
@@ -979,7 +982,7 @@ func TestStreamOllamaErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 		p := &Provider{typ: "ollama", baseURL: srv.URL}
-		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 		if end.FinishReason != "error" || !strings.Contains(end.Error, "model not found") {
 			t.Errorf("FinishReason = %q Error = %q, want error / model not found", end.FinishReason, end.Error)
 		}
@@ -991,7 +994,7 @@ func TestStreamOllamaErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 		p := &Provider{typ: "ollama", baseURL: srv.URL}
-		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 		if end.FinishReason != "error" || !strings.Contains(end.Error, "quota exceeded") {
 			t.Errorf("FinishReason = %q Error = %q, want error / quota exceeded", end.FinishReason, end.Error)
 		}
@@ -1003,7 +1006,7 @@ func TestStreamOllamaErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 		p := &Provider{typ: "ollama", baseURL: srv.URL}
-		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 		if end.FinishReason != "error" || !strings.Contains(end.Error, "parse error") {
 			t.Errorf("FinishReason = %q Error = %q, want error / parse error", end.FinishReason, end.Error)
 		}
@@ -1015,7 +1018,7 @@ func TestStreamOllamaErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 		p := &Provider{typ: "ollama", baseURL: srv.URL}
-		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 		if end.FinishReason != "error" || !strings.Contains(end.Error, "HTTP 400") || !strings.Contains(end.Error, "nope") {
 			t.Errorf("FinishReason = %q Error = %q, want error / HTTP 400 body", end.FinishReason, end.Error)
 		}
@@ -1027,7 +1030,7 @@ func TestStreamOllamaErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 		p := &Provider{typ: "ollama", baseURL: srv.URL}
-		end := drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 		if end.FinishReason != "stop" {
 			t.Errorf("FinishReason = %q, want stop", end.FinishReason)
 		}
@@ -1038,9 +1041,9 @@ func TestStreamOllamaErrors(t *testing.T) {
 // encoding per provider wire: string for openai, object for ollama
 // (the native path rejects the string) and Anthropic.
 func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
-	assistant := ai.NewAssistant("")
-	assistant.ToolCalls = []ai.ToolCall{{ID: "c1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
-	msgs := []ai.Message{ai.NewUser("hi"), assistant}
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	msgs := []core.Message{core.NewUser("hi"), assistant}
 
 	for _, c := range []struct {
 		name       string
@@ -1094,12 +1097,12 @@ func TestStreamOpenAIToolResultRoundTrip(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	assistant := ai.NewAssistant("")
-	assistant.ToolCalls = []ai.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
-	messages := []ai.Message{
-		ai.NewUser("weather?"),
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	messages := []core.Message{
+		core.NewUser("weather?"),
 		assistant,
-		ai.NewToolResult("30C and sunny", "call_ext", false),
+		core.NewToolResult("30C and sunny", "call_ext", false),
 	}
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "gpt-x", apiKey: "test-key"}
 	collectEvents(t, p.Stream(testContext(), messages, nil))
@@ -1137,7 +1140,7 @@ func TestStreamOpenAI(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "gpt-x", apiKey: "test-key"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 
 	if gotPath != "/chat/completions" {
 		t.Errorf("request path = %q, want /chat/completions", gotPath)
@@ -1147,15 +1150,15 @@ func TestStreamOpenAI(t *testing.T) {
 	}
 
 	chunks := 0
-	var toolCalls []ai.ToolCallEvent
+	var toolCalls []core.ToolCallEvent
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			if ev.Content != "Hi" {
 				t.Errorf("chunk content = %q, want %q", ev.Content, "Hi")
 			}
 			chunks++
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			toolCalls = append(toolCalls, ev)
 		}
 	}
@@ -1176,7 +1179,7 @@ func TestStreamOpenAI(t *testing.T) {
 		t.Errorf("tool call args cmd = %v, want %q (fragments accumulated)", tc.Arguments["cmd"], "ls")
 	}
 
-	end := got[len(got)-1].(ai.StreamEnd)
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.FinishReason != "tool_calls" {
 		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_calls")
 	}
@@ -1188,7 +1191,7 @@ func TestStreamOpenAI(t *testing.T) {
 	defer errSrv.Close()
 
 	p = &Provider{typ: "openai", baseURL: errSrv.URL, apiKey: "test-key"}
-	end = drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	end = drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	if end.FinishReason != "error" {
 		t.Errorf("error path FinishReason = %q, want %q", end.FinishReason, "error")
 	}
@@ -1218,7 +1221,7 @@ func TestStreamAnthropic(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "claude-x", apiKey: "test-key"}
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 
 	if gotPath != "/messages" {
 		t.Errorf("request path = %q, want /messages", gotPath)
@@ -1231,15 +1234,15 @@ func TestStreamAnthropic(t *testing.T) {
 	}
 
 	chunks := 0
-	var toolCalls []ai.ToolCallEvent
+	var toolCalls []core.ToolCallEvent
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			if ev.Content != "hey" {
 				t.Errorf("chunk content = %q, want %q", ev.Content, "hey")
 			}
 			chunks++
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			toolCalls = append(toolCalls, ev)
 		}
 	}
@@ -1260,7 +1263,7 @@ func TestStreamAnthropic(t *testing.T) {
 		t.Errorf("tool call args path = %v, want %q (fragments accumulated)", tc.Arguments["path"], "x.go")
 	}
 
-	end := got[len(got)-1].(ai.StreamEnd)
+	end := got[len(got)-1].(core.StreamEnd)
 	if end.FinishReason != "tool_use" {
 		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_use")
 	}
@@ -1272,7 +1275,7 @@ func TestStreamAnthropic(t *testing.T) {
 	defer errSrv.Close()
 
 	p = &Provider{typ: "anthropic", baseURL: errSrv.URL, apiKey: "test-key"}
-	end = drainEvents(p.Stream(testContext(), []ai.Message{ai.NewUser("hi")}, nil))
+	end = drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	if end.FinishReason != "error" {
 		t.Errorf("error path FinishReason = %q, want %q", end.FinishReason, "error")
 	}

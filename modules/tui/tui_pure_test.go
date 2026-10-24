@@ -4,24 +4,24 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// msgEqual compares two ai.Message values by type and content field.
+// msgEqual compares two core.Message values by type and content field.
 // Interface types with slices can't use ==/!=, so we compare structurally.
-func msgEqual(a, b ai.Message) bool {
+func msgEqual(a, b core.Message) bool {
 	switch va := a.(type) {
-	case ai.User:
-		vb, ok := b.(ai.User)
+	case core.User:
+		vb, ok := b.(core.User)
 		return ok && va.Content == vb.Content
-	case ai.Assistant:
-		vb, ok := b.(ai.Assistant)
+	case core.Assistant:
+		vb, ok := b.(core.Assistant)
 		return ok && va.Content == vb.Content
-	case ai.System:
-		vb, ok := b.(ai.System)
+	case core.System:
+		vb, ok := b.(core.System)
 		return ok && va.Content == vb.Content
-	case ai.ToolResult:
-		vb, ok := b.(ai.ToolResult)
+	case core.ToolResult:
+		vb, ok := b.(core.ToolResult)
 		return ok && va.Content == vb.Content
 	default:
 		return false
@@ -30,7 +30,7 @@ func msgEqual(a, b ai.Message) bool {
 
 func TestSummarizeForBranch(t *testing.T) {
 	t.Run("keepFirstPlusKeepLastGeLength returns unchanged", func(t *testing.T) {
-		msgs := []ai.Message{ai.NewUser("a"), ai.NewUser("b"), ai.NewUser("c")}
+		msgs := []core.Message{core.NewUser("a"), core.NewUser("b"), core.NewUser("c")}
 		got := summarizeForBranch(msgs, 1, 2)
 		if len(got) != len(msgs) {
 			t.Fatalf("len = %d, want %d (unchanged)", len(got), len(msgs))
@@ -43,9 +43,9 @@ func TestSummarizeForBranch(t *testing.T) {
 	})
 
 	t.Run("normal inserts summary between head and tail", func(t *testing.T) {
-		msgs := make([]ai.Message, 10)
+		msgs := make([]core.Message, 10)
 		for i := range msgs {
-			msgs[i] = ai.NewUser("m" + string(rune('a'+i)))
+			msgs[i] = core.NewUser("m" + string(rune('a'+i)))
 		}
 		got := summarizeForBranch(msgs, 2, 3)
 		if want := 2 + 1 + 3; len(got) != want {
@@ -58,9 +58,9 @@ func TestSummarizeForBranch(t *testing.T) {
 			}
 		}
 		// Middle is a synthetic system message.
-		sys, ok := got[2].(ai.System)
+		sys, ok := got[2].(core.System)
 		if !ok {
-			t.Fatalf("summary msg = %T, want ai.System", got[2])
+			t.Fatalf("summary msg = %T, want core.System", got[2])
 		}
 		if !strings.Contains(sys.Content, "omitted") {
 			t.Fatalf("summary content = %q, want it to mention omitted", sys.Content)
@@ -84,7 +84,7 @@ func TestSummarizeForBranch(t *testing.T) {
 	})
 
 	t.Run("single message returns unchanged", func(t *testing.T) {
-		msgs := []ai.Message{ai.NewUser("only")}
+		msgs := []core.Message{core.NewUser("only")}
 		got := summarizeForBranch(msgs, 2, 3)
 		if len(got) != 1 || !msgEqual(got[0], msgs[0]) {
 			t.Fatalf("got = %v, want unchanged single message", got)

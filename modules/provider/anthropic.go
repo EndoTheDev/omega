@@ -11,11 +11,12 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
-func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamEvent, messages, tools []map[string]any) ai.StreamEnd {
+func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	if p.apiKey == "" {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "anthropic: ANTHROPIC_API_KEY not set"}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "anthropic: ANTHROPIC_API_KEY not set"}
 	}
 
 	// Anthropic requires system prompt as top-level field, and tool
@@ -60,12 +61,12 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/messages", bytes.NewReader(payloadBytes))
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", p.apiKey)
@@ -73,13 +74,13 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 
 	resp, err := ai.RetryHTTP(req)
 	if err != nil {
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
 	}
 
 	reader := bufio.NewReader(resp.Body)
@@ -97,9 +98,9 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 				break
 			}
 			if ctx.Err() != nil {
-				return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
 			}
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 		}
 		if !ok {
 			break
@@ -124,16 +125,16 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 			Message *struct {
 				Usage *anthropicUsage `json:"usage"`
 			} `json:"message"`
-			Usage   *anthropicUsage `json:"usage"`
-			Error   *struct {
+			Usage *anthropicUsage `json:"usage"`
+			Error *struct {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(payloadLine), &chunk); err != nil {
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: parse error: %v", err)}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: parse error: %v", err)}
 		}
 		if chunk.Error != nil {
-			return ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: %s", chunk.Error.Message)}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: %s", chunk.Error.Message)}
 		}
 		if chunk.Message != nil {
 			chunk.Usage = chunk.Message.Usage // message_start carries usage nested in the message object
@@ -172,11 +173,11 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 			switch chunk.Delta.Type {
 			case "text_delta":
 				if chunk.Delta.Text != "" {
-					sendEvent(ctx, events, ai.ResponseChunk{Type: "response_chunk", Content: chunk.Delta.Text})
+					sendEvent(ctx, events, core.ResponseChunk{Type: "response_chunk", Content: chunk.Delta.Text})
 				}
 			case "thinking_delta":
 				if chunk.Delta.Thinking != "" {
-					sendEvent(ctx, events, ai.ThinkingChunk{Type: "thinking_chunk", Content: chunk.Delta.Thinking})
+					sendEvent(ctx, events, core.ThinkingChunk{Type: "thinking_chunk", Content: chunk.Delta.Thinking})
 				}
 			case "input_json_delta":
 				idx := 0
@@ -201,7 +202,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- ai.StreamE
 		func(pt *pendingTool) string { return pt.inputJSON },
 	)
 
-	return ai.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: promptTokens, EvalCount: completionTokens, CachedCount: cachedTokens}
+	return core.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: promptTokens, EvalCount: completionTokens, CachedCount: cachedTokens}
 }
 
 // anthropicUsage is the usage block on message_start and message_delta.
@@ -216,7 +217,7 @@ type anthropicUsage struct {
 // --- Anthropic message conversion ---
 
 // userImageBlocks lifts a user message's images key (the object shape
-// ai.User marshals: [{"media_type","base64"}]) into Anthropic image
+// core.User marshals: [{"media_type","base64"}]) into Anthropic image
 // source blocks. Messages without images yield nil.
 func userImageBlocks(msg map[string]any) []any {
 	imgs, ok := msg["images"].([]any)

@@ -9,28 +9,28 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // mockStore is a minimal StoreProvider for testing @session: injection.
 // Only GetMessages has configurable behavior; all other methods are no-ops.
 type mockStore struct {
-	messages []ai.Message
+	messages []core.Message
 	err      error
 }
 
-func (m *mockStore) Open(string) error                                        { return nil }
-func (m *mockStore) Close() error                                             { return nil }
+func (m *mockStore) Open(string) error                                           { return nil }
+func (m *mockStore) Close() error                                                { return nil }
 func (m *mockStore) CreateSession(context.Context, string, string, string) error { return nil }
 func (m *mockStore) GetSession(context.Context, string) (core.Session, error) {
 	return core.Session{}, nil
 }
-func (m *mockStore) ListSessions(context.Context) ([]core.Session, error) { return nil, nil }
-func (m *mockStore) DeleteSession(context.Context, string) error            { return nil }
-func (m *mockStore) UpdateSession(context.Context, string, string) error    { return nil }
-func (m *mockStore) AppendMessage(context.Context, string, ai.Message) error { return nil }
-func (m *mockStore) GetMessages(_ context.Context, _ string) ([]ai.Message, error) {
+func (m *mockStore) ListSessions(context.Context) ([]core.Session, error)      { return nil, nil }
+func (m *mockStore) DeleteSession(context.Context, string) error               { return nil }
+func (m *mockStore) UpdateSession(context.Context, string, string) error       { return nil }
+func (m *mockStore) AppendMessage(context.Context, string, core.Message) error { return nil }
+func (m *mockStore) GetMessages(_ context.Context, _ string) ([]core.Message, error) {
 	return m.messages, m.err
 }
 func (m *mockStore) GetMessagesWithTimes(context.Context, string) ([]core.StoredMessage, error) {
@@ -43,13 +43,13 @@ func (m *mockStore) GetActiveView(context.Context, string) (core.ActiveView, err
 	return core.ActiveView{}, m.err
 }
 
-func (m *mockStore) GetActiveMessages(_ context.Context, _ string) ([]ai.Message, error) {
+func (m *mockStore) GetActiveMessages(_ context.Context, _ string) ([]core.Message, error) {
 	return m.messages, m.err
 }
 func (m *mockStore) GetSessionTree(context.Context) ([]*core.SessionNode, error) {
 	return nil, nil
 }
-func (m *mockStore) GetAncestorMessages(context.Context, string) ([]ai.Message, error) {
+func (m *mockStore) GetAncestorMessages(context.Context, string) ([]core.Message, error) {
 	return nil, nil
 }
 func (m *mockStore) SearchMessages(context.Context, string) ([]core.SearchResult, error) {
@@ -65,7 +65,7 @@ func (m *mockStore) CountMessages(context.Context, string) (int, error) { return
 func (m *mockStore) SessionCounts(context.Context) (map[string]core.SessionCounts, error) {
 	return nil, nil
 }
-func (m *mockStore) AddSessionTokens(context.Context, string, int, int) error { return nil }
+func (m *mockStore) AddSessionTokens(context.Context, string, int, int) error    { return nil }
 func (m *mockStore) SetSessionTitle(context.Context, string, string, bool) error { return nil }
 func (m *mockStore) SetSessionLastRun(context.Context, string, *core.LastRunStats) error {
 	return nil
@@ -140,14 +140,14 @@ func TestDetectImageNotImage(t *testing.T) {
 
 // survives JSON marshal/unmarshal (store round-trip).
 func TestUserWithImagesRoundTrip(t *testing.T) {
-	original := ai.NewUserWithImages("describe this", []ai.ImageContent{
+	original := core.NewUserWithImages("describe this", []core.ImageContent{
 		{MediaType: "image/png", Base64: "iVBORw0KGgo="},
 	})
 	data, err := json.Marshal(original)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var decoded ai.User
+	var decoded core.User
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -365,9 +365,9 @@ func TestExtractImagesSkillInjection(t *testing.T) {
 func TestExtractImagesSessionInjection(t *testing.T) {
 	t.Run("messages returned", func(t *testing.T) {
 		store := &mockStore{
-			messages: []ai.Message{
-				ai.NewUser("hello there"),
-				ai.NewAssistant("hi back"),
+			messages: []core.Message{
+				core.NewUser("hello there"),
+				core.NewAssistant("hi back"),
 			},
 		}
 		input := "ctx @session:abc please"

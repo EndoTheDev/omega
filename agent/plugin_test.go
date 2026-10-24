@@ -13,7 +13,7 @@ import (
 // stubProvider satisfies ai.Provider for testing.
 type stubProvider struct{ name string }
 
-func (s *stubProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
+func (s *stubProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
 	return nil
 }
 func (s *stubProvider) ModelName() string { return s.name }
@@ -22,7 +22,7 @@ func (s *stubProvider) WithModel(model string) ai.Provider {
 	cp.name = model
 	return &cp
 }
-func (s *stubProvider) SetThinkingLevel(level string)    {}
+func (s *stubProvider) SetThinkingLevel(level string) {}
 func (s *stubProvider) WithThinkingLevel(string) ai.Provider {
 	return s
 }
@@ -32,14 +32,14 @@ func (s *stubProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}
 // stubCompactor satisfies CompactionProvider for testing.
 type stubCompactor struct{}
 
-func (stubCompactor) Compact(_ context.Context, msgs []ai.Message) ([]ai.Message, error) {
+func (stubCompactor) Compact(_ context.Context, msgs []core.Message) ([]core.Message, error) {
 	return msgs, nil
 }
 
 // stubToolProvider satisfies ToolProvider for testing.
-type stubToolProvider struct{ tools map[string]Tool }
+type stubToolProvider struct{ tools map[string]core.Tool }
 
-func (s stubToolProvider) Tools() map[string]Tool { return s.tools }
+func (s stubToolProvider) Tools() map[string]core.Tool { return s.tools }
 
 // testPlugin is a configurable Plugin for testing MountAll.
 type testPlugin struct {
@@ -160,7 +160,7 @@ func TestMountAllAdditiveTools(t *testing.T) {
 		provides: []string{"tools"},
 		mount: func(ctx *Context) error {
 			ctx.ToolProviders = append(ctx.ToolProviders, stubToolProvider{
-				tools: map[string]Tool{"a": {Description: "tool a"}},
+				tools: map[string]core.Tool{"a": {Description: "tool a"}},
 			})
 			return nil
 		},
@@ -170,7 +170,7 @@ func TestMountAllAdditiveTools(t *testing.T) {
 		provides: []string{"tools"},
 		mount: func(ctx *Context) error {
 			ctx.ToolProviders = append(ctx.ToolProviders, stubToolProvider{
-				tools: map[string]Tool{"b": {Description: "tool b"}},
+				tools: map[string]core.Tool{"b": {Description: "tool b"}},
 			})
 			return nil
 		},
@@ -247,7 +247,7 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		provides: []string{"tools"},
 		mount: func(ctx *Context) error {
 			ctx.ToolProviders = append(ctx.ToolProviders, stubToolProvider{
-				tools: map[string]Tool{
+				tools: map[string]core.Tool{
 					"alpha": {Description: "alpha tool"},
 					"beta":  {Description: "beta tool"},
 				},

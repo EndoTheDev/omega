@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compile-time interface checks.
@@ -18,7 +18,7 @@ func TestCompactDisabled(t *testing.T) {
 		provider: ai.NewFakeProvider("test"),
 		config:   core.CompactionConfig{Enabled: false},
 	}
-	msgs := []ai.Message{ai.NewUser("hello")}
+	msgs := []core.Message{core.NewUser("hello")}
 	out, err := c.Compact(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestCompactUnderBudget(t *testing.T) {
 			KeepLast:      1,
 		},
 	}
-	msgs := []ai.Message{ai.NewUser("short")}
+	msgs := []core.Message{core.NewUser("short")}
 	out, err := c.Compact(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
@@ -52,8 +52,8 @@ func TestCompactUnderBudget(t *testing.T) {
 func TestCompactSummarizes(t *testing.T) {
 	summary := "This is a summary."
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: summary},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: summary},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	c := &Compactor{
 		provider: provider,
@@ -66,11 +66,11 @@ func TestCompactSummarizes(t *testing.T) {
 			ReserveTokens: 1,
 		},
 	}
-	msgs := []ai.Message{
-		ai.NewUser("first message long enough to exceed tiny budget"),
-		ai.NewUser("middle message one"),
-		ai.NewUser("middle message two"),
-		ai.NewUser("last message also long enough"),
+	msgs := []core.Message{
+		core.NewUser("first message long enough to exceed tiny budget"),
+		core.NewUser("middle message one"),
+		core.NewUser("middle message two"),
+		core.NewUser("last message also long enough"),
 	}
 	out, err := c.Compact(context.Background(), msgs)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestCompactSummarizes(t *testing.T) {
 	if len(out) != 3 {
 		t.Fatalf("expected 3 messages (first+summary+last), got %d", len(out))
 	}
-	sys, ok := out[1].(ai.System)
+	sys, ok := out[1].(core.System)
 	if !ok {
 		t.Fatalf("expected system message at index 1, got %T", out[1])
 	}

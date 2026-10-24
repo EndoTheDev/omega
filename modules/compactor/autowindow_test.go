@@ -35,11 +35,11 @@ func autoTestCompactor(p *contextWindowProvider, threshold float64) *Compactor {
 // 16384, effective 83680; at threshold 0.6 the budget is 50208. The
 // same history stays under a manual 32768 window's budget (9840) and
 // triggers compaction against the probed one.
-var autoMsgs = []ai.Message{
-	ai.NewUser("first padded message to survive keep_first"),
-	ai.NewUser(strings_repeat("middle filler ", 700)),
-	ai.NewUser("middle filler two padded"),
-	ai.NewUser("last padded message to survive keep_last"),
+var autoMsgs = []core.Message{
+	core.NewUser("first padded message to survive keep_first"),
+	core.NewUser(strings_repeat("middle filler ", 700)),
+	core.NewUser("middle filler two padded"),
+	core.NewUser("last padded message to survive keep_last"),
 }
 
 func strings_repeat(s string, n int) string {
@@ -107,8 +107,8 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 	summary := "summary text"
 	provider := &contextWindowProvider{
 		Provider: ai.NewFakeProvider("test",
-			ai.ResponseChunk{Type: "response_chunk", Content: summary},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+			core.ResponseChunk{Type: "response_chunk", Content: summary},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	}
 	c := &Compactor{
@@ -116,11 +116,11 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 		config:     core.CompactionConfig{Enabled: true, Threshold: 1.0, KeepFirst: 1, KeepLast: 1},
 		autoWindow: 3000,
 	}
-	msgs := []ai.Message{
-		ai.NewUser("head message kept"),
-		ai.NewUser(strings_repeat("filler ", 1200)),
-		ai.NewUser("middle filler two"),
-		ai.NewUser("tail message kept"),
+	msgs := []core.Message{
+		core.NewUser("head message kept"),
+		core.NewUser(strings_repeat("filler ", 1200)),
+		core.NewUser("middle filler two"),
+		core.NewUser("tail message kept"),
 	}
 	out, err := c.Compact(context.Background(), msgs)
 	if err != nil {

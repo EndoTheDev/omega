@@ -347,4 +347,3 @@ func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 		t.Fatalf("trimmed 'list' should call listTools; got %q", res.Text)
 	}
 }
-

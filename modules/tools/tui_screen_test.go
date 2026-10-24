@@ -3,7 +3,7 @@ package tools
 // Screen tests for the module-owned /files browser (card t_88bb7dcf;
 // behavior ported unchanged from the old modules/tui browser.go): the
 // open-walk-preview-close state machine and the traversal defenses,
-// driven through the agent.TUIProvider contract with a recording
+// driven through the core.TUIProvider contract with a recording
 // console.
 
 import (
@@ -16,7 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// recordingConsole is an agent.TUIConsole that records output and
+// recordingConsole is an core.TUIConsole that records output and
 // renders styles unchanged.
 type recordingConsole struct {
 	labels []string
@@ -34,7 +34,7 @@ func (c *recordingConsole) ClearError()      { c.errs = nil }
 func (c *recordingConsole) Style(string) core.TUIStyle {
 	return func(s string) string { return s }
 }
-func (c *recordingConsole) CWD() string         { return c.cwd }
+func (c *recordingConsole) CWD() string        { return c.cwd }
 func (c *recordingConsole) Ext() *core.Context { return nil }
 
 // plainFilesConsole builds a recording console rooted at dir.

@@ -3,13 +3,12 @@ package store
 import (
 	"context"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
 // Message tree support (t_17365247): parent pointers ride the whole-
 // message JSON payloads; row ids are the message identities; selections
-// persist as ai.VariantSelect bookkeeping entries in the append list.
+// persist as core.VariantSelect bookkeeping entries in the append list.
 // No schema migration.
 
 // conversationRole reports whether a stored role takes part in the
@@ -34,7 +33,7 @@ func (s *Store) loadRows(ctx context.Context, sessionID string) ([]core.StoredMe
 		if err := rows.Scan(&sm.ID, &role, &payload, &sm.CreatedAt); err != nil {
 			return nil, err
 		}
-		m, err := ai.DecodeMessage(role, []byte(payload))
+		m, err := core.DecodeMessage(role, []byte(payload))
 		if err != nil {
 			return nil, err
 		}
@@ -106,12 +105,12 @@ func (s *Store) GetActiveView(ctx context.Context, sessionID string) (core.Activ
 
 // GetActiveMessages returns the active path as plain messages - the
 // context assembly and session-load seam.
-func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]ai.Message, error) {
+func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]core.Message, error) {
 	view, err := s.GetActiveView(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ai.Message, 0, len(view.Path))
+	out := make([]core.Message, 0, len(view.Path))
 	for _, sm := range view.Path {
 		out = append(out, sm.Message)
 	}
@@ -125,7 +124,7 @@ func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]ai.M
 // leaf (what the message follows/answers right now). The merged view
 // (loadViewRows) includes ancestor rows for parented sessions, so a
 // branch child's first message chains onto the ancestor leaf correctly.
-func (s *Store) resolveParent(ctx context.Context, sessionID string, msg ai.Message) (string, error) {
+func (s *Store) resolveParent(ctx context.Context, sessionID string, msg core.Message) (string, error) {
 	view, err := s.GetActiveView(ctx, sessionID)
 	if err != nil {
 		return "", err

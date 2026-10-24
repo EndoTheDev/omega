@@ -2,7 +2,7 @@ package tools
 
 // The interactive /files browser (ported from the old modules/tui
 // browser.go, card t_88bb7dcf): the full-screen view moves to the
-// module that owns the files domain, as an agent.TUIScreen the TUI
+// module that owns the files domain, as an core.TUIScreen the TUI
 // shell routes keys and renders. Read-only view state only.
 
 import (
@@ -15,7 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// tui implements agent.TUIProvider for the /files command.
+// tui implements core.TUIProvider for the /files command.
 type tui struct{}
 
 var _ core.TUIProvider = (*tui)(nil)

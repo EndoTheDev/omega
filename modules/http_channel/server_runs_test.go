@@ -29,11 +29,11 @@ import (
 // test therefore controls both the pacing and the completeness of the run.
 type stepProvider struct {
 	modelName string
-	next      chan []ai.StreamEvent
+	next      chan []core.ProviderStreamEvent
 }
 
 func newStepProvider(modelName string) *stepProvider {
-	return &stepProvider{modelName: modelName, next: make(chan []ai.StreamEvent)}
+	return &stepProvider{modelName: modelName, next: make(chan []core.ProviderStreamEvent)}
 }
 
 func (p *stepProvider) ModelName() string { return p.modelName }
@@ -59,8 +59,8 @@ func (p *stepProvider) ModelInfo() (ai.ModelInfo, error) {
 	return ai.ModelInfo{}, nil
 }
 
-func (p *stepProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSchema) <-chan ai.StreamEvent {
-	events := make(chan ai.StreamEvent)
+func (p *stepProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)
 		for batch := range p.next {
@@ -72,7 +72,7 @@ func (p *stepProvider) Stream(_ context.Context, _ []ai.Message, _ []ai.ToolSche
 	return events
 }
 
-func (p *stepProvider) send(batch ...ai.StreamEvent) {
+func (p *stepProvider) send(batch ...core.ProviderStreamEvent) {
 	p.next <- batch
 }
 
@@ -85,10 +85,10 @@ func (p *stepProvider) done() {
 // finalStep batches the turn-closing tail: the response chunk plus the
 // stop StreamEnd that testLoop answers with the assistant/turn_end/agent_end
 // sequence.
-func finalStep(content string) []ai.StreamEvent {
-	return []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: content},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+func finalStep(content string) []core.ProviderStreamEvent {
+	return []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: content},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 }
 
@@ -242,7 +242,7 @@ func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
 	defer cancel()
 
 	// First step lands on the wire, run is mid-flight.
-	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "a"})
+	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "a"})
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s1") })
 
@@ -369,7 +369,7 @@ func TestDetachedRunConflict(t *testing.T) {
 
 	resp, cancel, sc := postChatStream(t, ts, "s3")
 	defer cancel()
-	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "busy"})
+	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "busy"})
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s3") })
 
@@ -423,7 +423,7 @@ func TestSessionsListRunningFlag(t *testing.T) {
 
 	resp, cancel, sc := postChatStream(t, ts, "s4")
 	defer cancel()
-	prov.send(ai.ResponseChunk{Type: "response_chunk", Content: "live"})
+	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "live"})
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s4") })
 
@@ -514,14 +514,14 @@ func (hangLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "stop"}
 			return nil
 		}
-		call := ai.ToolCall{ID: "c1", Name: "hang"}
-		opts.Events <- core.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: call}}
-		opts.Events <- core.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+		call := core.ToolCall{ID: "c1", Name: "hang"}
+		opts.Events <- core.StreamEvent{Event: core.ToolCallEvent{Type: "tool_call", ToolCall: call}}
+		opts.Events <- core.StreamEvent{Event: core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
 		result, err := opts.Tools["hang"].Run(ctx, call.Arguments)
 		if err != nil {
-			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), call.ID, true)}
+			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(err.Error(), call.ID, true)}
 		} else {
-			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, call.ID, false)}
+			opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(result, call.ID, false)}
 		}
 		opts.Events <- core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: 1}
 	}
@@ -626,13 +626,13 @@ type scriptedStopLoop struct{ started func() }
 func (l scriptedStopLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	opts.Events <- core.AgentStart{Type: "agent_start"}
 	opts.Events <- core.TurnStart{Type: "turn_start", Turn: 1}
-	opts.Events <- core.StreamEvent{Event: ai.ResponseChunk{Type: "response_chunk", Content: "par"}}
-	opts.Events <- core.StreamEvent{Event: ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "hang"}}}
-	opts.Events <- core.StreamEvent{Event: ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+	opts.Events <- core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "par"}}
+	opts.Events <- core.StreamEvent{Event: core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "hang"}}}
+	opts.Events <- core.StreamEvent{Event: core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
 	// Mirror the real loop: the assistant persists before the tool
 	// runs, and both survive the cancelled ctx (WithoutCancel law).
 	if sink := agent.RunTurnSink(ctx); sink != nil {
-		_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewAssistant("par"))
+		_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), core.NewAssistant("par"))
 	}
 	if l.started != nil {
 		l.started()
@@ -640,14 +640,14 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts core.LoopOptions) error 
 	result, err := opts.Tools["hang"].Run(ctx, nil)
 	if err != nil {
 		if sink := agent.RunTurnSink(ctx); sink != nil {
-			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewToolResult(err.Error(), "c1", true))
+			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), core.NewToolResult(err.Error(), "c1", true))
 		}
-		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(err.Error(), "c1", true)}
+		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(err.Error(), "c1", true)}
 	} else {
 		if sink := agent.RunTurnSink(ctx); sink != nil {
-			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), ai.NewToolResult(result, "c1", false))
+			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), core.NewToolResult(result, "c1", false))
 		}
-		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: ai.NewToolResult(result, "c1", false)}
+		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(result, "c1", false)}
 	}
 	opts.Events <- core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
 	if ctx.Err() != nil {

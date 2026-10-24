@@ -6,15 +6,16 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // parseFileArgs splits args into image content and text prompt. Args
 // starting with "@" are treated as file references: image files are
 // loaded as base64 ImageContent, text files are inlined into the prompt.
 // Non-file args become the text prompt.
-func parseFileArgs(args []string) (string, []ai.ImageContent, error) {
+func parseFileArgs(args []string) (string, []core.ImageContent, error) {
 	var promptParts []string
-	var images []ai.ImageContent
+	var images []core.ImageContent
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "@") {
 			promptParts = append(promptParts, arg)

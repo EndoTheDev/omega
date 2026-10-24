@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // mockLogger records all Printf/Errorf calls so tests can assert on
@@ -58,8 +58,8 @@ func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 // and "agent ended" for a basic one-turn conversation.
 func TestLoopWithLogger(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	logger := &mockLogger{}
 
@@ -68,7 +68,7 @@ func TestLoopWithLogger(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 			Logger:   logger,
 		})
@@ -91,13 +91,13 @@ func TestLoopWithLogger(t *testing.T) {
 func TestLoopLoggerMaxTurns(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: emit a tool call so the loop continues.
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 		// Turn 2+: repeat — but MaxTurns=1 means we hit the cap before turn 2.
-		[]ai.StreamEvent{
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 	)
 	logger := &mockLogger{}
@@ -117,7 +117,7 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("go")},
+			Messages: []core.Message{core.NewUser("go")},
 			Tools:    tools,
 			Events:   events,
 			Logger:   logger,
@@ -138,7 +138,7 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 // when the provider sends a StreamEnd with an Error.
 func TestLoopLoggerStreamError(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "something broke"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "something broke"},
 	)
 	logger := &mockLogger{}
 
@@ -147,7 +147,7 @@ func TestLoopLoggerStreamError(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 			Logger:   logger,
 		})
@@ -166,13 +166,13 @@ func TestLoopLoggerStreamError(t *testing.T) {
 // a tool's Run returns an error.
 func TestLoopLoggerToolError(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 	logger := &mockLogger{}
@@ -192,7 +192,7 @@ func TestLoopLoggerToolError(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("go")},
+			Messages: []core.Message{core.NewUser("go")},
 			Tools:    tools,
 			Events:   events,
 			Logger:   logger,
@@ -216,7 +216,7 @@ func TestLoopLoggerToolError(t *testing.T) {
 // overflow error and no compactor is configured.
 func TestLoopLoggerOverflowNoCompactor(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
 	)
 	logger := &mockLogger{}
 
@@ -225,7 +225,7 @@ func TestLoopLoggerOverflowNoCompactor(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 			Logger:   logger,
 			// No CompactionProvider → "context full, no compactor loaded" branch.

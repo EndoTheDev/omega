@@ -14,7 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// consoleSpy is an agent.TUIConsole that records output and renders
+// consoleSpy is an core.TUIConsole that records output and renders
 // styles unchanged.
 type consoleSpy struct {
 	labels []string
@@ -27,12 +27,12 @@ func (c *consoleSpy) Labeled(label, body string) {
 	c.labels = append(c.labels, label)
 	c.bodies = append(c.bodies, body)
 }
-func (c *consoleSpy) Error(msg string)        { c.errs = append(c.errs, msg) }
-func (c *consoleSpy) ClearError()             {}
+func (c *consoleSpy) Error(msg string) { c.errs = append(c.errs, msg) }
+func (c *consoleSpy) ClearError()      {}
 func (c *consoleSpy) Style(string) core.TUIStyle {
 	return func(s string) string { return s }
 }
-func (c *consoleSpy) CWD() string         { return "" }
+func (c *consoleSpy) CWD() string        { return "" }
 func (c *consoleSpy) Ext() *core.Context { return c.ext }
 func (c *consoleSpy) transcript() string {
 	var sb strings.Builder

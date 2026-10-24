@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -39,11 +39,11 @@ func seedVariants(t *testing.T, m model) model {
 	if err := sp.CreateSession(ctx, "seeded", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	seed := []ai.Message{
-		ai.NewUser("which lane?"),
-		ai.NewAssistant("first answer"),
-		core.WithParentID(ai.NewAssistant("second answer"), "1"),
-		ai.NewVariantSelect("1", "2"),
+	seed := []core.Message{
+		core.NewUser("which lane?"),
+		core.NewAssistant("first answer"),
+		core.WithParentID(core.NewAssistant("second answer"), "1"),
+		core.NewVariantSelect("1", "2"),
 	}
 	for _, msg := range seed {
 		if err := sp.AppendMessage(ctx, "seeded", msg); err != nil {
@@ -108,7 +108,7 @@ func TestVariantSelectPersists(t *testing.T) {
 	if view.ActiveHeads["1"] != "3" {
 		t.Fatalf("selection did not persist as variant_select: active=%q", view.ActiveHeads["1"])
 	}
-	if len(flipped.history) != 2 || flipped.history[1].(ai.Assistant).Content != "second answer" {
+	if len(flipped.history) != 2 || flipped.history[1].(core.Assistant).Content != "second answer" {
 		t.Fatalf("path not reloaded after select: %v", flipped.history)
 	}
 	if markers := flipped.markersForHistory(); markers == nil || markers[1] != "[2/2]" {
@@ -166,7 +166,7 @@ func TestForkPersists(t *testing.T) {
 	if len(pinned.history) != 1 {
 		t.Fatalf("fork view not truncated to the pinned point: %d messages", len(pinned.history))
 	}
-	msg := applyForkPin(&pinned, ai.NewUser("new branch, same question"))
+	msg := applyForkPin(&pinned, core.NewUser("new branch, same question"))
 	if pinned.forkParent != "" {
 		t.Fatalf("pin not cleared after one send: %q", pinned.forkParent)
 	}
@@ -201,10 +201,10 @@ func TestRetrySiblingsPins(t *testing.T) {
 	mountScriptedRun(&mm,
 		// turn 1: partial response then a tool call - persists the
 		// pinned head, then the tool result
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "fresh "},
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nop"}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "fresh "},
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nop"}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 		// turn 2: the unpinned follow-on assistant
 		scriptedResponse("answer"),
@@ -259,7 +259,7 @@ func TestRetrySiblingsPins(t *testing.T) {
 // mountScriptedRun mounts the real agent loop and a scripted fake
 // provider into the model's extension context, so a started run
 // executes the loop and persists through its store sink.
-func mountScriptedRun(m *model, scripts ...[]ai.StreamEvent) {
+func mountScriptedRun(m *model, scripts ...[]core.ProviderStreamEvent) {
 	if err := agent_loop.NewPlugin().Mount(m.extensions); err != nil {
 		panic(err)
 	}
@@ -299,11 +299,11 @@ func TestLinearSessionNoVariants(t *testing.T) {
 	if err := sp.CreateSession(ctx, "linear", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	for _, msg := range []ai.Message{
-		ai.NewUser("q1"),
-		ai.NewAssistant("a1"),
-		ai.NewUser("q2"),
-		ai.NewAssistant("a2"),
+	for _, msg := range []core.Message{
+		core.NewUser("q1"),
+		core.NewAssistant("a1"),
+		core.NewUser("q2"),
+		core.NewAssistant("a2"),
 	} {
 		if err := sp.AppendMessage(ctx, "linear", msg); err != nil {
 			t.Fatal(err)

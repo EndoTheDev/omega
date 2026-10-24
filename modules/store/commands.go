@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -338,7 +337,7 @@ func HandleExportCommand(ctx context.Context, store core.StoreProvider, sessionI
 	defer f.Close()
 	enc := json.NewEncoder(f)
 	for _, msg := range messages {
-		role := ai.MessageRole(msg)
+		role := core.MessageRole(msg)
 		content := agent.MessageText(msg)
 		if err := enc.Encode(map[string]string{"role": role, "content": content}); err != nil {
 			return core.CommandResult{}, fmt.Errorf("export: %w", err)

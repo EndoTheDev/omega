@@ -17,12 +17,13 @@ type Plugin struct{}
 // NewPlugin returns a skills Plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-func (p *Plugin) Name() string       { return "skills" }
+func (p *Plugin) Name() string { return "skills" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "skills: reusable procedure files agents can invoke in a sub-agent"
 }
+
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "skills" }

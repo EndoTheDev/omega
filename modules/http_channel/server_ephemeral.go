@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -34,7 +33,7 @@ type ephemeralSession struct {
 	id        string
 	createdAt time.Time
 	updatedAt time.Time
-	history   []ai.Message
+	history   []core.Message
 	items     []transcriptItem
 	usage     streamUsage
 	last      *core.LastRunStats
@@ -110,7 +109,7 @@ func (r *ephRegistry) drop(id string) bool {
 // produces, minus the store row id - the variants surface addresses
 // ids, and an ephemeral session has none). The provider-facing history
 // copy lands through the loop's eph sink at run start (t_471f6d4a).
-func (r *ephRegistry) appendUser(id string, messages []ai.Message, now time.Time) {
+func (r *ephRegistry) appendUser(id string, messages []core.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.records[id]
@@ -118,7 +117,7 @@ func (r *ephRegistry) appendUser(id string, messages []ai.Message, now time.Time
 		return
 	}
 	for _, m := range messages {
-		if u, isUser := m.(ai.User); isUser {
+		if u, isUser := m.(core.User); isUser {
 			item := transcriptItem{Kind: "user", Content: u.Content, Time: now.UTC().Format(time.RFC3339)}
 			if len(u.Images) > 0 {
 				item.Images = u.Images
@@ -133,7 +132,7 @@ func (r *ephRegistry) appendUser(id string, messages []ai.Message, now time.Time
 // provider-facing history - the ephemeral conversation's store
 // equivalent. Best effort: a record that vanished (close, restart)
 // drops the write silently.
-func (r *ephRegistry) appendHistory(id string, msg ai.Message, now time.Time) {
+func (r *ephRegistry) appendHistory(id string, msg core.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.records[id]
@@ -153,8 +152,8 @@ type ephTurnSink struct {
 	id string
 }
 
-func (s ephTurnSink) AppendTurnMessage(ctx context.Context, msg ai.Message) error {
-	if a, ok := msg.(ai.Assistant); ok &&
+func (s ephTurnSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
+	if a, ok := msg.(core.Assistant); ok &&
 		a.Content == "" &&
 		(a.Thinking == nil || *a.Thinking == "") &&
 		len(a.ToolCalls) == 0 {
@@ -208,14 +207,14 @@ func (s *ephemeralSession) session() core.Session {
 // history returns a copy of the record's provider-facing history (the
 // context the next /chat run replays) - a fresh slice per read, so the
 // run's slice can never alias a concurrent commit's append.
-func (r *ephRegistry) history(id string) []ai.Message {
+func (r *ephRegistry) history(id string) []core.Message {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.records[id]
 	if !ok {
 		return nil
 	}
-	out := make([]ai.Message, len(s.history))
+	out := make([]core.Message, len(s.history))
 	copy(out, s.history)
 	return out
 }

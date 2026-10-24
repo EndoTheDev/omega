@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"gopkg.in/yaml.v3"
 )
@@ -21,7 +21,7 @@ import (
 func settingsKnobKeys(t *testing.T) map[string]bool {
 	t.Helper()
 	return map[string]bool{
-		"provider.type":              true,
+		"provider.type":               true,
 		"provider.model_name":         true,
 		"provider.vision_model":       true,
 		"provider.title_model":        true,
@@ -176,7 +176,7 @@ func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 	pctx := &agent.Context{Compactor: &compactor.Compactor{}}
 
 	payload, err := saveSettings(path, pctx, map[string]any{
-		"compaction.enabled": false,
+		"compaction.enabled":  false,
 		"provider.model_name": "new-model",
 	})
 	if err != nil {
@@ -311,7 +311,7 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	}
 	// the compactor honors the saved config on every Compact call:
 	// disabled compaction returns the input untouched regardless of size
-	msgs := []ai.Message{ai.User{Content: "hello"}, ai.Assistant{Content: "hi there"}}
+	msgs := []core.Message{core.User{Content: "hello"}, core.Assistant{Content: "hi there"}}
 	out, err := comp.Compact(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)

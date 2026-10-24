@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -39,12 +39,12 @@ type mockCompactionProvider struct {
 	callCount int
 }
 
-func (m *mockCompactionProvider) Compact(_ context.Context, messages []ai.Message) ([]ai.Message, error) {
+func (m *mockCompactionProvider) Compact(_ context.Context, messages []core.Message) ([]core.Message, error) {
 	m.called = true
 	m.callCount++
 	// Replace the message history with a single system message so
 	// len(compacted) < len(messages) and the log branch fires.
-	return []ai.Message{ai.NewSystem("compacted")}, nil
+	return []core.Message{core.NewSystem("compacted")}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -56,8 +56,8 @@ func (m *mockCompactionProvider) Compact(_ context.Context, messages []ai.Messag
 // an error containing "context canceled".
 func TestRunContextCancellation(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -68,7 +68,7 @@ func TestRunContextCancellation(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(ctx, core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 		})
 	}()
@@ -88,14 +88,14 @@ func TestRunContextCancellation(t *testing.T) {
 func TestRunToolProvidersMerging(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: call a tool provided by ToolProviders.
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "merged_tool", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "merged_tool", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 		// Turn 2: respond and stop.
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -118,7 +118,7 @@ func TestRunToolProvidersMerging(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:      provider,
-			Messages:      []ai.Message{ai.NewUser("go")},
+			Messages:      []core.Message{core.NewUser("go")},
 			ToolProviders: []core.ToolProvider{toolProvider},
 			Events:        events,
 		})
@@ -138,8 +138,8 @@ func TestRunToolProvidersMerging(t *testing.T) {
 // the prompt and guidelines to the message history.
 func TestRunPromptBuilder(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	pb := &mockPromptBuilder{
@@ -151,8 +151,8 @@ func TestRunPromptBuilder(t *testing.T) {
 	go func() {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
-			Provider:     provider,
-			Messages:     []ai.Message{ai.NewUser("hi")},
+			Provider:      provider,
+			Messages:      []core.Message{core.NewUser("hi")},
 			PromptBuilder: pb,
 			Events:        events,
 		})
@@ -170,9 +170,9 @@ func TestRunPromptBuilder(t *testing.T) {
 	if len(provider.LastMessages) == 0 {
 		t.Fatal("no messages recorded by provider")
 	}
-	sysMsg, ok := provider.LastMessages[0].(ai.System)
+	sysMsg, ok := provider.LastMessages[0].(core.System)
 	if !ok {
-		t.Fatalf("first message = %T, want ai.System", provider.LastMessages[0])
+		t.Fatalf("first message = %T, want core.System", provider.LastMessages[0])
 	}
 	if !strings.Contains(sysMsg.Content, "You are a test agent.") {
 		t.Errorf("system message missing prompt: %q", sysMsg.Content)
@@ -190,8 +190,8 @@ func TestRunPromptBuilder(t *testing.T) {
 // messages should replace the original history.
 func TestRunCompactionProvider(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	compactor := &mockCompactionProvider{}
@@ -201,7 +201,7 @@ func TestRunCompactionProvider(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:           provider,
-			Messages:           []ai.Message{ai.NewUser("hi"), ai.NewUser("second"), ai.NewUser("third")},
+			Messages:           []core.Message{core.NewUser("hi"), core.NewUser("second"), core.NewUser("third")},
 			CompactionProvider: compactor,
 			Events:             events,
 		})
@@ -232,14 +232,14 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: call the verbose tool.
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "verbose", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "verbose", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 		// Turn 2: stop.
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -258,14 +258,14 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:      provider,
-			Messages:      []ai.Message{ai.NewUser("go")},
+			Messages:      []core.Message{core.NewUser("go")},
 			Tools:         tools,
 			MaxToolOutput: 10,
 			Events:        events,
 		})
 	}()
 
-	var toolResult *ai.ToolResult
+	var toolResult *core.ToolResult
 	for e := range events {
 		if tre, ok := e.(core.ToolResultEvent); ok {
 			tr := tre.Message
@@ -293,14 +293,14 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 func TestRunUnknownTool(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: call a non-existent tool.
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "nonexistent", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nonexistent", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
 		// Turn 2: stop.
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -309,13 +309,13 @@ func TestRunUnknownTool(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("go")},
+			Messages: []core.Message{core.NewUser("go")},
 			Tools:    map[string]core.Tool{}, // empty tools map, no "nonexistent" tool
 			Events:   events,
 		})
 	}()
 
-	var toolResult *ai.ToolResult
+	var toolResult *core.ToolResult
 	for e := range events {
 		if tre, ok := e.(core.ToolResultEvent); ok {
 			tr := tre.Message
@@ -340,14 +340,14 @@ func TestRunUnknownTool(t *testing.T) {
 func TestRunInjectedMessagesDraining(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: respond and stop (no tool calls).
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "first"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "first"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 		// Turn 2: after injection, respond and stop again.
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "second"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "second"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -360,7 +360,7 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:         provider,
-			Messages:         []ai.Message{ai.NewUser("go")},
+			Messages:         []core.Message{core.NewUser("go")},
 			Events:           events,
 			InjectedMessages: injected,
 		})
@@ -382,7 +382,7 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 	// Find the user message with injected content in the second call's messages.
 	var foundInjected bool
 	for _, msg := range provider.LastMessages {
-		if u, ok := msg.(ai.User); ok {
+		if u, ok := msg.(core.User); ok {
 			if strings.Contains(u.Content, "injected message 1") && strings.Contains(u.Content, "injected message 2") {
 				foundInjected = true
 			}
@@ -398,10 +398,10 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 // Thinking field.
 func TestRunThinkingChunk(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ThinkingChunk{Type: "thinking_chunk", Content: "Let me think..."},
-		ai.ThinkingChunk{Type: "thinking_chunk", Content: " about this."},
-		ai.ResponseChunk{Type: "response_chunk", Content: "Here is my answer."},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ThinkingChunk{Type: "thinking_chunk", Content: "Let me think..."},
+		core.ThinkingChunk{Type: "thinking_chunk", Content: " about this."},
+		core.ResponseChunk{Type: "response_chunk", Content: "Here is my answer."},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	events := make(chan core.Event, 64)
@@ -409,12 +409,12 @@ func TestRunThinkingChunk(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
 		})
 	}()
 
-	var assistantMsg *ai.Assistant
+	var assistantMsg *core.Assistant
 	for e := range events {
 		if am, ok := e.(core.AssistantMessageEvent); ok {
 			msg := am.Message
@@ -441,13 +441,13 @@ func TestRunThinkingChunk(t *testing.T) {
 // via ToolProviders (plural) should merge its tools.
 func TestRunToolProviderSingular(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
-		[]ai.StreamEvent{
-			ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "singular_tool", Arguments: map[string]any{}}},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "singular_tool", Arguments: map[string]any{}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -470,7 +470,7 @@ func TestRunToolProviderSingular(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:      provider,
-			Messages:      []ai.Message{ai.NewUser("go")},
+			Messages:      []core.Message{core.NewUser("go")},
 			ToolProviders: []core.ToolProvider{toolProvider},
 			Events:        events,
 		})
@@ -489,8 +489,8 @@ func TestRunToolProviderSingular(t *testing.T) {
 // returns an error. The loop should emit AgentEnd with FinishReason="error".
 func TestRunCompactionError(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	compactor := &errorCompactor{}
@@ -500,7 +500,7 @@ func TestRunCompactionError(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:           provider,
-			Messages:           []ai.Message{ai.NewUser("hi")},
+			Messages:           []core.Message{core.NewUser("hi")},
 			CompactionProvider: compactor,
 			Events:             events,
 		})
@@ -517,7 +517,7 @@ func TestRunCompactionError(t *testing.T) {
 
 type errorCompactor struct{}
 
-func (errorCompactor) Compact(_ context.Context, _ []ai.Message) ([]ai.Message, error) {
+func (errorCompactor) Compact(_ context.Context, _ []core.Message) ([]core.Message, error) {
 	return nil, fmt.Errorf("compaction failed")
 }
 
@@ -526,13 +526,13 @@ func (errorCompactor) Compact(_ context.Context, _ []ai.Message) ([]ai.Message, 
 func TestRunOverflowRetryWithCompactor(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: overflow error with no content streamed.
-		[]ai.StreamEvent{
-			ai.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
+		[]core.ProviderStreamEvent{
+			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
 		},
 		// Turn 2 (retry): respond normally.
-		[]ai.StreamEvent{
-			ai.ResponseChunk{Type: "response_chunk", Content: "recovered"},
-			ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "recovered"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
 
@@ -543,7 +543,7 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider:           provider,
-			Messages:           []ai.Message{ai.NewUser("hi")},
+			Messages:           []core.Message{core.NewUser("hi")},
 			CompactionProvider: compactor,
 			Events:             events,
 		})
@@ -567,8 +567,8 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 // should be skipped without panic.
 func TestRunNilToolProviderEntry(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	events := make(chan core.Event, 64)
@@ -576,7 +576,7 @@ func TestRunNilToolProviderEntry(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			// Include a nil entry in ToolProviders.
 			ToolProviders: []core.ToolProvider{nil, nil},
 			Events:        events,
@@ -593,8 +593,8 @@ func TestRunNilToolProviderEntry(t *testing.T) {
 // to an empty map (the loop should not panic).
 func TestRunNilToolsMap(t *testing.T) {
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	events := make(chan core.Event, 64)
@@ -602,7 +602,7 @@ func TestRunNilToolsMap(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(context.Background(), core.LoopOptions{
 			Provider: provider,
-			Messages: []ai.Message{ai.NewUser("hi")},
+			Messages: []core.Message{core.NewUser("hi")},
 			Tools:    nil, // nil tools map
 			Events:   events,
 		})
@@ -621,8 +621,8 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 	// Provider that always stops without tool calls, so we reach the
 	// blocking-injection path on every turn.
 	provider := ai.NewFakeProvider("test",
-		ai.ResponseChunk{Type: "response_chunk", Content: "hello"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -633,7 +633,7 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 		defer close(events)
 		Loop{}.Run(ctx, core.LoopOptions{
 			Provider:         provider,
-			Messages:         []ai.Message{ai.NewUser("hi")},
+			Messages:         []core.Message{core.NewUser("hi")},
 			Events:           events,
 			InjectedMessages: injected,
 			// One-shot mode: UserInput is nil.

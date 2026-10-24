@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 const keypoolModel = "glm-5.3"
@@ -46,23 +47,23 @@ func TestLiveKeypoolAnthropic(t *testing.T) {
 	}}
 
 	// Turn 1: expect a get_weather tool call.
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
 	text, thinking := "", ""
 	var callID string
-	var end ai.StreamEnd
+	var end core.StreamEnd
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			text += ev.Content
-		case ai.ThinkingChunk:
+		case core.ThinkingChunk:
 			thinking += ev.Content
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			t.Logf("tool call: id=%s name=%s args=%v", ev.ToolCall.ID, ev.ToolCall.Name, ev.ToolCall.Arguments)
 			if callID != "" {
 				t.Logf("second tool call event; keeping first id")
 			}
 			callID = ev.ToolCall.ID
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			end = ev
 		}
 	}
@@ -78,19 +79,19 @@ func TestLiveKeypoolAnthropic(t *testing.T) {
 	t.Logf("turn 1: thinking %d chars, stop=%s", len(thinking), end.FinishReason)
 
 	// Turn 2: send assistant tool_use + folded tool_result back.
-	messages := []ai.Message{
-		ai.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
-		ai.Assistant{Content: "", ToolCalls: []ai.ToolCall{{ID: callID, Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}},
-		ai.NewToolResult("22C, sunny", callID, false),
+	messages := []core.Message{
+		core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
+		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: callID, Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}},
+		core.NewToolResult("22C, sunny", callID, false),
 	}
 	p2, _ := keypoolProvider(t, "anthropic") // fresh provider: separate request, same client key (rotation)
 	got2 := collectEvents(t, p2.Stream(testContext(), messages, tools))
-	text2, end2 := "", ai.StreamEnd{}
+	text2, end2 := "", core.StreamEnd{}
 	for _, e := range got2 {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			text2 += ev.Content
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			end2 = ev
 		}
 	}
@@ -123,19 +124,19 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
 	}}
 
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("Use the get_weather tool for Tokyo.")}, tools))
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo.")}, tools))
 	text, thinking := "", ""
-	var calls []ai.ToolCallEvent
-	end := ai.StreamEnd{}
+	var calls []core.ToolCallEvent
+	end := core.StreamEnd{}
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			text += ev.Content
-		case ai.ThinkingChunk:
+		case core.ThinkingChunk:
 			thinking += ev.Content
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			calls = append(calls, ev)
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			end = ev
 		}
 	}
@@ -155,18 +156,18 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 		host, len(calls), len(thinking), deref(end.PromptEvalCount), deref(end.EvalCount), deref(end.CachedCount))
 
 	// Tool result round trip.
-	messages := []ai.Message{
-		ai.NewUser("Use the get_weather tool for Tokyo."),
-		ai.Assistant{Content: "", ToolCalls: []ai.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
-		ai.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
+	messages := []core.Message{
+		core.NewUser("Use the get_weather tool for Tokyo."),
+		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
+		core.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
 	}
 	got2 := collectEvents(t, p.Stream(testContext(), messages, tools))
-	text2, end2 := "", ai.StreamEnd{}
+	text2, end2 := "", core.StreamEnd{}
 	for _, e := range got2 {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			text2 += ev.Content
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			end2 = ev
 		}
 	}
@@ -197,16 +198,16 @@ func TestLiveKeypoolOllama(t *testing.T) {
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
 	}}
 
-	got := collectEvents(t, p.Stream(testContext(), []ai.Message{ai.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
-	var calls []ai.ToolCallEvent
-	end := ai.StreamEnd{}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
+	var calls []core.ToolCallEvent
+	end := core.StreamEnd{}
 	for _, e := range got {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			t.Logf("turn 1 text: %s", ev.Content)
-		case ai.ToolCallEvent:
+		case core.ToolCallEvent:
 			calls = append(calls, ev)
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			end = ev
 		}
 	}
@@ -225,18 +226,18 @@ func TestLiveKeypoolOllama(t *testing.T) {
 	t.Logf("turn 1: tool call id=%s name=%s args=%v", calls[0].ToolCall.ID, calls[0].ToolCall.Name, calls[0].ToolCall.Arguments)
 
 	// Turn 2: tool result folds back (role "tool" + tool_call_id).
-	messages := []ai.Message{
-		ai.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
-		ai.Assistant{Content: "", ToolCalls: []ai.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
-		ai.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
+	messages := []core.Message{
+		core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
+		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
+		core.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
 	}
 	got2 := collectEvents(t, p.Stream(testContext(), messages, tools))
-	text2, end2 := "", ai.StreamEnd{}
+	text2, end2 := "", core.StreamEnd{}
 	for _, e := range got2 {
 		switch ev := e.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			text2 += ev.Content
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			end2 = ev
 		}
 	}

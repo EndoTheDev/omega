@@ -22,7 +22,7 @@ const defaultLogLines = 200
 // webui's logTailWindow).
 const logTailWindow = 512 << 10
 
-// tui implements agent.TUIProvider for the /logs command.
+// tui implements core.TUIProvider for the /logs command.
 type tui struct{}
 
 var _ core.TUIProvider = (*tui)(nil)

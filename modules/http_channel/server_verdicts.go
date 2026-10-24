@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -21,15 +20,15 @@ import (
 // millisecond epoch so the client countdowns against the server clock
 // without a timezone dance.
 type verdictCardWire struct {
-	ID        string             `json:"id"`
-	SessionID string             `json:"session_id"`
-	Title     string             `json:"title"`
-	Body      string             `json:"body,omitempty"`
-	Options   []ai.VerdictOption `json:"options,omitempty"`
-	Multi     bool               `json:"multi,omitempty"`
-	AllowText bool               `json:"allow_text,omitempty"`
-	TimeoutS  int                `json:"timeout_s,omitempty"`
-	ExpiresAt int64              `json:"expires_at"`
+	ID        string               `json:"id"`
+	SessionID string               `json:"session_id"`
+	Title     string               `json:"title"`
+	Body      string               `json:"body,omitempty"`
+	Options   []core.VerdictOption `json:"options,omitempty"`
+	Multi     bool                 `json:"multi,omitempty"`
+	AllowText bool                 `json:"allow_text,omitempty"`
+	TimeoutS  int                  `json:"timeout_s,omitempty"`
+	ExpiresAt int64                `json:"expires_at"`
 }
 
 // verdictAnswerRequest is the POST /sessions/{id}/verdicts body. One of

@@ -17,7 +17,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/ai"
 )
 
 var _ core.AgentSessionStore = (*Store)(nil)
@@ -31,7 +30,7 @@ func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, age
 	if agentName == "" {
 		agentName = agent.DefaultAgentName
 	}
-	now := ai.NowISO()
+	now := core.NowISO()
 	var parent any
 	if parentID != "" {
 		parent = parentID
@@ -66,7 +65,7 @@ func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core
 	return out, rows.Err()
 }
 
-// aiNowISO removed: ai.NowISO is the store-wide timestamp helper.
+// aiNowISO removed: core.NowISO is the store-wide timestamp helper.
 
 // HandleAgentsCommand renders the TUI's /agents table: the profile
 // inventory with session counts filled from the store. Needs OMEGA_HOME

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestForeignKeyCascadeOnPooledConnections(t *testing.T) {
@@ -40,7 +40,7 @@ func TestForeignKeyCascadeOnPooledConnections(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			errs <- s.AppendMessage(ctx, "fk-s1", ai.NewUser(fmt.Sprintf("wave %d", i)))
+			errs <- s.AppendMessage(ctx, "fk-s1", core.NewUser(fmt.Sprintf("wave %d", i)))
 		}(i)
 	}
 	wg.Wait()
@@ -53,7 +53,7 @@ func TestForeignKeyCascadeOnPooledConnections(t *testing.T) {
 
 	// Every pooled connection must enforce FK: an insert into messages
 	// under a nonexistent session_id is refused.
-	if err := s.AppendMessage(ctx, "fk-gone", ai.NewUser("orphan")); err == nil {
+	if err := s.AppendMessage(ctx, "fk-gone", core.NewUser("orphan")); err == nil {
 		t.Fatal("append under a nonexistent session succeeded - foreign key enforcement is OFF on the pool")
 	}
 

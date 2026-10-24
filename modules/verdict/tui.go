@@ -17,14 +17,14 @@ type tuiProvider struct {
 	hub core.VerdictsProvider
 }
 
-// TUICommands implements agent.TUIProvider.
+// TUICommands implements core.TUIProvider.
 func (p *tuiProvider) TUICommands() []core.TUICommand {
 	return []core.TUICommand{
 		{Name: "/verdict", Help: "list pending verdict cards / answer one: /verdict <N> <num|1,3|y|n|skip|text>"},
 	}
 }
 
-// HandleTUICommand implements agent.TUIProvider.
+// HandleTUICommand implements core.TUIProvider.
 //
 //	/verdict            list every pending card (oldest first), numbered
 //	/verdict N          pick one to answer: prints the card and its options

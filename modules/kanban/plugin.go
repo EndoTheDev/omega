@@ -36,6 +36,7 @@ func (p *Plugin) Name() string { return "kanban" }
 func (p *Plugin) Description() string {
 	return "kanban: the durable task board agents and workers coordinate through"
 }
+
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "kanban" }

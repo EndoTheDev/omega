@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // captionPrompt is the deterministic instruction the vision model gets
@@ -58,7 +58,7 @@ func NewCaptioner(base ai.Provider, model string, sink agent.CaptionStore, log c
 // Caption returns the caption for one image: process memo -> store ->
 // one vision-model call (persisted on success). Implements
 // agent.Captioner.
-func (c *Captioner) Caption(ctx context.Context, img ai.ImageContent) (string, error) {
+func (c *Captioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {
 	id := ImageID(img)
 	if v, ok := c.cache.Load(id); ok {
 		return v.(string), nil
@@ -99,20 +99,20 @@ func (c *Captioner) Caption(ctx context.Context, img ai.ImageContent) (string, e
 
 // describe runs ONE vision-model call for one image and collects the
 // streamed response.
-func (c *Captioner) describe(ctx context.Context, img ai.ImageContent) (string, error) {
+func (c *Captioner) describe(ctx context.Context, img core.ImageContent) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, captionTimeout)
 	defer cancel()
-	user := ai.User{
+	user := core.User{
 		Content:   captionPrompt,
-		Images:    []ai.ImageContent{img},
-		Timestamp: ai.NowISO(),
+		Images:    []core.ImageContent{img},
+		Timestamp: core.NowISO(),
 	}
 	var sb strings.Builder
-	for event := range c.prov.Stream(ctx, []ai.Message{user}, nil) {
+	for event := range c.prov.Stream(ctx, []core.Message{user}, nil) {
 		switch e := event.(type) {
-		case ai.ResponseChunk:
+		case core.ResponseChunk:
 			sb.WriteString(e.Content)
-		case ai.StreamEnd:
+		case core.StreamEnd:
 			if e.Error != "" {
 				return "", fmt.Errorf("vision model %s: %s", c.prov.ModelName(), e.Error)
 			}
@@ -128,7 +128,7 @@ func (c *Captioner) describe(ctx context.Context, img ai.ImageContent) (string, 
 // ImageID is the content-addressed caption key: media type plus the
 // sha256 of the base64 payload. The same bytes in any session, message,
 // or process share one caption.
-func ImageID(img ai.ImageContent) string {
+func ImageID(img core.ImageContent) string {
 	sum := sha256.Sum256([]byte(img.Base64))
 	return img.MediaType + "-" + hex.EncodeToString(sum[:])
 }

@@ -4,18 +4,17 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 // vo builds pick rows from labels: the test shorthand for
-// []ai.VerdictOption (labels only, no description).
-func vo(labels ...string) []ai.VerdictOption {
-	out := make([]ai.VerdictOption, len(labels))
+// []core.VerdictOption (labels only, no description).
+func vo(labels ...string) []core.VerdictOption {
+	out := make([]core.VerdictOption, len(labels))
 	for i, l := range labels {
-		out[i] = ai.VerdictOption{Label: l}
+		out[i] = core.VerdictOption{Label: l}
 	}
 	return out
 }

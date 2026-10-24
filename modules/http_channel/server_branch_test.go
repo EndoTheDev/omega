@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestBranchEndpointCreatesChild(t *testing.T) {
@@ -72,7 +72,7 @@ func TestBranchEndpointCreatesChild(t *testing.T) {
 	}
 	found := false
 	for _, m := range stored {
-		sys, ok := m.(ai.System)
+		sys, ok := m.(core.System)
 		if ok && strings.Contains(sys.Content, "branched from par") {
 			found = true
 		}
@@ -112,10 +112,10 @@ func TestBranchChildInheritsAncestorPath(t *testing.T) {
 	createSession(t, ts, "src")
 
 	// seed the parent by hand (no provider needed here)
-	if err := st.AppendMessage(context.Background(), "src", ai.NewUser("parent question")); err != nil {
+	if err := st.AppendMessage(context.Background(), "src", core.NewUser("parent question")); err != nil {
 		t.Fatalf("seed parent user: %v", err)
 	}
-	if err := st.AppendMessage(context.Background(), "src", ai.NewAssistant("parent answer")); err != nil {
+	if err := st.AppendMessage(context.Background(), "src", core.NewAssistant("parent answer")); err != nil {
 		t.Fatalf("seed parent assistant: %v", err)
 	}
 
@@ -145,17 +145,17 @@ func TestBranchChildInheritsAncestorPath(t *testing.T) {
 		t.Fatalf("child active view: %v", err)
 	}
 	leaf := view.Path[len(view.Path)-1:][0]
-	if leaf.Message.(ai.Assistant).Content != "parent answer" {
+	if leaf.Message.(core.Assistant).Content != "parent answer" {
 		t.Fatalf("child path leaf = %+v, want the parent assistant", leaf)
 	}
-	if err := st.AppendMessage(context.Background(), childID, ai.NewUser("child question")); err != nil {
+	if err := st.AppendMessage(context.Background(), childID, core.NewUser("child question")); err != nil {
 		t.Fatalf("append child message: %v", err)
 	}
 	view, err = st.GetActiveView(context.Background(), childID)
 	if err != nil {
 		t.Fatalf("child active view after append: %v", err)
 	}
-	if _, ok := view.Path[len(view.Path)-1].Message.(ai.User); !ok {
+	if _, ok := view.Path[len(view.Path)-1].Message.(core.User); !ok {
 		t.Fatalf("child path after append = %T, want the child user last", view.Path[len(view.Path)-1].Message)
 	}
 }
@@ -168,10 +168,10 @@ func TestExportJSONLShape(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	createSession(t, ts, "exp1")
-	if err := st.AppendMessage(context.Background(), "exp1", ai.NewUser("hello there")); err != nil {
+	if err := st.AppendMessage(context.Background(), "exp1", core.NewUser("hello there")); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
-	if err := st.AppendMessage(context.Background(), "exp1", ai.NewAssistant("hi, human")); err != nil {
+	if err := st.AppendMessage(context.Background(), "exp1", core.NewAssistant("hi, human")); err != nil {
 		t.Fatalf("seed assistant: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestExportHead(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	createSession(t, ts, "exph")
-	if err := st.AppendMessage(context.Background(), "exph", ai.NewUser("head seed")); err != nil {
+	if err := st.AppendMessage(context.Background(), "exph", core.NewUser("head seed")); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 

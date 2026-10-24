@@ -18,7 +18,7 @@ import (
 type fakeCronLister struct{ jobs []core.CronJobInfo }
 
 func (f fakeCronLister) Start(context.Context, core.CronDeps) error { return nil }
-func (f fakeCronLister) Stop() error                                 { return nil }
+func (f fakeCronLister) Stop() error                                { return nil }
 func (f fakeCronLister) Jobs() []core.CronJobInfo                   { return f.jobs }
 
 // noListerCron is a CronProvider that is not a CronLister - the shape
@@ -26,9 +26,9 @@ func (f fakeCronLister) Jobs() []core.CronJobInfo                   { return f.j
 type noListerCron struct{}
 
 func (noListerCron) Start(context.Context, core.CronDeps) error { return nil }
-func (noListerCron) Stop() error                                 { return nil }
+func (noListerCron) Stop() error                                { return nil }
 
-// consoleSpy is an agent.TUIConsole that records output and renders
+// consoleSpy is an core.TUIConsole that records output and renders
 // styles unchanged.
 type consoleSpy struct {
 	lines   []string
@@ -43,9 +43,9 @@ func (c *consoleSpy) ClearError()                { c.cleared++ }
 func (c *consoleSpy) Style(string) core.TUIStyle {
 	return func(s string) string { return s }
 }
-func (c *consoleSpy) CWD() string            { return "" }
-func (c *consoleSpy) Ext() *core.Context    { return c.ext }
-func (c *consoleSpy) transcript() string     { return strings.Join(c.lines, "\n") }
+func (c *consoleSpy) CWD() string        { return "" }
+func (c *consoleSpy) Ext() *core.Context { return c.ext }
+func (c *consoleSpy) transcript() string { return strings.Join(c.lines, "\n") }
 
 // TestRenderCronTable is pure: fixtures in, table out.
 func TestRenderCronTable(t *testing.T) {

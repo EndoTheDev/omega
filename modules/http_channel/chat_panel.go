@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -480,8 +479,8 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 	return rows
 }
 
-// imagesOf copies ai.ImageContent into the core vocabulary. Pure.
-func imagesOf(imgs []ai.ImageContent) []core.ImageContent {
+// imagesOf copies core.ImageContent into the core vocabulary. Pure.
+func imagesOf(imgs []core.ImageContent) []core.ImageContent {
 	if len(imgs) == 0 {
 		return nil
 	}

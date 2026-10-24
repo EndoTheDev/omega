@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -38,14 +38,14 @@ func seedInsightsRows(t *testing.T, st *store.Store) {
 	if err := st.CreateSession(ctx, "s1", "", "first session"); err != nil {
 		t.Fatalf("create s1: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "s1", ai.NewUser("hello world one")); err != nil {
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("hello world one")); err != nil {
 		t.Fatalf("append s1 u1: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "s1", ai.NewUser("hello world two")); err != nil {
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("hello world two")); err != nil {
 		t.Fatalf("append s1 u2: %v", err)
 	}
-	asst := ai.NewAssistant("response one")
-	asst.ToolCalls = []ai.ToolCall{
+	asst := core.NewAssistant("response one")
+	asst.ToolCalls = []core.ToolCall{
 		{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"cmd": "ls"}},
 		{ID: "tc2", Name: "files.read", Arguments: map[string]any{"path": "x.go"}},
 	}
@@ -55,17 +55,17 @@ func seedInsightsRows(t *testing.T, st *store.Store) {
 	if err := st.CreateSession(ctx, "s2", "", "second session"); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "s2", ai.NewUser("another message here")); err != nil {
+	if err := st.AppendMessage(ctx, "s2", core.NewUser("another message here")); err != nil {
 		t.Fatalf("append s2 u1: %v", err)
 	}
-	asst2 := ai.NewAssistant("response two")
-	asst2.ToolCalls = []ai.ToolCall{
+	asst2 := core.NewAssistant("response two")
+	asst2.ToolCalls = []core.ToolCall{
 		{ID: "tc3", Name: "shell.run", Arguments: map[string]any{"cmd": "pwd"}},
 	}
 	if err := st.AppendMessage(ctx, "s2", asst2); err != nil {
 		t.Fatalf("append s2 a1: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "s1", ai.NewModelChange("gpt-4o")); err != nil {
+	if err := st.AppendMessage(ctx, "s1", core.NewModelChange("gpt-4o")); err != nil {
 		t.Fatalf("append s1 metadata: %v", err)
 	}
 }
@@ -190,7 +190,7 @@ func seedOneUserTurn(t *testing.T, st *store.Store) {
 	if err := st.CreateSession(ctx, "solo", "", "only turn"); err != nil {
 		t.Fatalf("create solo: %v", err)
 	}
-	if err := st.AppendMessage(ctx, "solo", ai.NewUser("first and only user turn")); err != nil {
+	if err := st.AppendMessage(ctx, "solo", core.NewUser("first and only user turn")); err != nil {
 		t.Fatalf("append solo u1: %v", err)
 	}
 }

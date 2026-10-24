@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -18,11 +17,11 @@ import (
 // exportMessages writes messages as JSONL (one JSON object per line with
 // role and content fields) to w. Used by both the CLI export subcommand
 // and the TUI /export slash command.
-func exportMessages(messages []ai.Message, w io.Writer) error {
+func exportMessages(messages []core.Message, w io.Writer) error {
 	enc := json.NewEncoder(w)
 	for _, msg := range messages {
 		entry := map[string]any{
-			"role":    ai.MessageRole(msg),
+			"role":    core.MessageRole(msg),
 			"content": agent.MessageText(msg),
 		}
 		if err := enc.Encode(entry); err != nil {

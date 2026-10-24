@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // maxChatImageBytes caps one user message image accepted via /chat
@@ -26,9 +27,9 @@ const maxChatImageBytes = 10 * 1024 * 1024 // 10 MB
 // multiple of 4 bytes, so 3*len/4 slightly overestimates, which is the
 // safe direction for a cap). Returns the offending image info on
 // oversize - handleChat answers 400 with it.
-func checkImageSizes(messages []ai.Message) error {
+func checkImageSizes(messages []core.Message) error {
 	for i, m := range messages {
-		user, ok := m.(ai.User)
+		user, ok := m.(core.User)
 		if !ok {
 			continue
 		}

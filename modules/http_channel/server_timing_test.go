@@ -53,21 +53,21 @@ func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server,
 			},
 		},
 	}
-	script1 := []ai.StreamEvent{
-		ai.ThinkingChunk{Type: "thinking_chunk", Content: "t1"},
-		ai.ThinkingChunk{Type: "thinking_chunk", Content: "t2"},
-		ai.ResponseChunk{Type: "response_chunk", Content: "one"},
-		ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c1", Name: "sleep"}},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "tool_use"},
+	script1 := []core.ProviderStreamEvent{
+		core.ThinkingChunk{Type: "thinking_chunk", Content: "t1"},
+		core.ThinkingChunk{Type: "thinking_chunk", Content: "t2"},
+		core.ResponseChunk{Type: "response_chunk", Content: "one"},
+		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "sleep"}},
+		core.StreamEnd{Type: "stream_end", FinishReason: "tool_use"},
 	}
-	script2 := []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: "two"},
-		ai.ToolCallEvent{Type: "tool_call", ToolCall: ai.ToolCall{ID: "c2", Name: "sleep"}},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "tool_use"},
+	script2 := []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: "two"},
+		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c2", Name: "sleep"}},
+		core.StreamEnd{Type: "stream_end", FinishReason: "tool_use"},
 	}
-	script3 := []ai.StreamEvent{
-		ai.ResponseChunk{Type: "response_chunk", Content: "done"},
-		ai.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	script3 := []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: "done"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 	prov := ai.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
 	a := core.NewAgent(prov, nil, 0)
@@ -84,9 +84,9 @@ func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server,
 }
 
 type persistedMessage struct {
-	Role    string     `json:"role"`
-	Content string     `json:"content"`
-	Timing  *ai.Timing `json:"timing"`
+	Role    string       `json:"role"`
+	Content string       `json:"content"`
+	Timing  *core.Timing `json:"timing"`
 }
 
 // fetchPersistedMessages GETs the session detail and decodes every

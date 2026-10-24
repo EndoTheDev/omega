@@ -176,8 +176,8 @@ func TestUIActionsRoutesToCapsuleHandler(t *testing.T) {
 func TestUIActions404Shapes(t *testing.T) {
 	_, ts, _ := canvasServer(t)
 	for _, probe := range []struct {
-		body   string
-		wants  string
+		body  string
+		wants string
 	}{
 		{`{"module":"ghost","action":"x"}`, "unknown module"},
 		{`{"module":"probe","action":"vanish"}`, "unknown action"},
@@ -235,20 +235,20 @@ func newGatedProvider() *gatedProvider {
 	return &gatedProvider{release: make(chan struct{})}
 }
 
-func (p *gatedProvider) ModelName() string { return "gated" }
-func (p *gatedProvider) SetThinkingLevel(string) {}
-func (p *gatedProvider) WithModel(string) ai.Provider   { return p }
+func (p *gatedProvider) ModelName() string                    { return "gated" }
+func (p *gatedProvider) SetThinkingLevel(string)              {}
+func (p *gatedProvider) WithModel(string) ai.Provider         { return p }
 func (p *gatedProvider) WithThinkingLevel(string) ai.Provider { return p }
-func (p *gatedProvider) ListModels() ([]string, error) { return []string{"gated"}, nil }
-func (p *gatedProvider) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}, nil }
+func (p *gatedProvider) ListModels() ([]string, error)        { return []string{"gated"}, nil }
+func (p *gatedProvider) ModelInfo() (ai.ModelInfo, error)     { return ai.ModelInfo{}, nil }
 
-func (p *gatedProvider) Stream(context.Context, []ai.Message, []ai.ToolSchema) <-chan ai.StreamEvent {
-	events := make(chan ai.StreamEvent)
+func (p *gatedProvider) Stream(context.Context, []core.Message, []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)
-		events <- ai.ResponseChunk{Type: "response_chunk", Content: "a"}
+		events <- core.ResponseChunk{Type: "response_chunk", Content: "a"}
 		<-p.release
-		events <- ai.StreamEnd{Type: "stream_end", FinishReason: "stop"}
+		events <- core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
 	}()
 	return events
 }

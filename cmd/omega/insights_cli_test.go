@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -37,10 +37,10 @@ func setupInsightsEnv(t *testing.T, withSession bool) (home, sessionID string) {
 		if err := s.CreateSession(ctx, sessionID, "", "insights-test"); err != nil {
 			t.Fatalf("create session: %v", err)
 		}
-		if err := s.AppendMessage(ctx, sessionID, ai.NewUser("hello world")); err != nil {
+		if err := s.AppendMessage(ctx, sessionID, core.NewUser("hello world")); err != nil {
 			t.Fatalf("append user message: %v", err)
 		}
-		if err := s.AppendMessage(ctx, sessionID, ai.NewAssistant("hi there")); err != nil {
+		if err := s.AppendMessage(ctx, sessionID, core.NewAssistant("hi there")); err != nil {
 			t.Fatalf("append assistant message: %v", err)
 		}
 	}

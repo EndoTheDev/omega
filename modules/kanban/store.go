@@ -20,7 +20,7 @@ import (
 // shared sentinel, aliased here so store callers stay short).
 var ErrNotFound = core.ErrTaskNotFound
 
-// Store implements agent.KanbanProvider over SQLite. Safe for
+// Store implements core.KanbanProvider over SQLite. Safe for
 // concurrent use via *sql.DB (WAL + busy_timeout, same recipe as the
 // session store).
 //
@@ -34,9 +34,9 @@ type Store struct {
 
 	// board registry wiring (all optional; empty = single-board mode
 	// where any named board errors).
-	boardsDir  string
+	boardsDir   string
 	defaultName string // pointer target at mount ("" = unknown)
-	legacyDSN  string  // the main board's real path
+	legacyDSN   string // the main board's real path
 
 	mu    sync.Mutex
 	named map[string]*sql.DB
@@ -186,7 +186,7 @@ func (s *Store) handleFor(board string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Boards implements agent.BoardLister: the default board first, then
+// Boards implements core.BoardLister: the default board first, then
 // the registry directories that hold a kanban.db.
 func (s *Store) Boards(ctx context.Context) ([]core.BoardInfo, error) {
 	out := []core.BoardInfo{{Name: DefaultBoardName, Current: s.currentName() == DefaultBoardName || s.defaultName == ""}}

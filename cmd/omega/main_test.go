@@ -252,7 +252,6 @@ func TestResolveHomePaths(t *testing.T) {
 	}
 }
 
-
 // TestConfigSectionTable pins every plugin's config section routing
 // (section name -> plugin key, arc 2b t_889388cc): for each mounted
 // plugin the ConfigKey declaration matches its routing row, and the
@@ -353,7 +352,7 @@ func TestBuildConfigs(t *testing.T) {
 	cfg.Logging.File = "log-test.log"
 	cfg.Compaction = agent.CompactionConfig{
 		Enabled:       true,
-		Threshold:      0.42,
+		Threshold:     0.42,
 		ContextWindow: 4096,
 		KeepFirst:     3,
 		KeepLast:      8,
