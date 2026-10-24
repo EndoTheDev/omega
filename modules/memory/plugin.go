@@ -28,6 +28,12 @@ func (p *Plugin) Requires() []string { return nil }
 
 // Mount creates the FileMemory from config and populates ctx.Memory +
 // a memory tool provider.
+//
+// This Mount is the module's whole surface (arc 6 capsule, card
+// t_da1fcc76): the seam, the memory tool and the prompt section all
+// ship from here, and the module ships nothing else - no command, no
+// REST route, no canvas panel (nothing rendered memory before the arc).
+// Removal proof: TestMemoryRemovalProof (cmd/omega/removal_test.go).
 func (p *Plugin) Mount(ctx *core.Context) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["memory"].(Config); ok {

@@ -72,7 +72,7 @@ reference: `docs/tui.md`, module-owned command owners.
 | `skills/`       | skills, tools, prompt_sections | Skill loading + skills.read tool + /skills command + Available Skills section |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
 | `logging/`      | logging, TUI   | Operational logging (file logger, LoggerProvider) + /logs tail+follow command |
-| `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block |
+| `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block. The born-capsule: seam + tool + prompt section all ship from the same Mount; no command, REST route or canvas panel exists. Removal proof `TestMemoryRemovalProof` - arc 6 capsule |
 | `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
 | `tools/`        | tools, prompt_sections, TUI | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools); /files browser + /tools command |
 | `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
