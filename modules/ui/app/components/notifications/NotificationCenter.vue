@@ -325,8 +325,13 @@
   }
   .notif-badge {
     position: absolute;
-    top: -2px;
-    right: -4px;
+    /* card t_aca53fee: the old -2px/-4px offsets pushed the badge OUTSIDE
+       the bell button's box - a positioning overflow that clipped at the
+       menubar's corner in the narrow view. The badge now sits inside the
+       button's own 24px box (same top-right corner read, zero chrome
+       overflow); size/voice unchanged. */
+    top: 0;
+    right: 0;
     background: var(--accent);
     color: #181818;
     border-radius: 8px;

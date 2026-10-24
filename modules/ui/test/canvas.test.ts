@@ -27,6 +27,7 @@ import {
 import {
   createCanvasStore,
   formatCanvasPayload,
+  toastRowOf,
 } from "../app/composables/canvas.ts";
 import {
   DOCK_COMPONENTS,
@@ -309,6 +310,35 @@ test("formatCanvasPayload: pretty JSON, null payload marker", () => {
   assert.equal(formatCanvasPayload({ a: 1 }), JSON.stringify({ a: 1 }, null, 2));
 });
 
+// --- the toast panel body (card t_aca53fee) ---------------------------------
+
+const TOAST_RECORD = {
+  id: 42,
+  kind: "task",
+  source_id: "abc",
+  title: "Build finished",
+  verdict: "ok",
+  created_at: "2026-10-24T03:00:00Z",
+  read: false,
+};
+
+test("toastRowOf: the toast panel renders its record row read-only, not the JSON dump", () => {
+  // the arc 4b payload IS one record row: pass it through the row pipeline
+  assert.deepEqual(toastRowOf("toast", TOAST_RECORD), TOAST_RECORD);
+  assert.deepEqual(toastRowOf("toast", { id: 7, kind: "cron" }), { id: 7, kind: "cron" });
+  // every other kind keeps the v1 plain render
+  assert.equal(toastRowOf("list", TOAST_RECORD), null, "only kind toast");
+  assert.equal(toastRowOf("default", TOAST_RECORD), null);
+  // a toast with no record (the empty seeded panel) renders nothing row-shaped
+  assert.equal(toastRowOf("toast", null), null);
+  assert.equal(toastRowOf("toast", undefined), null);
+  // junk payloads fall back to the plain render, never crash
+  assert.equal(toastRowOf("toast", "junk"), null);
+  assert.equal(toastRowOf("toast", 7), null);
+  assert.equal(toastRowOf("toast", [TOAST_RECORD]), null, "not a rows array");
+  assert.equal(toastRowOf("toast", { unrelated: true }), null, "nothing row-shaped");
+});
+
 test("normalizeCanvasPanel guards the descriptor", () => {
   assert.equal(normalizeCanvasPanel(null), null);
   assert.equal(normalizeCanvasPanel("junk"), null);
@@ -332,9 +362,20 @@ test("CanvasPanel.vue: the generic renderer contract (title + payload view + act
   assert.match(src, /disabled/, "pending state disables the button");
   assert.match(src, /pending/, "pending state renders");
   assert.match(src, /canvas-error/, "error state renders");
-  // kind handling v1 is the plain render ONLY (Q2b law): no speculative
-  // per-kind template switching (rich kinds arrive with migrations)
+  // kind handling: v1 was the plain render only (Q2b); card t_aca53fee
+  // settled the toast kind - the record row renders read-only through
+  // the row pipeline, NEVER the raw JSON dump, and there is still no
+  // speculative per-kind template switching (the gate is script-side)
   assert.ok(!/v-if="panel\.kind/.test(src), "no speculative kind branches");
+  assert.match(src, /toastRowOf\(/, "the toast panel routes through the row pipeline");
+  // the row text width-truncates at the pane width (kind/key fields on
+  // one line) - the same contract the list panel's rows render under
+  const css = readFileSync(join(modules, "modules", "ui", "app", "assets", "css", "main.css"), "utf8");
+  assert.match(
+    css,
+    /\.canvas-row-text \{[\s\S]*?text-overflow: ellipsis/,
+    "canvas row lines truncate at the pane width",
+  );
   // the click emits to the owner: the component holds no store
   assert.match(src, /emit\('invoke'/s, "action clicks emit to the owner");
   assert.ok(!/fetch\(/.test(src), "the renderer never fetches");
