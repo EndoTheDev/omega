@@ -32,21 +32,10 @@
     v-else-if="item.kind === 'verdict'"
     :item="item"
     :session-id="sessionId" />
-  <div
-    v-else-if="item.kind === 'interrupted'"
-    class="interrupted-line">
-    <span>{{ item.label ?? "stream interrupted" }}</span>
-    <button
-      class="resume"
-      @click="emit('retry')">
-      retry
-    </button>
-  </div>
 </template>
 
 <script setup lang="ts">
-  import type { TranscriptItem } from "../composables/chat";
-  import type { VariantBlock } from "../composables/omega";
+  import type { TranscriptItem, VariantBlock } from "../composables/omega";
 
   defineProps<{
     item: TranscriptItem;
@@ -58,7 +47,6 @@
     sessionId?: string;
   }>();
   const emit = defineEmits<{
-    (e: "retry"): void;
     (e: "select", messageId: string, index: number): void;
     (e: "fork", messageId: string): void;
   }>();

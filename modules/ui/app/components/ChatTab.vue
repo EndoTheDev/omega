@@ -19,8 +19,7 @@
             :session-id="sessionId"
             :show-thinking="showThinking"
             @select="onSelect"
-            @fork="onFork"
-            @retry="onRetry" />
+            @fork="onFork" />
         </div>
         <div
           class="messages live-body stacked"
@@ -32,10 +31,7 @@
             :item="item"
             :variant="variantOfItem(item)"
             :session-id="sessionId"
-            :show-thinking="showThinking"
-            @select="onSelect"
-            @fork="onFork"
-            @retry="onRetry" />
+            :show-thinking="showThinking" />
         </div>
       </template>
       <div
@@ -68,8 +64,7 @@
               :session-id="sessionId"
               :show-thinking="showThinking"
               @select="onSelect"
-              @fork="onFork"
-              @retry="onRetry" />
+              @fork="onFork" />
           </div>
         </template>
         <template v-else>
@@ -81,15 +76,13 @@
             :session-id="sessionId"
             :show-thinking="showThinking"
             @select="onSelect"
-            @fork="onFork"
-            @retry="onRetry" />
+            @fork="onFork" />
         </template>
       </div>
       <!-- the activity line (card t_e9baac4b): phase-aware narration
            above the composer, mode-independent, hidden when idle. The
-           old in-column status line was the always-on "reasoning…"
-           label; statusLine now carries only non-phase leftovers
-           (the attach-failed error) and renders in its place. -->
+           phases derive from the rendered items (canvas rows painted
+           through the deltas; the restore fallback otherwise). -->
       <div
         v-if="activityText"
         class="activity-line">{{ activityText }}</div>
@@ -113,8 +106,8 @@
       :can-retry="canRetry"
       :thinking="thinking"
       :attachments="state.attachments"
-      :fork-anchor="state.forkFrom ?? null"
-      @clear-fork="host.clearFork(stateKey)"
+      :fork-anchor="forkAnchor"
+      @clear-fork="host.setFork(stateKey, null)"
       @update:model="emit('update:model', $event)"
       @update:thinking="emit('update:thinking', $event)"
       @send="onSend"
@@ -128,21 +121,20 @@
 
 <script setup lang="ts">
   // ONE chat tab (card t_4f0e88f2): the chat component is dockable now.
-  // Its identity is the tab it renders (pane + tab object) and its state
-  // lives in the app-level host keyed by the tab's instance key - so a
-  // stream keeps feeding an inactive/unmounted tab and two tabs on one
-  // session each hold their own transcript while the busy gate stays
-  // per session (the runHub run slot).
+  // chat-last 2a: the transcript renders FROM the canvas view-model -
+  // the chat panel's snapshot + deltas, item-mapped with identity so a
+  // repaint does not remount the pane. The per-tab transcript copies
+  // and the SSE-composed live view are gone; the state keeps the
+  // composer transport side (draft, attach chips, the REST restore's
+  // fallback for sessions the single panel does not cover, variants).
   import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
     EPHEMERAL_DRAFT_REF,
     activityPhase,
-    type ChatState,
-    type MessageItem,
-    type TranscriptItem,
+    createCanvasTranscript,
+    findMessageItem,
   } from "../composables/chat";
-  import { variantOf, type VariantBlock } from "../composables/omega";
   import {
     COMPOSER_FOCUS_KEY,
     focusDelivers,
@@ -154,12 +146,16 @@
     createItemKeySource,
     isAtBottom,
     pillVisible,
+    normalizeChatPayload,
     lastUserText,
     liveRunSlice,
     scrollFlushTick,
     splitBlocks,
     thinkingLevelWire,
+    variantOf,
     type Appearance,
+    type TranscriptItem,
+    type VariantBlock,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import AppComposer from "./chat/AppComposer.vue";
@@ -204,17 +200,33 @@
   // ensure BEFORE the computeds read the map: setup runs pre-render
   host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
   // the reactive read through the wrapped map is the view
-  const state = computed<ChatState | undefined>(() =>
-    (host.states.get(stateKey) as ChatState | undefined),
-  );
+  const state = computed(() => host.states.get(stateKey));
 
-  const transcript = computed(() => state.value?.transcript ?? []);
+  // --- the transcript's render source (chat-last 2a) ---
+  //
+  // The chat panel (kind 'chat' on the canvas) is the streaming source:
+  // when its payload covers THIS tab's session, the rows paint the pane
+  // (snapshot at load, deltas after - identity-kept per delta). Any
+  // other session falls back to the REST restore's rendered items.
+  const canvasTranscript = createCanvasTranscript();
+  const panelPayload = computed(() => {
+    const panel = host.chatPanel();
+    if (!panel) return null;
+    return normalizeChatPayload(panel.payload);
+  });
+  const panelMatches = computed(
+    () => !!panelPayload.value && panelPayload.value.session === sessionId.value,
+  );
+  const canvasItems = computed(() =>
+    panelMatches.value && panelPayload.value ? canvasTranscript.apply(panelPayload.value) : null,
+  );
+  const transcript = computed(() => canvasItems.value ?? state.value?.restored ?? []);
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
   // stacked layout (card t_84e4653c): the transcript cut at user
   // messages - user message + response subtree = one visual block.
-  // Blocks recompute from the SAME item objects, so the inner keys stay
-  // stable through streaming appends.
+  // The canvas item identity survives deltas, so the inner keys stay
+  // stable through streaming repaints.
   const blocks = computed(() => splitBlocks(transcript.value));
   function blockKey(block: TranscriptItem[]): number {
     const first = block[0];
@@ -240,7 +252,11 @@
   const canRetry = computed(
     // ephemeral (card t_d96a5cd5): nothing persisted to replay - the
     // affordance never renders, the server refuses the flag combination
-    () => !busy.value && lastUserText(transcript.value) !== null && !state.value?.ephemeral,
+    () =>
+      !busy.value &&
+      sessionId.value !== null &&
+      lastUserText(transcript.value) !== null &&
+      !state.value?.ephemeral,
   );
 
   // --- stacked live-run layout (card t_c40164cf): derived, no new
@@ -256,13 +272,13 @@
   );
 
   // --- the activity line (card t_e9baac4b): the phase is a pure
-  // derivation of the transcript + the session's busy gate (no new
-  // state, chat.ts owns it). One elapsed meter per phase stretch -
-  // recreated on the phase swap, so the counter restarts exactly on
-  // the event that ended one phase and started the next (and a
-  // restored still-running tool counts on from the server's
-  // elapsed-so-far through initialMs, like the ToolCallLine meter).
-  // Idle: the key is "" and the meter stops - the line is hidden.
+  // derivation of the rendered items + the session's busy gate (no new
+  // state). One elapsed meter per phase stretch - recreated on the
+  // phase swap, so the counter restarts exactly on the event that ended
+  // one phase and started the next (a running tool counts on from the
+  // panel's elapsed-so-far through initialMs, like the ToolCallLine
+  // meter). Idle: the key is "" and the meter stops - the line is
+  // hidden.
   const activity = computed(() => activityPhase(transcript.value, busy.value));
   const tickLabel = ref("");
   const activityText = computed(() => {
@@ -366,34 +382,63 @@
     scrollDown(true);
   }
 
+  // the painted transcript changes (canvas deltas, restore fetches or
+  // streaming repaints): follow the tail when the view is pinned. The
+  // pinned flag only changes on real scroll events - never measured
+  // after the append (the scroll-pinning law).
+  watch(transcript, () => scrollDown());
+
   // --- send / retry ---
   function onSend() {
     const text = draft.value.trim();
     if (!text) return;
     draft.value = "";
-    host.submit(stateKey, text, props.model, thinkingLevelWire(props.thinking));
+    // the fork anchor rides a validated target (resolved against the
+    // rendered transcript); a stale anchor degrades to a plain send,
+    // exactly as before - and consumes on send (the next send is a
+    // plain one unless the chip is armed again)
+    const fork = forkAnchor.value;
+    if (fork) host.setFork(stateKey, null);
+    host.submit(stateKey, text, props.model, thinkingLevelWire(props.thinking), fork ?? undefined);
   }
   function onRetry() {
-    host.retry(stateKey, props.model, thinkingLevelWire(props.thinking));
+    // the chat panel's retry action through the action pipe - the
+    // server replays the last user turn as a sibling variant
+    void host.retry(stateKey);
   }
 
   // --- variants (t_a62eeb43) ---
   //
-  // variantOfItem resolves ONE transcript item's branch block: an
+  // variantOfItem resolves ONE rendered item's branch block: an
   // assistant message whose store id is a sibling of a >=2-count branch
-  // point. The live tail (no id), user bubbles and plain sessions
-  // resolve to null - the switcher renders only there.
+  // point. Canvas-mapped stored rows carry the ids; live rows and user
+  // bubbles resolve to null - the switcher renders only on stored rows.
   function variantOfItem(item: TranscriptItem): VariantBlock | null {
     const st = state.value;
     if (!item || item.kind !== "message" || item.role !== "assistant") return null;
-    return variantOf(item as MessageItem, st?.variants);
+    return variantOf(item, st?.variants);
   }
   function onSelect(messageId: string, index: number) {
     void host.selectVariant(stateKey, messageId, index);
   }
   function onFork(messageId: string) {
-    void host.fork(stateKey, messageId, props.model, thinkingLevelWire(props.thinking));
+    // a USER target reruns that turn immediately (replay semantics,
+    // native /chat fork); anything else anchors the composer
+    const target = findMessageItem(transcript.value, messageId);
+    if (!target) return;
+    if (target.role === "user") {
+      void host.replayFork(stateKey, messageId, props.model, thinkingLevelWire(props.thinking));
+      return;
+    }
+    host.setFork(stateKey, messageId);
   }
+  // the anchor renders in the composer chip only while its target stays
+  // rendered (a refetch swap retires it silently)
+  const forkAnchor = computed(() => {
+    const id = state.value?.forkFrom;
+    if (!id) return null;
+    return findMessageItem(transcript.value, id) ? id : null;
+  });
 
   // --- composer auto-focus (card t_b40131ac): the app signals chat
   // selections and type-to-capture keystrokes through the focus signal;
@@ -427,8 +472,6 @@
     // pending selection focus for a tab minted after the request (the
     // new-chat / fresh-session open path)
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
-    // the driver-notified follower: stream writes reach a mounted tab
-    state.value!.notify = scrollDown;
     if (sessionId.value) host.load(stateKey, sessionId.value);
     // unsaved: composer-first, nothing to restore
   });
@@ -441,18 +484,19 @@
   });
 
   // a run starting for the session AFTER this tab mounted (another tab
-  // on the same session, or a detached run another window began): the
-  // ruling keeps both tabs subscribed - attach this tab's own copy.
-  // The mount's load() handles the already-live case; this catches the
-  // later-arriving truth through refreshSessions' server-active feed.
+  // on the same session, or a detached run another window began): attach
+  // this tab's own SSE copy - the deltas ride it into the canvas store
+  // the pane repaints from. The mount's load() handles the already-live
+  // case; this catches the later-arriving truth through refreshSessions'
+  // server-active feed.
   watch(
     () => sessionId.value ? host.busyAll.value.has(sessionId.value) : false,
     (live) => {
       if (!live) return;
       const st = host.states.get(stateKey);
-      // a run this tab never subscribed to and has no driver for: a
-      // virgin state loads (its restore attaches via the detail's live
-      // flag); a loaded one attaches its own copy - both tabs subscribe
+      // a run this tab never subscribed to: a virgin state loads (its
+      // restore attaches via the detail's live flag); a loaded one
+      // attaches its own copy - both tabs feed the canvas
       if (!st || st.attached || host.busyKeys.value.has(stateKey)) return;
       if (!st.loaded) {
         host.load(stateKey, sessionId.value!);
@@ -461,8 +505,4 @@
       host.attach(stateKey);
     },
   );
-
-  onBeforeUnmount(() => {
-    if (state.value) state.value.notify = undefined;
-  });
 </script>

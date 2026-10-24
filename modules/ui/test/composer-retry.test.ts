@@ -1,26 +1,20 @@
-// omega webui: the morphing composer button + server-side retry
-// (t_357cbe9c). ONE button: busy -> stop, empty composer + exchange ->
+// omega webui: the morphing composer button + the retry action (t_357cbe9c
+// + chat-last 2a). ONE button: busy -> stop, empty composer + exchange ->
 // retry, else send (draft beats retry). The attach affordance lives in
-// the input row's "+" now, and retry POSTs the /chat replay flag rather
-// than resubmitting text. Run: node --test modules/ui/test/ (node >= 23
-// runs TS natively)
-import { describe, it } from "node:test";
+// the input row's "+" now, and retry dispatches the chat panel's retry
+// action through the action pipe (no /chat flag, no text resubmit).
+// Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
+import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { composerFace } from "../app/composables/chat.ts";
+import { createChatHost, type ChatHostDeps, composerFace } from "../app/composables/chat.ts";
 import { SessionBusyError, streamChat, type StreamHandlers } from "../app/composables/omega.ts";
 
-// the two streamChat tests only prove the wire body - no handler fires
-// before the 409 throw
+// a send-only wire probe: no handler needs names
 const silent: StreamHandlers = {
-  onThinking: () => {},
-  onResponse: () => {},
-  onToolCall: () => {},
-  onToolResult: () => {},
-  onStatus: () => {},
   onUsage: () => {},
 };
 
@@ -60,45 +54,82 @@ describe("composerFace: the morphing button's three faces", () => {
   });
 });
 
-describe("streamChat retry body", () => {
-  // chat.ts's retry() posts {retry:true, session_id} with NO messages:
-  // the server replays the persisted last user turn itself. A fetch
-  // stub proves the wire shape without a server.
-  function capture(): { bodies: Record<string, unknown>[]; restore: () => void } {
-    const bodies: Record<string, unknown>[] = [];
-    const saved = globalThis.fetch;
-    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body)));
-      return new Response("", { status: 409 }); // 409 = bail out fast
-    }) as typeof fetch;
-    return { bodies, restore: () => (globalThis.fetch = saved) };
-  }
-
-  it("retry posts the flag alone - no messages ride the wire", async () => {
-    const { bodies, restore } = capture();
-    try {
-      await assert.rejects(
-        streamChat([{ role: "user", content: "whatever" }], "s1", silent, undefined, undefined, true),
-        SessionBusyError,
-      );
-    } finally {
-      restore();
-    }
-    assert.deepEqual(bodies, [{ retry: true, session_id: "s1" }]);
+describe("retry rides the action pipe", () => {
+  // chat.ts's retry() POSTs /ui/actions {module:"http_channel",
+  // action:"retry", args:{session}} - the server replays the persisted
+  // last user turn as a sibling variant. A fetch stub proves the wire
+  // shape without a canvas store: the module qualification is the
+  // chat panel's contract (card t_ec45b670).
+  const saved = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = saved;
   });
 
-  it("a normal send still carries its messages", async () => {
-    const { bodies, restore } = capture();
-    try {
-      await assert.rejects(
-        streamChat([{ role: "user", content: "hi" }], "s1", silent),
-        SessionBusyError,
-      );
-    } finally {
-      restore();
-    }
-    assert.deepEqual(bodies[0].messages, [{ role: "user", content: "hi" }]);
-    assert.equal(bodies[0].retry, undefined);
+  function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
+    return {
+      setTabSessionRef: () => {},
+      refreshSessions: () => {},
+      sessionRow: () => undefined,
+      markRead: () => {},
+      isFocused: () => false,
+      ...over,
+    };
+  }
+
+  it("the pipe retry POST carries module + action + the session arg", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return { ok: true, json: async () => ({ result: { running: true } }) } as unknown as Response;
+    }) as typeof fetch;
+    const host = createChatHost(deps());
+    host.ensureState("c1", "s1");
+    const ok = await host.retry("c1");
+    assert.equal(ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.url, "/ui/actions");
+    assert.equal(calls[0]!.body.module, "http_channel");
+    assert.equal(calls[0]!.body.action, "retry");
+    assert.deepEqual(calls[0]!.body.args, { session: "s1" });
+  });
+
+  it("a failed pipe call surfaces in the status line, no transcript surgery", async () => {
+    globalThis.fetch = (async () =>
+      ({ ok: false, status: 500, text: async () => "session not found" }) as unknown as Response) as typeof fetch;
+    const host = createChatHost(deps());
+    host.ensureState("c1", "s1");
+    const ok = await host.retry("c1");
+    assert.equal(ok, false);
+    assert.equal(host.states.get("c1")!.restored.length, 0);
+    assert.match(host.states.get("c1")!.statusLine, /retry failed/);
+  });
+
+  it("retry is refused client-side for unsaved and ephemeral tabs", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("no fetch may fire");
+    }) as typeof fetch;
+    const host = createChatHost(deps());
+    host.ensureState("c1"); // unsaved
+    assert.equal(await host.retry("c1"), false);
+    host.ensureState("c2", "eph-x", true);
+    assert.equal(await host.retry("c2"), false);
+  });
+
+  it("a normal send still carries its messages and never the retry flag", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response("", { status: 409 });
+    }) as typeof fetch;
+    await assert.rejects(
+      streamChat([{ role: "user", content: "hi" }], "s1", silent),
+      SessionBusyError,
+    );
+    assert.deepEqual(bodies[0]!.messages, [{ role: "user", content: "hi" }]);
+    assert.equal(bodies[0]!.retry, undefined, "the /chat retry flag is dead");
   });
 });
 

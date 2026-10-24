@@ -19,11 +19,6 @@ import {
 } from "../app/composables/chat.ts";
 
 const silent: StreamHandlers = {
-  onThinking: () => {},
-  onResponse: () => {},
-  onToolCall: () => {},
-  onToolResult: () => {},
-  onStatus: () => {},
   onUsage: () => {},
 };
 
@@ -75,7 +70,7 @@ describe("streamChat: the ephemeral wire half", () => {
         'event: agent_end\ndata: {"type":"agent_end"}\n\n',
       ]),
     );
-    await streamChat([{ role: "user", content: "q" }], null, silent, undefined, undefined, false, undefined, true);
+    await streamChat([{ role: "user", content: "q" }], null, silent, undefined, undefined, undefined, true);
     assert.equal(calls.length, 1);
     const body = calls[0]?.[2] as Record<string, unknown>;
     assert.equal(body.ephemeral, true, "the flag rides the wire");
@@ -178,8 +173,8 @@ describe("chat host: the ephemeral contract", () => {
     await host.load("r1", "eph-xyz");
     const st = host.states.get("r1")!;
     assert.equal(st.loaded, true, "the in-memory transcript restored");
-    assert.equal(st.transcript.length, 2);
-    assert.equal(st.transcript[0]?.kind, "message");
-    assert.equal(st.transcript[1]?.kind, "message");
+    assert.equal(st.restored.length, 2);
+    assert.equal(st.restored[0]?.kind, "message");
+    assert.equal(st.restored[1]?.kind, "message");
   });
 });

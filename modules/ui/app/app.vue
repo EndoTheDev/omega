@@ -359,7 +359,7 @@
       :tokens="tokens"
       :context-size="contextSize"
       :tokens-per-second="tokensPerSecond"
-      :live-chunks-per-second="liveChunksPerSecond"
+      :live-deltas-per-second="liveDeltasPerSecond"
       :last-chunks-per-second="lastChunksPerSecond"
       :version="healthVersion"
       :up-seconds="upSeconds" />
@@ -387,14 +387,11 @@
     isAtBottom,
     pillVisible,
     lastUserText,
-    hasInterruptedMarker,
-    withoutMarkers,
-    createItemKeySource,
-    streamChat,
-    attachSession,
+    chatPanelMessageCount,
+    chatPanelOf,
+    normalizeChatPayload,
     persistedTelemetry,
     formatDurationMs,
-    StreamInterruptedError,
     fetchThemes,
     applyThemeTokens,
     clearThemeTokens,
@@ -656,6 +653,12 @@
     // arc 3c: canvas panel deltas ride every run stream - the app's
     // canvas store is where they merge
     canvasDelta: (panel) => canvas.applyDelta(panel),
+    // chat-last 2a: the chat pane renders from the canvas' chat panel
+    // (snapshot + deltas) - the host hands the descriptor to the view
+    chatPanel: () => chatPanelOf(canvas.panels),
+    // the snapshot refetch: variant selects and action-driven repaints
+    // (the deltas ride run streams only)
+    canvasRefresh: () => canvas.refresh(),
   });
 
   // --- main-view: chat vs the module-owned board (kanban). Ported
@@ -784,15 +787,23 @@
   const focusedSessionId = computed(() => focusedChatState.value.sessionId);
 
   // status bar telemetry reads the focused chat's state (zeros until a
-  // session carries numbers - DEFAULT_CHAT_STATE fallback)
-  const transcript = computed(() => focusedChatState.value.transcript);
+  // session carries numbers - DEFAULT_CHAT_STATE fallback). The message
+  // count derives from the chat panel's rows while the canvas covers the
+  // focused session, the restore's fallback otherwise (chat-last 2a).
+  const chatPanelPayload = computed(() => {
+    const panel = chatPanelOf(canvas.panels);
+    return panel ? normalizeChatPayload(panel.payload) : null;
+  });
   const tokens = computed(() => focusedChatState.value.tokens);
   const tokensPerSecond = computed(() => focusedChatState.value.tokensPerSecond);
-  const liveChunksPerSecond = computed(() => focusedChatState.value.liveChunksPerSecond);
+  const liveDeltasPerSecond = computed(() => focusedChatState.value.liveDeltasPerSecond);
   const lastChunksPerSecond = computed(() => focusedChatState.value.lastChunksPerSecond);
-  const messageCount = computed(
-    () => transcript.value.filter((i) => i.kind === "message").length,
-  );
+  const messageCount = computed(() => {
+    const payload = chatPanelPayload.value;
+    if (payload && payload.session === focusedSessionId.value)
+      return chatPanelMessageCount(payload);
+    return focusedChatState.value.restored.filter((i) => i.kind === "message").length;
+  });
   const anyBusyNow = host.anyBusyNow;
   const busyAll = host.busyAll;
 

@@ -15,6 +15,7 @@ import {
   streamChat,
   variantLabel,
   variantOf,
+  SessionBusyError,
   type StreamHandlers,
   type TranscriptDetail,
   type VariantBlock,
@@ -258,101 +259,117 @@ describe("host.selectVariant: POST then the path re-renders", () => {
       host.ensureState("c1", "s1");
       // seed the stale path (variant 2 active) before the flip
       const st = host.states.get("c1")!;
-      st.transcript = renderTranscriptItems([
+      st.restored = renderTranscriptItems([
         { kind: "user", id: "1", content: "q" },
         { kind: "message", id: "5", content: "selected answer" },
       ]);
       const ok = await host.selectVariant("c1", "1", 0);
       assert.equal(ok, true);
       assert.deepEqual(posts, [{ message_id: "1", select: 0 }]);
-      assert.equal(transcriptCalls, 1, "the select re-fetches the active path");
-      // the transcript was REPLACED by the refetch's render
-      assert.equal(st.transcript[1].kind, "message");
-      assert.equal((st.transcript[1] as { content: string }).content, "selected answer");
+      assert.equal(transcriptCalls, 1, "the select re-reads the branch truth");
+      // the fallback render was REPLACED by the refetch's render (a
+      // canvas-covered tab repaints through the snapshot refetch)
+      assert.equal(st.restored[1]?.kind, "message");
+      assert.equal((st.restored[1] as { content: string }).content, "selected answer");
       assert.deepEqual(st.variants, [branch]);
     } finally {
       globalThis.fetch = saved;
     }
   });
-});
 
-describe("host.fork: anchor the next send on an assistant target", () => {
-  it("assistant target sets forkFrom; the next send POSTs /chat {fork}; the chip clears", async () => {
-    const posts: Record<string, unknown>[] = [];
+  it("a select repaints a canvas-covered tab through the snapshot refetch", async () => {
+    let refreshes = 0;
+    const branch: VariantBlock = { message_id: "1", siblings: ["2", "5"], count: 2, active: 1 };
     const saved = globalThis.fetch;
-    // route: transcript GET (serves the seeded ids through refetch),
-    // variants POST, /chat streams
-    const detail: TranscriptDetail = {
-      session: {} as TranscriptDetail["session"],
-      running: false,
-      items: [
-        { kind: "user", id: "1", content: "q" },
-        { kind: "message", id: "2", content: "answer" },
-      ],
-    };
     globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
       const u = String(url);
-      if (u.endsWith("/chat")) {
-        posts.push(JSON.parse(String(init?.body)));
-        return CLEAN_RUN;
-      }
-      if (u.endsWith("/transcript")) return jsonDetail(detail);
-      if (u.endsWith("/variants")) {
-        return { ok: true, json: async () => ({ variants: [] }) } as unknown as Response;
-      }
+      if (u.endsWith("/variants"))
+        return { ok: true, json: async () => ({ variants: [branch] }) } as unknown as Response;
+      if (u.endsWith("/transcript"))
+        return jsonDetail({
+          session: {} as TranscriptDetail["session"],
+          running: false,
+          variants: [branch],
+          items: [{ kind: "user", id: "1", content: "q" }],
+        });
       return CLEAN_RUN;
     }) as typeof fetch;
     try {
-      const host = createChatHost(deps());
+      const host = createChatHost(
+        deps({ canvasRefresh: () => { refreshes++; } }),
+      );
       host.ensureState("c1", "s1");
-      const st = host.states.get("c1")!;
-      st.transcript = renderTranscriptItems(detail.items);
-      await host.fork("c1", "2");
-      assert.equal(st.forkFrom, "2", "the anchor is armed");
-      const ok = await host.submit("c1", "continue here");
-      assert.equal(ok, true);
-      const body = posts[0]!;
-      assert.equal(body.fork, "2", "the send chains onto the anchor");
-      assert.equal((body.messages as unknown[]).length, 1, "the typed message rides");
-      assert.equal(body.retry, undefined);
-      assert.equal(st.forkFrom, null, "the anchor cleared on send");
+      await host.selectVariant("c1", "1", 0);
+      assert.equal(refreshes, 1, "the canvas snapshot refetch repainted the panel");
     } finally {
       globalThis.fetch = saved;
     }
   });
 });
 
-describe("host.fork: a USER target reruns that turn immediately", () => {
-  it("POSTs {fork: user id} with NO messages (replay semantics)", async () => {
+describe("host fork anchoring: setFork + the validated send", () => {
+  it("an assistant target anchors the composer; the next send chains onto it", async () => {
     const posts: Record<string, unknown>[] = [];
     const saved = globalThis.fetch;
-    const detail: TranscriptDetail = {
-      session: {} as TranscriptDetail["session"],
-      running: false,
-      items: [
-        { kind: "user", id: "1", content: "q" },
-        { kind: "message", id: "2", content: "answer" },
-      ],
-    };
     globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
       const u = String(url);
       if (u.endsWith("/chat")) {
         posts.push(JSON.parse(String(init?.body)));
         return CLEAN_RUN;
       }
-      if (u.endsWith("/transcript")) return jsonDetail(detail);
       return CLEAN_RUN;
     }) as typeof fetch;
     try {
       const host = createChatHost(deps());
       host.ensureState("c1", "s1");
       const st = host.states.get("c1")!;
-      st.transcript = renderTranscriptItems(detail.items);
-      await host.fork("c1", "1");
-      assert.equal(st.forkFrom, null, "a user target never anchors - it reruns");
+      // the VIEW resolved the anchor against the rendered transcript
+      host.setFork("c1", "2");
+      assert.equal(st.forkFrom, "2", "the anchor is armed");
+      const ok = await host.submit("c1", "continue here", undefined, undefined, st.forkFrom ?? undefined);
+      assert.equal(ok, true);
       const body = posts[0]!;
-      assert.equal(body.fork, "1");
-      assert.deepEqual(body.messages, []);
+      assert.equal(body.fork, "2", "the send chains onto the anchor");
+      assert.equal((body.messages as unknown[]).length, 1, "the typed message rides");
+      assert.equal(st.forkFrom, null, "the anchor consumed");
+    } finally {
+      globalThis.fetch = saved;
+    }
+  });
+
+  it("clearFork drops the anchor without sending", () => {
+    const host = createChatHost(deps());
+    host.ensureState("c1", "s1");
+    host.setFork("c1", "2");
+    host.setFork("c1", null);
+    assert.equal(host.states.get("c1")!.forkFrom, null);
+  });
+});
+
+describe("host.replayFork: a USER target reruns that turn immediately", () => {
+  it("POSTs {fork: user id} with NO messages (replay semantics)", async () => {
+    const posts: Record<string, unknown>[] = [];
+    const saved = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/chat")) {
+        posts.push(JSON.parse(String(init?.body)));
+        return CLEAN_RUN;
+      }
+      if (u.endsWith("/transcript"))
+        return jsonDetail({
+          session: {} as TranscriptDetail["session"],
+          running: false,
+          items: [],
+        });
+      return CLEAN_RUN;
+    }) as typeof fetch;
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1", "s1");
+      await host.replayFork("c1", "1");
+      assert.equal(posts[0]!.fork, "1");
+      assert.deepEqual(posts[0]!.messages, []);
     } finally {
       globalThis.fetch = saved;
     }
@@ -364,16 +381,16 @@ describe("streamChat: the fork body", () => {
     const saved = globalThis.fetch;
     const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body)));
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return new Response("", { status: 409 });
     }) as typeof fetch;
     try {
       await assert.rejects(
-        streamChat([{ role: "user", content: "c" }], "s1", silent, undefined, undefined, false, "7"),
-        { name: "SessionBusyError" },
+        streamChat([{ role: "user", content: "c" }], "s1", silent, undefined, undefined, "7"),
+        SessionBusyError,
       );
-      assert.equal(bodies[0].fork, "7");
-      assert.equal(bodies[0].session_id, "s1");
+      assert.equal(bodies[0]!.fork, "7");
+      assert.equal(bodies[0]!.session_id, "s1");
     } finally {
       globalThis.fetch = saved;
     }
@@ -381,7 +398,7 @@ describe("streamChat: the fork body", () => {
 });
 
 describe("a run end refreshes the variants (switcher appears after retry)", () => {
-  it("the post-run refetch replaces the live view with ids + the branch block", async () => {
+  it("the finalize re-reads the branch block, the panel paints the rows", async () => {
     const saved = globalThis.fetch;
     let transcriptCalls = 0;
     const branch: VariantBlock = { message_id: "1", siblings: ["2", "9"], count: 2, active: 1 };
@@ -406,22 +423,14 @@ describe("a run end refreshes the variants (switcher appears after retry)", () =
     try {
       const host = createChatHost(deps());
       host.ensureState("c1", "s1");
-      const st = host.states.get("c1")! as unknown as {
-        transcript: { content: string }[];
-        variants: VariantBlock[];
-      };
-      host.ensureState("c1", "s1");
       const ok = await host.submit("c1", "retry me");
       assert.equal(ok, true);
-      assert.equal(transcriptCalls >= 1, true, "the run end refetched");
-      assert.deepEqual(st.variants, [branch], "the branch block arrived");
-      const ids = st.transcript.map((i) => (i as unknown as { id?: string }).id);
-      assert.equal(ids.at(-1), "9", "the fresh sibling is on the path");
-      // the switcher data + the rendered bubble agree
-      const msg = { kind: "message", role: "assistant", id: "9" } as unknown as Parameters<
-        typeof variantOf
-      >[0];
-      assert.deepEqual(variantOf(msg, st.variants), branch);
+      assert.equal(transcriptCalls >= 1, true, "the run end refetched the branch truth");
+      assert.deepEqual(host.states.get("c1")!.variants, [branch], "the branch block arrived");
+      // the rendered ids come from the canvas rows now - variantOf
+      // resolves them the same way once the panel paints the siblings
+      const msg = { kind: "message", role: "assistant", id: "9" } as Parameters<typeof variantOf>[0];
+      assert.deepEqual(variantOf(msg, host.states.get("c1")!.variants), branch);
     } finally {
       globalThis.fetch = saved;
     }

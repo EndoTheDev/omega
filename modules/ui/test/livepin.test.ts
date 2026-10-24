@@ -13,7 +13,7 @@ import {
   scrollFlushTick,
 } from "../app/composables/omega.ts";
 
-import type { TranscriptItem } from "../app/composables/chat.ts";
+import type { TranscriptItem } from "../app/composables/omega.ts";
 
 // same builders the live stream and the restore path produce
 const user = (content: string): TranscriptItem => ({

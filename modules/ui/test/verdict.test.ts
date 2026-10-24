@@ -324,10 +324,16 @@ test("the notifications bell counts pending verdict cards", () => {
   assert.match(bell, /openVerdict/, "a pending card row routes to its chat session");
 });
 
-test("chat.ts streams the card above the tool line and settles it from the result", () => {
+test("chat.ts maps the card rows live and settles them from the result row", () => {
   const chat = read("modules/ui/app/composables/chat.ts");
-  assert.match(chat, /tool\.name === "verdict"/, "the live stream recognizes the card tool");
-  assert.match(chat, /verdictCardFromToolArgs/, "live cards build from the tool args");
-  assert.match(chat, /verdictFromResultText/, "the tool_result settles the card");
-  assert.match(chat, /item\.kind === "verdict" && item\.status === "pending"/, "a dead stream's card goes stale, never actionable");
+  // chat-last 2a: the canvas transcript tool_call row with the verdict
+  // name renders as the card (no plain tool line); the matching
+  // tool_result row settles it; a streaming-final row is stale
+  assert.match(chat, /"verdict"/, "the canvas transcript recognizes the card tool");
+  assert.match(chat, /verdictCardFromToolArgs/, "live cards build from the row args");
+  assert.match(chat, /verdictFromResultText/, "the tool_result row settles the card");
+  // staleness reads the PANEL's running flag: the compose dedupe can
+  // hand the card the persisted, closed copy of its own call row while
+  // the run is still live awaiting the answer - row status lies there
+  assert.match(chat, /stale = !panelRunning/, "a settled panel's pending card renders dead, never actionable");
 });
