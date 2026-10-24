@@ -225,7 +225,21 @@ body {
    standalone contexts see it untucked); the desktop strip covers the top */
 .dock-pane > .dock-content,
 .dock-pane > .dock-empty { margin-top: calc(-1 * var(--r-pane)); }
-.dock-tabs { display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
+/* card t_aca53fee: the strip SCROLLS at narrow width instead of clipping
+   - a pane narrower than its tab row was cutting the tail tabs (the
+   active Canvas chip off the viewport edge). overflow-x: auto keeps the
+   bar's 35px contract (the hidden scrollbar keeps the chrome flat);
+   DockPane scrolls the active chip into view (reachability is that
+   watcher's job, not the user's), so the selected tab never clips. */
+.dock-tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.dock-tabs::-webkit-scrollbar { display: none; }
 .dock-tabs.empty { flex: 1; } /* spacer: the empty pane's × hugs the right */
 .dock-tab {
   position: relative;
@@ -568,14 +582,11 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
 }
 .icon-btn svg { display: block; }
 .icon-btn:hover { color: var(--text); background: var(--z1-raised); }
-/* card t_47b776ad: the desktop sidebar toggles (hide/reopen the pinned
-   edge panes via dock.toggleEdge) - desktop chrome only, the mobile
-   media query below hides them under the breakpoint where the drawer
-   handles take over. */
-.icon-btn.edge-toggle { display: inline-flex; }
-/* the two remaining drawer buttons exist ONLY as the mobile drawers'
-   handles (the media query below re-shows them under 768px). */
-.icon-btn.drawer-btn { display: none; }
+/* card t_47b776ad: the sidebar toggles (hide/reopen the pinned edge
+   panes via dock.toggleEdge; the bottom toggle rides toggleBottom).
+   card t_aca53fee: no breakpoint hiding anymore - the three edge
+   toggles ARE the drawer handles below 768px (app.vue routes the
+   emits on isMobile), so one icon set serves every width. */
 
 .new-btn {
   background: transparent;
@@ -953,8 +964,15 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 .canvas-row-read {
   opacity: 0.55;
 }
+/* the row text truncates at the pane's width (card t_aca53fee: the
+   toast panel body renders width-truncated like the list panel, one
+   line - not wrapped, never a JSON dump); min-width: 0 lets the flex
+   row actually shrink it under the action button */
 .canvas-row-text {
-  word-break: break-word;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .canvas-row-action {
   border: 1px solid var(--stroke);
@@ -2312,12 +2330,6 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
     overflow: visible; /* the fixed overlays escape the zero cell */
   }
   .dock-split { flex-wrap: nowrap; }
-
-  /* the drawer handles come back under the breakpoint (fixed panes are
-     desktop chrome; on a phone they are drawers) - and the desktop
-     edge toggles drop out (the drawers own the same emits there) */
-  .icon-btn.drawer-btn { display: inline-flex; }
-  .icon-btn.edge-toggle { display: none; }
 
   /* card t_e76ce7b6: the mobile drawer. The dock's pinned-edge content is
      suppressed under the breakpoint (app.vue's edge-pane slots carry
