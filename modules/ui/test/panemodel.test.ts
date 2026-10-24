@@ -132,17 +132,20 @@ describe("gate: hover-X on main panes only", () => {
 // --- gate: the fixed-shape chrome ---------------------------------------------
 
 describe("gate: fixed shape chrome", () => {
-  it("MenuBar: the desktop toggles are BACK, the gear is GONE (t_47b776ad)", () => {
+  it("MenuBar: the three edge toggles at every breakpoint, ONE icon set (t_aca53fee)", () => {
     const bar = src("app/components/shell/MenuBar.vue");
-    // the toggle pair re-asserts the toggleEdge contract: state-aware
-    // titles, hidden desktop-side only via the edge-toggle class
+    const css = src("app/assets/css/main.css");
+    // the toggle trio re-asserts the toggleEdge contract: state-aware
+    // titles, left | bottom | right order, one icon set at every width -
+    // the drawer-only handles died (card t_aca53fee: narrow view showed a
+    // different set and the bottom panel toggle was MISSING there)
     assert.match(bar, /aria-label="Toggle left sidebar"/);
+    assert.match(bar, /aria-label="Toggle bottom panel"/);
     assert.match(bar, /aria-label="Toggle right sidebar"/);
     assert.match(bar, /class="icon-btn edge-toggle"/);
-    // the mobile drawer handles survive unchanged
-    assert.match(bar, /drawer-btn/);
-    assert.match(bar, /aria-label="Open the sessions drawer"/);
-    assert.match(bar, /aria-label="Open the inspector drawer"/);
+    assert.doesNotMatch(bar, /drawer-btn/, "no second (drawer-handle) icon set");
+    assert.doesNotMatch(css, /\.icon-btn\.drawer-btn/, "no breakpoint hiding rules");
+    assert.doesNotMatch(css, /\.icon-btn\.edge-toggle/, "the toggles never hide below 768px");
     // the settings gear died: settings opens from the pane '+' menu
     assert.doesNotMatch(bar, /aria-label="Settings"/);
     assert.doesNotMatch(bar, /\$emit\("settings"\)/);
@@ -167,6 +170,26 @@ describe("gate: fixed shape chrome", () => {
     const css = src("app/assets/css/main.css");
     assert.doesNotMatch(css, /\.inspector-tab\b/);
     assert.match(css, /module-panels/);
+  });
+});
+
+// --- gate: narrow-viewport tab strip (card t_aca53fee) ------------------------
+
+describe("gate: narrow-viewport tab strip (card t_aca53fee)", () => {
+  it("the strip scrolls instead of clipping the tail; the active tab stays reachable", () => {
+    const css = src("app/assets/css/main.css");
+    const pane = src("app/components/DockPane.vue");
+    // the strip: overflow-x instead of the hard clip - a pane narrower
+    // than its tab row used to cut the active Canvas chip at the edge
+    assert.match(css, /\.dock-tabs \{[\s\S]*?overflow-x: auto/, "the strip scrolls");
+    // the hidden scrollbar keeps the 35px tab-bar height contract flat
+    assert.match(css, /\.dock-tabs \{[\s\S]*?scrollbar-width: none/);
+    assert.match(css, /\.dock-tabs::-webkit-scrollbar \{ display: none; \}/);
+    // reachability: DockPane scrolls the ACTIVE chip into view whenever
+    // the selection (or the tab list) changes, horizontally only
+    assert.match(pane, /querySelector<HTMLElement>\("\.dock-tab\.active"\)/);
+    assert.match(pane, /scrollLeft/, "the fix is a horizontal scroll, not a reflow");
+    assert.match(pane, /flush: "post"/, "runs after the DOM reflects the new active tab");
   });
 });
 

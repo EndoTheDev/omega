@@ -45,13 +45,14 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import { formatCanvasPayload, type CanvasActionState } from "../../composables/canvas";
+  import { formatCanvasPayload, toastRowOf, type CanvasActionState } from "../../composables/canvas";
   import type { CanvasPanel, CanvasPanelAction } from "../../composables/omega";
 
   // The GENERIC panel renderer (arc 3c): consumes one panel descriptor
   // (schema v1) and renders title + payload view + action buttons. Kind
-  // handling for v1 is the plain/default rendering ONLY (settled Q2b) -
-  // rich kinds land as real migrations, each owning its panel UI. The
+  // handling v1 is the plain/default rendering; the toast kind joined in
+  // card t_aca53fee (one read-only record row - the JSON dump is debug
+  // output, not a panel body). The
   // component owns NO state: pending/error come from the canvas store
   // through the stateOf bridge (per panel+action), and an action click
   // emits to the owner, which routes it through the one action pipe.
@@ -88,6 +89,13 @@
     action?: unknown;
   }
   const rows = computed<CanvasRow[]>(() => {
+    // the toast panel (arc 4b, card t_aca53fee): the payload IS one
+    // record row - render it read-only through the same row line as the
+    // list panel (kind + title, width-truncated), never the raw JSON
+    // dump. The pure gate (toastRowOf) decides; nothing here knows the
+    // record shape beyond the row vocabulary below.
+    const toast = toastRowOf(props.panel.kind, props.panel.payload);
+    if (toast) return [toast as CanvasRow];
     const p = props.panel.payload;
     if (!p || typeof p !== "object") return [];
     const rs = (p as { rows?: unknown }).rows;
