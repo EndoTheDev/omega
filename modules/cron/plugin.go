@@ -12,9 +12,10 @@ import (
 // provides the "cron" seam (exclusive) - the serve host starts the
 // runner after MountAll with the store open.
 type Plugin struct {
-	cfg    *Config
-	home   string
-	runner core.CronProvider // the mounted scheduler; nil = not mounted
+	cfg     *Config
+	home    string
+	runner  core.CronProvider // the mounted scheduler; nil = not mounted
+	capsule *capsule          // the canvas surface; nil = not mounted
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -70,12 +71,21 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	}
 	p.cfg = cfg
 	p.home = home
-	p.runner = NewRunner(cfg, home)
+	r := NewRunner(cfg, home)
+	p.runner = r
 	ctx.Cron = p.runner
 	// The TUI command rides the module seam: registering here means a
 	// cron plugin left out of buildPlugins takes /cron out of the
 	// command table with it (card t_88bb7dcf).
 	ctx.TUIProviders = append(ctx.TUIProviders, &tui{p: p})
+	// Capsule law (arc 6, t_31174f80): the module ships its view-model
+	// with its scheduler. The jobs panel rides the same Mount - an
+	// unregistered plugin ships no seam, no commands, no panels. The
+	// runner pushes the refreshed panel through this registration on
+	// every hot reload (the module's one internal mutation).
+	p.capsule = newCapsule(r)
+	r.panels = p.capsule
+	ctx.PanelProviders = append(ctx.PanelProviders, p.capsule)
 	return nil
 }
 
