@@ -205,17 +205,16 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	}
 
 	// the NEXT send's context continues the selected branch: exactly
-	// what /chat feeds the provider through loadSessionMessages
+	// what /chat feeds the provider through sessionHistory
 	raw, _ := json.Marshal(map[string]any{"role": "user", "content": "next question"})
 	req := chatRequest{SessionID: "vr2", Messages: []json.RawMessage{raw}}
 	incoming, err := decodeMessages(req.Messages)
 	if err != nil {
 		t.Fatalf("decode incoming: %v", err)
 	}
-	rec := httptest.NewRecorder()
-	ctxMsgs, ok := s.loadSessionMessages(context.Background(), rec, &req, incoming)
-	if !ok || rec.Code/100 == 4 || rec.Code/100 == 5 {
-		t.Fatalf("context load failed: ok=%v code=%d", ok, rec.Code)
+	ctxMsgs, loadErr := s.sessionHistory(context.Background(), &req, incoming)
+	if loadErr != nil {
+		t.Fatalf("context load failed: %v", loadErr)
 	}
 	got := skeleton(ctxMsgs)
 	want := []string{"user:hi", "assistant:first answer", "user:next question"}
@@ -388,7 +387,7 @@ func TestVariantsGuards(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Fatalf("retry+fork = %d, want 400", code)
 	}
-	code, _ = postJSON(t, ts.URL+"/chat", `{"fork": "` + userID + `"}`)
+	code, _ = postJSON(t, ts.URL+"/chat", `{"fork": "`+userID+`"}`)
 	if code != http.StatusBadRequest {
 		t.Fatalf("sessionless fork = %d, want 400", code)
 	}
