@@ -21,6 +21,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 // canvasFeed is the shell's in-process canvas subscription: the canvas
@@ -141,15 +142,18 @@ func canvasActionRows(panels []core.Panel) []canvasRow {
 }
 
 // canvasScreen is the open /panels view: every mounted canvas panel,
-// title + payload view + numbered actions, live against the runtime.
-// While open it takes every key (the module screen shape).
+// title + body view + numbered actions, live against the runtime.
+// While open it takes every key (the module screen shape). The 'd'
+// key flips the raw JSON view - the debug shape behind a keybinding
+// (t_c5b98609 fix 1), rows stay the default body.
 type canvasScreen struct {
 	c        core.TUIConsole
-	snap     func() []core.Panel              // live snapshot; nil = no canvas
+	snap     func() []core.Panel                // live snapshot; nil = no canvas
 	dispatch func(core.ActionCall) (any, error) // the one action pipe; nil = no canvas
-	notice   string                           // empty-state line when snap is nil
-	result   string                           // last invocation outcome, pinned under the header
-	failed   bool                             // result is an error line
+	notice   string                             // empty-state line when snap is nil
+	result   string                             // last invocation outcome, pinned under the header
+	failed   bool                               // result is an error line
+	raw      bool                               // 'd': the JSON dump view
 	closed   bool
 	vp       viewport.Model
 }
@@ -195,6 +199,8 @@ func (s *canvasScreen) Update(msg any, c core.TUIConsole) {
 	switch key.String() {
 	case "q", "esc":
 		s.closed = true
+	case "d":
+		s.raw = !s.raw
 	case "up", "k":
 		s.vp.LineUp(1)
 	case "down", "j":
@@ -272,6 +278,9 @@ func (s *canvasScreen) View(width, height int) string {
 	panels := s.snapshot()
 	rows := canvasActionRows(panels)
 	body := renderCanvasPanels(width, panels)
+	if s.raw {
+		body = renderPanelsDebug(width, panels)
+	}
 	if s.snap != nil && len(panels) == 0 {
 		body = "(no panels mounted)"
 	} else if s.snap == nil {
@@ -297,13 +306,124 @@ func (s *canvasScreen) View(width, height int) string {
 	sb.WriteString("\n")
 	sb.WriteString(s.vp.View())
 	sb.WriteString("\n")
-	sb.WriteString(s.c.Style("status")("1-9 invoke · j/k scroll · q/esc close"))
+	sb.WriteString(s.c.Style("status")("1-9 invoke · j/k scroll · d raw · q/esc close"))
 	return sb.String()
 }
 
-// renderCanvasPanels renders the body: per panel a title, the payload
-// view (plain v1: string payloads as text, everything else as JSON),
-// and the numbered actions with module-qualified ids.
+// The list wire shape (t_c5b98609): list-kind panels decode their
+// payload through the generic row vocabulary - the shell holds no
+// module types (layer law), the JSON wire shape is the shared seam,
+// the same decode the toast line rides.
+type wireRowAction struct {
+	Label string `json:"label"`
+}
+
+type wireRow struct {
+	ID        int64          `json:"id"`
+	Kind      string         `json:"kind"`
+	SourceID  string         `json:"source_id"`
+	Title     string         `json:"title"`
+	Verdict   string         `json:"verdict"`
+	CreatedAt string         `json:"created_at"`
+	Read      bool           `json:"read"`
+	RowAction *wireRowAction `json:"action,omitempty"`
+}
+
+type wireListPayload struct {
+	Unread int       `json:"unread"`
+	Rows   []wireRow `json:"rows"`
+}
+
+// decodeListRows decodes a list-kind payload through the wire shape.
+// The bool reports the panel is a list: its body becomes one line per
+// row instead of the JSON dump. Struct payloads and JSON maps decode
+// alike (the in-process spine carries the module's typed payload, the
+// same field tags the wire carries).
+func decodeListRows(kind string, payload any) ([]wireRow, int, bool) {
+	if kind != "list" || payload == nil {
+		return nil, 0, false
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, 0, false
+	}
+	var lp wireListPayload
+	if err := json.Unmarshal(b, &lp); err != nil {
+		return nil, 0, false
+	}
+	return lp.Rows, lp.Unread, true
+}
+
+// decodeToastRow decodes a toast-kind payload: one wire row, the same
+// shape as a list row. The bool reports the panel is a toast.
+func decodeToastRow(kind string, payload any) (wireRow, bool) {
+	if kind != "toast" || payload == nil {
+		return wireRow{}, false
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return wireRow{}, false
+	}
+	var r wireRow
+	if err := json.Unmarshal(b, &r); err != nil || r.Title == "" {
+		return wireRow{}, false
+	}
+	return r, true
+}
+
+// truncateLine clips one line to a display width with an ellipsis -
+// no pane content may run past the pane edge (t_c5b98609 fix 2).
+func truncateLine(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	return xansi.Truncate(s, width, "…")
+}
+
+// truncateLines clips every line of a multi-line body to width.
+func truncateLines(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = truncateLine(l, width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// listRowLine renders one list row as a single line: the read-state
+// marker, the title, the record id and kind, and the row's binding
+// hint when it is unread (t_c5b98609 fix 1: key fields only).
+func listRowLine(r wireRow) string {
+	marker := "○ " // read
+	if !r.Read {
+		marker = "● "
+	}
+	title := r.Title
+	if title == "" {
+		title = r.SourceID
+	}
+	line := marker + title
+	if r.ID != 0 {
+		line += fmt.Sprintf(" #%d", r.ID)
+	}
+	if r.Kind != "" {
+		line += " · " + r.Kind
+	}
+	if r.Verdict != "" {
+		line += " · " + r.Verdict
+	}
+	if !r.Read && r.RowAction != nil && r.RowAction.Label != "" {
+		line += " · " + r.RowAction.Label
+	}
+	return line
+}
+
+// renderCanvasPanels renders the body: per panel a title, the body
+// view - list-kind panels as readable rows (t_c5b98609 fix 1),
+// everything else as the plain payload view - and the numbered
+// actions with module-qualified ids. Every line truncates to width.
 func renderCanvasPanels(width int, panels []core.Panel) string {
 	if width <= 0 {
 		width = 80
@@ -318,27 +438,72 @@ func renderCanvasPanels(width int, panels []core.Panel) string {
 		if head == "" {
 			head = p.ID
 		}
-		sb.WriteString(head)
-		if p.Kind != "" {
-			sb.WriteString("  [" + p.Kind + "]")
+		rows, unread, isList := decodeListRows(p.Kind, p.Payload)
+		toast, isToast := decodeToastRow(p.Kind, p.Payload)
+		if isList && unread > 0 {
+			head += fmt.Sprintf("  · %d unread", unread)
+		} else if p.Kind != "" {
+			head += "  [" + p.Kind + "]"
 		}
+		sb.WriteString(truncateLine(head, width))
 		sb.WriteString("\n")
-		if body := payloadView(p.Payload); body != "" {
-			sb.WriteString(body)
+		switch {
+		case isList:
+			if len(rows) == 0 {
+				sb.WriteString("(empty)")
+				sb.WriteString("\n")
+			}
+			for _, r := range rows {
+				sb.WriteString(truncateLine(listRowLine(r), width))
+				sb.WriteString("\n")
+			}
+		case isToast:
+			sb.WriteString(truncateLine(listRowLine(toast), width))
 			sb.WriteString("\n")
+		default:
+			if body := payloadView(p.Payload); body != "" {
+				sb.WriteString(truncateLines(body, width))
+				sb.WriteString("\n")
+			}
 		}
 		for _, a := range p.Actions {
 			n++
-			sb.WriteString(fmt.Sprintf("[%d] %s", n, a.Label))
+			sb.WriteString(truncateLine(fmt.Sprintf("[%d] %s", n, a.Label), width))
 			sb.WriteString("\n")
-			sb.WriteString("    " + a.Module + "." + a.ID)
+			sb.WriteString(truncateLine("    "+a.Module+"."+a.ID, width))
 			sb.WriteString("\n")
 		}
 	}
 	if n == 0 && len(panels) == 0 {
 		return "(no panels mounted)"
 	}
-	return sb.String()
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// renderPanelsDebug is the raw view behind the 'd' key: every payload
+// as indented JSON - a debug shape behind a keybinding, never the
+// default body (t_c5b98609 fix 1).
+func renderPanelsDebug(width int, panels []core.Panel) string {
+	if len(panels) == 0 {
+		return "(no panels mounted)"
+	}
+	var sb strings.Builder
+	for _, p := range panels {
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		head := p.Title
+		if p.Kind != "" {
+			head += "  [" + p.Kind + "]"
+		}
+		sb.WriteString(truncateLine(head, width))
+		sb.WriteString("\n")
+		if body := payloadView(p.Payload); body != "" {
+			sb.WriteString(truncateLines(body, width))
+			sb.WriteString("\n")
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // payloadView renders one payload or action result as plain text: a
