@@ -10,8 +10,10 @@
 #      SURVIVES a reload (the record's closed-edge set, card t_aa9dbada),
 #      the reopen restores the remembered height
 #   5  mobile (<768px): the bottom cell zero-collapses (state survives),
-#      the desktop toggle drops out, and the logs view stays reachable in
-#      the inspector drawer (the dual-host union)
+#      the desktop toggle STAYS VISIBLE at every breakpoint (the parity
+#      contract, 16ac10a - the toggle drives dock.toggleEdge directly
+#      below 768px too), and the logs view stays reachable in the
+#      inspector drawer (the dual-host union)
 #
 # No model needed: pure shell UI. Runs against JOURNEY_BASE_URL.
 . "${JROOT:?run must export JROOT}/lib.sh"
@@ -113,22 +115,26 @@ ab set viewport 420 840 >/dev/null 2>&1
 sleep 1.2
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "0" "mobile: the bottom cell zero-collapses (state survives in the tree)"
+# 16ac10a parity contract: the bottom toggle stays visible at every
+# breakpoint - below 768px it drives dock.toggleEdge directly (the
+# drawer-btn second icon set is gone; no class-based hiding either)
 toggle=$(jsq '(() => {
   const b = Array.from(document.querySelectorAll("button.icon-btn.edge-toggle"))
     .find((b) => b.getAttribute("aria-label") === "Toggle bottom panel");
-  return b ? getComputedStyle(b).display === "none" : true;
+  return b && getComputedStyle(b).display !== "none" ? true : false;
 })()')
-assert_eq "$toggle" "true" "mobile: the desktop bottom toggle is hidden"
+assert_eq "$toggle" "true" "mobile: the bottom-panel toggle is visible under 768px (parity contract, 16ac10a)"
 ab set viewport 1280 800 >/dev/null 2>&1
 sleep 1.2
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "400" "desktop again: the panel is back at its height (state survived mobile)"
 
 # and the logs view stays reachable on mobile - the inspector drawer
-# unions the right-domain set (logs' default home moved to the bottom)
+# unions the right-domain set (logs' default home moved to the bottom);
+# the drawer opens via the menubar inspector toggle (16ac10a)
 ab set viewport 420 840 >/dev/null 2>&1
 sleep 1
-js 'Array.from(document.querySelectorAll("button.icon-btn.drawer-btn")).find(b => b.getAttribute("aria-label") === "Open the inspector drawer").click()' >/dev/null 2>&1
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle right sidebar").click()' >/dev/null 2>&1
 sleep 0.7
 js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t => t.textContent.trim() === "Logs")?.click()' >/dev/null 2>&1
 sleep 3

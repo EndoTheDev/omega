@@ -11,6 +11,9 @@
 #
 # No model needed: the drawer is pure shell UI. Runs against the dev lane
 # (JOURNEY_BASE_URL, default :8098).
+# Card t_aca53fee (16ac10a): the mobile drawer-btn handles are deleted -
+# the menubar edge toggles are the drawer open path below 768px; the
+# repros pin the drawer behavior through that path now.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 open_app
@@ -60,13 +63,26 @@ assert_eq "$panes" "2" "desktop-close prunes both sidebars (main + bottom left)"
 ab set viewport 420 840 >/dev/null 2>&1
 sleep 1.2
 
-# the drawer handles surface only under the breakpoint
+# the drawer handles are GONE by design (16ac10a, card t_aca53fee):
+# one set of menubar edge toggles serves every width - below 768px they
+# drive the drawer flips (app.vue routes the same emits on isMobile).
+# Pin both halves of the contract: no drawer-btn, toggles visible.
 handles=$(jsq 'document.querySelectorAll("button.icon-btn.drawer-btn").length')
-assert_eq "$handles" "2" "mobile drawer handles render under 768px"
+assert_eq "$handles" "0" "16ac10a: the mobile drawer-btn handles are gone (one toggle set, every breakpoint)"
+visible=$(jsq '(() => {
+  const labels = ["Toggle left sidebar", "Toggle bottom panel", "Toggle right sidebar"];
+  return labels.every((l) => {
+    const b = Array.from(document.querySelectorAll("button.icon-btn.edge-toggle"))
+      .find((b) => b.getAttribute("aria-label") === l);
+    return b && getComputedStyle(b).display !== "none";
+  }) ? 1 : 0;
+})()')
+assert_eq "$visible" "1" "mobile: the menubar edge toggles render under 768px (the drawer open path)"
 
-# open the sessions drawer; REPRO 1 asserts it opens WITH content (not a
-# bare scrim) even though the edge pane was pruned at desktop
-js 'Array.from(document.querySelectorAll("button.icon-btn.drawer-btn")).find(b=>b.getAttribute("aria-label")==="Open the sessions drawer").click()' >/dev/null 2>&1
+# open the sessions drawer via the menubar toggle; REPRO 1 asserts it
+# opens WITH content (not a bare scrim) even though the edge pane was
+# pruned at desktop
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
 sleep 0.7
 scrim=$(jsq 'document.querySelector(".scrim")?1:0')
 open=$(jsq 'document.querySelector(".mobile-drawer.left.open")?1:0')
@@ -77,7 +93,8 @@ assert_eq "$content" "1" "REPRO 1: drawer opens WITH content after desktop-close
 step "ok: REPRO 1 - desktop-close -> mobile -> drawer opens with content"
 
 # --- REPRO 2: the inspector drawer shows its tab bar and tabs switch ---
-js 'Array.from(document.querySelectorAll("button.icon-btn.drawer-btn")).find(b=>b.getAttribute("aria-label")==="Open the inspector drawer").click()' >/dev/null 2>&1
+# the right drawer opens via the menubar inspector toggle (16ac10a)
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle right sidebar").click()' >/dev/null 2>&1
 sleep 0.7
 open=$(jsq 'document.querySelector(".mobile-drawer.right.open")?1:0')
 assert_eq "$open" "1" "REPRO 2: inspector drawer opens (right.open)"
