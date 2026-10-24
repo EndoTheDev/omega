@@ -77,8 +77,22 @@ func TestPathMarkersDerive(t *testing.T) {
 	if got := markers[1]; got != "[1/2]" {
 		t.Fatalf("expected active head 1/2 at path index 1, got %q", got)
 	}
-	if out := ansiStrip(renderTranscript(m.history, 80, themes["dark"], markers)); !strings.Contains(out, "[1/2]") {
-		t.Fatalf("marker missing from transcript: %q", out)
+	offs := chatRowOffsets(m.history)
+	rowMarkers := map[int]string{}
+	for i, mk := range markers {
+		if offs[i] >= 0 {
+			rowMarkers[offs[i]] = mk
+		}
+	}
+	m.chatCanvas.setConversation(m.sessionID, m.history)
+	payload := m.chatPayload()
+	lines := renderChatLines(80, themes["dark"], payload.Rows, chatRenderOpts{showThinking: true, showToolResults: true, toolResultsAuto: true, markers: rowMarkers, liveFrom: chatRenderNoLive}, nil)
+	var sb strings.Builder
+	for _, l := range lines {
+		sb.WriteString(l.text)
+	}
+	if out := ansiStrip(sb.String()); !strings.Contains(out, "[1/2]") {
+		t.Fatalf("marker missing from chat rows: %q", out)
 	}
 }
 
@@ -325,9 +339,10 @@ func TestLinearSessionNoVariants(t *testing.T) {
 	}
 }
 
-// stripTranscript flattens a returned model's transcript to plain text.
+// stripTranscript flattens a returned model's chat body (payload rows
+// and notices) to plain text.
 func stripTranscript(out tea.Model) string {
-	return ansiStrip(out.(model).transcript)
+	return transcriptOf(out.(model))
 }
 
 // teaModel re-wraps a model as tea.Model for stripTranscript.

@@ -835,7 +835,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// The injected result is this run's input; the
 					// loop's sink persists it (t_471f6d4a).
 					m.persistInput = []core.Message{m.history[len(m.history)-1]}
-						m.busy = true
+					m.busy = true
 					m.err = ""
 					m.resetRenderCache()
 					m.chatCanvas.setConversation(m.sessionID, m.history)
@@ -1190,6 +1190,9 @@ func (m *model) handleEvent(event core.Event) {
 				m.view = v
 			}
 		}
+		// The run is over: the running flag flips off (the follow-on
+		// delta paints the committed, non-streaming payload).
+		m.chatCanvas.setIdle()
 	case core.ToolResultEvent:
 		m.history = append(m.history, e.Message)
 		// Persisted by the loop's sink as the turn completed
@@ -2288,18 +2291,25 @@ func (m *model) resetRenderCache() {
 	}
 }
 
-// chatPayload returns the chat panel's view-model from the canvas
-// snapshot - the shell renders the conversation FROM the panel (the
-// 2b deliverable). No canvas renders empty.
+// chatPayload returns the chat panel's view-model: the canvas snapshot
+// is the render source (the 2b deliverable - the shell renders FROM the
+// canvas view-model). Without a canvas runtime (nil-pctx models: tests,
+// and the splash frame before wiring) the capsule state is the same
+// panel truth the sink would push, degraded to a direct read.
 func (m model) chatPayload() core.ChatPayload {
-	if m.canvasFeed == nil || !m.canvasFeed.hasPanels() {
-		return core.ChatPayload{}
+	if m.canvasFeed != nil && m.canvasFeed.hasPanels() {
+		if payload, ok := chatPayloadOf(m.canvasFeed.canvas.Snapshot()); ok {
+			return payload
+		}
 	}
-	payload, ok := chatPayloadOf(m.canvasFeed.canvas.Snapshot())
-	if !ok {
-		return core.ChatPayload{}
+	if m.chatCanvas != nil {
+		if panels := m.chatCanvas.Panels(); len(panels) > 0 {
+			if payload, ok := panels[0].Payload.(core.ChatPayload); ok {
+				return payload
+			}
+		}
 	}
-	return payload
+	return core.ChatPayload{}
 }
 
 // chatEmpty reports the conversation surface holds nothing: no rows,
@@ -2347,6 +2357,9 @@ func (m model) chatBody(width int) string {
 	if payload.Running {
 		liveFrom = turnStartOf(payload.Rows)
 	}
+	// Pane mode moves the in-flight run's tool/thinking rows into the
+	// run band; the legacy single column renders everything here.
+	split := m.geometry().active
 	lines := renderChatLines(width, m.theme, payload.Rows, m.chatOpts(payload), m.renderCache)
 	var sb strings.Builder
 	ni := 0
@@ -2358,7 +2371,7 @@ func (m model) chatBody(width int) string {
 	}
 	for _, line := range lines {
 		nextNotice(line.at)
-		if payload.Running && line.at >= liveFrom && !line.isText {
+		if split && payload.Running && line.at >= liveFrom && !line.isText {
 			continue // the run band renders this row
 		}
 		sb.WriteString(line.text)

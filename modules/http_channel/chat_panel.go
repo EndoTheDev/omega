@@ -73,6 +73,19 @@ func newChatCapsule() *chatCapsule {
 	}
 }
 
+// registerAt appends the capsule to the context's panel providers once
+// - the Start-time registration (chat-last 2b ruling: gated on the
+// channel actually starting; idempotent, so multi-bind servers share
+// one registration).
+func (c *chatCapsule) registerAt(ctx *core.Context) {
+	for _, p := range ctx.PanelProviders {
+		if p == core.PanelProvider(c) {
+			return
+		}
+	}
+	ctx.PanelProviders = append(ctx.PanelProviders, c)
+}
+
 // SetPanelUpdate installs the canvas closure (core.PanelUpdateSink).
 // Re-registration (a second canvas over the same providers) re-installs
 // it - last one wins, one frontend is live per process.

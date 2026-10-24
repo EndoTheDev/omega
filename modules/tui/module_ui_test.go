@@ -74,7 +74,7 @@ func TestModuleCommandDispatch(t *testing.T) {
 	if len(p.got) != 1 || p.got[0] != "/feat|alpha" {
 		t.Fatalf("provider not called: %v", p.got)
 	}
-	if got := ansiStrip(m.transcript); !strings.Contains(got, "ran /feat") {
+	if got := transcriptOf(m); !strings.Contains(got, "ran /feat") {
 		t.Fatalf("transcript missing provider output: %q", got)
 	}
 

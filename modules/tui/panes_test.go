@@ -401,16 +401,15 @@ func TestPaneSidebarKeyRouting(t *testing.T) {
 // tool/thinking output renders below the columns and out of the main
 // viewport; the chat response stays in chat; the idle band dims.
 func TestPaneRunOutput(t *testing.T) {
-	m := paneTestModel(t, nil)
+	m := paneTestModel(t, &core.Context{})
 	geo := paneSizedGeometry(t, m)
 
-	m.busy = true
-	m.segments = []streamSegment{
-		{kind: "tool", content: "[tool: files.read]\n  path: /tmp/x\n"},
-		{kind: "thinking", content: "weighing options"},
-		{kind: "response", content: "chat response"},
-	}
-	(&m).refresh()
+	m.chatCanvas.setConversation("sess", []core.Message{core.NewUser("hi")})
+	m.chatCanvas.setRun("sess", func() {})
+	m.chatCanvas.streamCall(core.ToolCall{ID: "c1", Name: "files.read", Arguments: map[string]any{"path": "/tmp/x"}})
+	m.chatCanvas.streamThinking("weighing options")
+	m.chatCanvas.streamResponse("chat response")
+	m.refresh()
 
 	vp := ansiStrip(m.viewport.View())
 	if strings.Contains(vp, "[tool: files.read]") || strings.Contains(vp, "weighing options") {
@@ -433,10 +432,9 @@ func TestPaneRunOutput(t *testing.T) {
 		t.Fatalf("tool output at row %d, want inside the run band (>= %d)", runRow, geo.colH)
 	}
 
-	// Idle: band dims, and after the fold the transcript keeps the
-	// completed output (existing contract).
-	m.busy = false
-	m.segments = nil
+	// Idle: the band dims; the committed rows keep rendering in the
+	// main pane (the exit flush painted the payload's completed state).
+	m.chatCanvas.setIdle()
 	if !strings.Contains(ansiStrip(m.bottomPaneBody()), "(no active run)") {
 		t.Fatal("idle band did not dim")
 	}

@@ -159,29 +159,51 @@ func TestSubmitCreatesFreshChannel(t *testing.T) {
 	}
 }
 
-// TestHandleEventFoldsStream verifies that response chunks, tool calls, and
-// the agent end fold into the transcript and history in the right order.
+// TestHandleEventFoldsStream verifies the stream folds onto the chat
+// capsule: the live tail carries thinking/call/text in emit order, and
+// the AgentEnd commit recomposes the persisted truth from history.
 func TestHandleEventFoldsStream(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-
+	m.chatCanvas.setRun("sess", func() {})
 	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "hello"}})
 	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: " world"}})
-	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{Name: "shell.run"}}})
-	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: core.NewAssistant("hello world")})
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	// While the run streams, the live tail holds one open text row and
+	// one running call row.
+	live := payloadRowTypes(m)
+	if len(live) != 2 || live[0] != core.ChatBlockText || live[1] != core.ChatBlockToolCall {
+		t.Fatalf("live rows = %v, want [text tool_call]", live)
+	}
+	if payload := m.chatPayload(); !payload.Running {
+		t.Fatal("streaming payload not marked running")
+	}
+
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "shell.run"}}
+	assistantB := core.NewAssistant("hello world")
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: assistant})
+	m.handleEvent(core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult("ok", "c1", false)})
+	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: assistantB})
 	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
 
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "hello world") {
 		t.Fatalf("transcript missing streamed content: %q", plain)
 	}
 	if !strings.Contains(plain, "[tool: shell.run]") {
-		t.Fatalf("transcript missing tool label: %q", plain)
+		t.Fatalf("transcript missing tool label after commit: %q", plain)
 	}
-	if len(m.history) != 1 {
-		t.Fatalf("expected 1 assistant message in history, got %d", len(m.history))
+	if payload := m.chatPayload(); payload.Running {
+		t.Fatal("payload still running after AgentEnd commit")
 	}
-	if len(m.segments) != 0 {
-		t.Fatalf("segments should be cleared after AgentEnd, got %d", len(m.segments))
+	types := payloadRowTypes(m)
+	if len(types) != 3 || types[0] != core.ChatBlockToolCall ||
+		types[1] != core.ChatBlockToolResult || types[2] != core.ChatBlockText {
+		t.Fatalf("committed rows = %v, want [tool_call tool_result text]", types)
+	}
+	if len(m.history) != 3 {
+		t.Fatalf("expected 3 messages in history, got %d", len(m.history))
 	}
 }
 
@@ -194,8 +216,8 @@ func TestHandleEventError(t *testing.T) {
 	if m.err != "boom" {
 		t.Fatalf("expected err boom, got %q", m.err)
 	}
-	if !strings.Contains(ansiStrip(m.transcript), "error: boom") {
-		t.Fatalf("transcript missing error: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "error: boom") {
+		t.Fatalf("transcript missing error: %q", transcriptOf(m))
 	}
 }
 
@@ -221,17 +243,17 @@ func TestSlashCommands(t *testing.T) {
 	// /help renders help text.
 	updated, _ = m.handleCommand("/help")
 	m = updated.(model)
-	if !strings.Contains(m.transcript, "/exit") {
-		t.Fatalf("help text missing /exit: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "/exit") {
+		t.Fatalf("help text missing /exit: %q", transcriptOf(m))
 	}
 
-	// /new wipes history and transcript.
+	// /new wipes history and payload.
 	m.history = append(m.history, core.NewUser("hi"))
-	m.transcript = "some old text"
+	m.chatCanvas.setConversation("old", []core.Message{core.NewUser("x")})
 	updated, _ = m.handleCommand("/new")
 	m = updated.(model)
-	if len(m.history) != 0 || m.transcript != "" {
-		t.Fatalf("clear failed: history=%d transcript=%q", len(m.history), m.transcript)
+	if len(m.history) != 0 || payloadRows(m) != "" {
+		t.Fatalf("clear failed: history=%d rows=%q", len(m.history), payloadRows(m))
 	}
 
 	// unknown command reports an error.
@@ -255,7 +277,7 @@ func TestSkillsCommand(t *testing.T) {
 		// If the error is empty, the command may have been routed to
 		// the extension manager which returns "no extensions loaded".
 		if m.err == "" {
-			t.Fatalf("expected error for /skills with no extension, got empty error and transcript %q", m.transcript)
+			t.Fatalf("expected error for /skills with no extension, got empty error and transcript %q", transcriptOf(m))
 		}
 	}
 }
@@ -269,8 +291,8 @@ func TestProviderCommand(t *testing.T) {
 	// /provider with no args shows current provider.
 	updated, _ := m.handleCommand("/provider")
 	m = updated.(model)
-	if !strings.Contains(m.transcript, "provider: ollama") {
-		t.Fatalf("transcript should show current provider, got: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "provider: ollama") {
+		t.Fatalf("transcript should show current provider, got: %q", transcriptOf(m))
 	}
 }
 
@@ -285,8 +307,8 @@ func TestModelViaExtension(t *testing.T) {
 	if m.modelName != "qwen2.5" {
 		t.Fatalf("expected model qwen2.5 via CmdAction, got %q", m.modelName)
 	}
-	if !strings.Contains(m.transcript, "switched to qwen2.5") {
-		t.Fatalf("expected confirmation text, got %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "switched to qwen2.5") {
+		t.Fatalf("expected confirmation text, got %q", transcriptOf(m))
 	}
 }
 
@@ -403,7 +425,7 @@ func TestRenderTranscriptRendersAssistant(t *testing.T) {
 		core.NewUser("hi"),
 		core.NewAssistant("**bold** `code`"),
 	}
-	out := renderTranscript(messages, 80, themes["dark"], nil)
+	out := chatRowsRawText(t, messages)
 
 	if !strings.Contains(out, "\x1b[") {
 		t.Fatalf("expected ANSI escape codes in rendered transcript, got %q", out)
@@ -524,13 +546,13 @@ func TestClearStartsFreshSession(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
 	m.sessionID = "sess1"
 	m.history = append(m.history, core.NewUser("hi"))
-	m.transcript = "old text"
+	m.chatCanvas.setConversation("sess1", m.history)
 
 	updated, _ := m.handleCommand("/new")
 	m = updated.(model)
 
-	if len(m.history) != 0 || m.transcript != "" {
-		t.Fatalf("clear failed: history=%d transcript=%q", len(m.history), m.transcript)
+	if len(m.history) != 0 || payloadRows(m) != "" {
+		t.Fatalf("clear failed: history=%d rows=%q", len(m.history), payloadRows(m))
 	}
 	if m.sessionID != "" {
 		t.Fatalf("clear kept session: %q", m.sessionID)
@@ -564,11 +586,11 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 
 	updated, _ := m.handleCommand("/sessions")
 	m = updated.(model)
-	if !strings.Contains(m.transcript, "abc123") {
-		t.Fatalf("/sessions missing session id: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "abc123") {
+		t.Fatalf("/sessions missing session id: %q", transcriptOf(m))
 	}
-	if !strings.Contains(m.transcript, "MSGS") {
-		t.Fatalf("/sessions missing table header: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "MSGS") {
+		t.Fatalf("/sessions missing table header: %q", transcriptOf(m))
 	}
 
 	updated, _ = m.handleCommand("/resume abc123")
@@ -579,8 +601,8 @@ func TestSessionsListsAndResumeLoads(t *testing.T) {
 	if len(m.history) != 2 {
 		t.Fatalf("resume history len = %d, want 2", len(m.history))
 	}
-	if !strings.Contains(m.transcript, "first") || !strings.Contains(m.transcript, "reply") {
-		t.Fatalf("resume transcript missing history: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "first") || !strings.Contains(transcriptOf(m), "reply") {
+		t.Fatalf("resume transcript missing history: %q", transcriptOf(m))
 	}
 }
 
@@ -637,8 +659,8 @@ func TestBranchCommand(t *testing.T) {
 	if len(m.history) != 1 {
 		t.Fatalf("branch history len = %d, want 1", len(m.history))
 	}
-	if !strings.Contains(m.transcript, "root msg") {
-		t.Fatalf("branch transcript missing inherited history: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "root msg") {
+		t.Fatalf("branch transcript missing inherited history: %q", transcriptOf(m))
 	}
 
 	// Branch from an explicit id.
@@ -687,8 +709,8 @@ func TestLabelCommand(t *testing.T) {
 	if sess.Label != "my branch" {
 		t.Fatalf("label = %q, want my branch", sess.Label)
 	}
-	if !strings.Contains(m.transcript, "[label: my branch]") {
-		t.Fatalf("transcript missing label confirm: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "[label: my branch]") {
+		t.Fatalf("transcript missing label confirm: %q", transcriptOf(m))
 	}
 
 	// No text clears the label.
@@ -738,7 +760,7 @@ func TestTreeCommand(t *testing.T) {
 		t.Fatalf("tree store error: %s", m.storeErr)
 	}
 
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "root") || !strings.Contains(plain, "child") {
 		t.Fatalf("tree missing session ids: %q", plain)
 	}
@@ -1111,27 +1133,30 @@ func TestUpDownHistory(t *testing.T) {
 	}
 }
 
-// TestSegmentOrder verifies segments render in the order they were emitted.
+// TestSegmentOrder verifies the live tail rows render in the order
+// the events were emitted (the narrative law the segment machinery
+// preserved).
 func TestSegmentOrder(t *testing.T) {
 	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
-	m.thinkingLevel = "on"
-	m.showThinking = true
 
-	m.handleEvent(core.StreamEvent{Event: core.ThinkingChunk{Content: "plan"}})
-	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{Name: "shell.run"}}})
-	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "done"}})
-	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
+	m.handleEvent(core.StreamEvent{Event: core.ThinkingChunk{Content: "Thinking a bit"}})
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "Final answer"}})
 
-	plain := ansiStrip(m.transcript)
-	thinkIdx := strings.Index(plain, "[thinking]")
-	toolIdx := strings.Index(plain, "[tool: shell.run]")
-	respIdx := strings.Index(plain, "done")
-
-	if thinkIdx < 0 || toolIdx < 0 || respIdx < 0 {
-		t.Fatalf("missing segments: think=%v tool=%v resp=%v", thinkIdx >= 0, toolIdx >= 0, respIdx >= 0)
+	types := payloadRowTypes(m)
+	if len(types) != 3 || types[0] != core.ChatBlockThinking ||
+		types[1] != core.ChatBlockToolCall || types[2] != core.ChatBlockText {
+		t.Fatalf("live rows = %v, want [thinking tool_call text]", types)
 	}
-	if thinkIdx > toolIdx || toolIdx > respIdx {
-		t.Fatalf("segment order wrong: think=%d tool=%d resp=%d", thinkIdx, toolIdx, respIdx)
+	plain := transcriptOf(m)
+	thinkIdx := strings.Index(plain, "Thinking a bit")
+	toolIdx := strings.Index(plain, "[tool: shell.run]")
+	respIdx := strings.Index(plain, "Final answer")
+	if thinkIdx < 0 || toolIdx < 0 || respIdx < 0 {
+		t.Fatalf("missing rows: think=%v tool=%v resp=%v", thinkIdx >= 0, toolIdx >= 0, respIdx >= 0)
+	}
+	if !(thinkIdx < toolIdx && toolIdx < respIdx) {
+		t.Fatalf("order broken: think=%d tool=%d resp=%d", thinkIdx, toolIdx, respIdx)
 	}
 }
 
@@ -1445,8 +1470,8 @@ func TestInlineSkillInvocation(t *testing.T) {
 	if !foundSystem {
 		t.Fatal("skill content not injected as system message")
 	}
-	if !strings.Contains(m.transcript, "[skill: learn-skill]") {
-		t.Fatalf("transcript missing skill marker: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "[skill: learn-skill]") {
+		t.Fatalf("transcript missing skill marker: %q", transcriptOf(m))
 	}
 }
 
@@ -1483,7 +1508,7 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 		core.NewToolResult("11:12 AM", "c1", false),
 		core.NewAssistant("It's 11:12 AM."),
 	}
-	out := ansiStrip(renderTranscript(messages, 80, themes["dark"], nil))
+	out := chatRowsText(t, messages)
 
 	if !strings.Contains(out, "whats the time rn?") {
 		t.Fatalf("missing user message: %q", out)
@@ -1507,20 +1532,26 @@ func TestRenderTranscriptToolResults(t *testing.T) {
 	}
 }
 
-// TestRenderTranscriptCompacted verifies compaction summaries render
-// while other system messages are skipped.
+// TestRenderTranscriptCompacted pins the v1 chat vocabulary: system
+// messages never render as chat rows - all of them, compaction
+// summaries included (the TUI surfaces the compaction event as a shell
+// notice at /compact time; the payload vocabulary grows rows only by a
+// real migration per Q2b).
 func TestRenderTranscriptCompacted(t *testing.T) {
 	messages := []core.Message{
 		core.NewSystem("[compacted: user asked about the time]"),
 		core.NewSystem("injected prompt - never persisted, skip"),
 		core.NewUser("continue"),
 	}
-	out := ansiStrip(renderTranscript(messages, 80, themes["dark"], nil))
-	if !strings.Contains(out, "[compacted:") {
-		t.Fatalf("missing compaction summary: %q", out)
+	out := chatRowsText(t, messages)
+	if strings.Contains(out, "[compacted:") {
+		t.Fatalf("compaction summary rendered as a row: %q", out)
 	}
 	if strings.Contains(out, "injected prompt") {
 		t.Fatalf("plain system message rendered: %q", out)
+	}
+	if !strings.Contains(out, "> continue") {
+		t.Fatalf("user row missing: %q", out)
 	}
 }
 
@@ -1569,8 +1600,8 @@ func TestSessionsDeleteCommand(t *testing.T) {
 	if m.sessionID != "" || m.history != nil {
 		t.Fatalf("active session not reset: id=%q history=%v", m.sessionID, m.history)
 	}
-	if !strings.Contains(m.transcript, "deleted") {
-		t.Fatalf("transcript missing deleted marker: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "deleted") {
+		t.Fatalf("transcript missing deleted marker: %q", transcriptOf(m))
 	}
 }
 
@@ -1687,8 +1718,9 @@ func TestSplashReappearsAfterNew(t *testing.T) {
 	}
 	defer s.Close()
 	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
-	m.transcript = "some content"
 	m.history = append(m.history, core.NewUser("hi"))
+	m.chatCanvas.setConversation("sess1", m.history)
+	m.addNotice("[note]")
 	// Not showing splash (has content).
 	view := ansiStrip(m.View())
 	if strings.Contains(view, `#"""#`) {
@@ -1775,12 +1807,12 @@ func TestModelsCommand(t *testing.T) {
 	// (the provider extension handles the call), so the result depends on
 	// whether Ollama is running. Just check it doesn't crash and produces
 	// output or an error.
-	if m.err != "" && m.transcript == "" {
-		// Error with no transcript is fine — Ollama might not be running.
+	if m.err != "" && transcriptOf(m) == "" {
+		// Error with no panel body is fine — Ollama might not be running.
 		return
 	}
-	if !strings.Contains(m.transcript, "NAME") {
-		t.Errorf("transcript should contain table header, got: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "NAME") {
+		t.Errorf("transcript should contain table header, got: %q", transcriptOf(m))
 	}
 }
 
@@ -1915,7 +1947,7 @@ func TestHandleModelsWithFakeProvider(t *testing.T) {
 	if m.err != "" {
 		t.Fatalf("unexpected error: %q", m.err)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "NAME") {
 		t.Errorf("transcript should contain table header NAME, got: %q", plain)
 	}
@@ -1945,7 +1977,7 @@ func TestHandleModelsEmptyList(t *testing.T) {
 	if m.err != "" {
 		t.Fatalf("unexpected error: %q", m.err)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "[no models available]") {
 		t.Errorf("transcript should report no models, got: %q", plain)
 	}
@@ -1968,7 +2000,7 @@ func TestHandleModelsProviderError(t *testing.T) {
 	if !strings.Contains(m.err, "provider unavailable") {
 		t.Errorf("err = %q, want it to contain 'provider unavailable'", m.err)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if strings.Contains(plain, "NAME") {
 		t.Errorf("transcript should not contain table header on error, got: %q", plain)
 	}
@@ -1982,8 +2014,8 @@ func TestModelSelectByNumber(t *testing.T) {
 	if m.modelName != "beta" {
 		t.Fatalf("modelName = %q, want beta", m.modelName)
 	}
-	if !strings.Contains(m.transcript, "switched to beta") {
-		t.Errorf("transcript should confirm model switch: %q", m.transcript)
+	if !strings.Contains(transcriptOf(m), "switched to beta") {
+		t.Errorf("transcript should confirm model switch: %q", transcriptOf(m))
 	}
 }
 
@@ -2070,8 +2102,8 @@ func TestCtrlPEmptyListFetches(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Ctrl+P with empty modelList should return a fetch cmd")
 	}
-	if !strings.Contains(m.transcript, "fetching models") {
-		t.Fatalf("transcript = %q, want 'fetching models'", m.transcript)
+	if !strings.Contains(transcriptOf(m), "fetching models") {
+		t.Fatalf("transcript = %q, want 'fetching models'", transcriptOf(m))
 	}
 }
 
@@ -2143,7 +2175,7 @@ func TestHandleSearchResults(t *testing.T) {
 	if m.storeErr != "" {
 		t.Fatalf("search store error: %s", m.storeErr)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "golang") {
 		t.Fatalf("transcript missing search result: %q", plain)
 	}
@@ -2170,7 +2202,7 @@ func TestHandleSearchNoResults(t *testing.T) {
 	if m.storeErr != "" {
 		t.Fatalf("search store error: %s", m.storeErr)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "[no results]") {
 		t.Fatalf("transcript missing [no results]: %q", plain)
 	}
@@ -2207,7 +2239,7 @@ func TestHandleInsightsNoSessions(t *testing.T) {
 	if m.err != "" {
 		t.Fatalf("unexpected error: %s", m.err)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "[no sessions") {
 		t.Fatalf("transcript missing [no sessions]: %q", plain)
 	}
@@ -2238,7 +2270,7 @@ func TestHandleInsightsWithSessions(t *testing.T) {
 	if m.err != "" {
 		t.Fatalf("unexpected error: %s", m.err)
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "omega insights") {
 		t.Fatalf("transcript missing insights report: %q", plain)
 	}
@@ -2374,7 +2406,7 @@ func TestHandleExportWrites(t *testing.T) {
 			t.Fatalf("line %d missing 'content' field: %v", i, entry)
 		}
 	}
-	plain := ansiStrip(m.transcript)
+	plain := transcriptOf(m)
 	if !strings.Contains(plain, "[exported") {
 		t.Fatalf("transcript missing export confirmation: %q", plain)
 	}

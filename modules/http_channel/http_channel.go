@@ -51,16 +51,7 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	if c.chat != nil {
 		c.srv.chat = c.chat
 		c.srv.chat.srv = c.srv
-		registered := false
-		for _, p := range deps.Ctx.PanelProviders {
-			if p == core.PanelProvider(c.chat) {
-				registered = true
-				break
-			}
-		}
-		if !registered {
-			deps.Ctx.PanelProviders = append(deps.Ctx.PanelProviders, c.chat)
-		}
+		c.srv.chat.registerAt(deps.Ctx)
 	}
 	// Multi-bind mirror (t_c6f13a82): every bind's server joins the one
 	// process-wide run registry, so a run launched through the action
