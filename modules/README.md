@@ -76,7 +76,7 @@ reference: `docs/tui.md`, module-owned command owners.
 | `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
 | `tools/`        | tools, prompt_sections, TUI | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools); /files browser + /tools command |
 | `mcp/`          | tools          | MCP bridge (stdio + HTTP MCP servers)                |
-| `delegate/`     | tools          | Subagent delegation (delegate.task, delegate.status) |
+| `delegate/`     | tools          | Subagent delegation (consolidated `delegate` tool with task/status actions + one-release alias shims, the ctx.InjectedMessages/PendingDelegations seam, notifications emitter). The wired born-capsule: seam + tool + emitter capture all ship from the same Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestDelegateRemovalProof` - arc 6 capsule |
 | `web/`          | tools          | Web search/fetch (Ollama Cloud API)                  |
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
 | `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |

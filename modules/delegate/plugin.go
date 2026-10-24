@@ -36,6 +36,14 @@ func (p *Plugin) Requires() []string { return []string{"notifications", "logging
 
 // Mount appends the delegate ToolProvider and sets InjectedMessages
 // and PendingDelegations on the Context.
+//
+// This Mount is the module's whole surface (arc 6 capsule, card
+// t_47675b6a): the inject seam, the consolidated delegate tool with its
+// task/status alias shims, and the notifications emitter capture all
+// ship from here, and the module ships nothing else - no command, no
+// REST route, no skills, no canvas panel (nothing rendered delegate
+// before the arc). Removal proof:
+// TestDelegateRemovalProof (cmd/omega/removal_test.go).
 func (p *Plugin) Mount(ctx *core.Context) error {
 	p.delegate.logger = ctx.Logger
 	p.delegate.notifier = ctx.Notifications
