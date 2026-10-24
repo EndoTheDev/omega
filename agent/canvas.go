@@ -48,27 +48,44 @@ func NewCanvas(ctx *core.Context, emit func(core.Event)) (*Canvas, error) {
 		emit:     emit,
 	}
 	for _, p := range ctx.PanelProviders {
-		if err := c.register(p); err != nil {
+		module, err := c.register(p)
+		if err != nil {
 			return nil, err
+		}
+		// A provider that owns state changing outside the action pipe
+		// gets the update closure for its own module namespace - the
+		// installation is registration, not wiring (arc 4b law: the
+		// sink rides the same registration that declares the panels,
+		// so an unmounted provider ships no emitter either).
+		if module != "" {
+			if sink, ok := p.(core.PanelUpdateSink); ok {
+				m := module
+				sink.SetPanelUpdate(func(panel core.Panel) error {
+					return c.Update(m, panel)
+				})
+			}
 		}
 	}
 	return c, nil
 }
 
-// register mounts one module's declarations.
-func (c *Canvas) register(p core.PanelProvider) error {
+// register mounts one module's declarations. The module name is
+// returned so the caller can install a PanelUpdateSink closure bound
+// to the same namespace; empty when the provider contributes nothing
+// (no actions, no capsule name).
+func (c *Canvas) register(p core.PanelProvider) (string, error) {
 	declared := p.Panels()
 	module := ""
 	seen := map[string]bool{}
 	for _, panel := range declared {
 		for _, a := range panel.Actions {
 			if a.Module == "" {
-				return fmt.Errorf("canvas register: action %q carries no module", a.ID)
+				return "", fmt.Errorf("canvas register: action %q carries no module", a.ID)
 			}
 			if !seen[a.Module] {
 				seen[a.Module] = true
 				if module != "" && module != a.Module {
-					return fmt.Errorf("canvas register: one provider declares actions of %q and %q", module, a.Module)
+					return "", fmt.Errorf("canvas register: one provider declares actions of %q and %q", module, a.Module)
 				}
 				module = a.Module
 			}
@@ -77,20 +94,20 @@ func (c *Canvas) register(p core.PanelProvider) error {
 	if module == "" {
 		// An actionless provider has no capsule name to route to. It
 		// contributes nothing to the canvas: registration is silent.
-		return nil
+		return "", nil
 	}
 	if _, mounted := c.handlers[module]; mounted {
-		return fmt.Errorf("canvas register: module %q registered twice", module)
+		return "", fmt.Errorf("canvas register: module %q registered twice", module)
 	}
 
 	panels := make(map[string]core.Panel, len(declared))
 	actionIDs := make(map[string]bool)
 	for _, panel := range declared {
 		if panel.ID == "" {
-			return fmt.Errorf("canvas register: module %q declared a panel with no id", module)
+			return "", fmt.Errorf("canvas register: module %q declared a panel with no id", module)
 		}
 		if _, dup := panels[panel.ID]; dup {
-			return fmt.Errorf("canvas register: panel %q declared twice in %q", panel.ID, module)
+			return "", fmt.Errorf("canvas register: panel %q declared twice in %q", panel.ID, module)
 		}
 		panels[panel.ID] = panel
 		for _, a := range panel.Actions {
@@ -102,7 +119,7 @@ func (c *Canvas) register(p core.PanelProvider) error {
 	c.actions[module] = actionIDs
 	c.handlers[module] = p
 	c.order = append(c.order, module)
-	return nil
+	return module, nil
 }
 
 // Snapshot returns the current panel state of every mounted module:

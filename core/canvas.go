@@ -66,6 +66,20 @@ type ViewModelDelta struct {
 
 func (ViewModelDelta) isEvent() {}
 
+// PanelUpdateSink is the optional capability of a PanelProvider whose
+// panel state changes outside the action pipe - state that turns on a
+// module-internal event (an emit, a poll) rather than a frontend call.
+// The canvas runtime installs the update closure when it registers the
+// provider: the closure routes the panel into the provider's own module
+// namespace, so a push updates the snapshot and emits a ViewModelDelta
+// on the same spine an action-pipe refresh would. Re-registration (a
+// second canvas built over the same providers) re-installs the closure -
+// last one wins, one frontend is live per process by the exclusive
+// frontend seam.
+type PanelUpdateSink interface {
+	SetPanelUpdate(update func(panel Panel) error)
+}
+
 // PanelProvider is the additive canvas registration seam (settled
 // Q5a/Q4b): a module declares its panels and registers their action
 // handlers through the same interface, appended to

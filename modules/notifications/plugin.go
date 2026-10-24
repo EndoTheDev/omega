@@ -21,9 +21,12 @@ func Default() Config { return Config{} }
 
 // Plugin adapts the notifications Store into omega's plugin system. It
 // owns the exclusive "notifications" seam; kanban, cron and delegate
-// emit through ctx.Notifications, the HTTP channel serves the bell.
+// emit through ctx.Notifications, the HTTP channel serves the bell,
+// and the capsule's canvas surface carries the list panel and the
+// toast event (arc 4b).
 type Plugin struct {
-	store *Store
+	store   *Store
+	capsule *capsule
 }
 
 var _ agent.Plugin = (*Plugin)(nil)
@@ -37,6 +40,7 @@ func (p *Plugin) Name() string { return "notifications" }
 func (p *Plugin) Description() string {
 	return "notifications: the finished-things store behind the bell (tasks, crons, chats)"
 }
+
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "notifications" }
@@ -67,7 +71,17 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 		return fmt.Errorf("notifications store: %w", err)
 	}
 	p.store = s
-	ctx.Notifications = s
+	// Capsule law (arc 4b, t_9339ad05): the module ships its view-model
+	// with its store. The seam the emitters see is the capsule-backed
+	// wrapper - every emit records through the store AND pushes the
+	// canvas panels (toast event + list refresh), so the toast is a
+	// canvas event and the emitter wiring lives in this module. The
+	// provider ride is the same Mount: an unregistered plugin ships
+	// no store, no panels, no toasts, no wiring - removal kills all
+	// of it together.
+	p.capsule = newCapsule(s)
+	ctx.Notifications = &emittingStore{store: s, capsule: p.capsule}
+	ctx.PanelProviders = append(ctx.PanelProviders, p.capsule)
 	p.wireCommand(ctx)
 	return nil
 }

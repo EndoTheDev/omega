@@ -43,7 +43,7 @@ export interface CanvasStore {
   actionState(panelId: string, actionId: string): CanvasActionState;
   /** the action pipe round-trip: optimistic pending, error state on
       4xx/5xx, idle again on success (the panel updates via deltas) */
-  invoke(panel: CanvasPanel, action: CanvasPanelAction): Promise<void>;
+  invoke(panel: CanvasPanel, action: CanvasPanelAction, args?: unknown): Promise<void>;
   /** refetch the snapshot (boot + later catch-ups). A failed fetch
       keeps the previous view - the same transient rule as sessions. */
   refresh(): Promise<void>;
@@ -87,7 +87,10 @@ export function createCanvasStore(): CanvasStore {
     const next: CanvasPanel[] = [];
     for (const item of list) {
       const p = normalizeCanvasPanel(item);
-      if (p) next.push(p);
+      if (p) {
+        next.push(p);
+        feedToastPanel(p);
+      }
     }
     panels.splice(0, panels.length, ...next);
   }
@@ -98,14 +101,15 @@ export function createCanvasStore(): CanvasStore {
     const i = panels.findIndex((x) => x.id === p.id);
     if (i >= 0) panels[i] = p;
     else panels.push(p);
+    feedToastPanel(p);
   }
 
-  async function invoke(panel: CanvasPanel, action: CanvasPanelAction): Promise<void> {
+  async function invoke(panel: CanvasPanel, action: CanvasPanelAction, args?: unknown): Promise<void> {
     const st = actionState(panel.id, action.id);
     st.status = "pending";
     st.error = undefined;
     try {
-      await postCanvasAction(action.module, action.id);
+      await postCanvasAction(action.module, action.id, args);
       st.status = "idle";
     } catch (e) {
       st.status = "error";
@@ -129,5 +133,51 @@ export function createCanvasStore(): CanvasStore {
     actionState,
     invoke,
     refresh,
+  };
+}
+
+// --- the toast feed (arc 4b, t_9339ad05) ---------------------------------
+
+// Panels of kind "toast" are canvas events, not persistent surface (the
+// notifications capsule is the first module to ship one). Both transports
+// land here: deltas ride the run streams, the snapshot is the catch-up
+// for emits that happened between runs. The fingerprint dedupes - the
+// same state seen twice (a reconnect replay, a snapshot refetch of an
+// unchanged store) toasts once. Handlers receive the payload verbatim;
+// decoding is the consumers' domain (the dock knows the record shape,
+// the canvas contract does not).
+type ToastPanelHandler = (payload: unknown) => void;
+
+const toastHandlers = new Set<ToastPanelHandler>();
+let lastToastFingerprint = "";
+
+// fingerprintOf is the dedupe key: the payload's stable serialization.
+// An unserializable payload degrades to the empty string and still
+// toasts once per distinct string (a toast that never fires is worse).
+function fingerprintOf(payload: unknown): string {
+  try {
+    return JSON.stringify(payload) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// feedToastPanel is the internal funnel: applyDelta and applySnapshot
+// call it for every panel; only kind "toast" payloads pass.
+function feedToastPanel(p: CanvasPanel): void {
+  if (p.kind !== "toast" || p.payload === null || p.payload === undefined) return;
+  const fp = fingerprintOf(p.payload);
+  if (fp === lastToastFingerprint) return;
+  lastToastFingerprint = fp;
+  for (const fn of toastHandlers) fn(p.payload);
+}
+
+// onToastPanel subscribes one toast consumer (the dock's toast stack).
+// The return releases the subscription - the handler set is a feed,
+// not a store; the panels list above stays the one state.
+export function onToastPanel(fn: ToastPanelHandler): () => void {
+  toastHandlers.add(fn);
+  return () => {
+    toastHandlers.delete(fn);
   };
 }

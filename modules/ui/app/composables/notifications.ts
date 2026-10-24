@@ -1,10 +1,15 @@
 // omega webui: finished-things notifications client (card t_5d9032d3).
 // One small record per finished thing - kanban task done, cron fire
-// finished, dispatched chat run ended - served by GET /notifications,
-// POST /notifications/read and a live SSE toast stream on
-// /notifications/events. Records are METADATA ONLY (kind, source id,
+// finished, dispatched chat run ended - served by GET /notifications and
+// POST /notifications/read. RECORDS ARE METADATA ONLY (kind, source id,
 // title line, verdict, read flag); the UI renders exactly what the
 // server sent and never invents content for the title line.
+//
+// Arc 4b (t_9339ad05): the toast moved to the canvas - the notifications
+// capsule ships a toast panel and the dock renders toasts from the
+// canvas feed (composables/canvas.ts onToastPanel), not from a private
+// SSE stream. What stays here is the REST client, the pure helpers the
+// dock and the toast path keep using, and the board-select seam.
 
 export interface OmegaNotification {
   id: number;
@@ -50,28 +55,6 @@ export async function markAllNotificationsRead(): Promise<void> {
     body: JSON.stringify({ all: true }),
   });
   if (!r.ok) throw new Error(`read-all: ${r.status}`);
-}
-
-// subscribeNotifications opens the live stream and hands every
-// "notification" frame to the callback. Returns a close fn (the
-// EventSource survives route changes; the bell's unmount closes it).
-export function subscribeNotifications(
-  onFrame: (n: OmegaNotification) => void,
-): () => void {
-  const es = new EventSource("/notifications/events");
-  let stopped = false;
-  es.addEventListener("notification", (ev) => {
-    try {
-      onFrame(JSON.parse((ev as MessageEvent<string>).data) as OmegaNotification);
-    } catch {
-      // a malformed frame is skipped, not fatal
-    }
-  });
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    es.close();
-  };
 }
 
 // --- pure helpers (node-tested: test/notifications.test.ts) ---

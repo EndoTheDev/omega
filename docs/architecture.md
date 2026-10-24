@@ -9,7 +9,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Agent    | `agent`     | Multi-turn loop, parallel tool execution, compaction, capability seams, Plugin system (Context, Plugin, MountAll)                                       |
 | Provider | `ai`        | Provider interface, Ollama + OpenAI + Anthropic, stream events, message types, retry                                                                    |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban (17) + `ui`, the Nuxt webui source |
+| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban, notifications, verdict (19) + `ui`, the Nuxt webui source |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer

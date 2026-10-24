@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -153,7 +153,7 @@ func TestSubscribeBroadcastAndCancel(t *testing.T) {
 		if n.SourceID != "task-1" || n.Kind != "chat" {
 			t.Fatalf("broadcast carried the wrong record: %+v", n)
 		}
-	case <-time.After(2*time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatalf("no broadcast within 2s")
 	}
 

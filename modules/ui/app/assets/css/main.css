@@ -932,6 +932,47 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   margin-top: 8px;
 }
 
+/* the row view (arc 4b): a payload's `rows` render as lines with their
+   declared per-row action bindings instead of the JSON dump */
+.canvas-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.canvas-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.canvas-row-read {
+  opacity: 0.55;
+}
+.canvas-row-text {
+  word-break: break-word;
+}
+.canvas-row-action {
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  flex: none;
+}
+.canvas-row-action:hover { border-color: var(--accent); }
+.canvas-row-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* the action pipe's buttons: the shell's accent voice */
 .canvas-action {
   border: 1px solid var(--stroke);

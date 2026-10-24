@@ -1211,15 +1211,18 @@ export async function fetchCanvas(): Promise<CanvasPanel[]> {
 // error is a 500 - both carry the server's plain-text reason, which the
 // panel's error state renders verbatim. Success resolves the
 // {"result": ...} body; the panel updates through the deltas, never
-// through this response (the call may emit none of its own).
+// through this response (the call may emit none of its own). An args
+// payload rides the call when the invoking binding declares one
+// (row bindings carry the arguments the action needs).
 export async function postCanvasAction(
   mod: string,
   action: string,
+  args?: unknown,
 ): Promise<unknown> {
   const r = await fetch("/ui/actions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ module: mod, action }),
+    body: JSON.stringify({ module: mod, action, args }),
   });
   if (!r.ok) {
     let msg = `action: ${r.status}`;
