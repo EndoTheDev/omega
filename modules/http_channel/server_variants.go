@@ -84,6 +84,16 @@ func (s *Server) handleSessionVariants(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "get session: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The select changed the panel's active path. The canvas snapshot is
+	// push-driven (Snapshot serves the last pushed panel), and a select
+	// is not a run - no delta would ever carry the swap. Re-push the
+	// focused panel so the webui's post-select snapshot refetch repaints
+	// the NEW active path (journey 30: the flip stuck on the old row).
+	if c := s.chat; c != nil && c.srv != nil {
+		if focusID, running := c.focus(); focusID == id {
+			c.push(c.buildPanel(id, running))
+		}
+	}
 	s.writeVariants(w, http.StatusOK, updated)
 }
 
