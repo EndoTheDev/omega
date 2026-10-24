@@ -1115,3 +1115,237 @@ for line in sys.stdin:
 	_ = core.ToolProvider(nil)
 	t.Log("PROOF removed: no mcp-shaped tools (MCP_SERVERS still set, nothing outside the module reads it), no /mcp command, no mcp panel or actions, the action pipe answers ErrUnknownModule, the other modules mount unchanged; the bridge persists no state (tools are discovered live, mcp.yaml is user config) - data is not code holds vacuously; the additive tools seam (core.Tool / core.ToolProvider / ctx.ToolProviders) remains - shared vocabulary, documented as intentional")
 }
+
+// TestVerdictRemovalProof is the arc 6 verdict-capsule proof (card
+// t_78935c07), the seventh worked proof in this file. Verdict is the
+// interactive born-capsule: the single-answer hub (ctx.Verdicts), the
+// blocking `verdict` tool, the /verdict TUI command, and the Verdict
+// Cards prompt section all ship from the one Mount - the same object
+// the hub builds is the tool's pause point and every answer surface's
+// write point, which is the whole single-answer race. No canvas panel,
+// no module-qualified actions, no skills: the webui renders the card
+// in the chat stream off the tool call and the bell polls /verdicts,
+// both surfaces guard by construction (a noninteractive run denies
+// the tool name; the REST routes 501 through their seam-nil guard).
+// The two mounts are the proof:
+//
+//  1. WITH verdict: the seam is mounted, the registry carries the
+//     verdict tool with its request sub-action, a real verdict.request
+//     BLOCKS the turn and the first answer through the seam resolves
+//     it (the very path the /verdicts POST and the /verdict command
+//     share), and the Verdict Cards prompt section rides the
+//     sectioner seam.
+//  2. WITHOUT verdict: the seam is nil (the /verdicts routes fall
+//     through to their 501 guard), no verdict tool, no /verdict
+//     command, no Verdict Cards prompt block, no canvas panel or
+//     verdict-qualified action, and the other modules mount unchanged.
+//
+// The audit rows stay: Answer persists the verdict record into the
+// session store (roles "verdict_card" / "verdict") - the store is a
+// different module and keeps rows from mounts gone by; data is not
+// code. The core types stay too (core/seams.go: VerdictsProvider,
+// VerdictPrompt, Verdict) - the seam signature references them and
+// layers never import modules. Intentional residue, documented: this
+// test compiles them to prove it.
+func TestVerdictRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// recipe step 1, declared data: verdict requires store and logging,
+	// and no other plugin's Requires may name "verdicts" - a hit here
+	// is the removal recipe's stop signal
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if req == "verdicts" {
+				t.Fatalf("FULL MOUNT precondition: %q requires verdicts - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if err := agent.MountAll(plugins, ctx); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.Verdicts == nil {
+		t.Fatal("FULL MOUNT: verdicts seam nil - capsule did not mount")
+	}
+	t.Log("PROOF mount=full: seam mounted (ctx.Verdicts), tool + command + prompt section from the same Mount")
+
+	// the prompt-section face: the same Mount renders the Verdict
+	// Cards guidance between Project Context and Environment
+	foundCardsBlock := false
+	for _, ps := range ctx.PromptSectioners {
+		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
+			if s.Title == "Verdict Cards" && strings.Contains(s.Body, "verdict.request") {
+				foundCardsBlock = true
+			}
+		}
+	}
+	if !foundCardsBlock {
+		t.Fatal("FULL MOUNT: the Verdict Cards prompt section is missing")
+	}
+
+	// the tool face: the registry carries the verdict tool with its
+	// one sub-action, and a real verdict.request hard-pauses the turn
+	// until an answer lands through the seam - the path the /verdicts
+	// POST and the /verdict command share
+	verdictTool, err := pluginTool(ctx, "verdict")
+	if err != nil {
+		t.Fatalf("FULL MOUNT: the verdict tool is missing from the registry: %v", err)
+	}
+	for _, tp := range ctx.ToolProviders {
+		if tool, ok := tp.Tools()["verdict"]; ok {
+			foundRequest := false
+			for _, a := range tool.Actions {
+				if a.Name == "request" {
+					foundRequest = true
+				}
+			}
+			if !foundRequest {
+				t.Fatalf("FULL MOUNT: the verdict tool lost its request sub-action: %+v", tool.Actions)
+			}
+		}
+	}
+	type toolResult struct {
+		res string
+		err error
+	}
+	resCh := make(chan toolResult, 1)
+	go func() {
+		res, err := verdictTool(context.Background(), map[string]any{
+			"action":  "request",
+			"title":   "arc 6 proof: which wire?",
+			"options": []any{"left", "right"},
+		})
+		resCh <- toolResult{res: res, err: err}
+	}()
+	var cardID string
+	cardDeadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(cardDeadline) {
+		if cards := ctx.Verdicts.Pending(""); len(cards) > 0 {
+			cardID = cards[0].ID
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if cardID == "" {
+		t.Fatal("FULL MOUNT: the blocked tool call never registered a pending card")
+	}
+	if _, err := ctx.Verdicts.Answer("", cardID, core.Verdict{OptionIndex: 2}); err != nil {
+		t.Fatalf("FULL MOUNT: answer through the seam failed: %v", err)
+	}
+	var got toolResult
+	select {
+	case got = <-resCh:
+		if got.err != nil || !strings.Contains(got.res, `"verdict":"answer"`) || !strings.Contains(got.res, `"option":"right"`) {
+			t.Fatalf("FULL MOUNT: verdict.request did not return the answered pick (res=%s err=%v)", got.res, got.err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("FULL MOUNT: verdict.request never unblocked after the first answer")
+	}
+	t.Logf("PROOF tool wiring: verdict.request blocked the turn, the first answer through the seam won the race - %s", strings.TrimSpace(got.res))
+
+	// the TUI face: /verdict declared through the same Mount
+	foundCommand := false
+	for _, tp := range ctx.TUIProviders {
+		for _, c := range tp.TUICommands() {
+			if c.Name == "/verdict" {
+				foundCommand = true
+			}
+		}
+	}
+	if !foundCommand {
+		t.Fatal("FULL MOUNT: no /verdict command registered through the capsule's TUIProvider")
+	}
+	t.Log("PROOF command face: /verdict registered by the same Mount that owns the tool and the hub")
+
+	// the action pipe: verdict ships no panel and no actions - even
+	// the full mount has nothing to route
+	canvas, err := agent.NewCanvas(ctx, nil)
+	if err != nil {
+		t.Fatalf("canvas: %v", err)
+	}
+	for _, p := range canvas.Snapshot() {
+		if p.ID == "verdict" {
+			t.Fatalf("FULL MOUNT: unexpected verdict panel in the snapshot: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "verdict" {
+				t.Fatalf("FULL MOUNT: unexpected verdict-qualified action on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := canvas.Dispatch(core.ActionCall{Module: "verdict", Action: "list_cards"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("FULL MOUNT: dispatch answered %v, want ErrUnknownModule (verdict declares no actions)", err)
+	}
+	t.Log("PROOF action-pipe: no panel, no actions - the pipe answers ErrUnknownModule on the full mount (module ships no canvas surface by design)")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "verdict" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if err := agent.MountAll(removed, ctx2); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctx2.Verdicts != nil {
+		t.Fatal("REMOVED MOUNT: verdicts seam still mounted")
+	}
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.Contains(name, "verdict") {
+				t.Fatalf("REMOVED MOUNT: verdict-shaped tool %q survived the removal", name)
+			}
+		}
+	}
+	for _, tp := range ctx2.TUIProviders {
+		for _, c := range tp.TUICommands() {
+			if c.Name == "/verdict" {
+				t.Fatal("REMOVED MOUNT: the /verdict command survived the removal")
+			}
+		}
+	}
+	for _, ps := range ctx2.PromptSectioners {
+		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
+			if strings.Contains(s.Body, "verdict.request") {
+				t.Fatalf("REMOVED MOUNT: the Verdict Cards prompt block survived the removal: %.120q", s.Body)
+			}
+		}
+	}
+	noCanvas, err := agent.NewCanvas(ctx2, nil)
+	if err != nil {
+		t.Fatalf("canvas removed: %v", err)
+	}
+	for _, p := range noCanvas.Snapshot() {
+		if p.ID == "verdict" {
+			t.Fatalf("REMOVED MOUNT: a verdict panel survived the removal: %+v", p)
+		}
+		for _, a := range p.Actions {
+			if a.Module == "verdict" {
+				t.Fatalf("REMOVED MOUNT: a verdict-qualified action survived on panel %q", p.ID)
+			}
+		}
+	}
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "verdict", Action: "list_cards"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
+	}
+	// the neighbors keep mounting: the removal takes no dependents
+	// (verdict requires store and logging, nothing requires verdicts)
+	if ctx2.Notifications == nil {
+		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
+	}
+	// core types remain - intentional (the seam signature references
+	// them; layers never import modules). Compile-time proof:
+	_ = core.VerdictsProvider(nil)
+	_ = core.VerdictPrompt{}
+	_ = core.Verdict{}
+	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core/seams.go verdict types remain - documented as intentional")
+}

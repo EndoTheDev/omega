@@ -39,6 +39,20 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 
 // Mount builds the hub, publishes it on the Context, and appends the
 // tool provider, TUI provider, and prompt-section contributor.
+//
+// Capsule posture (arc 6, card t_78935c07): this Mount is the module's
+// whole surface - the seam, the blocking verdict tool, the /verdict
+// command, and the Verdict Cards prompt section all ship from here,
+// and the module ships nothing else. No canvas panel and no
+// module-qualified actions exist (the card renders in the chat stream
+// off the tool call; nothing rendered a verdict panel before the arc).
+// The /verdicts REST routes live in modules/http_channel behind the
+// verdicts seam's nil guard - unmount answers 501 by construction.
+// The shell's busy-Enter answer path (modules/tui/tui_verdict.go)
+// reads the same seam and is nil-guarded: no mount, no intercept.
+// Take verdict.NewPlugin() out of buildPlugins() and every face above
+// vanishes; the proof is TestVerdictRemovalProof
+// (cmd/omega/removal_test.go, seventh).
 func (p *Plugin) Mount(ctx *core.Context) error {
 	p.hub = NewHub(ctx.Store, ctx.Logger)
 	ctx.Verdicts = p.hub
