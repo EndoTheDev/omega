@@ -331,6 +331,17 @@ The per-module REST routes stay; these two endpoints are additive.
   handler's own error is a **500**; success returns the handler's
   result as `{"result": ...}`. Non-POST/GET method mismatches are 405.
 
+The chat panel (chat-last 1/3): the conversation itself is a canvas
+surface. One `chat` panel rides the snapshot (`GET /ui/canvas`) and
+`view_model_delta` frames on the run streams: its payload is the focus
+session's message rows (`session`, `running`, `rows` - role, content
+block, status per row), snapshots cover the newest 40 rows, streaming
+tokens batch onto `view_model_delta` at the cadence and structural
+stream events flush immediately. Its actions (`stop`, `retry`,
+module `http_channel`) route through the pipe and serve the same faces
+the REST routes serve. The `/chat` REST + SSE API surface stays
+untouched - the panel is additive for canvas renderers.
+
 ## SPA catch-all
 
 Exact API patterns win over `/`. The catch-all serves real files, falls

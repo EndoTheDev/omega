@@ -106,3 +106,58 @@ func TestCanvas404Sentinels(t *testing.T) {
 		t.Error("wrapped action error must satisfy errors.Is(ErrUnknownAction)")
 	}
 }
+
+// The chat panel vocabulary's wire law (chat-last 1/3): both frontends
+// render the chat panel from these exact keys - payload session/running/
+// rows, row id/role/status/blocks, block type/content. No backwards
+// compatibility - if a key changes, this test changes with it.
+func TestChatPanelJSONShape(t *testing.T) {
+	p := Panel{
+		ID:   "chat",
+		Kind: PanelKindChat,
+		Payload: ChatPayload{
+			Session: "sess-x",
+			Running: true,
+			Rows: []ChatRow{{
+				ID:     "u1",
+				Role:   ChatRoleUser,
+				Status: ChatStatusStreaming,
+				Blocks: []ChatBlock{{Type: ChatBlockText, Content: "hi", Running: true}},
+			}},
+		},
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	payload, ok := raw["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload missing from %s", b)
+	}
+	for _, key := range []string{"session", "running", "rows"} {
+		if _, present := payload[key]; !present {
+			t.Errorf("ChatPayload JSON missing key %q: %s", key, b)
+		}
+	}
+	rows, _ := payload["rows"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("rows missing from %s", b)
+	}
+	row, _ := rows[0].(map[string]any)
+	for _, key := range []string{"id", "role", "status", "blocks"} {
+		if _, present := row[key]; !present {
+			t.Errorf("ChatRow JSON missing key %q: %s", key, b)
+		}
+	}
+	blocks, _ := row["blocks"].([]any)
+	block, _ := blocks[0].(map[string]any)
+	for _, key := range []string{"type", "content", "running"} {
+		if _, present := block[key]; !present {
+			t.Errorf("ChatBlock JSON missing key %q: %s", key, b)
+		}
+	}
+}

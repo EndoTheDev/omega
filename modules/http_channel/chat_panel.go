@@ -117,10 +117,11 @@ func (c *chatCapsule) Panels() []core.Panel {
 	return []core.Panel{c.buildPanel(session, running)}
 }
 
-// focus returns the panel's session ref: the session streaming right
-// now (the runHub is the live activity's truth), else the most recent
-// durable conversation, else nothing. (The focusID mutation side of
-// this is beginRun; the read is stateless over the hub + store.)
+// focus returns the panel's session ref and its live flag: the session
+// streaming right now (the runHub is the live activity's truth), else
+// the most recent durable conversation (not running), else nothing.
+// (The focusID mutation side of this is beginRun; the read is
+// stateless over the hub + store.)
 func (c *chatCapsule) focus() (string, bool) {
 	if id, ok := c.srv.runs.firstActive(); ok {
 		return id, true
@@ -141,7 +142,7 @@ func (c *chatCapsule) focus() (string, bool) {
 			newest, when = sess.ID, sess.UpdatedAt
 		}
 	}
-	return newest, newest != ""
+	return newest, false
 }
 
 // buildPanel composes the panel descriptor for one session: rows from
