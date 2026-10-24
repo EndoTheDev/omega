@@ -31,7 +31,13 @@ var webuiFS, _ = fs.Sub(staticFS, "static")
 type Server struct {
 	agent *core.Agent
 	tools map[string]core.Tool
-	runs  runHub // detached /chat runs by session id (reattach surface)
+	// runs is a per-PROCESS hub, not per-bind (t_c6f13a82): every
+	// multi-bind mirror shares it (HTTPChannel.Start swaps it in), or a
+	// run started through the action pipe on one bind is invisible to
+	// the transcript/events reads on the others - exactly the hub
+	// invisibility journey 30 caught. NewServer wires a private hub so
+	// directly constructed Servers (tests, embedding) stay self-contained.
+	runs *runHub // detached /chat runs by session id (reattach surface)
 	// eph is the no-persist (ephemeral) session registry: `eph-` ids
 	// live here, never in the store - invisible to every store-derived
 	// surface, gone at restart (card t_d96a5cd5).
@@ -102,7 +108,7 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
 	// Chat panel capsule (chat-last 1/3): default-wired so a directly
 	// constructed Server (tests, embedding) has the push hooks and the
 	// panel even without the plugin's channel-start handoff.

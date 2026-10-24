@@ -11,6 +11,11 @@ import (
 // Plugin implements agent.Plugin for the HTTP channel. It reads the
 // port from config and appends an HTTPChannel to ctx.Channels.
 type Plugin struct {
+	// hub is the process-wide run registry (t_c6f13a82): one hub, shared
+	// by every bind's channel start. Multi-bind mirrors serve one
+	// logical frontend - a run started on any mirror must be visible to
+	// the reads and reattach on all of them.
+	hub *runHub
 	// chat is the conversation's canvas capsule (chat-last 1/3): one
 	// instance per plugin, registered with the canvas seam below and
 	// shared by every bind's channel start (multi-bind: the last
@@ -69,12 +74,17 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	if len(binds) == 0 {
 		binds = []string{"127.0.0.1"}
 	}
+	// One run registry per process (t_c6f13a82): every mirror joins it
+	// at channel start, so action-pipe launches, reattach reads and the
+	// SSE attach agree on what is live regardless of which bind speaks.
+	p.hub = &runHub{}
 	for _, b := range binds {
 		ctx.Channels = append(ctx.Channels, &HTTPChannel{
 			addr:       fmt.Sprintf("%s:%d", b, port),
 			runTimeout: time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
 			titleModel: cfg.TitleModel,
 			chat:       p.chat,
+			hub:        p.hub,
 		})
 	}
 	// Chat panel (chat-last 1/3, card t_ec45b670): the conversation's
