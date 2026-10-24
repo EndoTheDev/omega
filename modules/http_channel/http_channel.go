@@ -42,11 +42,25 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
 	// Chat panel (chat-last 1/3): bind the plugin's registered capsule
 	// to THIS server before the canvas runtime builds over the
-	// providers. Multi-bind binds: the last started server serves the
-	// capsule - one frontend is live per process.
+	// providers, and register it with the canvas seam here - gated on
+	// the channel actually starting (chat-last 2b ruling: one chat
+	// panel per live frontend; a TUI-only process never reaches Start,
+	// so its canvas carries no dead http chat panel). Multi-bind binds:
+	// the registration is idempotent, the capsule follows the
+	// last-started server - one frontend is live per process.
 	if c.chat != nil {
 		c.srv.chat = c.chat
 		c.srv.chat.srv = c.srv
+		registered := false
+		for _, p := range deps.Ctx.PanelProviders {
+			if p == core.PanelProvider(c.chat) {
+				registered = true
+				break
+			}
+		}
+		if !registered {
+			deps.Ctx.PanelProviders = append(deps.Ctx.PanelProviders, c.chat)
+		}
 	}
 	// Multi-bind mirror (t_c6f13a82): every bind's server joins the one
 	// process-wide run registry, so a run launched through the action

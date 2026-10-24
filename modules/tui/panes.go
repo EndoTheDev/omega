@@ -346,36 +346,20 @@ func (m model) rightPaneContent(w int) string {
 }
 
 // bottomPaneBody builds the run band's body: the in-flight turn's
-// tool+thinking output while the agent runs, a dim idle line when it
-// does not. Completed folds land in the transcript as before - the
-// band never re-renders them. Thinking wraps at the band's own width,
-// not the terminal width.
+// tool+thinking output, rendered from the canvas panel payload (the
+// rows after the newest user row) at the band's own width; a dim idle
+// line when no run streams. The main pane renders the live text rows -
+// the split the chatBody composition keeps.
 func (m model) bottomPaneBody() string {
 	wrap := m.termWidth
 	if geo := paneGeometryFor(m.termWidth, m.screenHeight); geo.active {
 		wrap = geo.bottom.w
 	}
-	if !m.busy || len(m.segments) == 0 {
+	body := chatBandLines(wrap, m.theme, m.chatPayload())
+	if body == "" {
 		return m.theme.Thinking.Render("(no active run)")
 	}
-	var sb strings.Builder
-	for _, seg := range m.segments {
-		switch seg.kind {
-		case "thinking":
-			sb.WriteString(m.theme.Thinking.Render("[thinking]") + "\n")
-			sb.WriteString(m.theme.Thinking.Render(wordWrap(seg.content, wrap)) + "\n")
-		case "tool":
-			sb.WriteString(seg.content)
-		case "tool_result":
-			sb.WriteString("\n" + m.theme.Tool.Render(seg.content) + "\n")
-		case "tool_result_highlighted":
-			sb.WriteString("\n" + seg.content + "\n")
-		}
-	}
-	if sb.Len() == 0 {
-		return m.theme.Thinking.Render("(no active run)")
-	}
-	return strings.TrimRight(sb.String(), "\n")
+	return strings.TrimRight(body, "\n")
 }
 
 // inputHintLine renders the input grammar on its own dim row: the
@@ -422,7 +406,7 @@ func (m model) paneView(geo paneGeometry) string {
 
 	m.viewport.Width = geo.main.w
 	m.viewport.Height = vh
-	if m.transcript == "" && len(m.segments) == 0 && len(m.history) == 0 {
+	if m.chatEmpty() {
 		// Empty conversation: the splash IS the chat content. Rendered
 		// against this frame's height; not persisted past the frame.
 		m.viewport.SetContent(m.splashView())

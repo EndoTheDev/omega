@@ -39,7 +39,7 @@ func (m *model) tryAnswerVerdict(input string) (handed bool) {
 		return true
 	}
 	m.err = ""
-	m.transcript += "\n" + m.theme.Info.Render("[verdict: "+tuiVerdictSummary(card, v)+"]") + "\n"
+	m.addNotice("\n" + m.theme.Info.Render("[verdict: "+tuiVerdictSummary(card, v)+"]") + "\n")
 	m.refresh()
 	return true
 }

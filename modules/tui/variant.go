@@ -77,6 +77,33 @@ func (m model) markersForHistory() map[int]string {
 	return pathMarkers(m.view, len(m.history))
 }
 
+// rowMarkers returns variant markers keyed by row index in the chat
+// payload: the path-index-keyed message markers shift onto rows through
+// the deterministic chatRowsOf alignment (chat_view.go). nil unless the
+// history exactly matches the loaded view path (index-aligned) - a
+// drifted history can never mislabel rows, the same guard
+// markersForHistory enforced on the transcript renderer.
+func (m model) rowMarkers() map[int]string {
+	if len(m.history) == 0 || len(m.view.Path) != len(m.history) {
+		return nil
+	}
+	byMsg := pathMarkers(m.view, len(m.history))
+	if byMsg == nil {
+		return nil
+	}
+	offs := chatRowOffsets(m.history)
+	out := map[int]string{}
+	for i, mk := range byMsg {
+		if offs[i] >= 0 {
+			out[offs[i]] = mk
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // variantGuards reports why the variant commands cannot run right
 // now, or "" when they can.
 func (m model) variantGuards() string {
@@ -107,7 +134,8 @@ func (m *model) reloadView(view core.ActiveView) {
 	}
 	m.history = msgs
 	m.view = view
-	m.transcript = renderTranscript(msgs, m.viewport.Width, m.theme, pathMarkers(view, len(msgs)))
+	m.notices = nil
+	m.chatCanvas.setConversation(m.sessionID, msgs)
 }
 
 // handleVariant implements /variant: no branch state argument lists
@@ -131,7 +159,7 @@ func (m model) handleVariant(args []string) (tea.Model, tea.Cmd) {
 	}
 	branches := branchPointsOnPath(view)
 	if len(branches) == 0 {
-		m.transcript += "\n" + m.theme.Info.Render("[no variants in this session]") + "\n"
+		m.addNotice("\n" + m.theme.Info.Render("[no variants in this session]") + "\n")
 		m.refresh()
 		return m, nil
 	}
@@ -142,7 +170,7 @@ func (m model) handleVariant(args []string) (tea.Model, tea.Cmd) {
 		for _, b := range branches {
 			fmt.Fprintf(&sb, "  #%s  variant %d/%d\n", b.ParentID, b.ActiveIndex+1, b.Count)
 		}
-		m.transcript += m.theme.Info.Render(sb.String())
+		m.addNotice(m.theme.Info.Render(sb.String()))
 		m.refresh()
 		return m, nil
 	}
@@ -177,7 +205,7 @@ func (m model) handleVariant(args []string) (tea.Model, tea.Cmd) {
 // nothing (mirrors the http channel), it only re-renders.
 func (m model) selectVariant(view core.ActiveView, branch, child string, shown, total int) (tea.Model, tea.Cmd) {
 	if view.ActiveHeads[branch] == child {
-		m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[variant %d/%d at #%s already active]", shown, total, branch)) + "\n"
+		m.addNotice("\n" + m.theme.Info.Render(fmt.Sprintf("[variant %d/%d at #%s already active]", shown, total, branch)) + "\n")
 		m.refresh()
 		return m, nil
 	}
@@ -196,7 +224,7 @@ func (m model) selectVariant(view core.ActiveView, branch, child string, shown, 
 	}
 	m.reloadView(updated)
 	m.forkParent = "" // the pinned point may no longer be on the path
-	m.transcript += "\n" + m.theme.Info.Render(fmt.Sprintf("[variant %d/%d at #%s]", shown, total, branch)) + "\n"
+	m.addNotice("\n" + m.theme.Info.Render(fmt.Sprintf("[variant %d/%d at #%s]", shown, total, branch)) + "\n")
 	m.refresh()
 	return m, nil
 }
@@ -237,7 +265,7 @@ func (m model) handleFork(args []string) (tea.Model, tea.Cmd) {
 			}
 			fmt.Fprintf(&sb, "  %d  %-9s  %s\n", i+1, role, truncate(wordWrap(text, m.viewport.Width), 60))
 		}
-		m.transcript += m.theme.Info.Render(sb.String())
+		m.addNotice(m.theme.Info.Render(sb.String()))
 		m.refresh()
 		return m, nil
 	}
@@ -251,8 +279,8 @@ func (m model) handleFork(args []string) (tea.Model, tea.Cmd) {
 	target := view.Path[at]
 	m.reloadViewAt(view, at)
 	m.forkParent = core.MsgID(target.ID)
-	m.transcript += "\n" + m.theme.Info.Render("[fork: next message continues from #"+
-		core.MsgID(target.ID)+"]") + "\n"
+	m.addNotice("\n" + m.theme.Info.Render("[fork: next message continues from #"+
+		core.MsgID(target.ID)+"]") + "\n")
 	m.refresh()
 	return m, nil
 }
@@ -268,7 +296,8 @@ func (m *model) reloadViewAt(view core.ActiveView, at int) {
 	}
 	m.history = msgs
 	m.view = view
-	m.transcript = renderTranscript(msgs, m.viewport.Width, m.theme, pathMarkers(view, at+1))
+	m.notices = nil
+	m.chatCanvas.setConversation(m.sessionID, msgs)
 }
 
 // handleRetry implements /retry: the active path's last user turn
@@ -332,9 +361,9 @@ func (m model) handleRetry() (tea.Model, tea.Cmd) {
 		m.retryMarker = fmt.Sprintf("[%d/%d]", n, n)
 	}
 	m.busy = true
-	m.segments = nil
 	m.err = ""
-	m.lastRenderedResponse = ""
+	m.resetRenderCache()
+	m.chatCanvas.setConversation(m.sessionID, m.history)
 	m.startRun()
 	return m, tea.Batch(m.drainEvents(), m.titleCmd())
 }
