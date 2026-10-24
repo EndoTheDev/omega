@@ -253,6 +253,109 @@ func TestPanelsScreenRawJSONToggle(t *testing.T) {
 	}
 }
 
+// kanbanListFake builds a fake spine carrying the arc 5 kanban task
+// shape: string row ids, a status field, no unread - the same field
+// tags modules/kanban ships on the wire, no kanban import (layer law).
+func kanbanListFake() *fakePanelProvider {
+	return &fakePanelProvider{
+		panels: []core.Panel{{
+			ID:    "tasks",
+			Title: "Tasks",
+			Kind:  "list",
+			Payload: map[string]any{
+				"board": "build",
+				"total": 2,
+				"rows": []any{
+					map[string]any{"id": "t_abc123", "status": "running", "title": "ship the decoder",
+						"assignee": "cody", "created_at": "2026-10-24T01:02:03Z",
+						"action": map[string]any{"action": "complete_task", "label": "complete",
+							"args": map[string]any{"id": "t_abc123"}}},
+					map[string]any{"id": "t_def456", "status": "done", "title": "settle the shape",
+						"assignee": "cody", "created_at": "2026-10-24T00:00:00Z"},
+				},
+			},
+			Actions: []core.PanelAction{{ID: "complete_task", Label: "complete", Module: "kanban"}},
+		}},
+		result: "completed",
+	}
+}
+
+// TestCanvasKanbanListRowsRender: the arc 5 kanban task shape (string
+// ids, status, no unread) renders one line per row at the default
+// body - no JSON dump. Marker fallback is status-derived: settled rows
+// read, live rows unread with the binding hint. The total badge rides
+// the header, 'd' still flips the dump, truncation still holds.
+func TestCanvasKanbanListRowsRender(t *testing.T) {
+	fake := kanbanListFake()
+	m := panelModel(t, &core.Context{PanelProviders: []core.PanelProvider{fake}})
+	out, _ := m.handlePanels()
+	cs := out.(model).screen.(*canvasScreen)
+
+	view := cs.View(80, 24)
+	if !strings.Contains(view, "· 2 total") {
+		t.Fatalf("header lost the total badge: %q", view)
+	}
+	if !strings.Contains(view, "● ship the decoder t_abc123 · running · complete") {
+		t.Fatalf("live kanban row not rendered: %q", view)
+	}
+	if !strings.Contains(view, "○ settle the shape t_def456 · done") {
+		t.Fatalf("settled kanban row not rendered: %q", view)
+	}
+	if strings.Contains(view, `"assignee"`) || strings.Contains(view, `"board"`) {
+		t.Fatalf("kanban body still the JSON dump: %q", view)
+	}
+
+	// 'd' still flips to the raw dump and back over a kanban payload.
+	cs.Update(runeKey("d"), &panelConsole{})
+	raw := cs.View(80, 24)
+	if !strings.Contains(raw, `"assignee"`) {
+		t.Fatalf("'d' did not flip to the raw JSON view: %q", raw)
+	}
+	cs.Update(runeKey("d"), &panelConsole{})
+	if got := cs.View(80, 24); strings.Contains(got, `"assignee"`) || !strings.Contains(got, "● ship the decoder") {
+		t.Fatalf("second 'd' did not flip back to rows: %q", got)
+	}
+
+	// Truncation still holds: narrow lines clip to the width with an
+	// ellipsis.
+	body := renderCanvasPanels(24, fake.panels)
+	for _, l := range strings.Split(body, "\n") {
+		if got := lipgloss.Width(l); got > 24 {
+			t.Fatalf("row line overruns the width: %d %q", got, l)
+		}
+	}
+	if !strings.Contains(body, "…") {
+		t.Fatalf("narrow body lost the ellipsis: %q", body)
+	}
+}
+
+// TestCanvasBoardsSwitcherStaysJSON: the board switcher payload shares
+// no vocabulary field with the wire row (name/current/active only, no
+// title, no id, no status). The decode does not force it - the
+// switcher keeps the JSON dump as its default body.
+func TestCanvasBoardsSwitcherStaysJSON(t *testing.T) {
+	panels := []core.Panel{{
+		ID:    "boards",
+		Title: "Boards",
+		Kind:  "list",
+		Payload: map[string]any{
+			"active": "main",
+			"rows": []any{
+				map[string]any{"name": "main", "current": true, "active": true},
+				map[string]any{"name": "spike", "current": false, "active": false,
+					"action": map[string]any{"action": "switch_board", "label": "switch"}},
+			},
+		},
+	}}
+	body := renderCanvasPanels(80, panels)
+	if !strings.Contains(body, `"name": "spike"`) {
+		t.Fatalf("switcher body lost its JSON dump: %q", body)
+	}
+	if strings.Contains(body, "● ") || strings.Contains(body, "○ ") {
+		t.Fatalf("board rows were forced through the row vocabulary: %q", body)
+	}
+}
+
 // TestToastPanelRendersRowLine: the toast body is the notice row, not
 // a JSON dump of one record.
 func TestToastPanelRendersRowLine(t *testing.T) {
