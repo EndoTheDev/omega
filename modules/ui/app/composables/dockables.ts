@@ -83,10 +83,11 @@ export interface DockableComponent {
   area: DockArea;
   /** card t_67fc1905: the hosts that keep this component alive BEYOND its
       `area` home. Most components are single-host ([area] by omission);
-      logs (http_channel) is the first dual-host domain: the bottom panel
-      AND the secondary sidebar both seat it (same domain, two hosts -
-      card 2's finding). Two instances may coexist; the singleton
-      "at most once" invariant reads one per host instead. */
+      the machinery stays for a future multi-home domain (the terminal
+      tab). Logs was the first dual-host domain (right + bottom) until
+      its sidebar copy was ruled a duplicate and removed (Endo, 2026-10-26
+      - logs is bottom-only now). Two instances may coexist across hosts;
+      the singleton "at most once" invariant reads one per host. */
   homes?: readonly DockArea[];
   /** card t_67fc1905: where a FRESH built host seats this component -
       its default home. null/omitted = `area`. The bottom host's builder
@@ -155,11 +156,11 @@ export const DOCKABLES: readonly DockableComponent[] = [
       paths: ["M7 9h10", "M7 13h10", "M7 16h4"],
     },
     policy: "singleton",
-    area: "right",
-    // card t_67fc1905: dual host - the bottom panel's default home tab,
-    // still seatable in the secondary sidebar (same domain, two hosts)
-    homes: ["right", "bottom"],
-    defaultHome: "bottom",
+    // Endo's comment (2026-10-26): logs' home is the BOTTOM panel only -
+    // the secondary-sidebar copy duplicated it. The dual-host shape was
+    // t_67fc1905's transition; rehomeLogsTab (dock.ts) lifts persisted
+    // right-shell copies on load.
+    area: "bottom",
     closable: false,
   },
   {

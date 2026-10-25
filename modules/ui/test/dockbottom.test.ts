@@ -1,7 +1,9 @@
 // omega webui: unit tests for the bottom panel (card t_67fc1905) -
 // the dock's pinned horizontal child under the main panel: the pane
-// tree's bottom slot, the registry's dual-host logs home, close/reopen
-// persistence across reloads, and the horizontal divider's drag math
+// tree's bottom slot, the registry's bottom-hosted logs home (the
+// dual-host right-shell copy was ruled a duplicate and removed -
+// Endo's comment 2026-10-26), close/reopen persistence across
+// reloads, and the horizontal divider's drag math
 // (+200 snap ladder, grow-direction, drag-past-min close intent).
 // Render-free; node's built-in test runner.
 import { describe, it } from "node:test";
@@ -100,14 +102,45 @@ describe("the bottom shell's place in the tree", () => {
     );
   });
 
-  it("logs ALSO keeps its secondary-sidebar home (the dual host)", () => {
+  it("logs is bottom-hosted ONLY - the secondary sidebar never seats it (Endo's comment 2026-10-26)", () => {
     const dock = createDock(new MemoryStorage() as unknown as Storage);
     const inspector = findEdgePane(dock.tree.value, "inspector")!;
     const inspectorLogs = inspector.tabs.find((t) => t.component === "http_channel");
-    assert.ok(inspectorLogs, "the inspector still seats logs");
+    assert.ok(!inspectorLogs, "the inspector does NOT seat logs (duplicate removed)");
     const bottom = bottomOf(dock.tree.value)!;
     const bottomLogs = bottom.tabs.find((t) => t.component === "http_channel");
-    assert.ok(bottomLogs, "the bottom panel seats logs too");
+    assert.ok(bottomLogs, "the bottom panel seats logs");
+  });
+
+  it("rehomeLogsTab lifts a persisted right-shell logs copy (dual-host era trees)", () => {
+    // a record persisted while logs was dual-host (t_67fc1905): the
+    // right shell seats an http_channel tab beside its inspector
+    // views. The real load path (createDock over the stored record)
+    // must lift it - the registry alone would leave the copy alive
+    // (restoreInspectorSet only ADDS missing tabs, never prunes).
+    const store = new MemoryStorage() as unknown as Storage;
+    const fresh = createDock(store); // fresh boot (no record to persist yet)
+    store.setItem(DOCK_LAYOUT_KEY, serialize(fresh.tree.value, []));
+    const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
+    let seeded = false;
+    for (const n of allNodes(rec.tree as DockNode)) {
+      if (!isPane(n) || n.edge !== "right") continue;
+      n.tabs.push({ component: "http_channel" });
+      seeded = true;
+    }
+    assert.ok(seeded, "pre: the record carries the dual-host copy");
+    store.setItem(DOCK_LAYOUT_KEY, JSON.stringify(rec));
+    const dock = createDock(store);
+    assert.ok(
+      !findEdgePane(dock.tree.value, "inspector")!.tabs.some(
+        (x) => x.component === "http_channel",
+      ),
+      "the right-shell copy is lifted on load",
+    );
+    assert.ok(
+      bottomOf(dock.tree.value)!.tabs.some((x) => x.component === "http_channel"),
+      "the bottom shell keeps its own logs seat",
+    );
   });
 
   it("the bottom shell is pinned: unremovable via removePane", () => {
@@ -380,8 +413,8 @@ describe("the registry's home rulings", () => {
     assert.deepEqual(defaultHostTabs("bottom"), ["http_channel"]);
   });
 
-  it("logs reports BOTH hosts (right + bottom); every other component single-hosts", () => {
-    assert.deepEqual([...hostsOf("http_channel")], ["right", "bottom"]);
+  it("logs reports its bottom home; every other component single-hosts", () => {
+    assert.deepEqual([...hostsOf("http_channel")], ["bottom"]);
     assert.deepEqual([...hostsOf("cron")], ["right"]);
     assert.deepEqual([...hostsOf("chat")], ["main"]);
   });
