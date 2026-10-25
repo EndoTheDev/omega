@@ -329,6 +329,15 @@ type chatRequest struct {
 	// user is the head; continuations / tool results chain off the
 	// leaf). Unexported: never part of the request wire.
 	branchParent string
+	// branchFloor is the session's max store row id observed at run
+	// start, set alongside branchParent: while a branch-pinned run
+	// streams, the panel renders the active path cut at the branch row
+	// and keeps only rows with id > floor (rows the run itself
+	// persisted mid-stream) - the old sibling's rows leave the panel
+	// so the fresh response streams into their place (t_19c100dd,
+	// Endo ruling: retry renders in place, never stacked). Unexported:
+	// never part of the request wire.
+	branchFloor int64
 	// persistInput is the send's incoming messages - the run's turn
 	// copy the LOOP persists through its sink before the first turn
 	// (fork parents already applied). Unexported: never part of the
@@ -772,6 +781,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 			return nil, &runError{http.StatusBadRequest, "nothing to retry: session has no user message"}
 		}
 		req.branchParent = core.MsgID(view.Path[end].ID)
+		req.branchFloor = branchFloorOf(view.Path)
 		return storedMessages(view.Path[:end+1]), nil
 	}
 	if req.Fork != "" {
@@ -795,6 +805,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 				return nil, &runError{http.StatusBadRequest, "fork of a user turn takes no messages (retry semantics)"}
 			}
 			req.branchParent = req.Fork
+			req.branchFloor = branchFloorOf(view.Path)
 			return storedMessages(view.Path[:at+1]), nil
 		default:
 			if len(incoming) == 0 {
@@ -820,6 +831,20 @@ func storedMessages(path []core.StoredMessage) []core.Message {
 		out = append(out, sm.Message)
 	}
 	return out
+}
+
+// branchFloorOf reports the active path's max store row id - the floor a
+// branch-pinned run's own rows all exceed (row ids rise monotonically
+// with append order, and the loop's sink is the session's only writer
+// during the run). Pure.
+func branchFloorOf(path []core.StoredMessage) int64 {
+	var floor int64
+	for _, sm := range path {
+		if sm.ID > floor {
+			floor = sm.ID
+		}
+	}
+	return floor
 }
 
 // setupSSE sets SSE response headers and returns the flusher. On failure

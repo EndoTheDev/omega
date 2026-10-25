@@ -92,7 +92,14 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "get transcript: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	items := buildTranscriptItems(view.Path)
+	// A branch-pinned live run (retry, fork-of-user) cuts the old
+	// sibling's rows off the path (t_19c100dd): the tail below renders
+	// into the response's slot, never stacked under the prior answer.
+	path := view.Path
+	if branch, floor, pinned := s.runs.runBranch(id); pinned {
+		path = branchPath(path, branch, floor)
+	}
+	items := buildTranscriptItems(path)
 	// Reattach completeness (card t_692254f7): a session with a live run
 	// owns items the store has not seen yet - the run persists only at
 	// its end, so its segments (open thinking, running tool call, the

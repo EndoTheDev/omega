@@ -28,45 +28,49 @@
       <span
         v-if="streaming"
         class="cursor" />
-      <!-- variant switcher (t_a62eeb43): « 2/3 » pinned on the response
-           block's top edge - only rendered when the props carry a branch
-           block (assistant bubbles with >=2 sibling runs). Arrows emit
-           the sibling index; the host POSTs the select endpoint and the
-           transcript path re-renders. -->
+      <!-- the action row (t_19c100dd, Endo ruling 2): the variant
+           switcher « n/n », fork and copy sit in ONE row at the
+           BOTTOM of the message - never top-edge chips. The row hides
+           while the bubble streams (a streaming bubble has no
+           actions); the switcher mounts only on a branch block, fork
+           only on historical rows. -->
       <div
-        v-if="variant"
-        class="variant-switcher">
+        v-if="!streaming"
+        class="msg-actions">
+        <div
+          v-if="variant"
+          class="variant-switcher">
+          <button
+            class="v-arrow"
+            type="button"
+            title="previous variant"
+            :disabled="vLabel.index <= 0"
+            @click.stop="emit('select', vLabel.index - 1)">«</button>
+          <span class="v-pos">{{ vLabel.index + 1 }}/{{ vLabel.count }}</span>
+          <button
+            class="v-arrow"
+            type="button"
+            title="next variant"
+            :disabled="vLabel.index >= vLabel.count - 1"
+            @click.stop="emit('select', vLabel.index + 1)">»</button>
+        </div>
+        <!-- fork affordance (t_a62eeb43): any HISTORICAL message carries
+             it. Click anchors the composer - the next send continues
+             from this message. -->
         <button
-          class="v-arrow"
+          v-if="itemId && !streaming"
+          class="msg-fork"
           type="button"
-          title="previous variant"
-          :disabled="vLabel.index <= 0"
-          @click.stop="emit('select', vLabel.index - 1)">«</button>
-        <span class="v-pos">{{ vLabel.index + 1 }}/{{ vLabel.count }}</span>
+          title="fork from here - the next send continues from this message"
+          @click.stop="emit('fork')">fork</button>
+        <!-- copy message (/copy parity): the click carries the RAW
+             source, never the render -->
         <button
-          class="v-arrow"
+          class="msg-copy"
           type="button"
-          title="next variant"
-          :disabled="vLabel.index >= vLabel.count - 1"
-          @click.stop="emit('select', vLabel.index + 1)">»</button>
+          :title="copied ? 'copied' : 'copy message'"
+          @click.stop="copyMessage">{{ copied ? "copied" : "copy" }}</button>
       </div>
-      <!-- fork affordance (t_a62eeb43, per Endo's ruling - visible): any
-           HISTORICAL message carries it; the current streaming bubble
-           (no id / still streaming) never renders one. Click anchors the
-           composer - the next send runs from this message. -->
-      <button
-        v-if="itemId && !streaming"
-        class="msg-fork"
-        type="button"
-        title="fork from here - the next send continues from this message"
-        @click.stop="emit('fork')">fork</button>
-      <!-- copy message (/copy parity): hover glyph like the sessions row
-           actions; the click carries the RAW source, never the render -->
-      <button
-        class="msg-copy"
-        type="button"
-        :title="copied ? 'copied' : 'copy message'"
-        @click.stop="copyMessage">{{ copied ? "copied" : "copy" }}</button>
     </div>
   </div>
 </template>

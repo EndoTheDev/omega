@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -467,6 +468,201 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	last := chatPanelPayload(t, delta[len(delta)-1])
 	if last.Running || last.Session != sessionID {
 		t.Fatalf("exit payload = %+v", last)
+	}
+}
+
+// TestBranchPathCutsTheOldSiblingKeepsRunRows: the pure cut behind the
+// in-place retry composition (t_19c100dd) - rows up to and including
+// the branch row stay, old rows after it go, and rows above the
+// pre-run floor (the run's own mid-stream persisted segments) stay.
+func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
+	path := []core.StoredMessage{
+		{ID: 1},
+		{ID: 2},
+		{ID: 3},
+	}
+	// plain send: no pin, the path renders whole
+	if got := branchPath(path, "", 3); len(got) != 3 {
+		t.Fatalf("unpinned path = %d rows, want 3", len(got))
+	}
+	// dangling branch id pins nothing
+	if got := branchPath(path, "99", 3); len(got) != 3 {
+		t.Fatalf("dangling branch = %d rows, want 3", len(got))
+	}
+	// malformed branch id pins nothing
+	if got := branchPath(path, "zap", 3); len(got) != 3 {
+		t.Fatalf("malformed branch = %d rows, want 3", len(got))
+	}
+	// the retry window: everything after the branch row pre-dates the
+	// run - the old sibling's subtree leaves
+	if got := branchPath(path, "1", 3); len(got) != 1 || got[0].ID != 1 {
+		t.Fatalf("retry cut = %+v, want row 1 only", got)
+	}
+	// mid-run persisted segments (id > floor) stream into the slot
+	live := []core.StoredMessage{
+		{ID: 1},
+		{ID: 4},
+		{ID: 5},
+	}
+	if got := branchPath(live, "1", 3); len(got) != 3 {
+		t.Fatalf("mid-run cut = %+v, want rows 1,4,5", got)
+	} else if got[1].ID != 4 || got[2].ID != 5 {
+		t.Fatalf("mid-run cut = %+v, want rows 1,4,5", got)
+	}
+}
+
+// gateHoldProvider streams one response chunk, then holds the stream
+// open until release closes, then ends - the deterministic mid-run
+// window the in-place retry test pins the payload in. Every Stream
+// call gates the same way, so a detached title call rides the gate
+// harmlessly.
+type gateHoldProvider struct {
+	release chan struct{}
+}
+
+func (p *gateHoldProvider) ModelName() string                    { return "gate" }
+func (p *gateHoldProvider) SetThinkingLevel(string)              {}
+func (p *gateHoldProvider) WithModel(string) ai.Provider         { return p }
+func (p *gateHoldProvider) WithThinkingLevel(string) ai.Provider { return p }
+func (p *gateHoldProvider) ListModels() ([]string, error)        { return []string{"gate"}, nil }
+func (p *gateHoldProvider) ModelInfo() (ai.ModelInfo, error)     { return ai.ModelInfo{}, nil }
+
+func (p *gateHoldProvider) Stream(context.Context, []core.Message, []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	events := make(chan core.ProviderStreamEvent)
+	go func() {
+		defer close(events)
+		events <- core.ResponseChunk{Type: "response_chunk", Content: "fresh"}
+		<-p.release
+		events <- core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
+	}()
+	return events
+}
+
+// TestRetryRendersInPlaceMidRun (t_19c100dd, Endo ruling 1): while a
+// retry streams, the panel payload carries the old response NOWHERE -
+// the fresh answer streams into the old row's place. The exit keeps
+// one assistant row (the fresh sibling active), the transcript
+// endpoint's reattach merge agrees, and the store still holds the old
+// answer as a selectable sibling.
+func TestRetryRendersInPlaceMidRun(t *testing.T) {
+	prov := &gateHoldProvider{release: make(chan struct{})}
+	a := core.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, nil, nil, nil)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s.store = st
+	s.chat.batch = time.Hour
+	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
+		t.Fatalf("newCanvas: %v", err)
+	}
+	ts := httptest2.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	// one complete exchange, seeded straight into the store (legacy
+	// adjacency rows): user + the answer the retry will re-run.
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s-ip", "", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "s-ip", core.NewUser("say hi")); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "s-ip", core.NewAssistant("first answer")); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	// idle panel: the exchange renders whole
+	idle := chatPanelPayload(t, s.chat.buildPanel("s-ip", false))
+	if got := chatRowRoles(idle.Rows); strings.Join(got, ",") != "user,assistant" {
+		t.Fatalf("idle rows = %v", got)
+	}
+	if idle.Rows[1].Blocks[0].Content != "first answer" {
+		t.Fatalf("idle assistant = %q", idle.Rows[1].Blocks[0].Content)
+	}
+
+	// retry through the pipe
+	retryBody := `{"module":"http_channel","action":"retry","args":{"session":"s-ip"}}`
+	res, err := http.Post(ts.URL+"/ui/actions", "application/json", strings.NewReader(retryBody))
+	if err != nil {
+		t.Fatalf("post action: %v", err)
+	}
+	var out map[string]any
+	json.NewDecoder(res.Body).Decode(&out)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("retry = %d: %v", res.StatusCode, out)
+	}
+
+	// mid-run: the fresh chunk is in the open tail and the OLD answer
+	// is gone from the payload - the retry streams in place
+	deadline := time.Now().Add(5 * time.Second)
+	var mid []transcriptItem
+	for time.Now().Before(deadline) {
+		mid = s.chat.sessionItems("s-ip", true)
+		if len(mid) == 2 && mid[1].Kind == "message" && mid[1].Content == "fresh" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(mid) != 2 || mid[1].Content != "fresh" {
+		t.Fatalf("mid-run items = %+v, want user + streaming fresh", mid)
+	}
+	if mid[1].ID != "" || !mid[1].Running {
+		t.Fatalf("mid-run fresh row = %+v, want a running live row", mid[1])
+	}
+	for _, it := range mid {
+		if it.Content == "first answer" {
+			t.Fatalf("old answer still rendered mid-run: %+v", mid)
+		}
+	}
+	midPanel := chatPanelPayload(t, s.chat.buildPanel("s-ip", true))
+	if got := chatRowRoles(midPanel.Rows); strings.Join(got, ",") != "user,assistant" {
+		t.Fatalf("mid-run panel rows = %v", got)
+	}
+	if midPanel.Rows[1].Blocks[0].Content != "fresh" || midPanel.Rows[1].Status != core.ChatStatusStreaming {
+		t.Fatalf("mid-run panel assistant = %+v", midPanel.Rows[1])
+	}
+
+	// the transcript endpoint's reattach merge agrees: a mid-retry
+	// refresh renders the fresh stream in the old row's place
+	tres, err := http.Get(ts.URL + "/sessions/s-ip/transcript")
+	if err != nil {
+		t.Fatalf("get transcript: %v", err)
+	}
+	var body struct {
+		Items []transcriptItem `json:"items"`
+	}
+	json.NewDecoder(tres.Body).Decode(&body)
+	tres.Body.Close()
+	if len(body.Items) != 2 || body.Items[1].Content != "fresh" {
+		t.Fatalf("mid-run transcript items = %+v, want user + fresh", body.Items)
+	}
+	for _, it := range body.Items {
+		if it.Content == "first answer" {
+			t.Fatalf("old answer still served by the transcript mid-run: %+v", body.Items)
+		}
+	}
+
+	// release: the run completes, the exit paints the persisted truth
+	close(prov.release)
+	waitRunQuiescent(t, s, "s-ip")
+	final := chatPanelPayload(t, s.chat.buildPanel("s-ip", false))
+	if got := chatRowRoles(final.Rows); strings.Join(got, ",") != "user,assistant" {
+		t.Fatalf("final rows = %v, got payload %+v", got, final)
+	}
+	if final.Rows[1].Blocks[0].Content != "fresh" || final.Rows[1].Status != core.ChatStatusComplete {
+		t.Fatalf("final assistant = %+v", final.Rows[1])
+	}
+	// the old answer survived as a selectable sibling, not as a row
+	view, err := st.GetActiveView(ctx, "s-ip")
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if len(view.Branches) != 1 || view.Branches[0].Count != 2 {
+		t.Fatalf("branches after retry = %+v, want one point with 2 siblings", view.Branches)
 	}
 }
 

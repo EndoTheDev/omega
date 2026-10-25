@@ -5,7 +5,10 @@
 # doubled bubble, never a lost transcript. Since t_17365247 the replay
 # does not append a second response below the old one: the fresh answer
 # becomes the active variant under the same user turn and the previous
-# response stays reachable through the « n/n » switcher.
+# response stays reachable through the « n/n » switcher. Since t_19c100dd
+# the retry also renders IN PLACE mid-run (the old answer leaves the
+# panel while the fresh one streams) and the action row (switcher,
+# fork, copy) sits at the response's bottom.
 #
 # Every DOM assertion is scoped to the FOCUSED chat tab's pane: a
 # long-lived chrome carries earlier journeys' tabs (dock state restores
@@ -84,9 +87,16 @@ assert_eq "$count" "1" "user bubble count after retry"
 
 # the sibling contract (t_17365247 semantics): the active path renders
 # the re-run response and the prior response stays as a sibling variant
-# - the switcher pins « 2/2 » on the response block
+# - the switcher pins « 2/2 » on the response block. ONE response slot
+# (t_19c100dd): the in-place retry never stacks a second answer.
 answers=$(panejs 'p.querySelectorAll(".msg.assistant").length')
-[ "$answers" -ge 1 ] 2>/dev/null || die "no response rendered after retry (assistant bubbles: $answers)"
+assert_eq "$answers" "1" "exactly one assistant bubble after retry (in-place, never stacked)"
+
+# the action row sits at the response's bottom (t_19c100dd, Endo
+# ruling 2): the switcher renders inside the bubble's LAST element
+# child, under the content - not a top-edge chip.
+row=$(panejs '(r=>r?+(r===r.parentElement.lastElementChild?1:0):0)(p.querySelector(".msg.assistant .msg-actions"))')
+assert_eq "$row" "1" "the action row is the response's last child (bottom placement)"
 sw=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
   sw=$(panejs '((p.querySelector(".variant-switcher .v-pos")||{textContent:""}).textContent||"").replace(/\s+/g,"")')
