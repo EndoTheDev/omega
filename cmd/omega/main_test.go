@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/modules/http_channel"
+	"github.com/EndoTheDev/omega/http_channel"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/memory"
 	"github.com/EndoTheDev/omega/modules/provider"

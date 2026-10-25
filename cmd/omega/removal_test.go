@@ -520,8 +520,8 @@ func cronPanel(panels []core.Panel) (core.Panel, bool) {
 // The core.MemoryProvider type compiles in the proof on purpose - the
 // seam vocabulary lives in core/ and layers never import modules (the
 // recipe's intentional residue). The tool-name references the host
-// carries for the ephemeral deny lists (modules/http_channel,
-// modules/tui) are name-based guards, not module surfaces: they see a
+// carries for the ephemeral deny lists (http_channel,
+// tui) are name-based guards, not module surfaces: they see a
 // registry without the tool and do nothing.
 func TestMemoryRemovalProof(t *testing.T) {
 	home := t.TempDir()

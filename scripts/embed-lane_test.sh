@@ -64,7 +64,7 @@ if [ "${MOCK_FAIL:-0}" = "1" ]; then
 	echo "mock build failure" >&2
 	exit 1
 fi
-d="$(pwd)/modules/http_channel/static"
+d="$(pwd)/http_channel/static"
 rm -rf "$d"
 bid="${MOCK_BUILDID:-11111111-1111-1111-1111-111111111111}"
 mkdir -p "$d/_nuxt/builds/meta"
@@ -114,8 +114,8 @@ check "modules/ui change: build ran" test -f "$TMP.mock/canary-mock-ran"
 git -C "$TMP" log -1 --pretty=%s >"$TMP/head.msg"
 check "lane commit message has the context" contains "embed-lane: rebuild webui bundle for card t_test1" "$TMP/head.msg"
 git -C "$TMP" diff-tree -r --name-only HEAD~1 HEAD >"$TMP/lane-diff.txt"
-check "lane commit touches only static/" bash -c "grep -qv '^modules/http_channel/static/' '$TMP/lane-diff.txt'; test \$? -eq 1"
-check "lane commit carries the new bundle" contains "bundle-stamp=s1" "$TMP/modules/http_channel/static/index.html"
+check "lane commit touches only static/" bash -c "grep -qv '^http_channel/static/' '$TMP/lane-diff.txt'; test \$? -eq 1"
+check "lane commit carries the new bundle" contains "bundle-stamp=s1" "$TMP/http_channel/static/index.html"
 lane_sha="$(git -C "$TMP" rev-parse HEAD)"
 
 # hash gate: unchanged bundle -> no second lane commit
@@ -144,17 +144,17 @@ check "modules/*/ui change: lane commit created" contains "embed-lane: rebuild w
 STAMP="s3"
 echo "source v3" >"$TMP/modules/ui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui change: Foo v3"
-before_static="$(git -C "$TMP" rev-parse HEAD:modules/http_channel/static)"
+before_static="$(git -C "$TMP" rev-parse HEAD:http_channel/static)"
 MOCK_FAIL=1 run --base "$(git -C "$TMP" rev-parse HEAD~1)" "card t_test3"
 check "broken build: nonzero exit" test "$rc" -ne 0
-check "broken build: static/ untouched" test "$(git -C "$TMP" rev-parse HEAD:modules/http_channel/static)" = "$before_static"
+check "broken build: static/ untouched" test "$(git -C "$TMP" rev-parse HEAD:http_channel/static)" = "$before_static"
 check "broken build: aborted loudly" contains "FAILED" "$OUT"
 check "broken build: never hand-resolve law cited" contains "NEVER hand-resolved" "$OUT"
 
 # belt-and-suspenders: conflict markers in regenerated output rejected
 MOCK_POISON=1 run --base "$(git -C "$TMP" rev-parse HEAD~1)" "card t_test3"
 check "poisoned bundle: rejected by lint gate" test "$rc" -ne 0
-check "poisoned bundle: no lane commit" test "$(git -C "$TMP" rev-parse HEAD:modules/http_channel/static)" = "$before_static"
+check "poisoned bundle: no lane commit" test "$(git -C "$TMP" rev-parse HEAD:http_channel/static)" = "$before_static"
 
 ########## repo 2: base detection ##########
 new_repo
@@ -197,14 +197,14 @@ git -C "$TMP" checkout -q "$MAIN_BRANCH"
 git -C "$TMP" merge -q --no-edit wui-a >/dev/null
 run "branch A"
 check "parallel A: lane commit ok" test "$rc" -eq 0
-check "parallel A: bundle carries A's regen" contains "bundle-stamp=pa" "$TMP/modules/http_channel/static/index.html"
+check "parallel A: bundle carries A's regen" contains "bundle-stamp=pa" "$TMP/http_channel/static/index.html"
 STAMP="pb"
 rc_merge=0
 git -C "$TMP" merge --no-edit wui-b >/dev/null 2>"$TMP/merge-b.err" || rc_merge=$?
 check "parallel B merges with zero static/ conflicts" test "$rc_merge" -eq 0
 run "branch B"
 check "parallel B: lane commit ok" test "$rc" -eq 0
-check "parallel B: bundle carries B's regen" contains "bundle-stamp=pb" "$TMP/modules/http_channel/static/index.html"
+check "parallel B: bundle carries B's regen" contains "bundle-stamp=pb" "$TMP/http_channel/static/index.html"
 
 ########## summary ##########
 echo "embed-lane_test: pass=$pass fail=$fail"

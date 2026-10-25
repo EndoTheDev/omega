@@ -20,7 +20,7 @@ still applies at its layer.
   (`cmd/omega/plugins_test.go`) and the per-module removal proofs in
   `cmd/omega/removal_test.go` gate this.
 - Per-module REST routes answer 501 through their seam-nil guards -
-  they never outlive the module (the `modules/http_channel` guards:
+  they never outlive the module (the `http_channel` guards:
   `boardUnavailable` for kanban, the notifications 501, and so on).
 - Core types stay. `core/kanban.go`, `core/seams.go` and friends are
   the seam vocabulary the layers share; the layer law says layers
@@ -51,7 +51,7 @@ still applies at its layer.
    ```
 
    Expect hits in: the seam mount (`ctx.Kanban` in the module's
-   `Mount`), the REST guards (`modules/http_channel/tasks.go`), the
+   `Mount`), the REST guards (`http_channel/tasks.go`), the
    tool registry (the canonical `task` tool plus any `task.*` alias
    shims), the command chain (`/board`, `/boards` registered through
    `ctx.Commands`), the canvas panels (`modules/kanban/panel.go`,

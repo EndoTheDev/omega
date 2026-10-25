@@ -16,7 +16,7 @@ No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP and serves the embedded webui SPA (built by
-modules/ui/scripts/build.sh, committed in modules/http_channel/static/,
+modules/ui/scripts/build.sh, committed in http_channel/static/,
 baked in at compile time).
 
 ## Project Structure
@@ -33,7 +33,7 @@ agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
 modules/          In-process module packages (21 packages: 19 plugins +
                   datadir, an imported leaf, + ui, the webui SPA; compiled
                   into omega)
-modules/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
+http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
 modules/ui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
 docs/             User documentation (cli.md, api.md, webui.md, tui.md,
                   configuration.md, architecture.md, troubleshooting.md, roadmap.md)

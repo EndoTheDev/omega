@@ -403,7 +403,7 @@ set -e
 if [ "$gates_rc" != "0" ]; then
   tail -25 "$gates_log" >&2 || true
   git reset -q --hard "$pre"
-  git clean -qfd modules/http_channel/static >/dev/null 2>&1 || true
+  git clean -qfd http_channel/static >/dev/null 2>&1 || true
   note "red gate (rc $gates_rc) - un-landed: dev back to $pre"
   board_comment "$tid" "train: red gate on $mergesha - un-landed, back to ready. Failure evidence (tail):
 
