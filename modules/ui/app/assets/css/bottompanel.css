@@ -20,10 +20,23 @@
 }
 
 /* the root divider rides the same insets so the resize handle stays over
-   the panel it drags (aligned mode only; full mode the vars are gone) */
+   the panel it drags (aligned mode only; full mode the vars are gone) -
+   t_bc321318 reaches 2px past each inset (max keeps the full-mode
+   fallback at the natural margins): the handle's structural line then
+   ends exactly ON the root row's two vertical divider columns - the
+   connected frame's T-junctions meet pixel for pixel */
 .dock-root > .dock-divider {
-  margin-left: var(--bottom-inset-left, 0px);
-  margin-right: var(--bottom-inset-right, 0px);
+  margin-left: max(calc(var(--bottom-inset-left, 0px) - 2px), 0px);
+  margin-right: max(calc(var(--bottom-inset-right, 0px) - 2px), 0px);
+}
+
+/* t_bc321318 (dividers run THROUGH): the root row's vertical dividers
+   ride the sidebars' overhang - the handle (and its structural line)
+   extends to the pane-area's bottom row beside the band instead of
+   stopping above it. Cleared vars (full/hide modes) restore the plain
+   stretch, exactly like the pinned panes below. */
+.dock-root > .dock-split.row > .dock-divider {
+  margin-bottom: var(--bottom-sidebars-overhang, 0px);
 }
 
 /* card t_556ee727: aligned keeps the SIDEBARS full-height. The shell is
