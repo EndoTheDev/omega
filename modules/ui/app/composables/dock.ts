@@ -74,6 +74,12 @@ export const LEGACY_WIDTH_KEYS = {
 // squeeze chain closed them) and the hard chat floor.
 export const MIN_PANE_PX = 128;
 export const CHAT_FLOOR_PX = 320;
+/** Endo's comment (2026-10-26): the bottom shell's max share of the
+    split's content box. A drag past it (the pane swallowing the
+    window) strands the divider offscreen - the pane is bottom-anchored,
+    so its TOP edge (= the divider) climbs out of view and cannot be
+    grabbed back. 0.65 leaves the chat its floor with room to read. */
+export const BOTTOM_MAX_FRACTION = 0.65;
 
 // component names panes may host: the dockable registry is the single
 // source (see the re-exports above)
@@ -1436,8 +1442,13 @@ export function dragSplitDivider(
         return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
       }
       // the absorbing neighbor above: fixed floors at 128, flexible walls
-      // at the chat's 320
-      const hi = capFor(isPane(lp) && lp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX);
+      // at the chat's 320. Endo's comment (2026-10-26): the growth cap
+      // ALSO stops at the max share - a swallowed window strands the
+      // divider offscreen (bottom-anchored geometry), ungrabbable
+      const hi = Math.min(
+        capFor(isPane(lp) && lp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX),
+        Math.max(MIN_PANE_PX, Math.floor(contentPx * BOTTOM_MAX_FRACTION)),
+      );
       const s = squeeze(req, hi, li - 1, -1);
       (next.children[i] as DockPane).fixed = applySnap(s.px, MIN_PANE_PX, s.cap, BOTTOM_SNAP_STEP);
       return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
@@ -1663,7 +1674,7 @@ export function migrateLegacy(
 
 // --- store ---------------------------------------------------------------
 
-import { shallowRef, watch, type InjectionKey, type Ref } from "vue";
+import { shallowRef, watch, ref, type InjectionKey, type Ref } from "vue";
 
 /** pure graft: replace the split node `replacement` (by id) inside `root`
     and return the NEW root. No id regeneration, no sibling churn - and no
@@ -1741,6 +1752,12 @@ export interface DockApi {
       sidebars, whose fixed shape the loader re-asserts). The panel may
       close completely. */
   toggleBottom: () => void;
+  /** Endo's comment (2026-10-26): the bottom shell's fullscreen view -
+      the tabbar button flips it; the column split renders ONLY the
+      shell. Session-only (a reload never boots fullscreen). */
+  bottomFullscreen: Ref<boolean>;
+  /** flip the fullscreen view (see bottomFullscreen) */
+  toggleBottomFullscreen: () => void;
   /** card t_4ae27e0d: the id of the FIRST main pane - the only place a
       session tab may open. The pinned sidebars are skipped; when the tree
       holds no main pane (the user removed the last one) a fresh flexible
@@ -2003,6 +2020,17 @@ export function createDock(store: Storage): DockApi {
     }
   };
 
+  // Endo's comment (2026-10-26): the bottom shell's FULLSCREEN toggle -
+  // the pane's tabbar button flips it; the column split renders ONLY
+  // the shell (the main row above hides). Session-only on purpose: a
+  // reload never boots into fullscreen (the stored height + the
+  // render clamp keep the divider grabbable; fullscreen is a view, not
+  // a layout state).
+  const bottomFullscreen = ref(false);
+  const toggleBottomFullscreen = () => {
+    bottomFullscreen.value = !bottomFullscreen.value;
+  };
+
   // card t_33f8756c: the window-narrow give-way (app.vue's resize watcher
   // measures the pane-area and hands the content px in). Each collapsed
   // edge pane's width goes through the same memory the menubar toggle uses.
@@ -2026,6 +2054,7 @@ export function createDock(store: Storage): DockApi {
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
     firstDraftChatTab: () => firstDraftChatTab(tree.value),
     split, remove, toggleEdge, ensureMainPane, canRemovePane, isLastMainPane: lastMainPane, drag, toggleBottom,
+    bottomFullscreen, toggleBottomFullscreen,
     narrowSqueeze,
   };
 }

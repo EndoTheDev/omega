@@ -79,6 +79,17 @@
             +
           </button>
         </div>
+        <!-- Endo's comment (2026-10-26): the bottom shell's fullscreen
+             toggle - top-right of the pane's tabbar. Flips the
+             session-only view (the column renders only the shell). -->
+        <button
+          v-if="node.edge === 'bottom'"
+          class="dock-tab-btn"
+          :aria-label="api.bottomFullscreen.value ? 'exit logs fullscreen' : 'logs fullscreen'"
+          :title="api.bottomFullscreen.value ? 'exit fullscreen' : 'fullscreen'"
+          @click.stop="api.toggleBottomFullscreen()">
+          ⛶
+        </button>
         <button
           v-if="!pinned"
           class="dock-tab-btn actions"
