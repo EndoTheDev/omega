@@ -814,6 +814,18 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // the keyed v-for all read identity). Cached per row signature (the
 // store row id when persisted, else the stable role/type slot), mutated
 // in place, reused in the rebuilt array.
+//
+// REACTIVE ITEMS (t_078a2c35). The positional sig folds the sibling
+// variant rows onto ONE cached item: variant-2's row 392 and variant-1's
+// row 391 share `assistant:1:1`, so a select's refetch mutates the SAME
+// cached object's fields in place (it.id among them - the switcher's
+// label and the fork/copy targets ride item.id). The items flow into
+// ChatItem through the keyed v-for as the same object reference, so the
+// child's own props compare equal and the patch skips it - a plain
+// object's in-place mutation can never invalidate anything. The render
+// effects that read the fields (ChatItem's :item-id, ChatMessage's
+// variantLabel) must see the mutation: cache items are reactive
+// proxies, so every in-place write invalidates exactly its readers.
 
 export interface CanvasTranscript {
   apply(payload: ChatPayloadWire): TranscriptItem[];
@@ -836,11 +848,7 @@ export function createCanvasTranscript(): CanvasTranscript {
     // (ids arrive when the row persists - the object must not swap then)
     const sig = `${row.role}:${index}:${row.blocks?.length ?? 0}`;
     if (row.role === "user") {
-      const it = (cache.get(sig) ?? {
-        kind: "message",
-        role: "user",
-        content: "",
-      }) as MessageItem;
+      const it = (cache.get(sig) ?? reactive({ kind: "message", role: "user", content: "" })) as MessageItem;
       it.kind = "message";
       it.role = "user";
       it.content = block.content ?? "";
@@ -850,7 +858,7 @@ export function createCanvasTranscript(): CanvasTranscript {
       return it;
     }
     if (row.role === "assistant" && block.type === "thinking") {
-      const it = (cache.get(sig) ?? { kind: "thinking", content: "" }) as ThinkingItem;
+      const it = (cache.get(sig) ?? reactive({ kind: "thinking", content: "" })) as ThinkingItem;
       it.kind = "thinking";
       it.content = block.content ?? "";
       it.streaming = running ? true : undefined;
@@ -887,11 +895,7 @@ export function createCanvasTranscript(): CanvasTranscript {
       }
       // orphan result (the call row left the newest-40 window): render
       // the bare line rather than erase the tool's work
-      const it = (cache.get(`result:${index}:${sig}`) ?? {
-        kind: "tool",
-        name: "tool",
-        status: "done",
-      }) as ToolItem;
+      const it = (cache.get(`result:${index}:${sig}`) ?? reactive({ kind: "tool", name: "tool", status: "done" })) as ToolItem;
       it.kind = "tool";
       it.name = it.name || "tool";
       it.status = block.is_error ? "error" : "done";
@@ -918,7 +922,7 @@ export function createCanvasTranscript(): CanvasTranscript {
           cached.stale = !panelRunning;
           return cached;
         }
-        const card = verdictCardFromToolArgs(block.tool_call?.arguments);
+        const card = reactive(verdictCardFromToolArgs(block.tool_call?.arguments));
         card.callId = callId;
         card.status = "pending";
         card.stale = !panelRunning;
@@ -930,7 +934,7 @@ export function createCanvasTranscript(): CanvasTranscript {
         return card;
       }
       const csig = callId ? `tc:${callId}` : `tc:${index}`;
-      const it = (cache.get(csig) ?? { kind: "tool", name: "tool" }) as ToolItem;
+      const it = (cache.get(csig) ?? reactive({ kind: "tool", name: "tool" })) as ToolItem;
       it.kind = "tool";
       it.name = block.tool_call?.name || "tool";
       it.output =
@@ -950,7 +954,7 @@ export function createCanvasTranscript(): CanvasTranscript {
     // renderer stays flat. Streaming is ROW-level truth: the open
     // text/thinking rows carry status "streaming" (their blocks carry
     // no running bit - the meter is a tool-row thing).
-    const it = (cache.get(sig) ?? { kind: "message", role: "assistant", content: "" }) as MessageItem;
+    const it = (cache.get(sig) ?? reactive({ kind: "message", role: "assistant", content: "" })) as MessageItem;
     it.kind = "message";
     it.role = "assistant";
     it.content = block.content ?? "";

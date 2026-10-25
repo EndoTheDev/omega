@@ -17,6 +17,7 @@ import {
   chatPanelOf,
 } from "../app/composables/omega.ts";
 import { createCanvasTranscript } from "../app/composables/chat.ts";
+import { effect } from "vue";
 
 import type { StreamHandlers } from "../app/composables/omega.ts";
 
@@ -299,6 +300,40 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(settled.status, "settled", "the result row settles the card");
     assert.equal(settled.verdictKind, "answer");
     assert.equal(settled.picked, "yes");
+  });
+
+  // t_078a2c35: the switch-back red. The positional sig folds variant-2's
+  // row and variant-1's row onto one cached item; apply() mutates its id
+  // in place. Consumers read item.id (variantLabel rides it - « n/n »):
+  // the fold must INVALIDATE them, i.e. the items are reactive proxies -
+  // a plain object's write is invisible and the pane keeps the old paint.
+  it("the sibling fold's in-place id/content write invalidates its readers", () => {
+    const t = createCanvasTranscript();
+    const rows = (aid: string, text: string) =>
+      ({
+        session: "s1",
+        running: false,
+        rows: [
+          { id: "390", role: "user", status: "complete", blocks: [{ type: "text", content: "prompt" }] },
+          { id: aid, role: "assistant", status: "complete", blocks: [{ type: "text", content: text }] },
+        ],
+      }) as never;
+    const v2 = t.apply(rows("392", "second answer"));
+    let reads = 0;
+    let seen = "";
+    // stands in for the ChatItem/ChatMessage render effects that track
+    // item.id (the :item-id prop -> variantLabel) + :content
+    const stop = effect(() => {
+      reads++;
+      seen = `${(v2[1] as { id?: string }).id}:${(v2[1] as { content: string }).content}`;
+    });
+    assert.equal(seen, "392:second answer");
+    // the select's refetch: BOTH variants' rows fold onto the same sig
+    const v1 = t.apply(rows("391", "first answer"));
+    assert.equal(v1[1], v2[1], "the sibling row folds onto the cached item (identity kept)");
+    assert.equal(seen, "391:first answer", "the in-place write invalidated a reader");
+    assert.ok(reads >= 2, "the effect re-ran on the fold's writes");
+    stop();
   });
 });
 
