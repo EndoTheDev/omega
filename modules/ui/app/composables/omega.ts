@@ -2176,9 +2176,9 @@ export function commitSessionRename(
 }
 
 // Minimal structural view of a transcript item for the retry helpers -
-// only the fields lastCompleteUserIndex/lastUserText/
-// hasInterruptedMarker read; the app's TranscriptItem union satisfies
-// it (all member shapes carry kind, and role/content when applicable).
+// only the fields lastCompleteUserIndex/lastUserText read; the app's
+// TranscriptItem union satisfies it (all member shapes carry kind, and
+// role/content when applicable).
 export interface TranscriptItemLike {
   kind: string;
   role?: string;
