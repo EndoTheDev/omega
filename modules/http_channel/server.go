@@ -1541,7 +1541,8 @@ type toolListing struct {
 // handleTools serves GET /tools: the agent's executable tool registry
 // as a name+description array, sorted by name. Extension-provided
 // alias shims (Tool.AliasOf) are hidden: they stay callable by the
-// model for one release but the inventory shows the folded tool with
+// model until the v0.12 mount migration retires them, but the
+// inventory shows the folded tool with
 // its sub-actions. The inventory is the union the chat loop actually
 // runs with - the agent's ToolProviders plus the server registry
 // (agent.Tools() copies defensively; the server's own set overlays on

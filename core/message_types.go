@@ -295,7 +295,7 @@ func MessageRole(m Message) string {
 	}
 }
 
-// EncodeMessage serializes an ai.Message to its role discriminator
+// EncodeMessage serializes a Message to its role discriminator
 // and JSON payload. Used by the store extension for persistence
 // and wire transfer.
 func EncodeMessage(msg Message) (string, []byte, error) {

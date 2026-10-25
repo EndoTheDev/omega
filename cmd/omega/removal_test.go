@@ -143,12 +143,10 @@ func TestNotificationsRemovalProof(t *testing.T) {
 			}
 		}
 	}
-	if ctx2.Notifications == nil && len(noCanvas.Snapshot()) >= 0 {
-		// the REST surface: the http_channel routes answer 501 on the
-		// nil seam (server_notify.go's guard) - the routes answer the
-		// seam, they do not outlive it.
-		t.Log("PROOF removed: seam nil (REST routes fall through to their 501 guard), canvas carries no notifications panel, no toast, no emitter wiring")
-	}
+	// the REST surface: the http_channel routes answer 501 on the
+	// nil seam (server_notify.go's guard) - the routes answer the
+	// seam, they do not outlive it.
+	t.Log("PROOF removed: seam nil (REST routes fall through to their 501 guard), canvas carries no notifications panel, no toast, no emitter wiring")
 }
 
 // payloadJSON renders a panel payload through its wire serialization:
