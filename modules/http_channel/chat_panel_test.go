@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	httptest2 "net/http/httptest"
 	"strings"
@@ -884,4 +885,172 @@ func nextFrameW(t *testing.T, rd *bufio.Reader) (sseFrame, bool) {
 		t.Fatal("stream wedged")
 		return sseFrame{}, false
 	}
+}
+
+// gateStore arms ONCE: the first GetActiveView after arm blocks until
+// release - the chat panel's build composes through this store, so the
+// test pins a batcher tick inside its build window exactly, and fires
+// endRun there (t_877f4bce's race window, made deterministic).
+type gateStore struct {
+	core.StoreProvider
+	mu      sync.Mutex
+	armed   bool
+	entered chan struct{}
+	release chan struct{}
+	fired   bool
+}
+
+func (g *gateStore) arm() (<-chan struct{}, func()) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	g.mu.Lock()
+	g.armed = true
+	g.entered, g.release = entered, release
+	g.mu.Unlock()
+	return entered, func() { close(release) }
+}
+
+func (g *gateStore) GetActiveView(ctx context.Context, sessionID string) (core.ActiveView, error) {
+	g.mu.Lock()
+	take := g.armed && !g.fired
+	if take {
+		g.fired = true
+	}
+	entered, release := g.entered, g.release
+	g.mu.Unlock()
+	if take {
+		close(entered)
+		<-release
+	}
+	return g.StoreProvider.GetActiveView(ctx, sessionID)
+}
+
+// TestBatcherPushCannotOutliveTheRun (t_877f4bce, audit gate): a
+// batcher tick past takeDirty builds for ms-scale with no liveness
+// check; endRun fires inside that window and the stale running=true
+// push lands after the exit push - the canvas then serves a panel that
+// claims the session streams forever, and the webui reattach busy-gate
+// blocks the composer until an unrelated push heals it. The tick and
+// the exit flush now serialize under the capsule's paint lock, so the
+// exit push is last: the recorded deltas end running=false and the
+// canvas snapshot agrees.
+func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
+	prov := newMockProvider("mock", scripted(
+		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	))
+	a := core.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	gated := &gateStore{StoreProvider: st}
+	s := NewServer(a, nil, gated, nil)
+	s.chat.batch = 20 * time.Millisecond
+	// Real wiring order: the canvas registers the capsule, the test
+	// overrides the closure to record (one frontend is live).
+	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
+		t.Fatalf("newCanvas: %v", err)
+	}
+	recorder := newChatRecorder()
+	s.chat.SetPanelUpdate(func(p core.Panel) error {
+		recorder.ch <- p
+		return nil
+	})
+	ts := httptest2.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	// One real run streamed to completion behind the gate-unarmed
+	// store: persisted truth exists, no run is live from here on.
+	sessionID := postChatGetSessionID(t, ts)
+	waitRunQuiescent(t, s, sessionID)
+
+	// Stage the doomed interleaving: a batcher session dirty with a
+	// pending token batch, pinned inside its build, while endRun fires.
+	s.chat.beginRun(sessionID) // the batcher spawns; its begin push composes behind the unarmed store
+	entered, closeRelease := gated.arm()
+	s.chat.runEvent(sessionID, core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("batcher never entered its build - the race window never opened")
+	}
+	done := make(chan struct{})
+	go func() {
+		s.chat.endRun(sessionID)
+		close(done)
+	}()
+	// Old code: the exit push landed here already, and the tick still
+	// stuck mid-build pushed running=true after it. New code: endRun
+	// holds for the paint lock until the build returns.
+	time.Sleep(30 * time.Millisecond)
+	closeRelease()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("endRun never returned - the paint lock does not release")
+	}
+
+	// Settle past any further tick (3+ cadences), then close the gate.
+	time.Sleep(80 * time.Millisecond)
+	recorder.closeDeltas()
+	panels := recorder.all()
+	last := chatPanelPayload(t, panels[len(panels)-1])
+	if last.Running {
+		t.Fatalf("canvas panel ends running=true with no live run: last delta = %+v", last)
+	}
+	if last.Session != sessionID {
+		t.Fatalf("last delta session = %q, want %q", last.Session, sessionID)
+	}
+	// The canvas state agrees (GET /ui/canvas's snapshot source).
+	snap := s.canvas.Snapshot()
+	if len(snap) != 1 {
+		t.Fatalf("snapshot = %d panels, want 1", len(snap))
+	}
+	if payload := chatPanelPayload(t, snap[0]); payload.Running {
+		t.Fatalf("canvas snapshot ends running=true with no live run: %+v", payload)
+	}
+	if s.runs.active(sessionID) {
+		t.Fatal("no run should hold the slot")
+	}
+}
+
+// TestUIActionRetryOnLiveRunIsA409: handleUIActions passes a runError's
+// own HTTP status through - a retry against a session with a live run
+// answers 409 through the action pipe, the same face POST /chat serves,
+// not a flattened 500.
+func TestUIActionRetryOnLiveRunIsA409(t *testing.T) {
+	prov := &gateHoldProvider{release: make(chan struct{})}
+	a := core.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, nil, nil, nil)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s.store = st
+	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
+		t.Fatalf("newCanvas: %v", err)
+	}
+	ts := httptest2.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	sessionID := postChatGetSessionID(t, ts)
+	// The run is live (held on the gate) until release closes - the
+	// retry below lands while a run holds the slot.
+	body := `{"module":"http_channel","action":"retry","args":{"session":"` + sessionID + `"}}`
+	res, err := http.Post(ts.URL+"/ui/actions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("post action: %v", err)
+	}
+	out, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("retry on live run = %d (%s), want 409", res.StatusCode, out)
+	}
+	close(prov.release)
+	waitRunQuiescent(t, s, sessionID)
 }

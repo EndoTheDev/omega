@@ -61,6 +61,16 @@ type chatCapsule struct {
 	batch time.Duration
 
 	mu      sync.Mutex
+	// paintMu serializes one session's panel build+push (t_877f4bce):
+	// a batcher tick past takeDirty builds for ms-scale (the store
+	// read) with no run-liveness check, and endRun can fire inside that
+	// window - the batcher's running=true push would then land after
+	// endRun's running=false exit push and the canvas would hold a
+	// panel claiming the session streams forever (the webui reattach
+	// busy-gate blocks the composer until an unrelated push heals it).
+	// The batcher tick and the exit flush both hold it across
+	// takeDirty + build + push, so the exit push is always last.
+	paintMu sync.Mutex
 	update  func(core.Panel) error
 	focusID string                   // the session the panel currently covers
 	dirty   map[string]bool          // pending token batches, by session
@@ -106,7 +116,9 @@ func (c *chatCapsule) SetPanelUpdate(update func(core.Panel) error) {
 
 // push routes one panel through the installed closure. A missing sink
 // or a failed push is not a run failure: the rows are already in the
-// store, the snapshot is the catch-up.
+// store, the snapshot is the catch-up. A rejection IS loud: the only
+// current rejection is an undeclared panel id (canvas runtime), a
+// wiring bug the silent-swallow law must not hide.
 func (c *chatCapsule) push(p core.Panel) {
 	c.mu.Lock()
 	up := c.update
@@ -114,7 +126,11 @@ func (c *chatCapsule) push(p core.Panel) {
 	if up == nil {
 		return
 	}
-	_ = up(p)
+	if err := up(p); err != nil {
+		if srv := c.srv.Load(); srv != nil && srv.logger != nil {
+			srv.logger.Errorf("chat panel push rejected (module %q): %v", chatModuleNamespace, err)
+		}
+	}
 }
 
 // chatActions is the module's action vocabulary, declared on the panel
@@ -359,7 +375,10 @@ func (c *chatCapsule) beginRun(session string) {
 
 // batchLoop is the streaming cadence: while the run holds the panel,
 // tick the cadence and push the rebuilt rows when token chunks marked
-// them dirty. Exits when endRun closes the watch.
+// them dirty. Each tick holds paintMu across takeDirty + build + push
+// (t_877f4bce - see chatCapsule.paintMu): a tick that is past takeDirty
+// must never push a running=true panel after endRun's exit flush.
+// Exits when endRun closes the watch.
 func (c *chatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	ticker := time.NewTicker(c.batch)
 	defer ticker.Stop()
@@ -368,9 +387,11 @@ func (c *chatCapsule) batchLoop(watch <-chan struct{}, session string) {
 		case <-watch:
 			return
 		case <-ticker.C:
+			c.paintMu.Lock()
 			if c.takeDirty(session) {
 				c.push(c.buildPanel(session, true))
 			}
+			c.paintMu.Unlock()
 		}
 	}
 }
@@ -450,7 +471,7 @@ func (c *chatCapsule) endRun(session string) {
 	if known {
 		delete(c.watch, session)
 	}
-	c.dirty[session] = false
+	delete(c.dirty, session) // the entry leaves with the run - a stale batcher's takeDirty answers false
 	focused := c.focusID == session
 	c.mu.Unlock()
 	if known {
@@ -459,6 +480,13 @@ func (c *chatCapsule) endRun(session string) {
 	if !focused {
 		return
 	}
+	// The exit flush is the session's last push and must land last
+	// (t_877f4bce - see chatCapsule.paintMu): held across build+push,
+	// a batcher tick blocked mid-build (or already past takeDirty)
+	// serializes behind it or ahead of it, never a stale running=true
+	// panel after the run is gone.
+	c.paintMu.Lock()
+	defer c.paintMu.Unlock()
 	c.push(c.buildPanel(session, false))
 }
 
@@ -524,7 +552,7 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 		switch it.Kind {
 		case "user":
 			row.Role = core.ChatRoleUser
-			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: imagesOf(it.Images)}}
+			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: it.Images}}
 		case "message":
 			row.Role = core.ChatRoleAssistant
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content}}
@@ -543,16 +571,4 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-// imagesOf copies core.ImageContent into the core vocabulary. Pure.
-func imagesOf(imgs []core.ImageContent) []core.ImageContent {
-	if len(imgs) == 0 {
-		return nil
-	}
-	out := make([]core.ImageContent, len(imgs))
-	for i, im := range imgs {
-		out[i] = core.ImageContent{MediaType: im.MediaType, Base64: im.Base64}
-	}
-	return out
 }

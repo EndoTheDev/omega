@@ -187,6 +187,29 @@ func TestRegistrationWiringBugs(t *testing.T) {
 	}
 }
 
+// TestUpdateRejectsUndeclaredPanelId: a push naming a panel the module
+// never declared is a phantom panel (it would sit in the namespace
+// forever) - the runtime rejects it and the snapshot grows nothing.
+func TestUpdateRejectsUndeclaredPanelId(t *testing.T) {
+	c, err := mountedCtx(t, twoProviders(), nil)
+	if err != nil {
+		t.Fatalf("NewCanvas: %v", err)
+	}
+	err = c.Update("kanban", core.Panel{ID: "ghost", Kind: "kanban.ghost"})
+	if err == nil || !strings.Contains(err.Error(), "never declared") {
+		t.Errorf("phantom panel update = %v, want a never-declared rejection", err)
+	}
+	if got := len(c.Snapshot()); got != 3 {
+		t.Errorf("snapshot = %d panels, want 3 (nothing minted)", got)
+	}
+	// A declared id still updates.
+	if err := c.Update("kanban", core.Panel{ID: "board", Kind: "kanban.board", Payload: "ok"}); err != nil {
+		t.Errorf("declared panel update = %v, want nil", err)
+	}
+}
+
+// TestDispatchHappyPath: the dispatch hands the call to the handler
+// verbatim and its result passes through.
 func TestDispatchHappyPath(t *testing.T) {
 	var got core.ActionCall
 	c, err := mountedCtx(t, []core.PanelProvider{&panelProviderStub{
