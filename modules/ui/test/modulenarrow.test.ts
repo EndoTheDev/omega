@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { isNarrowWidth, NARROW_MAX_PX } from "../app/composables/narrow.ts";
 import { isNarrowWidth as cronIsNarrowWidth } from "../../cron/ui/narrow.ts";
-import { isNarrowWidth as logsIsNarrowWidth } from "../../http_channel/ui/narrow.ts";
+import { isNarrowWidth as logsIsNarrowWidth } from "../../../http_channel/ui/narrow.ts";
 import { isNarrowWidth as skillsIsNarrowWidth } from "../../skills/ui/narrow.ts";
 import { isNarrowWidth as toolsIsNarrowWidth } from "../../tools/ui/narrow.ts";
 // the recipe's original: the Board's module-owned copy must stay in the
@@ -62,7 +62,7 @@ const RETROFIT: Array<{
     rules: [/\.cron-list\.narrow \{/, /\.cron-list\.narrow \.cron-head \{/],
   },
   {
-    rel: "modules/http_channel/ui/LogsList.vue",
+    rel: "http_channel/ui/LogsList.vue",
     label: "logs",
     module: "http_channel",
     rules: [/\.logs-list\.narrow \./],

@@ -22,7 +22,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/cron"
 	"github.com/EndoTheDev/omega/modules/datadir"
 	"github.com/EndoTheDev/omega/modules/delegate"
-	httpchannel "github.com/EndoTheDev/omega/modules/http_channel"
+	httpchannel "github.com/EndoTheDev/omega/http_channel"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/mcp"
@@ -34,7 +34,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/store"
 	"github.com/EndoTheDev/omega/modules/tools"
 	"github.com/EndoTheDev/omega/modules/trust"
-	"github.com/EndoTheDev/omega/modules/tui"
+	"github.com/EndoTheDev/omega/tui"
 	"github.com/EndoTheDev/omega/modules/verdict"
 	"github.com/EndoTheDev/omega/modules/web"
 )

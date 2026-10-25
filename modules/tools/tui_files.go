@@ -2,7 +2,7 @@ package tools
 
 // Module-owned TUI surface (card t_88bb7dcf): /files belongs to the
 // tools module. The walk/validation rules below mirror
-// modules/http_channel server_files.go one to one (validateRelPath,
+// http_channel server_files.go one to one (validateRelPath,
 // resolveUnderRoot, ensureUnderRoot, sortFileEntries, the 64 KiB cap)
 // - both frontends answer the same request the same way. The http
 // surface is http-only and the TUI does not import it, so the mirror

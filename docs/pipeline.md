@@ -163,7 +163,7 @@ stable channel from ever seeing a nightly.
 
 | Piece                | Job                                                     |
 | -------------------- | ------------------------------------------------------- |
-| `scripts/embed-lane.sh` | the ONE owner of committed `modules/http_channel/static/` |
+| `scripts/embed-lane.sh` | the ONE owner of committed `http_channel/static/` |
 | `scripts/train-pass.sh` | one mechanical landing per pass + marker refs + strikes |
 | `scripts/train-bisect.sh` | the marker-chain walk: --list, or bisect by check   |
 | `scripts/review-at-close.sh` | fresh review worktree + cold diff vs merge-base |

@@ -46,9 +46,9 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 // and the module ships nothing else. No canvas panel and no
 // module-qualified actions exist (the card renders in the chat stream
 // off the tool call; nothing rendered a verdict panel before the arc).
-// The /verdicts REST routes live in modules/http_channel behind the
+// The /verdicts REST routes live in http_channel behind the
 // verdicts seam's nil guard - unmount answers 501 by construction.
-// The shell's busy-Enter answer path (modules/tui/tui_verdict.go)
+// The shell's busy-Enter answer path (tui/tui_verdict.go)
 // reads the same seam and is nil-guarded: no mount, no intercept.
 // Take verdict.NewPlugin() out of buildPlugins() and every face above
 // vanishes; the proof is TestVerdictRemovalProof

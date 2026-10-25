@@ -7,7 +7,7 @@ surface omega has — **loopback only by default**; extra binds (e.g. a
 Tailscale IP for Traefik) are an explicit `server.bind` opt-in, and
 the public edge always sits behind an auth wall.
 
-Routes are registered in `modules/http_channel/server.go`. Anything
+Routes are registered in `http_channel/server.go`. Anything
 documented below that is not in that mux is not real.
 
 | Route                                | Methods    | Notes                                          |
@@ -343,7 +343,7 @@ immediately. Its actions (`stop`, `retry`, module `http_channel`) route
 through the pipe and serve the same faces the REST routes serve. The
 registration is Start-gated: the panel exists only once a channel
 actually starts - a TUI-only process carries no dead http chat panel.
-In a TUI process the module-owned capsule from `modules/tui` (module
+In a TUI process the module-owned capsule from `tui` (module
 `tui`, same panel id and kind, the same `ChatPayload` vocabulary)
 covers the conversation: the chat pane renders from the canvas
 snapshot and its deltas natively, the stop/retry actions wrap the

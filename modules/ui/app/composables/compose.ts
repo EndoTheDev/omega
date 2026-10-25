@@ -26,38 +26,50 @@ export interface ModuleUI {
   dockable: DockableSpec | null;
 }
 
-// scanModuleUIs returns every dir under modulesRoot that carries a
-// modules/<name>/ui/ directory with at least one .vue file, sorted by
-// module name. A nonexistent modulesRoot yields [] (the dev tree never
-// sees it; the clean-clone build is what runs the scan for real).
+// scanModuleUIs returns every candidate dir under ANY of the given
+// parent roots that carries a <name>/ui/ directory with at least one
+// .vue file, sorted by module name. The tier law scan (card t_ae5423d2):
+// opinionated modules live in modules/, the engine ring sits at the
+// checkout root - both roots are passed and both follow the same rule
+// ("a directory is the registration"). A nonexistent root yields
+// nothing (the tree never sees it; the clean-clone build is what runs
+// the scan for real). "modules" is skipped on engine roots: the shell
+// tree is scanned via its own root, re-registering it under a parent
+// scan would double-count the shell's own modules/ui. A module name
+// found in an earlier root wins - modules/ is passed first, so an
+// engine dir can never shadow an opinionated module's panel.
 // Sorted twice - directory entries AND results - so the generated panel
 // list is stable regardless of readdir order.
-export function scanModuleUIs(modulesRoot: string): ModuleUI[] {
-  let names: string[];
-  try {
-    names = readdirSync(modulesRoot);
-  } catch {
-    return [];
-  }
-  const found: ModuleUI[] = [];
-  for (const name of names.sort()) {
-    // dot/underscore dirs are tooling junk (.nuxt); node_modules never
-    // ships omega UI; "ui" is the shell module itself - registering the
-    // shell inside its own shell would be a loop, the shell ships its
-    // UI in place
-    if (name === "ui" || name === "node_modules" ||
-        name.startsWith(".") || name.startsWith("_")) {
+export function scanModuleUIs(...roots: string[]): ModuleUI[] {
+  const byName = new Map<string, ModuleUI>();
+  for (const root of roots) {
+    let names: string[];
+    try {
+      names = readdirSync(root);
+    } catch {
       continue;
     }
-    const dir = join(modulesRoot, name, "ui");
-    if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
-    const components = readdirSync(dir)
-      .filter((f) => f.endsWith(".vue"))
-      .sort();
-    if (components.length === 0) continue;
-    found.push({ module: name, dir, components, dockable: readDockableSpec(dir) });
+    for (const name of names.sort()) {
+      // dot/underscore dirs are tooling junk (.nuxt, .worktrees);
+      // node_modules never ships omega UI; "ui" is the shell module
+      // itself - registering the shell inside its own shell would be a
+      // loop, the shell ships its UI in place; "modules" is the shell
+      // tree, scanned via its own root above
+      if (name === "ui" || name === "node_modules" || name === "modules" ||
+          name.startsWith(".") || name.startsWith("_")) {
+        continue;
+      }
+      if (byName.has(name)) continue;
+      const dir = join(root, name, "ui");
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
+      const components = readdirSync(dir)
+        .filter((f) => f.endsWith(".vue"))
+        .sort();
+      if (components.length === 0) continue;
+      byName.set(name, { module: name, dir, components, dockable: readDockableSpec(dir) });
+    }
   }
-  return found;
+  return [...byName.values()].sort((a, b) => a.module.localeCompare(b.module));
 }
 
 // readDockableSpec parses + validates ui/dockable.json - the dockable

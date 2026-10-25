@@ -7,7 +7,7 @@ import "time"
 // The webui registers by directory (modules/<name>/ui/); the TUI shell
 // registers whatever modules mount into Context.TUIProviders - a plugin
 // left out of buildPlugins never mounts, so its commands and screens
-// are simply absent from both ends. The shell (modules/tui) stays the
+// are simply absent from both ends. The shell (tui) stays the
 // input loop, layout and theme; it owns no feature commands.
 
 // TUICommand is one module-owned slash command. Name carries the
