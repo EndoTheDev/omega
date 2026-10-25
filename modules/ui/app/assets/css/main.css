@@ -193,8 +193,25 @@ body {
   width: auto;
   height: 4px;
   cursor: row-resize;
+  /* Endo's comment (2026-10-26): a divider is CHROME, not content - it
+     must ride ABOVE pane content. A chat pane squeezed to its 320 floor
+     overflows its composer past the pane bottom, covering the handle
+     (the "unable to find or drag the divider" state); the z-order puts
+     the strip back on top so the squeeze is always escapable. */
+  position: relative;
+  z-index: 40;
   background: linear-gradient(to bottom,
     transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px);
+}
+/* the grab band: 8px above and below the 4px visual - the strip is
+   easy to FIND without growing its visual weight */
+.dock-split.column > .dock-divider::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -8px;
+  bottom: -8px;
 }
 .dock-divider:hover, .dock-divider.active { background: var(--stroke); }
 /* magnetic snap attract: subtle accent guide while the pointer sits inside
