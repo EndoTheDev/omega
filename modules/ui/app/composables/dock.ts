@@ -1041,15 +1041,16 @@ export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode 
 
 /** card 2: close a tab; the last one empties the pane (menu reappears).
     card t_4ae27e0d: an UNCLOSEABLE tab refuses - the pinned sidebars'
-    tabs have no X at all. Endo ruling 2026-10-25: the last main pane's
-    tabs render no X, and the state side refuses what the chrome never
-    offered - a close request against the last main pane is a no-op from
-    any caller. */
+    tabs have no X at all. Endo ruling 2026-10-25, corrected t_b620f99d:
+    the last-main-pane law protects the PANE (removePane), not the tabs -
+    a close request against the last main pane's closable tabs goes
+    through; emptying the pane's last tab leaves the pane alive in place
+    as the empty launcher (it never leaves the tree here), so the law
+    still holds and the main area never reaches zero panes. */
 export function closeTab(tree: DockNode, paneId: string, index: number): DockNode {
   const pane = findPane(tree, paneId);
   const tab = pane?.tabs[index];
   if (!pane || !tab || !isClosableTab(tab.component)) return tree;
-  if (isLastMainPane(tree, pane)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       if (n.tabs.length <= index) return;
