@@ -10,10 +10,6 @@ import (
 // when one is exposed.
 const charsPerToken = 4
 
-// DefaultContextWindow moved to core with CompactionConfig (arc 1b);
-// re-exported for the modules that import agent.DefaultContextWindow.
-const DefaultContextWindow = core.DefaultContextWindow
-
 // CompactionConfig moved to core with its Budget methods (arc 1b);
 // FrontendOptions and the host config reference it.
 type CompactionConfig = core.CompactionConfig

@@ -62,9 +62,12 @@ func SSEData(reader *bufio.Reader) (string, bool, error) {
 }
 
 // Compatibility aliases: the provider contract (core.ToolSchema, core.Provider,
-// ModelInfo) now lives in core (arc 1b2, t_d16468fd). Every provider
-// lane and module import of ai.* keeps compiling; the aliases
-// disappear when modules rewire in phase 2.
+// ModelInfo) now lives in core (arc 1b2, t_d16468fd). Phase 2 (2cafbce)
+// rewired the module callers and kept the aliases: ai.Provider /
+// ai.ToolSchema / ai.ModelInfo ARE the module-boundary address, frozen
+// by extraction-recipe.md section 3 (live usages as of 2e9ae66:
+// 46 Provider, 21 ToolSchema, 24 ModelInfo). They are Go aliases of the
+// core types (`type Provider = core.Provider`), not a second contract.
 //
 // DO NOT add new contract types here - new provider contracts belong
 // in core.

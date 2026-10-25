@@ -190,8 +190,10 @@ file needs to move for this surface to hold:
   (agent/sessionctx.go), the canvas runtime (agent/canvas.go),
   `FormatInsights` (agent/insights.go), caption helpers
   (agent/caption.go — aliases of core types).
-- **ai** — the runtime plumbing: `ai.Provider` (the concrete
-  streaming contract behind core.Provider), `ai.ToolSchema`,
+- **ai** — the runtime plumbing: `ai.Provider` (the module-boundary
+  address of the provider contract — a Go alias of the same interface,
+  `type Provider = core.Provider`; not a second streaming contract),
+  `ai.ToolSchema`,
   `ai.RetryHTTP`, thinking ladder helpers, image magic/type sniffing,
   and the fake provider for harness tests.
 
