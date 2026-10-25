@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { drawerTabsForEdge, clampDrawerTab } from "../app/composables/mobileDrawer.ts";
 import {
   INSPECTOR_TAB_COMPONENTS,
+  defaultHostTabs,
   COMPONENT_TITLES,
   type DockComponentName,
 } from "../app/composables/dockables.ts";
@@ -70,9 +71,12 @@ test("drawerTabsForEdge: a free-content left pane hosting dragged-in inspector t
 });
 
 test("drawerTabsForEdge: the injected title resolver wins over the registry fallback", () => {
+  // logs left the inspector strip (bottom-only home, Endo's comment
+  // 2026-10-26) - the resolver still wins for any seated id; assert
+  // over the bottom host's default strip, where logs still lives
   const resolve = (id: DockComponentName) =>
     id === "http_channel" ? "Logs" : COMPONENT_TITLES[id];
-  const tabs = drawerTabsForEdge(null, INSPECTOR_TAB_COMPONENTS, resolve);
+  const tabs = drawerTabsForEdge(null, defaultHostTabs("bottom"), resolve);
   const logs = tabs.find((t) => t.id === "http_channel");
   assert.equal(logs?.title, "Logs");
 });

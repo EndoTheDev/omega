@@ -168,8 +168,8 @@ describe("the dockable registry", () => {
         `${d.id}: policy is one of the two`,
       );
       assert.ok(
-        d.area === "left" || d.area === "right" || d.area === "main",
-        `${d.id}: area is one of the three`,
+        d.area === "left" || d.area === "right" || d.area === "main" || d.area === "bottom",
+        `${d.id}: area is one of the four`,
       );
       assert.equal(typeof d.closable, "boolean", `${d.id}: closable flag`);
       // the lock is narrow now (t_d6b657a7): only sessions is locked;
@@ -199,12 +199,12 @@ describe("the dockable registry", () => {
     // insights joined the right shell at t_d7fd3ad3)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
@@ -443,7 +443,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(tree, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "canvas", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "canvas", "insights"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes
@@ -462,7 +462,7 @@ describe("dock store: the pane-model reset", () => {
         {
           kind: "pane",
           id: "n4",
-          tabs: ["files", "cron", "http_channel", "skills", "tools"].map((c) => ({
+          tabs: ["files", "cron", "skills", "tools"].map((c) => ({
             component: c as DockPane["tabs"][number]["component"],
           })),
           active: 2,
@@ -478,7 +478,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "canvas"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -503,7 +503,7 @@ describe("dock store: the pane-model reset", () => {
         {
           kind: "pane",
           id: "n4",
-          tabs: ["files", "cron", "http_channel", "skills", "tools"].map((c) => ({
+          tabs: ["files", "cron", "skills", "tools"].map((c) => ({
             component: c as DockPane["tabs"][number]["component"],
           })),
           active: 0,
@@ -534,15 +534,15 @@ describe("dock store: the pane-model reset", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "http_channel", "skills", "tools", "agents", "settings", "kanban", "extensions", "canvas", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "canvas", "insights"],
     );
   });
 
   it("a v2 tree with settings dragged into a main pane KEEPS it (free content)", async () => {
     let t: DockNode = defaultTree();
-    // settings is tab 6 of the inspector bar (agents joined at 5): drag
-    // it into the main pane
-    t = moveTab(t, asSplit(t).children[2].id, 6, asSplit(t).children[1].id, 0);
+    // settings is tab 5 of the inspector bar (logs left the strip -
+    // Endo's comment 2026-10-26): drag it into the main pane
+    t = moveTab(t, asSplit(t).children[2].id, 5, asSplit(t).children[1].id, 0);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
@@ -684,8 +684,8 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions,insights,canvas",
-      "none of the ten may close",
+      "files,cron,skills,tools,agents,settings,kanban,extensions,insights,canvas",
+      "none of the nine may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read
     // (t_b620f99d: the last-main-pane law protects the pane, not tabs)
