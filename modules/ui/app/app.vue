@@ -1406,14 +1406,19 @@
         healthy.value = false;
       }
     }, HEALTH_POLL_MS);
-    try {
-      const m = await fetchModels();
-      models.value = m.models;
-      selectedModel.value = m.current;
-      if (m.context_window) contextSize.value = m.context_window;
-    } catch {
-      // models are decoration until a chat runs
-    }
+    // the models fetch does NOT block boot: a slow or stalled provider
+    // /models round-trip (shared keypool stall) used to hold the whole
+    // sidebar hostage. Fire it off and let the picker fill in when it
+    // lands - the session list renders independent of provider reachability.
+    void fetchModels()
+      .then((m) => {
+        models.value = m.models;
+        selectedModel.value = m.current;
+        if (m.context_window) contextSize.value = m.context_window;
+      })
+      .catch(() => {
+        // models are decoration until a chat runs
+      });
     refreshSessions();
     // running-state poller: every tab reconciles against the rows
     runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
