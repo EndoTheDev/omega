@@ -23,7 +23,7 @@ import (
 
 // The knob/group shapes are core.SettingsKnob / core.SettingsGroup /
 // core.SettingsSchema - the seam is typed end to end, so cmd/omega and
-// modules/http_channel cannot drift apart on the wire shape. Masked
+// http_channel cannot drift apart on the wire shape. Masked
 // secrets and the config-yaml-only gate live in this file: the host
 // decides what the unauthenticated API may see and write.
 //

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# embed-lane.sh - the ONE lane that owns modules/http_channel/static/.
+# embed-lane.sh - the ONE lane that owns http_channel/static/.
 #
 # Webui cards commit SOURCE ONLY (modules/ui/ and modules/<name>/ui/).
 # The committed SPA bundle is regenerated and committed here, right
@@ -38,7 +38,7 @@ set -euo pipefail
 #   EMBED_LANE_BUILD_CMD - the command that regenerates the bundle.
 #   The real pass uses modules/ui/scripts/build.sh.
 
-STATIC="modules/http_channel/static"
+STATIC="http_channel/static"
 LANE_PREFIX="embed-lane: rebuild webui bundle for"
 
 # ui_changed <base> <head>: non-empty output when the diff touches

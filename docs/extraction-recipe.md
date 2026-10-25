@@ -42,8 +42,8 @@ direction: the harness depends on the engine, never the reverse.
 | `ai/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `ai.Provider` streaming contract, fake provider | imports core only; imported by engine (agent_loop) and harness capsules alike — it must sit under the engine or the agent loop would reach upward |
 | `modules/agent_loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
 | `modules/tools` | The bare-minimum tools: `shell.run`, `files` (read/write/edit + batch), /files browser, db deny-guard | the north-star ruling; verdict tool status is separate (see §6) |
-| `modules/http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
-| `modules/tui` | The terminal connector: the TUI shell, canvas pane rendering | frontend seam implementation on the engine side |
+| `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
+| `tui` | The terminal connector: the TUI shell, canvas pane rendering | frontend seam implementation on the engine side |
 | `modules/ui` | The webui SPA source (Nuxt/TS, no Go) — embedded into http_channel's `static/` | part of the connector/canvas runtime |
 | `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell | see HURT-4: today's shell is NOT yet minimal |
 
@@ -268,7 +268,7 @@ Places the recipe could not be written cleanly. Each is a finding,
 not a hedge. None is fixed by this card except where noted.
 
 1. **tui imports the store capsule for one helper function**
-   — modules/tui/tui.go:23 imports
+   — tui/tui.go:23 imports
    `github.com/EndoTheDev/omega/modules/store`; the only
    package-qualified use is `store.SessionDisplayName(...)` at
    tui.go:1525 (the other `store.X` greps are calls through the

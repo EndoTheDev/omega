@@ -149,8 +149,8 @@ assert_base "--base override -> explicit, trusted" "$d/dev" \
 d="$tmp/s7-e2e-webui"
 make_repo "$d"
 cat >"$d/fake-build.sh" <<'EOF'
-mkdir -p modules/http_channel/static
-printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > modules/http_channel/static/bundle.txt
+mkdir -p http_channel/static
+printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > http_channel/static/bundle.txt
 EOF
 chmod +x "$d/fake-build.sh"
 git -C "$d/dev" checkout -qb card
@@ -170,7 +170,7 @@ case "$out" in
 *"lane commit "*) : ;;
 *) fail "e2e: expected a lane commit after regen" ;;
 esac
-grep -q "bundle v0" "$d/dev/modules/http_channel/static/bundle.txt" ||
+grep -q "bundle v0" "$d/dev/http_channel/static/bundle.txt" ||
 	fail "e2e: static bundle not regenerated"
 pass "e2e: bundle regenerated and lane-committed"
 
@@ -203,8 +203,8 @@ esac
 d="$tmp/s9-e2e-unproven"
 make_repo "$d"
 cat >"$d/fake-build.sh" <<'EOF'
-mkdir -p modules/http_channel/static
-printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > modules/http_channel/static/bundle.txt
+mkdir -p http_channel/static
+printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > http_channel/static/bundle.txt
 EOF
 chmod +x "$d/fake-build.sh"
 git -C "$d/dev" checkout -qb card

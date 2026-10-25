@@ -8,7 +8,7 @@ omega binary via `go:embed` and served by the HTTP channel at `/`. An
 installed instance owns port 8099; the dev tree's omega serves 8098.
 The two never touch each other.
 
-Source of truth: `modules/ui/` (contracts below), `modules/http_channel/static/`
+Source of truth: `modules/ui/` (contracts below), `http_channel/static/`
 (the committed built bundle), and the wire contract in [api.md](api.md).
 
 ## Design tokens
@@ -119,7 +119,7 @@ The gutter divider retains magnetic snap rebase mechanics
   send; the server mints an `eph-` id on the leading `session` frame.
 - **Pure in-memory.** No store row, no messages on disk: conversation
   context, transcript items and telemetry live in the server's
-  `ephRegistry` (modules/http_channel/server_ephemeral.go). Restart
+  `ephRegistry` (http_channel/server_ephemeral.go). Restart
   kills; reload reattaches from server memory (transcript endpoint,
   same reattach machinery). Never a persisted-then-deleted shape.
 - **Invisible to every store-derived surface by law**: session lists,
@@ -204,7 +204,7 @@ transitions), `composer-retry.test.ts` (the morphing button), `panemodel.test.ts
 
 ## The embed lane
 
-- The built SPA is COMMITTED: `modules/http_channel/static/` is
+- The built SPA is COMMITTED: `http_channel/static/` is
   tracked, so `go install` and plain `go build` always produce the
   complete product. Webui cards commit **SOURCE ONLY**; the merge pass
   runs `scripts/embed-lane.sh`, which owns every `static/` commit.

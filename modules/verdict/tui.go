@@ -11,7 +11,7 @@ import (
 // tuiProvider is the verdict module's TUI surface (card t_88bb7dcf):
 // a /verdict command for idle answering and inspection. The live
 // answer path during a run is the shell's busy-Enter intercept
-// (modules/tui); this command covers the case the prompt is still up
+// (tui); this command covers the case the prompt is still up
 // after the run finished (a pending card whose run was cancelled).
 type tuiProvider struct {
 	hub core.VerdictsProvider
