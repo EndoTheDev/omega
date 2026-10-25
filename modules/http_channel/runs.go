@@ -468,11 +468,19 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Headers go out on attach, not on the run's first frame: the
+	// Subscribe BEFORE the client-visible 200: the moment the headers
+	// flush, the subscriber's channel must be registered in run.subs -
+	// otherwise a frame broadcast in the header-to-subscribe gap (a
+	// canvas delta, or the fast client firing its next request on the
+	// resolved fetch) lands on a subscriber list that does not exist
+	// yet and is dropped (t_eba53ebe: the view_model_delta race - the
+	// test's Update won that gap ~1 run in 2 under -race). Headers
+	// still go out on attach, not on the run's first frame: the
 	// subscriber's fetch() resolves while the run is still between
 	// events, so an attach landing in the gap between two frames does
 	// not hang on connect.
+	ch := s.runs.subscribe(run)
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-	s.serveRunFrames(w, flusher, run, s.runs.subscribe(run), r.Context())
+	s.serveRunFrames(w, flusher, run, ch, r.Context())
 }
