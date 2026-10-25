@@ -6,6 +6,8 @@
 # container - not the viewport. The kanban Board is the reference
 # implementation; the sweep retrofitted cron, logs, skills, tools, the
 # files tree, and settings rides card t_49d0b308's own adaptation.
+# Logs left the inspector (bottom-hosted only, 3dbb9c5) - the logs
+# checks moved out of this journey with it.
 #
 # Customer-visible invariants, asserted here per inspector tab:
 #   narrow  -> the panel root carries the `narrow` class AND the class's
@@ -81,7 +83,6 @@ tab_narrow() {
 # no rows (empty cron list, log tail): the condensed root padding is the
 # narrow rule; a missing descendant (no data) cannot fail the tab.
 tab_narrow 'cron'    '.cron-list'   'getComputedStyle(document.querySelector(".cron-list")).paddingLeft==="8px"'
-tab_narrow 'logs'    '.logs-list'   'getComputedStyle(document.querySelector(".logs-body")).paddingLeft==="8px"'
 tab_narrow 'skills'  '.skills-list' 'getComputedStyle(document.querySelector(".skills-list")).paddingLeft==="8px"'
 tab_narrow 'tools'   '.tools-list'  'getComputedStyle(document.querySelector(".tools-list")).paddingLeft==="8px"'
 tab_narrow 'files'   '.inspector-panel' 'getComputedStyle(document.querySelector(".files-tree .size")).display==="none"'
@@ -141,7 +142,6 @@ wide_drop() {
 
 wide_drop 'files'   '.inspector-panel'
 wide_drop 'cron'    '.cron-list'
-wide_drop 'logs'    '.logs-list'
 wide_drop 'skills'  '.skills-list'
 wide_drop 'tools'   '.tools-list'
 wide_drop 'settings' 'aside.settings'

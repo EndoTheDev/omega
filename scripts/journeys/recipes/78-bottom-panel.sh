@@ -12,8 +12,8 @@
 #   5  mobile (<768px): the bottom cell zero-collapses (state survives),
 #      the desktop toggle STAYS VISIBLE at every breakpoint (the parity
 #      contract, 16ac10a - the toggle drives dock.toggleEdge directly
-#      below 768px too), and the logs view stays reachable in the
-#      inspector drawer (the dual-host union)
+#      below 768px too), and the logs view stays reachable on mobile
+#      the bottom-only way (logs is bottom-hosted, 3dbb9c5)
 #
 # No model needed: pure shell UI. Runs against JOURNEY_BASE_URL.
 . "${JROOT:?run must export JROOT}/lib.sh"
@@ -129,17 +129,16 @@ sleep 1.2
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "400" "desktop again: the panel is back at its height (state survived mobile)"
 
-# and the logs view stays reachable on mobile - the inspector drawer
-# unions the right-domain set (logs' default home moved to the bottom);
-# the drawer opens via the menubar inspector toggle (16ac10a)
+# and logs stays reachable on mobile the bottom-only way (Endo's
+# ruling, 3dbb9c5: logs is bottom-hosted only - the inspector drawer
+# no longer seats it); the drawer opens via the menubar inspector
+# toggle (16ac10a)
 ab set viewport 420 840 >/dev/null 2>&1
 sleep 1
-js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle right sidebar").click()' >/dev/null 2>&1
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle right sidebar")?.click()' >/dev/null 2>&1
 sleep 0.7
-js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t => t.textContent.trim() === "Logs")?.click()' >/dev/null 2>&1
-sleep 3
-logs=$(jsq 'document.querySelector(".mobile-drawer.right.open .logs-list")?1:0')
-assert_eq "$logs" "1" "mobile: logs stays reachable in the inspector drawer (dual-host union)"
+drawerlogs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right.open .mobile-drawer-tab")).filter(t => t.textContent.trim() === "Logs").length')
+assert_eq "$drawerlogs" "0" "mobile: the right drawer holds no Logs tab (logs is bottom-only, 3dbb9c5)"
 
 # clean exit: back at desktop, drawer closed, bottom panel still there
 js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
