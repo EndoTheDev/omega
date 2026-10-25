@@ -118,7 +118,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   store-dependent commands (`/sessions`, `/resume`, `/branch`,
   `/label`, `/tree`, `/export`, `/search`, `/insights`). Context window
   priority: provider probe > compaction config >
-  `agent.DefaultContextWindow` (8192); `ModelInfo` runs on a
+  `core.DefaultContextWindow` (8192); `ModelInfo` runs on a
   per-lookup `WithModel` copy. Transcript segments preserve narrative
   order (thinking, tool, response) - never reorder; re-render covers
   resize/theme/resume. Bracketed paste inserts file paths as text.
