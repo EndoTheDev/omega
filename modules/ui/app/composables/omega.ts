@@ -167,9 +167,6 @@ export interface ToolItem {
   // result merge keeps the call item's identity, so the id stays the
   // call row's. Orphan results carry none. Live-built items carry none.
   id?: string;
-  // a dead stream never delivers the tool result - flagged so the
-  // elapsed meter in ToolCallLine freezes instead of ticking forever
-  interrupted?: boolean;
   output?: string;
   result?: string;
   // server-measured duration from the matched result (restored)
@@ -860,7 +857,7 @@ export function parseFrame(frame: string): unknown | null {
 export function handlePayload(
   payload: unknown,
   handlers: StreamHandlers,
-  state: { seenResponse: boolean; sawEnd?: boolean },
+  state: { sawEnd?: boolean },
 ): void {
   const p = payload as Record<string, unknown>;
   switch (p.type) {
@@ -871,7 +868,6 @@ export function handlePayload(
       // view-model the component paints.
       break;
     case "response_chunk":
-      if (!state.seenResponse) state.seenResponse = true;
       break;
     case "tool_call":
     case "tool_result":
@@ -2248,16 +2244,16 @@ export function mediaTypeFromBase64(base64: string): string | null {
 // stream's reason, the composer's retry face is the resume affordance.
 
 // createItemKeySource gives transcript items a stable key surviving the
-// two identity-breaking operations the transcript goes through (card
-// t_bc62c9ba round 1): `st.transcript = items` swaps in a rebuilt history
-// array, and `withoutMarkers + push` strips a stale marker while a retry
-// appends its fresh turn and re-indexes everything after it. Index-keyed
+// identity-breaking transcript rebuilds (card
+// t_bc62c9ba round 1): every render pulls a rebuilt history array
+// (`st.transcript = items` from the canvas replay or the restored
+// history), re-creating the item objects the transcript holds. Index-keyed
 // v-fors reuse the bubble
 // COMPONENT across those swaps, so a restored-history message inherited
 // the previous session's frozen elapsed label and a retried tool call
 // resumed the dead attempt's timer. Keying on object identity fixes both:
-// a kept object (history head, pre-interrupt exchange) keeps its
-// component and its state; every newly pushed object mounts fresh.
+// an item that survives a rebuild carries the same object, so it keeps
+// its component and its state; every newly pushed object mounts fresh.
 // WeakMap: the mapping dies with the item, no leak. This is per-source
 // state, not a global counter - two transcripts never share keys anyway.
 export function createItemKeySource(): (item: object) => number {
@@ -2276,7 +2272,9 @@ export function createItemKeySource(): (item: object) => number {
 // StreamInterruptedError: the SSE transport died mid-stream (reader or
 // fetch failure, connection drop before the terminal event) - NOT an
 // agent error payload, which throws a plain Error and lands in the
-// bubble. The caller reacts with the interrupt marker + resume pill.
+// bubble. The caller surfaces the death in the chat's statusLine above
+// the composer (the panel keeps its last paint); the composer's retry
+// face is the resume affordance.
 export class StreamInterruptedError extends Error {
   constructor(message = "stream interrupted") {
     super(message);
@@ -2305,7 +2303,7 @@ async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<voi
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const state = { seenResponse: false, sawEnd: false };
+  const state = { sawEnd: false };
 
   for (;;) {
     let read: ReadableStreamReadResult<Uint8Array>;

@@ -35,7 +35,6 @@ const tool = (name: string): TranscriptItem => ({
   name,
   status: "done",
 });
-const interrupted = (): TranscriptItem => ({ kind: "interrupted" });
 
 describe("liveRunSlice", () => {
   it("older history + new turn: pin = the last user message, body = its run", () => {
@@ -71,12 +70,6 @@ describe("liveRunSlice", () => {
     const { user: pin, body } = liveRunSlice(items);
     assert.equal(pin, items[3]);
     assert.deepEqual(body, []);
-  });
-
-  it("interruption marker after the user message belongs to the run's body", () => {
-    const items = [user("q"), assistant("par"), interrupted()];
-    const { body } = liveRunSlice(items);
-    assert.deepEqual(body, items.slice(1));
   });
 
   it("no user message in the transcript -> no pin, no branch (settled render)", () => {

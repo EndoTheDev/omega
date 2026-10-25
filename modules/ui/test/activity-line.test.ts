@@ -28,7 +28,7 @@ const thinking = (content: string, streaming?: boolean): TranscriptItem => ({
 const tool = (
   name: string,
   status: string,
-  extra: Partial<{ interrupted: boolean; elapsedMs: number }> = {},
+  extra: Partial<{ elapsedMs: number }> = {},
 ): TranscriptItem => ({
   kind: "tool",
   name,
@@ -40,8 +40,8 @@ describe("activityPhase (card t_e9baac4b)", () => {
   it("idle: null - the line is hidden entirely", () => {
     const items = [user("hi"), thinking("..."), assistant("hello")];
     assert.equal(activityPhase(items, false), null);
-    // even a transcript with leftover running/interrupted items
-    const dead = [user("hi"), tool("web.search", "running", { interrupted: true })];
+    // even a transcript with leftover running items
+    const dead = [user("hi"), tool("web.search", "running")];
     assert.equal(activityPhase(dead, false), null);
   });
 
@@ -94,28 +94,6 @@ describe("activityPhase (card t_e9baac4b)", () => {
     assert.deepEqual(activityPhase(items, true), {
       key: "thinking",
       label: "thinking",
-    });
-  });
-
-  it("interrupted tool call is never narrated as running", () => {
-    const items = [user("hi"), tool("shell", "running", { interrupted: true })];
-    // busy still true in the window before the transport death lands:
-    // the phase falls back to the run's wait-on-model state
-    assert.deepEqual(activityPhase(items, true), {
-      key: "thinking",
-      label: "thinking",
-    });
-  });
-
-  it("interrupted open call does not outshout a streaming response", () => {
-    const items = [
-      user("hi"),
-      tool("shell", "running", { interrupted: true }),
-      assistant("partial", true),
-    ];
-    assert.deepEqual(activityPhase(items, true), {
-      key: "responding",
-      label: "responding",
     });
   });
 

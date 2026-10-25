@@ -26,7 +26,6 @@
     v-else-if="item.kind === 'tool'"
     :name="item.name"
     :status="item.status"
-    :interrupted="item.interrupted"
     :final-ms="item.finalMs"
     :output="item.output"
     :result="item.result"
