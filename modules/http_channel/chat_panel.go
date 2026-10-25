@@ -23,6 +23,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -113,6 +115,21 @@ func (c *chatCapsule) push(p core.Panel) {
 	c.mu.Unlock()
 	if up == nil {
 		return
+	}
+	// diag(t_7ab2bc47): log every chat panel push (row ids + statuses
+	// + running flag) when OMEGA_DIAG_PUSH=1 - one line per push, so a
+	// journey red correlates the server's delta stream against the
+	// client's DOM sampler. Strip with the diagnosis.
+	if os.Getenv("OMEGA_DIAG_PUSH") != "" {
+		if pay, ok := p.Payload.(core.ChatPayload); ok {
+			summary := make([]string, 0, len(pay.Rows))
+			for _, r := range pay.Rows {
+				summary = append(summary, fmt.Sprintf("%s/%s/%s/%d", r.Role, r.ID, r.Status, len(r.Blocks)))
+			}
+			log.Printf("[diag-push] session=%s running=%v rows=%v", pay.Session, pay.Running, summary)
+		} else {
+			log.Printf("[diag-push] panel=%s payload_type=%T", p.ID, p.Payload)
+		}
 	}
 	_ = up(p)
 }
