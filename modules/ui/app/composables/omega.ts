@@ -150,6 +150,10 @@ export interface MessageItem {
 export interface ThinkingItem {
   kind: "thinking";
   content: string;
+  // store row id (canvas-mapped stored rows) - a run HEAD can be a
+  // thinking row (a multi-row replay), and the variant switcher anchors
+  // on it; live-built items carry none
+  id?: string;
   streaming?: boolean;
   // server-measured thinking duration (restored history)
   finalMs?: number;
@@ -158,6 +162,11 @@ export interface ToolItem {
   kind: "tool";
   name: string;
   status: string;
+  // store row id (the tool_CALL row) - a run HEAD can be a tool call
+  // row (a multi-row replay without an opening thinking block); the
+  // result merge keeps the call item's identity, so the id stays the
+  // call row's. Orphan results carry none. Live-built items carry none.
+  id?: string;
   // a dead stream never delivers the tool result - flagged so the
   // elapsed meter in ToolCallLine freezes instead of ticking forever
   interrupted?: boolean;
@@ -764,6 +773,79 @@ export function variantOf(
     if (v.count >= 2 && v.siblings?.includes(message.id)) return v;
   }
   return null;
+}
+
+// variantAnchors resolves WHERE a branch block's switcher renders
+// (card t_0df4efd8): the branch point's siblings are the run HEAD row
+// ids (DeriveTree: the first assistant row of each run), and on the
+// active path exactly one sibling is rendered - but that row can be a
+// THINKING row or a TOOL CALL row (a multi-row replay), which render
+// as ThinkingBlock/ToolCallLine, not bubbles. One anchor per branch,
+// resolved in this order:
+//   1. the head row is an assistant bubble (a plain one-row reply -
+//      the classic case) - the bubble anchors, variantOf semantics.
+//   2. head renders as thinking/tool and the run carries a stored TEXT
+//      row - the run's last stored assistant bubble anchors (its id is
+//      not a sibling; variantLabel falls back to the block's active
+//      index, which is this bubble's position).
+//   3. no stored text row - the head row itself anchors (the chip
+//      mounts on its thinking block / tool line).
+// The keyed map is by the anchor item's store id; live items (no id)
+// resolve to nothing - the switcher mounts only on stored rows. Pure.
+export function variantAnchors(
+  items: TranscriptItem[],
+  variants: VariantBlock[] | null | undefined,
+): Map<string, VariantBlock> {
+  const anchors = new Map<string, VariantBlock>();
+  if (!variants?.length) return anchors;
+  const idOf = (it: TranscriptItem): string | undefined =>
+    it.kind === "message" || it.kind === "thinking" || it.kind === "tool" ?
+      it.id
+    : undefined;
+  for (const v of variants) {
+    if (!v || v.count < 2) continue;
+    const head = v.siblings?.[Math.min(Math.max(v.active, 0), (v.siblings?.length ?? 1) - 1)];
+    if (!head) continue;
+    const headItem = items.find((it) => idOf(it) === head);
+    if (!headItem) continue; // branch not on the rendered path
+    if (headItem.kind === "message" && variantOf(headItem, [v])) {
+      anchors.set(head, v);
+      continue;
+    }
+    // the segment this run replays: strictly after the branch point's
+    // user bubble, up to the next user bubble - a later branch point
+    // (deeper fork) owns its own segment
+    let start = -1;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i]!;
+      if (it.kind === "message" && it.role === "user" && it.id === v.message_id) {
+        start = i;
+        break;
+      }
+    }
+    if (start >= 0) {
+      let end = items.length;
+      for (let i = start + 1; i < items.length; i++) {
+        const it = items[i]!;
+        if (it.kind === "message" && it.role === "user") {
+          end = i;
+          break;
+        }
+      }
+      for (let i = end - 1; i > start; i--) {
+        const it = items[i]!;
+        if (it.kind === "message" && it.role === "assistant" && it.id) {
+          anchors.set(it.id, v);
+          break;
+        }
+      }
+    }
+    if (![...anchors.values()].includes(v) &&
+        (headItem.kind === "thinking" || headItem.kind === "tool")) {
+      anchors.set(head, v);
+    }
+  }
+  return anchors;
 }
 
 // variantLabel is the one-indexed « 2/3 » math: THIS bubble's position

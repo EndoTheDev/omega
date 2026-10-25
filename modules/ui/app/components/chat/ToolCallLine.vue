@@ -28,6 +28,14 @@
         >{{ result }}</pre
       >
     </div>
+    <!-- variant anchor (t_0df4efd8): a tool CALL row can be a branch's
+         active head (a text-less multi-row replay) - the switcher
+         mounts on the line's tail -->
+    <VariantSwitcher
+      v-if="variant"
+      class="tool-variant"
+      :variant="variant"
+      @select="emit('select', $event)" />
   </details>
 </template>
 
@@ -36,6 +44,8 @@
 
   import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
   import { useElapsed } from "../../composables/useElapsed";
+  import VariantSwitcher from "./VariantSwitcher.vue";
+  import type { VariantBlock } from "../../composables/omega";
 
   const props = defineProps<{
     name: string;
@@ -46,6 +56,13 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // this row's branch block when the call row is the branch's active
+    // head (a text-less multi-row replay) - resolved by ChatTab
+    variant?: VariantBlock | null;
+  }>();
+
+  const emit = defineEmits<{
+    (e: "select", index: number): void;
   }>();
 
   // Elapsed counter (tool_call event -> tool_result arrival): ticks while
