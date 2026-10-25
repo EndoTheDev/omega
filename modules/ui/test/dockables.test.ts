@@ -687,8 +687,8 @@ describe("dock store: the pane-model reset", () => {
       "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions,insights,canvas",
       "none of the ten may close",
     );
-    // the main class still closes through the store - once a second main
-    // pane exists (Endo ruling 2026-10-25: the last one refuses)
+    // the main class still closes through the store on ANY census read
+    // (t_b620f99d: the last-main-pane law protects the pane, not tabs)
     const chatPane = paneById(tree, row.children[1].id);
     dock.split(chatPane.id, "row", "after");
     dock.closeTab(chatPane.id, 0);

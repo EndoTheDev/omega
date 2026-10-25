@@ -323,12 +323,11 @@ describe("tab ops", () => {
     return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
   }
   it("openTab appends and focuses; closeTab removes and shifts focus", () => {
-    // Endo ruling 2026-10-25: closeTab refuses on the LAST main pane, so
-    // the close mechanics ride a two-main-pane tree (the refusal has its
-    // own tests); the pane's own opener still targets it
+    // t_b620f99d: closeTab never consults the last-main-pane census, so
+    // the mechanics run on the plain single-pane tree; the emptied pane
+    // stays in the tree (the launcher state)
     const left = asPane(makePane("chat"));
-    const right = makePane("chat", null);
-    let t: DockNode = makeSplit("row", [left, right]);
+    let t: DockNode = left;
     t = openTab(t, left.id, { component: "scratch" });
     let p = findPane(t, left.id)!;
     assert.equal(p.tabs.length, 2);
