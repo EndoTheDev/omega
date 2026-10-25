@@ -91,7 +91,6 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// last-started server - one frontend is live per process.
 	if c.chat != nil {
 		c.srv.chat = c.chat
-		c.srv.chat.srv = c.srv
 		c.srv.chat.registerAt(deps.Ctx)
 	}
 	// Multi-bind mirror (t_c6f13a82): every bind's server joins the one
@@ -131,6 +130,15 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	c.srv.runTimeout = c.runTimeout
 	c.srv.titleModel = c.titleModel
 	c.srv.version = deps.Version
+	// The capsule pin goes live LAST, after every server field above
+	// is written: the Store publishes (release) a fully-wired server,
+	// so a reader that Loads the pin (acquire) never sees a
+	// half-wired one - a mid-wire pin let another bind's canvas build
+	// read this server's fields while wire still wrote them
+	// (t_1c9793a8). Last wire finished wins, same one-frontend law.
+	if c.chat != nil {
+		c.chat.srv.Store(c.srv)
+	}
 	return nil
 }
 
