@@ -1717,6 +1717,11 @@ labels stopped short of the right edge. */
   display: block;
   text-align: right;
 }
+/* Endo's comment (2026-10-26): inside the action row the duration rides
+   the row's right end - ONE line with fork/copy. */
+.msg-actions .msg-elapsed {
+  margin-left: auto;
+}
 .thinking-body {
   padding: 0 12px 10px;
   font-family: var(--mono);

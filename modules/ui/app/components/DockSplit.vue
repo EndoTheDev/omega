@@ -72,6 +72,7 @@
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
     DOCK_API_KEY,
+    CHAT_FLOOR_PX,
     type DockNode,
     type DockPane as DockPaneNode,
     type DockSplit,
@@ -97,8 +98,35 @@
   function cellStyleFor(child: DockNode, idx: number): Record<string, string> {
     const node = props.node as DockSplit; // root may be a bare pane; this runs for splits only
     const axis = node.direction === "row" ? "width" : "height";
-    if (child.kind === "pane" && child.fixed !== null)
+    // Endo's comment (2026-10-26): the bottom shell's FULLSCREEN view -
+    // the column renders ONLY the shell: the main row above hides, the
+    // shell flexes to fill. Session-only (the store owns the flag).
+    if (api.bottomFullscreen.value && node.direction === "column") {
+      const shell = node.children.some((c) => c.kind === "pane" && c.edge === "bottom");
+      if (shell) {
+        return child.kind === "pane" && child.edge === "bottom"
+          ? { [axis]: "auto", flex: "1 1 0" }
+          : { display: "none" };
+      }
+    }
+    if (child.kind === "pane" && child.fixed !== null) {
+      // Endo's comment (2026-10-26): the render clamp for column-fixed
+      // panes (the bottom shell today). A stored height larger than the
+      // content box (a window shrank after the drag) anchors the
+      // bottom pane so tall its TOP edge - the divider - climbs
+      // offscreen: ungrabbable, the exact "i cant drag the bottom pane
+      // anymore" report. max-height caps the RENDER at the chat's
+      // floor, so the divider always sits inside view and the next
+      // drag self-heals the stored value.
+      if (node.direction === "column") {
+        return {
+          [axis]: child.fixed + "px",
+          "max-height": `calc(100% - ${CHAT_FLOOR_PX}px)`,
+          flex: "0 0 auto",
+        };
+      }
       return { [axis]: child.fixed + "px", flex: "0 0 auto" };
+    }
     const n = node.children.length;
     const totalFlex = node.children.reduce(
       (a, c, k) =>

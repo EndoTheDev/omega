@@ -21,21 +21,21 @@
           :alt="'attached image ' + (i + 1)"
           @click="openImage(img)" />
       </div>
+      <!-- Endo's comment (2026-10-26): fork / copy / duration live on ONE
+           line at the bubble's bottom - the duration rides the action
+           row's right end. ASSISTANT responses only: user bubbles carry
+           no fork, no copy, no duration. While streaming the row hides
+           (no actions yet), so the live meter ticks on its own line
+           until the run ends. -->
       <span
-        v-if="elapsedLabel"
+        v-if="role === 'assistant' && streaming && elapsedLabel"
         class="msg-elapsed">{{ elapsedLabel }}</span
       >
       <span
         v-if="streaming"
         class="cursor" />
-      <!-- the action row (t_19c100dd, Endo ruling 2): the variant
-           switcher « n/n », fork and copy sit in ONE row at the
-           BOTTOM of the message - never top-edge chips. The row hides
-           while the bubble streams (a streaming bubble has no
-           actions); the switcher mounts only on a branch block, fork
-           only on historical rows. -->
       <div
-        v-if="!streaming"
+        v-if="!streaming && role === 'assistant'"
         class="msg-actions">
         <VariantSwitcher
           v-if="variant"
@@ -58,6 +58,9 @@
           type="button"
           :title="copied ? 'copied' : 'copy message'"
           @click.stop="copyMessage">{{ copied ? "copied" : "copy" }}</button>
+        <span
+          v-if="elapsedLabel"
+          class="msg-elapsed">{{ elapsedLabel }}</span>
       </div>
     </div>
   </div>

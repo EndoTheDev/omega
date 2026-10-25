@@ -131,8 +131,16 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
     assert.equal((chatMessage.match(/class="msg-actions"/g) ?? []).length, 1);
   });
 
-  it("the row hides while the message streams", () => {
-    assert.match(chatMessage, /<div\s+v-if="!streaming"\s+class="msg-actions">/);
+  it("the row hides while the message streams (assistant responses only)", () => {
+    // Endo's comment (2026-10-26): assistant-only + one-line duration
+    assert.match(chatMessage, /<div\s+v-if="!streaming && role === 'assistant'"\s+class="msg-actions">/);
+    // the duration rides the row's right end - ONE line with fork/copy
+    const actionsAt = chatMessage.indexOf('class="msg-actions"');
+    const elapsedAt = chatMessage.indexOf('class="msg-elapsed"', actionsAt);
+    assert.ok(elapsedAt > actionsAt, "the duration spans inside the action row");
+    // user bubbles carry no fork/copy/duration: both elapsed branches
+    // and the whole row gate on the assistant role
+    assert.match(chatMessage, /role === 'assistant' && streaming && elapsedLabel/);
   });
 
   it("the row is the bubble's last child - under the content, not a top edge", () => {

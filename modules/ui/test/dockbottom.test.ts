@@ -33,6 +33,7 @@ import {
   recalledEdgePx,
   MIN_PANE_PX,
   BOTTOM_DEFAULT_PX,
+  BOTTOM_MAX_FRACTION,
   BOTTOM_CLOSED_KEY,
   DOCK_LAYOUT_KEY,
   type DockNode,
@@ -377,6 +378,23 @@ describe("the horizontal divider drag (the bottom shell)", () => {
     const d = dragSplitDivider(split, 1, startPx, -400, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 380, "capped by the chat floor");
+  });
+
+  // Endo's comment (2026-10-26): the max share. A drag past 65% of the
+  // content box caps even when the chat floor leaves room - the
+  // swallowed window strands the divider offscreen (bottom-anchored
+  // geometry), ungrabbable
+  it("the bottom shell's growth stops at the max share (65%)", () => {
+    // 1200 content: the chat floor would allow 880, the max share is 780 -
+    // the share cap must bind first
+    const { split, startPx, contentPx } = column(200, 1200);
+    const d = dragSplitDivider(split, 1, startPx, -1000, contentPx);
+    const bottom = (d.split as DockSplit).children[1] as DockPane;
+    assert.equal(
+      bottom.fixed,
+      Math.floor(contentPx * BOTTOM_MAX_FRACTION),
+      "capped at the max share, not the chat floor",
+    );
   });
 });
 
