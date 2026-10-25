@@ -37,23 +37,11 @@
       <div
         v-if="!streaming"
         class="msg-actions">
-        <div
+        <VariantSwitcher
           v-if="variant"
-          class="variant-switcher">
-          <button
-            class="v-arrow"
-            type="button"
-            title="previous variant"
-            :disabled="vLabel.index <= 0"
-            @click.stop="emit('select', vLabel.index - 1)">«</button>
-          <span class="v-pos">{{ vLabel.index + 1 }}/{{ vLabel.count }}</span>
-          <button
-            class="v-arrow"
-            type="button"
-            title="next variant"
-            :disabled="vLabel.index >= vLabel.count - 1"
-            @click.stop="emit('select', vLabel.index + 1)">»</button>
-        </div>
+          :variant="variant"
+          :item-id="itemId"
+          @select="$emit('select', $event)" />
         <!-- fork affordance (t_a62eeb43): any HISTORICAL message carries
              it. Click anchors the composer - the next send continues
              from this message. -->
@@ -79,13 +67,13 @@
   import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../../composables/codeblocks";
+  import VariantSwitcher from "./VariantSwitcher.vue";
   import {
     createRenderScheduler,
     dataUrl,
     formatMsgTime,
     renderMarkdown,
     type OmegaImage,
-    variantLabel,
     type VariantBlock,
   } from "../../composables/omega";
   import { useElapsed } from "../../composables/useElapsed";
@@ -115,16 +103,6 @@
     (e: "select", index: number): void;
     (e: "fork"): void;
   }>();
-
-  // the « 2/3 » read: THIS bubble's 0-based sibling position clamped
-  // into range (variantLabel), one-indexed plus the total in the span.
-  // Read only under the v-if="variant" branch; the fallback keeps the
-  // computed total (a referrer outside that branch would have no slot).
-  const vLabel = computed(() =>
-    props.variant ?
-      variantLabel(props.variant, props.itemId)
-      : { index: 0, count: 1 },
-  );
 
   // Click-to-open: a data URL in a new browser tab is the plain full
   // view (no lightbox infrastructure for v1).
