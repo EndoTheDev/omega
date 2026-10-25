@@ -22,6 +22,6 @@ fi
 # generate, not build: ssr:false build emits a nitro server, generate emits
 # the static SPA (index.html + _nuxt/) that the go binary embeds
 npx nuxt generate
-rm -rf ../http_channel/static
-cp -r dist ../http_channel/static
-echo "synced modules/ui/dist -> modules/http_channel/static"
+rm -rf ../../http_channel/static
+cp -r dist ../../http_channel/static
+echo "synced modules/ui/dist -> http_channel/static"
