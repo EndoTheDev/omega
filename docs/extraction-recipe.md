@@ -268,7 +268,7 @@ Places the recipe could not be written cleanly. Each is a finding,
 not a hedge. None is fixed by this card except where noted.
 
 1. **tui imports the store capsule for one helper function**
-   — http_channel/tui.go:23 imports
+   — tui/tui.go:23 imports
    `github.com/EndoTheDev/omega/modules/store`; the only
    package-qualified use is `store.SessionDisplayName(...)` at
    tui.go:1525 (the other `store.X` greps are calls through the
