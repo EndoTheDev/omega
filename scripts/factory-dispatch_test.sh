@@ -57,6 +57,21 @@ l=$(sqlite3 "$T3DB" "SELECT claim_lock IS NULL FROM tasks WHERE id='t_rev_free';
 [ "$l" = "1" ] && ok || bad "T3: unpark left claim_lock='$l' (must restore NULL, never '')"
 rm -f "$T3DB"
 
+# T4 (local + CI): guard bug #5 - the candidate sort must be priority
+# first (DESC, higher = more urgent), ties oldest-first.
+T4DB=$(mktemp)
+sqlite3 "$T4DB" "CREATE TABLE tasks(id TEXT, status TEXT, claim_lock TEXT, priority INTEGER DEFAULT 0, created_at TEXT);
+INSERT INTO tasks VALUES('t_old_low','ready',NULL,0,'2026-10-01');
+INSERT INTO tasks VALUES('t_mid_arc','ready',NULL,5,'2026-10-20');
+INSERT INTO tasks VALUES('t_new_urgent','ready',NULL,10,'2026-10-26');
+INSERT INTO tasks VALUES('t_newer_low','ready',NULL,0,'2026-10-27');" 2>/dev/null
+order=$(sqlite3 "$T4DB" "SELECT id FROM tasks WHERE status='ready' ORDER BY priority DESC, created_at;")
+[ "$order" = "t_new_urgent
+t_mid_arc
+t_old_low
+t_newer_low" ] && ok || bad "T4: priority sort wrong - got: $order"
+rm -f "$T4DB"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
