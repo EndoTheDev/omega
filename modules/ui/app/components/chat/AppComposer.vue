@@ -73,16 +73,15 @@
       <ThinkingSelect
         :level="thinking"
         @update:level="$emit('update:thinking', $event)" />
-      <!-- ONE morphing button (t_357cbe9c): while a run streams this is
-           the stop control; idle, a typed draft or a pending attachment
-           means send (disabled when there is nothing to send), and an
-           exchange to replay with an empty composer means retry. Draft
-           beats retry: typed input is a new message, never a replay.
-           The separate paperclip + retry buttons died - the attach
-           affordance lives in the composer row's "+" now. -->
+      <!-- ONE morphing button (t_357cbe9c; retry left in t_95d2bc34):
+           while a run streams this is the stop control; idle it is send
+           always - dimmed (disabled) when a draft and the attachments
+           are both empty, armed once there is something to send. The
+           replay affordance renders in the newest response's action row
+           (ChatMessage's msg-retry chip), never here. -->
       <button
         class="send"
-        :class="{ cancel: face === 'stop', retry: face === 'retry' }"
+        :class="{ cancel: face === 'stop' }"
         type="button"
         :title="faceTitle"
         :disabled="face === 'send' && !canSend"
@@ -105,8 +104,6 @@
     models: string[];
     // THIS session's run is streaming: the send button is CANCEL now
     busy: boolean;
-    // idle with a last user message in the transcript: retry shows
-    canRetry: boolean;
     thinking: string;
     // pending image attachments - owned by the app: the transcript
     // bubble and the interrupted retry both need them
@@ -122,7 +119,6 @@
     (e: "update:thinking", value: string): void;
     (e: "send"): void;
     (e: "cancel"): void;
-    (e: "retry"): void;
     (e: "attach-files", images: OmegaImage[]): void;
     (e: "remove-attachment", index: number): void;
     (e: "attach-url", url: string): void;
@@ -132,23 +128,17 @@
   // send needs text OR an attachment - image-only messages are valid
   const canSend = computed(() => !!props.draft.trim() || props.attachments.length > 0);
 
-  // the morph (t_357cbe9c): busy -> stop, empty composer + exchange ->
-  // retry, else send. retry-face when the transcript has an exchange to
-  // replay and the composer carries nothing to send.
-  const face = computed(() => composerFace(props.busy, props.canRetry, canSend.value));
-  const faceLabel = computed(() =>
-    face.value === "stop" ? "■ stop" : face.value === "retry" ? "↻ retry" : "send",
-  );
+  // the morph (t_357cbe9c): busy -> stop, else send. The retry face left
+  // with the affordance (t_95d2bc34) - the action row owns replay now.
+  const face = computed(() => composerFace(props.busy));
+  const faceLabel = computed(() => (face.value === "stop" ? "■ stop" : "send"));
   const faceTitle = computed(() =>
     face.value === "stop" ?
       "cancel the running response (what streamed stays)"
-      : face.value === "retry" ?
-        "re-run the last user message - the fresh response appends below it"
-        : "send",
+      : "send",
   );
   function onButton() {
     if (face.value === "stop") emit("cancel");
-    else if (face.value === "retry") emit("retry");
     else emit("send");
   }
 

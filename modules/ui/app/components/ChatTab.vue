@@ -61,10 +61,12 @@
               :key="itemKey(item)"
               :item="item"
               :variant="variantOfItem(item)"
+              :retryable="retryableOfItem(item)"
               :session-id="sessionId"
               :show-thinking="showThinking"
               @select="onSelect"
-              @fork="onFork" />
+              @fork="onFork"
+              @retry="onRetry" />
           </div>
         </template>
         <template v-else>
@@ -73,10 +75,12 @@
             :key="itemKey(item)"
             :item="item"
             :variant="variantOfItem(item)"
+            :retryable="retryableOfItem(item)"
             :session-id="sessionId"
             :show-thinking="showThinking"
             @select="onSelect"
-            @fork="onFork" />
+            @fork="onFork"
+            @retry="onRetry" />
         </template>
       </div>
       <!-- the activity line (card t_e9baac4b): phase-aware narration
@@ -103,7 +107,6 @@
       :model="model"
       :models="models"
       :busy="busy"
-      :can-retry="canRetry"
       :thinking="thinking"
       :attachments="state.attachments"
       :fork-anchor="forkAnchor"
@@ -112,7 +115,6 @@
       @update:thinking="emit('update:thinking', $event)"
       @send="onSend"
       @cancel="host.cancel(stateKey)"
-      @retry="onRetry"
       @attach-files="(imgs: never[]) => host.attachFiles(stateKey, imgs)"
       @remove-attachment="(i: number) => host.removeAttachment(stateKey, i)"
       @attach-url="(u: string) => host.attachUrl(stateKey, u)" />
@@ -259,6 +261,29 @@
       !state.value?.ephemeral,
   );
 
+  // the retry affordance lives on the message action row (t_95d2bc34):
+  // the transcript owner derives BOTH signals - the run must be idle
+  // (canRetry above; the row also hides while the row's bubble streams)
+  // and this item is the NEWEST assistant response, the one the retry's
+  // sibling replay appends under. Older responses show fork/copy only.
+  const lastAssistantId = computed(() => {
+    const items = transcript.value;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i]!;
+      if (it.kind === "message" && it.role === "assistant") return it.id ?? null;
+    }
+    return null;
+  });
+  function retryableOfItem(item: TranscriptItem): boolean {
+    return (
+      canRetry.value &&
+      item.kind === "message" &&
+      item.role === "assistant" &&
+      !!item.id &&
+      item.id === lastAssistantId.value
+    );
+  }
+
   // --- stacked live-run layout (card t_c40164cf): derived, no new
   // state - the last user message is the pinned header, the items after
   // it are the run's agent body; the branch mounts for the run's
@@ -402,8 +427,9 @@
     host.submit(stateKey, text, props.model, thinkingLevelWire(props.thinking), fork ?? undefined);
   }
   function onRetry() {
-    // the chat panel's retry action through the action pipe - the
-    // server replays the last user turn as a sibling variant
+    // the message action row's retry chip (t_95d2bc34): the chat
+    // panel's retry action through the action pipe - the server replays
+    // the last user turn as a sibling variant
     void host.retry(stateKey);
   }
 

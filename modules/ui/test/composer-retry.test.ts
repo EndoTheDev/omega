@@ -1,9 +1,9 @@
 // omega webui: the morphing composer button + the retry action (t_357cbe9c
-// + chat-last 2a). ONE button: busy -> stop, empty composer + exchange ->
-// retry, else send (draft beats retry). The attach affordance lives in
-// the input row's "+" now, and retry dispatches the chat panel's retry
-// action through the action pipe (no /chat flag, no text resubmit).
-// Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
+// + chat-last 2a; retry face retired t_95d2bc34). ONE button: busy -> stop,
+// idle -> send (dimmed at rest, armed by a draft or attachment). The RETRY
+// affordance rendered in the message action row now - the newest assistant
+// response's chip dispatches the same action pipe (no /chat flag, no text
+// resubmit). Run: node --test modules/ui/test/ (node >= 23 runs TS natively)
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -24,33 +24,43 @@ const composer = readFileSync(
   join(here, "../app/components/chat/AppComposer.vue"),
   "utf8",
 );
+const chatMessage = readFileSync(
+  join(here, "../app/components/chat/ChatMessage.vue"),
+  "utf8",
+);
+const chatItem = readFileSync(
+  join(here, "../app/components/ChatItem.vue"),
+  "utf8",
+);
+const chatTab = readFileSync(
+  join(here, "../app/components/ChatTab.vue"),
+  "utf8",
+);
 const modelSelect = readFileSync(
   join(here, "../app/components/chat/ModelSelect.vue"),
   "utf8",
 );
 
-describe("composerFace: the morphing button's three faces", () => {
-  // canSend = draft.trim() || attachments.length>0 - encoded here as the
-  // boolean the composer feeds in
-  it("busy is stop - always, whatever the composer carries", () => {
-    assert.equal(composerFace(true, true, false), "stop");
-    assert.equal(composerFace(true, false, true), "stop");
-    assert.equal(composerFace(true, false, false), "stop");
+describe("composerFace: the morphing button's two faces", () => {
+  it("busy is stop - always", () => {
+    assert.equal(composerFace(true), "stop");
   });
-  it("idle + typed draft means send even when an exchange exists", () => {
-    assert.equal(composerFace(false, true, true), "send");
-    assert.equal(composerFace(false, false, true), "send");
+  it("idle is send - with or without an exchange in the transcript", () => {
+    assert.equal(composerFace(false), "send");
   });
-  it("idle + empty composer + exchange exists means retry", () => {
-    assert.equal(composerFace(false, true, false), "retry");
+  it("the composer no longer renders a retry face", () => {
+    // the retry affordance moved to the action row (t_95d2bc34): the
+    // composer's face vocabulary carries no retry branch, the button
+    // never wears the retry class, and no canRetry prop reaches it
+    assert.doesNotMatch(composer, /face === ['"]retry/);
+    assert.doesNotMatch(composer, /canRetry/);
+    assert.doesNotMatch(composer, /class="\{ cancel: face === 'stop', retry/);
+    assert.doesNotMatch(css, /\.send\.retry/);
   });
-  it("idle + empty composer + no exchange is a disabled send", () => {
-    assert.equal(composerFace(false, false, false), "send");
-  });
-  it("nothing to send is not disabled in the retry face", () => {
-    // the button's disabled binding disables ONLY on the send face
-    const face = composerFace(false, true, false);
-    assert.notEqual(face, "send");
+  it("idle + empty composer is the DIMMED send (disabled, not morphing)", () => {
+    // the disabled binding disables ONLY on the send face - which at
+    // idle + no draft (no attachments) is exactly where it lands
+    assert.equal(composerFace(false), "send");
   });
 });
 
@@ -59,7 +69,8 @@ describe("retry rides the action pipe", () => {
   // action:"retry", args:{session}} - the server replays the persisted
   // last user turn as a sibling variant. A fetch stub proves the wire
   // shape without a canvas store: the module qualification is the
-  // chat panel's contract (card t_ec45b670).
+  // chat panel's contract (card t_ec45b670). The TRIGGER is the newest
+  // assistant response's action-row chip now (card t_95d2bc34).
   const saved = globalThis.fetch;
   afterEach(() => {
     globalThis.fetch = saved;
@@ -133,6 +144,38 @@ describe("retry rides the action pipe", () => {
   });
 });
 
+describe("the retry affordance lives in the message action row", () => {
+  // the composer dropped the face; the chip took it (t_95d2bc34 ruling
+  // 1): only the newest assistant response carries it, gated by the
+  // transcript OWNER (ChatTab) - ChatMessage never knows the transcript
+  it("the msg-retry chip renders beside fork/copy, inside the action row", () => {
+    assert.match(chatMessage, /class="msg-retry"/);
+    const actionsAt = chatMessage.indexOf('class="msg-actions"');
+    const copyAt = chatMessage.indexOf('class="msg-copy"', actionsAt);
+    const retryAt = chatMessage.indexOf('class="msg-retry"', actionsAt);
+    assert.ok(retryAt > actionsAt, "the chip lives inside the action row");
+    assert.ok(retryAt > copyAt, "the chip sits beside fork/copy");
+    // the row is assistant-only and hidden while streaming - the chip
+    // rides the row's own v-if, it renders nowhere else
+    const otherAt = chatMessage.indexOf('class="msg-retry"', retryAt + 1);
+    assert.equal(otherAt, -1, "one chip site, inside the row");
+  });
+
+  it("ChatMessage receives the newest+idle signal from the transcript owner", () => {
+    // ChatMessage does not know the transcript: ChatItem carries the
+    // retryable prop through, ChatTab derives it (idle + newest response)
+    assert.match(chatItem, /:retryable="retryable && item\.role === 'assistant'"/);
+    assert.match(chatTab, /retryableOfItem\(item\)/);
+    // the signal: canRetry (idle gate) AND the item IS the newest
+    // assistant response
+    assert.match(chatTab, /item\.id === lastAssistantId\.value/);
+    // the chip's click carries the SAME host.retry the composer called
+    // - no new endpoint, no new plumbing
+    assert.match(chatTab, /@retry="onRetry"/);
+    assert.match(chatTab, /void host\.retry\(stateKey\)/);
+  });
+});
+
 describe("composer structure: one button, + in the input row", () => {
   it("the toolbar carries exactly ONE button - the morphing slot", () => {
     // the toolbar section lives between '<div class="toolbar">' and
@@ -143,7 +186,6 @@ describe("composer structure: one button, + in the input row", () => {
     const buttons = toolbar.match(/<button/g) ?? [];
     assert.equal(buttons.length, 1, "toolbar has exactly one button");
     assert.match(toolbar, /:class="\{ cancel: face === 'stop'/, "the stop face rides the same element");
-    assert.match(toolbar, /retry: face === 'retry'/, "the retry face rides the same element");
   });
   it("the paperclip toolbar button is dead", () => {
     assert.doesNotMatch(composer, /pick-btn/);
@@ -173,7 +215,7 @@ describe("the squeeze: 320px floor keeps one button + two chips on a row", () =>
   it("the model chip's name sits in an ellipsis-able span", () => {
     assert.match(modelSelect, /class="chip-name"/);
   });
-  it("the plus input row never contributes to the toolbar wrap", () => {
+  it("the + input row never contributes to the toolbar wrap", () => {
     assert.match(css, /\.composer-row\s*\{[^}]*display: flex/);
     assert.match(css, /\.plus-btn\s*\{[^}]*flex: none/);
   });

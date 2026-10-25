@@ -13,8 +13,10 @@
     :variant="item.role === 'assistant' ? variant : null"
     :final-ms="item.finalMs"
     :streaming="item.streaming"
+    :retryable="retryable && item.role === 'assistant'"
     @select="(i) => item.id && variant && $emit('select', variant.message_id, i)"
-    @fork="item.id && $emit('fork', item.id)" />
+    @fork="item.id && $emit('fork', item.id)"
+    @retry="$emit('retry')" />
   <ThinkingBlock
     v-else-if="item.kind === 'thinking' && showThinking"
     :content="item.content"
@@ -46,11 +48,15 @@
     // this item's branch block (assistant messages with >=2 sibling
     // runs) - resolved by ChatTab through variantOf, null elsewhere
     variant?: VariantBlock | null;
+    // the run is idle AND this item is the transcript's newest assistant
+    // response - ChatMessage renders the retry chip inside the action row
+    retryable?: boolean;
     // the chat tab's session id - verdict cards POST answers against it
     sessionId?: string;
   }>();
   const emit = defineEmits<{
     (e: "select", messageId: string, index: number): void;
     (e: "fork", messageId: string): void;
+    (e: "retry"): void;
   }>();
 </script>
