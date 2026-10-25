@@ -39,6 +39,24 @@ else
 	echo "T2: skipped (no board DB at $DB)"
 fi
 
+# T3 (local + CI): guard bug #4 - review-park SQL. A review-state card
+# gets the dispatch-hold sentinel ONLY when its lock is free; a foreign
+# sentinel (design-hold) survives; unpark restores NULL, never ''.
+T3DB=$(mktemp)
+sqlite3 "$T3DB" "CREATE TABLE tasks(id TEXT, status TEXT, claim_lock TEXT);
+INSERT INTO tasks VALUES('t_rev_free','review',NULL);
+INSERT INTO tasks VALUES('t_rev_held','review','pibtw:design-hold');
+INSERT INTO tasks VALUES('t_ready1','ready',NULL);" 2>/dev/null
+sqlite3 "$T3DB" "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='t_rev_free' AND (claim_lock IS NULL OR claim_lock='');"
+l=$(sqlite3 "$T3DB" "SELECT claim_lock FROM tasks WHERE id='t_rev_free';")
+[ "$l" = "pibtw:dispatch-hold" ] && ok || bad "T3: free review card not parked (claim_lock='$l')"
+l=$(sqlite3 "$T3DB" "SELECT claim_lock FROM tasks WHERE id='t_rev_held';")
+[ "$l" = "pibtw:design-hold" ] && ok || bad "T3: park overwrote a foreign sentinel ('$l')"
+sqlite3 "$T3DB" "UPDATE tasks SET claim_lock=NULL WHERE id='t_rev_free' AND claim_lock='pibtw:dispatch-hold';"
+l=$(sqlite3 "$T3DB" "SELECT claim_lock IS NULL FROM tasks WHERE id='t_rev_free';")
+[ "$l" = "1" ] && ok || bad "T3: unpark left claim_lock='$l' (must restore NULL, never '')"
+rm -f "$T3DB"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
