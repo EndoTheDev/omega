@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -98,28 +97,17 @@ var exclusiveSeams = map[string]bool{
 	"verdicts":       true,
 }
 
-// MountAll sorts plugins by dependencies and mounts each into ctx.
-// Returns an error if:
-//   - two plugins provide the same exclusive seam (conflict)
-//   - a required seam is not provided by any plugin (missing dep)
-//   - a plugin's Mount returns an error
-func MountAll(plugins []Plugin, ctx *Context) error {
-	provides, err := buildProvidesMap(plugins)
-	if err != nil {
-		return err
-	}
-
-	ordered, err := topoSort(plugins, provides)
-	if err != nil {
-		return err
-	}
-
-	return mountPlugins(ordered, ctx)
-}
+// MountAll lives in extensionapi.go: it keeps its classic signature
+// and delegates to MountAllAPI, which owns the plugin-set wiring
+// (provides sweep for conflicts, topo sort, mount dispatch, emitter
+// delivery) in both mount styles.
 
 // buildProvidesMap builds the seam -> plugin name map and detects conflicts
-// where two plugins provide the same exclusive seam.
-func buildProvidesMap(plugins []Plugin) (map[string]string, error) {
+// where two plugins provide the same exclusive seam. The exclusive
+// claims also land on the registry's owner ledger, so classic provides
+// and API seam registrations conflict with each other, not just among
+// themselves (one name, one tenant - Q5).
+func buildProvidesMap(plugins []Plugin, reg *Registry) (map[string]string, error) {
 	provides := make(map[string]string)
 	for _, p := range plugins {
 		for _, seam := range p.Provides() {
@@ -127,6 +115,7 @@ func buildProvidesMap(plugins []Plugin) (map[string]string, error) {
 				if existing, ok := provides[seam]; ok {
 					return nil, fmt.Errorf("seam %q provided by both %q and %q", seam, existing, p.Name())
 				}
+				reg.claimSlotQuiet(seam, p.Name())
 			}
 			provides[seam] = p.Name()
 		}
@@ -187,47 +176,7 @@ func topoSort(plugins []Plugin, provides map[string]string) ([]Plugin, error) {
 	return ordered, nil
 }
 
-// mountPlugins mounts each plugin in order and records what it contributed
-// so /extensions can display accurate counts.
-func mountPlugins(ordered []Plugin, ctx *Context) error {
-	for _, p := range ordered {
-		beforeTools := len(ctx.ToolProviders)
-		beforeCmds := len(ctx.Commands)
-		if err := p.Mount(ctx); err != nil {
-			return fmt.Errorf("mount %q: %w", p.Name(), err)
-		}
-		info := core.ExtensionInfo{
-			Name:  p.Name(),
-			Seams: p.Provides(),
-		}
-		if d, ok := p.(Describer); ok {
-			info.Description = d.Description()
-		}
-		// Count tools this plugin added.
-		for _, tp := range ctx.ToolProviders[beforeTools:] {
-			if tp == nil {
-				continue
-			}
-			for name, t := range tp.Tools() {
-				// Alias entries are model-facing compat shims, not inventory:
-				// they stay callable while hidden from the display counts.
-				if t.AliasOf != "" {
-					continue
-				}
-				info.Tools++
-				info.ToolList = append(info.ToolList, core.ToolInfo{
-					Name:        name,
-					Description: t.Description,
-					Actions:     t.Actions,
-				})
-			}
-		}
-		// Ensure deterministic order: map iteration is non-deterministic in Go.
-		sort.SliceStable(info.ToolList, func(i, j int) bool { return info.ToolList[i].Name < info.ToolList[j].Name })
-		// Count commands this plugin added.
-		info.Commands = len(ctx.Commands) - beforeCmds
-		ctx.Infos = append(ctx.Infos, info)
-	}
-
-	return nil
-}
+// mountPlugins lives in extensionapi.go - it is the dispatch point of
+// the dual mount (APIPlugin -> registration surface, Plugin ->
+// classic Mount) and records what it contributed so /extensions can
+// display accurate counts.
