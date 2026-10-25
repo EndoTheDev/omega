@@ -285,7 +285,7 @@ describe("chat host: the 409 and the busy affordance", () => {
       const st = host.states.get("c1")!;
       // the transcript belongs to the canvas panel - a refused send
       // paints NOTHING; the status line above the composer carries it
-      // and the composer's retry face is the affordance once it frees
+      // and the action row's retry chip is the affordance once it frees
       assert.equal(st.restored.length, 0);
       assert.match(st.statusLine, /busy/);
       assert.equal(host.composerBusy("c1"), false);

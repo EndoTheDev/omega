@@ -8,7 +8,10 @@
 # response stays reachable through the « n/n » switcher. Since t_19c100dd
 # the retry also renders IN PLACE mid-run (the old answer leaves the
 # panel while the fresh one streams) and the action row (switcher,
-# fork, copy) sits at the response's bottom.
+# fork, copy) sits at the response's bottom. Since t_95d2bc34 the retry
+# TRIGGER rides the newest assistant response's action row (the
+# msg-retry chip) - the composer carries no retry face any more; idle
+# with no draft it is the dimmed send button.
 #
 # Every DOM assertion is scoped to the FOCUSED chat tab's pane: a
 # long-lived chrome carries earlier journeys' tabs (dock state restores
@@ -68,17 +71,28 @@ scoped_wait '(p.querySelector(".msg.user")||{innerText:""}).innerText.includes("
 scoped_wait 'p.querySelector(".composer button.send.cancel") ? 0 : 1' 90
 step "ok: first exchange complete"
 
-# post-run retry: the composer's replay face (empty composer + a last
-# exchange = the send button morphs into retry)
-face=$(panejs '(p.querySelector("button.send")||{className:""}).className.includes("retry") ? 1 : 0')
-assert_eq "$face" "1" "composer offers retry post-run"
+# post-run retry: the affordance now lives on the newest assistant
+# response's action row (t_95d2bc34). The composer shows NO retry face
+# - idle with an empty draft it is the DIMMED send button - and the
+# newest response's action row carries exactly ONE msg-retry chip.
+face=$(panejs '(p.querySelector(".composer button.send")||{className:""}).className.includes("retry") ? 1 : 0')
+assert_eq "$face" "0" "the composer dropped the retry face"
+dim=$(panejs '(p.querySelector(".composer button.send")||{}).disabled ? 1 : 0')
+assert_eq "$dim" "1" "idle + no draft: the composer shows the dimmed send button"
+chip=$(panejs 'p.querySelectorAll(".msg.assistant .msg-retry").length')
+assert_eq "$chip" "1" "the newest response's action row carries the retry chip"
 
-# click the retry face inside the pane
-panejs 'p.querySelector("button.send").click(), 1' >/dev/null 2>&1 || die "retry click failed"
+# click the retry chip on the newest response's action row
+panejs '[...p.querySelectorAll(".msg.assistant .msg-retry")].pop().click(), 1' >/dev/null 2>&1 || die "action-row retry click failed"
 step "retry clicked"
 
 scoped_wait 'p.querySelector(".composer button.send.cancel") ? 0 : 1' 120
 step "ok: replay finished"
+
+# one chip still: the fresh response IS the newest (in place - the old
+# sibling's slot was replaced, never stacked)
+chip=$(panejs 'p.querySelectorAll(".msg.assistant .msg-retry").length')
+assert_eq "$chip" "1" "one retry chip after the replay - the fresh response is the newest"
 
 # THE invariant: exactly ONE user bubble in the focused tab - the replay
 # never persists (nor renders) a duplicate user turn

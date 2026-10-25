@@ -234,26 +234,24 @@ export interface ChatHost {
 
 export const CHAT_HOST_KEY: InjectionKey<ChatHost> = Symbol("omega-chat-host");
 
-// --- the ONE composer button's face (t_357cbe9c) ---
+// --- the ONE composer button's face (t_357cbe9c; retry left in
+// t_95d2bc34) ---
 //
-// retry and send merge into a single morphing affordance: while this
-// session's run streams the button is the stop control; idle, a typed
-// draft or a pending attachment means send (the button disables when
-// there is nothing to send), and an empty composer with an exchange in
-// the transcript means retry. Draft beats retry: typed input is a new
-// message, never a replay. Retry/stop dispatch through the action
-// pipe (the same faces the panel declares); send stays native /chat.
-// Pure so the morph states stay testable.
+// stop and send stay in ONE morphing affordance: while this session's
+// run streams the button is the stop control; idle it is send always -
+// the dimmed send at rest (no draft, nothing to send), the enabled send
+// once a draft or attachment is there. The RETRY FACE DROPPED (Endo,
+// 2026-10-26): the replay affordance renders in the newest assistant
+// response's action row now (the msg-retry chip; ChatMessage) - same
+// host.retry() pipe dispatch, no /chat flag, no text resubmit. Pure so
+// the morph states stay testable.
 
-export type ComposerFace = "stop" | "retry" | "send";
+export type ComposerFace = "stop" | "send";
 
 export function composerFace(
   busy: boolean,
-  canRetry: boolean,
-  canSend: boolean,
 ): ComposerFace {
   if (busy) return "stop";
-  if (!canSend && canRetry) return "retry";
   return "send";
 }
 
@@ -625,7 +623,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   // variant (detached) - the reattach + panel deltas are the surfaces,
   // no wire messages from here. The composer's model/thinking chips do
   // not ride the action (the pipe action carries the session alone) -
-  // the replay takes the session's own run configuration.
+  // the replay takes the session's own run configuration. Triggered
+  // from the newest assistant response's action row (t_95d2bc34; the
+  // composer's retry face retired).
   async function retry(key: string): Promise<boolean> {
     const st = ensureState(key);
     if (composerBusy(key)) return false;
@@ -997,8 +997,7 @@ export function createCanvasTranscript(): CanvasTranscript {
   return { apply };
 }
 
-// hasUserExchange is the pure gate behind the composer's retry face:
-// the transcript carries at least one user message.
-export function hasUserExchange(items: TranscriptItem[]): boolean {
-  return lastUserText(items) !== null;
-}
+// the retry gate moved with the affordance (t_95d2bc34): the newest
+// assistant response's action row carries the chip - ChatTab derives
+// the presence + the target item, ChatMessage renders it.
+// lastUserText stays the transcript-side presence check.
