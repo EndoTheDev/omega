@@ -105,6 +105,16 @@ RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 # -- candidates, oldest first --
 mapfile -t CAND < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='ready' ORDER BY created_at;")
 PARKED=(); LEGAL=0
+
+# guard bug #4 (2026-10-25): hermes kanban dispatch once claimed a card
+# that had flipped ready -> review mid-pass (t_bc321318 got a zombie
+# worker spawned onto already-merged work). The review pass and this
+# dispatch call race on status; park review-state cards for the
+# duration of the dispatch call - the EXIT trap unparks them.
+# Ceiling: if the daemon ever mis-claims todo/blocked cards the same
+# way, widen this status list.
+mapfile -t REVIEWCARDS < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='review' AND (claim_lock IS NULL OR claim_lock='');" 2>/dev/null || true)
+PARKED+=("${REVIEWCARDS[@]:-}")
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
