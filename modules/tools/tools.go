@@ -64,7 +64,8 @@ func filesLegacyName(action string) string {
 // consolidated into one "files" domain tool: the domain description
 // carries the contract (targets, atomic batch), Actions carries the
 // verbs, and the legacy files.read/files.write/files.edit names stay
-// registered as alias shims for one release.
+// registered as alias shims until the v0.12 mount migration retires
+// them.
 func (p *ToolProvider) Tools() map[string]core.Tool {
 	tools := map[string]core.Tool{
 		"shell.run": {
@@ -120,8 +121,8 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 
 // fileAliasTools builds the legacy-name compat shims: each maps its old
 // tool name onto the folded files tool with the action pre-set. They
-// stay callable by the model for one release (remove next release - the
-// upgrade path) and are hidden from the prompt and /tools inventory by
+// stay callable by the model until the v0.12 mount migration retires
+// them and are hidden from the prompt and /tools inventory by
 // the AliasOf marker.
 func (p *ToolProvider) fileAliasTools() map[string]core.Tool {
 	out := make(map[string]core.Tool, len(filesActions))

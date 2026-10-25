@@ -28,8 +28,9 @@ type Tool struct {
 
 	// AliasOf marks a backward-compatibility shim: an old tool name
 	// that maps onto a folded domain tool. Aliases stay callable by
-	// the model for one release but are hidden from the prompt and
-	// the /tools inventory, which show the folded tool only.
+	// the model until the v0.12 mount migration retires them but are
+	// hidden from the prompt and the /tools inventory, which show the
+	// folded tool only.
 	AliasOf string
 }
 

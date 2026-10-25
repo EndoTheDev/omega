@@ -48,8 +48,8 @@ var webActions = []core.ToolAction{
 }
 
 // Tools returns the web domain tool. The two dotted verbs fold into one
-// action protocol; the legacy names stay registered as alias shims for
-// one release.
+// action protocol; the legacy names stay registered as alias shims until
+// the v0.12 mount migration retires them.
 func (e *Extension) Tools() map[string]core.Tool {
 	tools := map[string]core.Tool{
 		"web": {

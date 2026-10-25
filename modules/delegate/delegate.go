@@ -73,7 +73,7 @@ var delegateActions = []core.ToolAction{
 
 // Tools returns the delegate domain tool. The two dotted verbs fold
 // into one action protocol; the legacy names stay registered as alias
-// shims for one release.
+// shims until the v0.12 mount migration retires them.
 func (d *Delegate) Tools() map[string]core.Tool {
 	tools := map[string]core.Tool{
 		"delegate": {

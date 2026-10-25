@@ -261,7 +261,8 @@ var legacyTaskNames = map[string]string{
 // Tools returns the board tools. The six dotted verbs are consolidated
 // into one "task" domain tool with an action enum (derived from
 // taskActions) plus a batch operations array; the legacy task.* names
-// stay registered as alias shims for one release.
+// stay registered as alias shims until the v0.12 mount migration
+// retires them.
 func (p *ToolProvider) Tools() map[string]core.Tool {
 	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
 	tools := map[string]core.Tool{
