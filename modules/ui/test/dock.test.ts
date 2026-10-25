@@ -323,21 +323,26 @@ describe("tab ops", () => {
     return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
   }
   it("openTab appends and focuses; closeTab removes and shifts focus", () => {
-    const t0 = asPane(makePane("chat"));
-    const id = t0.id;
-    let t: DockNode = openTab(t0, id, { component: "scratch" });
-    let p = findPane(t, id)!;
+    // Endo ruling 2026-10-25: closeTab refuses on the LAST main pane, so
+    // the close mechanics ride a two-main-pane tree (the refusal has its
+    // own tests); the pane's own opener still targets it
+    const left = asPane(makePane("chat"));
+    const right = makePane("chat", null);
+    let t: DockNode = makeSplit("row", [left, right]);
+    t = openTab(t, left.id, { component: "scratch" });
+    let p = findPane(t, left.id)!;
     assert.equal(p.tabs.length, 2);
     assert.equal(p.active, 1);
-    t = focusTab(t, id, 0);
-    t = closeTab(t, id, 0);
-    p = findPane(t, id)!;
+    t = focusTab(t, left.id, 0);
+    t = closeTab(t, left.id, 0);
+    p = findPane(t, left.id)!;
     assert.equal(p.tabs.length, 1);
     assert.equal(p.active, 0); // focus shifted back onto the survivor
-    t = closeTab(t, id, 0);
-    p = findPane(t, id)!;
+    t = closeTab(t, left.id, 0);
+    p = findPane(t, left.id)!;
     assert.equal(p.tabs.length, 0, "closing the last tab empties the pane");
     assert.equal(p.active, 0);
+    assert.ok(findPane(t, left.id), "the emptied pane stays in the tree");
   });
   it("an UNCLOSEABLE tab refuses closeTab (sidebar tabs have no X)", () => {
     const t = defaultTree();
@@ -1265,7 +1270,10 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
     assert.equal(shell.tabs.length, 0, "the shell sits empty");
     assert.equal(isPinnedPane(shell), true, "still a shell");
     // the '+' menu path fills the empty shell again: drain the tabs into
-    // the main pane, then remove that pane so the singletons truly died
+    // the main pane, then close that pane so the singletons truly died.
+    // Endo ruling 2026-10-25: the chat pane is the LAST MAIN pane, so a
+    // split must mint a second main pane before the remove may land
+    t = splitPane(t, chat.id, "row", "after");
     t = removePane(t, chat.id);
     const res = openSingleton(t, insp.id, "files");
     assert.equal(res.action, "created");
@@ -1348,10 +1356,12 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
   it("restoreInspectorSet re-adds an inspector singleton that died with its pane", () => {
     let t: DockNode = defaultTree();
     // settings can only die via a pane prune: move it to the main pane,
-    // then close the main pane
+    // then close the main pane. Endo ruling 2026-10-25: that pane is the
+    // LAST MAIN pane, so a split must mint a second main pane first
     const insp = paneByComponent(t, "files");
     t = moveTab(t, insp.id, 6, paneByComponent(t, "chat").id, 0); // settings out
     const settingsPane = findComponentPane(t, "settings")!;
+    t = splitPane(t, settingsPane.id, "row", "after");
     t = removePane(t, settingsPane.id);
     assert.equal(findComponentTab(t, "settings"), null, "settings is gone");
     const out = restoreInspectorSet(t);

@@ -267,7 +267,11 @@
   // lock is sessions leaving "left".
   const pinned = computed(() => props.node.edge !== undefined);
   function tabClosable(t: DockTab): boolean {
-    return isClosableTab(t.component);
+    // Endo ruling 2026-10-25: the LAST main pane's tab renders no close
+    // X - the button appears only while another main pane lives. Pinned
+    // panes are never the last main pane, so a chat tab parked in a
+    // shell keeps its X (t_d6b657a7) whatever the main census says.
+    return isClosableTab(t.component) && !api.isLastMainPane(props.node.id);
   }
 
   const outletName = computed(() => {

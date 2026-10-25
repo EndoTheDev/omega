@@ -172,8 +172,10 @@ describe("dockDropToZone (the docking mutation)", () => {
 
   it("edge shells keep their shape: split zones refuse, center groups", () => {
     // A(chat) | B(files, pinned right shell) - A's ONLY tab moves to B's
-    // center, so A closes with it (t_aa9dbada); the pinned shell itself
-    // never closes (it may sit empty)
+    // center. Endo ruling 2026-10-25: A is the LAST MAIN pane, so it
+    // survives the move as the empty launcher (the move-out auto-close
+    // exception); the pinned shell itself never closes either (it may
+    // sit empty)
     const a = makePane("chat");
     const b = makePane("files", 240, "right");
     const root = makeSplit("row", [a, b]);
@@ -182,8 +184,10 @@ describe("dockDropToZone (the docking mutation)", () => {
     const center = dockDropToZone(root, a.id, 0, b.id, "center");
     const B = paneOf(center, b.id);
     assert.deepEqual(B.tabs.map((t) => t.component), ["files", "chat"], "center still groups");
-    assert.ok(!findPane(center, a.id), "the emptied source pane closed");
-    assert.equal(paneCount(center), 1, "the shell is the only pane left");
+    const A = findPane(center, a.id);
+    assert.ok(A, "the emptied source pane survives (the last main pane never closes)");
+    assert.equal(A!.tabs.length, 0, "A sits empty as the launcher");
+    assert.equal(paneCount(center), 2, "both panes stay");
   });
 
   it("the LOCKED tab (sessions) refuses every zone landing outside left", () => {

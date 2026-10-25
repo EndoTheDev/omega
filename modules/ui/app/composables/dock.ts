@@ -304,6 +304,26 @@ export function firstMainPaneId(tree: DockNode): string | null {
   return null;
 }
 
+/** Endo ruling 2026-10-25: the main-pane census. Pinned shells don't
+    count - the close law is about the MAIN area, which must never reach
+    zero panes (the launcher pane IS a main pane; the pane itself is
+    always right, only its close button was the bug). */
+export function mainPaneCount(tree: DockNode): number {
+  let n = 0;
+  for (const node of allNodes(tree)) {
+    if (isPane(node) && !isPinnedPane(node)) n++;
+  }
+  return n;
+}
+
+/** the close-refusal predicate (Endo ruling 2026-10-25): `pane` is a
+    main pane and no OTHER main pane exists. Every close path consults
+    this against the LIVE tree, so a request computed against stale
+    state still lands on the truth. */
+export function isLastMainPane(tree: DockNode, pane: DockPane): boolean {
+  return !isPinnedPane(pane) && mainPaneCount(tree) <= 1;
+}
+
 /** t_67fc1905: a main pane for the bottom-panel era. The root is a
     COLUMN now (the main row rides on the pinned bottom child); a session
     pane must go into the ROW, not beside the whole column. The first
@@ -656,12 +676,16 @@ export function insertPane(
 }
 
 /** remove a pane by id. Its parent split hoists the lone survivor.
-    card t_4ae27e0d refusals: a PINNED pane (it hosts unclosable tabs) and
-    the LAST REMAINING pane both come back untouched - the dock never
-    empties (the fixed shape always keeps at least one pane). */
+    card t_4ae27e0d refusals: a PINNED pane (it hosts unclosable tabs)
+    refuses. Endo ruling 2026-10-25: the LAST MAIN pane refuses too - the
+    main area never reaches zero panes, whatever path the request took
+    (button, shortcut, API call, stale state). Shells don't count toward
+    the census: closing them may still leave no main pane, which the
+    store's ensureMainPane repairs on the next open. */
 export function removePane(tree: DockNode, paneId: string): DockNode {
   const pane = findPane(tree, paneId);
   if (!pane || isPinnedPane(pane)) return tree;
+  if (isLastMainPane(tree, pane)) return tree;
   return prunePane(tree, pane.id);
 }
 
@@ -961,6 +985,10 @@ export function movePane(
   // detach must not collapse while the source still anchors the insert:
   // locate the target BEFORE removing (ids survive the reclone)
   const without = removePane(tree, paneId);
+  // Endo ruling 2026-10-25: a refused detach (the last main pane never
+  // goes) must not fall through to the insert - the pane never left, so
+  // inserting its clone would duplicate it beside itself
+  if (without === tree) return tree;
   if (!findPane(without, targetId)) return without; // target WAS the source
   const moving = clone(pane);
   return insertPane(without, targetId, "row", position, moving);
@@ -1013,11 +1041,15 @@ export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode 
 
 /** card 2: close a tab; the last one empties the pane (menu reappears).
     card t_4ae27e0d: an UNCLOSEABLE tab refuses - the pinned sidebars'
-    tabs have no X at all. */
+    tabs have no X at all. Endo ruling 2026-10-25: the last main pane's
+    tabs render no X, and the state side refuses what the chrome never
+    offered - a close request against the last main pane is a no-op from
+    any caller. */
 export function closeTab(tree: DockNode, paneId: string, index: number): DockNode {
   const pane = findPane(tree, paneId);
   const tab = pane?.tabs[index];
   if (!pane || !tab || !isClosableTab(tab.component)) return tree;
+  if (isLastMainPane(tree, pane)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       if (n.tabs.length <= index) return;
@@ -1090,11 +1122,13 @@ export function moveTab(
   // remove button's result, automatic) - a main pane never lingers empty
   // from a move. The guards live in the law itself: pinned shells stay
   // (they may sit empty), the last remaining pane stays (prunePane's
-  // never-empty guard).
+  // never-empty guard). Endo ruling 2026-10-25: the LAST MAIN pane is
+  // the exception - it survives its own last tab walking out, sitting
+  // empty as the launcher (the empty pane IS a main pane state).
   if (result === tree) return tree;
   const src = findPane(result, fromPaneId);
   if (src && !isPinnedPane(src) && src.tabs.length === 0) {
-    return prunePane(result, fromPaneId);
+    if (!isLastMainPane(result, src)) return prunePane(result, fromPaneId);
   }
   return result;
 }
@@ -1678,9 +1712,17 @@ export interface DockApi {
       pane is inserted at the root's after-edge and its id returned. */
   ensureMainPane: () => string;
   /** whether the pane's X may remove it: pinned panes never (they host
-      unclosable tabs) and the last remaining pane never (the dock never
-      empties). The UI hides the X instead of offering a refused click. */
+      unclosable tabs) and the LAST MAIN pane never (Endo ruling
+      2026-10-25: the main area never reaches zero panes - the census
+      counts MAIN panes only, shells don't help). The UI hides the X
+      instead of offering a refused click. */
   canRemovePane: (paneId: string) => boolean;
+  /** Endo ruling 2026-10-25: whether `paneId` is a MAIN pane with no
+      other main pane beside it. The tab close X renders only while
+      this is false - the last main pane's tab carries no close button.
+      Pinned panes are never the last main pane (their tabs keep their
+      own closable rules). */
+  isLastMainPane: (paneId: string) => boolean;
   /** divider drag: measured start widths flow in on the first move event.
       Returns the drag's close intents for the caller to react to (the
       store itself already applies them to the tree). */
@@ -1852,7 +1894,14 @@ export function createDock(store: Storage): DockApi {
   };
   const canRemovePane = (paneId: string): boolean => {
     const pane = findPane(tree.value, paneId);
-    return !!pane && !isPinnedPane(pane) && paneCount(tree.value) > 1;
+    return !!pane && !isPinnedPane(pane) && mainPaneCount(tree.value) > 1;
+  };
+  // Endo ruling 2026-10-25: the tab-X visibility read. Reads the live
+  // tree, so a pane whose sibling main pane just closed re-renders its
+  // chrome in the same tick the tree swaps.
+  const lastMainPane = (paneId: string): boolean => {
+    const pane = findPane(tree.value, paneId);
+    return !!pane && isLastMainPane(tree.value, pane);
   };
   const drag = (
     splitId: string,
@@ -1936,7 +1985,7 @@ export function createDock(store: Storage): DockApi {
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
     firstDraftChatTab: () => firstDraftChatTab(tree.value),
-    split, remove, toggleEdge, ensureMainPane, canRemovePane, drag, toggleBottom,
+    split, remove, toggleEdge, ensureMainPane, canRemovePane, isLastMainPane: lastMainPane, drag, toggleBottom,
     narrowSqueeze,
   };
 }

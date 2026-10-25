@@ -27,7 +27,6 @@ import {
   createDock,
   focusTab,
   openTab,
-  removePane,
   makePane,
   makeSplit,
   nextNodeId,
@@ -44,10 +43,6 @@ import {
 
 // helpers ------------------------------------------------------------------
 
-function asPane(n: DockNode): DockPane {
-  assert.equal(n.kind, "pane");
-  return n as DockPane;
-}
 function asSplit(n: DockNode): DockSplit {
   assert.equal(n.kind, "split");
   return n as DockSplit;
@@ -596,12 +591,14 @@ describe("dock store: the pane-model reset", () => {
     assert.equal(serialize(dock.tree.value), before, "the tree is untouched");
   });
 
-  it("ensureMainPane re-inserts a main pane when the user removed the last one", async () => {
-    let t: DockNode = defaultTree();
-    // strip both main candidates: the chat pane (pinned sidebars refuse,
-    // so the tree keeps its shape) - only remove-able pane is the chat
-    const chatPane = asSplit(t).children[1];
-    t = removePane(t, asPane(chatPane).id);
+  it("ensureMainPane re-inserts a main pane when the record lost the last one (stale state)", async () => {
+    // Endo ruling 2026-10-25: removePane refuses the last main pane now,
+    // so the zero-main record is built BY HAND - the stale shape a
+    // pre-ruling session may still have persisted (ensureMainPane is
+    // the repair path for exactly that record)
+    const full = defaultTree();
+    const row = asSplit(full);
+    const t: DockNode = makeSplit("row", [row.children[0], row.children[2]]);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
@@ -627,7 +624,7 @@ describe("dock store: the pane-model reset", () => {
     );
   });
 
-  it("canRemovePane: pinned never, the last remaining pane never", async () => {
+  it("canRemovePane: pinned never, the last MAIN pane never (Endo ruling 2026-10-25)", async () => {
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(defaultTree()));
     const dock = createDock(mem as unknown as Storage);
@@ -644,26 +641,34 @@ describe("dock store: the pane-model reset", () => {
       false,
       "the bottom shell is unclosable too",
     );
-    assert.equal(dock.canRemovePane(chatPane.id), true, "a main pane may go");
+    // the chat pane is the ONLY main pane: the shells don't count toward
+    // the census, so its X hides (the old all-pane count let it go)
+    assert.equal(dock.canRemovePane(chatPane.id), false, "the last main pane is unclosable");
+    assert.equal(dock.isLastMainPane(chatPane.id), true, "the census read agrees");
+    // a second main pane flips the read: the X comes back on EACH of them
+    dock.split(chatPane.id, "row", "after");
+    const fresh = panes(dock.tree.value).find((p) => p.edge === undefined && p.tabs.length === 0)!;
+    assert.ok(fresh, "the split minted a second main pane");
+    assert.equal(dock.canRemovePane(chatPane.id), true, "a main pane may go once another lives");
+    assert.equal(dock.canRemovePane(fresh.id), true, "the fresh pane may go too");
+    assert.equal(dock.isLastMainPane(chatPane.id), false);
   });
 
-  it("closing every main pane still leaves the dock alive (the pinned set)", async () => {
+  it("the last main pane refuses removal through the store (Endo ruling 2026-10-25)", async () => {
     const t: DockNode = makePane("chat");
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
-    // boot repair already has the fixed shape; dropping the chat pane
-    // must leave the pinned set (sidebars + the bottom shell). the
-    // engine's never-empty guard is what would refuse a zero-pane dock
-    // from any other call path
+    // boot repair already has the fixed shape; the chat pane is the only
+    // MAIN pane, so the store's remove is a no-op whatever called it
+    const before = serialize(dock.tree.value);
     const chatPane = panes(dock.tree.value).find((p) => p.tabs[0]?.component === "chat")!;
     dock.remove(chatPane.id);
     await flush();
-    const tree = dock.tree.value;
-    // t_67fc1905: the pinned set is the two sidebars + the bottom shell
-    assert.equal(panes(tree).length, 3, "the pinned sidebars + bottom hold the dock");
-    assert.equal(dock.ensureMainPane().length > 0, true, "a main pane reopens");
+    assert.equal(serialize(dock.tree.value), before, "the close request changed nothing");
+    assert.ok(panes(dock.tree.value).some((p) => p.id === chatPane.id), "the pane never left");
+    assert.equal(dock.ensureMainPane(), chatPane.id, "a main pane still answers opens");
   });
 
   it("closeTab through the store refuses the pinned sidebars' tabs", async () => {
@@ -682,8 +687,10 @@ describe("dock store: the pane-model reset", () => {
       "files,cron,http_channel,skills,tools,agents,settings,kanban,extensions,insights,canvas",
       "none of the ten may close",
     );
-    // the main class still closes through the store
+    // the main class still closes through the store - once a second main
+    // pane exists (Endo ruling 2026-10-25: the last one refuses)
     const chatPane = paneById(tree, row.children[1].id);
+    dock.split(chatPane.id, "row", "after");
     dock.closeTab(chatPane.id, 0);
     await flush();
     assert.equal(paneById(dock.tree.value, chatPane.id).tabs.length, 0);
