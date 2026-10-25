@@ -19,7 +19,9 @@
     v-else-if="item.kind === 'thinking' && showThinking"
     :content="item.content"
     :final-ms="item.finalMs"
-    :streaming="item.streaming" />
+    :streaming="item.streaming"
+    :variant="variant"
+    @select="(i) => variant && $emit('select', variant.message_id, i)" />
   <ToolCallLine
     v-else-if="item.kind === 'tool'"
     :name="item.name"
@@ -27,7 +29,9 @@
     :interrupted="item.interrupted"
     :final-ms="item.finalMs"
     :output="item.output"
-    :result="item.result" />
+    :result="item.result"
+    :variant="variant"
+    @select="(i) => variant && $emit('select', variant.message_id, i)" />
   <VerdictCard
     v-else-if="item.kind === 'verdict'"
     :item="item"

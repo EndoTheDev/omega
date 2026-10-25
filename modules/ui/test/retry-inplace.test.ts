@@ -116,7 +116,8 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
     // the row exists and guards the three affordances in order
     assert.match(chatMessage, /class="msg-actions"/);
     const actionsAt = chatMessage.indexOf('class="msg-actions"');
-    const switcherAt = chatMessage.indexOf('class="variant-switcher"', actionsAt);
+    // the switcher is ONE component mounted in the row (t_0df4efd8)
+    const switcherAt = chatMessage.indexOf("<VariantSwitcher", actionsAt);
     const forkAt = chatMessage.indexOf('class="msg-fork"', actionsAt);
     const copyAt = chatMessage.indexOf('class="msg-copy"', actionsAt);
     assert.ok(switcherAt > actionsAt, "switcher in the row");

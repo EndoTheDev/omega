@@ -13,16 +13,19 @@ import { dirname, join } from "node:path";
 import {
   renderTranscriptItems,
   streamChat,
+  variantAnchors,
   variantLabel,
   variantOf,
   SessionBusyError,
   type StreamHandlers,
   type TranscriptDetail,
+  type TranscriptItem,
   type VariantBlock,
 } from "../app/composables/omega.ts";
 
 import {
   createChatHost,
+  createCanvasTranscript,
   findMessageItem,
   type ChatHostDeps,
 } from "../app/composables/chat.ts";
@@ -30,6 +33,10 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const chatMessage = readFileSync(
   join(here, "../app/components/chat/ChatMessage.vue"),
+  "utf8",
+);
+const variantSwitcher = readFileSync(
+  join(here, "../app/components/chat/VariantSwitcher.vue"),
   "utf8",
 );
 const chatItem = readFileSync(
@@ -105,6 +112,124 @@ describe("variantLabel: the « 2/3 » index/total math", () => {
   });
 });
 
+// --- variantAnchors (t_0df4efd8): WHERE the switcher renders. A
+// multi-row replay's branch siblings are run HEAD row ids, and the
+// active head can be a THINKING row or a TOOL CALL row - a plain
+// message-only lookup renders nothing.
+
+// the live-probed shape (t_078a2c35 verify, run-25Oct191736): the
+// retry replayed thinking + tool_call + tool_result + text - the
+// heads (46, 47) are both THINKING rows, the fresh answer text (49)
+// is not a sibling
+const MULTIBRANCH: VariantBlock = {
+  message_id: "45",
+  siblings: ["46", "47"],
+  count: 2,
+  active: 1,
+};
+const multiRunItems: TranscriptItem[] = [
+  { kind: "message", role: "user", content: "q", id: "45" },
+  { kind: "thinking", content: "hm", id: "47" } as TranscriptItem,
+  // the tool_result row (48) merged onto the call item - the id stays
+  // the CALL row's
+  { kind: "tool", name: "grep", status: "done", result: "x", id: "33" } as TranscriptItem,
+  { kind: "message", role: "assistant", content: "answer", id: "49" },
+];
+
+describe("variantAnchors: the switcher survives multi-row replays", () => {
+  it("a thinking/tool head's run anchors its last stored text bubble", () => {
+    const anchors = variantAnchors(multiRunItems, [MULTIBRANCH]);
+    assert.equal(anchors.size, 1);
+    assert.equal(anchors.get("49"), MULTIBRANCH);
+    // the head rows themselves do NOT render chips
+    assert.equal(anchors.get("47"), undefined);
+    assert.equal(anchors.get("33"), undefined);
+  });
+
+  it("a text-less run anchors the head block itself", () => {
+    const items: TranscriptItem[] = [
+      { kind: "message", role: "user", content: "q", id: "45" },
+      { kind: "thinking", content: "hm", id: "47" } as TranscriptItem,
+    ];
+    const anchors = variantAnchors(items, [MULTIBRANCH]);
+    assert.equal(anchors.get("47"), MULTIBRANCH);
+    // and the head as a tool line (no thinking, no text)
+    const toolOnly: TranscriptItem[] = [
+      { kind: "message", role: "user", content: "q", id: "45" },
+      { kind: "tool", name: "grep", status: "done", result: "x", id: "47" } as TranscriptItem,
+    ];
+    assert.equal(variantAnchors(toolOnly, [MULTIBRANCH]).get("47"), MULTIBRANCH);
+  });
+
+  it("a plain one-row reply anchors the head bubble (the classic case)", () => {
+    const items: TranscriptItem[] = [
+      { kind: "message", role: "user", content: "q", id: "45" },
+      { kind: "message", role: "assistant", content: "v2", id: "47" },
+    ];
+    const anchors = variantAnchors(items, [MULTIBRANCH]);
+    assert.equal(anchors.get("47"), MULTIBRANCH);
+    assert.equal(anchors.size, 1);
+  });
+
+  it("one anchor per branch: the tool-call head does not double-anchor", () => {
+    // head = the tool call row itself, run carries a text row: the
+    // text bubble wins, the tool line stays chipless
+    const items: TranscriptItem[] = [
+      { kind: "message", role: "user", content: "q", id: "45" },
+      { kind: "tool", name: "grep", status: "done", result: "x", id: "47" } as TranscriptItem,
+      { kind: "message", role: "assistant", content: "answer", id: "49" },
+    ];
+    const anchors = variantAnchors(items, [MULTIBRANCH]);
+    assert.deepEqual(
+      [...anchors.keys()].sort(),
+      ["49"],
+      JSON.stringify([...anchors.entries()]),
+    );
+  });
+
+  it("live items (no id) never anchor; orphan results carry no id", () => {
+    const items: TranscriptItem[] = [
+      { kind: "message", role: "user", content: "q" }, // live user row
+      { kind: "thinking", content: "hm" } as TranscriptItem, // live thinking
+      { kind: "tool", name: "tool", status: "done", result: "orphan", id: "48" } as TranscriptItem,
+    ];
+    assert.equal(variantAnchors(items, [MULTIBRANCH]).size, 0);
+  });
+
+  it("single-run branch points and absent variants anchor nothing", () => {
+    const one: VariantBlock = { message_id: "45", siblings: ["47"], count: 1, active: 0 };
+    assert.equal(variantAnchors(multiRunItems, [one]).size, 0);
+    assert.equal(variantAnchors(multiRunItems, undefined).size, 0);
+    assert.equal(variantAnchors(multiRunItems, []).size, 0);
+  });
+});
+
+describe("canvas fold: stored ids ride the thinking/tool rows", () => {
+  it("a multi-row replay's rows carry their ids (head anchorable)", () => {
+    const t = createCanvasTranscript();
+    const rows = [
+      { id: "45", role: "user", status: "complete", blocks: [{ type: "text", content: "q" }] },
+      { id: "47", role: "assistant", status: "complete", blocks: [{ type: "thinking", content: "hm" }] },
+      {
+        id: "33",
+        role: "assistant",
+        status: "complete",
+        blocks: [{ type: "tool_call", tool_call: { id: "c1", name: "grep", arguments: {} } }],
+      },
+      {
+        id: "48",
+        role: "tool",
+        status: "complete",
+        blocks: [{ type: "tool_result", content: "x", tool_call_id: "c1" }],
+      },
+      { id: "49", role: "assistant", status: "complete", blocks: [{ type: "text", content: "answer" }] },
+    ] as never;
+    const items = t.apply({ session: "s1", rows });
+    const ids = items.map((it) => (it as { id?: string }).id);
+    assert.deepEqual(ids, ["45", "47", "33", "49"], JSON.stringify(ids));
+  });
+});
+
 describe("renderTranscriptItems: store ids ride the restore", () => {
   it("user and assistant items carry their wire id; the live tail does not", () => {
     const items = renderTranscriptItems([
@@ -150,15 +275,19 @@ describe("findMessageItem: the variants surface's address", () => {
 
 describe("ChatMessage markup: switcher + fork affordance", () => {
   it("the switcher mounts ONLY on a variant block, one-indexed, arrows emit", () => {
+    // t_0df4efd8: the chip markup is ONE component (VariantSwitcher) -
+    // the bubble's action row mounts it and forwards the sibling index
+    assert.match(chatMessage, /<VariantSwitcher/);
     assert.match(chatMessage, /v-if="variant"/);
-    assert.match(chatMessage, /variant-switcher/);
-    assert.match(chatMessage, /\{\{ vLabel\.index \+ 1 \}\}\/\{\{ vLabel\.count \}\}/);
-    assert.match(chatMessage, /emit\('select', vLabel\.index - 1\)/);
-    assert.match(chatMessage, /emit\('select', vLabel\.index \+ 1\)/);
+    assert.match(chatMessage, /@select="\$emit\('select', \$event\)"/);
+    assert.match(variantSwitcher, /class="variant-switcher"/);
+    assert.match(variantSwitcher, /\{\{ vLabel\.index \+ 1 \}\}\/\{\{ vLabel\.count \}\}/);
+    assert.match(variantSwitcher, /emit\('select', vLabel\.index - 1\)/);
+    assert.match(variantSwitcher, /emit\('select', vLabel\.index \+ 1\)/);
   });
   it("arrows disable at the range edges", () => {
-    assert.match(chatMessage, /:disabled="vLabel\.index <= 0"/);
-    assert.match(chatMessage, /:disabled="vLabel\.index >= vLabel\.count - 1"/);
+    assert.match(variantSwitcher, /:disabled="vLabel\.index <= 0"/);
+    assert.match(variantSwitcher, /:disabled="vLabel\.index >= vLabel\.count - 1"/);
   });
   it("the fork button is historical-only (an id, not streaming)", () => {
     assert.match(chatMessage, /v-if="itemId && !streaming"/);
@@ -179,6 +308,9 @@ describe("ChatItem + composer wiring", () => {
     assert.match(chatItem, /:variant="item\.role === 'assistant' \? variant : null"/);
     assert.match(chatItem, /emit\('select', variant\.message_id, i\)/);
     assert.match(chatItem, /emit\('fork', item\.id\)/);
+  });
+  it("head-row anchors ride ThinkingBlock and ToolCallLine too (t_0df4efd8)", () => {
+    assert.match(chatItem, /:variant="variant"\n    @select="\(i\) => variant && \$emit\('select', variant\.message_id, i\)"/);
   });
   it("the composer shows the fork chip with a drop control", () => {
     assert.match(composer, /class="fork-chip"/);
