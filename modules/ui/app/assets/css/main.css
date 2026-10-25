@@ -118,6 +118,7 @@ body {
 
 /* ---- layer 1: pane area — floating rounded panes on the canvas ---- */
 .pane-area {
+  position: relative; /* anchors the layout layer's frame edges below */
   display: flex;
   min-height: 0;
   min-width: 0;
@@ -137,6 +138,30 @@ body {
 /* panes adjacent: every pane keeps its full border on all four sides - the
    divider sits in the 4px gap between the two 1px strokes. */
 
+/* t_bc321318 (the connected frame): the layout layer's HORIZONTAL edges.
+   The pane-area paints full-width 1px strokes UNDER the cards at the exact
+   rows the cards' own top/bottom borders occupy - top:0 is the cards'
+   border-top row (pane-area starts flush at the menubar's bottom edge),
+   bottom:3px is the border-bottom row (3px padding below the content box).
+   The strokes show only in the 4px gaps between cards, so every card edge
+   joins its neighbors into one continuous line - the vertical divider
+   lines meet both rows at their corners. Desktop law only: the mobile
+   pane-area has no padding (and no card row) for these rows to track. */
+@media (min-width: 769px) {
+  .pane-area::before,
+  .pane-area::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--stroke);
+    pointer-events: none;
+  }
+  .pane-area::before { top: 0; }
+  .pane-area::after { bottom: 3px; }
+}
+
 /* ---- dock (card t_63253264): the recursive layout tree ---- */
 .dock-split {
   display: flex;
@@ -150,17 +175,26 @@ body {
 .pane-area > .dock-root { flex: 1; }
 .dock-cell { min-width: 0; min-height: 0; }
 
+/* t_bc321318 (Endo ruling, dividers run THROUGH): the resting divider
+   paints its structural line - one continuous 1px stroke through the
+   handle's whole cross-extent (the handle stretches, so the line spans
+   its region's full extent). The cards flanking the boundary keep their
+   own edges; the line belongs to the layout layer and cards never stop
+   it. No border-radius: the line must run edge-to-edge (hover/snap then
+   paint their full-4px bands square - transient states). */
 .dock-divider {
   width: 4px;
   flex: 0 0 auto;
   cursor: col-resize;
-  border-radius: 2px;
-  background: transparent;
+  background: linear-gradient(to right,
+    transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px);
 }
 .dock-split.column > .dock-divider {
   width: auto;
   height: 4px;
   cursor: row-resize;
+  background: linear-gradient(to bottom,
+    transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px);
 }
 .dock-divider:hover, .dock-divider.active { background: var(--stroke); }
 /* magnetic snap attract: subtle accent guide while the pointer sits inside
@@ -193,10 +227,12 @@ body {
    the surface itself (--z1 = the card's color): its shape is the tab
    rectangle + two concave fillets (radius = the panel's 8px) sweeping
    into the card below - tab + panel read as one continuous surface,
-   browser-tab style. The seam line is the strip's inset shadow (not a
-   border) so opaque children break it: it runs only where chrome shows.
-   Inactive tabs stay flat and blend into the strip. Both themes via vars.
-   Layout-neutral: widths and offsets change not. */
+   browser-tab style. Inactive tabs stay flat and blend into the strip.
+   Both themes via vars. Layout-neutral: widths and offsets change not.
+   t_bc321318 (Endo ruling, 2026-10-25, dividers run THROUGH): the seam
+   under the strip is a REAL full-width border-bottom - opaque children
+   no longer break it (the old inset-shadow read had it run only where
+   chrome shows, which read as a stub beside the sidebar's own seam). */
 .dock-tabbar {
   flex: 0 0 auto;
   height: 35px;
@@ -205,12 +241,11 @@ body {
   gap: 2px;
   padding-right: 4px;
   background: var(--z1-raised);
-  /* outline the top half only; the bottom seam is the inset shadow so the
-     active tab's surface breaks it without fighting a real border */
   border: 1px solid var(--stroke);
-  border-bottom: none;
+  /* the seam: a real border-bottom, full pane width, NEVER broken by
+     opaque children (t_bc321318; supersedes t_f6c1b5fe's inset-shadow) */
+  border-bottom: 1px solid var(--stroke);
   border-radius: var(--r-pane) var(--r-pane) 0 0;
-  box-shadow: inset 0 -1px 0 var(--stroke);
   /* paint above the tucked pane card so its hidden top curve never bleeds */
   position: relative;
   z-index: 1;
