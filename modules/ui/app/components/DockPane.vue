@@ -11,6 +11,10 @@
         // card t_67fc1905: the bottom shell gets its own class (the
         // bottom-panel css file owns its look + the mobile zero-collapse)
         'edge-bottom': node.edge === 'bottom',
+        // Endo's comment (2026-10-26): the fullscreen VIEW rides the
+        // pane class - bottompanel.css owns the takeover; the sidebars
+        // never hide (Endo: they stay as-is, still self-toggled)
+        'bottom-fullscreen': node.edge === 'bottom' && api.bottomFullscreen.value,
       },
     ]"
     :style="cellStyle"

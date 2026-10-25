@@ -6,7 +6,7 @@
 // reloads, and the horizontal divider's drag math
 // (+200 snap ladder, grow-direction, drag-past-min close intent).
 // Render-free; node's built-in test runner.
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   createDock,
@@ -42,6 +42,29 @@ import {
 } from "../app/composables/dock.ts";
 import { defaultHostTabs, hostsOf } from "../app/composables/dockables.ts";
 import { snapCandidateAt, BOTTOM_SNAP_STEP } from "../app/composables/panes.ts";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const srcPath = (rel: string) =>
+  readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+
+test("fullscreen keeps the sidebars: css owns the takeover (Endo's comment 2026-10-26)", () => {
+  const css = srcPath("../app/assets/css/bottompanel.css");
+  // the band escapes the flow and spans between the sidebar insets
+  assert.match(css, /\.dock-pane\.edge-bottom\.bottom-fullscreen\s*{[^}]*position:\s*absolute/s);
+  assert.match(css, /left:\s*var\(--bottom-inset-left/s);
+  assert.match(css, /right:\s*var\(--bottom-inset-right/s);
+  // the sidebars never hide: only their measured overhang is neutralized
+  // (the row stays rendered underneath)
+  assert.match(css, /:has\(\.dock-pane\.edge-bottom\.bottom-fullscreen\)[^}]*margin-bottom:\s*0\s*!important/s);
+  // the pane class is bound in DockPane (the view rides the class, not
+  // inline styles)
+  const pane = srcPath("../app/components/DockPane.vue");
+  assert.match(pane, /'bottom-fullscreen':\s*node\.edge === 'bottom' && api\.bottomFullscreen\.value/);
+  // no row-hiding branch left in the split renderer
+  const split = srcPath("../app/components/DockSplit.vue");
+  assert.ok(!split.includes('display: "none"'), "the row never hides");
+});
 
 function flush(): Promise<void> {
   // Vue's deep-watch persistence flushes on a microtask - a "reload"

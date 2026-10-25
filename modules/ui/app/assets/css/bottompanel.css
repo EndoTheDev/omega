@@ -50,6 +50,47 @@
   margin-bottom: var(--bottom-sidebars-overhang, 0px);
 }
 
+/* Endo's comment (2026-10-26): FULLSCREEN - the band takes over the
+   CONTENT column only; the sidebars stay exactly as they are (still
+   self-toggled). The pane escapes the column flow (position absolute
+   spanning the pane-area top-to-bottom between the sidebar insets) and
+   covers the chat content beneath it; the row above keeps rendering -
+   its sidebars are the visible gutters, the chat sits under the band.
+   The flow geometry (tree, heights, insets) is untouched - exiting
+   restores it byte-for-byte. Desktop only: the mobile zero-collapse
+   keeps its !important (specificity loses here, the breakpoint wins).
+   ponytail: :has() needs Chrome 105+ - the lane's browser family is
+   modern Chrome; an old-browser fallback would need JS class plumbing
+   on app.vue, not worth it. */
+@media (min-width: 769px) {
+  /* the band's takeover */
+  .dock-pane.edge-bottom.bottom-fullscreen {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--bottom-inset-left, 0px);
+    right: var(--bottom-inset-right, 0px);
+    height: auto !important; /* beats the tree's inline fixed px */
+    margin: 0; /* the inset vars now position; margins would double them */
+    z-index: 30;
+  }
+  /* the row reclaims the full column (the band left the flow), so the
+     sidebars reach the bottom on their own - the overhang (measured
+     against the in-flow band) would push them past the pane-area */
+  .pane-area:has(.dock-pane.edge-bottom.bottom-fullscreen)
+    .dock-pane.pinned:not(.edge-bottom) {
+    margin-bottom: 0 !important;
+  }
+  /* the band's own divider points at nothing while the band is out of
+     flow - the exit is the tabbar button. Scoped: only while the
+     fullscreen pane is present */
+  .pane-area:has(.dock-pane.edge-bottom.bottom-fullscreen)
+    > .dock-root
+    > .dock-divider.column {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   /* mobile: no desktop-shaped bottom panel on a phone - the shell
      zero-collapses exactly like the sidebar overlay cells (state

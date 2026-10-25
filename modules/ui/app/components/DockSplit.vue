@@ -98,17 +98,6 @@
   function cellStyleFor(child: DockNode, idx: number): Record<string, string> {
     const node = props.node as DockSplit; // root may be a bare pane; this runs for splits only
     const axis = node.direction === "row" ? "width" : "height";
-    // Endo's comment (2026-10-26): the bottom shell's FULLSCREEN view -
-    // the column renders ONLY the shell: the main row above hides, the
-    // shell flexes to fill. Session-only (the store owns the flag).
-    if (api.bottomFullscreen.value && node.direction === "column") {
-      const shell = node.children.some((c) => c.kind === "pane" && c.edge === "bottom");
-      if (shell) {
-        return child.kind === "pane" && child.edge === "bottom"
-          ? { [axis]: "auto", flex: "1 1 0" }
-          : { display: "none" };
-      }
-    }
     if (child.kind === "pane" && child.fixed !== null) {
       // Endo's comment (2026-10-26): the render clamp for column-fixed
       // panes (the bottom shell today). A stored height larger than the
