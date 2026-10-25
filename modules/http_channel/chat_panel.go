@@ -194,6 +194,41 @@ func (c *chatCapsule) payloadFor(session string, running bool) core.ChatPayload 
 	return p
 }
 
+// branchPath cuts the active path for a branch-pinned live run
+// (t_19c100dd, Endo ruling: retry renders in place): rows up to and
+// including the branch row (the replayed user turn / the fork target)
+// stay, OLD rows after it - the sibling response being re-run - leave,
+// and rows with id > floor (the run's own segments, persisted
+// mid-stream by the loop's sink) stay so multi-segment runs keep their
+// closed tool turns while they stream. A branch id off the path pins
+// nothing (dangling safety): the path renders whole. Pure.
+func branchPath(path []core.StoredMessage, branch string, floor int64) []core.StoredMessage {
+	if branch == "" {
+		return path
+	}
+	branchID, err := core.ParseMsgID(branch)
+	if err != nil {
+		return path
+	}
+	cut := -1
+	for i, sm := range path {
+		if sm.ID == branchID {
+			cut = i
+			break
+		}
+	}
+	if cut == -1 {
+		return path
+	}
+	out := make([]core.StoredMessage, 0, len(path))
+	for i, sm := range path {
+		if i <= cut || sm.ID > floor {
+			out = append(out, sm)
+		}
+	}
+	return out
+}
+
 // sessionItems collects the transcript items the panel renders for one
 // session. Durable sessions compose persisted history plus the live
 // run's OPEN items (the runHub's open tail); store-less sessions
@@ -201,7 +236,10 @@ func (c *chatCapsule) payloadFor(session string, running bool) core.ChatPayload 
 // tail - nothing they own was ever persisted. A store fault answers
 // nil: the surface degrades, the REST routes surface the fault.
 // Tails compose only while the run streams: the final exit flush
-// (running=false) renders the persisted truth alone.
+// (running=false) renders the persisted truth alone. A branch-pinned
+// run (retry, fork-of-user) cuts the old sibling's rows off the path
+// first, so the open tail streams into the response's slot - one slot,
+// N variants, never stacked.
 func (c *chatCapsule) sessionItems(session string, running bool) []transcriptItem {
 	if isEphemeralID(session) {
 		items := c.srv.Load().eph.snapshotItems(session)
@@ -219,7 +257,13 @@ func (c *chatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if err != nil {
 		return nil
 	}
-	persisted := buildTranscriptItems(view.Path)
+	path := view.Path
+	if running {
+		if branch, floor, pinned := c.srv.Load().runs.runBranch(session); pinned {
+			path = branchPath(path, branch, floor)
+		}
+	}
+	persisted := buildTranscriptItems(path)
 	if !running {
 		return persisted
 	}

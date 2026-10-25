@@ -52,6 +52,14 @@ type activeRun struct {
 	// which a full-tail merge would double-render. Same h.mu, same
 	// replace semantics.
 	openTail []transcriptItem
+	// branch pins the run head's parent row id ("" for plain sends:
+	// retry and fork-of-user pin it, t_19c100dd) with the session's
+	// max store row id at run start as the floor. The chat panel's
+	// composition reads it to cut the old sibling's persisted rows
+	// so the fresh response streams into their place - never stacked.
+	// Same h.mu discipline as the tails.
+	branch string
+	floor  int64
 }
 
 // runHub tracks detached runs by session id. It is the reattach
@@ -153,6 +161,32 @@ func (h *runHub) openItems(id string) ([]transcriptItem, bool) {
 		return nil, false
 	}
 	return run.openTail, true
+}
+
+// setBranch pins the run's branch-parent row and the pre-run row-id
+// floor (t_19c100dd). The cur == run guard keeps a late pin a no-op once
+// another run re-registered the same session id.
+func (h *runHub) setBranch(run *activeRun, branch string, floor int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cur, ok := h.runs[run.id]; ok && cur == run {
+		run.branch = branch
+		run.floor = floor
+	}
+}
+
+// runBranch reports the session's live run branch pin: the parent row id
+// and the pre-run floor. pinned is false when no run holds the slot or
+// the run pinned nothing (a plain send - the panel composes the active
+// path whole).
+func (h *runHub) runBranch(id string) (branch string, floor int64, pinned bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	run, ok := h.runs[id]
+	if !ok || run.branch == "" {
+		return "", 0, false
+	}
+	return run.branch, run.floor, true
 }
 
 // firstActive returns one live session id - the chat panel's focus
@@ -287,6 +321,11 @@ func (h *runHub) finish(run *activeRun) {
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
 func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
+	// Branch pin (t_19c100dd): BEFORE beginRun's first delta - the
+	// opening push must already compose with the old sibling's rows
+	// cut, so the retry's first paint is in place. Plain sends pin
+	// nothing and compose exactly as before.
+	s.runs.setBranch(run, req.branchParent, req.branchFloor)
 	// Chat panel (chat-last 1/3): NewServer always wires the capsule;
 	// no nil guard needed here.
 	s.chat.beginRun(req.SessionID)

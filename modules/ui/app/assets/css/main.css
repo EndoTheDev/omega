@@ -1362,14 +1362,24 @@ labels stopped short of the right edge. */
   animation: fade-in 0.18s ease-out;
 }
 
-/* copy message (/copy parity, card t_868633b3): a small mono glyph in
-   the bubble's top-right corner, same hover-fade contract as the
-   sessions row actions. Opaque chip surface so it stays legible over
-   text underneath; hidden entirely while not hovered (no hit target). */
+/* the action row (t_19c100dd, Endo ruling 2): switcher + fork + copy in
+   ONE row at the bottom of the message, under the content - the
+   top-edge chip placement is retired. Hidden while the bubble streams
+   (the component's v-if); fork/copy keep the hover-fade contract, the
+   switcher stays always-on. */
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* copy message (/copy parity, card t_868633b3): a small mono chip in the
+   action row, same hover-fade contract as the sessions row actions.
+   Opaque chip surface so it stays legible over text underneath; hidden
+   entirely while not hovered (no hit target). */
 .msg-copy {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  flex: none;
   height: 16px;
   padding: 0 5px;
   border: 1px solid var(--stroke);
@@ -1388,13 +1398,11 @@ labels stopped short of the right edge. */
 .msg-copy:hover { color: var(--text); }
 
 /* fork affordance (t_a62eeb43): the same hover-fade chip as msg-copy,
-   parked just left of it on the bubble's top edge; any HISTORICAL
-   message carries it (a streaming bubble has no id). Click anchors the
-   composer - the next send continues from this message. */
+   its left neighbor in the action row; any HISTORICAL message carries it
+   (a streaming bubble has no id). Click anchors the composer - the next
+   send continues from this message. */
 .msg-fork {
-  position: absolute;
-  top: 4px;
-  right: 44px;
+  flex: none;
   height: 16px;
   padding: 0 5px;
   border: 1px solid var(--stroke);
@@ -1412,17 +1420,13 @@ labels stopped short of the right edge. */
 .msg-fork:focus-visible { opacity: 1; pointer-events: auto; }
 .msg-fork:hover { color: var(--accent); }
 
-/* variant switcher (t_a62eeb43): « 2/3 » straddling the response block's
-   top border - small, mono, always visible while the session renders
-   this branch. Sessions without variants render NOTHING of this (the
-   component only mounts with a branch block), so plain sessions are
-   pixel-identical to before. The arrows are the only affordance that
-   rewrites which path the transcript serves. */
+/* variant switcher (t_a62eeb43): « 2/3 » in the action row - small,
+   mono, always visible while the session renders this branch. Sessions
+   without variants render NOTHING of this (the component only mounts
+   the switcher with a branch block). The arrows are the only
+   affordance that rewrites which path the transcript serves. */
 .variant-switcher {
-  position: absolute;
-  top: 0;
-  left: 8px;
-  transform: translateY(-50%);
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 0;
