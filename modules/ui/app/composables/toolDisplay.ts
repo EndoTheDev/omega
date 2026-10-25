@@ -22,16 +22,11 @@ export function parseToolDisplay(v: unknown): ToolDisplay {
 // toolRowWantOpen: the pure mode+status -> open mapping for a row the
 // user has NOT pinned. Auto = the TUI behavior: a running call is open
 // (you watch it work), a settled one is closed (the result collapses).
-// An interrupted call never delivers its result, so it counts as
-// settled - a dead meter behind an open row says nothing. Pure.
-export function toolRowWantOpen(
-  status: string,
-  mode: ToolDisplay,
-  interrupted = false,
-): boolean {
+// Pure.
+export function toolRowWantOpen(status: string, mode: ToolDisplay): boolean {
   if (mode === "expanded") return true;
   if (mode === "collapsed") return false;
-  return status === "running" && !interrupted;
+  return status === "running";
 }
 
 // Module-scoped mode ref: ToolCallLine rows live under ChatItem in every

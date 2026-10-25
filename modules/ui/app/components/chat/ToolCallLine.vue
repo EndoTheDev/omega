@@ -50,7 +50,6 @@
   const props = defineProps<{
     name: string;
     status: string;
-    interrupted?: boolean;
     output?: string;
     result?: string;
     // server-measured duration from restored history - wins over the
@@ -68,14 +67,11 @@
   // Elapsed counter (tool_call event -> tool_result arrival): ticks while
   // the call is running, freezes at the final value once the result
   // lands - the finished line keeps showing how long the call took.
-  // Restored history arrives already-final and renders nothing.
-  // live = no result yet AND the stream survived it: a dead stream never
-  // delivers the tool result, so the interrupted flag stops the meter -
-  // without it the counter would tick forever over a call that cannot
-  // finish. It stays honest: dot and status keep saying running.
+  // Restored history arrives already-final and renders nothing. It stays
+  // honest: dot and status keep saying running.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
-    () => props.status === "running" && !props.interrupted,
+    () => props.status === "running",
     // a restored STILL-RUNNING call counts on from the server's
     // elapsed-so-far (live-run merge) - not from the mount moment
     () => props.elapsedMs,
@@ -95,13 +91,13 @@
 
   function applyAuto() {
     if (pinned.value !== null || !el.value) return;
-    el.value.open = toolRowWantOpen(props.status, display.value, props.interrupted);
+    el.value.open = toolRowWantOpen(props.status, display.value);
   }
 
   // nextTick: the status flip and the result's v-if land in the same
   // render pass - apply after the DOM settles.
   watch(
-    [() => props.status, () => props.interrupted, display],
+    [() => props.status, display],
     () => void nextTick(applyAuto),
   );
   onMounted(applyAuto);

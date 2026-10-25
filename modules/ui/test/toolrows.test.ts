@@ -55,14 +55,6 @@ test("auto expands a running row, collapses a settled one", () => {
   assert.equal(toolRowWantOpen("", "auto"), false);
 });
 
-test("auto keeps an interrupted row collapsed - a dead stream never delivers its result", () => {
-  assert.equal(toolRowWantOpen("running", "auto", true), false);
-  assert.equal(toolRowWantOpen("running", "auto", false), true);
-  // pin-independent: the interrupted flag never overrides a hard mode
-  assert.equal(toolRowWantOpen("running", "expanded", true), true);
-  assert.equal(toolRowWantOpen("running", "collapsed", true), false);
-});
-
 // --- structural wiring: the card's must-haves in the components ---
 
 test("the shared mode key persists under omega.tool-display", () => {
@@ -81,7 +73,7 @@ test("ToolCallLine pins a manual toggle and recomputes around it", () => {
   assert.match(t, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);
   // the state machine rides the shared composable, not a private copy
   assert.match(t, /useToolDisplay\(\)/);
-  assert.match(t, /toolRowWantOpen\(props\.status, display\.value, props\.interrupted\)/);
+  assert.match(t, /toolRowWantOpen\(props\.status, display\.value\)/);
 });
 
 test("ChatMessage copies the RAW message content, never rendered HTML", () => {

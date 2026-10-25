@@ -112,7 +112,7 @@ describe("streamChat: clean end vs transport death", () => {
   });
 
   it("handlePayload records agent_end as the terminal event", () => {
-    const state = { seenResponse: false, sawEnd: false };
+    const state = { sawEnd: false };
     handlePayload({ type: "stream_end" }, silent, state);
     assert.equal(state.sawEnd, false);
     handlePayload({ type: "agent_end" }, silent, state);
@@ -146,7 +146,7 @@ describe("server-side cancel reads as interrupted", () => {
   });
 
   it("cancelled agent_end still marks the transport state sawEnd", () => {
-    const state = { seenResponse: false, sawEnd: false };
+    const state = { sawEnd: false };
     assert.throws(() =>
       handlePayload(
         { type: "agent_end", turns: 1, finish_reason: "cancelled", error: "context canceled" },

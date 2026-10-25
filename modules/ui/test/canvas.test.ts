@@ -269,7 +269,7 @@ test("view_model_delta reaches onViewModelDelta, normalized", () => {
   handlePayload(
     deltaFrame(WIRE_PANEL),
     { onViewModelDelta: (p) => seen.push(p) } as unknown as Parameters<typeof handlePayload>[1],
-    { seenResponse: false },
+    {},
   );
   assert.deepEqual(seen, [
     {
@@ -285,12 +285,12 @@ test("view_model_delta reaches onViewModelDelta, normalized", () => {
   handlePayload(
     deltaFrame({ junk: true }),
     { onViewModelDelta: (p) => seen.push(p) } as unknown as Parameters<typeof handlePayload>[1],
-    { seenResponse: false },
+    {},
   );
   handlePayload(
     deltaFrame(null),
     { onViewModelDelta: (p) => seen.push(p) } as unknown as Parameters<typeof handlePayload>[1],
-    { seenResponse: false },
+    {},
   );
   assert.equal(seen.length, len);
 });
@@ -299,7 +299,7 @@ test("absent onViewModelDelta: the frame is a no-op (no canvas, snapshot is the 
   handlePayload(
     deltaFrame(WIRE_PANEL),
     {} as unknown as Parameters<typeof handlePayload>[1],
-    { seenResponse: false },
+    {},
   );
 });
 

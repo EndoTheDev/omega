@@ -53,13 +53,11 @@ describe("parseFrame", () => {
 describe("handlePayload", () => {
   it("render frames carry no callbacks - the canvas deltas paint the pane", () => {
     const { handlers, calls } = recording();
-    const state = { seenResponse: false };
-    handlePayload({ type: "thinking_chunk", content: "hm" }, handlers, state);
-    handlePayload({ type: "response_chunk", content: "a" }, handlers, state);
-    handlePayload({ type: "tool_call", tool_call: { id: "c1", name: "shell.run", arguments: {} } }, handlers, state);
-    handlePayload({ type: "tool_result", message: { content: "boom", is_error: true } }, handlers, state);
+    handlePayload({ type: "thinking_chunk", content: "hm" }, handlers, {});
+    handlePayload({ type: "response_chunk", content: "a" }, handlers, {});
+    handlePayload({ type: "tool_call", tool_call: { id: "c1", name: "shell.run", arguments: {} } }, handlers, {});
+    handlePayload({ type: "tool_result", message: { content: "boom", is_error: true } }, handlers, {});
     assert.deepEqual(calls, [], "no transport consumer for render frames");
-    assert.equal(state.seenResponse, true, "the stream state still tracks the response half");
   });
 
   it("a view_model_delta frame reaches the handler as a normalized panel", () => {
@@ -67,14 +65,14 @@ describe("handlePayload", () => {
     handlePayload(
       { type: "view_model_delta", panel: { id: "chat", title: "Chat", kind: "chat", payload: { session: "s1", rows: [] } } },
       handlers,
-      { seenResponse: false },
+      {},
     );
     assert.deepEqual(calls, ["delta:chat:chat"]);
   });
 
   it("a malformed delta panel is skipped (the snapshot is the catch-up)", () => {
     const { handlers, calls } = recording();
-    handlePayload({ type: "view_model_delta", panel: 7 }, handlers, { seenResponse: false });
+    handlePayload({ type: "view_model_delta", panel: 7 }, handlers, {});
     assert.deepEqual(calls, []);
   });
 
@@ -88,14 +86,14 @@ describe("handlePayload", () => {
         cached_count: 4,
       },
       handlers,
-      { seenResponse: true },
+      {},
     );
     assert.deepEqual(calls, ["usage:10/20/4"]);
   });
 
   it("unknown event types are ignored", () => {
     const { handlers, calls } = recording();
-    handlePayload({ type: "agent_start" }, handlers, { seenResponse: false });
+    handlePayload({ type: "agent_start" }, handlers, {});
     assert.deepEqual(calls, []);
   });
 
@@ -103,9 +101,7 @@ describe("handlePayload", () => {
     const { handlers } = recording();
     assert.throws(
       () =>
-        handlePayload({ type: "error", error: "provider exploded" }, handlers, {
-          seenResponse: false,
-        }),
+        handlePayload({ type: "error", error: "provider exploded" }, handlers, {}),
       /provider exploded/,
     );
   });

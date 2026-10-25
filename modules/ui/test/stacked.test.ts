@@ -37,7 +37,6 @@ const tool = (name: string): TranscriptItem => ({
   name,
   status: "done",
 });
-const interrupted = (): TranscriptItem => ({ kind: "interrupted" });
 
 describe("splitBlocks", () => {
   it("one exchange = one block: user message opens, subtree belongs to it", () => {
@@ -90,13 +89,6 @@ describe("splitBlocks", () => {
     const blocks = splitBlocks([user("a"), user("b"), user("c")]);
     assert.equal(blocks.length, 3);
     assert.deepEqual(blocks.map((b) => b.length), [1, 1, 1]);
-  });
-
-  it("interruption marker rides inside the block it interrupted", () => {
-    const items = [user("a"), assistant("par"), interrupted()];
-    const blocks = splitBlocks(items);
-    assert.equal(blocks.length, 1);
-    assert.deepEqual(blocks[0], items);
   });
 
   it("restored history and live converge on the same blocks", () => {

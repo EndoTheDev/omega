@@ -306,8 +306,7 @@ export function activityPhase(
     if (
       tool === null &&
       item?.kind === "tool" &&
-      item.status === "running" &&
-      !item.interrupted
+      item.status === "running"
     ) {
       tool = item;
     } else if (
@@ -881,7 +880,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       if (target?.kind === "tool") {
         target.result = block.content ?? "";
         target.status = block.is_error ? "error" : "done";
-        target.interrupted = undefined;
         // the call settled: the running meter's offset is spent
         if (!blockRunning) target.elapsedMs = undefined;
         target.finalMs = block.elapsed_ms;
@@ -903,7 +901,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       it.name = it.name || "tool";
       it.status = block.is_error ? "error" : "done";
       it.result = block.content ?? "";
-      it.interrupted = undefined;
       it.finalMs = block.elapsed_ms;
       cache.set(`result:${index}:${sig}`, it);
       return it;
@@ -949,7 +946,6 @@ export function createCanvasTranscript(): CanvasTranscript {
           JSON.stringify(block.tool_call.arguments, null, 2)
         : undefined;
       it.status = blockRunning ? "running" : "done";
-      it.interrupted = undefined;
       // elapsed already consumed by a STILL-RUNNING restored call (the
       // persisted history's live-run merge): the meter counts on
       if (blockRunning) it.elapsedMs = block.elapsed_ms ?? 0;
