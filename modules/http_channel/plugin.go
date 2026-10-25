@@ -21,6 +21,11 @@ type Plugin struct {
 	// shared by every bind's channel start (multi-bind: the last
 	// started server serves it - one frontend is live per process).
 	chat *chatCapsule
+	// canvas is the per-process canvas builder (t_1c9793a8): one
+	// canvas behind every bind's server - the panel state the snapshot
+	// GET serves, the action pipe routes and the deltas carry must be
+	// the same on all mirrors.
+	canvas *sharedCanvas
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -76,6 +81,7 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	// at channel start, so action-pipe launches, reattach reads and the
 	// SSE attach agree on what is live regardless of which bind speaks.
 	p.hub = &runHub{}
+	p.canvas = &sharedCanvas{}
 	for _, b := range binds {
 		ctx.Channels = append(ctx.Channels, &HTTPChannel{
 			addr:       fmt.Sprintf("%s:%d", b, port),
@@ -83,6 +89,7 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 			titleModel: cfg.TitleModel,
 			chat:       p.chat,
 			hub:        p.hub,
+			canvas:     p.canvas,
 		})
 	}
 	return nil

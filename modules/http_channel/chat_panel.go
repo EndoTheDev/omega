@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
@@ -49,7 +50,11 @@ const (
 // and the actions answer "chat channel not started" - the same
 // degradation every optional seam applies).
 type chatCapsule struct {
-	srv *Server
+	// srv is the late-bound server pin. Atomic because multi-bind
+	// starts channels in goroutines (cmdServe) and each bind's wire
+	// re-pins the shared capsule while the other mirrors may already
+	// serve requests (t_1c9793a8).
+	srv atomic.Pointer[Server]
 	// batch is the streaming-token flush cadence. Zero disables
 	// batching: every token event flushes (tests pin the batch law
 	// with both settings).
@@ -76,8 +81,12 @@ func newChatCapsule() *chatCapsule {
 // registerAt appends the capsule to the context's panel providers once
 // - the Start-time registration (chat-last 2b ruling: gated on the
 // channel actually starting; idempotent, so multi-bind servers share
-// one registration).
+// one registration). Under the capsule mutex: multi-bind starts
+// channels in goroutines, so two wires register concurrently and the
+// append must serialize against the other bind's read (t_1c9793a8).
 func (c *chatCapsule) registerAt(ctx *core.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, p := range ctx.PanelProviders {
 		if p == core.PanelProvider(c) {
 			return
@@ -122,7 +131,7 @@ func chatActions() []core.PanelAction {
 // still declares the panel - the kind and actions stay on the wire,
 // the payload stays empty until a conversation exists.
 func (c *chatCapsule) Panels() []core.Panel {
-	if c.srv == nil {
+	if c.srv.Load() == nil {
 		return []core.Panel{{ID: chatPanelID, Title: "Chat", Kind: core.PanelKindChat, Actions: chatActions()}}
 	}
 	session, running := c.focus()
@@ -135,13 +144,13 @@ func (c *chatCapsule) Panels() []core.Panel {
 // (The focusID mutation side of this is beginRun; the read is
 // stateless over the hub + store.)
 func (c *chatCapsule) focus() (string, bool) {
-	if id, ok := c.srv.runs.firstActive(); ok {
+	if id, ok := c.srv.Load().runs.firstActive(); ok {
 		return id, true
 	}
-	if c.srv.store == nil {
+	if c.srv.Load().store == nil {
 		return "", false
 	}
-	sessions, err := c.srv.store.ListSessions(context.Background())
+	sessions, err := c.srv.Load().store.ListSessions(context.Background())
 	if err != nil {
 		return "", false
 	}
@@ -195,18 +204,18 @@ func (c *chatCapsule) payloadFor(session string, running bool) core.ChatPayload 
 // (running=false) renders the persisted truth alone.
 func (c *chatCapsule) sessionItems(session string, running bool) []transcriptItem {
 	if isEphemeralID(session) {
-		items := c.srv.eph.snapshotItems(session)
+		items := c.srv.Load().eph.snapshotItems(session)
 		if running {
-			if tail, live := c.srv.runs.tailItems(session); live {
+			if tail, live := c.srv.Load().runs.tailItems(session); live {
 				items = append(items, tail...)
 			}
 		}
 		return items
 	}
-	if c.srv.store == nil {
+	if c.srv.Load().store == nil {
 		return nil
 	}
-	view, err := c.srv.store.GetActiveView(context.Background(), session)
+	view, err := c.srv.Load().store.GetActiveView(context.Background(), session)
 	if err != nil {
 		return nil
 	}
@@ -214,7 +223,7 @@ func (c *chatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if !running {
 		return persisted
 	}
-	open, live := c.srv.runs.openItems(session)
+	open, live := c.srv.Load().runs.openItems(session)
 	if !live || len(open) == 0 {
 		return persisted
 	}
@@ -282,7 +291,7 @@ func itemSignature(it transcriptItem) (string, bool) {
 // path) owns no panel. The cadence ticker is this session's batcher:
 // one per streaming session.
 func (c *chatCapsule) beginRun(session string) {
-	if c.srv == nil || session == "" {
+	if c.srv.Load() == nil || session == "" {
 		return
 	}
 	c.mu.Lock()
@@ -340,7 +349,7 @@ func (c *chatCapsule) takeDirty(session string) bool {
 // opened, a result answered, the assistant message landed in the
 // store). A stale run's events never paint a newer run's panel.
 func (c *chatCapsule) runEvent(session string, event core.Event) {
-	if c.srv == nil || session == "" {
+	if c.srv.Load() == nil || session == "" {
 		return
 	}
 	c.mu.Lock()
@@ -389,7 +398,7 @@ func (c *chatCapsule) flushNowUnlocked(session string) {
 // focused session's exit paints it - the 409 law may already have
 // registered a newer run for the session. The batcher exits here too.
 func (c *chatCapsule) endRun(session string) {
-	if c.srv == nil || session == "" {
+	if c.srv.Load() == nil || session == "" {
 		return
 	}
 	c.mu.Lock()
@@ -415,7 +424,7 @@ func (c *chatCapsule) endRun(session string) {
 // the same faces the REST routes serve - the pipe routes the existing
 // chat verbs, no new behavior (render, do not redesign).
 func (c *chatCapsule) HandleAction(call core.ActionCall) (any, error) {
-	if c.srv == nil {
+	if c.srv.Load() == nil {
 		return nil, fmt.Errorf("chat channel not started")
 	}
 	var args struct {
@@ -434,7 +443,7 @@ func (c *chatCapsule) HandleAction(call core.ActionCall) (any, error) {
 		// The same face POST /sessions/{id}/stop serves: cancel the
 		// live run's context; the loop unwinds through its normal
 		// path and the run's exit hook paints the completed state.
-		ok, cancellable := c.srv.runs.stop(args.Session)
+		ok, cancellable := c.srv.Load().runs.stop(args.Session)
 		if !ok {
 			return nil, fmt.Errorf("session not active")
 		}
@@ -448,11 +457,11 @@ func (c *chatCapsule) HandleAction(call core.ActionCall) (any, error) {
 		// the panel's deltas and the reattach stream are the
 		// surfaces; no response body to stream.
 		req := chatRequest{SessionID: args.Session, Retry: true}
-		cr, err := c.srv.prepareRun(context.Background(), &req, nil)
+		cr, err := c.srv.Load().prepareRun(context.Background(), &req, nil)
 		if err != nil {
 			return nil, err
 		}
-		c.srv.launchRun(context.Background(), cr.run, cr.prov, cr.messages, cr.tools, req)
+		c.srv.Load().launchRun(context.Background(), cr.run, cr.prov, cr.messages, cr.tools, req)
 		return map[string]any{"session": args.Session, "running": true}, nil
 	default:
 		return nil, fmt.Errorf("%w: %q", core.ErrUnknownAction, call.Action)

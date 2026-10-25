@@ -8,10 +8,36 @@ package http_channel
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
+
+// sharedCanvas builds the process's ONE canvas on first use and hands
+// every bind's server the same instance (t_1c9793a8). A per-bind canvas
+// left every mirror but the last-started one frozen at its boot-time
+// seed: the capsule's push closure is last-one-wins, so only one
+// bind's canvas ever tracked panel state, and the other mirrors' GET
+// /ui/canvas served the seed forever - journey 30's variant switch
+// back read that frozen snapshot and the flip never rendered. The emit
+// closure rides the first starter's server; its fan-out is the shared
+// run hub, so deltas reach every mirror's subscribers either way.
+type sharedCanvas struct {
+	once sync.Once
+	c    *agent.Canvas
+	err  error
+}
+
+// build returns the process canvas, building it on first call from
+// the fully mounted Context (the same registration point every other
+// seam reads). Later calls reuse the instance - one canvas, one
+// SetPanelUpdate installation, one panel state per process.
+func (sc *sharedCanvas) build(ctx *core.Context, emit func(core.Event)) (*agent.Canvas, error) {
+	sc.once.Do(func() { sc.c, sc.err = agent.NewCanvas(ctx, emit) })
+	return sc.c, sc.err
+}
 
 // HTTPChannel adapts the HTTP server to the core.Channel interface.
 // It creates one agent from the Context and reuses it for all requests.
@@ -26,6 +52,11 @@ type HTTPChannel struct {
 	// capsule's pinned last-started server, and with per-bind hubs the
 	// transcript/events reads on the other mirrors go blind to that run.
 	hub *runHub
+	// canvas is the per-process canvas builder every bind shares
+	// (t_1c9793a8): one panel state behind every mirror's snapshot
+	// GET, action pipe and delta fan-out - the canvas is per-process,
+	// not per-bind (the same ruling the run hub already follows).
+	canvas *sharedCanvas
 	// chat is the canvas capsule the plugin registered (chat-last 1/3):
 	// Start binds it to this channel's server before the canvas runtime
 	// builds - the snapshot and the action pipe meet the served state.
@@ -35,6 +66,16 @@ type HTTPChannel struct {
 // Start creates an agent from deps.Ctx and serves HTTP/SSE until the
 // context is cancelled. Blocks.
 func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
+	if err := c.wire(deps); err != nil {
+		return err
+	}
+	return c.srv.Serve(ctx, c.addr)
+}
+
+// wire builds the channel's server and binds it to the process-wide
+// state (hub, chat capsule, canvas). Split from Start so a host or
+// test can wire a mirror without serving it.
+func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	if deps.Ctx == nil || deps.Ctx.Provider == nil {
 		return fmt.Errorf("http_channel: no provider configured")
 	}
@@ -50,7 +91,6 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	// last-started server - one frontend is live per process.
 	if c.chat != nil {
 		c.srv.chat = c.chat
-		c.srv.chat.srv = c.srv
 		c.srv.chat.registerAt(deps.Ctx)
 	}
 	// Multi-bind mirror (t_c6f13a82): every bind's server joins the one
@@ -64,10 +104,17 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	// Canvas transport (arc 3b): the runtime is built from the fully
 	// mounted Context after MountAll - the same registration point
 	// every other seam reads (card t_058edeb3). Deltas fan out through
-	// the server's run hub (server_canvas.go).
-	if err := c.srv.newCanvas(deps.Ctx); err != nil {
+	// the server's run hub (server_canvas.go). ONE canvas per process
+	// (t_1c9793a8): every bind's server serves the same instance, so
+	// every mirror's snapshot GET tracks the pushed panel state.
+	if c.canvas == nil {
+		c.canvas = &sharedCanvas{}
+	}
+	canvas, err := c.canvas.build(deps.Ctx, c.srv.canvasEmit)
+	if err != nil {
 		return fmt.Errorf("http_channel: canvas: %w", err)
 	}
+	c.srv.canvas = canvas
 	c.srv.Kanban = deps.Ctx.Kanban
 	// Inspector seams (card t_db430fea): read-only views for the
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
@@ -83,7 +130,16 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	c.srv.runTimeout = c.runTimeout
 	c.srv.titleModel = c.titleModel
 	c.srv.version = deps.Version
-	return c.srv.Serve(ctx, c.addr)
+	// The capsule pin goes live LAST, after every server field above
+	// is written: the Store publishes (release) a fully-wired server,
+	// so a reader that Loads the pin (acquire) never sees a
+	// half-wired one - a mid-wire pin let another bind's canvas build
+	// read this server's fields while wire still wrote them
+	// (t_1c9793a8). Last wire finished wins, same one-frontend law.
+	if c.chat != nil {
+		c.chat.srv.Store(c.srv)
+	}
+	return nil
 }
 
 // Stop shuts the HTTP server down. The host calls this after the
