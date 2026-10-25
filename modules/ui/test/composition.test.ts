@@ -29,6 +29,27 @@ test("scanModuleUIs finds module ui dirs with their components", () => {
   }
 });
 
+test("scanModuleUIs covers the engine ring: second root registers engine ui dirs, never the shell tree", () => {
+  const scratch = makeScratch();
+  const engine = makeScratch();
+  try {
+    mkdirSync(join(scratch, "tools", "ui"), { recursive: true });
+    writeFileSync(join(scratch, "tools", "ui", "ToolsList.vue"), "<template/>");
+    // engine ring: http_channel ships ui/ at the checkout root
+    mkdirSync(join(engine, "http_channel", "ui"), { recursive: true });
+    writeFileSync(join(engine, "http_channel", "ui", "LogsList.vue"), "<template/>");
+    // the shell tree under an engine root is scanned via modulesRoot
+    // only - a parent-root scan must not re-register it as "modules"
+    mkdirSync(join(engine, "modules", "ui"), { recursive: true });
+    writeFileSync(join(engine, "modules", "ui", "Shell.vue"), "<template/>");
+    const found = scanModuleUIs(scratch, engine);
+    assert.deepEqual(found.map((f) => f.module), ["http_channel", "tools"]);
+  } finally {
+    rm(scratch);
+    rm(engine);
+  }
+});
+
 test("scanModuleUIs skips empty ui dirs, dot dirs, and ui itself", () => {
   const scratch = makeScratch();
   try {
@@ -155,7 +176,7 @@ test("the inspector's module tab hosts only the active panel's module", () => {
 
 test("nuxt.config wires the composition in", () => {
   const config = readFileSync(`${root}/nuxt.config.ts`, "utf8");
-  assert.ok(config.includes("scanModuleUIs(modulesRoot)"), "scans the modules tree");
+  assert.ok(config.includes("scanModuleUIs(modulesRoot, checkoutRoot)"), "scans the modules tree + the engine ring");
   assert.ok(config.includes("prefix: ui.module"), "registers module dirs with a namespace prefix");
   assert.ok(config.includes('"/tools"'), "dev-proxies the tools endpoint to the dev instance");
   assert.ok(config.includes("writeFileSync"), "generates the panel list at config-eval time");

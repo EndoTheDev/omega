@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
-	httpchannel "github.com/EndoTheDev/omega/modules/http_channel"
+	httpchannel "github.com/EndoTheDev/omega/http_channel"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/memory"

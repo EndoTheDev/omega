@@ -41,7 +41,7 @@ modules/ui/app/composables/module-panels.generated.ts
 *.log
 npm-debug.log*
 
-# NOTE: modules/http_channel/static/ IS tracked - the built SPA is
+# NOTE: http_channel/static/ IS tracked - the built SPA is
 # committed so go install / go build produce the complete product
 # (placeholder-era ignore rules removed; see modules/ui/scripts/build.sh)
 
