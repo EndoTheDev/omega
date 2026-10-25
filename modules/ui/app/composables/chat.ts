@@ -861,6 +861,9 @@ export function createCanvasTranscript(): CanvasTranscript {
       const it = (cache.get(sig) ?? reactive({ kind: "thinking", content: "" })) as ThinkingItem;
       it.kind = "thinking";
       it.content = block.content ?? "";
+      // the store id rides the row (a run head can be a thinking row -
+      // the variant switcher anchors on it, t_0df4efd8)
+      it.id = row.id;
       it.streaming = running ? true : undefined;
       it.finalMs = undefined;
       cache.set(sig, it);
@@ -937,6 +940,10 @@ export function createCanvasTranscript(): CanvasTranscript {
       const it = (cache.get(csig) ?? reactive({ kind: "tool", name: "tool" })) as ToolItem;
       it.kind = "tool";
       it.name = block.tool_call?.name || "tool";
+      // the store id rides the CALL row (a run head can be a tool call
+      // row - the variant switcher anchors on it, t_0df4efd8); the
+      // result merge mutates this same item, so the id stays the call's
+      it.id = row.id;
       it.output =
         block.tool_call?.arguments != null ?
           JSON.stringify(block.tool_call.arguments, null, 2)
@@ -968,6 +975,11 @@ export function createCanvasTranscript(): CanvasTranscript {
 
   function apply(payload: ChatPayloadWire): TranscriptItem[] {
     const out: TranscriptItem[] = [];
+    // one push per item object: a merge (the result row onto its call
+    // item, the settled verdict onto its card) RESOLVES to an item the
+    // call row already pushed - re-pushing it would render the line
+    // twice and hand the keyed v-for a duplicate key (t_0df4efd8)
+    const pushed = new Set<TranscriptItem>();
     const rows = payload.rows ?? [];
     if ((payload.session ?? "") !== session) {
       // another conversation took the panel over: identities are
@@ -978,7 +990,10 @@ export function createCanvasTranscript(): CanvasTranscript {
     }
     for (let i = 0; i < rows.length; i++) {
       const it = item(rows[i]!, i, !!payload.running);
-      if (it) out.push(it);
+      if (it && !pushed.has(it)) {
+        out.push(it);
+        pushed.add(it);
+      }
     }
     return out;
   }

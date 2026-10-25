@@ -1488,6 +1488,13 @@ labels stopped short of the right edge. */
 .variant-switcher .v-arrow:hover:not(:disabled) { color: var(--accent); }
 .variant-switcher .v-arrow:disabled { opacity: 0.35; cursor: default; }
 
+/* head-row anchors (t_0df4efd8): the switcher also mounts on a branch's
+   active head when it renders as a thinking block or a tool line (a
+   multi-row replay without a stored text bubble) - small inset under
+   the block's body, same chip as the bubble row */
+.thinking .thinking-variant { margin: 4px 8px 8px; }
+.toolcall .tool-variant { margin: 4px 8px; display: inline-flex; }
+
 /* the composer's fork chip: state, not decoration - while the anchor is
    armed the next send runs FROM a historical message, and the user must
    be able to see (and drop) that */

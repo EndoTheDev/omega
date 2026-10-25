@@ -152,7 +152,7 @@
     scrollFlushTick,
     splitBlocks,
     thinkingLevelWire,
-    variantOf,
+    variantAnchors,
     type Appearance,
     type TranscriptItem,
     type VariantBlock,
@@ -407,16 +407,28 @@
     void host.retry(stateKey);
   }
 
-  // --- variants (t_a62eeb43) ---
+  // --- variants (t_a62eeb43, anchor fix t_0df4efd8) ---
   //
-  // variantOfItem resolves ONE rendered item's branch block: an
-  // assistant message whose store id is a sibling of a >=2-count branch
-  // point. Canvas-mapped stored rows carry the ids; live rows and user
-  // bubbles resolve to null - the switcher renders only on stored rows.
+  // variantOfItem resolves ONE rendered item's switcher block: the
+  // branch anchor item, resolved once per transcript pass by
+  // variantAnchors - a branch's ACTIVE head row anchors, whatever kind
+  // it renders as (a multi-row replay's head is a thinking or tool
+  // call row; the run's stored text bubble anchors instead, and a
+  // text-less run anchors the head block itself). Canvas-mapped stored
+  // rows carry the ids; live rows and user bubbles resolve to null -
+  // the switcher renders only on stored rows.
+  const variantAnchorMap = computed(() =>
+    variantAnchors(transcript.value, state.value?.variants),
+  );
   function variantOfItem(item: TranscriptItem): VariantBlock | null {
     const st = state.value;
-    if (!item || item.kind !== "message" || item.role !== "assistant") return null;
-    return variantOf(item, st?.variants);
+    if (!st?.variants?.length) return null;
+    const id =
+      item.kind === "message" || item.kind === "thinking" || item.kind === "tool" ?
+        item.id
+      : undefined;
+    if (!id) return null;
+    return variantAnchorMap.value.get(id) ?? null;
   }
   function onSelect(messageId: string, index: number) {
     void host.selectVariant(stateKey, messageId, index);
