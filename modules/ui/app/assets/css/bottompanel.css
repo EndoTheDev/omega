@@ -71,6 +71,9 @@
     left: var(--bottom-inset-left, 0px);
     right: var(--bottom-inset-right, 0px);
     height: auto !important; /* beats the tree's inline fixed px */
+    /* the render clamp (the stuck-divider fix) caps the IN-FLOW pane;
+       the absolute band spans top-to-bottom and must not inherit it */
+    max-height: none !important;
     margin: 0; /* the inset vars now position; margins would double them */
     z-index: 30;
   }
