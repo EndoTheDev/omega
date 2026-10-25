@@ -46,7 +46,7 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	// pin.
 	hub := &runHub{}
 	chat := newChatCapsule()
-	chat.srv = sB
+	chat.srv.Store(sB)
 	shared := &sharedCanvas{}
 	for _, s := range []*Server{sA, sB} {
 		s.runs = hub

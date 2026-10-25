@@ -113,7 +113,7 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	// constructed Server (tests, embedding) has the push hooks and the
 	// panel even without the plugin's channel-start handoff.
 	s.chat = newChatCapsule()
-	s.chat.srv = s
+	s.chat.srv.Store(s)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)

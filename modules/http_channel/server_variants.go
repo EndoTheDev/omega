@@ -89,7 +89,7 @@ func (s *Server) handleSessionVariants(w http.ResponseWriter, r *http.Request) {
 	// is not a run - no delta would ever carry the swap. Re-push the
 	// focused panel so the webui's post-select snapshot refetch repaints
 	// the NEW active path (journey 30: the flip stuck on the old row).
-	if c := s.chat; c != nil && c.srv != nil {
+	if c := s.chat; c != nil && c.srv.Load() != nil {
 		if focusID, running := c.focus(); focusID == id {
 			c.push(c.buildPanel(id, running))
 		}
