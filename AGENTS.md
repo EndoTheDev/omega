@@ -82,7 +82,9 @@ Terse operational rules. Layer references live in `docs/` (map below);
   seams, messagetree); `agent/` is for the loop runtime and real helpers
   only (`Plugin`, `MountAll`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
-  (card t_fb49d5cf).
+  (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26):
+  `http_channel/` and `tui/` are ENGINE ring, not modules - a module
+  importing them is module-imports-engine, not module-imports-module.
 - **New extension recipe.** Create `modules/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
   `buildPlugins()` in `cmd/omega/main.go`; append tools to
@@ -162,10 +164,10 @@ Terse operational rules. Layer references live in `docs/` (map below);
 | `ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
 | `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAll`), events, shared types | `docs/architecture.md` |
 | `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
-| `modules/` | In-process extension packages (one `agent.Plugin` each) | `docs/architecture.md` (table), `modules/README.md` (authoring) |
+| `http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
+| `tui/` | ENGINE ring (always on, never disabled): terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
+| `modules/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `modules/README.md` (authoring) |
 | `modules/ui/` | Nuxt 4 webui SPA, built output embedded into the binary | `docs/webui.md` |
-| `modules/http_channel/` | HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
-| `modules/tui/` | Terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
 | `modules/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
 | `modules/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
 | `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
