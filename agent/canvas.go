@@ -147,20 +147,31 @@ func (c *Canvas) Snapshot() []core.Panel {
 // carrying it. The panel's kind/title and its Actions travel with
 // every delta (descriptors are small by law, self-describing beats a
 // second message kind). The module must be mounted and the panel must
-// carry the id it updates by - an unknown module is a wiring bug, and
-// this is the runtime's front line for catching it.
+// carry the id it updates by - an unknown module is a wiring bug, an
+// undeclared panel id likewise (it would mint a phantom panel the
+// module never mounted, forever). Both reject with an error. The emit
+// happens under the state lock (t_877f4bce): Panel carries no sequence
+// number, so a delta emitted after unlock could leave a concurrent
+// second Update's delta landing first and regressing both the live
+// frontends and the stored state to a stale payload - under one lock,
+// delta order is state order. The emitter must therefore not call
+// back into the canvas (Snapshot/Update/Dispatch deadlock); the
+// transports fan out under their own locks, which is the contract.
 func (c *Canvas) Update(module string, panel core.Panel) error {
 	if module == "" || panel.ID == "" {
 		return fmt.Errorf("canvas update: both module and panel id are required")
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if _, mounted := c.handlers[module]; !mounted {
-		c.mu.Unlock()
 		return fmt.Errorf("%w: %q", core.ErrUnknownModule, module)
 	}
-	panel.Actions = c.state[module][panel.ID].Actions
+	seed, declared := c.state[module][panel.ID]
+	if !declared {
+		return fmt.Errorf("canvas update: module %q never declared panel %q - phantom panel rejected", module, panel.ID)
+	}
+	panel.Actions = seed.Actions
 	c.state[module][panel.ID] = panel
-	c.mu.Unlock()
 
 	if c.emit != nil {
 		c.emit(core.ViewModelDelta{Type: "view_model_delta", Panel: panel})

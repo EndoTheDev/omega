@@ -103,6 +103,13 @@ func (s *Server) handleUIActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		// A runError carries its own HTTP status (the same surface the
+		// chat verbs serve: a retry against a session with a live run is
+		// a 409 through the pipe, exactly like POST /chat answers).
+		if re, ok := err.(*runError); ok {
+			http.Error(w, err.Error(), re.code)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
