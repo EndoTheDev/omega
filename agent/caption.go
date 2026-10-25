@@ -2,13 +2,11 @@ package agent
 
 import (
 	"context"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
-// Captioner moved to core with the Agent engine (arc 1b; the agent's
-// RunWithProvider caption path references it), t_7bb4790d.
-type Captioner = core.Captioner
+// Captioner moved to core with the Agent engine (arc 1b); the agent's
+// RunWithProvider caption path references it. Consumers import it from
+// core.Captioner (no re-exports at intermediate layers).
 
 // CaptionStore persists computed captions keyed by image content.
 // Optional: the captioner's in-process cache covers one process's

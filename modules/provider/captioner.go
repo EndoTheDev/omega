@@ -26,7 +26,7 @@ const captionPrompt = "Describe this image factually and completely, plain text.
 const captionTimeout = 2 * time.Minute
 
 // Captioner describes image content with the vision_model. It is the
-// agent.Captioner implementation for the vision-model knob: one pinned
+// core.Captioner implementation for the vision-model knob: one pinned
 // provider copy serves the vision model, the process-wide memo plus the
 // store sink (agent.CaptionStore) make repeat appearances of the same
 // image a cache hit - the caption is computed ONCE per image and
@@ -57,7 +57,7 @@ func NewCaptioner(base ai.Provider, model string, sink agent.CaptionStore, log c
 
 // Caption returns the caption for one image: process memo -> store ->
 // one vision-model call (persisted on success). Implements
-// agent.Captioner.
+// core.Captioner.
 func (c *Captioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {
 	id := ImageID(img)
 	if v, ok := c.cache.Load(id); ok {

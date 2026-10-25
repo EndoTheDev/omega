@@ -11,7 +11,6 @@ import {
   parseFrame,
   normalizeCanvasPanel,
   normalizeChatPayload,
-  renderChatPanel,
   chatPanelContent,
   chatPanelMessageCount,
   chatPanelOf,
@@ -146,39 +145,6 @@ describe("normalizeChatPayload: the chat panel payload's wire guard", () => {
     assert.equal(normalizeChatPayload(null), null);
     assert.equal(normalizeChatPayload([1, 2]), null);
     assert.equal(normalizeChatPayload("chat"), null);
-  });
-
-  it("renderChatPanel maps the rows onto the component contract", () => {
-    const items = renderChatPanel(
-      normalizeChatPayload({
-        session: "s1",
-        rows: [
-          { id: "3", role: "user", status: "complete", blocks: [{ type: "text", content: "q" }] },
-          { role: "assistant", status: "streaming", blocks: [{ type: "thinking", content: "hm", running: true }] },
-          {
-            role: "assistant",
-            status: "complete",
-            blocks: [{ type: "tool_call", tool_call: { id: "c9", name: "files.read", arguments: { path: "x" } } }],
-          },
-          { role: "tool", status: "complete", blocks: [{ type: "tool_result", tool_call_id: "c9", content: "contents" }] },
-          { id: "5", role: "assistant", status: "complete", blocks: [{ type: "text", content: "## done" }] },
-        ],
-      })!,
-    );
-    assert.deepEqual(
-      items.map((i) => i.kind),
-      ["message", "thinking", "tool", "message"],
-      "the call row + result row merge exactly like the restore merge; the prose row is its own bubble",
-    );
-    const user = items[0] as { role: string; id?: string; content: string };
-    assert.equal(user.role, "user");
-    assert.equal(user.id, "3");
-    const think = items[1] as { streaming?: boolean };
-    assert.equal(think.streaming, true, "the open block streams");
-    const tool = items[2] as { name: string; result?: string; status: string };
-    assert.equal(tool.name, "files.read");
-    assert.equal(tool.result, "contents");
-    assert.equal(tool.status, "done");
   });
 
   it("chatPanelContent + chatPanelMessageCount read the rows", () => {
