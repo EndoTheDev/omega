@@ -124,3 +124,23 @@ jobs:
           curl -X POST -H "Content-Type: application/json" \
             -d "{\"content\":\"🚀 **omega ${{ steps.version.outputs.VERSION }}** is out!\\n\\n[Download here](https://github.com/EndoTheDev/omega/releases/tag/${{ steps.version.outputs.VERSION }})\",\"username\":\"omega releases\"}" \
             "$DISCORD_WEBHOOK_URL"
+
+  windows-smoke:
+    # ponytail: prove the windows asset executes before users find out
+    # it doesn't. Costs windows-runner minutes only when a release
+    # exists. Ceiling named: version + one help call, not a suite.
+    runs-on: windows-latest
+    needs: release
+    permissions:
+      contents: read
+    steps:
+      - name: Download and smoke the windows asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$env:GITHUB_REF_NAME" --pattern "omega-*windows_amd64.zip"
+          Expand-Archive -Path "omega-*windows_amd64.zip" -DestinationPath smoke
+          $exe = Get-ChildItem -Path smoke -Recurse -Filter omega.exe | Select-Object -First 1
+          if (-not $exe) { throw "omega.exe not found in the windows asset" }
+          & $exe.FullName --version
+          & $exe.FullName run --help

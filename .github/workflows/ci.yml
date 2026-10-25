@@ -3,8 +3,17 @@ name: CI
 on:
   push:
     branches: [master, dev]
+    # ponytail: docs-only pushes skip CI (minutes back). Tradeoff named:
+    # the drift gate also skips those pushes - drift state stays as of the
+    # last code push, next code push restores it. Acceptable during soak.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [master, dev]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 jobs:
   test:
