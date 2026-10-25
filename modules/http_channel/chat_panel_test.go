@@ -711,8 +711,29 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("retry = %d: %v", res.StatusCode, out)
 	}
-	if !s.runs.active(sessionID) {
-		t.Fatal("retry run not live")
+	// The retry run is live - OR already finished. The run slot is
+	// registered synchronously inside the action's 200 (prepareRun's
+	// runs.start), so "not live at this instant" has exactly one
+	// product meaning: the whole run (dummy provider, near-instant;
+	// persist -> finish) completed inside the gap between the action
+	// response and this check - a window that widens under runner
+	// load, where this test process can be descheduled long past a
+	// run's entire lifetime. active() is a transient; the persisted
+	// sibling branch is the durable proof the retry launched. Accept
+	// either; a single instantaneous check reds ~1 run per nightly.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if s.runs.active(sessionID) {
+			break
+		}
+		v, err := s.store.GetActiveView(context.Background(), sessionID)
+		if err == nil && len(v.Branches) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("retry run not live and no sibling branch persisted - the retry launched nothing")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	waitRunQuiescent(t, s, sessionID)
 	// The retry replays the same turn: the store gains a sibling
