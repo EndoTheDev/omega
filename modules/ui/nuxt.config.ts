@@ -89,11 +89,19 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
-        // card t_d7a7beaa: the board switcher reads GET /boards in dev
-        // too (same-origin embedded in production); without this route
-        // the switcher's v-if never turns true on a dev lane and the
-        // header spacing (t_de8ae822) cannot be verified live
         "/boards",
+        // card t_078a2c35: the canvas view-model pipe (GET /ui/canvas +
+        // POST /ui/actions) is same-origin embedded in production; the
+        // chat transcript renders FROM it (chat-last 2a), so a dev lane
+        // without this route renders only the REST restore and cannot
+        // reproduce canvas-seam behavior at all
+        "/ui",
+        // the sidebar's list fetch is QUERY-BEARING and devProxy matches
+        // prefix on the FULL path (query included) - a bare "/sessions"
+        // key never matches it (the remainder "?archived=include" is not
+        // a "/..." path segment), so the request fell through to SSR
+        // index.html and the SPA booted with an empty session list
+        "/sessions?archived=include",
         // card t_14f73742: the extensions inventory tab fetches the
         // module list in dev (same-origin embedded in production)
         "/extensions",
