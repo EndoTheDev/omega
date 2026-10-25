@@ -629,6 +629,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, prepErr.Error(), code)
 			return
 		}
+		// Subscribe BEFORE anything client-visible (the session frame
+		// below) - the same law handleSessionEvents serves on the
+		// reattach side (t_eba53ebe): the moment the origin response is
+		// visible on the wire, the subscriber's channel must be in
+		// run.subs, so a broadcast landing in the visible-to-subscribed
+		// gap (a concurrent canvas delta rides broadcastAll) cannot be
+		// dropped. setupSSE failure walks it back through the same
+		// finish() the pre-SSE failure used.
+		ch := s.runs.subscribe(cr.run)
 		flusher, ok := setupSSE(w)
 		if !ok {
 			s.runs.finish(cr.run)
@@ -649,10 +658,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		// disconnect - a page refresh mid-generation - no longer cancels
 		// the run. This response becomes just another subscriber of the
 		// run's live frames; reattach is GET /sessions/{id}/events
-		// (handleSessionEvents). Subscribe BEFORE launch: the origin
-		// client must see the run's first frame, so the consumer channel
-		// exists before the run broadcasts.
-		ch := s.runs.subscribe(cr.run)
+		// (handleSessionEvents). ch is the subscriber's channel,
+		// already registered (above, before the session frame): the
+		// run broadcasts into it from launch.
 		s.launchRun(context.WithoutCancel(r.Context()), cr.run, cr.prov, cr.messages, cr.tools, req)
 		s.serveRunFrames(w, flusher, cr.run, ch, r.Context())
 		return
