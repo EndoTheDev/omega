@@ -221,7 +221,7 @@ func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	}
 	// The channel-start handoff (HTTPChannel.Start): bind the capsule
 	// to its server and register it before the canvas runtime builds.
-	plugin.chat.srv = s
+	plugin.chat.srv.Store(s)
 	plugin.chat.registerAt(pctx)
 	canvas, err := agent.NewCanvas(pctx, nil)
 	if err != nil {
