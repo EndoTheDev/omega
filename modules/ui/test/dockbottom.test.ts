@@ -11,6 +11,7 @@ import {
   serialize,
   deserialize,
   migrateLegacy,
+  makeSplit,
   findEdgePane,
   findComponentTab,
   firstMainPaneId,
@@ -126,15 +127,15 @@ describe("the bottom shell's place in the tree", () => {
   });
 
   it("insertMainPane lands in the MAIN ROW of a column root, not beside the bottom shell", () => {
-    // drop the flexible chat pane so the caller must re-insert a main pane
+    // Endo ruling 2026-10-25: removePane can no longer strip the last
+    // main pane, so the no-main state is built BY HAND - the shape a
+    // stale persisted record may still carry (ensureMainPane is the
+    // repair path for exactly that record)
     const dock = createDock(new MemoryStorage() as unknown as Storage);
     const root = dock.tree.value as DockSplit;
     const row = root.children[0] as DockSplit;
-    const chat = row.children.find((c) => isPane(c) && c.edge === undefined)!;
-    const without = removePane(
-      removePane(dock.tree.value, chat.id),
-      "", // no-op id, just mechanics (the row still holds the two sidebars)
-    );
+    const shellRow = makeSplit("row", [row.children[0], row.children[2]]);
+    const without = makeSplit("column", [shellRow, root.children[1]]);
     assert.ok(findEdgePane(without, "sidebar"), "sidebar survived");
     assert.ok(findEdgePane(without, "inspector"), "inspector survived");
     assert.ok(!firstMainPaneId(without), "no main pane left");

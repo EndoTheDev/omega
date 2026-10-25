@@ -57,9 +57,13 @@ The gutter divider retains magnetic snap rebase mechanics
 - **Pane model**: left sidebar = sessions pane (pinned singleton, no
   X); right sidebar = inspector pane with the fixed module tabs (Files,
   Cron, Logs, Skills, Tools, Settings, Kanban — no X); middle = main
-  pane. The main pane is the last-unclosable pane: the shell always
-  keeps >= 1 pane; the X on main shows on hover and only when more than
-  one pane exists.
+  pane. The LAST main pane is never closable (Endo ruling, 2026-10-25):
+  its tab carries no close X and its pane offers no remove, and every
+  state-side close path (`removePane`, `closeTab`, the move-out
+  auto-close) refuses it as a no-op — the main area never reaches zero
+  panes. The X shows on hover and only while another MAIN pane exists
+  (pinned shells don't count toward that census); the empty launcher
+  pane is itself a main pane and stays.
 - **Sessions lock to the primary sidebar** — open a session or hit `new`
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
