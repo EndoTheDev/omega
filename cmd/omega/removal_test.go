@@ -1559,21 +1559,21 @@ func TestTrustRemovalProof(t *testing.T) {
 
 // TestWebRemovalProof is the arc 6 web-capsule proof (card
 // t_23f42712), the ninth worked proof in this file. Web is the
-// additive-seam thin capsule (same shape as mcp): the consolidated
-// `web` tool plus its one-release alias shims (web.search, web.fetch)
-// ship from the single Mount as one ToolProvider, and the module even
-// ships its config stanza (ctx.Configs["web"] routed by the plugin's
-// ConfigKey; the base_url override and the provider-host mirror
-// fallback derive inside the host's ConfigSection from module-owned
-// types). No command, no REST route, no skills, no exclusive seam
-// ( Provides() is exactly "tools" - nothing reads a ctx.Web field),
-// no canvas panel, and none existed before the arc. The two mounts
-// are the proof:
+// additive-seam thin capsule (same shape as mcp): the two namespaced
+// tools (web.search, web.fetch - the dotted names promoted when the
+// v0.12 mount migration retired the consolidated unprefixed `web`
+// primary and its alias shims, Q10) ship from MountWithAPI, and the
+// module even ships its config stanza (ctx.Configs["web"] routed by
+// the plugin's ConfigKey; the base_url override and the provider-host
+// mirror fallback derive inside the host's ConfigSection from
+// module-owned types). No command, no REST route, no skills, no
+// exclusive seam (Provides() is exactly "tools" - nothing reads a
+// ctx.Web field), no canvas panel, and none existed before the arc.
+// The two mounts are the proof:
 //
-//  1. WITH web: the registry carries the domain tool and both alias
-//     shims, and a real search and a real fetch round-trip through a
-//     fake mirror endpoint - search through the folded dispatcher,
-//     fetch through the alias shim (the same runWeb behind both).
+//  1. WITH web: the registry carries both namespaced tools, and a real
+//     search and a real fetch round-trip through a fake mirror
+//     endpoint - both through the shared runWeb dispatcher.
 //  2. WITHOUT web: with the mirror endpoint still configured and the
 //     fake server's hit counter frozen - nothing outside the module
 //     reads the endpoint - no web-shaped tool survives, no /web
@@ -1645,9 +1645,9 @@ func TestWebRemovalProof(t *testing.T) {
 		t.Fatalf("mount all: %v", err)
 	}
 
-	// the tool face: the domain tool answers a real search through the
-	// folded dispatcher
-	search, err := pluginTool(ctx, "web")
+	// the tool face: web.search answers a real search through the
+	// shared dispatcher
+	search, err := pluginTool(ctx, "web.search")
 	if err != nil {
 		fatalTools := ""
 		for _, tp := range ctx.ToolProviders {
@@ -1657,28 +1657,28 @@ func TestWebRemovalProof(t *testing.T) {
 		}
 		t.Fatalf("FULL MOUNT: the web tool is missing from the registry (tools:%s)", fatalTools)
 	}
-	res, runErr := search(context.Background(), map[string]any{"action": "search", "query": "arc 6 proof"})
+	res, runErr := search(context.Background(), map[string]any{"query": "arc 6 proof"})
 	if runErr != nil || !strings.Contains(res, "web search answer") || !strings.Contains(res, "https://omega.example/proof") {
 		t.Fatalf("FULL MOUNT: web search round-trip failed (res=%q err=%v)", res, runErr)
 	}
-	// the alias face: web.fetch routes through the same dispatcher
+	// the second face: web.fetch routes through the same dispatcher
 	var fetchRun func(context.Context, map[string]any) (string, error)
 	for _, tp := range ctx.ToolProviders {
-		if tl, ok := tp.Tools()["web.fetch"]; ok && tl.AliasOf == "web" && tl.Run != nil {
+		if tl, ok := tp.Tools()["web.fetch"]; ok && tl.Run != nil {
 			fetchRun = tl.Run
 		}
 	}
 	if fetchRun == nil {
-		t.Fatal("FULL MOUNT: web.fetch alias Shim missing (AliasOf=web)")
+		t.Fatal("FULL MOUNT: web.fetch missing from the registry")
 	}
 	res, runErr = fetchRun(context.Background(), map[string]any{"url": "https://omega.example/proof"})
 	if runErr != nil || !strings.Contains(res, "Proof page") || !strings.Contains(res, "web fetch answer") {
-		t.Fatalf("FULL MOUNT: web.fetch alias round-trip failed (res=%q err=%v)", res, runErr)
+		t.Fatalf("FULL MOUNT: web.fetch round-trip failed (res=%q err=%v)", res, runErr)
 	}
 	if hits != 2 {
 		t.Fatalf("FULL MOUNT: the fake mirror served %d hits, want 2 (search + fetch)", hits)
 	}
-	t.Logf("PROOF tool wiring: web search answered through the folded dispatcher, web.fetch through the alias shim (the same runWeb behind both) - both round-tripped the configured mirror (%d hits)", hits)
+	t.Logf("PROOF tool wiring: web.search and web.fetch both answered through the shared runWeb dispatcher - both round-tripped the configured mirror (%d hits)", hits)
 
 	// the action pipe: web ships no panel and no actions - even the
 	// full mount has nothing to route
