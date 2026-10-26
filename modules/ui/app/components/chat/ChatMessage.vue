@@ -58,6 +58,18 @@
           type="button"
           :title="copied ? 'copied' : 'copy message'"
           @click.stop="copyMessage">{{ copied ? "copied" : "copy" }}</button>
+        <!-- retry affordance (t_95d2bc34): THE NEWEST assistant response
+             carries it, and only when the run is idle (the owner passes
+             the signal - this component does not know the transcript).
+             Same replay the composer's face used to dispatch: the chat
+             panel's retry action through the pipe, the fresh response
+             becomes a sibling variant. -->
+        <button
+          v-if="retryable && itemId"
+          class="msg-retry"
+          type="button"
+          title="retry - re-run the last user message, the fresh response becomes a sibling variant"
+          @click.stop="emit('retry')">retry</button>
         <span
           v-if="elapsedLabel"
           class="msg-elapsed">{{ elapsedLabel }}</span>
@@ -97,6 +109,10 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // the run is IDLE and this bubble is the transcript's NEWEST
+    // assistant response: the retry chip shows (ChatTab derives it -
+    // the component does not know the transcript)
+    retryable?: boolean;
   }>();
 
   // the variant affordances surface upward: select carries the SIBLING
@@ -105,6 +121,7 @@
   const emit = defineEmits<{
     (e: "select", index: number): void;
     (e: "fork"): void;
+    (e: "retry"): void;
   }>();
 
   // Click-to-open: a data URL in a new browser tab is the plain full

@@ -1,11 +1,15 @@
-// omega webui: the retry UX rulings (t_19c100dd, Endo 2026-10-25).
+// omega webui: the retry UX rulings (t_19c100dd, Endo 2026-10-25;
+// affordance re-homed t_95d2bc34).
 // Ruling 1 - retry renders in place: a retry's payload REPLACES the
 // response slot (the server cuts the old sibling's rows, card
 // t_1c9793a8's payload lane), and the canvas transcript applies each
 // payload as a full replacement - the old row is gone from the render
 // the moment the retry's first delta lands, never stacked.
 // Ruling 2 - the action row sits at the BOTTOM of the message:
-// switcher + fork + copy in one row, hidden while streaming.
+// switcher + fork + copy + retry in one row, hidden while streaming.
+// Ruling 3 (t_95d2bc34) - the RETRY CHIP rides the action row of the
+// NEWEST assistant response only (idle runs); the composer carries no
+// replay face any more - idle + no draft is the dimmed send.
 // Run: node --test test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -123,12 +127,34 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
     assert.ok(switcherAt > actionsAt, "switcher in the row");
     assert.ok(forkAt > switcherAt, "fork after the switcher, one row");
     assert.ok(copyAt > forkAt, "copy after the fork, one row");
-    // the row closes before the bubble does: all three live inside it
+    // the row closes before the bubble does: all the affordances live inside it
     const bubbleClose = chatMessage.lastIndexOf("</template>");
     const rowClose = chatMessage.lastIndexOf("</div>", bubbleClose);
     assert.ok(copyAt < rowClose, "the affordances sit inside the action row");
     // exactly one row container - never scattered chips
     assert.equal((chatMessage.match(/class="msg-actions"/g) ?? []).length, 1);
+  });
+
+  it("the retry chip is the newest response's - owner-gated, one site", () => {
+    // ruling 3 (t_95d2bc34): the chip lives in the action row AFTER
+    // copy, gated on the retryable prop the transcript owner derives
+    // (idle + newest assistant response) - ChatMessage never knows the
+    // transcript, so "newest" can never leak in as an old response's chip
+    const actionsAt = chatMessage.indexOf('class="msg-actions"');
+    const copyAt = chatMessage.indexOf('class="msg-copy"', actionsAt);
+    const retryAt = chatMessage.indexOf('class="msg-retry"', actionsAt);
+    assert.ok(retryAt > copyAt, "the chip renders after copy, in the row");
+    assert.match(chatMessage, /v-if="retryable && itemId"/, "the chip gates on the owner's signal");
+    // the row hides while streaming: the chip inherits the row's v-if,
+    // so a live run shows no retry affordance at all
+    assert.match(
+      chatMessage,
+      /v-if="!streaming && role === 'assistant'"\s+class="msg-actions">/,
+    );
+    // the composer carries no retry affordance any more
+    assert.doesNotMatch(css, /\.send\.retry/);
+    assert.match(css, /\.msg-retry\s*\{/, "the chip has its stylesheet");
+    assert.match(css, /\.msg-retry\s*\{[^}]*opacity: 0/, "the chip keeps the hover-fade contract");
   });
 
   it("the row hides while the message streams (assistant responses only)", () => {
