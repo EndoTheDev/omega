@@ -26,13 +26,15 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Panel ids and action ids of the capsule. Module-qualified on the
-// wire (core.PanelAction.Module carries "kanban").
+// Panel ids and action ids of the capsule. Panel ids are natural
+// (user-facing view names); action ids are machine-facing and carry
+// the module.verb namespace (Q10, enforced at registration -
+// core.PanelAction.Module names the tenant on the wire).
 const (
-	listPanelID   = "tasks"
-	boardsPanelID = "boards"
-	actionComplete = "complete_task"
-	actionSwitch   = "switch_board"
+	listPanelID    = "tasks"
+	boardsPanelID  = "boards"
+	actionComplete = "kanban.complete_task"
+	actionSwitch   = "kanban.switch_board"
 )
 
 // panelRows caps the task panel's payload: the view-model shows the

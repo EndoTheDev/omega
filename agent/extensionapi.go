@@ -39,7 +39,13 @@
 //	 ToolProviders                 RegisterTool
 //	 PromptSectioners              RegisterPromptSectioner
 //	 TUIProviders                  RegisterRenderer
-//	 PanelProviders                RegisterPanel / RegisterAction
+//	RegisterPanel / RegisterAction   (declarative: static descriptors
+//	                                + checked action-pipe handlers)
+//	RegisterPanelProvider            (live: a stateful core.PanelProvider
+//	                                - Panels() computed per snapshot, a
+//	                                core.PanelUpdateSink pushing through
+//	                                mutations; kanban's capsule is the
+//	                                reference)
 //	 Channels                      RegisterChannel
 //	 Commands + CommandHandler     RegisterCommand
 //	 InjectedMessages              RegisterDelegation
@@ -246,6 +252,9 @@ type ExtensionAPI struct {
 	panels map[string]core.Panel
 	order  []string
 	acts   map[string]registeredAction
+	// panelProviders holds the live registered providers (the dynamic
+	// capsule shape) - commit lands them on ctx.PanelProviders.
+	panelProviders []core.PanelProvider
 }
 
 // claim validates and records a namespaced machine-facing identity
@@ -355,35 +364,75 @@ func (api *ExtensionAPI) RegisterAction(id string, check core.ShapeCheck, handle
 	return nil
 }
 
-// commit assembles the module's panel provider and appends it to
-// ctx.PanelProviders - the exact slice the classic mount appends to.
-// Called by the mount loop after MountWithAPI returns; validation
-// failures abort the mount (fail loud, Q5).
-func (api *ExtensionAPI) commit() error {
-	if len(api.panels) == 0 {
-		return nil
+// RegisterPanelProvider registers a live panel provider - the dynamic
+// capsule shape the declarative registrations cannot express: its
+// Panels() computes the snapshot from its own state on every read and
+// a core.PanelUpdateSink (installed by the canvas at registration)
+// pushes deltas around module-face mutations. Kanban's capsule is the
+// reference (phase C1, the migration that surfaced this gap). The
+// validation is the declarative path's, applied to the provider's
+// current declaration: every panel carries its id, every action id is
+// a namespaced pair claimed by this capsule. The real provider lands
+// on ctx.PanelProviders at commit - the exact append the classic
+// mount makes.
+func (api *ExtensionAPI) RegisterPanelProvider(p core.PanelProvider) error {
+	if p == nil {
+		return fmt.Errorf("panel provider %q: a registration carries its provider", api.module)
 	}
-	for id := range api.acts {
-		declared := false
-		for _, panel := range api.panels {
-			for _, pa := range panel.Actions {
-				if pa.ID == id {
-					declared = true
-				}
+	for _, panel := range p.Panels() {
+		if panel.ID == "" {
+			return fmt.Errorf("panel %q: a registered panel carries its id", api.module)
+		}
+		for _, a := range panel.Actions {
+			module := a.Module
+			if module == "" {
+				module = api.module
+			}
+			if module != api.module {
+				return fmt.Errorf("panel %q action %q claims module %q - the api mounts %q only", panel.ID, a.ID, a.Module, api.module)
+			}
+			if err := api.claim(a.ID); err != nil {
+				return err
 			}
 		}
-		if !declared {
-			return fmt.Errorf("action %q is declared on no panel of %q - register it on the panel descriptor", id, api.module)
+	}
+	api.panelProviders = append(api.panelProviders, p)
+	return nil
+}
+
+// commit assembles the module's panel surface and appends it to
+// ctx.PanelProviders - the exact slice the classic mount appends to:
+// the declarative registrations assemble one provider, the live
+// registered providers land as themselves. Called by the mount loop
+// after MountWithAPI returns; validation failures abort the mount
+// (fail loud, Q5).
+func (api *ExtensionAPI) commit() error {
+	if len(api.panels) > 0 {
+		for id := range api.acts {
+			declared := false
+			for _, panel := range api.panels {
+				for _, pa := range panel.Actions {
+					if pa.ID == id {
+						declared = true
+					}
+				}
+			}
+			if !declared {
+				return fmt.Errorf("action %q is declared on no panel of %q - register it on the panel descriptor", id, api.module)
+			}
 		}
+		provider := &apiPanels{
+			module: api.module,
+			reg:    api.reg,
+			panels: api.panels,
+			order:  api.order,
+			acts:   api.acts,
+		}
+		api.ctx.PanelProviders = append(api.ctx.PanelProviders, provider)
 	}
-	provider := &apiPanels{
-		module: api.module,
-		reg:    api.reg,
-		panels: api.panels,
-		order:  api.order,
-		acts:   api.acts,
+	for _, p := range api.panelProviders {
+		api.ctx.PanelProviders = append(api.ctx.PanelProviders, p)
 	}
-	api.ctx.PanelProviders = append(api.ctx.PanelProviders, provider)
 	return nil
 }
 

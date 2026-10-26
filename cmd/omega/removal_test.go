@@ -231,7 +231,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canvas 2: %v", err)
 	}
-	taskRun, err := pluginTool(ctx, "task")
+	taskRun, err := pluginTool(ctx, "kanban.task")
 	if err != nil {
 		t.Fatalf("task tool: %v", err)
 	}
@@ -257,22 +257,22 @@ func TestKanbanRemovalProof(t *testing.T) {
 	t.Log("PROOF tool wiring: task create pushed the task panel through the live canvas")
 
 	// the action pipe completes the task - the same grammar the tool
-	// uses, routed by module + action id
-	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "complete_task", Args: json.RawMessage(`{"id": "` + id + `"}`)}); err != nil {
-		t.Fatalf("dispatch complete_task: %v", err)
+	// uses, routed by module + namespaced action id
+	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "kanban.complete_task", Args: json.RawMessage(`{"id": "` + id + `"}`)}); err != nil {
+		t.Fatalf("dispatch kanban.complete_task: %v", err)
 	}
 	kt, err := ctx.Kanban.GetTask(cctx, "", id)
 	if err != nil {
 		t.Fatalf("get task: %v", err)
 	}
 	if kt.Status != "done" {
-		t.Fatalf("FULL MOUNT: complete_task left %s at %q", id, kt.Status)
+		t.Fatalf("FULL MOUNT: kanban.complete_task left %s at %q", id, kt.Status)
 	}
 	// and the switcher runs the /board equivalence
-	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "switch_board", Args: json.RawMessage(`{"board": "main"}`)}); err != nil {
-		t.Fatalf("dispatch switch_board: %v", err)
+	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "kanban.switch_board", Args: json.RawMessage(`{"board": "main"}`)}); err != nil {
+		t.Fatalf("dispatch kanban.switch_board: %v", err)
 	}
-	t.Logf("PROOF action-pipe: complete_task closed %s, switch_board answered the switcher", id)
+	t.Logf("PROOF action-pipe: kanban.complete_task closed %s, kanban.switch_board answered the switcher", id)
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
@@ -304,19 +304,20 @@ func TestKanbanRemovalProof(t *testing.T) {
 			t.Fatalf("REMOVED MOUNT: capsule surface survived: panel %+v", p)
 		}
 	}
-	// the tool registry: no task tool, no alias shims
+	// the tool registry: no kanban tool and no legacy prefix (the
+	// dotted alias shims died with the mount migration)
 	names := map[string]bool{}
 	for _, tp := range ctx2.ToolProviders {
 		for name := range tp.Tools() {
 			names[name] = true
 		}
 	}
-	if names["task"] {
-		t.Fatal("REMOVED MOUNT: the task tool survived the removal")
+	if names["kanban.task"] {
+		t.Fatal("REMOVED MOUNT: the kanban task tool survived the removal")
 	}
 	for name := range names {
-		if strings.HasPrefix(name, "task.") {
-			t.Fatalf("REMOVED MOUNT: legacy shim %q survived the removal", name)
+		if strings.HasPrefix(name, "kanban.") || strings.HasPrefix(name, "task.") {
+			t.Fatalf("REMOVED MOUNT: tool %q survived the removal", name)
 		}
 	}
 	// the commands: /board and /boards are unregistered

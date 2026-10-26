@@ -724,6 +724,7 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterTool":            true,
 		"RegisterPanel":           true,
 		"RegisterAction":          true,
+		"RegisterPanelProvider":   true,
 		"RegisterRoute":           true,
 		"RegisterCommand":         true,
 		"RegisterEmitter":         true,
