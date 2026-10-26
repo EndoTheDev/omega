@@ -283,10 +283,10 @@ func TestDualMountParity(t *testing.T) {
 
 	var classicCtx, apiCtx Context
 	classic := &classicCapsule{}
-	if _, err := MountAllAPI([]Plugin{&notifierPlugin{n: notifier}, classic}, &classicCtx, nil); err != nil {
+	if _, err := MountAllAPI([]Plugin{&notifierPlugin{n: notifier}, classic}, &classicCtx, nil, nil); err != nil {
 		t.Fatalf("classic mount: %v", err)
 	}
-	reg, err := MountAllAPI([]Plugin{&notifierPlugin{n: notifier}, &apiCapsule{}}, &apiCtx, nil)
+	reg, err := MountAllAPI([]Plugin{&notifierPlugin{n: notifier}, &apiCapsule{}}, &apiCtx, nil, nil)
 	if err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestDualMountParity(t *testing.T) {
 // registration.
 func TestNamespaceEnforcement(t *testing.T) {
 	var ctx Context
-	reg, err := MountAllAPI([]Plugin{badNamespace{}}, &ctx, nil)
+	reg, err := MountAllAPI([]Plugin{badNamespace{}}, &ctx, nil, nil)
 	if reg != nil {
 		t.Errorf("a failed mount returns no registry")
 	}
@@ -455,7 +455,7 @@ func TestOneTenant(t *testing.T) {
 	// Classic claim first, api claim after: the api claim meets the
 	// provides sweep's pre-recorded tenant.
 	var ctxA Context
-	_, err := MountAllAPI([]Plugin{classicStore{}, apiStoreClaimer{}}, &ctxA, nil)
+	_, err := MountAllAPI([]Plugin{classicStore{}, apiStoreClaimer{}}, &ctxA, nil, nil)
 	if err == nil {
 		t.Fatalf("an api capsule claiming a classic-mounted seam must fail the mount")
 	}
@@ -468,7 +468,7 @@ func TestOneTenant(t *testing.T) {
 	// the provides sweep recorded the classic one first, so the api
 	// claim fails loud before any silent overwrite.
 	var ctxB Context
-	_, err = MountAllAPI([]Plugin{apiStoreClaimer{}, classicStore{}}, &ctxB, nil)
+	_, err = MountAllAPI([]Plugin{apiStoreClaimer{}, classicStore{}}, &ctxB, nil, nil)
 	if err == nil {
 		t.Fatalf("a classic capsule claiming behind an api tenant must fail the mount")
 	}
@@ -477,7 +477,7 @@ func TestOneTenant(t *testing.T) {
 	}
 	// api vs api.
 	var ctxC Context
-	_, err = MountAllAPI([]Plugin{apiStoreClaimer{}, secondStore{}}, &ctxC, nil)
+	_, err = MountAllAPI([]Plugin{apiStoreClaimer{}, secondStore{}}, &ctxC, nil, nil)
 	if err == nil {
 		t.Fatalf("a second module's store claim must fail the mount")
 	}
@@ -526,7 +526,7 @@ func (secondStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 // own name replaces the entry - mount stays clean-idempotent.
 func TestSameTenantReplace(t *testing.T) {
 	var ctx Context
-	reg, err := MountAllAPI([]Plugin{replaceCapsule{}}, &ctx, nil)
+	reg, err := MountAllAPI([]Plugin{replaceCapsule{}}, &ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("same-tenant replacement must not error: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestActionShapeCheckProof(t *testing.T) {
 		}
 		return nil
 	}
-	reg, err := MountAllAPI([]Plugin{proofCapsule{check: numCheck}}, &ctx, nil)
+	reg, err := MountAllAPI([]Plugin{proofCapsule{check: numCheck}}, &ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -693,7 +693,7 @@ func (p proofCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 func TestEmitterHandoffNilSafe(t *testing.T) {
 	var ctx Context
 	emitterSeen = nil
-	if _, err := MountAllAPI([]Plugin{nilEmitterCapsule{}}, &ctx, nil); err != nil {
+	if _, err := MountAllAPI([]Plugin{nilEmitterCapsule{}}, &ctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
 	if ctx.Notifications != nil {
@@ -795,7 +795,7 @@ func TestSubcommandRegistration(t *testing.T) {
 			greeted = argv[0]
 			return nil
 		}},
-	}, &ctx, nil)
+	}, &ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -812,7 +812,7 @@ func TestSubcommandRegistration(t *testing.T) {
 
 	// cross-tenant: a second module claiming `greet` fails the mount
 	var ctx2 Context
-	_, err = MountAllAPI([]Plugin{&subCapsule{name: "greeter"}, &subCapsule{name: "other"}}, &ctx2, nil)
+	_, err = MountAllAPI([]Plugin{&subCapsule{name: "greeter"}, &subCapsule{name: "other"}}, &ctx2, nil, nil)
 	if err == nil {
 		t.Fatalf("a cross-tenant subcommand claim must fail the mount")
 	}
@@ -835,7 +835,7 @@ func TestSubcommandRegistration(t *testing.T) {
 	var ctx3 Context
 	reg3, err := MountAllAPI([]Plugin{
 		&subCapsule{name: "greeter", summary: "greets by name"},
-	}, &ctx3, nil)
+	}, &ctx3, nil, nil)
 	if err != nil {
 		t.Fatalf("remount: %v", err)
 	}

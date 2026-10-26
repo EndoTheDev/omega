@@ -25,7 +25,7 @@ var turnCopyAppendAllowlist = map[string]string{
 	"http_channel/server_variants.go": "tree operation - core.NewVariantSelect marker",
 	"tui/variant.go":                  "tree operation - core.NewVariantSelect markers",
 	"tui/tui.go":                      "session entry markers (persistEntry: model/thinking-level changes) - not turn copies",
-	"modules/verdict/hub.go":                  "verdict audit records (VerdictCard/Verdict) - extension-owned Q&A records, not model turns",
+	"modules/verdict/hub.go":          "verdict audit records (VerdictCard/Verdict) - extension-owned Q&A records, not model turns",
 }
 
 var appendMessageCall = regexp.MustCompile(`\.AppendMessage\(`)
