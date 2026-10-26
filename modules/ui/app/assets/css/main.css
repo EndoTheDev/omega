@@ -1414,11 +1414,11 @@ labels stopped short of the right edge. */
   animation: fade-in 0.18s ease-out;
 }
 
-/* the action row (t_19c100dd, Endo ruling 2): switcher + fork + copy in
-   ONE row at the bottom of the message, under the content - the
-   top-edge chip placement is retired. Hidden while the bubble streams
-   (the component's v-if); fork/copy keep the hover-fade contract, the
-   switcher stays always-on. */
+/* the action row (t_19c100dd, Endo ruling 2): switcher + fork + copy +
+   retry in ONE row at the bottom of the message, under the content -
+   the top-edge chip placement is retired. Hidden while the bubble
+   streams (the component's v-if); fork/copy/retry keep the hover-fade
+   contract, the switcher stays always-on. */
 .msg-actions {
   display: flex;
   align-items: center;
@@ -1471,6 +1471,32 @@ labels stopped short of the right edge. */
 .bubble:hover .msg-fork,
 .msg-fork:focus-visible { opacity: 1; pointer-events: auto; }
 .msg-fork:hover { color: var(--accent); }
+
+/* retry affordance (t_95d2bc34): the composer's retry face retired -
+   the replay control rides the action row now, the same hover-fade
+   chip as msg-fork. Only the NEWEST assistant response carries it (the
+   component's prop gates it; ChatTab derives "newest" + idle). Click
+   re-runs the last user turn as a sibling variant - the same pipe call
+   the composer's face used to dispatch. Accent on hover: it is the
+   replay control, not a copy. */
+.msg-retry {
+  flex: none;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  background: var(--z2);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: var(--mono);
+  line-height: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.bubble:hover .msg-retry,
+.msg-retry:focus-visible { opacity: 1; pointer-events: auto; }
+.msg-retry:hover { color: var(--accent); }
 
 /* variant switcher (t_a62eeb43): « 2/3 » in the action row - small,
    mono, always visible while the session renders this branch. Sessions
@@ -2068,15 +2094,9 @@ labels stopped short of the right edge. */
    "answer" */
 .send.cancel { background: var(--text-dim); }
 
-/* retry: the morphing button's replay face (t_357cbe9c) - outline-accent
-   so it does not read as "forward something new". The server re-runs
-   the persisted last user turn; the fresh response appends below it. */
-.send.retry {
-  /* override the accent fill: this face is not the aggressive one */
-  background: none;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-}
+/* the retry face is gone from the composer (t_95d2bc34): idle with an
+   empty draft is just the dimmed send (.send:disabled), the replay
+   affordance renders in the newest response's action row now. */
 
 /* ---- layer 2: overlays (mobile drawer scrims) ---- */
 .scrim {

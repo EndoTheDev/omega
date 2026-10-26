@@ -98,11 +98,14 @@ The gutter divider retains magnetic snap rebase mechanics
 - Scroll pinning follows only the stream whose session is being
   viewed; the `pinned` flag changes only on real scroll events — never
   re-measure after appending.
-- Retry is regenerate-in-place via the server: `POST /chat {"retry":
-  true}` re-runs the session's LAST user message as a sibling variant
-  without persisting a duplicate user bubble; a cancelled/partial
-  response stays visible and the new response appends below. Client-side
-  `dropLastExchange` transcript surgery is RETIRED — never reintroduce it.
+- Retry is regenerate-in-place via the server: the action row's retry
+  chip (composer face retired, t_95d2bc34) dispatches the chat panel's
+  retry action through the pipe - it re-runs the session's LAST user
+  message as a sibling variant without persisting a duplicate user
+  bubble; a cancelled/partial response stays visible and the new
+  response appends below. The chip renders only on the NEWEST assistant
+  response while the run is idle. Client-side `dropLastExchange`
+  transcript surgery is RETIRED - never reintroduce it.
 - Vue reactivity trap (bit once, live-proven): after pushing an item
   into the reactive transcript, re-capture the reactive proxy
   (`st.transcript[len-1]`) before mutating it — raw-ref mutations
@@ -153,9 +156,11 @@ The gutter divider retains magnetic snap rebase mechanics
 - Shell: `MenuBar` (brand, toggles), `StatusBar` (health dot,
   token/ctx/rate telemetry, build version + uptime), `SearchInput`,
   `PaneDivider`.
-- Chat: `AppComposer` (auto-grow textarea, ONE morphing action button —
-  send/stop/retry, draft beats retry, `+` opens the file picker,
-  attach-strip with image thumbnails, paste + paperclip attach),
+- Chat: `AppComposer` (auto-grow textarea, ONE morphing action button -
+  send/stop, dimmed at idle with no draft, `+` opens the file picker,
+  attach-strip with image thumbnails, paste + paperclip attach; the
+  retry face is retired - the newest response's action row carries the
+  msg-retry chip, card t_95d2bc34),
   `ModelSelect` + `ThinkingSelect` (custom listboxes — a native
   `<select>` popup is OS chrome that cannot be themed), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
