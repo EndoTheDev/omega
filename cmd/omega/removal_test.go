@@ -737,32 +737,34 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF mount=full: inject seam mounted (ctx.InjectedMessages + ctx.PendingDelegations), pending count 0")
 
-	// the tool face: the registry carries the consolidated delegate tool
-	// with its task/status actions and the two alias shims
+	// the tool face: the registry carries the two namespaced tools -
+	// the aliases promoted when the consolidated unprefixed primary
+	// retired (Q10, the v0.12 mount migration)
 	var delegateTool core.Tool
-	foundTool, foundTaskShim, foundStatusShim := false, false, false
+	foundTool, foundStatusTool := false, false
 	for _, tp := range ctx.ToolProviders {
 		for name, tool := range tp.Tools() {
 			switch name {
-			case "delegate":
-				delegateTool, foundTool = tool, true
 			case "delegate.task":
-				foundTaskShim = foundTaskShim || tool.AliasOf == "delegate"
+				delegateTool, foundTool = tool, true
 			case "delegate.status":
-				foundStatusShim = foundStatusShim || tool.AliasOf == "delegate"
+				foundStatusTool = tool.Run != nil
 			}
 		}
 	}
-	if !foundTool {
-		t.Fatal("FULL MOUNT: the delegate tool is missing from the registry")
+	if !foundTool || !foundStatusTool {
+		t.Fatalf("FULL MOUNT: delegate tools missing (task=%v status=%v)", foundTool, foundStatusTool)
 	}
-	if !foundTaskShim || !foundStatusShim {
-		t.Fatalf("FULL MOUNT: alias shims missing (task=%v status=%v)", foundTaskShim, foundStatusShim)
-	}
-	t.Log("PROOF tool wiring: registry carries the delegate tool + the delegate.task / delegate.status alias shims")
+	t.Log("PROOF tool wiring: the registry carries the delegate.task / delegate.status namespace pair")
 
 	// the status arm answers the live listing
-	res, runErr := delegateTool.Run(context.Background(), map[string]any{"action": "status"})
+	var statusRun func(context.Context, map[string]any) (string, error)
+	for _, tp := range ctx.ToolProviders {
+		if tl, ok := tp.Tools()["delegate.status"]; ok && tl.Run != nil {
+			statusRun = tl.Run
+		}
+	}
+	res, runErr := statusRun(context.Background(), map[string]any{})
 	if runErr != nil || !strings.Contains(res, "Running: 0") || !strings.Contains(res, "No tasks.") {
 		t.Fatalf("FULL MOUNT: delegate status failed (res=%s err=%v)", res, runErr)
 	}
