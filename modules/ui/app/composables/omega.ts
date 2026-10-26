@@ -81,6 +81,9 @@ export interface Session {
   // only on forked sessions - the sidebar's "↳ branch" row badge reads
   // it; the list itself stays linear (roots and children together)
   parent_id?: string;
+  // the session's pinned working folder (card t_9de5b009): file
+  // operations root there; empty = the process working directory
+  workspace?: string;
 }
 
 // LastRunStats is one completed run's average rates, stored on the
@@ -2114,6 +2117,52 @@ export async function archiveSession(id: string, archived: boolean): Promise<voi
     body: JSON.stringify({ archived }),
   });
   if (!r.ok) throw new Error(`archive: ${r.status}`);
+}
+
+// setSessionContext pins the session's remembered send context (card
+// t_9de5b009): the model it replays with and the folder its file
+// operations root at. Pass only what changes - omitted fields stay
+// untouched; "" clears one. updated_at never moves.
+export async function setSessionContext(
+  id: string,
+  model?: string,
+  workspace?: string,
+): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (model !== undefined) body.model = model;
+  if (workspace !== undefined) body.workspace = workspace;
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const text = (await r.text()).trim();
+    throw new Error(`session context: ${r.status}${text ? `: ${text}` : ""}`);
+  }
+}
+
+// WorkspaceListing is one GET /workspaces/browse response: the resolved
+// dir, its parent ("" at the root - the climb hides there) and the
+// visible child directories (dirs only, hidden entries filtered
+// server-side).
+export interface WorkspaceListing {
+  path: string;
+  parent: string;
+  dirs: { name: string; path: string }[];
+}
+
+// browseWorkspaces lists one directory's child folders for the session
+// workspace picker. Root (no arg) lists "/". Read-only; the server
+// validates every path before the disk is touched.
+export async function browseWorkspaces(path?: string): Promise<WorkspaceListing> {
+  const q = path ? `?path=${encodeURIComponent(path)}` : "";
+  const r = await fetch(`/workspaces/browse${q}`);
+  if (!r.ok) {
+    const text = (await r.text()).trim();
+    throw new Error(text || `browse: ${r.status}`);
+  }
+  return (await r.json()) as WorkspaceListing;
 }
 
 // deleteSession removes a session PERMANENTLY (messages cascade

@@ -61,12 +61,13 @@
               :key="tab.key ?? pane"
               :tab="tab"
               :show-thinking="showThinking"
-              :model="selectedModel"
               :models="models"
+              :session="chatSession(tab)"
               :thinking="selectedThinking"
               :appearance="appearance"
-              @update:model="selectedModel = $event"
-              @update:thinking="selectedThinking = $event" />
+              @update:model="onChatModel(tab, $event)"
+              @update:thinking="selectedThinking = $event"
+              @update:workspace="onChatWorkspace(tab, $event)" />
           </div>
           <div
             v-if="mainView === 'board' && pane === boardHostPane"
@@ -383,6 +384,7 @@
     pinSession,
     parseAppearance,
     renameSession,
+    setSessionContext,
     APPEARANCE_KEY,
     isAtBottom,
     pillVisible,
@@ -1018,6 +1020,37 @@
     } catch {
       // sidebar refresh is best-effort
     }
+  }
+
+  // --- the session's remembered context (card t_9de5b009) ---
+  //
+  // chatSession resolves a tab's binding to its row (the ChatTab props
+  // read the pinned model + workspace from it). onChatModel /
+  // onChatWorkspace write a picker change THROUGH to the row: the
+  // optimistic local edit keeps the chip + sidebar instant, the PATCH
+  // persists it, the refresh adopts the server's truth. A draft tab
+  // (no binding) only moves the app default model - there is no row to
+  // pin on until the first send adopts an id.
+  function chatSession(tab: { sessionRef?: string | null }): Session | null {
+    if (!tab.sessionRef || tab.sessionRef === EPHEMERAL_DRAFT_REF) return null;
+    return sessions.value.find((s) => s.id === tab.sessionRef) ?? null;
+  }
+  function onChatModel(tab: { sessionRef?: string | null }, v: string) {
+    selectedModel.value = v;
+    const s = chatSession(tab);
+    if (!s || s.model === v) return;
+    s.model = v;
+    setSessionContext(s.id, v)
+      .then(refreshSessions)
+      .catch(() => refreshSessions());
+  }
+  function onChatWorkspace(tab: { sessionRef?: string | null }, v: string) {
+    const s = chatSession(tab);
+    if (!s || s.workspace === v) return;
+    s.workspace = v;
+    setSessionContext(s.id, undefined, v)
+      .then(refreshSessions)
+      .catch(() => refreshSessions());
   }
 
   // card t_47b776ad: the menubar toggles are BACK - on desktop they
