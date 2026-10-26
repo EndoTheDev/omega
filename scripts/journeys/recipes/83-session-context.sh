@@ -12,6 +12,12 @@ JOURNEY_NEEDS_MODEL=1
 # long-lived chrome keeps SPA state, about:blank forces a real remount.
 fresh_open() { ab open "about:blank" >/dev/null 2>&1; open_app; }
 
+# deq: ab eval prints JS strings JSON-quoted ("beam") - a value compared
+# against row_field (plain) or interpolated into a JS string comparator
+# must be unquoted first (the house dequote, cf 30-retry's sed). Strip
+# the outer quote pair, unescape the inner ones.
+deq() { sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g'; }
+
 # row_model / row_workspace: wire truth from the /sessions row.
 row_field() {
   curl -s "$JOURNEY_BASE_URL/sessions" | python3 -c "
@@ -33,13 +39,19 @@ fresh_open
 open_journey_row "$LABEL"
 
 # --- the model picker writes the row --------------------------------
-default=$(jsq 'document.querySelector(".model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1)
-[ -n "$default" ] || die "model chip did not render"
+# the chip waits for the models fetch to seed it (boot fires /models
+# without blocking; the chip fills within ~a second on a healthy lane)
+wait_js '!!(document.querySelector(".model-chip .chip-name")?.textContent ?? "")' 10 \
+  || die "model chip did not render"
+default=$(jsq 'document.querySelector(".model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1 | deq)
+[ -n "$default" ] || die "model chip rendered empty"
 
 jsq 'document.querySelector(".model-chip")?.click()' >/dev/null 2>&1
 wait_js '!!document.querySelector(".model-list li")' 10
 # pick the first option that differs from the chip's current model
-target=$(jsq '(()=>{const cur = document.querySelector(".model-chip .chip-name")?.textContent ?? ""; const opts = Array.from(document.querySelectorAll(".model-list li")); const other = opts.find(li => (li.textContent || "").trim() && (li.textContent || "").trim() !== cur.trim()); return other ? (other.textContent || "").trim() : "";})()' 2>&1 | tail -1)
+# target is read INSIDE js (cur comes from the DOM) - it exits as a
+# plain model name once deq'd, safe to interpolate into the li matcher
+target=$(jsq '(()=>{const cur = document.querySelector(".model-chip .chip-name")?.textContent ?? ""; const opts = Array.from(document.querySelectorAll(".model-list li")); const other = opts.find(li => (li.textContent || "").trim() && (li.textContent || "").trim() !== cur.trim()); return other ? (other.textContent || "").trim() : "";})()' 2>&1 | tail -1 | deq)
 if [ -z "$target" ]; then
   # one-model lane: the picker cannot move anything - the pin halves
   # below still prove the restore path over a wire-written pin
@@ -60,7 +72,7 @@ fi
 # --- reload: the pin restores ---------------------------------------
 fresh_open
 open_journey_row "$LABEL"
-restored=$(jsq 'document.querySelector(".model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1)
+restored=$(jsq 'document.querySelector(".model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1 | deq)
 assert_eq "$restored" "$target" "pinned model restored on reopen"
 
 # --- the workspace chip writes the row ------------------------------
@@ -82,7 +94,7 @@ assert_eq "$ws" "/home" "workspace chip wrote the session row"
 # --- reload: the folder restores ------------------------------------
 fresh_open
 open_journey_row "$LABEL"
-ws_set=$(jsq 'document.querySelector(".ws-btn .ws-set")?.textContent ?? ""' 2>&1 | tail -1)
+ws_set=$(jsq 'document.querySelector(".ws-btn .ws-set")?.textContent ?? ""' 2>&1 | tail -1 | deq)
 assert_eq "$ws_set" "home" "pinned workspace restored on reopen"
 
 # --- clear: the chip drops the pin ----------------------------------
