@@ -110,6 +110,10 @@ export default defineNuxtConfig({
         // card t_14f73742: the extensions inventory tab fetches the
         // module list in dev (same-origin embedded in production)
         "/extensions",
+        // t_8eb149fa: the workspace chip's browser fetches /workspaces/
+        // browse (browseWorkspaces) - without this route a dev lane
+        // serves SSR index.html for the pop and no dir rows render
+        "/workspaces",
         // card t_e1e61680: the insights dashboard fetches GET /insights
         // (same-origin embedded in production)
         "/insights",
