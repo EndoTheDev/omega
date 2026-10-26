@@ -1196,12 +1196,12 @@ func TestVerdictRemovalProof(t *testing.T) {
 	// one sub-action, and a real verdict.request hard-pauses the turn
 	// until an answer lands through the seam - the path the /verdicts
 	// POST and the /verdict command share
-	verdictTool, err := pluginTool(ctx, "verdict")
+	verdictTool, err := pluginTool(ctx, "verdict.request")
 	if err != nil {
 		t.Fatalf("FULL MOUNT: the verdict tool is missing from the registry: %v", err)
 	}
 	for _, tp := range ctx.ToolProviders {
-		if tool, ok := tp.Tools()["verdict"]; ok {
+		if tool, ok := tp.Tools()["verdict.request"]; ok {
 			foundRequest := false
 			for _, a := range tool.Actions {
 				if a.Name == "request" {

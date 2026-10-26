@@ -474,7 +474,7 @@ const (
 )
 
 // WithRunOrigin tags the run context with its launching surface. The
-// request_verdict tool reads it to refuse background origins.
+// verdict.request tool reads it to refuse background origins.
 func WithRunOrigin(ctx context.Context, origin string) context.Context {
 	if origin == "" {
 		return ctx
