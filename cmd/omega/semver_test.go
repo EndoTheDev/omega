@@ -1,6 +1,9 @@
 package main
 
 import (
+	"io"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -142,5 +145,228 @@ func TestParseUpdateFlags(t *testing.T) {
 	opts, err = parseUpdateFlags([]string{"arg.txt"})
 	if err != nil || opts.nightly {
 		t.Errorf("positional arg ignored: %+v, %v", opts, err)
+	}
+	// --yes (card t_dc91a94b): parses alone and alongside other flags;
+	// near-misses must still error so a typo'd flag does not silently
+	// skip the prompt.
+	opts, err = parseUpdateFlags([]string{"--yes"})
+	if err != nil || !opts.yes || opts.nightly || opts.rollback || opts.allowDowngrade {
+		t.Errorf("--yes: opts = %+v, %v", opts, err)
+	}
+	opts, err = parseUpdateFlags([]string{"-y"})
+	if err != nil || !opts.yes {
+		t.Errorf("-y alias: opts = %+v, %v", opts, err)
+	}
+	opts, err = parseUpdateFlags([]string{"--nightly", "--yes"})
+	if err != nil || !opts.nightly || !opts.yes {
+		t.Errorf("--nightly --yes: opts = %+v, %v", opts, err)
+	}
+	if _, err := parseUpdateFlags([]string{"--ye"}); err == nil {
+		t.Error("typo'd --ye must error, not fall through to an unprompted update")
+	}
+}
+
+// TestCountNewer pins the behind-count math: newest-first list, current
+// at index k yields N = k tags strictly newer. The current version's
+// build hash is build metadata and never counts for or against;
+// unparseable tags never count as ahead.
+func TestCountNewer(t *testing.T) {
+	list := []string{"v0.9.4", "v0.9.3", "v0.9.2", "v0.9.1"}
+	tests := []struct {
+		name    string
+		tags    []string
+		current string
+		want    int
+	}{
+		{"current at index 2", list, "v0.9.2", 2},
+		{"current at index 1", list, "v0.9.3", 1},
+		{"current newest (index 0)", list, "v0.9.4", 0},
+		{"current older than everything", list, "v0.9.0", 4},
+		{"current with build hash (trimmed)", []string{"v0.9.2", "v0.9.1"}, "v0.9.1-c268097e", 1},
+		{"offered equals current: no count", []string{"v0.9.1", "v0.9.0"}, "v0.9.1", 0},
+		{"unparseable tag never counts", []string{"garbage", "v0.9.2"}, "v0.9.1", 1},
+		{"unparseable current: nothing counts", []string{"v0.9.4", "v0.9.1"}, "dev", 0},
+		{"empty list", nil, "v0.9.1", 0},
+	}
+	for _, tt := range tests {
+		if got := countNewer(tt.tags, tt.current); got != tt.want {
+			t.Errorf("%s: countNewer(%q, %q) = %d, want %d", tt.name, tt.tags, tt.current, got, tt.want)
+		}
+	}
+}
+
+// TestChannelTags pins the channel split the behind-count relies on:
+// stable = not draft, not prerelease (what /releases/latest serves);
+// nightly = the -nightly.* tags, everything else invisible.
+func TestChannelTags(t *testing.T) {
+	list := []githubRelease{
+		{TagName: "v0.9.2"},
+		{TagName: "v0.9.2-rc.1", Prerelease: true},
+		{TagName: "v0.9.2-nightly.20261022", Prerelease: true},
+		{TagName: "v0.9.1", Draft: true},
+	}
+	stable := channelTags(list, false)
+	if len(stable) != 1 || stable[0] != "v0.9.2" {
+		t.Errorf("stable channel = %v, want [v0.9.2] (rc + nightlies invisible, drafts invisible)", stable)
+	}
+	nightly := channelTags(list, true)
+	if len(nightly) != 1 || nightly[0] != "v0.9.2-nightly.20261022" {
+		t.Errorf("nightly channel = %v, want [v0.9.2-nightly.20261022]", nightly)
+	}
+}
+
+// runUpdatePrompt drives cmdUpdate against a release fixture with the
+// running version pinned to current, a scripted stdin answer, captured
+// stderr and a stubbed install. terminal simulates tty-ness of the
+// process the update runs in.
+func runUpdatePrompt(t *testing.T, current string, flags []string, terminal bool, answer string) (stdout, stderr string, installedTag string, installErr error) {
+	t.Helper()
+	t.Setenv("OMEGA_UPDATE_API_BASE", "")
+
+	oldTerm := stdinIsTerminal
+	stdinIsTerminal = func() bool { return terminal }
+	t.Cleanup(func() { stdinIsTerminal = oldTerm })
+
+	oldBase := githubAPIBase
+	t.Cleanup(func() { githubAPIBase = oldBase })
+	githubAPIBase = fixtureReleases(t,
+		rel("v0.9.2"),
+		[]githubRelease{rel("v0.9.2"), rel("v0.9.1"), rel("v0.9.0")})
+
+	oldVer := omegaVersion
+	t.Cleanup(func() { omegaVersion = oldVer })
+	omegaVersion = current
+
+	// Scripted stdin: the answer, then EOF (writer closed).
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("stdin pipe: %v", pipeErr)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = oldStdin; r.Close() })
+	if answer != "" {
+		w.WriteString(answer)
+	}
+	w.Close()
+
+	// Captured stderr and stdout.
+	or, ow, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("stdout pipe: %v", pipeErr)
+	}
+	sr, sw, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("stderr pipe: %v", pipeErr)
+	}
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	os.Stdout = ow
+	os.Stderr = sw
+	t.Cleanup(func() { os.Stdout = oldStdout; or.Close() })
+	t.Cleanup(func() { os.Stderr = oldStderr; sr.Close() })
+
+	// Install seam: record, never touch a binary.
+	oldInstall := installArchiveFn
+	t.Cleanup(func() { installArchiveFn = oldInstall })
+	installArchiveFn = func(rel githubRelease, nightly bool) error {
+		installedTag = rel.TagName
+		return nil
+	}
+
+	installErr = cmdUpdate(flags)
+	ow.Close()
+	sw.Close()
+	ob, _ := io.ReadAll(or)
+	b, _ := io.ReadAll(sr)
+	return string(ob), string(b), installedTag, installErr
+}
+
+// TestCmdUpdatePrompt pins the bare-update contract (card t_dc91a94b):
+// behind report + y/N prompt; only y installs; n, junk, EOF and a
+// non-tty stdin decline with the --yes hint and never touch the binary.
+func TestCmdUpdatePrompt(t *testing.T) {
+	// y installs, after the behind line and the prompt.
+	_, stderr, tag, err := runUpdatePrompt(t, "v0.9.1", nil, true, "y\n")
+	if err != nil {
+		t.Fatalf("bare update, answer y: %v", err)
+	}
+	if tag != "v0.9.2" {
+		t.Errorf("y installed %q, want v0.9.2", tag)
+	}
+	if !strings.Contains(stderr, "you are 1 versions behind: v0.9.1 -> v0.9.2") {
+		t.Errorf("behind line missing: %q", stderr)
+	}
+	if !strings.Contains(stderr, "install v0.9.2 (stable channel)? [y/N]") {
+		t.Errorf("prompt missing: %q", stderr)
+	}
+
+	// n declines: exit 0, no install, hint printed.
+	_, stderr, tag, err = runUpdatePrompt(t, "v0.9.1", nil, true, "n\n")
+	if err != nil || tag != "" {
+		t.Errorf("answer n: err = %v, installed = %q, want nil/\"\"", err, tag)
+	}
+	if !strings.Contains(stderr, "--yes to install") {
+		t.Errorf("decline hint missing: %q", stderr)
+	}
+
+	// Junk declines.
+	_, _, tag, err = runUpdatePrompt(t, "v0.9.1", nil, true, "no\n")
+	if err != nil || tag != "" {
+		t.Errorf("answer no: err = %v, installed = %q", err, tag)
+	}
+
+	// EOF declines (empty stdin, writer closed immediately).
+	_, _, tag, err = runUpdatePrompt(t, "v0.9.1", nil, true, "")
+	if err != nil || tag != "" {
+		t.Errorf("EOF: err = %v, installed = %q, want nil/\"\"", err, tag)
+	}
+
+	// Non-tty declines without even reading: a scripted y in the pipe
+	// must NOT install (unattended bare updates never replace the
+	// binary; the scripted path is --yes).
+	_, stderr, tag, err = runUpdatePrompt(t, "v0.9.1", nil, false, "y\n")
+	if err != nil || tag != "" {
+		t.Errorf("non-tty: err = %v, installed = %q, want nil/\"\"", err, tag)
+	}
+	if !strings.Contains(stderr, "--yes to install") {
+		t.Errorf("non-tty decline hint missing: %q", stderr)
+	}
+}
+
+// TestCmdUpdateYesSkipsPrompt: --yes installs even with an empty stdin
+// (EOF) — if it read stdin at all it would decline, so an install here
+// proves the prompt is never consulted. The behind line still prints.
+func TestCmdUpdateYesSkipsPrompt(t *testing.T) {
+	_, stderr, tag, err := runUpdatePrompt(t, "v0.9.1", []string{"--yes"}, true, "")
+	if err != nil {
+		t.Fatalf("--yes: %v", err)
+	}
+	if tag != "v0.9.2" {
+		t.Errorf("--yes installed %q, want v0.9.2", tag)
+	}
+	if !strings.Contains(stderr, "you are 1 versions behind: v0.9.1 -> v0.9.2") {
+		t.Errorf("--yes must still print the behind line first: %q", stderr)
+	}
+	if strings.Contains(stderr, "--yes to install") {
+		t.Errorf("--yes flow printed the decline hint: %q", stderr)
+	}
+}
+
+// TestCmdUpdateSkipNoPrompt: already-current runs print the old
+// "already up to date" line - no behind fetch, no prompt, no install.
+func TestCmdUpdateSkipNoPrompt(t *testing.T) {
+	stdout, _, tag, err := runUpdatePrompt(t, "v0.9.2", nil, true, "")
+	if err != nil {
+		t.Fatalf("skip path: %v", err)
+	}
+	if tag != "" {
+		t.Errorf("skip path installed %q", tag)
+	}
+	if !strings.Contains(stdout, "already up to date") {
+		t.Errorf("skip path stdout = %q, want \"already up to date\"", stdout)
+	}
+	if strings.Contains(stdout, "behind") || strings.Contains(stdout, "install") {
+		t.Errorf("skip path must not prompt or count: %q", stdout)
 	}
 }

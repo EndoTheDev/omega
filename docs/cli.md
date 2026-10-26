@@ -16,7 +16,8 @@ omega serve           start the HTTP server (SSE streaming)
 omega export <id|label> [output]   export a session as JSONL
 omega insights [--days N]          session usage analytics (default: 30 days)
 omega agents                       list registered agents; `omega agents create <name>` scaffolds one
-omega update              install the latest stable release
+omega update              report N versions behind + prompt y/N
+omega update --yes        install the latest stable without a prompt
 omega update --rollback   swap back to omega.bak + health-verify
 omega rollback            alias for omega update --rollback
 omega health          check the server at the configured port
@@ -117,12 +118,20 @@ the `.example` config seeds copy over without overwriting anything that
 exists.
 
 ```bash
-omega update                      # latest stable (prereleases invisible)
-omega update --nightly            # newest -nightly.* prerelease
+omega update                      # report N versions behind, then prompt y/N
+omega update --yes                # install without a prompt
+omega update --nightly            # newest -nightly.* prerelease (same prompt contract)
 omega update --allow-downgrade    # permit installing a lower version
 omega update --rollback           # swap back to omega.bak, verify it runs
 omega rollback                    # same swap
 ```
+
+Prompt contract: a bare update never installs silently. It fetches,
+prints how far behind it is (version/tag distance over the channel's
+release list), then asks y/N. Only an explicit y installs. A non-tty
+stdin or an EOF declines immediately with a hint to run
+`omega update --yes` - an unattended bare update never replaces the
+binary; `--yes` is the scripted path and consults no terminal.
 
 Downgrade protection: an offered tag older than the running version is
 refused (a stale mirror must never quietly revert a box) unless
