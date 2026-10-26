@@ -27,17 +27,15 @@ func withSession(ctx context.Context, id string) context.Context {
 func TestToolsRegistryComplete(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()
-	for _, name := range []string{
-		"task.create", "task.list", "task.update",
-		"task.comment", "task.complete", "task.link_session",
-	} {
-		tool, ok := tools[name]
-		if !ok {
-			t.Fatalf("missing tool %s", name)
-		}
-		if tool.Run == nil || tool.Description == "" {
-			t.Fatalf("%s: broken registration", name)
-		}
+	tool, ok := tools["kanban.task"]
+	if !ok {
+		t.Fatal(`missing tool "kanban.task"`)
+	}
+	if tool.Run == nil || tool.Description == "" {
+		t.Fatal("broken registration")
+	}
+	if len(tools) != 1 {
+		t.Fatalf("the registry carries the one folded namespaced tool; got %d entries", len(tools))
 	}
 }
 
@@ -261,31 +259,19 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	}
 }
 
-// TestTaskAliasesRouteThroughFoldedTool is the compat gate: the old
-// dotted names still work, routed through the folded dispatcher, and
-// are marked AliasOf so they stay out of the prompt and /tools.
-func TestTaskAliasesRouteThroughFoldedTool(t *testing.T) {
-	p, board := toolProvider(t)
-	ctx := withSession(context.Background(), "sess_alias")
+// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement: the
+// machine-facing identity is the module.verb namespace pair, so the
+// legacy dotted alias shims no longer register at all. The folded
+// dispatcher keeps the same action vocabulary.
+func TestTaskAliasesRetired(t *testing.T) {
+	p, _ := toolProvider(t)
 	tools := p.Tools()
-
-	out, err := tools["task.create"].Run(ctx, map[string]any{"title": "via alias"})
-	if err != nil || !strings.Contains(out, "created t_") {
-		t.Fatalf("task.create alias: %q %v", out, err)
-	}
-	id := strings.Fields(out)[1]
-	if _, err := tools["task.comment"].Run(ctx, map[string]any{"id": id, "body": "note"}); err != nil {
-		t.Fatalf("task.comment alias: %v", err)
-	}
-	if comments, _ := board.GetTaskComments(context.Background(), "", id); len(comments) != 1 {
-		t.Fatalf("comments = %+v", comments)
+	if len(tools) != 1 {
+		t.Fatalf("alias shims must not return: %d entries", len(tools))
 	}
 	for name, tool := range tools {
-		if name == "task" || name == "task.create" || name == "task.comment" {
-			continue
-		}
-		if tool.AliasOf != "task" {
-			t.Fatalf("%s not marked AliasOf=task: %q", name, tool.AliasOf)
+		if tool.AliasOf != "" {
+			t.Fatalf("%s registered as an alias of %q - the shim era is closed", name, tool.AliasOf)
 		}
 	}
 }
