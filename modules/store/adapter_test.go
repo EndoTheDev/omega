@@ -108,8 +108,8 @@ func TestPluginMount(t *testing.T) {
 			"store": Config{DBPath: ":memory:"},
 		},
 	}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	defer ctx.Store.Close()
 

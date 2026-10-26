@@ -57,8 +57,8 @@ func TestPluginContract(t *testing.T) {
 func TestMountAppendsToolProvider(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("ToolProviders len = %d, want 1", len(ctx.ToolProviders))

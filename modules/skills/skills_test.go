@@ -151,8 +151,8 @@ func TestPluginMountWarnsLegacyShape(t *testing.T) {
 			"skills": Config{Dir: dir},
 		},
 	}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if len(log.msgs) != 1 {
 		t.Fatalf("expected 1 boot warning, got %d: %v", len(log.msgs), log.msgs)
@@ -240,8 +240,8 @@ func TestPluginMount(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
 	ctx := &core.Context{CWD: dir}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Skills == nil {
 		t.Fatal("Skills slot not populated")
@@ -264,8 +264,8 @@ func TestPluginMountWithConfig(t *testing.T) {
 	// panic with a nil Config.
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount with nil config: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount with nil config: %v", err)
 	}
 }
 
@@ -474,8 +474,8 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 			"skills": Config{Dir: dir},
 		},
 	}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount with config: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount with config: %v", err)
 	}
 	if ctx.Skills == nil {
 		t.Fatal("Skills slot not populated")
@@ -565,3 +565,24 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
 	var _ core.SkillsLister = (*SkillsProvider)(nil)
 }
+
+// stubProvides satisfies the logging Requires edge in the mount set
+// without registering anything: the seam it names is already
+// populated on the Context the test built.
+type stubProvides struct {
+	plugin agent.Plugin
+	seam   string
+}
+
+func (s stubProvides) Name() string       { return "stub-" + s.seam }
+func (s stubProvides) Provides() []string { return []string{s.seam} }
+func (s stubProvides) Requires() []string { return nil }
+
+func (s stubProvides) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	_ = s.plugin
+	return nil
+}
+
+// Mount satisfies the interface until phase F retires it; the stub
+// never registers and is never dispatched (the API mount wins).
+func (s stubProvides) Mount(ctx *core.Context) error { return nil }

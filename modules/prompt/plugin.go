@@ -1,12 +1,15 @@
 package prompt
 
 import (
+	"fmt"
+
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin is the agent.Plugin adapter for the prompt builder.
-// Seam: prompt_builder (exclusive).
+// Seam: prompt_builder (exclusive). It mounts through the ExtensionAPI
+// exclusively (v0.12 phase F).
 type Plugin struct{}
 
 // NewPlugin creates a prompt-builder plugin.
@@ -32,17 +35,17 @@ func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
 // time, so it has no mount-order dependencies.
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount sets ctx.PromptBuilder. The builder reads prompt section
-// contributors from the Context at build time.
+// Mount is the retired classic body (v0.12 phase F). Fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
-	ctx.PromptBuilder = NewPromptBuilder(ctx)
-	return nil
+	return fmt.Errorf("prompt: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
+}
+
+// MountWithAPI implements agent.APIPlugin: the prompt_builder seam,
+// one registration. The builder reads prompt section contributors
+// from the Context at build time.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	return api.RegisterPromptBuilder(NewPromptBuilder(ctx))
 }
 
 // Compile-time check: Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
-// Dismount unmounts the prompt_builder seam (the E1 dismount proof).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	ctx.PromptBuilder = nil
-	return nil
-}

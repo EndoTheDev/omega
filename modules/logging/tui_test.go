@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -194,7 +195,7 @@ func TestLogsMissingLogger(t *testing.T) {
 func TestLogsTUIRegistration(t *testing.T) {
 	cfg := Config{Enabled: true, File: filepath.Join(t.TempDir(), "omega.log")}
 	ctx := &core.Context{Configs: map[string]any{"logging": cfg}}
-	if err := (&Plugin{}).Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{&Plugin{}}, ctx, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var got []string

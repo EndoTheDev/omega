@@ -92,6 +92,18 @@ type APIPlugin interface {
 	MountWithAPI(ctx *Context, api *ExtensionAPI) error
 }
 
+// ExtensionAPI.tier: whether the mounting capsule ships built-in
+// vocabulary (machine-critical, not toggleable - provider, store,
+// skills, tools, the loop) or module vocabulary (the opinionated
+// capsules). Module registrations must carry the capsule's own
+// namespace (Q10); built-in registrations are the engine's vocabulary
+// and keep their natural names - both land on the same one-tenant
+// ledger, so the collision law holds across the boundary.
+func isBuiltin(p Plugin) bool {
+	_, toggleable := p.(Toggleable)
+	return !toggleable
+}
+
 // MountAll keeps its classic signature: every existing call site and
 // test mounts unchanged. Hosts that consume registrations (module
 // routes, the refusal ledger) or honor a disable list call MountAllAPI
@@ -377,11 +389,12 @@ func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
 // the methods adapt each registration onto the exact Context field
 // the classic mount would assign.
 type ExtensionAPI struct {
-	module string
-	ctx    *core.Context
-	reg    *Registry
-	j      *journal // this mount's contribution journal (v0.12 E1)
-	live   bool     // true = writes are already on the live Context (boot)
+	module  string
+	ctx     *core.Context
+	reg     *Registry
+	j       *journal // this mount's contribution journal (v0.12 E1)
+	live    bool     // true = writes are already on the live Context (boot)
+	builtin bool     // the capsule ships built-in vocabulary (not Toggleable)
 	tools  map[string]core.Tool
 	wired  bool // the one tool provider is already on ctx.ToolProviders
 	panels map[string]core.Panel
@@ -454,12 +467,23 @@ func (api *ExtensionAPI) claim(name string) error {
 }
 
 // RegisterTool adds one tool (ToolProviders, additive). The name is
-// the model-facing identity and carries the module prefix (Q10) -
-// existing classic tool names migrate with the capsules (phase C);
-// the payload contract is unchanged raw JSON (core.Tool.Run takes
-// map[string]any, Q9).
+// the model-facing identity. A module capsule (Toggleable) must carry
+// its own namespace prefix (Q10: "kanban.task"); a built-in capsule
+// (provider, store, skills, tools, the loop - machine-critical, in the
+// engine's vocabulary) registers its natural name ("shell.run",
+// "sessions.search"). Both land on the same one-tenant ledger; a
+// second tenant on a held tool name is a fail-loud error (Q5), and a
+// same-tenant re-registration replaces (Q7, the clean-idempotent
+// remount). The payload contract is unchanged raw JSON (core.Tool.Run
+// takes map[string]any, Q9).
 func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
-	if err := api.claim(name); err != nil {
+	if api.builtin {
+		// Built-in vocabulary: the one-tenant ledger holds the name
+		// itself, no namespace pairing. Journaled for release.
+		if err := api.claimRecorded("tool:" + name); err != nil {
+			return err
+		}
+	} else if err := api.claim(name); err != nil {
 		return err
 	}
 	if api.tools == nil {
@@ -484,6 +508,40 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 type toolMap map[string]core.Tool
 
 func (m toolMap) Tools() map[string]core.Tool { return m }
+
+// RegisterRuntimeTools lands the capsule's runtime-loaded tool set
+// (the mcp ruling, card t_6c0375b5): server-qualified externally
+// sourced names ("proof.echo") are configuration data, not registered
+// vocabulary - they never pass the namespace claim, so a server name
+// outside the capsule's own namespace stays illegal to CLAIM while
+// being legal to SERVE. The provider is appended whole (it re-reads
+// its live set on every Tools() call, the classic bridge shape). The
+// capsule claims its own namespace ONCE as the guard ("mcp." - the
+// guard claim is journaled like every other), and the tools ride
+// beneath it as runtime data. Binary purity holds: removing the module
+// removes all of them regardless of naming. The one-dot law is not
+// weakened anywhere - no multi-dot parse, no flattening.
+func (api *ExtensionAPI) RegisterRuntimeTools(p core.ToolProvider) error {
+	if p == nil {
+		return fmt.Errorf("runtime tools %q: a registration carries its provider", api.module)
+	}
+	module := api.module
+	if err := api.reg.claimSlot("ns:"+module+".", module); err != nil {
+		return err
+	}
+	api.j.add(contribution{
+		module:  module,
+		desc:    "runtime tools guard " + module + ".",
+		regUndo: func(r *Registry) { r.releaseClaim("ns:"+module+".", module) },
+	})
+	before := len(api.ctx.ToolProviders)
+	api.writeSlot(
+		fmt.Sprintf("runtime tools (%d under guard %s.)", len(p.Tools()), module),
+		func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, p) },
+		func(c *core.Context) { c.ToolProviders = c.ToolProviders[:before] },
+	)
+	return nil
+}
 
 // RegisterPanel declares one panel descriptor (PanelProviders,
 // additive). The api path assembles one panel provider per module at

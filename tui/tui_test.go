@@ -30,10 +30,9 @@ func testContext() *core.Context {
 			"provider": provider.Default(),
 		},
 	}
-	p := &provider.Plugin{}
-	p.Mount(ctx)
-	sp := store.NewPlugin()
-	sp.Mount(ctx)
+	if _, err := agent.MountAllAPI([]agent.Plugin{&provider.Plugin{}, store.NewPlugin()}, ctx, nil, nil); err != nil {
+		panic(err)
+	}
 	return ctx
 }
 
@@ -318,7 +317,12 @@ func TestCompactViaExtension(t *testing.T) {
 	ctx := testContext()
 	// Also mount the compactor plugin so /compact is registered.
 	comp := &compactor.Plugin{}
-	comp.Mount(ctx)
+	// the registration surface is the only mount path; the provider
+	// seam the compactor requires is stubbed (the seam is already
+	// populated on this test Context by testContext).
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubSeamer{seam: "provider"}, comp}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount compactor: %v", err)
+	}
 
 	// Compaction config is needed for the TUI to run the compaction.
 	compCfg := &core.CompactionConfig{
@@ -475,7 +479,7 @@ func TestSubmitPersistsMessages(t *testing.T) {
 	// Persistence belongs to the loop now, so the run must actually
 	// execute: mount the loop and a scripted provider into the
 	// extension context, exactly what a boot does.
-	if err := agent_loop.NewPlugin().Mount(pctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{agent_loop.NewPlugin()}, pctx, nil, nil); err != nil {
 		t.Fatalf("mount loop: %v", err)
 	}
 	pctx.Provider = ai.NewFakeProviderScripts("test",
@@ -2681,3 +2685,20 @@ func TestHandleCompact(t *testing.T) {
 		}
 	})
 }
+
+// stubSeamer satisfies a Requires edge in the mount set without
+// registering anything: the seam it names is already populated on the
+// Context the test built (testContext mounts the real provider).
+type stubSeamer struct{ seam string }
+
+func (s stubSeamer) Name() string { return "stub-" + s.seam }
+
+func (s stubSeamer) Provides() []string { return []string{s.seam} }
+
+func (s stubSeamer) Requires() []string { return nil }
+
+func (s stubSeamer) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
+
+// Mount satisfies the interface until phase F retires it; the stub
+// never registers and is never dispatched (the API mount wins).
+func (s stubSeamer) Mount(ctx *core.Context) error { return nil }

@@ -5,24 +5,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
 // Plugin adapts ToolProvider into the agent.Plugin interface.
-// It registers shell and file tools as an additive tools-seam provider.
-type Plugin struct {
-	// mountState carries what Dismount must reverse (the E1 dismount
-	// proof): the tool provider, the files renderer and the prior
-	// command chain.
-	provider    *ToolProvider
-	renderer    *tui
-	prevHandler commandHandler
-}
-
-// commandHandler is the CommandHandler stack shape the classic mounts
-// chain onto.
-type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
+// It registers shell and file tools as an additive tools-seam provider
+// and mounts through the ExtensionAPI exclusively (v0.12 phase F).
+type Plugin struct{}
 
 // Name returns the extension name shown in /extensions.
 func (p *Plugin) Name() string { return "tools" }
@@ -44,51 +35,65 @@ func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections
 // has no dependencies — it only provides tools, which need nothing.
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount appends the ToolProvider to ctx.ToolProviders and registers
-// the /tools command. The provider also carries the store-door
-// deny-guard (ENDO'S LAW 2026-10-18) built from the store config.
+// Mount is the retired classic body (v0.12 phase F). Fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
-	p.provider = &ToolProvider{}
-	provider := p.provider
+	return fmt.Errorf("tools: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
+}
+
+// MountWithAPI implements agent.APIPlugin. Registers the tool
+// provider, the prompt section, the /tools command and the /files
+// browser renderer. The provider carries the store-door deny-guard
+// (ENDO'S LAW 2026-10-18) built from the store config.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	provider := &ToolProvider{}
 	if c, ok := ctx.Configs["store"].(store.Config); ok {
 		provider.dbGuard = newDBGuard(c.DBPath)
 	} else {
 		provider.dbGuard = newDBGuard("")
 	}
-	ctx.ToolProviders = append(ctx.ToolProviders, provider)
-	ctx.PromptSectioners = append(ctx.PromptSectioners, p)
-
-	// /tools stays an extension command (it returns CommandResult with
-	// display-mode actions the shell interprets); its enum completions
-	// ride on the command itself now, not a shell-side map.
-	ctx.Commands = append(ctx.Commands,
-		core.ExtensionCommand{Name: "/tools", Description: "list tools or toggle tool result display [on|off|auto|list]", Args: []string{"on", "off", "auto", "list"}},
-	)
-	// The /files browser rides the module TUI seam (the read view over
-	// the files domain). A tools plugin left out of buildPlugins takes
-	// /files out of the command table with it (card t_88bb7dcf).
-	p.renderer = &tui{}
-	ctx.TUIProviders = append(ctx.TUIProviders, p.renderer)
-
-	p.prevHandler = ctx.CommandHandler
-	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		if name == "/tools" {
-			return handleToolsCommand(ctx, args)
-		}
-		if prev != nil {
-			return prev(c, name, args)
-		}
-		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	steps := []func() error{
+		func() error {
+			for name, t := range provider.Tools() {
+				if err := api.RegisterTool(name, t); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		func() error { return api.RegisterPromptSectioner(p) },
+		// /tools stays an extension command (it returns CommandResult
+		// with display-mode actions the shell interprets); its enum
+		// completions ride on the command itself now, not a shell-side
+		// map. The list view reads the mount Context's inventory - the
+		// same capture the classic wrapper held.
+		func() error {
+			return api.RegisterCommand("/tools", "list tools or toggle tool result display [on|off|auto|list]",
+				[]string{"on", "off", "auto", "list"}, func(_ context.Context, name, args string) (core.CommandResult, error) {
+					return handleToolsCommand(ctx, name, args)
+				})
+		},
+		// The /files browser rides the module TUI seam (the read view
+		// over the files domain). A tools plugin left out of
+		// buildPlugins takes /files out of the command table with it
+		// (card t_88bb7dcf).
+		func() error { return api.RegisterRenderer(&tui{}) },
 	}
-
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // handleToolsCommand handles the /tools command. "list" (or no args)
-// lists all tools from all extensions. "on|off|auto" toggles display
-// state via a set_tool_display action.
-func handleToolsCommand(ctx *core.Context, args string) (core.CommandResult, error) {
+// lists all tools from all extensions (the mount Context's inventory,
+// the same read the classic wrapper made). "on|off|auto" toggles
+// display state via a set_tool_display action.
+func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResult, error) {
+	if name != "/tools" {
+		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	}
 	arg := strings.TrimSpace(args)
 	if arg == "" || arg == "list" {
 		return listTools(ctx), nil
@@ -161,42 +166,3 @@ func firstLineOfDesc(desc string) string {
 
 // NewPlugin creates a new tools plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
-// Dismount unmounts the tool provider, the prompt section, the /tools
-// command, the files renderer and the command chain (the E1 dismount
-// proof).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	tools := ctx.ToolProviders[:0]
-	for _, tp := range ctx.ToolProviders {
-		if tp == p.provider {
-			continue
-		}
-		tools = append(tools, tp)
-	}
-	ctx.ToolProviders = tools
-	sections := ctx.PromptSectioners[:0]
-	for _, ps := range ctx.PromptSectioners {
-		if ps == p {
-			continue
-		}
-		sections = append(sections, ps)
-	}
-	ctx.PromptSectioners = sections
-	cmds := ctx.Commands[:0]
-	for _, c := range ctx.Commands {
-		if c.Name == "/tools" {
-			continue
-		}
-		cmds = append(cmds, c)
-	}
-	ctx.Commands = cmds
-	tuis := ctx.TUIProviders[:0]
-	for _, tp := range ctx.TUIProviders {
-		if tp == p.renderer {
-			continue
-		}
-		tuis = append(tuis, tp)
-	}
-	ctx.TUIProviders = tuis
-	ctx.CommandHandler = p.prevHandler
-	return nil
-}

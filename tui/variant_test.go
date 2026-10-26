@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
@@ -274,7 +275,7 @@ func TestRetrySiblingsPins(t *testing.T) {
 // provider into the model's extension context, so a started run
 // executes the loop and persists through its store sink.
 func mountScriptedRun(m *model, scripts ...[]core.ProviderStreamEvent) {
-	if err := agent_loop.NewPlugin().Mount(m.extensions); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{agent_loop.NewPlugin()}, m.extensions, nil, nil); err != nil {
 		panic(err)
 	}
 	m.extensions.Provider = ai.NewFakeProviderScripts("test", scripts...)
