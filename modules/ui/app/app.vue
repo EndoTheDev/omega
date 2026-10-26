@@ -893,8 +893,10 @@
     // opened tab mounts and restores immediately
   }
 
-  // openEphemeralTab (card t_d96a5cd5): the "+ new" dropdown's no-persist
-  // entry. A composer-first tab CARRYING the EPHEMERAL_DRAFT_REF marker
+  // openEphemeralTab (card t_d96a5cd5): the session sidebar's "+ New
+  // Session" dropdown's no-persist entry (card t_55a571ff: entry label
+  // "Ephemeral"). A composer-first tab CARRYING the EPHEMERAL_DRAFT_REF
+  // marker
   // - ChatTab reads the marker into the state's ephemeral bit, the send
   // rides /chat {ephemeral:true} and the server's `eph-` id adopts onto
   // the tab. Always mints fresh (no draft reuse: a plain draft and an

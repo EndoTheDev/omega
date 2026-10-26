@@ -1,0 +1,59 @@
+// omega webui: source-check for the sidebar's new-session control (card
+// t_55a571ff): the split button reads "+ New Session" and the type
+// picker is DATA - three entries (New Session, Ephemeral, Continuous),
+// the Continuous placeholder rendering disabled with the design-pending
+// note (Endo ruling: ship the label now, wire behavior in the
+// continuous-agents arc). The template renders the list, so the
+// contract is pinned against AppSidebar.vue's source.
+// Run: node --test "test/*.test.ts" (node >= 23 runs TS natively)
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL } from "node:url";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
+
+const sidebar = src("app/components/sessions/AppSidebar.vue");
+// the picker's data lives in one array - match only inside it, never the
+// whole component (other sites carry label-like strings)
+const picker =
+  sidebar.match(/const newMenuEntries: NewMenuEntry\[\] = \[([\s\S]*?)\n\s*\];/)?.[1] ??
+  "";
+
+describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
+  it('the main chip reads "+ New Session"', () => {
+    assert.match(sidebar, /\+\s*New Session/, "the split button's body label");
+  });
+
+  it("the picker holds the three entries, in order, as data", () => {
+    const labels = [...picker.matchAll(/label:\s*"([^"]+)",/g)].map((m) => m[1]);
+    assert.deepEqual(labels, ["New Session", "Ephemeral", "Continuous"]);
+    assert.equal(labels.length, 3, "exactly three entries ship now");
+  });
+
+  it("the Continuous placeholder is the disabled entry with the design-pending note", () => {
+    const entry = picker.match(/\{\s*label:\s*"Continuous",[\s\S]*?\},/);
+    assert.ok(entry, "the Continuous entry exists as its own object");
+    assert.match(entry[0], /disabled:\s*true/, "the placeholder renders disabled");
+    assert.match(
+      entry[0],
+      /design pending - coming with the continuous agents arc/,
+      "the title carries Endo's design-pending note",
+    );
+  });
+
+  it("the picker renders from the data list - a disabled entry renders inert", () => {
+    assert.match(sidebar, /v-for="entry in newMenuEntries"/, "the menu is the data list");
+    assert.match(sidebar, /:disabled="entry\.disabled"/, "the disabled flag renders");
+    assert.match(
+      sidebar,
+      /\.new-menu-item:disabled\b/,
+      "the disabled entry gets the dim, inert styling",
+    );
+  });
+
+  it("the ephemeral entry still routes through the existing opener", () => {
+    assert.match(sidebar, /run:\s*\(\)\s*=>\s*pickNew\(true\)/, "Ephemeral mints the draft");
+  });
+});
