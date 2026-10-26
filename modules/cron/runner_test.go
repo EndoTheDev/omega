@@ -491,17 +491,33 @@ func waitFor(t *testing.T, limit time.Duration, cond func() bool, trigger func()
 
 // --- plugin mount ---
 
+// notificationsPlugin provides the presence the cron Requires edge
+// declares (Q3): the runner's notifier arrives through CronDeps.Ctx at
+// Start, but the mount pins need the seam provided to mount at all.
+type notificationsPlugin struct{}
+
+func (notificationsPlugin) Name() string                  { return "notifications" }
+func (notificationsPlugin) Provides() []string            { return []string{"notifications"} }
+func (notificationsPlugin) Requires() []string            { return nil }
+func (notificationsPlugin) Mount(ctx *core.Context) error { return nil }
+
+// TestPluginMountSetsCronSeam pins the api mount (the only mount since
+// the v0.12 phase-C2 migration).
 func TestPluginMountSetsCronSeam(t *testing.T) {
 	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "a", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
-	var ctx core.Context
-	if err := p.Mount(&ctx); err != nil {
-		t.Fatalf("mount: %v", err)
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Cron == nil {
 		t.Fatal("ctx.Cron not populated")
 	}
 	if p.Provides()[0] != "cron" {
 		t.Fatalf("provides = %v", p.Provides())
+	}
+	// the classic mount path is dead: reaching it fails loud
+	if err := p.Mount(ctx); err == nil {
+		t.Fatal("the retired classic mount must fail loud")
 	}
 }
 
@@ -511,8 +527,8 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewPluginWithConfig(nil, home)
-	var ctx core.Context
-	if err := p.Mount(&ctx); err == nil {
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil); err == nil {
 		t.Fatal("invalid crons.yaml mounted silently")
 	} else if !strings.Contains(err.Error(), `job "bad"`) {
 		t.Fatalf("mount error missing job name: %v", err)
