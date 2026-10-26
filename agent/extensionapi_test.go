@@ -759,3 +759,87 @@ func TestCensusEnforcement(t *testing.T) {
 		}
 	}
 }
+
+// TestSubcommandRegistration pins the phase-D CLI law (grill Q6 - the
+// module owns its argv): the registration is a thin name+handler
+// prefix, the name keeps its user-facing natural shape (bare word, no
+// namespace pair, no leading / or -), the registry records the owner,
+// a cross-tenant claim of the same subcommand fails the mount loud
+// (Q5), same-tenant re-registration replaces (Q7), and the registry
+// table lists the surviving entries.
+type subCapsule struct {
+	name    string
+	summary string
+	handler func(argv []string) error
+}
+
+func (p *subCapsule) Name() string       { return p.name }
+func (p *subCapsule) Provides() []string { return nil }
+func (p *subCapsule) Requires() []string { return nil }
+func (p *subCapsule) Mount(ctx *Context) error {
+	return errors.New("not dispatched - mounted through the api")
+}
+func (p *subCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
+	handler := p.handler
+	if handler == nil {
+		handler = func(argv []string) error { return nil }
+	}
+	return api.RegisterSubcommand("greet", p.summary, handler)
+}
+
+func TestSubcommandRegistration(t *testing.T) {
+	greeted := ""
+	var ctx Context
+	reg, err := MountAllAPI([]Plugin{
+		&subCapsule{name: "greeter", summary: "greets by name", handler: func(argv []string) error {
+			greeted = argv[0]
+			return nil
+		}},
+	}, &ctx, nil)
+	if err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	subs := reg.Subcommands()
+	if len(subs) != 1 || subs[0].Name != "greet" || subs[0].Module != "greeter" || subs[0].Summary != "greets by name" {
+		t.Fatalf("registry table: %+v", subs)
+	}
+	if err := subs[0].Handler([]string{"world"}); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if greeted != "world" {
+		t.Fatalf("handler argv: %q", greeted)
+	}
+
+	// cross-tenant: a second module claiming `greet` fails the mount
+	var ctx2 Context
+	_, err = MountAllAPI([]Plugin{&subCapsule{name: "greeter"}, &subCapsule{name: "other"}}, &ctx2, nil)
+	if err == nil {
+		t.Fatalf("a cross-tenant subcommand claim must fail the mount")
+	}
+	if !errors.Is(err, core.ErrSeamForeignTenant) {
+		t.Errorf("error chain must carry ErrSeamForeignTenant: %v", err)
+	}
+
+	// name shape: the registration refuses non-bare-word names
+	shape := func(name string) error {
+		api := &ExtensionAPI{module: "shape", ctx: &Context{}, reg: newRegistry(nil)}
+		return api.RegisterSubcommand(name, "", func(argv []string) error { return nil })
+	}
+	for _, bad := range []string{"", " spaced ", "-flag", "/slash"} {
+		if err := shape(bad); err == nil {
+			t.Errorf("subcommand %q accepted, want refusal", bad)
+		}
+	}
+
+	// same tenant remount (Q7): a fresh registry is clean-idempotent
+	var ctx3 Context
+	reg3, err := MountAllAPI([]Plugin{
+		&subCapsule{name: "greeter", summary: "greets by name"},
+	}, &ctx3, nil)
+	if err != nil {
+		t.Fatalf("remount: %v", err)
+	}
+	if len(reg3.Subcommands()) != 1 {
+		t.Fatalf("remount table: %+v", reg3.Subcommands())
+	}
+}

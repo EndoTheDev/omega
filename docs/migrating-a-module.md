@@ -75,9 +75,19 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    capsule served through a Context seam (kanban's `/tasks` rides
    `ctx.Kanban` through `http_channel`) registers nothing in phase C.
 
-6. **Keep the CLI where it is.** `RegisterCommand` covers slash
-   commands in the TUI chain; the argv subcommands move home in
-   phase D, not here.
+6. **Home the CLI subcommand (v0.12 phase D).** `RegisterSubcommand`
+   registers the capsule's argv subcommand: a thin name+handler prefix.
+   The binary routes `omega <name> ...` to the handler with the
+   untouched argv after the name - the module parses its own flags
+   (core never grows a flag framework) and prints its own help for
+   `omega <name> --help`. The global `omega --help` lists module
+   subcommands by registry introspection, so deleting the module makes
+   the subcommand vanish from the help and from dispatch; a
+   non-matching argument falls back to the project-path behavior. The
+   module-CLI mount runs on config defaults when the home's config.yaml
+   is missing or invalid: a module subcommand keeps the pre-migration
+   CLI contract of never requiring a valid global config.
+   Kanban (`modules/kanban/cli.go`) is the reference.
 
 ## How the proof works
 
@@ -117,5 +127,7 @@ survived:
 - Do not widen the API to express one capsule's shape. `RegisterPanelProvider`
   exists because live view-models are a real, shared need (stateful
   capsules push deltas); ad-hoc escape hatches are not.
-- Do not register a route you do not serve (phase D does), or port a
-  subcommand (phase D does).
+- Do not register a route you do not serve, and do not leave the
+  capsule's argv in cmd/omega: the CLI subcommand homes in the capsule
+  (step 6, phase D) - a wiring file in cmd/omega/<module>.go is the
+  seam assignment the migration deletes.
