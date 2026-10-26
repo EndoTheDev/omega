@@ -127,6 +127,10 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// card t_2ecf9c51: the verdicts seam (answer POSTs + pending list).
 	c.srv.Verdicts = deps.Ctx.Verdicts
 	c.srv.logger = deps.Ctx.Logger
+	// card t_9de5b009: the trust gate resolves a workspace-rooted
+	// session's AGENTS.md context at send time. Optional like the
+	// inspector seams - nil keeps the run scope context-free.
+	c.srv.trust = deps.Ctx.Trust
 	c.srv.runTimeout = c.runTimeout
 	c.srv.titleModel = c.titleModel
 	c.srv.version = deps.Version
