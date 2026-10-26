@@ -339,11 +339,32 @@ type emitterReg struct {
 
 // deliverEmitters hands the mounted Notifications seam (nil when the
 // module is absent - emitters stay nil-safe by the classic law) to
-// every hook at mount end.
+// every hook at mount end (boot: MountAllAPI's final deliver).
 func (r *Registry) deliverEmitters(ctx *Context) {
 	r.mu.Lock()
 	hooks := make([]emitterReg, len(r.emitter))
 	copy(hooks, r.emitter)
+	r.mu.Unlock()
+	for _, h := range hooks {
+		h.fn(ctx.Notifications)
+	}
+}
+
+// deliverModuleEmitters replays the emit-on-remount law: a remount's
+// fresh hooks never saw the mount-end deliver (they registered after
+// boot's sweep), so Mount delivers the named module's hooks itself.
+// Only that module's entries are replayed - the others are either
+// already delivered (boot) or gone (their dismount undid them). A
+// rejected remount panics before this runs and plays the hooks back
+// instead, so nothing is delivered half-mounted (Q11).
+func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
+	r.mu.Lock()
+	var hooks []emitterReg
+	for _, h := range r.emitter {
+		if h.module == module {
+			hooks = append(hooks, h)
+		}
+	}
 	r.mu.Unlock()
 	for _, h := range hooks {
 		h.fn(ctx.Notifications)

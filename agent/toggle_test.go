@@ -280,3 +280,76 @@ func TestToggleRemountPanicRollsBackAndRejects(t *testing.T) {
 		t.Fatalf("rejected toggle left census drift: %v", after.Diff(base))
 	}
 }
+
+// emitterProbeCapsule mounts the notifications seam and an emitter
+// hook that counts its deliveries - the emit-on-remount law's test
+// subject.
+type emitterProbeCapsule struct {
+	name   string
+	counts *int
+	seen   *core.NotificationsProvider
+}
+
+func (c *emitterProbeCapsule) Name() string       { return c.name }
+func (c *emitterProbeCapsule) Provides() []string { return []string{"notifications"} }
+func (c *emitterProbeCapsule) Requires() []string { return nil }
+func (c *emitterProbeCapsule) Toggleable() bool   { return true }
+func (c *emitterProbeCapsule) Mount(*core.Context) error {
+	return errors.New("emitterProbeCapsule mounts through the API")
+}
+
+func (c *emitterProbeCapsule) MountWithAPI(_ *core.Context, api *ExtensionAPI) error {
+	if err := api.RegisterNotifications(plugNotifier{}); err != nil {
+		return err
+	}
+	counts, seen := c.counts, c.seen
+	return api.RegisterEmitter(func(n core.NotificationsProvider) {
+		*counts++
+		*seen = n
+	})
+}
+
+func TestRemountReplaysEmitter(t *testing.T) {
+	// The emit-on-remount law: the boot deliver runs once, at
+	// MountAllAPI's end; a remount's fresh hooks register past it. The
+	// toggle cycle must replay them - or the module's finished-things
+	// handoff stays nil until the next restart.
+	counts := 0
+	var seen core.NotificationsProvider
+	ctx := &core.Context{}
+	reg, err := MountAllAPI([]Plugin{&emitterProbeCapsule{name: "mod", counts: &counts, seen: &seen}}, ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := core.Census(ctx)
+	if counts != 1 || seen == nil {
+		t.Fatalf("boot delivery: counts=%d seen=%v", counts, seen)
+	}
+	if err := reg.Toggle(ctx, "mod", false, core.StartDeps{}); err != nil {
+		t.Fatal(err)
+	}
+	off := core.Census(ctx)
+	if counts != 1 {
+		t.Fatalf("dismount must not re-deliver: counts=%d", counts)
+	}
+	if err := reg.Toggle(ctx, "mod", true, core.StartDeps{}); err != nil {
+		t.Fatal(err)
+	}
+	if counts != 2 || seen == nil {
+		t.Fatalf("remount replay: counts=%d seen=%v", counts, seen)
+	}
+	if after := core.Census(ctx); !after.Equal(full) {
+		t.Fatalf("the replay drifted the census: %v", after.Diff(full))
+	}
+	// The undo is per-lifetime: the second disable removes the second
+	// hook and the count stops where the replay left it.
+	if err := reg.Toggle(ctx, "mod", false, core.StartDeps{}); err != nil {
+		t.Fatal(err)
+	}
+	if counts != 2 {
+		t.Fatalf("the undo delivered an extra: counts=%d", counts)
+	}
+	if after := core.Census(ctx); !after.Equal(off) {
+		t.Fatalf("second dismount drifted: %v", after.Diff(off))
+	}
+}
