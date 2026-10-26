@@ -43,6 +43,81 @@ type Describer interface {
 	ConfigKey() string
 }
 
+// Dismounter is an optional Plugin capability (v0.12 E1): it lives in
+// dismount.go with the teardown machinery it belongs to.
+
+// Toggleable is an optional Plugin capability (the tier law, grill
+// Q1/Q13): only the opinionated capsules may appear in the disable
+// list. Machine-critical mounts (provider, store, loop, logging - the
+// behavior the machine needs to be a machine) and the engine ring
+// (http_channel, tui) never implement it, and disabling them fails
+// the boot loud. Default is NOT toggleable: a plugin opts in.
+type Toggleable interface {
+	Toggleable() bool
+}
+
+// filterDisabled applies the omega.json disable list (grill Q1) to the
+// plugin set before anything mounts: a disabled name must exist and
+// name a toggleable capsule (the tier law), and a remaining plugin
+// whose required seam is mounted only by a disabled module fails the
+// boot naming the edge (Q3 - no silent degradation).
+func filterDisabled(plugins []Plugin, disabled []string) ([]Plugin, error) {
+	if len(disabled) == 0 {
+		return plugins, nil
+	}
+	byName := make(map[string]Plugin, len(plugins))
+	for _, p := range plugins {
+		if _, dup := byName[p.Name()]; dup {
+			return nil, fmt.Errorf("two plugins named %q", p.Name())
+		}
+		byName[p.Name()] = p
+	}
+	off := make(map[string]bool, len(disabled))
+	for _, name := range disabled {
+		p, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("disabled %q: no such module", name)
+		}
+		if t, ok := p.(Toggleable); !ok || !t.Toggleable() {
+			return nil, fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is machine-critical or engine ring", name, name)
+		}
+		off[name] = true
+	}
+	// Seam providers, split live/disabled, for the Q3 edge check.
+	provides := make(map[string]string)
+	offProvides := make(map[string]string)
+	for _, p := range plugins {
+		if off[p.Name()] {
+			for _, seam := range p.Provides() {
+				if _, ok := offProvides[seam]; !ok {
+					offProvides[seam] = p.Name()
+				}
+			}
+			continue
+		}
+		for _, seam := range p.Provides() {
+			provides[seam] = p.Name()
+		}
+	}
+	var enabled []Plugin
+	for _, p := range plugins {
+		if off[p.Name()] {
+			continue
+		}
+		for _, req := range p.Requires() {
+			if _, ok := provides[req]; ok {
+				continue
+			}
+			if by, ok := offProvides[req]; ok {
+				return nil, fmt.Errorf("module %q requires seam %q, mounted only by disabled module %q - disable %q too, or re-enable %q (Q3: no silent degradation)", p.Name(), req, by, p.Name(), by)
+			}
+			return nil, fmt.Errorf("plugin %q requires seam %q but no plugin provides it", p.Name(), req)
+		}
+		enabled = append(enabled, p)
+	}
+	return enabled, nil
+}
+
 // ConfigSource is the host's raw config as the config router sees
 // it: typed config sections by name. cmd/omega implements it on its
 // Config type; a future or embedding host serves whatever sections

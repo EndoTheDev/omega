@@ -73,7 +73,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -94,32 +94,50 @@ type APIPlugin interface {
 
 // MountAll keeps its classic signature: every existing call site and
 // test mounts unchanged. Hosts that consume registrations (module
-// routes, the refusal ledger) call MountAllAPI instead.
+// routes, the refusal ledger) or honor a disable list call MountAllAPI
+// instead.
 func MountAll(plugins []Plugin, ctx *Context) error {
-	_, err := MountAllAPI(plugins, ctx, nil)
+	_, err := MountAllAPI(plugins, ctx, nil, nil)
 	return err
 }
 
 // MountAllAPI mounts the plugin set like MountAll and returns the
 // registration registry: claims, module routes and the refusal
 // ledger. The refusals sink is host-supplied; nil builds the default
-// in-process refusal ledger.
-func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink) (*Registry, error) {
+// in-process refusal ledger. disabled names the modules omega.json
+// toggles off (Q1): Mount skips them; a remaining plugin depending on
+// a disabled module fails the boot naming the edge (Q3). A boot panic
+// re-panics as *core.ModulePanicError - die loud naming the module
+// and the fix-it hint (Q11).
+func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disabled []string) (*Registry, error) {
 	if refusals == nil {
 		refusals = NewRefusalLedger()
 	}
+	enabled, err := filterDisabled(plugins, disabled)
+	if err != nil {
+		return nil, err
+	}
 	reg := newRegistry(refusals)
-	provides, err := buildProvidesMap(plugins, reg)
+	provides, err := buildProvidesMap(enabled, reg)
 	if err != nil {
 		return nil, err
 	}
-	ordered, err := topoSort(plugins, provides)
+	ordered, err := topoSort(enabled, provides)
 	if err != nil {
 		return nil, err
 	}
-	if err := mountPlugins(ordered, reg, ctx); err != nil {
-		return nil, err
+	for _, p := range ordered {
+		if err := reg.bootMount(ctx, p); err != nil {
+			return nil, err
+		}
 	}
+	reg.mu.Lock()
+	for _, p := range ordered {
+		reg.mountOrder = append(reg.mountOrder, p)
+		reg.active[p.Name()] = true
+		reg.plugins[p.Name()] = p
+	}
+	reg.mu.Unlock()
 	reg.deliverEmitters(ctx)
 	return reg, nil
 }
@@ -134,9 +152,17 @@ type Registry struct {
 	mu       sync.Mutex
 	owner    map[string]string // seam name or namespace pair -> tenant module
 	emitter  []emitterReg      // finished-things hooks, delivered at mount end
-	routes   []Route      // module REST, consumed in phase D
-	subcmds  []Subcommand // module CLI subcommands, dispatched by the omega binary
+	routes   []Route           // module REST, consumed in phase D
+	subcmds  []Subcommand      // module CLI subcommands, dispatched by the omega binary
 	refusals core.RefusalSink
+
+	// Teardown state (v0.12 E1): the recorded topo order DismountAll
+	// replays in reverse, which modules are live, each module's
+	// contribution journal and the plugin handles by name.
+	mountOrder []Plugin
+	active     map[string]bool
+	journals   map[string]*journal
+	plugins    map[string]Plugin
 }
 
 // Route is one module-registered REST route. Nothing serves it in
@@ -219,7 +245,51 @@ func (l *RefusalLedger) Refusals() []core.Refusal {
 }
 
 func newRegistry(refusals core.RefusalSink) *Registry {
-	return &Registry{owner: make(map[string]string), refusals: refusals}
+	return &Registry{
+		owner:    make(map[string]string),
+		active:   make(map[string]bool),
+		journals: make(map[string]*journal),
+		plugins:  make(map[string]Plugin),
+		refusals: refusals,
+	}
+}
+
+// isActive reports whether a module is mounted, under the registry
+// lock.
+func (r *Registry) isActive(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.active[name]
+}
+
+// recordJournal lands a successfully mounted module's contributions
+// in the ledger (boot path - the writes are already live).
+func (r *Registry) recordJournal(j *journal) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.journals[j.module] = j
+}
+
+// adoptMount accepts a committed remount: the live record of module,
+// journal and topo position.
+func (r *Registry) adoptMount(p Plugin, j *journal) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.plugins[p.Name()] = p
+	r.journals[p.Name()] = j
+	r.active[p.Name()] = true
+	r.mountOrder = append(r.mountOrder, p)
+}
+
+// releaseClaim drops a registry claim at undo time - only when the
+// tenant is still the module that recorded it (a re-enabled claim
+// chain must never release someone else's name).
+func (r *Registry) releaseClaim(key, module string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.owner[key] == module {
+		delete(r.owner, key)
+	}
 }
 
 // claimSlot records the one-tenant rule on a bare seam name ("store",
@@ -271,8 +341,10 @@ func (r *Registry) deliverEmitters(ctx *Context) {
 // the classic mount would assign.
 type ExtensionAPI struct {
 	module string
-	ctx    *Context
+	ctx    *core.Context
 	reg    *Registry
+	j      *journal // this mount's contribution journal (v0.12 E1)
+	live   bool     // true = writes are already on the live Context (boot)
 	tools  map[string]core.Tool
 	wired  bool // the one tool provider is already on ctx.ToolProviders
 	panels map[string]core.Panel
@@ -281,6 +353,40 @@ type ExtensionAPI struct {
 	// panelProviders holds the live registered providers (the dynamic
 	// capsule shape) - commit lands them on ctx.PanelProviders.
 	panelProviders []core.PanelProvider
+}
+
+// writeSlot records the mount's write into the journal and applies it
+// to the mounting Context (boot: the live Context; remount: the
+// scoped proxy). apply runs immediately; undo plays backward at
+// dismount time. Append writes capture their start index in the undo
+// closure the call site builds.
+func (api *ExtensionAPI) writeSlot(desc string, apply func(*core.Context), undo func(*core.Context)) {
+	applied := api.live
+	if apply != nil {
+		apply(api.ctx)
+	}
+	api.j.add(contribution{
+		module:   api.module,
+		desc:     desc,
+		ctxApply: apply,
+		ctxUndo:  undo,
+		applied:  applied,
+	})
+}
+
+// claimRecorded claims a registry key and journals its release, so a
+// dismount (or a remount panic) frees the name for the next mount.
+func (api *ExtensionAPI) claimRecorded(key string) error {
+	if err := api.reg.claimSlot(key, api.module); err != nil {
+		return err
+	}
+	module := api.module
+	api.j.add(contribution{
+		module:  api.module,
+		desc:    "claim " + key,
+		regUndo: func(r *Registry) { r.releaseClaim(key, module) },
+	})
+	return nil
 }
 
 // claim validates and records a namespaced machine-facing identity
@@ -299,6 +405,14 @@ func (api *ExtensionAPI) claim(name string) error {
 		return fmt.Errorf("%w: %q mounted by %q", core.ErrSeamForeignTenant, name, owner)
 	}
 	api.reg.owner[name] = api.module
+	if api.j != nil { // nil only in tests building the api by hand; journal the release
+		module := api.module
+		api.j.add(contribution{
+			module:  module,
+			desc:    "claim " + name,
+			regUndo: func(r *Registry) { r.releaseClaim(name, module) },
+		})
+	}
 	return nil
 }
 
@@ -317,7 +431,13 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	api.tools[name] = t
 	if !api.wired {
 		api.wired = true
-		api.ctx.ToolProviders = append(api.ctx.ToolProviders, toolMap(api.tools))
+		before := len(api.ctx.ToolProviders)
+		provider := toolMap(api.tools)
+		api.writeSlot(
+			"tool provider (tools: "+name+")",
+			func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, provider) },
+			func(c *core.Context) { c.ToolProviders = c.ToolProviders[:before] },
+		)
 	}
 	return nil
 }
@@ -447,6 +567,7 @@ func (api *ExtensionAPI) commit() error {
 				return fmt.Errorf("action %q is declared on no panel of %q - register it on the panel descriptor", id, api.module)
 			}
 		}
+		before := len(api.ctx.PanelProviders)
 		provider := &apiPanels{
 			module: api.module,
 			reg:    api.reg,
@@ -454,10 +575,24 @@ func (api *ExtensionAPI) commit() error {
 			order:  api.order,
 			acts:   api.acts,
 		}
-		api.ctx.PanelProviders = append(api.ctx.PanelProviders, provider)
+		api.writeSlot(
+			"declarative panels",
+			func(c *core.Context) { c.PanelProviders = append(c.PanelProviders, provider) },
+			func(c *core.Context) { c.PanelProviders = c.PanelProviders[:before] },
+		)
 	}
-	for _, p := range api.panelProviders {
-		api.ctx.PanelProviders = append(api.ctx.PanelProviders, p)
+	if len(api.panelProviders) > 0 {
+		before := len(api.ctx.PanelProviders)
+		providers := api.panelProviders
+		api.writeSlot(
+			"live panel providers",
+			func(c *core.Context) {
+				for _, p := range providers {
+					c.PanelProviders = append(c.PanelProviders, p)
+				}
+			},
+			func(c *core.Context) { c.PanelProviders = c.PanelProviders[:before] },
+		)
 	}
 	return nil
 }
@@ -525,6 +660,8 @@ func (p *apiPanels) refuse(call core.ActionCall, err error) {
 }
 
 // RegisterRoute registers one module REST route (the phase-D vocabulary;
+
+// RegisterRoute registers one module REST route (the phase-D vocabulary;
 // validated and recorded, nothing serves it in phase B). The pattern
 // is an http.ServeMux pattern; the registry rejects a cross-tenant
 // claim of the same pattern and replaces a same-tenant one.
@@ -535,19 +672,42 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 	if h == nil {
 		return fmt.Errorf("route %q: a registration carries its handler", pattern)
 	}
+	module := api.module
 	api.reg.mu.Lock()
-	defer api.reg.mu.Unlock()
 	if owner, ok := api.reg.owner["route:"+pattern]; ok && owner != api.module {
+		api.reg.mu.Unlock()
 		return fmt.Errorf("%w: route %q mounted by %q", core.ErrSeamForeignTenant, pattern, owner)
 	}
 	api.reg.owner["route:"+pattern] = api.module
+	replaced := false
 	for i, r := range api.reg.routes {
 		if r.Pattern == pattern {
 			api.reg.routes[i].Handler = h // same tenant re-registers = replace (Q7)
-			return nil
+			replaced = true
+			break
 		}
 	}
-	api.reg.routes = append(api.reg.routes, Route{Module: api.module, Pattern: pattern, Handler: h})
+	if !replaced {
+		api.reg.routes = append(api.reg.routes, Route{Module: api.module, Pattern: pattern, Handler: h})
+	}
+	api.reg.mu.Unlock()
+	api.j.add(contribution{ // registry is always live; undo frees the claim and the route
+		module: module,
+		desc:   "route " + pattern,
+		regUndo: func(r *Registry) {
+			r.mu.Lock()
+			routes := make([]Route, 0, len(r.routes))
+			for _, rt := range r.routes {
+				if rt.Module == module && rt.Pattern == pattern {
+					continue
+				}
+				routes = append(routes, rt)
+			}
+			r.routes = routes
+			r.mu.Unlock()
+			r.releaseClaim("route:"+pattern, module)
+		},
+	})
 	return nil
 }
 
@@ -571,19 +731,41 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 	if handler == nil {
 		return fmt.Errorf("subcommand %q: a registration carries its handler", name)
 	}
+	module := api.module
 	if err := api.reg.claimSlot("cli:"+name, api.module); err != nil {
 		return err
 	}
 	api.reg.mu.Lock()
-	defer api.reg.mu.Unlock()
+	replaced := false
 	for i, s := range api.reg.subcmds {
-		if s.Name == name {
+		if s.Name == name && s.Module == module {
 			api.reg.subcmds[i].Summary = summary // same tenant re-registers = replace (Q7)
 			api.reg.subcmds[i].Handler = handler
-			return nil
+			replaced = true
+			break
 		}
 	}
-	api.reg.subcmds = append(api.reg.subcmds, Subcommand{Module: api.module, Name: name, Summary: summary, Handler: handler})
+	if !replaced {
+		api.reg.subcmds = append(api.reg.subcmds, Subcommand{Module: module, Name: name, Summary: summary, Handler: handler})
+	}
+	api.reg.mu.Unlock()
+	api.j.add(contribution{
+		module: module,
+		desc:   "subcommand " + name,
+		regUndo: func(r *Registry) {
+			r.mu.Lock()
+			subs := make([]Subcommand, 0, len(r.subcmds))
+			for _, s := range r.subcmds {
+				if s.Module == module && s.Name == name {
+					continue
+				}
+				subs = append(subs, s)
+			}
+			r.subcmds = subs
+			r.mu.Unlock()
+			r.releaseClaim("cli:"+name, module)
+		},
+	})
 	return nil
 }
 
@@ -596,10 +778,33 @@ func (api *ExtensionAPI) RegisterEmitter(fn func(n core.NotificationsProvider)) 
 	if fn == nil {
 		return fmt.Errorf("emitter %q: a registration carries its hook", api.module)
 	}
+	module := api.module
 	api.reg.mu.Lock()
 	api.reg.emitter = append(api.reg.emitter, emitterReg{module: api.module, fn: fn})
 	api.reg.mu.Unlock()
+	api.j.add(contribution{
+		module: module,
+		desc:   "emitter hook",
+		regUndo: func(r *Registry) {
+			r.mu.Lock()
+			hooks := make([]emitterReg, 0, len(r.emitter))
+			for _, e := range r.emitter {
+				if e.module == module && sameFunc(e.fn, fn) {
+					continue
+				}
+				hooks = append(hooks, e)
+			}
+			r.emitter = hooks
+			r.mu.Unlock()
+		},
+	})
 	return nil
+}
+
+// sameFunc compares two func values by code pointer - the identity
+// the emitter undo matches on. Same function, same hook.
+func sameFunc(a, b any) bool {
+	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
 // RegisterRenderer maps the TUI ownership seam (phase E mounts
@@ -610,7 +815,12 @@ func (api *ExtensionAPI) RegisterRenderer(r core.TUIProvider) error {
 	if r == nil {
 		return fmt.Errorf("renderer %q: a registration carries its provider", api.module)
 	}
-	api.ctx.TUIProviders = append(api.ctx.TUIProviders, r)
+	before := len(api.ctx.TUIProviders)
+	api.writeSlot(
+		"renderer",
+		func(c *core.Context) { c.TUIProviders = append(c.TUIProviders, r) },
+		func(c *core.Context) { c.TUIProviders = c.TUIProviders[:before] },
+	)
 	return nil
 }
 
@@ -619,16 +829,26 @@ func (api *ExtensionAPI) RegisterPromptSectioner(p core.PromptSectioner) error {
 	if p == nil {
 		return fmt.Errorf("prompt sectioner %q: a registration carries its provider", api.module)
 	}
-	api.ctx.PromptSectioners = append(api.ctx.PromptSectioners, p)
+	before := len(api.ctx.PromptSectioners)
+	api.writeSlot(
+		"prompt sectioner",
+		func(c *core.Context) { c.PromptSectioners = append(c.PromptSectioners, p) },
+		func(c *core.Context) { c.PromptSectioners = c.PromptSectioners[:before] },
+	)
 	return nil
 }
 
 // RegisterChannel maps the additive channel seam.
-func (api *ExtensionAPI) RegisterChannel(c core.Channel) error {
-	if c == nil {
+func (api *ExtensionAPI) RegisterChannel(ch core.Channel) error {
+	if ch == nil {
 		return fmt.Errorf("channel %q: a registration carries its channel", api.module)
 	}
-	api.ctx.Channels = append(api.ctx.Channels, c)
+	before := len(api.ctx.Channels)
+	api.writeSlot(
+		"channel",
+		func(c *core.Context) { c.Channels = append(c.Channels, ch) },
+		func(c *core.Context) { c.Channels = c.Channels[:before] },
+	)
 	return nil
 }
 
@@ -644,40 +864,93 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 	if h == nil {
 		return fmt.Errorf("command %q: a registration carries its handler", name)
 	}
-	if err := api.reg.claimSlot(strings.TrimPrefix(name, "/"), api.module); err != nil {
+	if err := api.claimRecorded(strings.TrimPrefix(name, "/")); err != nil {
 		return err
 	}
-	api.ctx.Commands = append(api.ctx.Commands, core.ExtensionCommand{Name: name, Description: description, Args: args})
+	before := len(api.ctx.Commands)
+	api.writeSlot(
+		"command "+name,
+		func(c *core.Context) {
+			c.Commands = append(c.Commands, core.ExtensionCommand{Name: name, Description: description, Args: args})
+		},
+		func(c *core.Context) { c.Commands = c.Commands[:before] },
+	)
 	prev := api.ctx.CommandHandler
-	api.ctx.CommandHandler = func(c context.Context, n, a string) (core.CommandResult, error) {
-		out, err := h(c, n, a)
-		if err == nil {
-			return out, nil
-		}
-		if prev != nil {
-			return prev(c, n, a)
-		}
-		return out, err
-	}
+	api.writeSlot(
+		"command handler chain "+name,
+		func(c *core.Context) {
+			inner := c.CommandHandler // chain on the target Context's current handler
+			c.CommandHandler = func(ctx context.Context, n, a string) (core.CommandResult, error) {
+				out, err := h(ctx, n, a)
+				if err == nil {
+					return out, nil
+				}
+				if inner != nil {
+					return inner(ctx, n, a)
+				}
+				return out, err
+			}
+		},
+		func(c *core.Context) { c.CommandHandler = prev },
+	)
 	return nil
 }
 
 // RegisterDelegation maps the delegation pipe (both fields of the
 // classic delegate seam in one registration).
 func (api *ExtensionAPI) RegisterDelegation(injected <-chan core.InjectedMessage, pending func() int) error {
-	api.ctx.InjectedMessages = injected
-	api.ctx.PendingDelegations = pending
+	prevInj := api.ctx.InjectedMessages
+	api.writeSlot(
+		"injected messages",
+		func(c *core.Context) { c.InjectedMessages = injected },
+		func(c *core.Context) { c.InjectedMessages = prevInj },
+	)
+	prevPending := api.ctx.PendingDelegations
+	api.writeSlot(
+		"pending delegations",
+		func(c *core.Context) { c.PendingDelegations = pending },
+		func(c *core.Context) { c.PendingDelegations = prevPending },
+	)
+	return nil
+}
+
+// RegisterLifecycle records one Start/Stop fence handle for the
+// capsule (the goroutine fence, v0.12 E1): Mount starts nothing - the
+// handle waits for the host's StartAll after the commit. The
+// registration journals the fence entry, so a dismount stops and
+// unregisters it and a rejected remount leaves the live run-group
+// untouched (the scoped proxy holds its own group).
+func (api *ExtensionAPI) RegisterLifecycle(name string, start func(ctx context.Context, deps core.StartDeps) error, stop func() error) error {
+	if name == "" {
+		return fmt.Errorf("lifecycle handle by %q: a handle carries its name", api.module)
+	}
+	if start == nil {
+		return fmt.Errorf("lifecycle handle %q: a handle carries its start", name)
+	}
+	module := api.module
+	api.writeSlot(
+		"lifecycle handle "+name,
+		func(c *core.Context) {
+			c.RunGroup().Register(module, core.LifecycleHandle{Name: name, Start: start, Stop: stop})
+		},
+		func(c *core.Context) {
+			if c.Lifecycle != nil {
+				c.RunGroup().Unregister(module, name)
+			}
+		},
+	)
 	return nil
 }
 
 // mountSeam maps one exclusive slot: the one-tenant claim at
-// registration time (Q5) and then the same field assignment the
-// classic mount writes.
-func (api *ExtensionAPI) mountSeam(seam string, apply func()) error {
-	if err := api.reg.claimSlot(seam, api.module); err != nil {
+// registration time (Q5, journaled for release), then the same field
+// assignment the classic mount writes - journaled with the previous
+// value so the dismount restores exactly what it found.
+func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo func(*core.Context)) error {
+	if err := api.claimRecorded(seam); err != nil {
 		return err
 	}
-	apply()
+	api.writeSlot("slot "+seam, apply, undo)
 	return nil
 }
 
@@ -686,15 +959,21 @@ func (api *ExtensionAPI) RegisterProvider(p core.Provider) error {
 	if p == nil {
 		return fmt.Errorf("provider %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("provider", func() { api.ctx.Provider = p })
+	prev := api.ctx.Provider
+	return api.mountSeam("provider",
+		func(c *core.Context) { c.Provider = p },
+		func(c *core.Context) { c.Provider = prev })
 }
 
 // RegisterCompactor maps the compactor seam.
-func (api *ExtensionAPI) RegisterCompactor(c core.CompactionProvider) error {
-	if c == nil {
+func (api *ExtensionAPI) RegisterCompactor(cp core.CompactionProvider) error {
+	if cp == nil {
 		return fmt.Errorf("compactor %q: a registration carries its compactor", api.module)
 	}
-	return api.mountSeam("compactor", func() { api.ctx.Compactor = c })
+	prev := api.ctx.Compactor
+	return api.mountSeam("compactor",
+		func(c *core.Context) { c.Compactor = cp },
+		func(c *core.Context) { c.Compactor = prev })
 }
 
 // RegisterStore maps the store seam.
@@ -702,7 +981,10 @@ func (api *ExtensionAPI) RegisterStore(s core.StoreProvider) error {
 	if s == nil {
 		return fmt.Errorf("store %q: a registration carries its store", api.module)
 	}
-	return api.mountSeam("store", func() { api.ctx.Store = s })
+	prev := api.ctx.Store
+	return api.mountSeam("store",
+		func(c *core.Context) { c.Store = s },
+		func(c *core.Context) { c.Store = prev })
 }
 
 // RegisterSkills maps the skills seam.
@@ -710,7 +992,10 @@ func (api *ExtensionAPI) RegisterSkills(s core.SkillsProvider) error {
 	if s == nil {
 		return fmt.Errorf("skills %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("skills", func() { api.ctx.Skills = s })
+	prev := api.ctx.Skills
+	return api.mountSeam("skills",
+		func(c *core.Context) { c.Skills = s },
+		func(c *core.Context) { c.Skills = prev })
 }
 
 // RegisterLoop maps the loop seam.
@@ -718,7 +1003,10 @@ func (api *ExtensionAPI) RegisterLoop(l core.LoopProvider) error {
 	if l == nil {
 		return fmt.Errorf("loop %q: a registration carries its loop", api.module)
 	}
-	return api.mountSeam("loop", func() { api.ctx.Loop = l })
+	prev := api.ctx.Loop
+	return api.mountSeam("loop",
+		func(c *core.Context) { c.Loop = l },
+		func(c *core.Context) { c.Loop = prev })
 }
 
 // RegisterLogger maps the logging seam.
@@ -726,7 +1014,10 @@ func (api *ExtensionAPI) RegisterLogger(l core.LoggerProvider) error {
 	if l == nil {
 		return fmt.Errorf("logging %q: a registration carries its logger", api.module)
 	}
-	return api.mountSeam("logging", func() { api.ctx.Logger = l })
+	prev := api.ctx.Logger
+	return api.mountSeam("logging",
+		func(c *core.Context) { c.Logger = l },
+		func(c *core.Context) { c.Logger = prev })
 }
 
 // RegisterMemory maps the memory seam.
@@ -734,7 +1025,10 @@ func (api *ExtensionAPI) RegisterMemory(m core.MemoryProvider) error {
 	if m == nil {
 		return fmt.Errorf("memory %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("memory", func() { api.ctx.Memory = m })
+	prev := api.ctx.Memory
+	return api.mountSeam("memory",
+		func(c *core.Context) { c.Memory = m },
+		func(c *core.Context) { c.Memory = prev })
 }
 
 // RegisterPromptBuilder maps the prompt_builder seam.
@@ -742,7 +1036,10 @@ func (api *ExtensionAPI) RegisterPromptBuilder(p core.PromptBuilder) error {
 	if p == nil {
 		return fmt.Errorf("prompt_builder %q: a registration carries its builder", api.module)
 	}
-	return api.mountSeam("prompt_builder", func() { api.ctx.PromptBuilder = p })
+	prev := api.ctx.PromptBuilder
+	return api.mountSeam("prompt_builder",
+		func(c *core.Context) { c.PromptBuilder = p },
+		func(c *core.Context) { c.PromptBuilder = prev })
 }
 
 // RegisterFrontend maps the frontend seam.
@@ -750,7 +1047,10 @@ func (api *ExtensionAPI) RegisterFrontend(f core.Frontend) error {
 	if f == nil {
 		return fmt.Errorf("frontend %q: a registration carries its frontend", api.module)
 	}
-	return api.mountSeam("frontend", func() { api.ctx.Frontend = f })
+	prev := api.ctx.Frontend
+	return api.mountSeam("frontend",
+		func(c *core.Context) { c.Frontend = f },
+		func(c *core.Context) { c.Frontend = prev })
 }
 
 // RegisterTrust maps the trust seam.
@@ -758,15 +1058,21 @@ func (api *ExtensionAPI) RegisterTrust(t core.TrustProvider) error {
 	if t == nil {
 		return fmt.Errorf("trust %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("trust", func() { api.ctx.Trust = t })
+	prev := api.ctx.Trust
+	return api.mountSeam("trust",
+		func(c *core.Context) { c.Trust = t },
+		func(c *core.Context) { c.Trust = prev })
 }
 
 // RegisterCron maps the cron seam.
-func (api *ExtensionAPI) RegisterCron(c core.CronProvider) error {
-	if c == nil {
+func (api *ExtensionAPI) RegisterCron(cr core.CronProvider) error {
+	if cr == nil {
 		return fmt.Errorf("cron %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("cron", func() { api.ctx.Cron = c })
+	prev := api.ctx.Cron
+	return api.mountSeam("cron",
+		func(c *core.Context) { c.Cron = cr },
+		func(c *core.Context) { c.Cron = prev })
 }
 
 // RegisterKanban maps the kanban seam.
@@ -774,7 +1080,10 @@ func (api *ExtensionAPI) RegisterKanban(k core.KanbanProvider) error {
 	if k == nil {
 		return fmt.Errorf("kanban %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("kanban", func() { api.ctx.Kanban = k })
+	prev := api.ctx.Kanban
+	return api.mountSeam("kanban",
+		func(c *core.Context) { c.Kanban = k },
+		func(c *core.Context) { c.Kanban = prev })
 }
 
 // RegisterNotifications maps the notifications seam.
@@ -782,7 +1091,10 @@ func (api *ExtensionAPI) RegisterNotifications(n core.NotificationsProvider) err
 	if n == nil {
 		return fmt.Errorf("notifications %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("notifications", func() { api.ctx.Notifications = n })
+	prev := api.ctx.Notifications
+	return api.mountSeam("notifications",
+		func(c *core.Context) { c.Notifications = n },
+		func(c *core.Context) { c.Notifications = prev })
 }
 
 // RegisterVerdicts maps the verdicts seam.
@@ -790,68 +1102,20 @@ func (api *ExtensionAPI) RegisterVerdicts(v core.VerdictsProvider) error {
 	if v == nil {
 		return fmt.Errorf("verdicts %q: a registration carries its provider", api.module)
 	}
-	return api.mountSeam("verdicts", func() { api.ctx.Verdicts = v })
+	prev := api.ctx.Verdicts
+	return api.mountSeam("verdicts",
+		func(c *core.Context) { c.Verdicts = v },
+		func(c *core.Context) { c.Verdicts = prev })
 }
 
 // RegisterCaptioner maps the captioner seam (host-built after
 // MountAll today; carried so the census has no gaps).
-func (api *ExtensionAPI) RegisterCaptioner(c core.Captioner) error {
-	if c == nil {
+func (api *ExtensionAPI) RegisterCaptioner(cp core.Captioner) error {
+	if cp == nil {
 		return fmt.Errorf("captioner %q: a registration carries its captioner", api.module)
 	}
-	return api.mountSeam("captioner", func() { api.ctx.Captioner = c })
-}
-
-// mountPlugins mounts each plugin in order, dispatching APIPlugin to
-// the registration surface and Plugin to the classic Mount. Both land
-// on the same Context fields, so the inventory counting below reads
-// either style the same way.
-func mountPlugins(ordered []Plugin, reg *Registry, ctx *Context) error {
-	for _, p := range ordered {
-		beforeTools := len(ctx.ToolProviders)
-		beforeCmds := len(ctx.Commands)
-		if ap, ok := p.(APIPlugin); ok {
-			api := &ExtensionAPI{module: p.Name(), ctx: ctx, reg: reg}
-			if err := ap.MountWithAPI(ctx, api); err != nil {
-				return fmt.Errorf("mount %q: %w", p.Name(), err)
-			}
-			if err := api.commit(); err != nil {
-				return fmt.Errorf("mount %q: %w", p.Name(), err)
-			}
-		} else if err := p.Mount(ctx); err != nil {
-			return fmt.Errorf("mount %q: %w", p.Name(), err)
-		}
-		info := core.ExtensionInfo{
-			Name:  p.Name(),
-			Seams: p.Provides(),
-		}
-		if d, ok := p.(Describer); ok {
-			info.Description = d.Description()
-		}
-		// Count tools this plugin added.
-		for _, tp := range ctx.ToolProviders[beforeTools:] {
-			if tp == nil {
-				continue
-			}
-			for name, t := range tp.Tools() {
-				// Alias entries are model-facing compat shims, not inventory:
-				// they stay callable while hidden from the display counts.
-				if t.AliasOf != "" {
-					continue
-				}
-				info.Tools++
-				info.ToolList = append(info.ToolList, core.ToolInfo{
-					Name:        name,
-					Description: t.Description,
-					Actions:     t.Actions,
-				})
-			}
-		}
-		// Ensure deterministic order: map iteration is non-deterministic in Go.
-		sort.SliceStable(info.ToolList, func(i, j int) bool { return info.ToolList[i].Name < info.ToolList[j].Name })
-		// Count commands this plugin added.
-		info.Commands = len(ctx.Commands) - beforeCmds
-		ctx.Infos = append(ctx.Infos, info)
-	}
-	return nil
+	prev := api.ctx.Captioner
+	return api.mountSeam("captioner",
+		func(c *core.Context) { c.Captioner = cp },
+		func(c *core.Context) { c.Captioner = prev })
 }

@@ -30,6 +30,11 @@ type StartDeps struct {
 	Ctx   *Context
 	Agent *Agent
 	Store StoreProvider
+	// Run is the cancellation context the armed work runs under -
+	// the shutdown signal the host owns (serve passes its signal
+	// context). Nil means the caller asked for a mount with nothing
+	// armed.
+	Run context.Context
 }
 
 // LifecycleHandle is one registered unit of background work: a name
