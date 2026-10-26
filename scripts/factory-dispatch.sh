@@ -31,7 +31,21 @@ while [ $# -gt 0 ]; do
 done
 
 tokens_of() {  # extract repo paths from free text (body or diff)
-  grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
+  # Brace lists (modules/{a,b}/) expand first: a FILES surface naming a
+  # brace list must cover every member (proven 2026-10-26: the c2 card's
+  # FILES line collapsed to a bare modules/ token and hid modules/cron
+  # from the overlap check, guard read a colliding card false-legal).
+  # The regex gate bounds eval to path-shaped words: no $, backticks,
+  # parens or quotes pass it, so eval can only emit path strings.
+  # (bash 5.3: quoted =~ RHS is literal - keep the pattern unquoted-var)
+  local line gate='^[A-Za-z0-9_./{},: -]+$'
+  while IFS= read -r line; do
+    if [[ "$line" == *'{'* && "$line" =~ $gate ]]; then
+      eval "printf '%s\n' $line" 2>/dev/null || printf '%s\n' "$line"
+    else
+      printf '%s\n' "$line"
+    fi
+  done | grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
 }
 
 candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
