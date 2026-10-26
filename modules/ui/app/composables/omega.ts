@@ -1863,6 +1863,130 @@ export async function saveSettings(values: Record<string, unknown>): Promise<Set
   return normalizeSettingsPayload(await r.json());
 }
 
+// --- modules: the live module toggle surface (v0.12 E2) ---
+
+// ModuleRow is one registry-introspected module. state is the live
+// mount state; dependents lists the modules that follow this one down
+// when it disables (the Q3 edge, surfaced).
+export interface ModuleRow {
+  name: string;
+  description?: string;
+  provides?: string[];
+  requires?: string[];
+  state: "mounted" | "disabled";
+  toggleable: boolean;
+  dependents?: string[];
+}
+
+// ModuleRefusal is one ledger entry: a rejection the UI surfaces as an
+// event (Q12).
+export interface ModuleRefusal {
+  module: string;
+  predicate: string;
+  err: string;
+  at: string;
+}
+
+export interface ModulesPayload {
+  modules: ModuleRow[];
+  refusals: ModuleRefusal[];
+}
+
+// normalizeModulesPayload sanitizes a /modules response: junk entries
+// drop out, names stay strings, states fold to the two known values.
+// Pure, like the settings normalizer.
+export function normalizeModulesPayload(raw: unknown): ModulesPayload {
+  const modules: ModuleRow[] = [];
+  const list =
+    raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).modules)
+      ? ((raw as Record<string, unknown>).modules as unknown[])
+      : [];
+  for (const m of list) {
+    if (!m || typeof m !== "object") continue;
+    const mod = m as Record<string, unknown>;
+    if (typeof mod.name !== "string" || mod.name.length === 0) continue;
+    const state = mod.state === "disabled" ? "disabled" : "mounted";
+    modules.push({
+      name: mod.name,
+      description: typeof mod.description === "string" ? mod.description : undefined,
+      provides: Array.isArray(mod.provides) ? (mod.provides as string[]) : undefined,
+      requires: Array.isArray(mod.requires) ? (mod.requires as string[]) : undefined,
+      state,
+      toggleable: mod.toggleable === true,
+      dependents: Array.isArray(mod.dependents) ? (mod.dependents as string[]) : undefined,
+    });
+  }
+  const refusals: ModuleRefusal[] = [];
+  const entries =
+    raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).refusals)
+      ? ((raw as Record<string, unknown>).refusals as unknown[])
+      : [];
+  for (const e of entries) {
+    if (!e || typeof e !== "object") continue;
+    const ref = e as Record<string, unknown>;
+    if (typeof ref.module !== "string" || typeof ref.err !== "string") continue;
+    refusals.push({
+      module: ref.module,
+      predicate: typeof ref.predicate === "string" ? ref.predicate : "",
+      err: ref.err,
+      at: typeof ref.at === "string" ? ref.at : "",
+    });
+  }
+  return { modules, refusals };
+}
+
+// fetchModules loads the module list. 501 = the host serves no toggle
+// seam: the caller hides the section, like the settings pane does.
+export async function fetchModules(): Promise<ModulesPayload> {
+  const r = await fetch("/modules");
+  if (!r.ok) {
+    let msg = `modules: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.error === "string") msg = body.error;
+    } catch {
+      // non-JSON failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+  return normalizeModulesPayload(await r.json());
+}
+
+// toggleModule PUTs one module's new state and returns the refreshed
+// introspection. Rejections throw with the server's ledger text (Q11:
+// the roll-back text surfaces verbatim).
+export async function toggleModule(name: string, enabled: boolean): Promise<ModulesPayload> {
+  const r = await fetch(`/modules/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!r.ok) {
+    let msg = `module toggle: ${r.status}`;
+    try {
+      // the error envelope is plain text (http.Error), not JSON
+      const text = await r.text();
+      if (text) msg = text;
+    } catch {
+      // keep the status-code message
+    }
+    throw new Error(msg);
+  }
+  return normalizeModulesPayload(await r.json());
+}
+
+// toggleNote builds the confirm line for a toggle: not-toggleable
+// modules state their always-on law, dependents name what goes down
+// with the module (the Q3 semantics surfaced), everything else just
+// asks. Empty string = apply without a confirm.
+export function toggleNote(m: ModuleRow, enable: boolean): string {
+  if (!m.toggleable) return `${m.name} is machine-critical or engine ring - always on`;
+  if (enable) return "";
+  if (m.dependents && m.dependents.length > 0)
+    return `disable ${m.name}? this also disables: ${m.dependents.join(", ")}`;
+  return `disable ${m.name}?`;
+}
+
 // --- themes: user token themes behind /themes ---
 
 // ThemeMode is the theme select's value space: the three built-in
