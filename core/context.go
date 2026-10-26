@@ -52,8 +52,8 @@ type Context struct {
 	// handlers. The canvas runtime seeds the snapshot from these.
 	PanelProviders []PanelProvider
 	Trust          TrustProvider
-	Cron         CronProvider
-	Kanban       KanbanProvider
+	Cron           CronProvider
+	Kanban         KanbanProvider
 	// Notifications is the finished-things store seam (card t_5d9032d3):
 	// kanban completions, cron fires and dispatched chat runs each emit
 	// one record the webui bell serves. Nil when the notifications
@@ -82,6 +82,22 @@ type Context struct {
 	CWD     string
 	Configs map[string]any // per-plugin typed config, keyed by plugin Name()
 
+	// Lifecycle is the goroutine fence run-group (v0.12 E1). Nil
+	// until the first module registers a handle - Reach it through
+	// RunGroup, never assign it directly.
+	Lifecycle *Lifecycle
+
 	// Metadata (built during MountAll).
 	Infos []ExtensionInfo
+}
+
+// RunGroup returns the Context's fence run-group (the goroutine
+// fence, v0.12 E1), creating it on first use. Modules call it in
+// Mount to register Start/Stop handles; background work starts only
+// when the host calls StartAll after the mount commit.
+func (c *Context) RunGroup() *Lifecycle {
+	if c.Lifecycle == nil {
+		c.Lifecycle = &Lifecycle{}
+	}
+	return c.Lifecycle
 }
