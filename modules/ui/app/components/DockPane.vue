@@ -69,19 +69,19 @@
           </div>
           <!-- insertion caret "after the last tab" rides the '+' button's
                left edge (absolute pseudo-element, no reflow) -->
-        <!-- card t_d7fd3ad3 (items 2+5): the '+' is MAIN-pane chrome only -
-             the pinned shells (both sidebars AND the bottom panel) are
-             closed tab bars: no '+', no menu. The main pane keeps its
-             load-bearing '+' (the dockable inventory menu). -->
-        <button
-          v-if="!pinned"
-          class="dock-tab-new"
-          :class="{ 'caret-before': dropIdx === node.tabs.length }"
-          aria-label="new tab"
-          title="new tab"
-          @click.stop="newTabMenu = !newTabMenu">
-            +
-          </button>
+          <!-- Endo amendment (2026-10-26): the '+' BODY MINTS a new normal
+               session directly - no dropdown, no chevron, no inventory menu
+               (Endo owns the menu's return later; the empty-pane watermark
+               below keeps the full inventory). -->
+          <button
+            v-if="!pinned"
+            class="dock-tab-new"
+            :class="{ 'caret-before': dropIdx === node.tabs.length }"
+            aria-label="new session"
+            title="new session"
+            @click.stop="newSession()">
+              +
+            </button>
         </div>
         <!-- Endo's comment (2026-10-26): the bottom shell's fullscreen
              toggle - top-right of the pane's tabbar. Flips the
@@ -152,29 +152,6 @@
           {{ menuLabel(d) }}
         </button>
       </div>
-    </div>
-
-    <!-- '+' new-tab menu: card 4's dockable registry inventory with icons
-         (replaces card 2's chat-only list). A singleton that already lives
-         FOCUSES instead of opening a second instance. t_d6b657a7: the menu
-         rides the MENU inventory - the refill source for any pane. The
-         template iterated the never-defined `mainDockables` (empty menu,
-         no new tab could open); menuDockables is the pinned inventory. -->
-    <div
-      v-if="newTabMenu"
-      class="dock-menu"
-      role="menu"
-      aria-label="new tab components"
-      @click.stop>
-      <button
-        v-for="d in menuDockables"
-        :key="d.id"
-        class="dock-menu-btn"
-        role="menuitem"
-        @click="openDockable(d)">
-        <DockItemIcon :icon="d.icon" />
-        {{ menuLabel(d) }}
-      </button>
     </div>
 
     <!-- corner affordance: split / remove (never on a pinned pane) -->
@@ -262,10 +239,10 @@
   }>();
 
   const api = inject(DOCK_API_KEY)!;
-  // card 3: the chat tab is multi-instance - opening a chat (the '+'
-  // menu, the empty-pane menu's "new chat") mints a REAL tab through the
-  // app's opener (this pane's id goes with it). Card 4's dockable
-  // registry replaces the openers wholesale.
+  // the chat tab is multi-instance - opening a chat mints a REAL tab
+  // through the app's opener (this pane's id goes with it). Both the '+'
+  // button (Endo amendment 2026-10-26: it mints a session directly, no
+  // menu) and the empty-pane watermark's "new chat" ride it.
   const openChat = inject(DOCK_CHAT_OPEN_KEY, null);
   // card 3: chat tabs show their session's title ('new chat' unsaved);
   // other components keep the generic titles
@@ -304,15 +281,22 @@
   }
   // THE open path (card 4): the singleton policy decides - at most one
   // instance, so opening while it lives FOCUSES it wherever it sits; chat
-  // (multi) always mints a fresh tab through the app's opener
+  // (multi) always mints a fresh tab through the app's opener. The
+  // empty-pane watermark routes through here.
   function openDockable(d: DockableComponent) {
-    newTabMenu.value = false;
     if (d.policy === "multi") {
       if (openChat) openChat(props.node.id, null);
       else api.setComponent(props.node.id, d.id); // unreachable: app always provides the opener
       return;
     }
     api.openSingleton(props.node.id, d.id);
+  }
+  // Endo amendment (2026-10-26): the '+' button's BODY mints a new normal
+  // session directly - the inventory dropdown is gone from it (no
+  // chevron, no menu; Endo owns its return later).
+  function newSession() {
+    if (openChat) openChat(props.node.id, null);
+    else api.setComponent(props.node.id, "chat"); // unreachable: app always provides the opener
   }
 
   // the registry's icon renderer: 14px in the shell's 24-box stroke style
@@ -429,7 +413,6 @@
     const top = bar ? bar.getBoundingClientRect().bottom : pr.top;
     return { x: pr.left, y: top, w: pr.width, h: Math.max(0, pr.bottom - top) };
   }
-  const newTabMenu = ref(false);
   const menuOpen = ref(false); // the pane-actions (split / remove) menu
   const tabsEl = ref<HTMLElement | null>(null);
   const paneEl = ref<HTMLElement | null>(null); // the pane root (zone-math measurements)
@@ -610,7 +593,6 @@
   });
   function onDocClick() {
     menuOpen.value = false;
-    newTabMenu.value = false;
   }
   onBeforeUnmount(() => {
     document.removeEventListener("click", onDocClick);
