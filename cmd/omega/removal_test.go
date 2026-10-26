@@ -105,13 +105,13 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	t.Logf("PROOF emit: toast panel carries the record verbatim (%s)", toastPayload)
 
 	// the action pipe mutates the store and refreshes the list
-	if _, err := c2.Dispatch(core.ActionCall{Module: "notifications", Action: "mark_all"}); err != nil {
-		t.Fatalf("dispatch mark_all: %v", err)
+	if _, err := c2.Dispatch(core.ActionCall{Module: "notifications", Action: "notifications.mark_all"}); err != nil {
+		t.Fatalf("dispatch notifications.mark_all: %v", err)
 	}
 	if _, unread, err := ctx.Notifications.List(t.Context(), false, 10, 0); err != nil || unread != 0 {
-		t.Fatalf("FULL MOUNT: mark_all did not clear the store (unread=%d err=%v)", unread, err)
+		t.Fatalf("FULL MOUNT: notifications.mark_all did not clear the store (unread=%d err=%v)", unread, err)
 	}
-	t.Log("PROOF action-pipe: mark_all cleared the store, list refreshed through the canvas")
+	t.Log("PROOF action-pipe: notifications.mark_all cleared the store, list refreshed through the canvas")
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
@@ -418,8 +418,8 @@ func TestCronRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canvas 2: %v", err)
 	}
-	if _, err := live.Dispatch(core.ActionCall{Module: "cron", Action: "refresh_jobs"}); err != nil {
-		t.Fatalf("dispatch refresh_jobs: %v", err)
+	if _, err := live.Dispatch(core.ActionCall{Module: "cron", Action: "cron.refresh_jobs"}); err != nil {
+		t.Fatalf("dispatch cron.refresh_jobs: %v", err)
 	}
 	pushed := false
 	for _, d := range deltas {
@@ -430,7 +430,7 @@ func TestCronRemovalProof(t *testing.T) {
 	if !pushed {
 		t.Fatalf("FULL MOUNT: refresh answered but pushed no panel (deltas=%d)", len(deltas))
 	}
-	t.Log("PROOF action-pipe: refresh_jobs answered the listing, the panel rode the spine")
+	t.Log("PROOF action-pipe: cron.refresh_jobs answered the listing, the panel rode the spine")
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
@@ -454,7 +454,7 @@ func TestCronRemovalProof(t *testing.T) {
 	if _, found := cronPanel(noCanvas.Snapshot()); found {
 		t.Fatalf("REMOVED MOUNT: the jobs panel survived the removal: %+v", noCanvas.Snapshot())
 	}
-	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "cron", Action: "refresh_jobs"}); !errors.Is(err, core.ErrUnknownModule) {
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "cron", Action: "cron.refresh_jobs"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
 	// the TUI surface: no provider declares /cron
@@ -563,13 +563,13 @@ func TestMemoryRemovalProof(t *testing.T) {
 	foundTool := false
 	for _, tp := range ctx.ToolProviders {
 		for name, tool := range tp.Tools() {
-			if name == "memory" {
+			if name == "memory.entry" {
 				memTool, foundTool = tool, true
 			}
 		}
 	}
 	if !foundTool {
-		t.Fatal("FULL MOUNT: the memory tool is missing from the registry")
+		t.Fatal("FULL MOUNT: the memory.entry tool is missing from the registry")
 	}
 	res, runErr := memTool.Run(context.Background(), map[string]any{
 		"action": "add", "target": "memory", "content": "arc 6 proof entry",
@@ -737,32 +737,34 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF mount=full: inject seam mounted (ctx.InjectedMessages + ctx.PendingDelegations), pending count 0")
 
-	// the tool face: the registry carries the consolidated delegate tool
-	// with its task/status actions and the two alias shims
+	// the tool face: the registry carries the two namespaced tools -
+	// the aliases promoted when the consolidated unprefixed primary
+	// retired (Q10, the v0.12 mount migration)
 	var delegateTool core.Tool
-	foundTool, foundTaskShim, foundStatusShim := false, false, false
+	foundTool, foundStatusTool := false, false
 	for _, tp := range ctx.ToolProviders {
 		for name, tool := range tp.Tools() {
 			switch name {
-			case "delegate":
-				delegateTool, foundTool = tool, true
 			case "delegate.task":
-				foundTaskShim = foundTaskShim || tool.AliasOf == "delegate"
+				delegateTool, foundTool = tool, true
 			case "delegate.status":
-				foundStatusShim = foundStatusShim || tool.AliasOf == "delegate"
+				foundStatusTool = tool.Run != nil
 			}
 		}
 	}
-	if !foundTool {
-		t.Fatal("FULL MOUNT: the delegate tool is missing from the registry")
+	if !foundTool || !foundStatusTool {
+		t.Fatalf("FULL MOUNT: delegate tools missing (task=%v status=%v)", foundTool, foundStatusTool)
 	}
-	if !foundTaskShim || !foundStatusShim {
-		t.Fatalf("FULL MOUNT: alias shims missing (task=%v status=%v)", foundTaskShim, foundStatusShim)
-	}
-	t.Log("PROOF tool wiring: registry carries the delegate tool + the delegate.task / delegate.status alias shims")
+	t.Log("PROOF tool wiring: the registry carries the delegate.task / delegate.status namespace pair")
 
 	// the status arm answers the live listing
-	res, runErr := delegateTool.Run(context.Background(), map[string]any{"action": "status"})
+	var statusRun func(context.Context, map[string]any) (string, error)
+	for _, tp := range ctx.ToolProviders {
+		if tl, ok := tp.Tools()["delegate.status"]; ok && tl.Run != nil {
+			statusRun = tl.Run
+		}
+	}
+	res, runErr := statusRun(context.Background(), map[string]any{})
 	if runErr != nil || !strings.Contains(res, "Running: 0") || !strings.Contains(res, "No tasks.") {
 		t.Fatalf("FULL MOUNT: delegate status failed (res=%s err=%v)", res, runErr)
 	}
@@ -1194,12 +1196,12 @@ func TestVerdictRemovalProof(t *testing.T) {
 	// one sub-action, and a real verdict.request hard-pauses the turn
 	// until an answer lands through the seam - the path the /verdicts
 	// POST and the /verdict command share
-	verdictTool, err := pluginTool(ctx, "verdict")
+	verdictTool, err := pluginTool(ctx, "verdict.request")
 	if err != nil {
 		t.Fatalf("FULL MOUNT: the verdict tool is missing from the registry: %v", err)
 	}
 	for _, tp := range ctx.ToolProviders {
-		if tool, ok := tp.Tools()["verdict"]; ok {
+		if tool, ok := tp.Tools()["verdict.request"]; ok {
 			foundRequest := false
 			for _, a := range tool.Actions {
 				if a.Name == "request" {
@@ -1559,21 +1561,21 @@ func TestTrustRemovalProof(t *testing.T) {
 
 // TestWebRemovalProof is the arc 6 web-capsule proof (card
 // t_23f42712), the ninth worked proof in this file. Web is the
-// additive-seam thin capsule (same shape as mcp): the consolidated
-// `web` tool plus its one-release alias shims (web.search, web.fetch)
-// ship from the single Mount as one ToolProvider, and the module even
-// ships its config stanza (ctx.Configs["web"] routed by the plugin's
-// ConfigKey; the base_url override and the provider-host mirror
-// fallback derive inside the host's ConfigSection from module-owned
-// types). No command, no REST route, no skills, no exclusive seam
-// ( Provides() is exactly "tools" - nothing reads a ctx.Web field),
-// no canvas panel, and none existed before the arc. The two mounts
-// are the proof:
+// additive-seam thin capsule (same shape as mcp): the two namespaced
+// tools (web.search, web.fetch - the dotted names promoted when the
+// v0.12 mount migration retired the consolidated unprefixed `web`
+// primary and its alias shims, Q10) ship from MountWithAPI, and the
+// module even ships its config stanza (ctx.Configs["web"] routed by
+// the plugin's ConfigKey; the base_url override and the provider-host
+// mirror fallback derive inside the host's ConfigSection from
+// module-owned types). No command, no REST route, no skills, no
+// exclusive seam (Provides() is exactly "tools" - nothing reads a
+// ctx.Web field), no canvas panel, and none existed before the arc.
+// The two mounts are the proof:
 //
-//  1. WITH web: the registry carries the domain tool and both alias
-//     shims, and a real search and a real fetch round-trip through a
-//     fake mirror endpoint - search through the folded dispatcher,
-//     fetch through the alias shim (the same runWeb behind both).
+//  1. WITH web: the registry carries both namespaced tools, and a real
+//     search and a real fetch round-trip through a fake mirror
+//     endpoint - both through the shared runWeb dispatcher.
 //  2. WITHOUT web: with the mirror endpoint still configured and the
 //     fake server's hit counter frozen - nothing outside the module
 //     reads the endpoint - no web-shaped tool survives, no /web
@@ -1645,9 +1647,9 @@ func TestWebRemovalProof(t *testing.T) {
 		t.Fatalf("mount all: %v", err)
 	}
 
-	// the tool face: the domain tool answers a real search through the
-	// folded dispatcher
-	search, err := pluginTool(ctx, "web")
+	// the tool face: web.search answers a real search through the
+	// shared dispatcher
+	search, err := pluginTool(ctx, "web.search")
 	if err != nil {
 		fatalTools := ""
 		for _, tp := range ctx.ToolProviders {
@@ -1657,28 +1659,28 @@ func TestWebRemovalProof(t *testing.T) {
 		}
 		t.Fatalf("FULL MOUNT: the web tool is missing from the registry (tools:%s)", fatalTools)
 	}
-	res, runErr := search(context.Background(), map[string]any{"action": "search", "query": "arc 6 proof"})
+	res, runErr := search(context.Background(), map[string]any{"query": "arc 6 proof"})
 	if runErr != nil || !strings.Contains(res, "web search answer") || !strings.Contains(res, "https://omega.example/proof") {
 		t.Fatalf("FULL MOUNT: web search round-trip failed (res=%q err=%v)", res, runErr)
 	}
-	// the alias face: web.fetch routes through the same dispatcher
+	// the second face: web.fetch routes through the same dispatcher
 	var fetchRun func(context.Context, map[string]any) (string, error)
 	for _, tp := range ctx.ToolProviders {
-		if tl, ok := tp.Tools()["web.fetch"]; ok && tl.AliasOf == "web" && tl.Run != nil {
+		if tl, ok := tp.Tools()["web.fetch"]; ok && tl.Run != nil {
 			fetchRun = tl.Run
 		}
 	}
 	if fetchRun == nil {
-		t.Fatal("FULL MOUNT: web.fetch alias Shim missing (AliasOf=web)")
+		t.Fatal("FULL MOUNT: web.fetch missing from the registry")
 	}
 	res, runErr = fetchRun(context.Background(), map[string]any{"url": "https://omega.example/proof"})
 	if runErr != nil || !strings.Contains(res, "Proof page") || !strings.Contains(res, "web fetch answer") {
-		t.Fatalf("FULL MOUNT: web.fetch alias round-trip failed (res=%q err=%v)", res, runErr)
+		t.Fatalf("FULL MOUNT: web.fetch round-trip failed (res=%q err=%v)", res, runErr)
 	}
 	if hits != 2 {
 		t.Fatalf("FULL MOUNT: the fake mirror served %d hits, want 2 (search + fetch)", hits)
 	}
-	t.Logf("PROOF tool wiring: web search answered through the folded dispatcher, web.fetch through the alias shim (the same runWeb behind both) - both round-tripped the configured mirror (%d hits)", hits)
+	t.Logf("PROOF tool wiring: web.search and web.fetch both answered through the shared runWeb dispatcher - both round-tripped the configured mirror (%d hits)", hits)
 
 	// the action pipe: web ships no panel and no actions - even the
 	// full mount has nothing to route

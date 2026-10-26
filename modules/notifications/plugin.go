@@ -48,12 +48,23 @@ func (p *Plugin) ConfigKey() string { return "notifications" }
 func (p *Plugin) Provides() []string { return []string{"notifications"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount opens the store and mounts the seam, then registers the
-// read-only /notifications TUI command. Without a home AND a config
-// path (exotic embeds) the plugin mounts nothing - every emitter is
-// nil-safe and the HTTP endpoints answer 501, so notifications are a
-// no-op rather than a startup failure.
+// Mount satisfies agent.Plugin (the interface keeps its classic shape
+// until phase F). It is never dispatched: MountWithAPI exists, and
+// APIPlugin wins (the strangler rule). If ever reached it fails loud -
+// notifications does not mount the old way, which is the proof of
+// migration.
 func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("notifications: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
+}
+
+// MountWithAPI implements agent.APIPlugin. Same resolution the classic
+// body ran; without a home AND a config path (exotic embeds) the mount
+// registers nothing and returns nil - every emitter is nil-safe and
+// the HTTP endpoints answer 501, so notifications are a no-op rather
+// than a startup failure. Every face goes through the api: the seam
+// (the capsule-backed emittingStore), the canvas panels, and the
+// read-only /notifications command.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["notifications"].(Config); ok {
 		cfg = c
@@ -76,33 +87,26 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	// wrapper - every emit records through the store AND pushes the
 	// canvas panels (toast event + list refresh), so the toast is a
 	// canvas event and the emitter wiring lives in this module. The
-	// provider ride is the same Mount: an unregistered plugin ships
-	// no store, no panels, no toasts, no wiring - removal kills all
-	// of it together.
+	// provider rides the same registration: an unregistered plugin
+	// ships no store, no panels, no toasts, no wiring - removal kills
+	// all of it together.
 	p.capsule = newCapsule(s)
-	ctx.Notifications = &emittingStore{store: s, capsule: p.capsule}
-	ctx.PanelProviders = append(ctx.PanelProviders, p.capsule)
-	p.wireCommand(ctx)
-	return nil
-}
-
-// wireCommand registers the read-only /notifications table command
-// with the TUI command chain (the /board pattern: wrap the previous
-// handler, fall through on a miss).
-func (p *Plugin) wireCommand(ctx *core.Context) {
-	ctx.Commands = append(ctx.Commands,
-		core.ExtensionCommand{Name: "/notifications", Description: "list recent finished things (tasks, crons, chats)"},
-	)
-	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		if name == "/notifications" {
-			return p.handleCommand(c, args)
-		}
-		if prev != nil {
-			return prev(c, name, args)
-		}
-		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	if err := api.RegisterNotifications(&emittingStore{store: s, capsule: p.capsule}); err != nil {
+		return err
 	}
+	if err := api.RegisterPanelProvider(p.capsule); err != nil {
+		return err
+	}
+	// The read-only /notifications table command (the /board pattern:
+	// one registration per command, the wrapper falls through on a
+	// miss).
+	return api.RegisterCommand("/notifications", "list recent finished things (tasks, crons, chats)", nil,
+		func(c context.Context, name, args string) (core.CommandResult, error) {
+			if name != "/notifications" {
+				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+			}
+			return p.handleCommand(c, args)
+		})
 }
 
 // handleCommand renders the newest records as a fixed-width table.

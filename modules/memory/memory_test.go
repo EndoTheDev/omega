@@ -651,21 +651,28 @@ func TestPluginMount(t *testing.T) {
 
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"memory": cfg}}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Memory == nil {
 		t.Fatal("ctx.Memory is nil after Mount")
 	}
 
-	// Verify memory tool is registered.
+	// Verify the namespaced memory tool is registered.
 	tps := ctx.ToolProviders
 	if len(tps) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(tps))
 	}
 	tools := tps[0].Tools()
-	if _, ok := tools["memory"]; !ok {
-		t.Fatal("memory tool not registered")
+	if _, ok := tools["memory.entry"]; !ok {
+		t.Fatal("memory.entry tool not registered")
+	}
+	if _, ok := tools["memory"]; ok {
+		t.Fatal("the unprefixed memory tool must be retired")
+	}
+	// the classic mount path is dead: reaching it fails loud
+	if err := p.Mount(ctx); err == nil {
+		t.Fatal("the retired classic mount must fail loud")
 	}
 }
 

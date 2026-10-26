@@ -1090,7 +1090,9 @@ func (m *model) startRun() {
 	// intercept answers it.
 	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	if m.ephemeral {
-		ctx = agent.WithDeniedTools(ctx, "memory")
+		// the denied name is modules/memory's registered identity
+		// (memory.entry, Q10 namespace pair, v0.12 phase C2)
+		ctx = agent.WithDeniedTools(ctx, "memory.entry")
 	}
 	// Turn-copy persistence belongs to the loop (card t_471f6d4a): the
 	// sink carries the session and the head-pin parent, the run's new

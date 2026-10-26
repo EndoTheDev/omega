@@ -181,7 +181,7 @@ export interface ToolItem {
 // inline transport markers do not exist anymore (chat-last 2a): a dead
 // stream's reason renders in the statusLine above the composer; the
 // transcript belongs to the canvas panel never to transport state.
-// Verdict cards v1 (card t_2ecf9c51): a request_verdict tool call
+// Verdict cards v1 (card t_2ecf9c51): a verdict.request tool call
 // renders as an interactive card, NOT a tool line. Live items come from
 // the chat panel's tool_call rows; restored items from the persisted
 // assistant tool_call row. The matching tool_result's JSON content
@@ -319,12 +319,12 @@ export function renderTranscriptItems(
           elapsedMs: it.running ? (it.elapsed_ms ?? 0) : undefined,
         };
         if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
-        // Verdict cards v1 (card t_2ecf9c51): a request_verdict call
+        // a verdict.request call (Q10 namespaced identity, v0.12)
         // renders as a verdict card and NO tool line (the card is the
         // interactive surface AND the technical record - its result
         // below still settles the card). The matching tool_result is
         // consumed by the card branch, never by the tool-line map.
-        if (t.name === "verdict") {
+        if (t.name === "verdict.request") {
           const v = verdictCardFromToolArgs(it.tool_call?.arguments);
           if (it.tool_call?.id) verdictById.set(it.tool_call.id, v);
           v.status = "pending"; // settled by the tool_result below

@@ -16,7 +16,7 @@ func toolRun(t *testing.T, p *verdictToolProvider, ctx context.Context, args map
 	t.Helper()
 	ch := make(chan toolResult, 1)
 	go func() {
-		s, err := p.Tools()["verdict"].Run(ctx, args)
+		s, err := p.Tools()["verdict.request"].Run(ctx, args)
 		ch <- toolResult{s: s, err: err}
 	}()
 	return ch
@@ -64,7 +64,7 @@ func TestToolRefusesBackgroundOrigins(t *testing.T) {
 
 	for _, origin := range []string{core.RunOriginCron, core.RunOriginDelegate} {
 		ctx := core.WithRunOrigin(context.Background(), origin)
-		_, err := p.Tools()["verdict"].Run(ctx, args)
+		_, err := p.Tools()["verdict.request"].Run(ctx, args)
 		if err == nil {
 			t.Fatalf("origin %q must refuse verdict.request", origin)
 		}
@@ -78,7 +78,7 @@ func TestToolRequiresAction(t *testing.T) {
 		"no action":      {"title": "q"},
 		"unknown action": {"action": "status", "title": "q"},
 	} {
-		_, err := p.Tools()["verdict"].Run(interactiveCtx("s1"), args)
+		_, err := p.Tools()["verdict.request"].Run(interactiveCtx("s1"), args)
 		if err == nil || !containsStr(err.Error(), "action is required") {
 			t.Fatalf("%s: err = %v, want 'action is required'", name, err)
 		}
@@ -100,7 +100,7 @@ func TestToolRequiresTitleAndShape(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := p.Tools()["verdict"].Run(interactiveCtx("s1"), tc.args)
+			_, err := p.Tools()["verdict.request"].Run(interactiveCtx("s1"), tc.args)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -218,7 +218,7 @@ func TestToolAllowTextOnlyCard(t *testing.T) {
 
 func TestToolRefusesWithoutSeam(t *testing.T) {
 	p := &verdictToolProvider{hub: nil}
-	_, err := p.Tools()["verdict"].Run(interactiveCtx("s1"), requestArgs(map[string]any{"options": []any{"y"}}))
+	_, err := p.Tools()["verdict.request"].Run(interactiveCtx("s1"), requestArgs(map[string]any{"options": []any{"y"}}))
 	if err == nil {
 		t.Fatal("tool must refuse when the seam is not mounted")
 	}
