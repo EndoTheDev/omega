@@ -105,13 +105,13 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	t.Logf("PROOF emit: toast panel carries the record verbatim (%s)", toastPayload)
 
 	// the action pipe mutates the store and refreshes the list
-	if _, err := c2.Dispatch(core.ActionCall{Module: "notifications", Action: "mark_all"}); err != nil {
-		t.Fatalf("dispatch mark_all: %v", err)
+	if _, err := c2.Dispatch(core.ActionCall{Module: "notifications", Action: "notifications.mark_all"}); err != nil {
+		t.Fatalf("dispatch notifications.mark_all: %v", err)
 	}
 	if _, unread, err := ctx.Notifications.List(t.Context(), false, 10, 0); err != nil || unread != 0 {
-		t.Fatalf("FULL MOUNT: mark_all did not clear the store (unread=%d err=%v)", unread, err)
+		t.Fatalf("FULL MOUNT: notifications.mark_all did not clear the store (unread=%d err=%v)", unread, err)
 	}
-	t.Log("PROOF action-pipe: mark_all cleared the store, list refreshed through the canvas")
+	t.Log("PROOF action-pipe: notifications.mark_all cleared the store, list refreshed through the canvas")
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin

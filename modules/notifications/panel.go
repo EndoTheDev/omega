@@ -24,13 +24,15 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Panel ids and action ids of the capsule. Module-qualified on the
-// wire (core.PanelAction.Module carries "notifications").
+// Panel ids and action ids of the capsule. Panel ids keep their
+// natural shape; action ids are machine-facing and namespaced pairs
+// (notifications.verb, Q10 - the registration API claims each one,
+// v0.12 phase C2). core.PanelAction.Module carries "notifications".
 const (
 	listPanelID  = "notifications"
 	toastPanelID = "toast"
-	actionRead   = "mark_read"
-	actionAll    = "mark_all"
+	actionRead   = "notifications.mark_read"
+	actionAll    = "notifications.mark_all"
 )
 
 // listPanelRows caps the list panel's payload: the view-model shows
