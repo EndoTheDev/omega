@@ -28,11 +28,33 @@
 # Every write-journey creates a throwaway session (id prefix jrn-, label
 # prefix "(journey)") and deletes it on exit; the suite leaves no
 # residue in the live store.
+#
+# Chrome-death contract (proven live 2026-10-27: 37 orphaned chromes
+# held a Pi 5 at load 10 and red-flaked every suite run):
+#   normal exit, die(), INT (Ctrl-C)   -> the EXIT trap runs stop_chrome,
+#                                        which group-kills the chrome we
+#                                        launched (setsid makes it its
+#                                        own process group) plus a belt
+#                                        scan for stragglers wearing
+#                                        this run's profile dir.
+#   TERM/INT raised by a kill          -> trap re-raises via exit, which
+#                                        runs the same EXIT trap.
+#   SIGKILL on run.sh, crash, OOM      -> nothing can trap. sweep-chromes.sh
+#                                        is the backstop: run.sh reaps
+#                                        orphans at every suite start,
+#                                        and the script is safe to run
+#                                        standalone (cron, pre-merge).
+# A chrome this run ATTACHED to (already listening when we started) is
+# never ours: CHROME_PID stays empty and every kill path no-ops.
 
 set -u
 
 JROOT="$(cd "$(dirname "$0")" && pwd)"
 EVID="$(mktemp -d "${TMPDIR:-/tmp}/omega-journeys-evidence.XXXXXX")"
+
+# backstop: reap chromes orphaned by dead earlier runs (SIGKILLed run.sh,
+# dead worker debug sessions) before anything here can attach to them
+bash "$JROOT/sweep-chromes.sh" -q 2>/dev/null || true
 
 # --- env -------------------------------------------------------------------
 JOURNEY_BASE_URL="${JOURNEY_BASE_URL:-http://127.0.0.1:8098}"
@@ -83,13 +105,19 @@ launch_chrome() {
   local UD="${TMPDIR:-/tmp}/omega-journeys-chrome-profile-$JOURNEY_CHROME_PORT"
   if [ "${1:-}" = "reset" ]; then rm -rf "$UD"; fi
   mkdir -p "$UD"
-  LD_LIBRARY_PATH="$LIBS:$(dirname "$BINPATH")" "$BINPATH" \
+  # setsid puts chrome (and its render children) in a process group of
+  # its own: the group kill in stop_chrome then takes the whole tree
+  # without touching this script's own group.
+  setsid env \
+    LD_LIBRARY_PATH="$LIBS:$(dirname "$BINPATH")" \
+    "$BINPATH" \
     --headless=new --remote-debugging-port="$JOURNEY_CHROME_PORT" \
     --user-data-dir="$UD" --no-first-run --no-default-browser-check \
     --disable-gpu --window-size=1280,720 --noerrdialogs \
     --use-mock-keychain --password-store=basic \
     >/dev/null 2>&1 &
   CHROME_PID=$!
+  CHROME_UD="$UD"
   local i=0
   while [ "$i" -lt 20 ]; do
     if curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null | grep -q Chrome; then
@@ -101,11 +129,50 @@ launch_chrome() {
   return 1
 }
 
-stop_chrome() {
-  if [ -n "${CHROME_PID:-}" ]; then
-    kill "$CHROME_PID" 2>/dev/null
-  fi
+# chrome_procs_matching <profile-dir>: print pids of chrome.real MAIN
+# processes (the launcher, not --type= render children) whose cmdline
+# names that profile dir. The /proc comm-name scan is the safe pattern:
+# pgrep -f self-matches the invoking shell (proven twice 2026-10-27,
+# one self-inflicted SIGKILL) - filter by /proc/*/comm, never by
+# pattern text. comm "chrome.real" contains no spaces, so stat field 4
+# (ppid) is unshifted.
+chrome_procs_matching() {
+  local want="$1" p pid comm
+  for p in /proc/[0-9]*; do
+    pid="${p#/proc/}"
+    comm="$(cat "$p/comm" 2>/dev/null)"
+    [ "$comm" = "chrome.real" ] || continue
+    case "$(tr '\0' ' ' <"$p/cmdline" 2>/dev/null)" in
+      *"--user-data-dir=$want"*"--remote-debugging-port"*) echo "$pid" ;;
+    esac
+  done
 }
+
+stop_chrome() {
+  # primary: the chrome we launched. setsid made it a process-group
+  # leader, so the group kill takes every render child with it.
+  if [ -n "${CHROME_PID:-}" ] && kill -0 "$CHROME_PID" 2>/dev/null; then
+    kill -TERM -- "-$CHROME_PID" 2>/dev/null
+    kill -TERM "$CHROME_PID" 2>/dev/null
+    local i=0
+    while kill -0 "$CHROME_PID" 2>/dev/null && [ "$i" -lt 10 ]; do
+      sleep 0.2
+      i=$((i + 1))
+    done
+    kill -KILL -- "-$CHROME_PID" 2>/dev/null
+    kill -KILL "$CHROME_PID" 2>/dev/null
+  fi
+  # belt: a chrome wearing this run's profile dir but not the pid we
+  # recorded (setsid forked instead of execing, pid churn). Children
+  # die with their main process, so only mains are targeted.
+  local pid
+  for pid in $(chrome_procs_matching "${CHROME_UD:-__none__}"); do
+    kill "$pid" 2>/dev/null
+  done
+  CHROME_PID=""
+}
+
+trap 'stop_chrome' EXIT
 
 # --- lane health -------------------------------------------------------------
 if ! curl -s "$JOURNEY_BASE_URL/health" 2>/dev/null | grep -q '"ok"'; then
@@ -117,6 +184,12 @@ fi
 # --- browser attach ----------------------------------------------------------
 JOURNEY_CDP_ATTACHED=0
 CHROME_PID=""
+CHROME_UD=""
+# INT/TERM on this script: exit with the conventional status, which runs
+# the EXIT trap -> stop_chrome. SIGKILL cannot be trapped; the suite-start
+# sweep and standalone sweep-chromes.sh are the backstop for that.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 chrome_listening() {
   curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null | grep -q Chrome
 }
@@ -245,8 +318,6 @@ if [ "$JOURNEY_JSON" = "1" ]; then
   done
   printf 'journeys: {"green": %s, "skipped": %s, "failed": [%s]}\n' "$green" "$skipped" "$json_failed"
 fi
-
-stop_chrome
 
 if [ "$redcount" -gt 0 ]; then
   printf 'journeys: RED — failing:%s\n' "$failed"
