@@ -211,6 +211,7 @@ go vet ./...      # no suspicious constructs
 - `docs/project-trust.md` - trust gate
 - `docs/pipeline.md` - the landing pipeline (merge train)
 - `docs/removing-a-module.md` - the module removal recipe (capsule law)
+- `docs/migrating-a-module.md` - the module migration recipe (universal mount)
 - `modules/README.md` - extension authoring guide
 - `.agents/COMMIT.md` - commit convention and voice
 
