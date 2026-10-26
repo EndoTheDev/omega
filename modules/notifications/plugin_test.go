@@ -17,7 +17,7 @@ import (
 func mountCtx(t *testing.T, ctx *core.Context) (*Plugin, *core.Context) {
 	t.Helper()
 	p := NewPlugin()
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	t.Cleanup(func() {

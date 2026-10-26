@@ -23,7 +23,7 @@ func mountAt(t *testing.T, home string) *Plugin {
 	t.Setenv("OMEGA_HOME", home)
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	t.Cleanup(func() { p.store.Close() })
@@ -37,7 +37,7 @@ func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 	t.Setenv("OMEGA_HOME", home)
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
 	p := NewPlugin()
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	t.Cleanup(func() { p.store.Close() })
@@ -126,7 +126,7 @@ func TestMountResolvesPointerBoard(t *testing.T) {
 	t.Setenv("OMEGA_HOME", home)
 	p2 := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p2}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p2}, ctx, nil, nil); err != nil {
 		t.Fatalf("remount: %v", err)
 	}
 	t.Cleanup(func() { p2.store.Close() })

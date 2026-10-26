@@ -12,7 +12,15 @@ import (
 // Plugin is the in-process adapter for the provider extension.
 // It reads provider configuration from Context.Configs and mounts
 // a Provider into the provider seam.
-type Plugin struct{}
+type Plugin struct {
+	// prevHandler is the command chain before Mount's /model wrapper -
+	// the value Dismount restores (the E1 dismount proof).
+	prevHandler commandHandler
+}
+
+// commandHandler is the CommandHandler stack shape the classic mounts
+// chain onto.
+type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
 
 // Name returns the plugin name shown in the /extensions listing.
 func (Plugin) Name() string { return "provider" }
@@ -53,6 +61,7 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 
 	// Wire command handler, chaining after any previous handler.
 	prev := ctx.CommandHandler
+	p.prevHandler = prev
 	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		result, err := p.handleCommand(prov, name, args)
 		if err == nil {
@@ -152,4 +161,21 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 		}, nil
 	}
 	return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+}
+
+// Dismount unmounts the provider seam, its four commands and the
+// command chain (the E1 dismount proof: reverse exactly the Mount).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	ctx.Provider = nil
+	out := ctx.Commands[:0]
+	for _, c := range ctx.Commands {
+		switch c.Name {
+		case "/model", "/models", "/thinking", "/provider":
+			continue
+		}
+		out = append(out, c)
+	}
+	ctx.Commands = out
+	ctx.CommandHandler = p.prevHandler
+	return nil
 }

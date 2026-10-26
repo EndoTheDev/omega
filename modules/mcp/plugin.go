@@ -86,3 +86,22 @@ func (b bridgeToolProvider) Tools() map[string]core.Tool {
 	}
 	return tools
 }
+
+// Toggleable marks the MCP bridge as a module capsule (v0.12 E1): the
+// omega.json disable list may name it.
+func (p *Plugin) Toggleable() bool { return true }
+
+// Dismount unmounts the bridge tool provider (the E1 dismount proof).
+// The bridge process is the caller's concern - the plugin that opened
+// it owns closing it.
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	tools := ctx.ToolProviders[:0]
+	for _, tp := range ctx.ToolProviders {
+		if _, is := tp.(bridgeToolProvider); is {
+			continue
+		}
+		tools = append(tools, tp)
+	}
+	ctx.ToolProviders = tools
+	return nil
+}

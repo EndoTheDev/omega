@@ -30,3 +30,10 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	ctx.Loop = Loop{}
 	return nil
 }
+
+// Dismount unmounts the loop seam (the E1 dismount proof: the module
+// reverses exactly what it mounted).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	ctx.Loop = nil
+	return nil
+}

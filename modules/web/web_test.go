@@ -387,7 +387,7 @@ func TestFetchNoAPIKey(t *testing.T) {
 func TestMount(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount failed: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {
@@ -417,7 +417,7 @@ func TestMountWithConfig(t *testing.T) {
 			"web": Config{APIKey: "sk-test", BaseURL: "http://host:1"},
 		},
 	}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount failed: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {

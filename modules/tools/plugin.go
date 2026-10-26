@@ -11,7 +11,18 @@ import (
 
 // Plugin adapts ToolProvider into the agent.Plugin interface.
 // It registers shell and file tools as an additive tools-seam provider.
-type Plugin struct{}
+type Plugin struct {
+	// mountState carries what Dismount must reverse (the E1 dismount
+	// proof): the tool provider, the files renderer and the prior
+	// command chain.
+	provider    *ToolProvider
+	renderer    *tui
+	prevHandler commandHandler
+}
+
+// commandHandler is the CommandHandler stack shape the classic mounts
+// chain onto.
+type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
 
 // Name returns the extension name shown in /extensions.
 func (p *Plugin) Name() string { return "tools" }
@@ -37,7 +48,8 @@ func (p *Plugin) Requires() []string { return nil }
 // the /tools command. The provider also carries the store-door
 // deny-guard (ENDO'S LAW 2026-10-18) built from the store config.
 func (p *Plugin) Mount(ctx *core.Context) error {
-	provider := &ToolProvider{}
+	p.provider = &ToolProvider{}
+	provider := p.provider
 	if c, ok := ctx.Configs["store"].(store.Config); ok {
 		provider.dbGuard = newDBGuard(c.DBPath)
 	} else {
@@ -55,8 +67,10 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	// The /files browser rides the module TUI seam (the read view over
 	// the files domain). A tools plugin left out of buildPlugins takes
 	// /files out of the command table with it (card t_88bb7dcf).
-	ctx.TUIProviders = append(ctx.TUIProviders, &tui{})
+	p.renderer = &tui{}
+	ctx.TUIProviders = append(ctx.TUIProviders, p.renderer)
 
+	p.prevHandler = ctx.CommandHandler
 	prev := ctx.CommandHandler
 	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/tools" {
@@ -147,3 +161,42 @@ func firstLineOfDesc(desc string) string {
 
 // NewPlugin creates a new tools plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
+// Dismount unmounts the tool provider, the prompt section, the /tools
+// command, the files renderer and the command chain (the E1 dismount
+// proof).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	tools := ctx.ToolProviders[:0]
+	for _, tp := range ctx.ToolProviders {
+		if tp == p.provider {
+			continue
+		}
+		tools = append(tools, tp)
+	}
+	ctx.ToolProviders = tools
+	sections := ctx.PromptSectioners[:0]
+	for _, ps := range ctx.PromptSectioners {
+		if ps == p {
+			continue
+		}
+		sections = append(sections, ps)
+	}
+	ctx.PromptSectioners = sections
+	cmds := ctx.Commands[:0]
+	for _, c := range ctx.Commands {
+		if c.Name == "/tools" {
+			continue
+		}
+		cmds = append(cmds, c)
+	}
+	ctx.Commands = cmds
+	tuis := ctx.TUIProviders[:0]
+	for _, tp := range ctx.TUIProviders {
+		if tp == p.renderer {
+			continue
+		}
+		tuis = append(tuis, tp)
+	}
+	ctx.TUIProviders = tuis
+	ctx.CommandHandler = p.prevHandler
+	return nil
+}

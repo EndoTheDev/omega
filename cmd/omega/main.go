@@ -218,7 +218,7 @@ func mountRegistry(cfg Config) (*agent.Registry, *agent.Context, error) {
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	reg, err := agent.MountAllAPI(plugins, pctx, nil)
+	reg, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled)
 	if err != nil {
 		return nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
@@ -472,9 +472,14 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	// The API mount honors the omega.json toggle list (v0.12 E1, Q1):
+	// disabled capsules skip Mount, and a capsule depending on one
+	// fails the boot naming the edge (Q3).
+	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled)
+	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
+	_ = reg // the serve path consumes registry surfaces in later phases
 
 	// The store resolves BEFORE the agent is built: the captioner
 	// (vision_model knob) holds the caption sink from the start, and
@@ -586,16 +591,17 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		}(ch)
 	}
 
-	// Start the cron runner (if mounted) with the fully-wired agent,
-	// store, memory seam and logger. Runs until shutdown, alongside
-	// the channels.
-	if pctx.Cron != nil {
-		go func() {
-			if err := pctx.Cron.Start(ctx, core.CronDeps{Ctx: pctx, Agent: ag, Store: store}); err != nil {
-				fmt.Fprintf(os.Stderr, "omega: cron runner: %v\n", err)
-				errCh <- err
-			}
-		}()
+	// The fence (v0.12 E1): module background work starts here, after
+	// the mount commit. The run group owns the Start/Stop handles the
+	// capsules registered in Mount (cron first); the channels stay
+	// host-started - engine ring, no module handles.
+	if err := pctx.RunGroup().StartAll(ctx, core.StartDeps{
+		Ctx:   pctx,
+		Agent: ag,
+		Store: store,
+		Run:   ctx,
+	}, ""); err != nil {
+		return fmt.Errorf("start module lifecycle: %w", err)
 	}
 
 	fmt.Printf("omega: serving %d channel(s) (model %s)\n", len(pctx.Channels), ag.ModelName())
@@ -726,7 +732,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	if err := agent.MountAll(plugins, pctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled); err != nil {
 		return fmt.Errorf("mount extensions: %w", err)
 	}
 	if pctx.Logger != nil {

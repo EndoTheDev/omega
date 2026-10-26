@@ -26,6 +26,9 @@ type Plugin struct {
 	// GET serves, the action pipe routes and the deltas carry must be
 	// the same on all mirrors.
 	canvas *sharedCanvas
+	// mounted carries the channels Mount appended - the value Dismount
+	// removes by identity (the E1 dismount proof).
+	mounted []core.Channel
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -83,17 +86,41 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	p.hub = &runHub{}
 	p.canvas = &sharedCanvas{}
 	for _, b := range binds {
-		ctx.Channels = append(ctx.Channels, &HTTPChannel{
+		ch := &HTTPChannel{
 			addr:       fmt.Sprintf("%s:%d", b, port),
 			runTimeout: time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
 			titleModel: cfg.TitleModel,
 			chat:       p.chat,
 			hub:        p.hub,
 			canvas:     p.canvas,
-		})
+		}
+		p.mounted = append(p.mounted, ch)
+		ctx.Channels = append(ctx.Channels, ch)
 	}
 	return nil
 }
 
 // NewPlugin returns an HTTP channel Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
+
+// Dismount removes the channels Mount appended, by identity (the E1
+// dismount proof). The engine ring never lands in the disable list -
+// Dismount exists for the teardown proof, not for toggling.
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	chans := ctx.Channels[:0]
+	for _, ch := range ctx.Channels {
+		dead := false
+		for _, m := range p.mounted {
+			if ch == m {
+				dead = true
+				break
+			}
+		}
+		if !dead {
+			chans = append(chans, ch)
+		}
+	}
+	ctx.Channels = chans
+	p.mounted = nil
+	return nil
+}

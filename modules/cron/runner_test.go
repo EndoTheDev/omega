@@ -506,7 +506,7 @@ func (notificationsPlugin) Mount(ctx *core.Context) error { return nil }
 func TestPluginMountSetsCronSeam(t *testing.T) {
 	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "a", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
 	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Cron == nil {
@@ -528,7 +528,7 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 	}
 	p := NewPluginWithConfig(nil, home)
 	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil); err == nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil, nil); err == nil {
 		t.Fatal("invalid crons.yaml mounted silently")
 	} else if !strings.Contains(err.Error(), `job "bad"`) {
 		t.Fatalf("mount error missing job name: %v", err)

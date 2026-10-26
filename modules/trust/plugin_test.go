@@ -17,7 +17,7 @@ import (
 func TestMountWithAPIShape(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Trust == nil {
