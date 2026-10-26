@@ -44,6 +44,10 @@ type Server struct {
 	eph      ephRegistry
 	store    core.StoreProvider
 	settings core.Settings
+	// modules is the optional module-toggle seam (v0.12 E2): the
+	// /modules endpoints serve registry introspection + live toggles
+	// through it; a nil value answers 501.
+	modules core.ModuleToggles
 	// trust is the optional project-context seam (modules/trust). A
 	// session rooted in a workspace folder resolves its AGENTS.md
 	// context through it at send time (card t_9de5b009); a nil seam
@@ -110,11 +114,11 @@ type Server struct {
 // optional session persistence; a nil store disables persistence and the
 // session CRUD endpoints. settings is the optional config-knobs seam
 // (/settings endpoints); a nil value answers 501 on those endpoints.
-func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings) *Server {
+func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings, modules core.ModuleToggles) *Server {
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
 	// Chat panel capsule (chat-last 1/3): default-wired so a directly
 	// constructed Server (tests, embedding) has the push hooks and the
 	// panel even without the plugin's channel-start handoff.
@@ -144,6 +148,11 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/extensions", s.handleExtensions)
+	// v0.12 E2: the module toggle surface - registry introspection and
+	// the live toggle (Q7), rejections visible through the refusal
+	// ledger (Q12). Handler family lives in server_modules.go.
+	mux.HandleFunc("GET /modules", s.handleModules)
+	mux.HandleFunc("PUT /modules/{name}", s.handleModuleToggle)
 	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
 	mux.HandleFunc("/skills", s.handleSkills)
 	mux.HandleFunc("/logs", s.handleLogs)
