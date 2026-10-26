@@ -30,15 +30,15 @@
             <svg
               class="new-caret-chevron"
               :class="{ open: newMenuOpen }"
-              width="8"
-              height="8"
-              viewBox="0 0 8 8"
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
               aria-hidden="true">
               <path
-                d="M1 2.5L4 5.5L7 2.5"
+                d="M2.5 4L6 7.5L9.5 4"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="1.2" />
+                stroke-width="1.5" />
             </svg>
           </button>
         </div>
@@ -544,6 +544,9 @@
   color: inherit;
   cursor: pointer;
 }
+/* card t_a0a466c6: the caret is its own zone - the hairline divider
+   (the chip's own border color) reads the split, the hover lights ONLY
+   the caret zone so the two halves answer the pointer separately. */
 .new-caret {
   display: inline-flex;
   align-items: center;
@@ -555,6 +558,9 @@
   font: inherit;
   color: inherit;
   cursor: pointer;
+}
+.new-caret:hover {
+  background: var(--z2);
 }
 .new-main:focus-visible,
 .new-caret:focus-visible {

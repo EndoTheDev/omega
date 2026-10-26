@@ -57,3 +57,24 @@ describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
     assert.match(sidebar, /run:\s*\(\)\s*=>\s*pickNew\(true\)/, "Ephemeral mints the draft");
   });
 });
+
+describe("AppSidebar: the caret affordance (card t_a0a466c6)", () => {
+  it("the caret zone is its own visual zone with a divider", () => {
+    const caret = sidebar.match(/\.new-caret\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(caret, /border-left:\s*1px solid var\(--stroke\)/, "the hairline divider uses the chip border color");
+  });
+
+  it("hovering the caret lights the caret zone with the z2 token", () => {
+    const hover = sidebar.match(/\.new-caret:hover\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(hover, /background:\s*var\(--z2\)/, "the caret zone's hover background");
+  });
+
+  it("the chevron renders at 12x12, up from the invisible 8x8", () => {
+    const svg = sidebar.match(
+      /<svg[^>]*class="new-caret-chevron"[\s\S]*?<\/svg>/,
+    )?.[0] ?? "";
+    assert.match(svg, /width="12"/, "12px wide");
+    assert.match(svg, /height="12"/, "12px tall");
+    assert.doesNotMatch(svg, /width="8"/, "the 8px chevron is gone");
+  });
+});
