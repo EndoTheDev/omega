@@ -7,6 +7,8 @@
 // Render-free; node's built-in test runner.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL } from "node:url";
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
@@ -734,5 +736,36 @@ describe("dockablesFromPanels", () => {
       { module: MODULE, dockable: {} },
     ]);
     assert.deepEqual(lifted.map((d) => d.id), [MODULE]);
+  });
+});
+
+// --- the main-pane '+' source pins (Endo amendment, 2026-10-26) ------------
+
+describe("the main-pane '+' mints a session, no menu", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
+  const pane = src("app/components/DockPane.vue");
+
+  it("the '+' body mints a session through newSession() - no dropdown wiring survives", () => {
+    assert.match(pane, /aria-label="new session"/);
+    assert.match(pane, /@click\.stop="newSession\(\)"/);
+    // the old inventory-menu shape is OUT of the '+': no state, no toggle,
+    // no popup markup (Endo owns the menu's return later)
+    assert.doesNotMatch(pane, /newTabMenu/, "the newTabMenu state must be gone");
+    assert.doesNotMatch(pane, /new tab components/, "the '+' popup markup must be gone");
+  });
+
+  it("the '+' still carries the drop-caret affordance for the bar's end", () => {
+    assert.match(
+      pane,
+      /dock-tab-new"[\s\S]*?caret-before[\s\S]*?dropIdx === node\.tabs\.length/,
+      "dropping a tab at the pane end still lands after the last tab",
+    );
+  });
+
+  it("the empty-pane watermark KEEPS the full inventory menu", () => {
+    assert.match(pane, /dock-empty[\s\S]*?role="menu"/);
+    assert.match(pane, /v-for="d in menuDockables"/);
+    assert.match(pane, /function openDockable\(/);
   });
 });

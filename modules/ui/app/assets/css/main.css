@@ -233,7 +233,8 @@ body {
 .dock-content > .pane { flex: 1; }
 
 /* card 2: the TAB BAR is the pane's header. Height = the MenuBar contract
-   (35px); VS Code editor-group look: component-title tabs, '+' new-tab,
+   (35px); VS Code editor-group look: component-title tabs, '+' new-session
+   (Endo amendment 2026-10-26: the '+' mints a session directly, no menu),
    ⋯ pane-actions. Drop affordances here are layout-inert by design: the
    drop highlight is an outline, the insertion caret an absolute bar - a
    dragging gesture reflows nothing (card verify (d)). */
