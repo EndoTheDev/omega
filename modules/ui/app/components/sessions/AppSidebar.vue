@@ -5,11 +5,11 @@
     <div class="sessions-head">
       <!-- card t_aee5199f: the new-chat control is a FULL-WIDTH split
            button - the body mints the default (persisted) chat, the
-           arrow-down opens t_d96a5cd5's type picker: new chat /
-           new ephemeral chat. All styling stays scoped so this surface
-           never grows main.css (SAME-FILE discipline: t_33f8756c owns
-           the shared sheet) - only .new-btn's shared chip look from
-           main.css is consumed. -->
+           arrow-down opens the type picker (card t_55a571ff: New
+           Session / Ephemeral / Continuous). All styling stays scoped so
+           this surface never grows main.css (SAME-FILE discipline:
+           t_33f8756c owns the shared sheet) - only .new-btn's shared
+           chip look from main.css is consumed. -->
       <div class="head-actions">
         <div
           class="new-btn"
@@ -18,7 +18,7 @@
             class="new-main"
             title="New conversation"
             @click="pickNew(false)">
-            + new
+            + New Session
           </button>
           <button
             class="new-caret"
@@ -46,15 +46,20 @@
           v-if="newMenuOpen"
           class="new-menu"
           @click.stop>
+          <!-- the picker is DATA (card t_55a571ff): each entry is a label
+               + intent; a disabled entry renders inert until its design
+               round lands - no behavior is built here. The future
+               continuous-agents card wires its `run`, no template change. -->
           <button
+            v-for="entry in newMenuEntries"
+            :key="entry.label"
             class="new-menu-item"
-            @click="pickNew(false)">
-            New chat
-          </button>
-          <button
-            class="new-menu-item"
-            @click="pickNew(true)">
-            New ephemeral chat
+            :class="{ 'new-menu-disabled': entry.disabled }"
+            :disabled="entry.disabled"
+            :title="entry.title"
+            :aria-disabled="entry.disabled || undefined"
+            @click="entry.run?.()">
+            {{ entry.label }}
           </button>
         </div>
       </div>
@@ -325,6 +330,29 @@
   // the new-chat dropdown's open bit + click-outside close (document
   // listener bound on open, torn down on close/unmount)
   const newMenuOpen = ref(false);
+  // card t_55a571ff: the type picker is data. The placeholder entry is
+  // DATA, not dead template - a future continuous-agents card flips
+  // `disabled` off and supplies `run` (Endo ruling: ship the label now
+  // so the shape is visible, no behavior until the design round lands).
+  interface NewMenuEntry {
+    label: string;
+    title: string;
+    disabled?: boolean;
+    run?: () => void;
+  }
+  const newMenuEntries: NewMenuEntry[] = [
+    { label: "New Session", title: "New conversation", run: () => pickNew(false) },
+    {
+      label: "Ephemeral",
+      title: "No-persist chat (nothing stored, gone when closed)",
+      run: () => pickNew(true),
+    },
+    {
+      label: "Continuous",
+      title: "design pending - coming with the continuous agents arc",
+      disabled: true,
+    },
+  ];
   function pickNew(ephemeral: boolean) {
     newMenuOpen.value = false;
     if (ephemeral) emit("new-ephemeral");
@@ -571,5 +599,15 @@
 }
 .new-menu-item:hover {
   background: var(--z2);
+}
+/* card t_55a571ff: the disabled placeholder (Continuous) renders dim and
+   inert - no hover lift, no pointer affordance until its future card
+   wires the entry. */
+.new-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+.new-menu-item:disabled:hover {
+  background: none;
 }
 </style>
