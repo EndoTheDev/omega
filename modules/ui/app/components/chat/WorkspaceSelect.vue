@@ -10,9 +10,7 @@
       class="ws-btn"
       type="button"
       :disabled="disabled"
-      :title="disabled
-        ? 'send a first message to bind a session, then pin a folder'
-        : workspace ? 'workspace: ' + workspace : 'pick this session's working folder'"
+      :title="btnTitle"
       @click="toggle">
       <span
         v-if="workspace"
@@ -93,6 +91,13 @@
   const baseName = computed(() => {
     const p = props.workspace ?? "";
     return p.split("/").filter(Boolean).pop() ?? p;
+  });
+
+  // the chip's tooltip (script keeps the literal strings - apostrophes
+  // in template expressions break the vue template parser)
+  const btnTitle = computed(() => {
+    if (props.disabled) return "send a first message to bind a session, then pin a folder";
+    return props.workspace ? `workspace: ${props.workspace}` : "pick this session's working folder";
   });
 
   function toggle() {
