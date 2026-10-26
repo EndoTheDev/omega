@@ -14,10 +14,13 @@ import (
 
 // Plugin adapts the kanban Store into omega's plugin system. It owns
 // the exclusive "kanban" seam (the board provider the HTTP channel
-// serves /tasks from) and contributes the board tools ("tools" seam,
-// additive) so the agent manages the board natively in chat. The
-// canvas panels (arc 5, t_7bd3dc06) ride the same Mount - the
-// registration IS the plugin (see capsule, panel.go).
+// serves /tasks from) and contributes the board tools so the agent
+// manages the board natively in chat. The canvas panels (arc 5,
+// t_7bd3dc06) ride the same Mount - the registration IS the plugin
+// (see capsule, panel.go). It mounts through the ExtensionAPI
+// exclusively (v0.12 phase C1; the classic Mount body is retired to
+// the fail-loud stub below - docs/migrating-a-module.md is the recipe
+// this migration produced).
 type Plugin struct {
 	store   *Store
 	tools   *ToolProvider
@@ -41,29 +44,40 @@ func (p *Plugin) Description() string {
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "kanban" }
 
+// Provides stays the declared data the census reads: the exclusive
+// kanban seam and the tools surface (the registration vocabulary
+// resolves the seams; the sweep claims them the same as ever).
 func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 
-// Requires: the notifications seam - Mount hands it to the board store
-// so done transitions emit finished-things records (card t_5d9032d3).
-// The board tools themselves are plain store CRUD with nothing to wait
-// for (card t_13a2af8a: the edge is declared data, not slice position).
-func (p *Plugin) Requires() []string { return []string{"notifications"} }
+// Requires: none. The finished-things dependency on the notifications
+// seam moved to the emitter registration (below) - the hook receives
+// the mounted seam at mount end, nil-safe, so the classic Requires
+// edge retired with the mount-time capture (v0.12 phase C1).
+func (p *Plugin) Requires() []string { return nil }
 
-// Mount opens the board db and mounts the provider plus the tools.
-// The db path is config db_path; the relative default resolves through
-// the board registry: the pointer file <home>/data/boards/current
-// names the board "" means (missing file = "main" = the legacy
-// <home>/data/kanban.db), so existing installs keep their cards. A
-// mount failure (bad dsn, unreadable path, corrupt pointer) is a
+// Mount satisfies agent.Plugin (the interface keeps its classic shape
+// until phase F). It is never dispatched: MountWithAPI exists, and
+// APIPlugin wins (the strangler rule). If ever reached it fails loud -
+// kanban does not mount the old way, which is the proof of migration.
+func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("kanban: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C1)")
+}
+
+// MountWithAPI implements agent.APIPlugin. The store opens here (same
+// resolution the classic body ran); every face registers through the
+// api: the kanban seam, the folded task tool, the live panel capsule,
+// the /board and /boards commands, and the finished-things emitter.
+// A mount failure (bad dsn, unreadable path, corrupt pointer) is a
 // startup error - a board that silently does not exist is worse than
 // a crash.
-func (p *Plugin) Mount(ctx *core.Context) error {
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["kanban"].(Config); ok {
 		cfg = c
 	}
 	dsn := cfg.DBPath
 	name := ""
+	var boardsNamed bool
 	if home := datadir.Home(); home != "" {
 		pointer, err := ReadPointer(home)
 		if err != nil {
@@ -81,25 +95,18 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 			// host pre-resolved through the pointer: keep the name
 			name = pointer
 		}
-		s, oerr := Open(dsn)
-		if oerr != nil {
-			return fmt.Errorf("kanban store: %w", oerr)
-		}
-		p.store = s
-		s.ConfigureBoards(BoardsDir(home), name, datadir.DBPath(home, "kanban.db"))
-	} else {
-		// no home (exotic embed): plain single-board mode
-		s, oerr := Open(dsn)
-		if oerr != nil {
-			return fmt.Errorf("kanban store: %w", oerr)
-		}
-		p.store = s
+		boardsNamed = true
 	}
-	p.tools = &ToolProvider{board: p.store}
-	// card t_5d9032d3: done transitions report to the finished-things
-	// store. The Requires edge on "notifications" guarantees the seam
-	// is mounted by the time this runs; nil is legal.
-	p.store.SetNotifier(ctx.Notifications)
+	s, oerr := Open(dsn)
+	if oerr != nil {
+		return fmt.Errorf("kanban store: %w", oerr)
+	}
+	p.store = s
+	if boardsNamed {
+		home := datadir.Home()
+		s.ConfigureBoards(BoardsDir(home), name, datadir.DBPath(home, "kanban.db"))
+	}
+	p.tools = &ToolProvider{board: s}
 	// Capsule law (arc 5, t_7bd3dc06): the module ships its view-model
 	// with its store. The task panel and the board switcher ride the
 	// same Mount - an unregistered plugin ships no store, no tools, no
@@ -107,32 +114,58 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	// board: the panels mirror the one truth the tools and /board
 	// already share, and the swap hands the switcher its /board
 	// equivalence.
-	p.capsule = newCapsule(p.store, p.tools.sessionBoard, p.setSessionBoard)
+	p.capsule = newCapsule(s, p.tools.sessionBoard, p.setSessionBoard)
 	p.tools.capsule = p.capsule
-	ctx.PanelProviders = append(ctx.PanelProviders, p.capsule)
-	p.wireCommands(ctx)
-	ctx.Kanban = p.store
-	ctx.ToolProviders = append(ctx.ToolProviders, p.tools)
+	for _, step := range []func() error{
+		func() error { return api.RegisterKanban(s) },
+		func() error {
+			for toolName, tool := range p.tools.Tools() {
+				if err := api.RegisterTool(toolName, tool); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		func() error { return api.RegisterPanelProvider(p.capsule) },
+		func() error { return p.registerCommands(api) },
+		// card t_5d9032d3: done transitions report to the finished-
+		// things store. The hook hands the mounted notifications seam
+		// over at mount end, nil when the module is absent (nil is
+		// legal - the emitter is nil-safe by the classic law).
+		func() error {
+			store := s
+			return api.RegisterEmitter(func(n core.NotificationsProvider) { store.SetNotifier(n) })
+		},
+	} {
+		if err := step(); err != nil {
+			_ = s.Close()
+			return err
+		}
+	}
 	return nil
 }
 
-// wireCommands registers the /board and /boards slash commands with
-// the TUI command chain.
-func (p *Plugin) wireCommands(ctx *core.Context) {
-	ctx.Commands = append(ctx.Commands,
-		core.ExtensionCommand{Name: "/board", Description: "show the active board, or switch it (/board [name])"},
-		core.ExtensionCommand{Name: "/boards", Description: "list boards and the current pointer"},
-	)
-	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		if name == "/board" || name == "/boards" {
+// registerCommands registers the /board and /boards slash commands
+// through the API chain: one registration per command, each handler
+// answering only its own name - the wrapper's chain-on-miss cascade
+// produces the same fall-through the classic single wrapper had.
+func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
+	if err := api.RegisterCommand("/board", "show the active board, or switch it (/board [name])", nil,
+		func(c context.Context, name, args string) (core.CommandResult, error) {
+			if name != "/board" {
+				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+			}
 			return p.handleCommand(name, args)
-		}
-		if prev != nil {
-			return prev(c, name, args)
-		}
-		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		}); err != nil {
+		return err
 	}
+	return api.RegisterCommand("/boards", "list boards and the current pointer", nil,
+		func(c context.Context, name, args string) (core.CommandResult, error) {
+			if name != "/boards" {
+				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+			}
+			return p.handleCommand(name, args)
+		})
 }
 
 // handleCommand answers /boards (list + pointer) and /board (show or
@@ -247,26 +280,16 @@ func taskActionNames() []string {
 	return names
 }
 
-// legacyTaskNames maps folded actions back to the pre-fold dotted tool
-// names (the alias shim set).
-var legacyTaskNames = map[string]string{
-	"create":       "task.create",
-	"list":         "task.list",
-	"update":       "task.update",
-	"complete":     "task.complete",
-	"comment":      "task.comment",
-	"link_session": "task.link_session",
-}
-
-// Tools returns the board tools. The six dotted verbs are consolidated
-// into one "task" domain tool with an action enum (derived from
-// taskActions) plus a batch operations array; the legacy task.* names
-// stay registered as alias shims until the v0.12 mount migration
-// retires them.
+// Tools returns the board tools. The six dotted verbs were
+// consolidated into one "kanban.task" domain tool with an action enum
+// (derived from taskActions) plus a batch operations array; the
+// registry carries the one namespaced name (no backwards
+// compatibility - the alias shim era closed with the mount migration,
+// whose machine-facing identity is the module.verb namespace pair).
 func (p *ToolProvider) Tools() map[string]core.Tool {
 	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
 	tools := map[string]core.Tool{
-		"task": {
+		"kanban.task": {
 			Description: "One tool for the kanban board: create, list, update, complete, comment on, and link tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
 			Actions:     taskActions,
 			Parameters: map[string]any{
@@ -301,21 +324,6 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 			},
 			Run: p.runTask,
 		},
-	}
-	for _, a := range taskActions {
-		legacy := legacyTaskNames[a.Name]
-		if legacy == "" {
-			continue
-		}
-		action := a.Name
-		tools[legacy] = core.Tool{
-			Description: fmt.Sprintf("%s (alias for task with action %q)", a.Description, action),
-			AliasOf:     "task",
-			Run: func(ctx context.Context, args map[string]any) (string, error) {
-				args["action"] = action
-				return p.runTask(ctx, args)
-			},
-		}
 	}
 	return tools
 }

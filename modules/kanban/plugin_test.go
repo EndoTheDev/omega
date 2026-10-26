@@ -10,18 +10,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
 // mountAt mounts a fresh plugin on an existing home (OMEGA_HOME must
-// point there) - the same wiring the hosts do.
+// point there) - the same wiring the hosts do. Mount dispatches
+// through agent.MountAllAPI (the ExtensionAPI path is kanban's only
+// mount since the v0.12 phase-C1 migration).
 func mountAt(t *testing.T, home string) *Plugin {
 	t.Helper()
 	t.Setenv("OMEGA_HOME", home)
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	t.Cleanup(func() { p.store.Close() })
 	return p
@@ -34,11 +37,78 @@ func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 	t.Setenv("OMEGA_HOME", home)
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
 	p := NewPlugin()
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	t.Cleanup(func() { p.store.Close() })
 	return p, ctx, home
+}
+
+// TestMountWithAPIShape pins the migrated mount's registrations: the
+// seam lands, the one namespaced tool registers, the commands take
+// their table order with a chain that falls through to the miss
+// error, the live panel provider lands with module-qualified, namespaced
+// action ids, and the classic Mount fails loud.
+func TestMountWithAPIShape(t *testing.T) {
+	p, ctx, _ := mountPlugin(t)
+	if ctx.Kanban != p.store {
+		t.Fatal("seam mismatch: ctx.Kanban is not the mounted store")
+	}
+	// the tool registry: exactly the folded namespaced tool
+	names := map[string]int{}
+	for _, tp := range ctx.ToolProviders {
+		for name := range tp.Tools() {
+			names[name]++
+		}
+	}
+	if len(names) != 1 || names["kanban.task"] != 1 {
+		t.Fatalf("tool registry = %v, want {kanban.task: 1}", names)
+	}
+	// the command table and the chain
+	var cmds []string
+	for _, c := range ctx.Commands {
+		cmds = append(cmds, c.Name)
+	}
+	if fmt.Sprint(cmds) != "[/board /boards]" {
+		t.Fatalf("commands = %v", cmds)
+	}
+	res, err := ctx.CommandHandler(context.Background(), "/board", "")
+	if err != nil || !strings.HasPrefix(res.Text, "board:") {
+		t.Fatalf("/board via chain: %q %v", res.Text, err)
+	}
+	if _, err := ctx.CommandHandler(context.Background(), "/boards", ""); err != nil {
+		t.Fatalf("/boards via chain: %v", err)
+	}
+	if _, err := ctx.CommandHandler(context.Background(), "/notes", ""); err == nil ||
+		!strings.Contains(fmt.Sprint(err), "no handler for /notes") {
+		t.Fatalf("foreign command must fall through to the miss error, got %v", err)
+	}
+	// the panels: one live provider, two module-qualified panels with
+	// namespaced action ids
+	if len(ctx.PanelProviders) != 1 {
+		t.Fatalf("panel providers = %d", len(ctx.PanelProviders))
+	}
+	panels := ctx.PanelProviders[0].Panels()
+	if len(panels) != 2 {
+		t.Fatalf("panels = %d, want the task list and the switcher", len(panels))
+	}
+	for _, panel := range panels {
+		if panel.ID != listPanelID && panel.ID != boardsPanelID {
+			t.Fatalf("panel id %q: not the capsule's", panel.ID)
+		}
+		for _, a := range panel.Actions {
+			if a.Module != "kanban" {
+				t.Fatalf("panel %q action %q module = %q", panel.ID, a.ID, a.Module)
+			}
+			if _, _, perr := core.ParseSeamName(a.ID); perr != nil {
+				t.Fatalf("panel %q action id %q is not a namespaced pair: %v", panel.ID, a.ID, perr)
+			}
+		}
+	}
+	// the classic mount path is dead: reaching it fails loud
+	if err := p.Mount(ctx); err == nil {
+		t.Fatal("the retired classic mount must fail loud")
+	}
 }
 
 func TestMountResolvesPointerBoard(t *testing.T) {
@@ -56,7 +126,7 @@ func TestMountResolvesPointerBoard(t *testing.T) {
 	t.Setenv("OMEGA_HOME", home)
 	p2 := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
-	if err := p2.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p2}, ctx, nil); err != nil {
 		t.Fatalf("remount: %v", err)
 	}
 	t.Cleanup(func() { p2.store.Close() })

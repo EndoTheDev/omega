@@ -1,17 +1,19 @@
 # Removing a module (the capsule recipe)
 
 A module is a capsule: everything a card can see it through ships from
-one registration point - the plugin's `Mount`. The seam (`ctx.Kanban`),
+one registration point - the plugin's mount. The seam (`ctx.Kanban`),
 the tools, the slash commands, the canvas panels and their actions are
-all appended in that one function. Delete the module's registration and
-every face vanishes by construction - nothing outside the module holds
-a reference. Kanban is the worked example below (arc 5, the flagship:
-the biggest module - six tools folded into one, two commands, two
-panels, the REST surface).
+all registered from that one function. Delete the module's
+registration and every face vanishes by construction - nothing outside
+the module holds a reference. Kanban is the worked example below (arc
+5, the flagship: the biggest module - six tools folded into one, two
+commands, two panels, the REST surface).
 
 This doc is the whole-module recipe. The pre-canvas TUI/webui recipe
 remains in `docs/tui.md` ("Module removal recipe (both ends)") and
-still applies at its layer.
+still applies at its layer. The mount-style migration recipe (v0.12
+phase C, moving a capsule onto the universal `Register*` surface) is
+its sibling: `docs/migrating-a-module.md`.
 
 ## What the law guarantees
 
@@ -45,17 +47,18 @@ still applies at its layer.
    ```bash
    grep -rn '"kanban"' cmd modules core docs --include='*.go'
    grep -rn 'Module: "kanban"' modules            # module-qualified action ids
-   grep -rn '"task"\|task\.' modules/*/plugin.go  # tool names + alias shims
+   grep -rn '"kanban.task"\|kanban\.' modules/kanban  # tool names (namespaced, Q10)
    grep -rn '"/board"' cmd modules                # the /board, /boards commands
    grep -rn 'kanban' docs                         # route tables, command docs, layer table
    ```
 
-   Expect hits in: the seam mount (`ctx.Kanban` in the module's
-   `Mount`), the REST guards (`http_channel/tasks.go`), the
-   tool registry (the canonical `task` tool plus any `task.*` alias
-   shims), the command chain (`/board`, `/boards` registered through
-   `ctx.Commands`), the canvas panels (`modules/kanban/panel.go`,
-   module-qualified actions), and the docs. Then delete the module
+   Expect hits in: the seam mount (`api.RegisterKanban` in the module's
+   mount), the REST guards (`http_channel/tasks.go`), the tool registry
+   (the namespaced `kanban.task` tool - the legacy `task`/`task.*`
+   names retired with the v0.12 mount migration), the command chain
+   (`/board`, `/boards` registered through `api.RegisterCommand`), the
+   canvas panels (`modules/kanban/panel.go`,
+   namespaced action ids), and the docs. Then delete the module
    directory (`modules/kanban/`) - tests die with it.
 4. **Write the removal proof against the mounts, not the directory.**
    The pattern is `TestKanbanRemovalProof` (`cmd/omega/removal_test.go`
