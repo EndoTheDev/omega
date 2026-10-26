@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -46,17 +47,29 @@ func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"cron"} }
 
-// Requires lists seams that must be mounted before this plugin. The
-// cron runner receives agent, store, memory and logger through
-// CronDeps at Start, and it captures ctx.Notifications there too -
-// declared as the notifications edge (card t_13a2af8a: mount order is
-// declared data, not a comment law about list position).
+// Requires: notifications. The runner's notifier arrives through
+// CronDeps.Ctx at Start (host wiring, post-mount) - the edge is the
+// presence declaration: with notifications toggled off, cron must fail
+// the boot (Q3), not silently drop its finished-things records. No
+// mount-time capture exists (recipe law 4; the capture is at Start,
+// after MountAllAPI returns).
 func (p *Plugin) Requires() []string { return []string{"notifications"} }
 
-// Mount loads crons.yaml and mounts the Runner into ctx.Cron. A load
-// failure (invalid yaml) is a mount error - the operator sees the
-// offending job name and line at startup, not a silent skip.
+// Mount satisfies agent.Plugin (the interface keeps its classic shape
+// until phase F). It is never dispatched: MountWithAPI exists, and
+// APIPlugin wins (the strangler rule). If ever reached it fails loud -
+// cron does not mount the old way, which is the proof of migration.
 func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("cron: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
+}
+
+// MountWithAPI loads crons.yaml and registers every face: the cron
+// seam, the /cron TUI commands (the module-owns-its-surface law, card
+// t_88bb7dcf: a cron plugin left out of buildPlugins takes /cron out
+// of the command table with it), and the jobs panel. A load failure
+// (invalid yaml) is a mount error - the operator sees the offending
+// job name and line at startup, not a silent skip.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	home := p.home
 	if home == "" {
 		home = cronHome()
@@ -73,20 +86,20 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	p.home = home
 	r := NewRunner(cfg, home)
 	p.runner = r
-	ctx.Cron = p.runner
-	// The TUI command rides the module seam: registering here means a
-	// cron plugin left out of buildPlugins takes /cron out of the
-	// command table with it (card t_88bb7dcf).
-	ctx.TUIProviders = append(ctx.TUIProviders, &tui{p: p})
+	if err := api.RegisterCron(r); err != nil {
+		return err
+	}
+	if err := api.RegisterRenderer(&tui{p: p}); err != nil {
+		return err
+	}
 	// Capsule law (arc 6, t_31174f80): the module ships its view-model
-	// with its scheduler. The jobs panel rides the same Mount - an
+	// with its scheduler. The jobs panel rides the same mount - an
 	// unregistered plugin ships no seam, no commands, no panels. The
 	// runner pushes the refreshed panel through this registration on
 	// every hot reload (the module's one internal mutation).
 	p.capsule = newCapsule(r)
 	r.panels = p.capsule
-	ctx.PanelProviders = append(ctx.PanelProviders, p.capsule)
-	return nil
+	return api.RegisterPanelProvider(p.capsule)
 }
 
 // homeFile returns the crons.yaml path inside home. The legacy home-root

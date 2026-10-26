@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -128,12 +129,13 @@ func TestCronCommand(t *testing.T) {
 	}
 }
 
-// TestCronTUIRegistration pins the law: the plugin's Mount registers
-// the provider, so a cron plugin absent from a mount never surfaces
-// /cron in a TUI command table.
+// TestCronTUIRegistration pins the law: the plugin's registration
+// mounts the provider, so a cron plugin absent from a mount never
+// surfaces /cron in a TUI command table.
 func TestCronTUIRegistration(t *testing.T) {
 	ctx := &core.Context{}
-	if err := (NewPluginWithConfig(&Config{}, t.TempDir())).Mount(ctx); err != nil {
+	plugins := []agent.Plugin{notificationsPlugin{}, NewPluginWithConfig(&Config{}, t.TempDir())}
+	if _, err := agent.MountAllAPI(plugins, ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 	var got []string

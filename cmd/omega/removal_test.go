@@ -418,8 +418,8 @@ func TestCronRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canvas 2: %v", err)
 	}
-	if _, err := live.Dispatch(core.ActionCall{Module: "cron", Action: "refresh_jobs"}); err != nil {
-		t.Fatalf("dispatch refresh_jobs: %v", err)
+	if _, err := live.Dispatch(core.ActionCall{Module: "cron", Action: "cron.refresh_jobs"}); err != nil {
+		t.Fatalf("dispatch cron.refresh_jobs: %v", err)
 	}
 	pushed := false
 	for _, d := range deltas {
@@ -430,7 +430,7 @@ func TestCronRemovalProof(t *testing.T) {
 	if !pushed {
 		t.Fatalf("FULL MOUNT: refresh answered but pushed no panel (deltas=%d)", len(deltas))
 	}
-	t.Log("PROOF action-pipe: refresh_jobs answered the listing, the panel rode the spine")
+	t.Log("PROOF action-pipe: cron.refresh_jobs answered the listing, the panel rode the spine")
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
@@ -454,7 +454,7 @@ func TestCronRemovalProof(t *testing.T) {
 	if _, found := cronPanel(noCanvas.Snapshot()); found {
 		t.Fatalf("REMOVED MOUNT: the jobs panel survived the removal: %+v", noCanvas.Snapshot())
 	}
-	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "cron", Action: "refresh_jobs"}); !errors.Is(err, core.ErrUnknownModule) {
+	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "cron", Action: "cron.refresh_jobs"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
 	// the TUI surface: no provider declares /cron

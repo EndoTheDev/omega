@@ -23,8 +23,8 @@ func mountedPanelPlugin(t *testing.T, jobs ...Job) (*core.Context, *Plugin) {
 	home := t.TempDir()
 	p := NewPluginWithConfig(&Config{Jobs: jobs}, home)
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	return ctx, p
 }
