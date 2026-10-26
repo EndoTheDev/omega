@@ -72,6 +72,23 @@ t_old_low
 t_newer_low" ] && ok || bad "T4: priority sort wrong - got: $order"
 rm -f "$T4DB"
 
+# T5 (local + CI): guard bug #6 - brace-list FILES surfaces. A FILES line
+# like `modules/{cron,memory}/` must expand to every member before token
+# extraction (proven live 2026-10-26: it collapsed to a bare modules/
+# token and the guard read a modules/cron collision false-legal). The
+# eval gate admits path chars only; metachar lines pass through raw.
+# Also pins the bash 5.3 =~ shape: the regex must ride an UNQUOTED var -
+# a quoted RHS is literal in 5.3 and matches nothing.
+tok=$(bash -c '
+source <(sed -n "/^tokens_of()/,/^}/p" "'"$GUARD"'")
+printf "FILES: modules/{cron,memory,delegate}/\nplain modules/x/ text\ncmd;bad {a,b}\n" | tokens_of
+' 2>/dev/null)
+[ "$(printf "%s\n" "$tok" | grep -c "^modules/")" = "4" ] \
+	&& ok || bad "T5: brace list emitted $(printf "%s\n" "$tok" | grep -c "^modules/") tokens, expected 4 (got: $tok)"
+printf "%s" "$tok" | grep -q "^modules/cron/" && ok || bad "T5: modules/cron/ missing from expansion"
+printf "%s" "$tok" | grep -q "^modules/delegate/" && ok || bad "T5: modules/delegate/ missing from expansion"
+printf "%s" "$tok" | grep -q "cmd;bad" && bad "T5: metachar line was eval-expanded (gate failed)" || ok
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
