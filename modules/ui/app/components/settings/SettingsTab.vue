@@ -116,6 +116,9 @@
         </template>
       </template>
     </section>
+    <!-- v0.12 E2: the live module toggle list sits under the knob
+         groups, same body scroll (registry introspection rendered). -->
+    <ModuleToggleList />
     </div>
     <!-- save row stays pinned below the scrollable body -->
     <div v-if="dirtyCount > 0" class="settings-save-row">
@@ -159,6 +162,9 @@
     type ThemeMode,
     type UserTheme,  } from "~/composables/omega";
   import { useNarrow } from "~/composables/narrow";
+  // v0.12 E2: the live module toggle list - registry introspection
+  // rendered under the knob groups.
+  import ModuleToggleList from "./ModuleToggleList.vue";
   import type { ToolDisplay } from "~/composables/toolDisplay";
   // card t_d7fd3ad3 item 6: the dock group's client knob rides the shared
   // bottom-width mode ref (the applier in app.vue reads the same signal)
