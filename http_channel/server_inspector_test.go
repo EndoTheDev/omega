@@ -60,7 +60,7 @@ func (l *fakePathLogger) Path() string          { return l.path }
 
 func inspectorServer(t *testing.T) *Server {
 	t.Helper()
-	return NewServer(nil, nil, nil, nil)
+	return NewServer(nil, nil, nil, nil, nil)
 }
 
 func serveInspector(t *testing.T, s *Server) *httptest.Server {

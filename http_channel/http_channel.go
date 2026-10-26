@@ -80,7 +80,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 		return fmt.Errorf("http_channel: no provider configured")
 	}
 	ag := core.NewFromContext(deps.Ctx, core.AgentOptions{})
-	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
+	c.srv = NewServer(ag, nil, deps.Store, deps.Settings, deps.Modules)
 	// Chat panel (chat-last 1/3): bind the plugin's registered capsule
 	// to THIS server before the canvas runtime builds over the
 	// providers, and register it with the canvas seam here - gated on

@@ -21,7 +21,7 @@ import (
 // with alpha and beta created, pointer on main.
 func multiBoardServer(t *testing.T) *httptest2.Server {
 	t.Helper()
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 	home := t.TempDir()
 	for _, name := range []string{"alpha", "beta"} {
 		if err := kanban.CreateBoard(home, name); err != nil {

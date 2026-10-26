@@ -14,7 +14,7 @@ import (
 // kanbanTestServer is a Server with a real board mounted.
 func kanbanTestServer(t *testing.T) *Server {
 	t.Helper()
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 	board, err := kanban.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open board: %v", err)
@@ -120,7 +120,7 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 }
 
 func TestTasksNotConfigured501(t *testing.T) {
-	ts := httptest.NewServer(NewServer(nil, nil, nil, nil).Handler())
+	ts := httptest.NewServer(NewServer(nil, nil, nil, nil, nil).Handler())
 	defer ts.Close()
 	res, _ := http.Get(ts.URL + "/tasks")
 	res.Body.Close()
