@@ -63,8 +63,10 @@ Usage:
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
-  omega update              install the latest stable release (nightlies invisible)
-  omega update --nightly    install the newest -nightly.* prerelease instead
+  omega update              report N versions behind + prompt y/N; nothing
+                            installs without an explicit y (or --yes)
+  omega update --yes        install the latest stable release without a prompt
+  omega update --nightly    check the newest -nightly.* prerelease channel instead
   omega update --rollback   swap back to omega.bak + verify it runs
   omega rollback            same as omega update --rollback
   omega health          check the server at the configured port
@@ -82,6 +84,8 @@ Update flags:
   --nightly             nightly channel: newest prerelease tag
   --allow-downgrade     permit installing a version lower than the running one
                         (a stale mirror must never quietly revert a box)
+  --yes                 auto-accept the install prompt (unattended-safe: a
+                        non-tty stdin or EOF always declines a bare update)
 `
 
 // run parses the subcommand and dispatches. The first non-flag argument

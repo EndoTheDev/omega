@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -21,9 +22,14 @@ import (
 // githubRelease represents the subset of the GitHub releases API
 // response that omega update needs.
 type githubRelease struct {
-	TagName string        `json:"tag_name"`
-	Assets  []githubAsset `json:"assets"`
-	Message string        `json:"message"` // API error message (e.g. "Not Found")
+	TagName string `json:"tag_name"`
+	// Draft and Prerelease channel the behind-count: the stable
+	// channel is exactly what /releases/latest serves (not draft,
+	// not prerelease); nightlies are prereleases.
+	Draft      bool          `json:"draft"`
+	Prerelease bool          `json:"prerelease"`
+	Assets     []githubAsset `json:"assets"`
+	Message    string        `json:"message"` // API error message (e.g. "Not Found")
 }
 
 type githubAsset struct {
@@ -55,6 +61,7 @@ type updateOptions struct {
 	nightly        bool // resolve the newest -nightly.* prerelease instead of the latest stable
 	rollback       bool // swap back to omega.bak
 	allowDowngrade bool // permit installing a version lower than the running one
+	yes            bool // auto-accept the install prompt (unattended-safe install)
 }
 
 // parseUpdateFlags parses the flags accepted after "update" (or after
@@ -70,9 +77,11 @@ func parseUpdateFlags(args []string) (updateOptions, error) {
 			opts.rollback = true
 		case "--allow-downgrade":
 			opts.allowDowngrade = true
+		case "--yes", "-y":
+			opts.yes = true
 		default:
 			if strings.HasPrefix(a, "-") {
-				return opts, fmt.Errorf("unknown update flag %q (known: --nightly, --rollback, --allow-downgrade)", a)
+				return opts, fmt.Errorf("unknown update flag %q (known: --nightly, --rollback, --allow-downgrade, --yes)", a)
 			}
 			// Positional arg: ignore. omega accepts trailing noise
 			// in other subcommands too.
@@ -148,21 +157,27 @@ func fetchStable() (githubRelease, error) {
 	return rel, nil
 }
 
-// fetchNightly resolves the NEWEST -nightly.* prerelease tag from the
-// release list (one page of 100 — the nightly channel tags at most one
-// per day, so the page always covers recent nightlies).
-func fetchNightly() (githubRelease, error) {
+// fetchReleaseList fetches one page of the release list (newest
+// first), the same endpoint fetchNightly resolves the nightly channel
+// from and behindCount measures the version distance over.
+func fetchReleaseList() ([]githubRelease, error) {
 	resp, err := http.Get(githubAPIBase + "/repos/" + repoSlug + "/releases?per_page=100")
 	if err != nil {
-		return githubRelease{}, fmt.Errorf("fetch releases: %w", err)
+		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var rels []githubRelease
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&rels); err != nil {
-		return githubRelease{}, fmt.Errorf("decode releases: %w", err)
+		return nil, fmt.Errorf("decode releases: %w", err)
 	}
+	return rels, nil
+}
 
+// newestNightly picks the NEWEST -nightly.* prerelease tag from a
+// release list (one page of 100 — the nightly channel tags at most one
+// per day, so the page always covers recent nightlies).
+func newestNightly(rels []githubRelease) (githubRelease, error) {
 	newest := -1
 	for i, rel := range rels {
 		if !isNightlyTag(rel.TagName) {
@@ -178,6 +193,16 @@ func fetchNightly() (githubRelease, error) {
 	return rels[newest], nil
 }
 
+// fetchNightly resolves the NEWEST -nightly.* prerelease tag from the
+// release list.
+func fetchNightly() (githubRelease, error) {
+	rels, err := fetchReleaseList()
+	if err != nil {
+		return githubRelease{}, err
+	}
+	return newestNightly(rels)
+}
+
 // compareTagNewer reports whether tag a sorts above tag b, treating an
 // unparseable tag as never-newer so oddball prerelease tags can't win
 // the nightly pick over valid semver tags.
@@ -186,10 +211,83 @@ func compareTagNewer(a, b string) bool {
 	return ok && cmp > 0
 }
 
+// channelTags returns the tags on the requested channel from the
+// release list, in list order (newest first). stable is exactly what
+// /releases/latest serves: not draft, not prerelease. nightly is the
+// -nightly.* tags.
+func channelTags(rels []githubRelease, nightly bool) []string {
+	var tags []string
+	for _, rel := range rels {
+		if nightly {
+			if isNightlyTag(rel.TagName) {
+				tags = append(tags, rel.TagName)
+			}
+			continue
+		}
+		if !rel.Draft && !rel.Prerelease {
+			tags = append(tags, rel.TagName)
+		}
+	}
+	return tags
+}
+
+// countNewer counts the tags strictly newer (semver) than current.
+// The current version's build hash ("-c268097e") is build metadata and
+// is trimmed first, exactly like updateGate. Unparseable tags never
+// count: a tag that cannot be ordered must not claim a version ahead.
+func countNewer(tags []string, current string) int {
+	behind := 0
+	for _, tag := range tags {
+		if cmp, ok := compareVersions(tag, trimBuildHash(current)); ok && cmp > 0 {
+			behind++
+		}
+	}
+	return behind
+}
+
+// stdinIsTerminal reports whether stdin is an interactive terminal
+// (character device). Package var so tests can drive the prompt
+// without a real TTY. Note /dev/null is a character device too —
+// harmless, its read is an immediate EOF, which declines.
+var stdinIsTerminal = func() bool {
+	st, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return st.Mode()&os.ModeCharDevice != 0
+}
+
+// confirmInstall asks prompt as y/N on stderr and reads one line from
+// stdin. Only an explicit y/yes accepts. EOF or any other answer
+// declines. Non-terminal stdin declines without reading, so an
+// unattended bare update never blocks and never replaces the binary —
+// the scripted path is omega update --yes.
+func confirmInstall(prompt string) bool {
+	if !stdinIsTerminal() {
+		fmt.Fprintf(os.Stderr, "%s [y/N] not a terminal: declining\n", prompt)
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return false // EOF (empty answer): default N
+	}
+	ans := strings.ToLower(strings.TrimSpace(line))
+	return ans == "y" || ans == "yes"
+}
+
+// installArchiveFn is the install seam: package var so prompt tests can
+// observe the install decision without replacing the running (test)
+// binary.
+var installArchiveFn = installArchive
+
 // cmdUpdate installs a release. With no flags it resolves the latest
 // stable; --nightly resolves the newest prerelease on the nightly
-// channel; --rollback swaps back to omega.bak. Every install preserves
-// the replaced binary as omega.bak beside it (one generation).
+// channel; --rollback swaps back to omega.bak. A bare run reports how
+// far behind it is and prompts y/N before installing — declined (or
+// non-tty / EOF) it exits with the --yes hint and touches no binary.
+// --yes skips the prompt and installs. Every install preserves the
+// replaced binary as omega.bak beside it (one generation).
 func cmdUpdate(rest []string) error {
 	if base := os.Getenv("OMEGA_UPDATE_API_BASE"); base != "" {
 		githubAPIBase = base // fixture flow for tests; never set in prod
@@ -210,8 +308,12 @@ func cmdUpdate(rest []string) error {
 	fmt.Fprintf(os.Stderr, "omega: checking for latest %s release...\n", channel)
 
 	var rel githubRelease
+	var rels []githubRelease // release list, when one fetch already surfaced it
 	if opts.nightly {
-		rel, err = fetchNightly()
+		rels, err = fetchReleaseList()
+		if err == nil {
+			rel, err = newestNightly(rels)
+		}
 	} else {
 		rel, err = fetchStable()
 	}
@@ -228,8 +330,29 @@ func cmdUpdate(rest []string) error {
 		return nil
 	}
 
+	// How far behind? Version/tag distance over the channel's release
+	// list. A failed list fetch only costs the count line — the offer
+	// is already resolved and gateable.
+	behind := 0
+	if rels != nil {
+		behind = countNewer(channelTags(rels, opts.nightly), omegaVersion)
+	} else if list, listErr := fetchReleaseList(); listErr == nil {
+		behind = countNewer(channelTags(list, opts.nightly), omegaVersion)
+	}
+	if behind > 0 {
+		fmt.Fprintf(os.Stderr, "omega: you are %d versions behind: %s -> %s\n", behind, omegaVersion, rel.TagName)
+	}
+
+	if !opts.yes {
+		prompt := fmt.Sprintf("omega: install %s (%s channel)?", rel.TagName, channel)
+		if !confirmInstall(prompt) {
+			fmt.Fprintln(os.Stderr, "omega: not installing - run omega update --yes to install")
+			return nil // declined: exit 0, binary untouched
+		}
+	}
+
 	fmt.Fprintf(os.Stderr, "omega: updating from %s to %s (%s)...\n", omegaVersion, rel.TagName, channel)
-	return installArchive(rel, opts.nightly)
+	return installArchiveFn(rel, opts.nightly)
 }
 
 // installArchive is the shared download-verify-extract-replace flow for
