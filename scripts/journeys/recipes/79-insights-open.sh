@@ -14,9 +14,11 @@
 #   render   - clicking the tab mounts the usage dashboard (OVERVIEW).
 #   numbers  - the overview carries real data (a session count > 0, a
 #              token figure, the period header).
-#   ranges   - the period switches exist and the header follows a click.
-#   menu     - the MAIN pane's '+' menu still lists insights and FOCUSES
-#              the sidebar instance (no second insights tab appears).
+#   ranges  - the period switches exist and the header follows a click.
+#   plus    - the MAIN pane's '+' MINTS a fresh chat session directly
+#             (Endo amendment 2026-10-26, t_a582486d: the inventory
+#             dropdown is OUT of the '+'; the empty-pane watermark
+#             keeps the dockable inventory).
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 open_app
@@ -79,26 +81,56 @@ done
 [ "$ok" = "1" ] || die "7-days header never rendered (last: [$got])"
 step "ok: period header follows the 7-days switch"
 
-# the MAIN pane's '+' menu coexists (t_d7fd3ad3): it lists insights and
-# clicking it FOCUSES the sidebar instance - no second insights tab
+# the MAIN pane's '+' mints a session (Endo amendment 2026-10-26,
+# t_a582486d): no dropdown, no menu. openChatTab(null) FOCUSES an
+# existing draft chat tab before minting (app.vue: no duplicate
+# new-chat tab), so the mint path needs a draft-free dock: close the
+# boot draft tab, then open the seeded jrn session in the pane, then
+# the '+' must mint a FRESH draft tab. Catches the '+' going dead
+# (the invisible-to-gates family this journey exists for).
+# 1) close the boot draft tab (title "new chat", unsaved)
+draftclosed=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/^new chat$/i.test((t.textContent||"").trim())));if(!hit) return 0;const t=[...hit.querySelectorAll(".dock-tab-title")].findIndex(x=>/^new chat$/i.test((x.textContent||"").trim()));if(t<0) return 0;const x=hit.querySelectorAll(".dock-tab-close")[t];if(!x) return 0;x.click();return 1})()')
+assert_eq "$draftclosed" "1" "boot draft chat tab closed"
+draftgone=0; guard=0
+while [ "$guard" -lt 20 ]; do
+  left=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned"));return hit?[...hit.querySelectorAll(".dock-tab-title")].filter(t=>/^new chat$/i.test((t.textContent||"").trim())).length:0})()')
+  [ "$left" = "0" ] && draftgone=1 && break
+  sleep 0.5; guard=$((guard + 1))
+done
+[ "$draftgone" = "1" ] || die "the draft chat tab never closed"
+# 2) open the seeded jrn session in the (now empty) main pane
+seedrow=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  seedrow=$(jsq '(()=>{const rows=Array.from(document.querySelectorAll(".session-list li"));const r=rows.find(x=>/insights/i.test(x.innerText||""));if(!r) return 0;if(r.classList.contains("bucket-row")) return 0;r.click();return 1})()' 2>&1)
+  [ "$seedrow" = "1" ] && break
+  sleep 1
+done
+assert_eq "$seedrow" "1" "seeded jrn session row clicked (opens in the pane)"
+seedopen=0; guard=0
+while [ "$guard" -lt 20 ]; do
+  inpane=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/insights/i.test(t.textContent||"")));return hit?1:0})()')
+  [ "$inpane" = "1" ] && seedopen=1 && break
+  sleep 0.5; guard=$((guard + 1))
+done
+[ "$seedopen" = "1" ] || die "the seeded session never opened in the pane"
 before=$(jsq 'document.querySelectorAll(".dock-tab-title").length')
 mainJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
- const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/chat/i.test(t.textContent||"")));
- if(!hit) return 0; const plus=hit.querySelector("button.dock-tab-new");
- if(!plus) return 0; plus.click(); return 1})()'
+  const hit=ps.find(p=>!p.classList.contains("pinned")&&p.querySelector("button.dock-tab-new"));
+  if(!hit) return 0; const plus=hit.querySelector("button.dock-tab-new");
+  if(!plus) return 0; plus.click(); return 1})()'
 opened=$(jsq "$mainJS")
-assert_eq "$opened" "1" "main pane '+' menu opens"
-listed=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
- return m&&[...m.querySelectorAll("button")].some(b=>(b.textContent||"").trim()==="Insights")?1:0})()')
-assert_eq "$listed" "1" "'+' menu lists insights (capital I)"
-clicked=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
- const b=[...m.querySelectorAll("button")].find(b=>(b.textContent||"").trim()==="Insights");
- if(!b) return 0; b.click(); return 1})()')
-assert_eq "$clicked" "1" "insights menu item clicked"
-# no duplicate: the singleton focused the sidebar instance, so the tab
-# count is unchanged
-after=$(jsq 'document.querySelectorAll(".dock-tab-title").length')
-[ "$before" = "$after" ] || die "menu open minted a duplicate insights tab ($before -> $after tabs)"
-step "ok: '+' menu focuses the sidebar instance (no duplicate tab)"
+assert_eq "$opened" "1" "main pane '+' clicked"
+i=0; grew=0; got=""
+while [ "$i" -lt 30 ]; do
+  got=$(jsq 'document.querySelectorAll(".dock-tab-title").length')
+  if [ "$got" -gt "$before" ]; then grew=1; break; fi
+  sleep 0.5; i=$((i + 1))
+done
+[ "$grew" = "1" ] || die "'+' minted no new tab (tab count stuck at $before, last [$got])"
+step "ok: '+' minted a fresh tab ($before -> $got tabs)"
+# no menu survives: the dock-menu popup must not render on the click
+menu=$(jsq '(()=>{const m=document.querySelector(".dock-menu");
+  return m?1:0})()')
+assert_eq "$menu" "0" "the '+' opens no inventory menu (Endo amendment)"
 
 step "done: insights opens through the UI with real data"
