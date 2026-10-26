@@ -29,7 +29,10 @@ func (p *Plugin) Description() string {
 func (p *Plugin) ConfigKey() string { return "skills" }
 
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
-func (p *Plugin) Requires() []string { return nil }
+// Requires names the logging seam: Mount runs WarnLegacyShape, which
+// reads ctx.Logger to mirror the legacy-format boot warning into the
+// log file. Logging must mount first or the edge is meaningless.
+func (p *Plugin) Requires() []string { return []string{"logging"} }
 
 // Mount populates ctx.Skills, appends the tool provider, and sets
 // commands + handler. The skills directory is read from ctx.Configs.
@@ -49,6 +52,12 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	ctx.ToolProviders = append(ctx.ToolProviders, sp)
 	ctx.PromptSectioners = append(ctx.PromptSectioners, sp)
 	ctx.Commands = append(ctx.Commands, sp.Commands()...)
+
+	// Legacy-format visibility (card t_5baad951): a folder holding
+	// <name>.md without SKILL.md is invisible to discovery - one boot
+	// warning per hit, never a silent skip. Reading the logging seam
+	// here is why Requires names it.
+	sp.WarnLegacyShape(ctx.Logger)
 
 	// Wire command handler if not already set. Multiple plugins could
 	// provide commands; the last one wins — ponytail: acceptable for now

@@ -1,6 +1,8 @@
 // Package skills implements the skills seam: scanning a directory
-// for <name>/<name>.md skill files, parsing YAML frontmatter, and
-// providing the skills.read tool and /skills slash command.
+// for <name>/SKILL.md skill files (one folder per skill, the file
+// always named SKILL.md, the folder name is the skill name),
+// parsing YAML frontmatter, and providing the skills.read tool and
+// /skills slash command.
 package skills
 
 import (
@@ -41,7 +43,7 @@ func (sp *SkillsProvider) scanDirs(dir string) []string {
 }
 
 // LoadSkills scans the configured directories (shared first, then
-// dir) for <name>/<name>.md skill files and returns them, deduped by
+// dir) for <name>/SKILL.md skill files and returns them, deduped by
 // name with the first (shared) occurrence winning. Missing
 // directories return an empty slice, not an error. If dir is empty,
 // uses the provider's configured Dir.
@@ -140,7 +142,7 @@ func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (str
 	// both resolves to the same winner the prompt listing shows.
 	var lastIsNotExist bool
 	for _, dir := range dirs {
-		skillFile := filepath.Join(dir, name, name+".md")
+		skillFile := filepath.Join(dir, name, "SKILL.md")
 		s, err := loadSkill(skillFile)
 		if err != nil {
 			lastIsNotExist = os.IsNotExist(err)
@@ -195,7 +197,9 @@ func (sp *SkillsProvider) Commands() []core.ExtensionCommand {
 	}
 }
 
-// scanSkills scans a directory for <name>/<name>.md skill files.
+// scanSkills scans a directory for <name>/SKILL.md skill files. The
+// folder name is the skill name (card t_5baad951): frontmatter cannot
+// rename a skill, so the parsed name field (retired) is overridden.
 func scanSkills(dir string) ([]core.Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -209,7 +213,7 @@ func scanSkills(dir string) ([]core.Skill, error) {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		skillFile := filepath.Join(dir, entry.Name(), entry.Name()+".md")
+		skillFile := filepath.Join(dir, entry.Name(), "SKILL.md")
 		s, err := loadSkill(skillFile)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -217,14 +221,63 @@ func scanSkills(dir string) ([]core.Skill, error) {
 			}
 			return nil, fmt.Errorf("%s: %w", entry.Name(), err)
 		}
+		s.Name = entry.Name()
 		s.Dir = filepath.Join(dir, entry.Name())
 		skills = append(skills, s)
 	}
 	return skills, nil
 }
 
-// loadSkill reads a single skill .md file and parses its YAML
-// frontmatter. The frontmatter is delimited by --- lines.
+// WarnLegacyShape reports skill folders still in the retired format:
+// a directory holding <name>.md with no SKILL.md. Such a folder is
+// invisible to discovery (discovery reads SKILL.md only), and silent
+// loss is how the old <name>.md bug hid - so every legacy folder gets
+// one explicit boot warning naming the skill. The warning goes to
+// stderr unconditionally (logging may be disabled, a NopLogger
+// discards everything) and into the log when a logger is mounted.
+// Boot-only: runtime scans skip the legacy shape, this once-per-boot
+// scan is the visibility contract (card t_5baad951). Returns the
+// warned skill names. No auto-migration - a rename is the fix.
+func (sp *SkillsProvider) WarnLegacyShape(logger core.LoggerProvider) []string {
+	var warned []string
+	for _, dir := range sp.scanDirs(sp.Dir) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			// Best-effort boot diagnostic; the runtime scan surfaces
+			// real read errors (LoadSkills returns them).
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			if fileExists(filepath.Join(dir, entry.Name(), "SKILL.md")) {
+				continue
+			}
+			legacy := filepath.Join(dir, entry.Name(), entry.Name()+".md")
+			if !fileExists(legacy) {
+				continue
+			}
+			msg := fmt.Sprintf("skills: skill %q uses the retired format (%s) - rename the file to SKILL.md (the folder name is the skill name)",
+				entry.Name(), legacy)
+			fmt.Fprintln(os.Stderr, msg)
+			if logger != nil {
+				logger.Printf("%s", msg)
+			}
+			warned = append(warned, entry.Name())
+		}
+	}
+	return warned
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// loadSkill reads a single SKILL.md file and parses its YAML
+// frontmatter. The frontmatter is delimited by --- lines; only the
+// description is read from it - the skill name is the folder name.
 func loadSkill(path string) (core.Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -249,10 +302,7 @@ func loadSkill(path string) (core.Skill, error) {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
-		switch key {
-		case "name":
-			s.Name = val
-		case "description":
+		if key == "description" {
 			s.Description = val
 		}
 	}

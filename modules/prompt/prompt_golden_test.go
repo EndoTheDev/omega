@@ -10,6 +10,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/memory"
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/tools"
@@ -31,11 +32,13 @@ func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Cont
 	t.Helper()
 	ctx := &core.Context{
 		Configs: map[string]any{
-			"memory": memCfg,
-			"skills": skills.Config{Dir: skillDir},
+			"memory":  memCfg,
+			"skills":  skills.Config{Dir: skillDir},
+			"logging": logging.Config{Enabled: false},
 		},
 	}
 	plugins := []agent.Plugin{
+		logging.NewPlugin(),
 		memory.NewPlugin(),
 		skills.NewPlugin(),
 		tools.NewPlugin(),
@@ -59,7 +62,7 @@ func seedSkills(t *testing.T, dir string) {
 			t.Fatal(err)
 		}
 		content := "---\nname: " + name + "\ndescription: " + desc + "\n---\n\nBody.\n"
-		if err := os.WriteFile(filepath.Join(skillDir, name+".md"), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
