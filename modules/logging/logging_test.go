@@ -162,8 +162,8 @@ func TestPluginMount(t *testing.T) {
 
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"logging": cfg}}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Logger == nil {
 		t.Fatal("ctx.Logger is nil after Mount")
@@ -177,8 +177,8 @@ func TestPluginMountDisabled(t *testing.T) {
 
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"logging": cfg}}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Logger == nil {
 		t.Fatal("ctx.Logger is nil after Mount")

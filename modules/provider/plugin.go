@@ -6,21 +6,15 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/ai"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin is the in-process adapter for the provider extension.
 // It reads provider configuration from Context.Configs and mounts
-// a Provider into the provider seam.
-type Plugin struct {
-	// prevHandler is the command chain before Mount's /model wrapper -
-	// the value Dismount restores (the E1 dismount proof).
-	prevHandler commandHandler
-}
-
-// commandHandler is the CommandHandler stack shape the classic mounts
-// chain onto.
-type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
+// through the ExtensionAPI exclusively (v0.12 phase F): the provider
+// seam plus the /model, /models, /thinking and /provider commands.
+type Plugin struct{}
 
 // Name returns the plugin name shown in the /extensions listing.
 func (Plugin) Name() string { return "provider" }
@@ -30,7 +24,6 @@ func (Plugin) Description() string {
 	return "model provider: LLM transport (Ollama, OpenAI, Anthropic), streaming and model listing"
 }
 
-// Provides lists the seam names this plugin mounts.
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "provider" }
@@ -40,51 +33,52 @@ func (Plugin) Provides() []string { return []string{"provider"} }
 // Requires lists seam names that must be mounted before this plugin.
 func (Plugin) Requires() []string { return nil }
 
-// Mount reads the provider config from Context.Configs and sets
-// ctx.Provider. If config is missing, the provider is created with
-// zero values (type defaults to ollama).
+// Mount is the retired classic body (v0.12 phase F). Fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("provider: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
+}
+
+// MountWithAPI implements agent.APIPlugin. Reads the provider config
+// from Context.Configs (missing config: zero values, type defaults to
+// ollama) and registers the provider seam plus the four commands.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["provider"].(Config); ok {
 		cfg = c
 	}
 	prov := NewProvider(cfg.Type, cfg.ModelName, cfg.Host, cfg.APIKey)
-	ctx.Provider = prov
-
-	// Register /model, /models, /thinking, and /provider commands.
-	ctx.Commands = append(ctx.Commands,
-		core.ExtensionCommand{Name: "/model", Description: "switch the model (line # from /models, or name)"},
-		core.ExtensionCommand{Name: "/models", Description: "list available models"},
-		core.ExtensionCommand{Name: "/thinking", Description: "set or cycle thinking level [none|off|on|minimal|low|medium|high|extra high|max|ultra]"},
-		core.ExtensionCommand{Name: "/provider", Description: "show current provider and model"},
-	)
-
-	// Wire command handler, chaining after any previous handler.
-	prev := ctx.CommandHandler
-	p.prevHandler = prev
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		result, err := p.handleCommand(prov, name, args)
-		if err == nil {
-			return result, nil
-		}
-		if prev != nil {
-			return prev(c, name, args)
-		}
-		return result, err
+	if err := api.RegisterProvider(prov); err != nil {
+		return err
 	}
-
+	commands := []struct {
+		name, description string
+	}{
+		{"/model", "switch the model (line # from /models, or name)"},
+		{"/models", "list available models"},
+		{"/thinking", "set or cycle thinking level [none|off|on|minimal|low|medium|high|extra high|max|ultra]"},
+		{"/provider", "show current provider and model"},
+	}
+	for _, c := range commands {
+		if err := api.RegisterCommand(c.name, c.description, nil,
+			func(ctx context.Context, name, args string) (core.CommandResult, error) {
+				return p.handleCommand(prov, name, args)
+			}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// handleCommand handles /model and /provider commands.
+// handleCommand handles the /model, /models, /thinking and /provider
+// commands. The /model switch mutates the base provider in place
+// (single user, applied outside a run); runs themselves carry their
+// own WithModel copy.
 func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/model":
 		if args == "" {
 			return core.CommandResult{Text: "usage: /model <name>"}, nil
 		}
-		// Base-provider model set (single user, applied outside a run);
-		// runs themselves carry their own WithModel copy.
 		*prov = *prov.WithModel(args).(*Provider)
 		return core.CommandResult{
 			Text: "switched to " + args,
@@ -160,22 +154,8 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 			Text: fmt.Sprintf("provider: %s\nmodel: %s", prov.typ, prov.ModelName()),
 		}, nil
 	}
-	return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 }
 
-// Dismount unmounts the provider seam, its four commands and the
-// command chain (the E1 dismount proof: reverse exactly the Mount).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	ctx.Provider = nil
-	out := ctx.Commands[:0]
-	for _, c := range ctx.Commands {
-		switch c.Name {
-		case "/model", "/models", "/thinking", "/provider":
-			continue
-		}
-		out = append(out, c)
-	}
-	ctx.Commands = out
-	ctx.CommandHandler = p.prevHandler
-	return nil
-}
+// NewPlugin returns a provider Plugin instance.
+func NewPlugin() *Plugin { return &Plugin{} }

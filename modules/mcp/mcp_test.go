@@ -42,8 +42,8 @@ func TestEmptyBridge(t *testing.T) {
 
 	p := NewPlugin(b)
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
@@ -71,8 +71,8 @@ func TestPluginMetadata(t *testing.T) {
 func TestNilBridgePlugin(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount with nil bridge: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount with nil bridge: %v", err)
 	}
 	if len(ctx.ToolProviders) != 0 {
 		t.Fatalf("nil bridge should mount 0 providers, got %d", len(ctx.ToolProviders))
@@ -83,8 +83,8 @@ func TestNilBridgePlugin(t *testing.T) {
 // through a fake MCP server connection.
 func TestBridgeWithFakeServer(t *testing.T) {
 	b := &Bridge{
-		servers: make(map[string]MCPConn),
-		toolMap: make(map[string]toolMapping),
+		servers:  make(map[string]MCPConn),
+		toolMap:  make(map[string]toolMapping),
 		toolDefs: make(map[string]mcpTool),
 	}
 

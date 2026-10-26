@@ -1,11 +1,16 @@
 package agent_loop
 
 import (
+	"fmt"
+
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the loop into omega's plugin system. It provides
-// the "loop" seam — the agent's turn-based conversation loop.
+// the "loop" seam — the agent's turn-based conversation loop. It
+// mounts through the ExtensionAPI exclusively (v0.12 phase F - the
+// universal registration surface is the only mount path).
 type Plugin struct{}
 
 // NewPlugin creates an agent-loop plugin instance.
@@ -25,15 +30,15 @@ func (p *Plugin) ConfigKey() string { return "" }
 func (p *Plugin) Provides() []string { return []string{"loop"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount sets ctx.Loop to the default loop implementation.
+// Mount is the retired classic body: the capsule mounts through the
+// ExtensionAPI only (agent.APIPlugin wins the strangler dispatch).
+// Reaching it means the registration surface was bypassed - fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
-	ctx.Loop = Loop{}
-	return nil
+	return fmt.Errorf("agent-loop: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
 }
 
-// Dismount unmounts the loop seam (the E1 dismount proof: the module
-// reverses exactly what it mounted).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	ctx.Loop = nil
-	return nil
+// MountWithAPI implements agent.APIPlugin: the loop seam, one
+// registration.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	return api.RegisterLoop(Loop{})
 }

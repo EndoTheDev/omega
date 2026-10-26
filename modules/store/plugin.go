@@ -11,18 +11,10 @@ import (
 )
 
 // Plugin implements agent.Plugin for the store seam. It opens the
-// SQLite database from config and mounts it as the StoreProvider,
-// plus contributes the sessions.search tool and session commands.
-type Plugin struct {
-	// mountState carries what Dismount must reverse (the E1 dismount
-	// proof): the search tool provider and the prior command chain.
-	search      *searchToolProvider
-	prevHandler commandHandler
-}
-
-// commandHandler is the CommandHandler stack shape the classic mounts
-// chain onto.
-type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
+// SQLite database from config and mounts it through the ExtensionAPI
+// exclusively (v0.12 phase F) - the StoreProvider seam, the
+// sessions.search tool and the session commands.
+type Plugin struct{}
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
@@ -41,9 +33,17 @@ func (p *Plugin) ConfigKey() string { return "store" }
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount opens the store from config and populates ctx.Store + a
-// sessions.search tool provider + session slash commands.
+// Mount is the retired classic body (v0.12 phase F). Fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("store: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
+}
+
+// MountWithAPI implements agent.APIPlugin. Opens the store from
+// config, registers the store seam, the sessions.search tool provider
+// and the eleven session commands. The store connection is host-owned
+// at dismount - the journal unmounts the registrations, never the
+// data (disable never deletes data).
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["store"].(Config); ok {
 		cfg = c
@@ -62,115 +62,109 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	if err != nil {
 		return err
 	}
-	ctx.Store = s
-	p.search = &searchToolProvider{store: s}
-	ctx.ToolProviders = append(ctx.ToolProviders, p.search)
-
-	// Register session commands.
-	ctx.Commands = append(ctx.Commands,
-		core.ExtensionCommand{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
-		core.ExtensionCommand{Name: "/agents", Description: "list registered agent profiles"},
-		core.ExtensionCommand{Name: "/agent", Description: "show one agent profile's detail (/agent <name>)"},
-		core.ExtensionCommand{Name: "/tree", Description: "show session tree with nesting and message counts"},
-		core.ExtensionCommand{Name: "/search", Description: "search past session messages by keyword"},
-		core.ExtensionCommand{Name: "/insights", Description: "show cross-session usage analytics"},
-		core.ExtensionCommand{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence, --agent <name> to bind it)"},
-		core.ExtensionCommand{Name: "/resume", Description: "resume a session by #, id, or label"},
-		core.ExtensionCommand{Name: "/branch", Description: "branch a new session from the current (or given) one"},
-		core.ExtensionCommand{Name: "/label", Description: "set a label on the current session (no text clears it)"},
-		core.ExtensionCommand{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
-	)
-
-	// Wire command handler, chaining after any previous handler.
-	p.prevHandler = ctx.CommandHandler
-	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		switch name {
-		case "/sessions":
-			return HandleSessionsCommand(c, s, args)
-		case "/agents":
-			return HandleAgentsCommand(c, s)
-		case "/agent":
-			// TUI passes the raw args; the agent name is the first word.
-			return HandleAgentDetailCommand(c, s, args)
-		case "/tree":
-			return HandleTreeCommand(c, s)
-		case "/search":
-			return HandleSearchCommand(c, s, args)
-		case "/insights":
-			return HandleInsightsCommand(c, s, args)
-		case "/new":
-			return HandleNewCommand(args)
-		case "/resume":
-			return HandleResumeCommand(c, s, args)
-		case "/branch":
-			// TUI passes "parentID rest" — extract the parent ID.
-			parts := strings.SplitN(args, " ", 2)
-			parentID := parts[0]
-			rest := ""
-			if len(parts) > 1 {
-				rest = parts[1]
+	search := &searchToolProvider{store: s}
+	steps := []func() error{
+		func() error { return api.RegisterStore(s) },
+		func() error {
+			for name, t := range search.Tools() {
+				if err := api.RegisterTool(name, t); err != nil {
+					return err
+				}
 			}
-			return HandleBranchCommand(c, s, parentID, rest)
-		case "/label":
-			// TUI passes "sessionID label" — extract the session ID.
-			parts := strings.SplitN(args, " ", 2)
-			sessionID := parts[0]
-			rest := ""
-			if len(parts) > 1 {
-				rest = parts[1]
+			return nil
+		},
+		func() error {
+			for _, c := range sessionCommands() {
+				cmd := c
+				if err := api.RegisterCommand(cmd.Name, cmd.Description, cmd.Args,
+					func(c context.Context, name, args string) (core.CommandResult, error) {
+						return p.handleSessionCommand(s, c, name, args)
+					}); err != nil {
+					return err
+				}
 			}
-			return HandleLabelCommand(c, s, sessionID, rest)
-		case "/export":
-			// TUI passes "sessionID path" — extract the session ID.
-			parts := strings.SplitN(args, " ", 2)
-			sessionID := parts[0]
-			rest := ""
-			if len(parts) > 1 {
-				rest = parts[1]
-			}
-			return HandleExportCommand(c, s, sessionID, rest)
-		}
-		if prev != nil {
-			return prev(c, name, args)
-		}
-		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+			return nil
+		},
 	}
-
+	for _, step := range steps {
+		if err := step(); err != nil {
+			_ = s.Close() // a half-registered store would leak the db file
+			return err
+		}
+	}
 	return nil
+}
+
+// sessionCommands returns the eleven session commands in registration
+// order.
+func sessionCommands() []core.ExtensionCommand {
+	return []core.ExtensionCommand{
+		{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
+		{Name: "/agents", Description: "list registered agent profiles"},
+		{Name: "/agent", Description: "show one agent profile's detail (/agent <name>)"},
+		{Name: "/tree", Description: "show session tree with nesting and message counts"},
+		{Name: "/search", Description: "search past session messages by keyword"},
+		{Name: "/insights", Description: "show cross-session usage analytics"},
+		{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence, --agent <name> to bind it)"},
+		{Name: "/resume", Description: "resume a session by #, id, or label"},
+		{Name: "/branch", Description: "branch a new session from the current (or given) one"},
+		{Name: "/label", Description: "set a label on the current session (no text clears it)"},
+		{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
+	}
+}
+
+// handleSessionCommand dispatches one session command (the classic
+// wrapper's switch, one command at a time - the api chain-on-miss
+// wrapper produces the same fall-through).
+func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args string) (core.CommandResult, error) {
+	switch name {
+	case "/sessions":
+		return HandleSessionsCommand(c, s, args)
+	case "/agents":
+		return HandleAgentsCommand(c, s)
+	case "/agent":
+		// TUI passes the raw args; the agent name is the first word.
+		return HandleAgentDetailCommand(c, s, args)
+	case "/tree":
+		return HandleTreeCommand(c, s)
+	case "/search":
+		return HandleSearchCommand(c, s, args)
+	case "/insights":
+		return HandleInsightsCommand(c, s, args)
+	case "/new":
+		return HandleNewCommand(args)
+	case "/resume":
+		return HandleResumeCommand(c, s, args)
+	case "/branch":
+		// TUI passes "parentID rest" — extract the parent ID.
+		parts := strings.SplitN(args, " ", 2)
+		parentID := parts[0]
+		rest := ""
+		if len(parts) > 1 {
+			rest = parts[1]
+		}
+		return HandleBranchCommand(c, s, parentID, rest)
+	case "/label":
+		// TUI passes "sessionID label" — extract the session ID.
+		parts := strings.SplitN(args, " ", 2)
+		sessionID := parts[0]
+		rest := ""
+		if len(parts) > 1 {
+			rest = parts[1]
+		}
+		return HandleLabelCommand(c, s, sessionID, rest)
+	case "/export":
+		// TUI passes "sessionID path" — extract the session ID.
+		parts := strings.SplitN(args, " ", 2)
+		sessionID := parts[0]
+		rest := ""
+		if len(parts) > 1 {
+			rest = parts[1]
+		}
+		return HandleExportCommand(c, s, sessionID, rest)
+	}
+	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 }
 
 // NewPlugin returns a store Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
-
-// Dismount unmounts the store seam, the search tool provider, the
-// eleven session commands and the command chain (the E1 dismount
-// proof). The store connection itself is host-owned - the host opened
-// it and closes it - Dismount never closes data under it (disable
-// never deletes data).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	ctx.Store = nil
-	tools := ctx.ToolProviders[:0]
-	for _, tp := range ctx.ToolProviders {
-		if tp == p.search {
-			continue
-		}
-		tools = append(tools, tp)
-	}
-	ctx.ToolProviders = tools
-	names := map[string]bool{
-		"/sessions": true, "/agents": true, "/agent": true, "/tree": true,
-		"/search": true, "/insights": true, "/new": true, "/resume": true,
-		"/branch": true, "/label": true, "/export": true,
-	}
-	cmds := ctx.Commands[:0]
-	for _, c := range ctx.Commands {
-		if names[c.Name] {
-			continue
-		}
-		cmds = append(cmds, c)
-	}
-	ctx.Commands = cmds
-	ctx.CommandHandler = p.prevHandler
-	return nil
-}

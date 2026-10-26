@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
@@ -405,8 +406,8 @@ func TestInitDefaults(t *testing.T) {
 func TestProviderModelCommand(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 
 	result, err := ctx.CommandHandler(context.Background(), "/model", "qwen2.5")
@@ -434,7 +435,9 @@ func TestProviderModelCommand(t *testing.T) {
 func TestProviderModelNoArgs(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
-	p.Mount(ctx)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
 
 	result, err := ctx.CommandHandler(context.Background(), "/model", "")
 	if err != nil {
@@ -449,7 +452,9 @@ func TestProviderModelNoArgs(t *testing.T) {
 func TestProviderInfoCommand(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
-	p.Mount(ctx)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
 
 	result, err := ctx.CommandHandler(context.Background(), "/provider", "")
 	if err != nil {

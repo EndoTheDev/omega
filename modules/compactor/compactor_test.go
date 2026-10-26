@@ -110,8 +110,8 @@ func TestCompactCommand(t *testing.T) {
 	ctx := &core.Context{}
 	// Compactor requires provider seam — mount a fake provider.
 	ctx.Provider = ai.NewFakeProvider("test")
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: p, seam: "provider"}, p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
 	}
 
 	// Verify /compact command was registered.
@@ -135,3 +135,23 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatalf("expected run_compact action, got %+v", result.Actions)
 	}
 }
+
+// stubProvides satisfies a Requires edge in the mount set without
+// registering anything: the seam it names is already populated on the
+// Context the test built (a fake provider, a logging stub).
+type stubProvides struct {
+	plugin agent.Plugin
+	seam   string
+}
+
+func (s stubProvides) Name() string       { return "stub-" + s.seam }
+func (s stubProvides) Provides() []string { return []string{s.seam} }
+func (s stubProvides) Requires() []string { return nil }
+func (s stubProvides) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	_ = s.plugin
+	return nil
+}
+
+// Mount satisfies the interface until phase F retires it; the stub
+// never registers and is never dispatched (the API mount wins).
+func (s stubProvides) Mount(ctx *core.Context) error { return nil }

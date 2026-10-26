@@ -4,19 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Plugin adapts the compactor to the agent.Plugin interface.
-type Plugin struct {
-	// prevHandler is the command chain before Mount's /compact
-	// wrapper - the value Dismount restores (the E1 dismount proof).
-	prevHandler commandHandler
-}
-
-// commandHandler is the CommandHandler stack shape the classic mounts
-// chain onto.
-type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
+// Plugin adapts the compactor to the agent.Plugin interface. It
+// mounts through the ExtensionAPI exclusively (v0.12 phase F).
+type Plugin struct{}
 
 func (p *Plugin) Name() string { return "compactor" }
 
@@ -32,10 +26,16 @@ func (p *Plugin) ConfigKey() string { return "compactor" }
 func (p *Plugin) Provides() []string { return []string{"compactor"} }
 func (p *Plugin) Requires() []string { return []string{"provider"} }
 
-// Mount reads CompactionConfig from ctx.Configs, wires the provider
-// from the already-mounted provider slot, sets ctx.Compactor, and
-// registers the /compact command.
+// Mount is the retired classic body (v0.12 phase F). Fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("compactor: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
+}
+
+// MountWithAPI implements agent.APIPlugin. Reads CompactionConfig from
+// ctx.Configs, wires the provider from the already-mounted provider
+// slot (the Requires edge orders the read), registers the compactor
+// seam and the /compact command.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	var compactor *Compactor
 	if cfg, ok := ctx.Configs["compactor"].(core.CompactionConfig); ok {
 		compactor = &Compactor{
@@ -60,46 +60,26 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 			provider: ctx.Provider,
 		}
 	}
-	ctx.Compactor = compactor
-
-	// Register /compact command.
-	ctx.Commands = append(ctx.Commands,
-		core.ExtensionCommand{Name: "/compact", Description: "summarize conversation history"},
-	)
-
-	// Wire command handler, chaining after any previous handler.
-	p.prevHandler = ctx.CommandHandler
-	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		if name == "/compact" {
-			return core.CommandResult{
-				Actions: []core.CmdAction{{Type: "run_compact"}},
-			}, nil
-		}
-		if prev != nil {
-			return prev(c, name, args)
-		}
-		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	// /compact stays an extension command (it returns CommandResult
+	// with a display-mode action the shell interprets). Registration
+	// order mirrors the classic body: seam first, command second - the
+	// api chain-on-miss wrapper produces the same fall-through.
+	if err := api.RegisterCompactor(compactor); err != nil {
+		return err
 	}
+	return api.RegisterCommand("/compact", "summarize conversation history", nil, p.handleCompact)
+}
 
-	return nil
+// handleCompact answers the /compact command (the command body moved
+// here so the registration and the behavior sit in one file).
+func (p *Plugin) handleCompact(ctx context.Context, name, args string) (core.CommandResult, error) {
+	if name != "/compact" {
+		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	}
+	return core.CommandResult{
+		Actions: []core.CmdAction{{Type: "run_compact"}},
+	}, nil
 }
 
 // NewPlugin creates a compactor plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
-
-// Dismount unmounts the compactor seam, the /compact command and the
-// command chain (the E1 dismount proof).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	ctx.Compactor = nil
-	out := ctx.Commands[:0]
-	for _, c := range ctx.Commands {
-		if c.Name == "/compact" {
-			continue
-		}
-		out = append(out, c)
-	}
-	ctx.Commands = out
-	ctx.CommandHandler = p.prevHandler
-	return nil
-}

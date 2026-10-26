@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
 )
@@ -137,7 +138,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 
 	plugin := &Plugin{}
 	// Auto: config 0 -> probe runs, window cached.
-	if err := plugin.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: plugin, seam: "provider"}, plugin}, ctx, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	c, ok := ctx.Compactor.(*Compactor)
@@ -151,7 +152,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 	// Manual: config > 0 -> no probe at all.
 	p2 := &contextWindowProvider{info: ai.ModelInfo{ContextWindow: 999999}}
 	ctx2 := &core.Context{Provider: p2, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 32768}}}
-	if err := (&Plugin{}).Mount(ctx2); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: &Plugin{}, seam: "provider"}, &Plugin{}}, ctx2, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	c2 := ctx2.Compactor.(*Compactor)
@@ -163,7 +164,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 func TestMountProbeFailureStillBoots(t *testing.T) {
 	p := &contextWindowProvider{err: context.DeadlineExceeded}
 	ctx := &core.Context{Provider: p, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 0}}}
-	if err := (&Plugin{}).Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: &Plugin{}, seam: "provider"}, &Plugin{}}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount must not fail on probe error: %v", err)
 	}
 	c := ctx.Compactor.(*Compactor)

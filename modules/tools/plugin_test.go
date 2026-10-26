@@ -192,7 +192,7 @@ func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
 
 func TestHandleToolsCommandNoArgs(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "")
+	res, err := handleToolsCommand(ctx, "/tools", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestHandleToolsCommandNoArgs(t *testing.T) {
 
 func TestHandleToolsCommandList(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "list")
+	res, err := handleToolsCommand(ctx, "/tools", "list")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestHandleToolsCommandListWithTools(t *testing.T) {
 			},
 		},
 	}
-	res, err := handleToolsCommand(ctx, "list")
+	res, err := handleToolsCommand(ctx, "/tools", "list")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestHandleToolsCommandListWithTools(t *testing.T) {
 
 func TestHandleToolsCommandOn(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "on")
+	res, err := handleToolsCommand(ctx, "/tools", "on")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestHandleToolsCommandOn(t *testing.T) {
 
 func TestHandleToolsCommandExpanded(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "expanded")
+	res, err := handleToolsCommand(ctx, "/tools", "expanded")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestHandleToolsCommandExpanded(t *testing.T) {
 
 func TestHandleToolsCommandOff(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "off")
+	res, err := handleToolsCommand(ctx, "/tools", "off")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestHandleToolsCommandOff(t *testing.T) {
 
 func TestHandleToolsCommandCollapsed(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "collapsed")
+	res, err := handleToolsCommand(ctx, "/tools", "collapsed")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestHandleToolsCommandCollapsed(t *testing.T) {
 
 func TestHandleToolsCommandAuto(t *testing.T) {
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "auto")
+	res, err := handleToolsCommand(ctx, "/tools", "auto")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestHandleToolsCommandAuto(t *testing.T) {
 
 func TestHandleToolsCommandInvalid(t *testing.T) {
 	ctx := &core.Context{}
-	_, err := handleToolsCommand(ctx, "bogus")
+	_, err := handleToolsCommand(ctx, "/tools", "bogus")
 	if err == nil {
 		t.Fatal("expected error for invalid arg, got nil")
 	}
@@ -339,7 +339,7 @@ func TestHandleToolsCommandInvalid(t *testing.T) {
 func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 	// Leading/trailing whitespace should be trimmed, so "  list  " → listTools.
 	ctx := &core.Context{}
-	res, err := handleToolsCommand(ctx, "  list  ")
+	res, err := handleToolsCommand(ctx, "/tools", "  list  ")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

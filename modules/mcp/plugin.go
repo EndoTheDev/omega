@@ -1,12 +1,16 @@
 package mcp
 
 import (
+	"fmt"
+
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the MCP bridge into omega's plugin system. It provides
 // the "tools" seam (additive) — discovered MCP server tools are merged
-// with other tool providers by the agent loop.
+// with other tool providers by the agent loop. It mounts through the
+// ExtensionAPI exclusively (v0.12 phase F).
 type Plugin struct {
 	bridge *Bridge
 }
@@ -48,27 +52,39 @@ func (p *Plugin) Provides() []string { return []string{"tools"} }
 // MCP has no dependencies on other plugins.
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount populates the Context. Appends a ToolProvider that wraps
-// the bridge's discovered MCP tools as core.Tool values.
-//
-// This Mount is the module's whole surface (arc 6 capsule, card
-// t_cf6b7795): the bridge tool provider - every discovered MCP server
-// tool, server-qualified - ships from here, and the module ships
-// nothing else - no command, no REST route, no skills, no canvas panel
-// (nothing rendered mcp before the arc). The env/mcp.yaml config load
-// lives in the module too; buildPlugins' construction falls back to a
-// no-op bridge on config failure. Removal proof:
-// TestMCPRemovalProof (cmd/omega/removal_test.go).
+// Mount is the retired classic body (v0.12 phase F). Fail loud.
 func (p *Plugin) Mount(ctx *core.Context) error {
-	if p.bridge == nil {
-		return nil
-	}
-
-	ctx.ToolProviders = append(ctx.ToolProviders, bridgeToolProvider{p.bridge})
-	return nil
+	return fmt.Errorf("mcp: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
 }
 
-// bridgeToolProvider adapts Bridge to the core.ToolProvider interface.
+// MountWithAPI implements agent.APIPlugin. This Mount is the module's
+// whole surface (arc 6 capsule, card t_cf6b7795): the bridge tool
+// provider - every discovered MCP server tool, server-qualified -
+// ships from here, and the module ships nothing else - no command, no
+// REST route, no skills, no canvas panel. The env/mcp.yaml config load
+// lives in the module too; the host's construction falls back to a
+// no-op bridge on config failure. Removal proof:
+// TestMCPRemovalProof (cmd/omega/removal_test.go).
+//
+// The names are runtime data (the mcp ruling, card t_6c0375b5):
+// server-qualified external names ("proof.echo") live beneath the
+// "mcp." namespace guard claimed ONCE here - they never pass the
+// per-name namespace claim, so the one-dot law stays unweakened while
+// externally-sourced server tools surface under their natural names.
+// Binary purity: removing the module removes the guard and all of
+// them.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	if p.bridge == nil {
+		// No servers configured: claim nothing, register nothing -
+		// the no-op shape the classic nil bridge had.
+		return nil
+	}
+	return api.RegisterRuntimeTools(bridgeToolProvider{p.bridge})
+}
+
+// bridgeToolProvider adapts Bridge to the core.ToolMap shape. The map
+// is assembled at registration; the provider it lands in re-reads the
+// bridge's discovered tools on every Tools() call.
 type bridgeToolProvider struct {
 	bridge *Bridge
 }
@@ -91,17 +107,5 @@ func (b bridgeToolProvider) Tools() map[string]core.Tool {
 // omega.json disable list may name it.
 func (p *Plugin) Toggleable() bool { return true }
 
-// Dismount unmounts the bridge tool provider (the E1 dismount proof).
-// The bridge process is the caller's concern - the plugin that opened
-// it owns closing it.
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	tools := ctx.ToolProviders[:0]
-	for _, tp := range ctx.ToolProviders {
-		if _, is := tp.(bridgeToolProvider); is {
-			continue
-		}
-		tools = append(tools, tp)
-	}
-	ctx.ToolProviders = tools
-	return nil
-}
+// Compile-time assertion that the plugin is a Plugin.
+var _ agent.Plugin = (*Plugin)(nil)

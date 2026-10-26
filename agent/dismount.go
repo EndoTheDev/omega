@@ -80,7 +80,7 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 	beforeInfos := len(target.Infos)
 	if ap, ok := p.(APIPlugin); ok {
 		j.apiMounted = true
-		api := &ExtensionAPI{module: p.Name(), ctx: target, reg: reg, j: j, live: !remount}
+		api := &ExtensionAPI{module: p.Name(), ctx: target, reg: reg, j: j, live: !remount, builtin: isBuiltin(p)}
 		if err := ap.MountWithAPI(target, api); err != nil {
 			return j, fmt.Errorf("mount %q: %w", p.Name(), err)
 		}

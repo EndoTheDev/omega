@@ -9,7 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Plugin implements agent.Plugin for the TUI frontend.
+// Plugin implements agent.Plugin for the TUI frontend. It mounts
+// through the ExtensionAPI exclusively (v0.12 phase F).
 type Plugin struct{}
 
 var _ agent.Plugin = (*Plugin)(nil)
@@ -28,9 +29,16 @@ func (p *Plugin) ConfigKey() string { return "" }
 func (Plugin) Provides() []string { return []string{"frontend"} }
 func (Plugin) Requires() []string { return nil }
 
+// Mount is the retired classic body (v0.12 phase F): the frontend
+// seam registers through the ExtensionAPI now. Fail loud if reached.
 func (p *Plugin) Mount(ctx *core.Context) error {
-	ctx.Frontend = &Frontend{}
-	return nil
+	return fmt.Errorf("tui: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
+}
+
+// MountWithAPI implements agent.APIPlugin: the frontend seam, one
+// registration.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	return api.RegisterFrontend(&Frontend{})
 }
 
 // Frontend implements core.Frontend by running the Bubble Tea program.
@@ -46,9 +54,3 @@ func (f *Frontend) Run(ctx context.Context, pctx *core.Context, opts core.Fronte
 }
 
 func NewPlugin() *Plugin { return &Plugin{} }
-
-// Dismount unmounts the frontend seam (the E1 dismount proof).
-func (p *Plugin) Dismount(ctx *core.Context) error {
-	ctx.Frontend = nil
-	return nil
-}
