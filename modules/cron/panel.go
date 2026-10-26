@@ -29,12 +29,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// jobsPanelID is the jobs panel's id. The panel ids the canvas routes
-// on stay the module's own namespace; the capsule's module name rides
-// its declared actions (refresh carries Module: "cron").
+// jobsPanelID is the jobs panel's id. Panel ids keep their natural
+// shape; action ids are machine-facing and namespaced pairs
+// (cron.verb, Q10 - the registration API claims each one, v0.12 phase
+// C2).
 const (
 	jobsPanelID   = "cron"
-	actionRefresh = "refresh_jobs"
+	actionRefresh = "cron.refresh_jobs"
 )
 
 // jobRow is one jobs-panel line: the CronJobInfo fields verbatim (the

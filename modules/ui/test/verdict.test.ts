@@ -113,7 +113,7 @@ test("verdictFromResultText: non-JSON and unknown kinds are a dead card, not a c
 test("renderTranscriptItems: a verdict call renders the card, not a tool line", () => {
   const items = renderTranscriptItems([
     { kind: "message", content: "go?", role: "user", time: "t0" },
-    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict", arguments: { title: "Approve?", options: ["yes", "no"] } } },
+    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict.request", arguments: { title: "Approve?", options: ["yes", "no"] } } },
     { kind: "tool_result", tool_call_id: "tc1", content: `{"card_id":"c1","verdict":"answer","option_index":1,"option":"yes"}`, elapsed_ms: 4200 },
   ]);
   assert.deepEqual(items.map((i) => (i.kind === "verdict" ? "verdict" : i.kind)), ["message", "verdict"]);
@@ -130,7 +130,7 @@ test("renderTranscriptItems: a verdict call renders the card, not a tool line", 
 
 test("renderTranscriptItems: described options survive the restore (list layout data)", () => {
   const items = renderTranscriptItems([
-    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict", arguments: {
+    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict.request", arguments: {
       title: "Pick lanes",
       options: [{ label: "Ship", description: "merge now" }, { label: "Hold" }],
       multi: true,
@@ -149,7 +149,7 @@ test("renderTranscriptItems: described options survive the restore (list layout 
 
 test("renderTranscriptItems: an unrestored (not running) card starts stale, never actionable", () => {
   const items = renderTranscriptItems([
-    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict", arguments: { title: "Old question" } } },
+    { kind: "tool_call", tool_call: { id: "tc1", name: "verdict.request", arguments: { title: "Old question" } } },
   ]);
   const card = items[0];
   if (card.kind !== "verdict") throw new Error("expected a verdict item");
@@ -329,7 +329,7 @@ test("chat.ts maps the card rows live and settles them from the result row", () 
   // chat-last 2a: the canvas transcript tool_call row with the verdict
   // name renders as the card (no plain tool line); the matching
   // tool_result row settles it; a streaming-final row is stale
-  assert.match(chat, /"verdict"/, "the canvas transcript recognizes the card tool");
+  assert.match(chat, /"verdict.request"/, "the canvas transcript recognizes the card tool");
   assert.match(chat, /verdictCardFromToolArgs/, "live cards build from the row args");
   assert.match(chat, /verdictFromResultText/, "the tool_result row settles the card");
   // staleness reads the PANEL's running flag: the compose dedupe can
