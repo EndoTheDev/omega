@@ -21,7 +21,7 @@ func writeSkill(t *testing.T, dir, name, description string) {
 		t.Fatal(err)
 	}
 	body := "---\nname: " + name + "\ndescription: " + description + "\n---\nbody of " + name
-	if err := os.WriteFile(filepath.Join(dir, name, name+".md"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name, "SKILL.md"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

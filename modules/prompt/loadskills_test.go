@@ -9,6 +9,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/skills"
 )
 
@@ -37,23 +38,32 @@ func TestBuildPromptWithSkillsSection(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The file is always SKILL.md and the folder name is the skill
+	// name (card t_5baad951) - the frontmatter name is retired, so the
+	// prompt must show "my-skill", never "Custom Name".
 	content := "---\nname: Custom Name\ndescription: A custom description\n---\n\nBody.\n"
-	if err := os.WriteFile(filepath.Join(skillDir, "my-skill.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	ctx := &core.Context{
-		Configs: map[string]any{"skills": skills.Config{Dir: dir}},
+		Configs: map[string]any{
+			"skills":  skills.Config{Dir: dir},
+			"logging": logging.Config{Enabled: false},
+		},
 	}
-	if err := agent.MountAll([]agent.Plugin{skills.NewPlugin(), NewPlugin()}, ctx); err != nil {
+	if err := agent.MountAll([]agent.Plugin{logging.NewPlugin(), skills.NewPlugin(), NewPlugin()}, ctx); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), core.PromptBuildOptions{})
 	if !ok {
 		t.Fatal("BuildPrompt returned false")
 	}
-	if !strings.Contains(prompt, "Custom Name") {
-		t.Error("prompt missing skill name 'Custom Name'")
+	if !strings.Contains(prompt, "my-skill") {
+		t.Error("prompt missing skill name 'my-skill' (folder name is authoritative)")
+	}
+	if strings.Contains(prompt, "Custom Name") {
+		t.Error("prompt shows retired frontmatter name 'Custom Name' - folder name must win")
 	}
 	if !strings.Contains(prompt, "A custom description") {
 		t.Error("prompt missing skill description")

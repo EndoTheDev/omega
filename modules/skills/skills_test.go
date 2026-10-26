@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,7 +20,10 @@ var (
 	_ agent.Plugin        = (*Plugin)(nil)
 )
 
-// makeSkillDir creates a temp skills directory with one skill.
+// makeSkillDir creates a temp skills directory with one skill in the
+// contracted shape: <name>/SKILL.md, the folder name is the skill
+// name. The frontmatter deliberately carries a different name to pin
+// the ruling that the folder wins (card t_5baad951).
 func makeSkillDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -27,8 +31,8 @@ func makeSkillDir(t *testing.T) string {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nname: test-skill\ndescription: A test skill\n---\nThis is the body.\n"
-	if err := os.WriteFile(filepath.Join(skillDir, "test-skill.md"), []byte(content), 0o644); err != nil {
+	content := "---\nname: Not The Folder\ndescription: A test skill\n---\nThis is the body.\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -65,6 +69,127 @@ func TestLoadSkillsMissingDir(t *testing.T) {
 		t.Fatalf("expected nil skills for missing dir, got %v", skills)
 	}
 }
+
+// TestLoadSkillsLegacyShapeNotLoaded pins the retired format: a folder
+// holding <name>.md without SKILL.md is invisible to discovery (card
+// t_5baad951). Only the SKILL.md sibling loads.
+func TestLoadSkillsLegacyShapeNotLoaded(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "old-skill", "old-skill.md")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("---\ndescription: legacy shape\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProperSkill(t, dir, "new-skill")
+
+	sp := NewSkillsProvider(dir)
+	skills, err := sp.LoadSkills(dir)
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill (legacy folder invisible), got %d: %+v", len(skills), skills)
+	}
+	if skills[0].Name != "new-skill" {
+		t.Fatalf("expected new-skill, got %q", skills[0].Name)
+	}
+}
+
+// TestWarnLegacyShape covers the boot warning: a legacy folder is
+// reported by name with the rename cure, a proper folder is silent.
+func TestWarnLegacyShape(t *testing.T) {
+	dir := t.TempDir()
+	writeProperSkill(t, dir, "proper-skill")
+	legacyDir := filepath.Join(dir, "old-skill")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "old-skill.md"), []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sp := NewSkillsProvider(dir)
+	log := &captureLogger{}
+	warned := sp.WarnLegacyShape(log)
+	if len(warned) != 1 || warned[0] != "old-skill" {
+		t.Fatalf("warned = %v, want [old-skill]", warned)
+	}
+	if len(log.msgs) != 1 {
+		t.Fatalf("expected 1 log warning, got %d: %v", len(log.msgs), log.msgs)
+	}
+	if !strings.Contains(log.msgs[0], `skill "old-skill"`) || !strings.Contains(log.msgs[0], "rename the file to SKILL.md") {
+		t.Fatalf("warning must name the skill and the rename, got: %q", log.msgs[0])
+	}
+
+	// A proper skills tree warns nothing.
+	clean := NewSkillsProvider(makeSkillDir(t))
+	log2 := &captureLogger{}
+	if got := clean.WarnLegacyShape(log2); len(got) != 0 || len(log2.msgs) != 0 {
+		t.Fatalf("proper shape must warn nothing, got %v / %v", got, log2.msgs)
+	}
+}
+
+// TestPluginMountWarnsLegacyShape covers the mount-time hook: a legacy
+// folder under the configured dir surfaces the boot warning through
+// the context logger.
+func TestPluginMountWarnsLegacyShape(t *testing.T) {
+	dir := t.TempDir()
+	legacyDir := filepath.Join(dir, "old-skill")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "old-skill.md"), []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log := &captureLogger{}
+	p := NewPlugin()
+	ctx := &core.Context{
+		Logger: log,
+		Configs: map[string]any{
+			"skills": Config{Dir: dir},
+		},
+	}
+	if err := p.Mount(ctx); err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+	if len(log.msgs) != 1 {
+		t.Fatalf("expected 1 boot warning, got %d: %v", len(log.msgs), log.msgs)
+	}
+	if !strings.Contains(log.msgs[0], "old-skill") {
+		t.Fatalf("boot warning must name the skill, got: %q", log.msgs[0])
+	}
+}
+
+// writeProperSkill seeds dir with <name>/SKILL.md in the contracted
+// shape (card t_5baad951).
+func writeProperSkill(t *testing.T, dir, name string) {
+	t.Helper()
+	skillDir := filepath.Join(dir, name)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: " + name + "\ndescription: the " + name + " skill\n---\nbody of " + name + "\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// captureLogger is a core.LoggerProvider test double.
+type captureLogger struct {
+	msgs []string
+}
+
+func (c *captureLogger) Printf(format string, args ...any) {
+	c.msgs = append(c.msgs, fmt.Sprintf(format, args...))
+}
+
+func (c *captureLogger) Errorf(format string, args ...any) {
+	c.msgs = append(c.msgs, "ERROR: "+fmt.Sprintf(format, args...))
+}
+
+func (c *captureLogger) Close() error { return nil }
 
 func TestToolsRead(t *testing.T) {
 	dir := makeSkillDir(t)
@@ -210,8 +335,9 @@ func TestRunReadNonNotExistError(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Create the .md path as a directory (not a file) so os.Open fails.
-	mdPath := filepath.Join(skillDir, skillName+".md")
+	// Create the SKILL.md path as a directory (not a file) so os.Open
+	// fails with a non-IsNotExist error.
+	mdPath := filepath.Join(skillDir, "SKILL.md")
 	if err := os.MkdirAll(mdPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -275,9 +401,9 @@ func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Create the .md path as a directory (not a file) so os.Open fails
-	// with a non-IsNotExist error.
-	mdPath := filepath.Join(skillDir, skillName+".md")
+	// Create the SKILL.md path as a directory (not a file) so os.Open
+	// fails with a non-IsNotExist error.
+	mdPath := filepath.Join(skillDir, "SKILL.md")
 	if err := os.MkdirAll(mdPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +538,7 @@ func TestListSkillsSortedAndLive(t *testing.T) {
 			t.Fatal(err)
 		}
 		content := "---\nname: " + name + "\ndescription: the " + name + " skill\n---\nbody\n"
-		if err := os.WriteFile(filepath.Join(skillDir, name+".md"), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

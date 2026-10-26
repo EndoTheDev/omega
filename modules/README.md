@@ -87,6 +87,17 @@ reference: `docs/tui.md`, module-owned command owners.
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before the frontends launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
 | `cron/`         | cron, TUI, panels | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron, the jobs canvas panel - arc 6 capsule) |
 
+### Authored skill files
+
+The `skills/` module reads one directory per skill, the file always
+named `SKILL.md` (`<skills-dir>/<skill-name>/SKILL.md`) - the skill
+name is the FOLDER name, never frontmatter (only `description` is
+read from it; reference layout: the prod home's `skills/` and the
+dev home's `bin/skills/`). A directory holding `<name>.md` without
+`SKILL.md` is invisible to discovery and gets one boot warning
+naming the skill + "rename the file to SKILL.md" - no
+auto-migration, the rename is the fix (card t_5baad951).
+
 ## Writing an module
 
 1. Create a directory under `modules/<name>/`.
