@@ -13,7 +13,16 @@ import (
 // Plugin implements agent.Plugin for the store seam. It opens the
 // SQLite database from config and mounts it as the StoreProvider,
 // plus contributes the sessions.search tool and session commands.
-type Plugin struct{}
+type Plugin struct {
+	// mountState carries what Dismount must reverse (the E1 dismount
+	// proof): the search tool provider and the prior command chain.
+	search      *searchToolProvider
+	prevHandler commandHandler
+}
+
+// commandHandler is the CommandHandler stack shape the classic mounts
+// chain onto.
+type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
@@ -54,7 +63,8 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 		return err
 	}
 	ctx.Store = s
-	ctx.ToolProviders = append(ctx.ToolProviders, &searchToolProvider{store: s})
+	p.search = &searchToolProvider{store: s}
+	ctx.ToolProviders = append(ctx.ToolProviders, p.search)
 
 	// Register session commands.
 	ctx.Commands = append(ctx.Commands,
@@ -72,6 +82,7 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	)
 
 	// Wire command handler, chaining after any previous handler.
+	p.prevHandler = ctx.CommandHandler
 	prev := ctx.CommandHandler
 	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		switch name {
@@ -131,3 +142,35 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 
 // NewPlugin returns a store Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
+
+// Dismount unmounts the store seam, the search tool provider, the
+// eleven session commands and the command chain (the E1 dismount
+// proof). The store connection itself is host-owned - the host opened
+// it and closes it - Dismount never closes data under it (disable
+// never deletes data).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	ctx.Store = nil
+	tools := ctx.ToolProviders[:0]
+	for _, tp := range ctx.ToolProviders {
+		if tp == p.search {
+			continue
+		}
+		tools = append(tools, tp)
+	}
+	ctx.ToolProviders = tools
+	names := map[string]bool{
+		"/sessions": true, "/agents": true, "/agent": true, "/tree": true,
+		"/search": true, "/insights": true, "/new": true, "/resume": true,
+		"/branch": true, "/label": true, "/export": true,
+	}
+	cmds := ctx.Commands[:0]
+	for _, c := range ctx.Commands {
+		if names[c.Name] {
+			continue
+		}
+		cmds = append(cmds, c)
+	}
+	ctx.Commands = cmds
+	ctx.CommandHandler = p.prevHandler
+	return nil
+}

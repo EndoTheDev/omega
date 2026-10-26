@@ -50,7 +50,7 @@ func TestMountWithAPIShape(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
 	plugins := []agent.Plugin{stubLoggerPlugin{}, stubStorePlugin{}, p}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if p.hub == nil {

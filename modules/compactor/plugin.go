@@ -8,7 +8,15 @@ import (
 )
 
 // Plugin adapts the compactor to the agent.Plugin interface.
-type Plugin struct{}
+type Plugin struct {
+	// prevHandler is the command chain before Mount's /compact
+	// wrapper - the value Dismount restores (the E1 dismount proof).
+	prevHandler commandHandler
+}
+
+// commandHandler is the CommandHandler stack shape the classic mounts
+// chain onto.
+type commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error)
 
 func (p *Plugin) Name() string { return "compactor" }
 
@@ -60,6 +68,7 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 	)
 
 	// Wire command handler, chaining after any previous handler.
+	p.prevHandler = ctx.CommandHandler
 	prev := ctx.CommandHandler
 	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/compact" {
@@ -78,3 +87,19 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 
 // NewPlugin creates a compactor plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
+
+// Dismount unmounts the compactor seam, the /compact command and the
+// command chain (the E1 dismount proof).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	ctx.Compactor = nil
+	out := ctx.Commands[:0]
+	for _, c := range ctx.Commands {
+		if c.Name == "/compact" {
+			continue
+		}
+		out = append(out, c)
+	}
+	ctx.Commands = out
+	ctx.CommandHandler = p.prevHandler
+	return nil
+}

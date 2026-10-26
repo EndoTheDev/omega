@@ -46,3 +46,9 @@ func (f *Frontend) Run(ctx context.Context, pctx *core.Context, opts core.Fronte
 }
 
 func NewPlugin() *Plugin { return &Plugin{} }
+
+// Dismount unmounts the frontend seam (the E1 dismount proof).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	ctx.Frontend = nil
+	return nil
+}

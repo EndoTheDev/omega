@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -89,6 +90,26 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterCron(r); err != nil {
 		return err
 	}
+	// The goroutine fence (v0.12 E1): the runner comes live only when
+	// the host calls StartAll after the mount commit - Mount spawns
+	// nothing. The handle wraps the cron seam's Start/Stop. Runner.Start
+	// blocks until cancellation or Stop, so the handle arms it on its
+	// own goroutine (the fence Start law: Start returns promptly) and
+	// Stop ends it.
+	if err := api.RegisterLifecycle(
+		"runner",
+		func(ctx context.Context, deps core.StartDeps) error {
+			go func() {
+				if err := r.Start(ctx, core.CronDeps{Ctx: deps.Ctx, Agent: deps.Agent, Store: deps.Store}); err != nil {
+					fmt.Fprintf(os.Stderr, "omega: cron runner: %v\n", err)
+				}
+			}()
+			return nil
+		},
+		func() error { return r.Stop() },
+	); err != nil {
+		return err
+	}
 	if err := api.RegisterRenderer(&tui{p: p}); err != nil {
 		return err
 	}
@@ -113,3 +134,7 @@ func homeFile(home string) string {
 	}
 	return filepath.Join(home, "config", stateFileName)
 }
+
+// Toggleable marks this capsule as a module capsule (v0.12 E1, the
+// tier law): the omega.json disable list may name it.
+func (p *Plugin) Toggleable() bool { return true }

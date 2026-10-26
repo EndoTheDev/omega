@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -50,6 +52,10 @@ type Config struct {
 	Logging       LoggingConfig `yaml:"logging"`
 	Web           WebConfig     `yaml:"web"`
 	Kanban        KanbanConfig  `yaml:"kanban"`
+	// Disabled is the omega.json toggle list (v0.12 E1, grill Q1) - a
+	// separate file next to config.yaml, never a config.yaml key.
+	// Loaded by LoadDisabled after the YAML is in.
+	Disabled []string `yaml:"-"`
 }
 
 // WebConfig carries optional overrides for the web tools. BaseURL, when
@@ -183,7 +189,49 @@ func LoadConfig(path string) (Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
+	// The toggle list lives beside the config (v0.12 E1): a broken
+	// omega.json fails the boot loud - a silently ignored disable list
+	// would boot modules the operator switched off.
+	off, err := LoadDisabled(path)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Disabled = off
 	return cfg, nil
+}
+
+// LoadDisabled reads the omega.json module toggle list (grill Q1):
+// {"disabled": ["kanban"]} next to config.yaml (legacy home-root
+// layout included). An absent file is an empty list - every capsule
+// on (Q2). Malformed JSON fails loud.
+func LoadDisabled(configPath string) ([]string, error) {
+	dirs := []string{}
+	if configPath != "" {
+		dirs = append(dirs, filepath.Dir(configPath))
+	}
+	home := omegaHome()
+	dirs = append(dirs, home+"/config", home)
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, "omega.json")
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read omega.json: %w", err)
+		}
+		var doc struct {
+			Disabled []string `json:"disabled"`
+		}
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return nil, fmt.Errorf("parse omega.json: %w", err)
+		}
+		return doc.Disabled, nil
+	}
+	return nil, nil
 }
 
 // applyEnv overrides config fields from OMEGA_* environment variables.

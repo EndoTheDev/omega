@@ -21,7 +21,7 @@ func mountWithRegistry(t *testing.T, cfg Config, plugins []agent.Plugin) *agent.
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	reg, err := agent.MountAllAPI(plugins, ctx, nil)
+	reg, err := agent.MountAllAPI(plugins, ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}

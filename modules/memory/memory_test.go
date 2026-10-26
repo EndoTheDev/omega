@@ -651,7 +651,7 @@ func TestPluginMount(t *testing.T) {
 
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"memory": cfg}}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Memory == nil {

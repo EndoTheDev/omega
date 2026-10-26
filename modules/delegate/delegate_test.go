@@ -85,7 +85,7 @@ func TestPluginMount(t *testing.T) {
 	}
 	plugins := []agent.Plugin{loggingPlugin{}, p}
 	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {
@@ -144,7 +144,7 @@ func TestEmitterDeliversSeamAtMountEnd(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
 	plugins := []agent.Plugin{loggingPlugin{}, stubNotificationsPlugin{}, p}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if p.delegate.notifier == nil {

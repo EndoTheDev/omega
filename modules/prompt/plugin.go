@@ -41,3 +41,8 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 
 // Compile-time check: Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
+// Dismount unmounts the prompt_builder seam (the E1 dismount proof).
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	ctx.PromptBuilder = nil
+	return nil
+}

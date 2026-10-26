@@ -135,7 +135,7 @@ func TestCronCommand(t *testing.T) {
 func TestCronTUIRegistration(t *testing.T) {
 	ctx := &core.Context{}
 	plugins := []agent.Plugin{notificationsPlugin{}, NewPluginWithConfig(&Config{}, t.TempDir())}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var got []string
