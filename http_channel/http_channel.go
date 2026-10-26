@@ -80,7 +80,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 		return fmt.Errorf("http_channel: no provider configured")
 	}
 	ag := core.NewFromContext(deps.Ctx, core.AgentOptions{})
-	c.srv = NewServer(ag, nil, deps.Store, deps.Settings)
+	c.srv = NewServer(ag, nil, deps.Store, deps.Settings, deps.Modules)
 	// Chat panel (chat-last 1/3): bind the plugin's registered capsule
 	// to THIS server before the canvas runtime builds over the
 	// providers, and register it with the canvas seam here - gated on
@@ -115,22 +115,13 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 		return fmt.Errorf("http_channel: canvas: %w", err)
 	}
 	c.srv.canvas = canvas
-	c.srv.Kanban = deps.Ctx.Kanban
+	// Optional-module seams ride the shared rewire (v0.12 E2): the same
+	// field set the old mount-time copies set, now read live per
+	// request and re-readable after every toggle.
+	c.srv.rewireSeams(deps.Ctx)
 	// Inspector seams (card t_db430fea): read-only views for the
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
 	// handlers degrade to empty lists / 404 when a module is absent.
-	c.srv.Skills = deps.Ctx.Skills
-	c.srv.Cron = deps.Ctx.Cron
-	// card t_5d9032d3: the finished-things seam (bell list/read + live
-	// toast stream). Optional - nil degrades to 501s.
-	c.srv.Notifications = deps.Ctx.Notifications
-	// card t_2ecf9c51: the verdicts seam (answer POSTs + pending list).
-	c.srv.Verdicts = deps.Ctx.Verdicts
-	c.srv.logger = deps.Ctx.Logger
-	// card t_9de5b009: the trust gate resolves a workspace-rooted
-	// session's AGENTS.md context at send time. Optional like the
-	// inspector seams - nil keeps the run scope context-free.
-	c.srv.trust = deps.Ctx.Trust
 	c.srv.runTimeout = c.runTimeout
 	c.srv.titleModel = c.titleModel
 	c.srv.version = deps.Version
@@ -144,6 +135,14 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 		c.chat.srv.Store(c.srv)
 	}
 	return nil
+}
+
+// RewireSeams implements core.LiveSeams (v0.12 E2): the host calls it
+// after every successful live module toggle. The engine ring stays
+// mounted, but the modules it serves do not - the routes, panels, and
+// tool inventory re-read the Context instead of the boot copies.
+func (c *HTTPChannel) RewireSeams(ctx *core.Context) error {
+	return c.srv.rewireSeams(ctx)
 }
 
 // Stop shuts the HTTP server down. The host calls this after the

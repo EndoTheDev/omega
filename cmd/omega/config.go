@@ -234,6 +234,65 @@ func LoadDisabled(configPath string) ([]string, error) {
 	return nil, nil
 }
 
+// disabledJSONPath resolves the omega.json file a toggle write
+// persists to: the omega.json that already exists wins (the same dir
+// search order LoadDisabled uses), else the config/ layout, else next
+// to the active config, else the home root.
+func disabledJSONPath(configFile string) string {
+	home := omegaHome()
+	dirs := []string{}
+	if configFile != "" {
+		dirs = append(dirs, filepath.Dir(configFile))
+	}
+	dirs = append(dirs, home+"/config", home)
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, "omega.json")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	if fi, err := os.Stat(home + "/config"); err == nil && fi.IsDir() {
+		return home + "/config/omega.json"
+	}
+	if configFile != "" {
+		return filepath.Dir(configFile) + "/omega.json"
+	}
+	return home + "/omega.json"
+}
+
+// SaveDisabled writes the omega.json toggle list (v0.12 E2): the file
+// boot reads, updated in place. Other keys in the file survive; an
+// empty list removes the key (an all-on home carries no toggle state).
+// Malformed existing JSON fails loud - a write that destroys the file
+// boot must parse is worse than a failed toggle.
+func SaveDisabled(path string, off []string) error {
+	doc := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf("parse omega.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read omega.json: %w", err)
+	}
+	if len(off) == 0 {
+		delete(doc, "disabled")
+	} else {
+		doc["disabled"] = off
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode omega.json: %w", err)
+	}
+	out = append(out, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create omega.json dir: %w", err)
+	}
+	return os.WriteFile(path, out, 0600)
+}
+
 // applyEnv overrides config fields from OMEGA_* environment variables.
 func applyEnv(cfg *Config) {
 	// String assignments: env var -> *string field.

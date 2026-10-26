@@ -462,11 +462,12 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 
 // newAgent wires config into a provider, agent, store, and extensions
 // via the in-process plugin system. The store and plugin context are
-// returned so the caller can close the store and start channels.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, error) {
+// returned so the caller can close the store and start channels. The
+// mount registry rides along for the E2 module-toggle surface.
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, *agent.Registry, error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
 	}
 	ctx := &agent.Context{
 		CWD:     cwd(),
@@ -477,22 +478,21 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 	// fails the boot naming the edge (Q3).
 	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
-	_ = reg // the serve path consumes registry surfaces in later phases
 
 	// The store resolves BEFORE the agent is built: the captioner
 	// (vision_model knob) holds the caption sink from the start, and
 	// NewFromContext copies ctx.Captioner onto every agent it creates.
 	if ctx.Store != nil {
 		if err := ctx.Store.Open(cfg.Store.DBPath); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
+			return nil, nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
 		}
 	} else {
 		ctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
 		s, err := store.Open(":memory:")
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
+			return nil, nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
 		}
 		ctx.Store = s
 	}
@@ -507,7 +507,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		CWD:           cwd(),
 	})
 
-	return ag, ctx.Store, ctx.Logger, ctx, nil
+	return ag, ctx.Store, ctx.Logger, ctx, reg, nil
 }
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
@@ -547,7 +547,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return err
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, pctx, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, reg, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -575,6 +575,16 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		// layout; writeConfigFile creates parents.
 		configFile = omegaHome() + "/config/config.yaml"
 	}
+	// The E2 module-toggle surface (Q7): the registry behind the seam,
+	// arming the fence handles exactly like the boot-time StartAll
+	// below, persisting the toggle list to the omega.json boot reads.
+	mods := &omegaModules{
+		pctx:      pctx,
+		reg:       reg,
+		deps:      core.StartDeps{Ctx: pctx, Agent: ag, Store: store, Run: ctx},
+		omegaPath: disabledJSONPath(configFile),
+		logger:    logger,
+	}
 	WatchConfig(configFile, func(newCfg Config) {
 		hotApply(newCfg, pctx)
 	})
@@ -584,6 +594,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 			Ctx:      pctx,
 			Store:    store,
 			Settings: &omegaSettings{path: configFile, pctx: pctx},
+			Modules:  mods,
 			Version:  omegaVersion,
 		}
 		go func(c core.Channel) {
@@ -663,7 +674,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		}
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, _, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}

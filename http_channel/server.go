@@ -44,30 +44,16 @@ type Server struct {
 	eph      ephRegistry
 	store    core.StoreProvider
 	settings core.Settings
-	// trust is the optional project-context seam (modules/trust). A
-	// session rooted in a workspace folder resolves its AGENTS.md
-	// context through it at send time (card t_9de5b009); a nil seam
-	// keeps workspace-rooted runs context-free - the file tools still
-	// root, the prompt context just stays empty.
-	trust core.TrustProvider
-	// Kanban is the optional board seam (modules/kanban). A nil value
-	// answers 501 on the /tasks endpoints - the board is optional.
-	Kanban core.KanbanProvider
-	// Inspector seams (card t_db430fea, read-only v1). All optional:
-	// a nil Skills serves an empty list on /skills, a nil Cron an
-	// empty list on /cron/jobs, and a nil logger (or one without a
-	// path) 404s on /logs.
-	Skills core.SkillsProvider
-	Cron   core.CronProvider
-	logger core.LoggerProvider
-	// Notifications is the finished-things seam (card t_5d9032d3):
-	// /notifications list + read, /notifications/events SSE toasts.
-	// Nil answers 501 - the seam is optional like the board.
-	Notifications core.NotificationsProvider
-	// Verdicts is the interactive-question seam (verdict cards v1,
-	// card t_2ecf9c51): /verdicts listing + /sessions/{id}/verdicts
-	// answering. Nil answers 501 - optional like the board.
-	Verdicts core.VerdictsProvider
+	// modules is the optional module-toggle seam (v0.12 E2): the
+	// /modules endpoints serve registry introspection + live toggles
+	// through it; a nil value answers 501.
+	modules core.ModuleToggles
+	// seams is the optional-module surface of the serving routes
+	// (v0.12 E2): read per request behind a lock, rewritten by
+	// RewireSeams after every live module toggle. A mount-time pointer
+	// copy would keep a disabled module's routes alive - the board is
+	// optional, but its death is not optional once the UI can toggle it.
+	seams seamSet
 	// canvas is the runtime behind the canvas transport (arc 3b):
 	// panel snapshot source and the one action pipe (server_canvas.go).
 	// Nil means nothing mounted - /ui/canvas serves [] and /ui/actions
@@ -105,16 +91,70 @@ type Server struct {
 	themes *themeRegistry
 }
 
+// seamSet is the optional-module surface behind the Server's routes
+// (v0.12 E2). One write side - RewireSeams, called at channel mount and
+// by the host after each live module toggle - and the per-request read
+// accessors the handlers use. The lock matters because the toggle path
+// rewrites every field while any of these handlers may be mid-request.
+type seamSet struct {
+	mu            sync.RWMutex
+	kanban        core.KanbanProvider
+	skills        core.SkillsProvider
+	cron          core.CronProvider
+	logger        core.LoggerProvider
+	notifications core.NotificationsProvider
+	verdicts      core.VerdictsProvider
+	trust         core.TrustProvider
+}
+
+// Accessors, one per seam. All nil-safe: the nil seam is the contract
+// the handlers degrade through (501 / empty list / context-free run).
+
+func (s *Server) Kanban() core.KanbanProvider             { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.kanban }
+func (s *Server) Skills() core.SkillsProvider             { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.skills }
+func (s *Server) Cron() core.CronProvider                 { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.cron }
+func (s *Server) Logger() core.LoggerProvider             { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.logger }
+func (s *Server) Notifications() core.NotificationsProvider { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.notifications }
+func (s *Server) Verdicts() core.VerdictsProvider         { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.verdicts }
+func (s *Server) Trust() core.TrustProvider               { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.trust }
+
+// rewireSeams re-reads the module seams from the live Context: the
+// route surface above, the canvas panel registry, and the agent's tool
+// providers. The channel calls it at mount (initial wiring, the same
+// fields the old boot path set) and the host calls it through
+// core.LiveSeams after every successful toggle - so a disabled module's
+// tools, panels, and routes die without a restart and a re-enabled
+// module's surface returns (E2 journal: the toggle machinery changed
+// the Context; this re-reads it).
+func (s *Server) rewireSeams(ctx *core.Context) error {
+	s.seams.mu.Lock()
+	s.seams.kanban = ctx.Kanban
+	s.seams.skills = ctx.Skills
+	s.seams.cron = ctx.Cron
+	s.seams.logger = ctx.Logger
+	s.seams.notifications = ctx.Notifications
+	s.seams.verdicts = ctx.Verdicts
+	s.seams.trust = ctx.Trust
+	s.seams.mu.Unlock()
+	if s.agent != nil {
+		s.agent.RefreshToolProviders(ctx)
+	}
+	if s.canvas != nil {
+		return s.canvas.Resync(ctx)
+	}
+	return nil
+}
+
 // NewServer creates a Server. tools is the registry of executable tools
 // the agent may call; a nil map uses the built-in registry. store is the
 // optional session persistence; a nil store disables persistence and the
 // session CRUD endpoints. settings is the optional config-knobs seam
 // (/settings endpoints); a nil value answers 501 on those endpoints.
-func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings) *Server {
+func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings, modules core.ModuleToggles) *Server {
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
 	// Chat panel capsule (chat-last 1/3): default-wired so a directly
 	// constructed Server (tests, embedding) has the push hooks and the
 	// panel even without the plugin's channel-start handoff.
@@ -144,6 +184,11 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/extensions", s.handleExtensions)
+	// v0.12 E2: the module toggle surface - registry introspection and
+	// the live toggle (Q7), rejections visible through the refusal
+	// ledger (Q12). Handler family lives in server_modules.go.
+	mux.HandleFunc("GET /modules", s.handleModules)
+	mux.HandleFunc("PUT /modules/{name}", s.handleModuleToggle)
 	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
 	mux.HandleFunc("/skills", s.handleSkills)
 	mux.HandleFunc("/logs", s.handleLogs)
@@ -547,8 +592,8 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// resolution skips an untrusted folder's context with a stderr
 	// note - the same gate the host applies at boot.
 	req.workspace = sess.Workspace
-	if sess.Workspace != "" && s.trust != nil {
-		req.workspacePromptContext = s.trust.ResolveContext(sess.Workspace, false, false, false)
+	if sess.Workspace != "" && s.Trust() != nil {
+		req.workspacePromptContext = s.Trust().ResolveContext(sess.Workspace, false, false, false)
 	}
 
 	tools := s.tools

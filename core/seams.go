@@ -253,6 +253,22 @@ type PromptSectioner interface {
 	PromptSections(opts PromptBuildOptions) []PromptSection
 }
 
+// LiveSeams is the optional Channel capability (v0.12 E2): the host
+// calls RewireSeams after every successful live module toggle, so the
+// channel's optional-module surface follows the Context it was built
+// from instead of mount-time pointer copies - a disabled module's
+// tools, panels, and routes die without a restart, a re-enabled one's
+// return. A channel that serves nothing module-dependent (or cannot)
+// does not implement it and the host skips it.
+type LiveSeams interface {
+	// RewireSeams re-reads the module seams from the live Context:
+	// the optional-module route surface, the canvas panel registry,
+	// and the agent's tool providers. It returns the wiring error of
+	// a re-enabled module's panels, if any - the toggle machinery has
+	// already changed the Context by the time this runs.
+	RewireSeams(ctx *Context) error
+}
+
 // Channel is a delivery transport that connects external clients to
 // the agent. Channels are additive: multiple can run simultaneously
 // (HTTP + Discord + Telegram). The host starts all mounted channels
@@ -320,14 +336,51 @@ type Settings interface {
 	Save(values map[string]any) (*SettingsSchema, error)
 }
 
+// ModuleStatus is one module in the registry introspection (v0.12 E2,
+// the settings-toggle small law: the settings capsule RENDERS the
+// registry, core provides the vocabulary). State is "mounted" or
+// "disabled" (the omega.json toggle list). Dependents names the live
+// modules that require a seam this one alone provides - the Q3 edge
+// semantics surfaced, so a disable confirms with what goes down too.
+type ModuleStatus struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Provides    []string `json:"provides,omitempty"`
+	Requires    []string `json:"requires,omitempty"`
+	State       string   `json:"state"` // "mounted" | "disabled"
+	Toggleable  bool     `json:"toggleable"`
+	Dependents  []string `json:"dependents,omitempty"`
+}
+
+// ModuleToggles is the module-toggle seam (v0.12 E2). The host wires
+// the mount registry behind it; the serving channel renders Modules
+// and applies Toggle. Toggle goes through the same mount machinery as
+// boot (Q7: one code path) and rejects loudly (Q11); a host that does
+// not expose toggles is nil and endpoints answer 501.
+type ModuleToggles interface {
+	// Modules returns every module in the build's registry catalog
+	// with its live state (engine ring modules never appear - the
+	// serving surface filters them, tier law).
+	Modules() []ModuleStatus
+	// Toggle enables or disables one module at runtime. A rejection
+	// (tier law, Q3 edge, roll-back panic) returns an error naming
+	// the module and the failed check.
+	Toggle(ctx context.Context, name string, enabled bool) error
+	// Refusals returns the recorded boundary rejections (Q12) - the
+	// toggle ledger the UI surfaces as events.
+	Refusals() []Refusal
+}
+
 // ChannelDeps carries everything a channel needs to run. Ctx is the
 // fully-wired plugin Context — channels create agents from it. Store
 // persists messages. Settings (optional) exposes the config knobs.
-// Version is the host's build tag, surfaced through /health.
+// Modules (optional) exposes the module-toggle surface. Version is
+// the host's build tag, surfaced through /health.
 type ChannelDeps struct {
 	Ctx      *Context
 	Store    StoreProvider
 	Settings Settings
+	Modules  ModuleToggles
 	Version  string
 }
 

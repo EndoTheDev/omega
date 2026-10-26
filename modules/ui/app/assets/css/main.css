@@ -2332,6 +2332,35 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 .settings.narrow .settings-note,
 .settings.narrow .setting-help { font-size: 10.5px; }
 
+/* ---- v0.12 E2: the module toggle list (registry introspection) ---- */
+.modules-group .modules-head {
+  display: flex;
+  align-items: center;
+  cursor: default;
+}
+.module-row {
+  flex-wrap: nowrap;
+  max-width: 100%;
+}
+.module-row .module-label { flex: 0 1 auto; }
+.module-row input[type="checkbox"] { flex: 0 0 auto; }
+.module-row.module-off .module-label { color: var(--text-dim); }
+.module-state {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.module-note {
+  flex-basis: 100%;
+  margin-left: 24px;
+}
+.module-refusal {
+  font-size: 10.5px;
+  color: var(--err);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 /* ---- layer 0: status bar (canvas-colored chrome, no rounding) ---- */
 .statusbar {
   display: flex;

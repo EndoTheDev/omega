@@ -19,20 +19,20 @@ import (
 // contract (list / read / live SSE frames).
 func serveNotifications(t *testing.T) (*httptest.Server, *notifications.Store) {
 	t.Helper()
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 	st, err := notifications.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open notifications: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s.Notifications = st
+	s.seams.notifications = st
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, st
 }
 
 func TestNotificationsEndpoints501WithoutSeam(t *testing.T) {
-	ts := httptest.NewServer(NewServer(nil, nil, nil, nil).Handler())
+	ts := httptest.NewServer(NewServer(nil, nil, nil, nil, nil).Handler())
 	t.Cleanup(ts.Close)
 
 	for _, probe := range []struct{ method, path string }{
