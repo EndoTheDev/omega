@@ -35,8 +35,9 @@ bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orphan-test.XXXXXX")"
 cleanup() {
-  # our own chromes first (any phase stragglers), then the stub hangs;
-  # a freshly killed chrome may still be writing - rm twice
+  # our own chromes first (any phase stragglers), then the fake lane and
+  # the stub hangs; a freshly killed chrome may still be writing - rm twice
+  kill "${LANE_PID:-}" 2>/dev/null
   rm -rf "$TMP" 2>/dev/null
   sleep 1
   rm -rf "$TMP" 2>/dev/null

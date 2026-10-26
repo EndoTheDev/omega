@@ -210,7 +210,17 @@ if ! chrome_listening; then
   fi
 fi
 if chrome_listening; then
-  "$AB" --session "$JOURNEY_SESSION" connect "$JOURNEY_CHROME_PORT" >/dev/null 2>&1 || { echo "journeys: agent-browser cannot attach to the CDP port" >&2; exit 2; }
+  # background+wait, not a foreground call: a foreground child defers
+  # TERM/INT traps until it exits (proven by orphan_test phase A - the
+  # chrome outlived a mid-connect TERM), while the wait builtin runs a
+  # pending trap at once. Recipes stay foreground: a TERM mid-recipe
+  # defers the trap to the recipe end, the trap still fires, the chrome
+  # dies with the run - never an orphan.
+  "$AB" --session "$JOURNEY_SESSION" connect "$JOURNEY_CHROME_PORT" >/dev/null 2>&1 &
+  if ! wait "$!"; then
+    echo "journeys: agent-browser cannot attach to the CDP port" >&2
+    exit 2
+  fi
   JOURNEY_CDP_ATTACHED=1
 fi
 # else: agent-browser daemon launches its own Chrome on first command.
