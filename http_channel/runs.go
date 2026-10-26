@@ -353,8 +353,10 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// Ephemeral (card t_d96a5cd5): the loop filters the denied name
 		// AFTER every provider merge, so a tool an extension re-adds
 		// under the same name never runs in a no-persist session.
+		// The denied name is modules/memory's registered identity
+		// (memory.entry, Q10 namespace pair, v0.12 phase C2).
 		if req.Ephemeral {
-			ctx = agent.WithDeniedTools(ctx, "memory")
+			ctx = agent.WithDeniedTools(ctx, "memory.entry")
 		}
 		var recs []assistantRecord
 		var rec assistantRecord

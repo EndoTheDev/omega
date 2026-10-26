@@ -563,13 +563,13 @@ func TestMemoryRemovalProof(t *testing.T) {
 	foundTool := false
 	for _, tp := range ctx.ToolProviders {
 		for name, tool := range tp.Tools() {
-			if name == "memory" {
+			if name == "memory.entry" {
 				memTool, foundTool = tool, true
 			}
 		}
 	}
 	if !foundTool {
-		t.Fatal("FULL MOUNT: the memory tool is missing from the registry")
+		t.Fatal("FULL MOUNT: the memory.entry tool is missing from the registry")
 	}
 	res, runErr := memTool.Run(context.Background(), map[string]any{
 		"action": "add", "target": "memory", "content": "arc 6 proof entry",
