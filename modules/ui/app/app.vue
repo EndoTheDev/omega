@@ -61,6 +61,7 @@
               :key="tab.key ?? pane"
               :tab="tab"
               :show-thinking="showThinking"
+              :model="selectedModel"
               :models="models"
               :session="chatSession(tab)"
               :thinking="selectedThinking"
