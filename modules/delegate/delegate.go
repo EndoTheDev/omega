@@ -63,60 +63,60 @@ func NewDelegate() *Delegate {
 	}
 }
 
-// delegateActions is the structured sub-action metadata for the
-// consolidated delegate tool: one source of truth for the schema enum,
-// the prompt, and the /tools inventory.
-var delegateActions = []core.ToolAction{
-	{Name: "task", Description: "Spawn a subagent to work on a task in the background."},
-	{Name: "status", Description: "Check the status of running and completed subagent tasks."},
-}
+// Description constants for the delegate tools (the machine-facing
+// identities, Q10 namespace pairs since the v0.12 mount migration).
+const (
+	delegateTaskDesc   = "Spawn a subagent to work on a task in the background."
+	delegateStatusDesc = "Check the status of running and completed subagent tasks."
+)
 
-// Tools returns the delegate domain tool. The two dotted verbs fold
-// into one action protocol; the legacy names stay registered as alias
-// shims until the v0.12 mount migration retires them.
 func (d *Delegate) Tools() map[string]core.Tool {
-	tools := map[string]core.Tool{
-		"delegate": {
-			Description: "Spawn subagents that run as separate omega processes with a fresh context. Results are injected automatically when a subagent finishes - do not end the conversation until all delegated tasks complete.",
-			Actions:     delegateActions,
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"action": map[string]any{
-						"type":        "string",
-						"description": "task (spawn a subagent) or status (check running/completed).",
-					},
-					"prompt": map[string]any{
-						"type":        "string",
-						"description": "Self-contained task prompt for the subagent (required for action task).",
-					},
-					"timeout": map[string]any{
-						"type":        "integer",
-						"description": "Max seconds to wait (action task, default 300).",
-					},
-					"agent": map[string]any{
-						"type":        "string",
-						"description": "Registered agent profile to run the subtask as (action task): its config, skills, memory and logs. Default: none - runs as the plain home config.",
-					},
-					},
-				"required": []string{"action"},
+	// taskParams are the spawn parameters; status takes none.
+	taskParams := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"prompt": map[string]any{
+				"type":        "string",
+				"description": "Self-contained task prompt for the subagent (required).",
 			},
-			Run: d.runDelegate,
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Max seconds to wait (default 300).",
+			},
+			"agent": map[string]any{
+				"type":        "string",
+				"description": "Registered agent profile to run the subtask as (action task): its config, skills, memory and logs. Default: none - runs as the plain home config.",
+			},
 		},
+		"required": []string{"prompt"},
 	}
-	for _, a := range delegateActions {
-		legacy := map[string]string{"task": "delegate.task", "status": "delegate.status"}[a.Name]
-		action := a.Name
-		tools[legacy] = core.Tool{
-			Description: fmt.Sprintf("%s (alias for delegate with action %q)", a.Description, action),
-			AliasOf:     "delegate",
+	return map[string]core.Tool{
+		// The machine-facing identities are the module.verb pairs
+		// (Q10, the v0.12 mount migration): the two verbs register as
+		// delegate.task and delegate.status, each with its own
+		// parameters, both routed through the shared dispatcher the
+		// consolidated "delegate" primary used.
+		"delegate.task": {
+			Description: delegateTaskDesc,
+			Parameters:  taskParams,
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
-				args["action"] = action
+				args["action"] = "task"
 				return d.runDelegate(ctx, args)
 			},
-		}
+		},
+		"delegate.status": {
+			Description: delegateStatusDesc,
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+				"required":   []string{},
+			},
+			Run: func(ctx context.Context, args map[string]any) (string, error) {
+				args["action"] = "status"
+				return d.runDelegate(ctx, args)
+			},
+		},
 	}
-	return tools
 }
 
 // runDelegate dispatches the consolidated delegate tool.
