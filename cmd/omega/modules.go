@@ -82,7 +82,6 @@ func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) er
 	return nil
 }
 
-
 // makeModuleToggleError wraps the persistence failure so the caller
 // sees which module toggled and which direction the write lost.
 func makeModuleToggleError(name string, enabled bool, cause error) error {
