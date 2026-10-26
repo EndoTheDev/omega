@@ -37,8 +37,8 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := []core.CronJobInfo{}
-	if s.Cron != nil {
-		if lister, ok := s.Cron.(core.CronLister); ok {
+	if s.Cron() != nil {
+		if lister, ok := s.Cron().(core.CronLister); ok {
 			if jobs := lister.Jobs(); jobs != nil {
 				out = jobs
 			}
@@ -106,8 +106,8 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := []skillListing{}
-	if s.Skills != nil {
-		if lister, ok := s.Skills.(core.SkillsLister); ok {
+	if s.Skills() != nil {
+		if lister, ok := s.Skills().(core.SkillsLister); ok {
 			skills, err := lister.ListSkills()
 			if err != nil {
 				http.Error(w, "list skills: "+err.Error(), http.StatusInternalServerError)
@@ -136,7 +136,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lines := parseLogLines(r.URL.Query().Get("lines"))
-	path := logPathOf(s.logger)
+	path := logPathOf(s.Logger())
 	if path == "" {
 		http.Error(w, "log file not configured", http.StatusNotFound)
 		return

@@ -43,11 +43,11 @@ type taskDetail struct {
 // current board flagged. 501 when the seam lacks the listing
 // capability (a single-board provider stays legal).
 func (s *Server) handleBoards(w http.ResponseWriter, r *http.Request) {
-	if s.Kanban == nil {
+	if s.Kanban() == nil {
 		boardUnavailable(w)
 		return
 	}
-	lister, ok := s.Kanban.(core.BoardLister)
+	lister, ok := s.Kanban().(core.BoardLister)
 	if !ok {
 		http.Error(w, "board registry not supported", http.StatusNotImplemented)
 		return
@@ -65,13 +65,13 @@ func (s *Server) handleBoards(w http.ResponseWriter, r *http.Request) {
 // (create; title required, unspecified status defaults to triage in
 // the store).
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
-	if s.Kanban == nil {
+	if s.Kanban() == nil {
 		boardUnavailable(w)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		tasks, err := s.Kanban.ListTasks(r.Context(), boardParam(r), r.URL.Query().Get("status"))
+		tasks, err := s.Kanban().ListTasks(r.Context(), boardParam(r), r.URL.Query().Get("status"))
 		if err != nil {
 			http.Error(w, "list tasks: "+err.Error(), http.StatusBadRequest)
 			return
@@ -88,7 +88,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		out, err := s.Kanban.CreateTask(r.Context(), boardParam(r), core.KanbanTask{
+		out, err := s.Kanban().CreateTask(r.Context(), boardParam(r), core.KanbanTask{
 			Title:    body.Title,
 			Body:     body.Body,
 			Assignee: body.Assignee,
@@ -109,7 +109,7 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 // agent, no dispatch races to armor). PATCH pointer fields distinguish
 // "set to this value (possibly empty)" from "leave alone".
 func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
-	if s.Kanban == nil {
+	if s.Kanban() == nil {
 		boardUnavailable(w)
 		return
 	}
@@ -120,17 +120,17 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		t, err := s.Kanban.GetTask(r.Context(), boardParam(r), id)
+		t, err := s.Kanban().GetTask(r.Context(), boardParam(r), id)
 		if err != nil {
 			taskByIDError(w, err)
 			return
 		}
-		comments, err := s.Kanban.GetTaskComments(r.Context(), boardParam(r), id)
+		comments, err := s.Kanban().GetTaskComments(r.Context(), boardParam(r), id)
 		if err != nil {
 			http.Error(w, "get comments: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		events, err := s.Kanban.GetTaskEvents(r.Context(), boardParam(r), id)
+		events, err := s.Kanban().GetTaskEvents(r.Context(), boardParam(r), id)
 		if err != nil {
 			http.Error(w, "get events: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -150,7 +150,7 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		}
 		// task.update keeps a simple non-pointer Status field ("" = no
 		// change); wire it through directly
-		out, err := s.Kanban.UpdateTask(r.Context(), boardParam(r), id, core.KanbanPatch{
+		out, err := s.Kanban().UpdateTask(r.Context(), boardParam(r), id, core.KanbanPatch{
 			Title:     body.Title,
 			Body:      body.Body,
 			Assignee:  body.Assignee,
@@ -171,7 +171,7 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 // is "web" - the board must be able to tell a human UI comment from an
 // agent tool comment.
 func (s *Server) handleTaskComments(w http.ResponseWriter, r *http.Request) {
-	if s.Kanban == nil {
+	if s.Kanban() == nil {
 		boardUnavailable(w)
 		return
 	}
@@ -195,7 +195,7 @@ func (s *Server) handleTaskComments(w http.ResponseWriter, r *http.Request) {
 	if body.Author == "" {
 		body.Author = "web"
 	}
-	c, err := s.Kanban.AddComment(r.Context(), boardParam(r), id, body.Author, body.Body)
+	c, err := s.Kanban().AddComment(r.Context(), boardParam(r), id, body.Author, body.Body)
 	if err != nil {
 		taskByIDError(w, err)
 		return

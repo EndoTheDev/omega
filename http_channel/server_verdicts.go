@@ -53,7 +53,7 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if s.Verdicts == nil {
+	if s.Verdicts() == nil {
 		http.Error(w, "verdicts seam not mounted", http.StatusNotImplemented)
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 // /sessions/{id}/verdicts (one session): the pending cards, oldest
 // first, that the bell counts and the webui re-renders after a reload.
 func (s *Server) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
-	cards := s.Verdicts.Pending(sessionID)
+	cards := s.Verdicts().Pending(sessionID)
 	out := make([]verdictCardWire, 0, len(cards))
 	for _, c := range cards {
 		out = append(out, toVerdictWire(c))
@@ -102,7 +102,7 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		Text:          req.Text,
 		Skipped:       req.Skip,
 	}
-	answered, err := s.Verdicts.Answer(sessionID, req.CardID, v)
+	answered, err := s.Verdicts().Answer(sessionID, req.CardID, v)
 	if err != nil {
 		// settled cards (answered/skipped/expired) race to 409 with the
 		// reason; unknown / no-pending-card is 404. The message names the

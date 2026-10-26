@@ -137,6 +137,13 @@ func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disa
 		reg.active[p.Name()] = true
 		reg.plugins[p.Name()] = p
 	}
+	// The catalog keeps EVERY module of the build - disabled ones too -
+	// so the E2 registry surface can introspect and remount them.
+	reg.catalog = make(map[string]Plugin, len(plugins))
+	for _, p := range plugins {
+		reg.catalog[p.Name()] = p
+		reg.catalogOrder = append(reg.catalogOrder, p)
+	}
 	reg.mu.Unlock()
 	reg.deliverEmitters(ctx)
 	return reg, nil
@@ -163,6 +170,14 @@ type Registry struct {
 	active     map[string]bool
 	journals   map[string]*journal
 	plugins    map[string]Plugin
+
+	// Introspection + toggle state (v0.12 E2): the full plugin
+	// catalog - mounted or disabled - behind the registry's module
+	// surface, its build order for the UI list, and the mutex
+	// serializing live toggles.
+	catalog      map[string]Plugin
+	catalogOrder []Plugin
+	toggleMu     sync.Mutex
 }
 
 // Route is one module-registered REST route. Nothing serves it in
@@ -250,6 +265,7 @@ func newRegistry(refusals core.RefusalSink) *Registry {
 		active:   make(map[string]bool),
 		journals: make(map[string]*journal),
 		plugins:  make(map[string]Plugin),
+		catalog:  make(map[string]Plugin),
 		refusals: refusals,
 	}
 }
@@ -323,11 +339,32 @@ type emitterReg struct {
 
 // deliverEmitters hands the mounted Notifications seam (nil when the
 // module is absent - emitters stay nil-safe by the classic law) to
-// every hook at mount end.
+// every hook at mount end (boot: MountAllAPI's final deliver).
 func (r *Registry) deliverEmitters(ctx *Context) {
 	r.mu.Lock()
 	hooks := make([]emitterReg, len(r.emitter))
 	copy(hooks, r.emitter)
+	r.mu.Unlock()
+	for _, h := range hooks {
+		h.fn(ctx.Notifications)
+	}
+}
+
+// deliverModuleEmitters replays the emit-on-remount law: a remount's
+// fresh hooks never saw the mount-end deliver (they registered after
+// boot's sweep), so Mount delivers the named module's hooks itself.
+// Only that module's entries are replayed - the others are either
+// already delivered (boot) or gone (their dismount undid them). A
+// rejected remount panics before this runs and plays the hooks back
+// instead, so nothing is delivered half-mounted (Q11).
+func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
+	r.mu.Lock()
+	var hooks []emitterReg
+	for _, h := range r.emitter {
+		if h.module == module {
+			hooks = append(hooks, h)
+		}
+	}
 	r.mu.Unlock()
 	for _, h := range hooks {
 		h.fn(ctx.Notifications)

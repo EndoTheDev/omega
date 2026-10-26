@@ -159,6 +159,10 @@ func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error
 	}
 	j.commit(ctx) // replay forward onto the live Context
 	r.adoptMount(p, j)
+	// The emit-on-remount law: the remount's fresh emitter hooks
+	// registered past boot's deliver sweep - replay them, or the
+	// module's finished-things handoff stays nil until restart.
+	r.deliverModuleEmitters(ctx, p.Name())
 	if deps.Ctx != nil { // start the module's fence handles; deps arms them
 		if err := ctx.RunGroup().StartAll(startCtx(deps), deps, p.Name()); err != nil {
 			return fmt.Errorf("module %q mounted but its fence handles failed to start: %w", p.Name(), err)

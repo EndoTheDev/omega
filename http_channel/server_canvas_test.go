@@ -68,7 +68,7 @@ func (p *canvasProbeProvider) captured() *core.ActionCall {
 func canvasServer(t *testing.T) (*Server, *httptest2.Server, *canvasProbeProvider) {
 	t.Helper()
 	probe := &canvasProbeProvider{}
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{probe}}); err != nil {
 		t.Fatalf("newCanvas: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestCanvasSnapshotListsMountedPanels(t *testing.T) {
 // Zero mounted providers is a state, not an error: the webui renders
 // the empty dock off the same 200.
 func TestCanvasSnapshotEmptyWhenNothingMounted(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil)
 	ts := httptest2.NewServer(s.Handler())
 	defer ts.Close()
 	res, err := http.Get(ts.URL + "/ui/canvas")
@@ -267,7 +267,7 @@ func gatedCanvasServer(t *testing.T) (*Server, *httptest2.Server, *gatedProvider
 	gated := newGatedProvider()
 	a := core.NewAgent(gated, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)

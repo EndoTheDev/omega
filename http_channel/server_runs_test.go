@@ -105,7 +105,7 @@ func newStepServer(t *testing.T) (*Server, *stepProvider, *store.Store, *httptes
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := NewServer(a, nil, st, nil)
+	s := NewServer(a, nil, st, nil, nil)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return s, prov, st, ts
@@ -550,7 +550,7 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 				return "", ctx.Err()
 			},
 		},
-	}, st, nil)
+	}, st, nil, nil)
 	s.runTimeout = 250 * time.Millisecond
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
@@ -674,7 +674,7 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := NewServer(a, map[string]core.Tool{"hang": stopHangTool(nil)}, st, nil)
+	s := NewServer(a, map[string]core.Tool{"hang": stopHangTool(nil)}, st, nil, nil)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 

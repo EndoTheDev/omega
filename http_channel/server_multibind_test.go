@@ -33,12 +33,12 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	sA := NewServer(a, nil, st, nil)
+	sA := NewServer(a, nil, st, nil, nil)
 	// The second mirror gets its own agent (each channel start builds
 	// one) over the same provider + store: the mirror executes runs.
 	aB := core.NewAgent(prov, nil, 0)
 	aB.SetLoopProvider(testLoop{})
-	sB := NewServer(aB, nil, st, nil)
+	sB := NewServer(aB, nil, st, nil, nil)
 
 	// The channel-start wiring (HTTPChannel.Start): one process-wide
 	// hub, one shared capsule, ONE canvas behind every mirror

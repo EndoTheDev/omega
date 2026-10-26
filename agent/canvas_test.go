@@ -398,3 +398,48 @@ func TestActionlessProviderGetsNoSink(t *testing.T) {
 		t.Fatalf("actionless provider must not receive a sink")
 	}
 }
+
+// TestCanvasResyncDetachesAndRestores pins the live-toggle contract:
+// Resync drops a module whose provider left the Context (panels and
+// actions die without a restart) and registers a provider the scoped
+// remount appended. Untouched modules keep their state.
+func TestCanvasResyncDetachesAndRestores(t *testing.T) {
+	c, err := mountedCtx(t, twoProviders(), nil)
+	if err != nil {
+		t.Fatalf("NewCanvas: %v", err)
+	}
+
+	// kanban's provider leaves the Context (the disable cascade).
+	offCtx := &core.Context{PanelProviders: []core.PanelProvider{
+		twoProviders()[1], // files stays mounted
+	}}
+	if err := c.Resync(offCtx); err != nil {
+		t.Fatalf("Resync (disable): %v", err)
+	}
+	for _, p := range c.Snapshot() {
+		if strings.HasPrefix(p.Kind, "kanban.") {
+			t.Fatalf("kanban panel %q survived the dismount resync", p.ID)
+		}
+	}
+	if _, err := c.Dispatch(core.ActionCall{Module: "kanban", Action: "refresh"}); !errors.Is(err, core.ErrUnknownModule) {
+		t.Fatalf("kanban dispatch after disable = %v, want ErrUnknownModule", err)
+	}
+
+	// ... and the scoped remount appends a fresh provider: it
+	// registers again, files stays exactly where it was.
+	onCtx := &core.Context{PanelProviders: twoProviders()}
+	if err := c.Resync(onCtx); err != nil {
+		t.Fatalf("Resync (enable): %v", err)
+	}
+	var ids []string
+	for _, p := range c.Snapshot() {
+		ids = append(ids, p.ID)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("after enable re-register snapshot = %v, want 3 panels", ids)
+	}
+	if _, err := c.Dispatch(core.ActionCall{Module: "kanban", Action: "refresh"}); err != nil && !strings.Contains(err.Error(), "no handler registered") {
+		// the stub registers no handler - the 404 shape would be the failure
+		t.Fatalf("kanban dispatch after enable routed nowhere: %v", err)
+	}
+}
