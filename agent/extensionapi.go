@@ -137,6 +137,13 @@ func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disa
 		reg.active[p.Name()] = true
 		reg.plugins[p.Name()] = p
 	}
+	// The catalog keeps EVERY module of the build - disabled ones too -
+	// so the E2 registry surface can introspect and remount them.
+	reg.catalog = make(map[string]Plugin, len(plugins))
+	for _, p := range plugins {
+		reg.catalog[p.Name()] = p
+		reg.catalogOrder = append(reg.catalogOrder, p)
+	}
 	reg.mu.Unlock()
 	reg.deliverEmitters(ctx)
 	return reg, nil
@@ -163,6 +170,14 @@ type Registry struct {
 	active     map[string]bool
 	journals   map[string]*journal
 	plugins    map[string]Plugin
+
+	// Introspection + toggle state (v0.12 E2): the full plugin
+	// catalog - mounted or disabled - behind the registry's module
+	// surface, its build order for the UI list, and the mutex
+	// serializing live toggles.
+	catalog      map[string]Plugin
+	catalogOrder []Plugin
+	toggleMu     sync.Mutex
 }
 
 // Route is one module-registered REST route. Nothing serves it in
@@ -250,6 +265,7 @@ func newRegistry(refusals core.RefusalSink) *Registry {
 		active:   make(map[string]bool),
 		journals: make(map[string]*journal),
 		plugins:  make(map[string]Plugin),
+		catalog:  make(map[string]Plugin),
 		refusals: refusals,
 	}
 }
