@@ -253,6 +253,22 @@ type PromptSectioner interface {
 	PromptSections(opts PromptBuildOptions) []PromptSection
 }
 
+// LiveSeams is the optional Channel capability (v0.12 E2): the host
+// calls RewireSeams after every successful live module toggle, so the
+// channel's optional-module surface follows the Context it was built
+// from instead of mount-time pointer copies - a disabled module's
+// tools, panels, and routes die without a restart, a re-enabled one's
+// return. A channel that serves nothing module-dependent (or cannot)
+// does not implement it and the host skips it.
+type LiveSeams interface {
+	// RewireSeams re-reads the module seams from the live Context:
+	// the optional-module route surface, the canvas panel registry,
+	// and the agent's tool providers. It returns the wiring error of
+	// a re-enabled module's panels, if any - the toggle machinery has
+	// already changed the Context by the time this runs.
+	RewireSeams(ctx *Context) error
+}
+
 // Channel is a delivery transport that connects external clients to
 // the agent. Channels are additive: multiple can run simultaneously
 // (HTTP + Discord + Telegram). The host starts all mounted channels

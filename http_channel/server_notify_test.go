@@ -25,7 +25,7 @@ func serveNotifications(t *testing.T) (*httptest.Server, *notifications.Store) {
 		t.Fatalf("open notifications: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s.Notifications = st
+	s.seams.notifications = st
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, st
