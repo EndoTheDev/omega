@@ -104,15 +104,18 @@
     <AppComposer
       ref="composerEl"
       v-model:draft="draft"
-      :model="model"
+      :model="modelValue"
       :models="models"
       :busy="busy"
       :thinking="thinking"
+      :workspace="workspaceValue"
+      :workspace-bound="sessionId !== null"
       :attachments="state.attachments"
       :fork-anchor="forkAnchor"
       @clear-fork="host.setFork(stateKey, null)"
-      @update:model="emit('update:model', $event)"
+      @update:model="onModelChange"
       @update:thinking="emit('update:thinking', $event)"
+      @update:workspace="onWorkspaceChange"
       @send="onSend"
       @cancel="host.cancel(stateKey)"
       @attach-files="(imgs: never[]) => host.attachFiles(stateKey, imgs)"
@@ -156,6 +159,7 @@
     thinkingLevelWire,
     variantAnchors,
     type Appearance,
+    type Session,
     type TranscriptItem,
     type VariantBlock,
   } from "../composables/omega";
@@ -168,8 +172,11 @@
     tab: DockTab;
     /** show thinking blocks (app setting) */
     showThinking: boolean;
-    model: string;
+    /** available model names (shared - the picker's list) */
     models: string[];
+    /** the session this tab is bound to (null = unsaved draft tab) -
+         its pinned model + workspace are what stick (card t_9de5b009) */
+    session?: Session | null;
     /** reasoning-effort chip selection ("default" = no field sent) */
     thinking: string;
     /** chat appearance: chronolog | stacked blocks (card t_84e4653c) */
@@ -179,6 +186,7 @@
   const emit = defineEmits<{
     (e: "update:model", value: string): void;
     (e: "update:thinking", value: string): void;
+    (e: "update:workspace", value: string): void;
   }>();
 
   const host = inject(CHAT_HOST_KEY)!;
@@ -203,6 +211,48 @@
   host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
   // the reactive read through the wrapped map is the view
   const state = computed(() => host.states.get(stateKey));
+
+  // --- the session's remembered context (card t_9de5b009) ---
+  //
+  // The pinned model + workspace belong to the SESSION, not to the app:
+  // reopening restores what it last used, a mid-session change updates
+  // the row (the app PATCHes on our emit). A bound tab adopts the row's
+  // pins; a draft tab rides the app's default model and has no folder.
+  const modelValue = ref(props.session?.model || props.model);
+  const workspaceValue = ref(props.session?.workspace ?? "");
+  // rebind (draft -> sent adopts an id; tab remount) restores from the
+  // row; a row refresh adopts the pins the PATCH persisted. The pinned
+  // model only wins while non-empty - a draft with no row keeps the
+  // app default that props.model carries.
+  function restorePins() {
+    const pinnedModel = props.session?.model ?? "";
+    if (sessionId.value) {
+      if (pinnedModel) modelValue.value = pinnedModel;
+    } else {
+      modelValue.value = props.model;
+    }
+    workspaceValue.value = sessionId.value ? (props.session?.workspace ?? "") : "";
+  }
+  watch(
+    () => [sessionId.value, props.session?.model ?? "", props.session?.workspace ?? ""] as const,
+    restorePins,
+  );
+  // the app's default model moved (models fetch or another draft tab's
+  // change): an UNPINNED context follows it, a pinned session holds
+  watch(
+    () => props.model,
+    (m) => {
+      if (!sessionId.value || !props.session?.model) modelValue.value = m;
+    },
+  );
+  function onModelChange(v: string) {
+    modelValue.value = v;
+    emit("update:model", v);
+  }
+  function onWorkspaceChange(v: string) {
+    workspaceValue.value = v;
+    emit("update:workspace", v);
+  }
 
   // --- the transcript's render source (chat-last 2a) ---
   //
@@ -424,7 +474,7 @@
     // plain one unless the chip is armed again)
     const fork = forkAnchor.value;
     if (fork) host.setFork(stateKey, null);
-    host.submit(stateKey, text, props.model, thinkingLevelWire(props.thinking), fork ?? undefined);
+    host.submit(stateKey, text, modelValue.value, thinkingLevelWire(props.thinking), fork ?? undefined);
   }
   function onRetry() {
     // the message action row's retry chip (t_95d2bc34): the chat
@@ -465,7 +515,7 @@
     const target = findMessageItem(transcript.value, messageId);
     if (!target) return;
     if (target.role === "user") {
-      void host.replayFork(stateKey, messageId, props.model, thinkingLevelWire(props.thinking));
+      void host.replayFork(stateKey, messageId, modelValue.value, thinkingLevelWire(props.thinking));
       return;
     }
     host.setFork(stateKey, messageId);

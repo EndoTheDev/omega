@@ -70,6 +70,13 @@
         :model="model"
         :models="models"
         @update:model="$emit('update:model', $event)" />
+      <!-- the session's working folder chip (card t_9de5b009): pick +
+           apply = the app writes the session row; the folder's trust
+           rules govern the session, its file operations root there -->
+      <WorkspaceSelect
+        :workspace="workspace"
+        :disabled="!workspaceBound"
+        @update:workspace="$emit('update:workspace', $event)" />
       <ThinkingSelect
         :level="thinking"
         @update:level="$emit('update:thinking', $event)" />
@@ -95,6 +102,7 @@
 <script setup lang="ts">
   import ModelSelect from "./ModelSelect.vue";
   import ThinkingSelect from "./ThinkingSelect.vue";
+  import WorkspaceSelect from "./WorkspaceSelect.vue";
   import { dataUrl, mediaTypeFromBase64, type OmegaImage } from "../../composables/omega";
   import { composerFace } from "../../composables/chat";
 
@@ -105,6 +113,12 @@
     // THIS session's run is streaming: the send button is CANCEL now
     busy: boolean;
     thinking: string;
+    // the session's remembered working folder ("" = none) - the chip
+    // shows it, picking a new one emits update:workspace
+    workspace?: string;
+    // false when no session is bound yet: a folder pins on a SESSION
+    // row, and a draft has nothing to pin on - the chip disables
+    workspaceBound?: boolean;
     // pending image attachments - owned by the app: the transcript
     // bubble and the interrupted retry both need them
     attachments: OmegaImage[];
@@ -117,6 +131,7 @@
     (e: "update:draft", value: string): void;
     (e: "update:model", value: string): void;
     (e: "update:thinking", value: string): void;
+    (e: "update:workspace", value: string): void;
     (e: "send"): void;
     (e: "cancel"): void;
     (e: "attach-files", images: OmegaImage[]): void;
