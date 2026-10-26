@@ -18,8 +18,12 @@ import (
 )
 
 // TestRunChdirError verifies a non-subcommand argument that is not a
-// directory surfaces a clean chdir error (rather than launching the TUI).
+// directory and matches no module subcommand surfaces a clean chdir
+// error (rather than launching the TUI). It passes through the module
+// CLI dispatch first (v0.12 phase D) - a temp home keeps the mount
+// hermetic.
 func TestRunChdirError(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
 	err := run([]string{"/nonexistent/path/xyz"})
 	if err == nil {
 		t.Fatal("expected chdir error for nonexistent path")
@@ -27,8 +31,11 @@ func TestRunChdirError(t *testing.T) {
 }
 
 // TestRunHelp verifies --help and -h print help and exit cleanly, even
-// when combined with a subcommand.
+// when combined with a subcommand. The module-subcommand listing is
+// registry introspection - the temp home keeps the help-path mount
+// hermetic (a missing config resolves defaults, the section prints).
 func TestRunHelp(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
 	for _, args := range [][]string{
 		{"--help"},
 		{"-h"},

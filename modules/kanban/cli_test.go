@@ -1,17 +1,40 @@
-package main
+package kanban
 
-// Kanban CLI tests (t_d7a7beaa): board registry ops against a temp
-// home, and the isolation probe the card asks for - two boards, a
-// card on each, no bleed across list calls.
+// Kanban CLI tests (t_d7a7beaa, argv homed to the capsule in v0.12
+// phase D t_69322045): board registry ops against a temp home, and the
+// isolation probe the card asks for - two boards, a card on each, no
+// bleed across list calls.
 
 import (
 	"context"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 )
+
+// captureStdout reroutes os.Stdout through a pipe for the duration of
+// fn (the CLI handlers print straight to stdout).
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	outCh := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		outCh <- string(b)
+	}()
+	fnErr := fn()
+	w.Close()
+	return <-outCh, fnErr
+}
 
 // cardCount opens the board's db and counts tasks (registry wired,
 // the way a mount does it).
@@ -27,17 +50,17 @@ func cardCount(t *testing.T, home, board string) int {
 
 // openBoardStore opens the pointer-default dsn with the registry
 // wired, matching a mount.
-func openBoardStore(t *testing.T, home string) *kanbanModule.Store {
+func openBoardStore(t *testing.T, home string) *Store {
 	t.Helper()
-	dsn, err := kanbanModule.BoardDSN(home, kanbanModule.DefaultBoardName)
+	dsn, err := BoardDSN(home, DefaultBoardName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := kanbanModule.Open(dsn)
+	s, err := Open(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.ConfigureBoards(kanbanModule.BoardsDir(home), kanbanModule.DefaultBoardName, dsn)
+	s.ConfigureBoards(BoardsDir(home), DefaultBoardName, dsn)
 	t.Cleanup(func() { s.Close() })
 	return s
 }
@@ -119,7 +142,7 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 	if err := cmdKanban([]string{"done", tasks[0].ID}); err != nil {
 		t.Fatalf("done: %v", err)
 	}
-	if done := listBoardTasks(t, home, "alpha")[0].Status; done != kanbanModule.StatusDone {
+	if done := listBoardTasks(t, home, "alpha")[0].Status; done != StatusDone {
 		t.Fatalf("status = %q, want done", done)
 	}
 

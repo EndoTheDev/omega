@@ -21,9 +21,18 @@ omega update --yes        install the latest stable without a prompt
 omega update --rollback   swap back to omega.bak + health-verify
 omega rollback            alias for omega update --rollback
 omega health          check the server at the configured port
+omega kanban          the task board registry (see: omega kanban --help)
 ```
 
 ## Subcommands
+
+Module-owned subcommands (v0.12 phase D): the dispatch table is the
+mount registry. A capsule registers its own name + handler at mount,
+parses its own argv (including its own `--help`), and the global
+`omega --help` lists module subcommands by registry introspection.
+Deleting a module removes its registration: the subcommand vanishes
+from `omega --help` and an argument that matches nothing falls back to
+the project-path behavior.
 
 ### `omega` / `omega chat` (TUI)
 

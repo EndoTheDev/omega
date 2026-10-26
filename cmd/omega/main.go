@@ -5,11 +5,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -49,9 +51,11 @@ func main() {
 	}
 }
 
-// helpText is the global --help output. One help for all subcommands;
-// per-subcommand help is deferred until a subcommand has enough flags
-// to warrant it.
+// helpText is the global --help output's static part: the built-in
+// subcommands and flags. Module-owned subcommands are NOT listed here
+// - the list is registry introspection (v0.12 phase D, Q6: the module
+// owns its argv), appended by printModuleSubcommands so a module's
+// absence makes its subcommand vanish from the help.
 const helpText = `omega - a Go event-stream agent (Pi/Tau port)
 
 Usage:
@@ -70,7 +74,6 @@ Usage:
   omega update --rollback   swap back to omega.bak + verify it runs
   omega rollback            same as omega update --rollback
   omega health          check the server at the configured port
-  omega kanban          the task board registry (see: omega kanban --help)
 
 Flags:
   --config <path>       config file (default: <home>/config.yaml, or <home>/config/config.yaml)
@@ -111,7 +114,7 @@ func run(args []string) error {
 	for _, a := range args {
 		switch a {
 		case "--help", "-h":
-			fmt.Print(helpText)
+			printHelp(args)
 			return nil
 		case "--version", "-v":
 			fmt.Println("omega", omegaVersion)
@@ -128,8 +131,6 @@ func run(args []string) error {
 		return cmdRun(parseConfigFlag(rest), rest, trust)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
-	case "kanban":
-		return cmdKanban(rest)
 	case "export":
 		return cmdExport(parseConfigFlag(rest), rest)
 	case "insights":
@@ -146,14 +147,119 @@ func run(args []string) error {
 		// Explicit chat subcommand, or no subcommand: default to the TUI.
 		return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
 	default:
-		// Not a subcommand: treat as a project path. chdir there, then
-		// launch the TUI so project context and tool operations resolve
-		// relative to that directory.
+		// An existing directory stays the project path - decided before
+		// the module table, an existing directory is always a workspace.
+		if info, serr := os.Stat(sub); serr == nil && info.IsDir() {
+			if err := os.Chdir(sub); err != nil {
+				return fmt.Errorf("chdir %s: %w", sub, err)
+			}
+			return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
+		}
+		// Module-owned subcommands (v0.12 phase D, Q6 - CLI homecoming):
+		// the dispatch table is the mount registry, the module owns its
+		// argv. No module claims the name: fall back to the project-path
+		// behavior (chdir there, then the TUI).
+		if handled, err := dispatchModuleCLI(args, sub, rest); handled {
+			return err
+		}
 		if err := os.Chdir(sub); err != nil {
 			return fmt.Errorf("chdir %s: %w", sub, err)
 		}
 		return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
 	}
+}
+
+// printHelp prints the static help plus the module-owned subcommand
+// lines. The listing is registry introspection (settings-list law), so
+// a removed module's subcommand vanishes from `omega --help`. The
+// mount is best effort: help never fails, a broken home just loses
+// the module section (the static part always prints first).
+func printHelp(args []string) {
+	fmt.Print(helpText)
+	subs := []agent.Subcommand{}
+	if reg, _, err := mountRegistry(configForCLI(args)); err == nil {
+		subs = reg.Subcommands()
+	}
+	printModuleSubcommands(subs, os.Stdout)
+}
+
+// printModuleSubcommands renders the module section of the global
+// help - one line per registered subcommand, name-sorted. An empty
+// table prints no section: a binary with no module CLIs looks exactly
+// like the pre-phase-D help.
+func printModuleSubcommands(subs []agent.Subcommand, w io.Writer) {
+	if len(subs) == 0 {
+		return
+	}
+	sort.Slice(subs, func(i, j int) bool { return subs[i].Name < subs[j].Name })
+	width := len("kanban") + 2 // minimum: the description starts past the longest name today
+	for _, s := range subs {
+		if len(s.Name)+2 > width {
+			width = len(s.Name) + 2
+		}
+	}
+	fmt.Fprintf(w, "\nModule subcommands (a removed module's subcommand vanishes):\n")
+	for _, s := range subs {
+		fmt.Fprintf(w, "  omega %-*s %s\n", width, s.Name, s.Summary)
+	}
+}
+
+// mountRegistry builds and mounts the plugin set with the API mount,
+// returning the registration registry (the module CLI dispatch table
+// is registry introspection) and the mounted context. The context is
+// returned so a caller can drain seams; the CLI dispatch only needs
+// the registry.
+func mountRegistry(cfg Config) (*agent.Registry, *agent.Context, error) {
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build plugins: %w", err)
+	}
+	pctx := &agent.Context{
+		CWD:     cwd(),
+		Configs: agent.RouteConfigs(plugins, cfg),
+	}
+	reg, err := agent.MountAllAPI(plugins, pctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("mount extensions: %w", err)
+	}
+	return reg, pctx, nil
+}
+
+// configForCLI resolves the config for a module CLI dispatch. A
+// module subcommand keeps the old CLI contract - it never required a
+// (valid) config.yaml, the capsules run on their own config sections -
+// so a missing home or a broken global config falls back to the
+// defaults instead of failing the dispatch. A bad --config path
+// behaves the same: the module sections come up on their defaults.
+func configForCLI(args []string) Config {
+	cfg, err := LoadConfig(resolveConfigPath(parseConfigFlag(args)))
+	if err != nil {
+		return DefaultConfig()
+	}
+	return cfg
+}
+
+// dispatchModuleCLI mounts the capsules and dispatches a module-owned
+// CLI subcommand. Returns handled=false when no module claims the
+// name. The module handler receives the argv after the subcommand
+// untouched - the module parses its own argv (Q6).
+func dispatchModuleCLI(args []string, sub string, rest []string) (bool, error) {
+	reg, _, err := mountRegistry(configForCLI(args))
+	if err != nil {
+		return false, err
+	}
+	return dispatchSubcommand(reg, sub, rest)
+}
+
+// dispatchSubcommand consults the registry's cli table. Linear scan:
+// module subcommands are a handful at most.
+func dispatchSubcommand(reg *agent.Registry, sub string, rest []string) (bool, error) {
+	for _, c := range reg.Subcommands() {
+		if c.Name == sub {
+			return true, c.Handler(rest)
+		}
+	}
+	return false, nil
 }
 
 // splitSubcommand returns the first non-flag argument as the subcommand

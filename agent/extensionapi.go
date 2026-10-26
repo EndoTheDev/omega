@@ -48,6 +48,7 @@
 //	                                reference)
 //	 Channels                      RegisterChannel
 //	 Commands + CommandHandler     RegisterCommand
+//	 CLI subcommands (phase D)     RegisterSubcommand
 //	 InjectedMessages              RegisterDelegation
 //	 PendingDelegations            RegisterDelegation
 //
@@ -133,7 +134,8 @@ type Registry struct {
 	mu       sync.Mutex
 	owner    map[string]string // seam name or namespace pair -> tenant module
 	emitter  []emitterReg      // finished-things hooks, delivered at mount end
-	routes   []Route           // module REST, consumed in phase D
+	routes   []Route      // module REST, consumed in phase D
+	subcmds  []Subcommand // module CLI subcommands, dispatched by the omega binary
 	refusals core.RefusalSink
 }
 
@@ -152,6 +154,30 @@ func (r *Registry) Routes() []Route {
 	defer r.mu.Unlock()
 	out := make([]Route, len(r.routes))
 	copy(out, r.routes)
+	return out
+}
+
+// Subcommand is one module-owned CLI subcommand (v0.12 phase D, grill
+// Q6 - CLI homecoming): the binary routes `omega <name> ...` to the
+// handler with the untouched argv after the name; the module parses
+// its own argv (core never grows a flag framework) and prints its own
+// help. Deleting the module removes the registration: the subcommand
+// vanishes from `omega --help` and dispatch falls back to the
+// project-path behavior.
+type Subcommand struct {
+	Module  string
+	Name    string
+	Summary string // the one-line list entry `omega --help` shows
+	Handler func(argv []string) error
+}
+
+// Subcommands returns the registered module subcommands in
+// registration order.
+func (r *Registry) Subcommands() []Subcommand {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]Subcommand, len(r.subcmds))
+	copy(out, r.subcmds)
 	return out
 }
 
@@ -522,6 +548,42 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 		}
 	}
 	api.reg.routes = append(api.reg.routes, Route{Module: api.module, Pattern: pattern, Handler: h})
+	return nil
+}
+
+// RegisterSubcommand registers the capsule's CLI subcommand (v0.12
+// phase D, Q6 - module owns its argv): a thin name+handler prefix. The
+// binary consults the registry's cli table when a first non-flag
+// argument matches no built-in subcommand; the registration carries
+// the name (user-facing identity, natural shape like slash commands -
+// no namespace pair), the one-line summary the global help list shows,
+// and the handler that parses its own argv. The claim is
+// one-name-one-tenant: a cross-tenant claim of the same subcommand
+// name fails the boot loud (Q5), same-tenant re-registration replaces
+// (Q7).
+func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(argv []string) error) error {
+	if name == "" || name != strings.TrimSpace(name) {
+		return fmt.Errorf("subcommand %q: a registration carries its bare-word name", name)
+	}
+	if strings.HasPrefix(name, "-") || strings.HasPrefix(name, "/") {
+		return fmt.Errorf("subcommand %q: a CLI subcommand is a bare word - flags are the module's own argv, a leading / names the TUI seam", name)
+	}
+	if handler == nil {
+		return fmt.Errorf("subcommand %q: a registration carries its handler", name)
+	}
+	if err := api.reg.claimSlot("cli:"+name, api.module); err != nil {
+		return err
+	}
+	api.reg.mu.Lock()
+	defer api.reg.mu.Unlock()
+	for i, s := range api.reg.subcmds {
+		if s.Name == name {
+			api.reg.subcmds[i].Summary = summary // same tenant re-registers = replace (Q7)
+			api.reg.subcmds[i].Handler = handler
+			return nil
+		}
+	}
+	api.reg.subcmds = append(api.reg.subcmds, Subcommand{Module: api.module, Name: name, Summary: summary, Handler: handler})
 	return nil
 }
 

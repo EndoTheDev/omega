@@ -128,6 +128,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		},
 		func() error { return api.RegisterPanelProvider(p.capsule) },
 		func() error { return p.registerCommands(api) },
+		// CLI homecoming (v0.12 phase D, Q6): the omega kanban argv
+		// lives here now - the register step is the thin name+handler
+		// prefix, this capsule parses its own argv.
+		func() error { return api.RegisterSubcommand("kanban", kanbanSummary, cmdKanban) },
 		// card t_5d9032d3: done transitions report to the finished-
 		// things store. The hook hands the mounted notifications seam
 		// over at mount end, nil when the module is absent (nil is
