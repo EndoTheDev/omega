@@ -16,7 +16,7 @@ Project rules live here.
 
 ## Tools
 ### memory
-- memory: Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.
+- memory.entry: Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.
   .add: Append a new entry (content required).
   .replace: Find the entry matching old_text (unique substring) and replace it with content.
   .remove: Find the entry matching old_text (unique substring) and delete it.
