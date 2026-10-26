@@ -285,47 +285,32 @@ func TestExtensionImplementsToolProvider(t *testing.T) {
 	var _ core.ToolProvider = (*Extension)(nil)
 }
 
-// TestToolsShape checks the folded domain tool plus its alias shims
-// are registered with correct names.
+// TestToolsShape checks the namespaced tool pair registers with
+// correct names and per-action parameters.
 func TestToolsShape(t *testing.T) {
 	ext := New(Default()) // no API key, tools still registered
 	tools := ext.Tools()
-	for _, name := range []string{"web", "web.search", "web.fetch"} {
+	for _, name := range []string{"web.search", "web.fetch"} {
 		if _, ok := tools[name]; !ok {
 			t.Errorf("missing %s tool", name)
 		}
 	}
-	if len(tools) != 3 {
-		t.Errorf("expected 3 tools, got %d", len(tools))
+	if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
-	// Aliases route through the folded dispatcher and are marked.
-	for _, legacy := range []string{"web.search", "web.fetch"} {
-		if tools[legacy].AliasOf != "web" {
-			t.Errorf("%s not marked AliasOf=web", legacy)
-		}
+	// Each verb carries its own parameters (the schema split that came
+	// with the Q10 rename); web.search wants query, web.fetch wants url.
+	if _, ok := tools["web.search"].Parameters["properties"].(map[string]any)["query"]; !ok {
+		t.Error("web.search schema lost the query property")
 	}
-	// The domain tool's enum covers both verbs via the metadata.
-	names := webActionNames(t)
-	if names[0] != "search" || names[1] != "fetch" {
-		t.Fatalf("actions metadata = %+v", ext.Tools()["web"].Actions)
+	if _, ok := tools["web.fetch"].Parameters["properties"].(map[string]any)["url"]; !ok {
+		t.Error("web.fetch schema lost the url property")
 	}
-}
-
-// webActionNames reads the action names off the registered web tool.
-func webActionNames(t *testing.T) []string {
-	t.Helper()
-	ext := New(Default())
-	tools := ext.Tools()
-	names := make([]string, len(tools["web"].Actions))
-	for i, a := range tools["web"].Actions {
-		names[i] = a.Name
-	}
-	return names
 }
 
 // TestRunWebRoutesBothActions is the fold gate: both verbs are
-// reachable through the folded dispatcher's action enum (validation
-// errors, no HTTP calls).
+// reachable through the shared dispatcher (validation errors, no HTTP
+// calls).
 func TestRunWebRoutesBothActions(t *testing.T) {
 	ext := New(Default())
 	// search routes
@@ -338,9 +323,9 @@ func TestRunWebRoutesBothActions(t *testing.T) {
 	if err != nil || result != "error: url is required" {
 		t.Fatalf("fetch route: %q %v", result, err)
 	}
-	// alias routes through the same dispatcher
+	// the registered namespaced tools route through the same dispatcher
 	if out, err := ext.Tools()["web.search"].Run(context.Background(), map[string]any{}); err != nil || out != "error: query is required" {
-		t.Fatalf("web.search alias: %q %v", out, err)
+		t.Fatalf("web.search: %q %v", out, err)
 	}
 	// unknown action
 	if _, err := ext.runWeb(context.Background(), map[string]any{}); err == nil {
@@ -396,12 +381,14 @@ func TestFetchNoAPIKey(t *testing.T) {
 	}
 }
 
-// TestMount verifies Mount appends a ToolProvider to the Context.
+// TestMount verifies the api mount registers the ToolProvider on the
+// Context - the ExtensionAPI path is web's only mount since the v0.12
+// phase-C2 migration.
 func TestMount(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount failed: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+		t.Fatalf("api mount failed: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("expected 1 ToolProvider, got %d", len(ctx.ToolProviders))
@@ -409,6 +396,15 @@ func TestMount(t *testing.T) {
 	tools := ctx.ToolProviders[0].Tools()
 	if _, ok := tools["web.search"]; !ok {
 		t.Error("mounted provider missing web.search")
+	}
+	if _, ok := tools["web.fetch"]; !ok {
+		t.Error("mounted provider missing web.fetch")
+	}
+	if _, ok := tools["web"]; ok {
+		t.Error("the unprefixed consolidated web tool must be retired")
+	}
+	if err := p.Mount(ctx); err == nil {
+		t.Error("the retired classic mount must fail loud")
 	}
 }
 
@@ -418,11 +414,11 @@ func TestMountWithConfig(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{
 		Configs: map[string]any{
-			"web": Config{APIKey: "sk", BaseURL: "http://host:1"},
+			"web": Config{APIKey: "sk-test", BaseURL: "http://host:1"},
 		},
 	}
-	if err := p.Mount(ctx); err != nil {
-		t.Fatalf("Mount failed: %v", err)
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil); err != nil {
+		t.Fatalf("api mount failed: %v", err)
 	}
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
