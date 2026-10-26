@@ -24,10 +24,13 @@ type verdictToolProvider struct {
 	hub core.VerdictsProvider
 }
 
-// Tools implements core.ToolProvider.
+// Tools implements core.ToolProvider. The machine-facing identity is
+// the namespaced pair verdict.request (Q10, the v0.12 mount migration)
+// - the module's own prompt vocabulary ("verdict.request: ask the
+// user...") is the verb.
 func (p *verdictToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"verdict": {
+		"verdict.request": {
 			Description: "Pause the conversation and present a choice card when a decision materially affects the user - ask when the decision needs human input and you cannot proceed without them. Never call this from a cron or delegated run; it only works in interactive turns.",
 			Actions:     verdictActions,
 			Parameters: map[string]any{

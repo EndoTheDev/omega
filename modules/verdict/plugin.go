@@ -1,15 +1,20 @@
 package verdict
 
 import (
+	"fmt"
+
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Plugin mounts the verdicts seam and its surfaces: the verdict tool,
-// the /verdict TUI command, and a short prompt section so the
-// model knows when to ask. The hub is built once and shared by the
-// tool (the blocking Ask), the HTTP channel (the answer POSTs), and the
-// TUI (the answer command) - that one object is the single-answer race.
+// Plugin mounts the verdicts seam and its surfaces: the
+// verdict.request tool, the /verdict TUI command, and a short prompt
+// section so the model knows when to ask. The hub is built once and
+// shared by the tool (the blocking Ask), the HTTP channel (the answer
+// POSTs), and the TUI (the answer command) - that one object is the
+// single-answer race. It mounts through the ExtensionAPI exclusively
+// (v0.12 phase C2; the classic Mount body is retired to the fail-loud
+// stub below).
 type Plugin struct {
 	hub *Hub
 }
@@ -37,13 +42,23 @@ func (p *Plugin) ConfigKey() string { return "" }
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 
-// Mount builds the hub, publishes it on the Context, and appends the
-// tool provider, TUI provider, and prompt-section contributor.
+// Mount satisfies agent.Plugin (the interface keeps its classic shape
+// until phase F). It is never dispatched: MountWithAPI exists, and
+// APIPlugin wins (the strangler rule). If ever reached it fails loud -
+// verdict does not mount the old way, which is the proof of migration.
+func (p *Plugin) Mount(ctx *core.Context) error {
+	return fmt.Errorf("verdict: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
+}
+
+// MountWithAPI builds the hub from the seams the mount reads in place
+// (store, logging - the Requires edges stay, recipe law 4) and
+// registers every face: the verdicts seam, the verdict.request tool,
+// the TUI renderer, and the Verdict Cards prompt section.
 //
-// Capsule posture (arc 6, card t_78935c07): this Mount is the module's
-// whole surface - the seam, the blocking verdict tool, the /verdict
-// command, and the Verdict Cards prompt section all ship from here,
-// and the module ships nothing else. No canvas panel and no
+// Capsule posture (arc 6, card t_78935c07): this registration is the
+// module's whole surface - the seam, the blocking verdict tool, the
+// /verdict command, and the Verdict Cards prompt section all ship from
+// here, and the module ships nothing else. No canvas panel and no
 // module-qualified actions exist (the card renders in the chat stream
 // off the tool call; nothing rendered a verdict panel before the arc).
 // The /verdicts REST routes live in http_channel behind the
@@ -53,13 +68,20 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 // Take verdict.NewPlugin() out of buildPlugins() and every face above
 // vanishes; the proof is TestVerdictRemovalProof
 // (cmd/omega/removal_test.go, seventh).
-func (p *Plugin) Mount(ctx *core.Context) error {
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	p.hub = NewHub(ctx.Store, ctx.Logger)
-	ctx.Verdicts = p.hub
-	ctx.ToolProviders = append(ctx.ToolProviders, &verdictToolProvider{hub: p.hub})
-	ctx.TUIProviders = append(ctx.TUIProviders, &tuiProvider{hub: p.hub})
-	ctx.PromptSectioners = append(ctx.PromptSectioners, p)
-	return nil
+	if err := api.RegisterVerdicts(p.hub); err != nil {
+		return err
+	}
+	for name, tool := range (&verdictToolProvider{hub: p.hub}).Tools() {
+		if err := api.RegisterTool(name, tool); err != nil {
+			return err
+		}
+	}
+	if err := api.RegisterRenderer(&tuiProvider{hub: p.hub}); err != nil {
+		return err
+	}
+	return api.RegisterPromptSectioner(p)
 }
 
 // NewPlugin returns a verdict Plugin.
