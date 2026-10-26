@@ -43,6 +43,21 @@ type Session struct {
 	// and persisted on the session row. Nil until a run with reported
 	// usage completes - a fresh session never carries phantom rates.
 	LastRun *LastRunStats `json:"last_run,omitempty"`
+
+	// Model is the session's pinned model_name (empty = no pin - the
+	// channel's default model serves the session). Written when the
+	// user picks a model mid-session and read by every send: reopening
+	// the session restores the model it last used. Sessions saved
+	// before this data was recorded stay empty - today's behavior.
+	Model string `json:"model,omitempty"`
+
+	// Workspace is the session's working folder (empty = no root -
+	// relative file operations resolve against the process working
+	// directory, exactly as before). Set operations root file tools
+	// here, and the folder's trust.yaml + AGENTS.md govern the
+	// session's prompt context. Absolute path; validated to be an
+	// existing directory when written.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // LastRunStats is one completed run's average rates, written with the

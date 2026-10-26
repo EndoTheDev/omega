@@ -121,7 +121,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 	title_state INTEGER NOT NULL DEFAULT 0,
 	last_read_at TEXT NOT NULL DEFAULT '',
 	agent TEXT NOT NULL DEFAULT 'default',
-	last_run TEXT NOT NULL DEFAULT ''
+	last_run TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	workspace TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,6 +213,8 @@ INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 		`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'default'`,
 		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -271,7 +275,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
-		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun); err != nil {
+		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.Workspace); err != nil {
 		return core.Session{}, err
 	}
 	sess.ParentID = parent.String
@@ -295,7 +299,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, workspace"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
@@ -311,6 +315,25 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET last_run = ? WHERE id = ?`, encoded, sessionID)
+	return err
+}
+
+// SetSessionModel pins the session's model_name (the SessionContextStore
+// seam, card t_9de5b009). Empty clears the pin. A picker concern, not
+// activity - updated_at is untouched.
+func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET model = ? WHERE id = ?`, model, sessionID)
+	return err
+}
+
+// SetSessionWorkspace roots the session's file operations at an absolute
+// working folder (the SessionContextStore seam). Empty clears it. A
+// picker concern, not activity - updated_at is untouched. Directory
+// validation lives at the HTTP surface; the store knows only rows.
+func (s *Store) SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET workspace = ? WHERE id = ?`, workspace, sessionID)
 	return err
 }
 
