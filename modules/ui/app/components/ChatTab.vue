@@ -172,6 +172,9 @@
     tab: DockTab;
     /** show thinking blocks (app setting) */
     showThinking: boolean;
+    /** the app default model (an unpinned tab rides it; a pinned row
+         holds its own pin - t_9de5b009's restorePins law) */
+    model: string;
     /** available model names (shared - the picker's list) */
     models: string[];
     /** the session this tab is bound to (null = unsaved draft tab) -
