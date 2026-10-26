@@ -163,6 +163,24 @@ type AgentSessionStore interface {
 	ListAgentSessions(ctx context.Context, agentName string) ([]Session, error)
 }
 
+// SessionContextStore is the optional session-context surface (card
+// t_9de5b009): the per-session pinned model and working folder. The core
+// StoreProvider stays untouched so the default surface (and every fake)
+// keeps compiling: implementers opt in by type-asserting to this
+// interface, the same pattern AgentSessionStore, CronLister and
+// SkillsLister use. Both setters are user-list concerns - they do not
+// touch updated_at.
+type SessionContextStore interface {
+	// SetSessionModel pins the model_name the session remembers (the
+	// name the picker wrote; every send resolves through it). Empty
+	// clears the pin - the channel's default model serves again.
+	SetSessionModel(ctx context.Context, sessionID, model string) error
+	// SetSessionWorkspace sets the session's working folder (absolute,
+	// existing directory - validated at the surface). Empty clears it:
+	// relative file operations root at the process working directory.
+	SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error
+}
+
 // SkillsProvider is the skill loading seam. The default implementation
 // scans a directory for <name>/<name>.md files, provided via the skills
 // plugin. The host uses this to populate the skill list for autocomplete,
@@ -472,6 +490,46 @@ func RunOriginFromContext(ctx context.Context) string {
 }
 
 type runOriginKey struct{}
+
+// runScope is one run's per-session working-folder override (card
+// t_9de5b009). CWD roots the run's relative file operations (the tools
+// and the prompt's CWD line); PromptContext is the trust-gated
+// AGENTS.md project context of THAT folder, resolved by the channel at
+// send time.
+type runScope struct {
+	CWD           string
+	PromptContext string
+}
+
+type runScopeKey struct{}
+
+// RunWorkspace returns the run's session workspace root ("" = none - the
+// run is not rooted in a session folder). File tools resolve relative
+// paths against it; the loop serves it as the prompt's CWD. The channel
+// injects the value from the session's Workspace column at send time.
+func RunWorkspace(ctx context.Context) string {
+	scope, _ := ctx.Value(runScopeKey{}).(runScope)
+	return scope.CWD
+}
+
+// RunPromptContext returns the run's trust-gated project context override
+// ("" = unset - the agent's host-level prompt context applies).
+func RunPromptContext(ctx context.Context) string {
+	scope, _ := ctx.Value(runScopeKey{}).(runScope)
+	return scope.PromptContext
+}
+
+// WithRunWorkspace returns a child context carrying the run's session
+// workspace root and its trust-gated project context. An empty dir is
+// the unset case: the child wraps nothing, the host-level values apply.
+// Values are run-scoped: each Run caller wraps its own context, so
+// parallel runs never share one.
+func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Context {
+	if dir == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
+}
 
 // Frontend is the user-facing interface seam. The default implementation
 // is the terminal TUI (tui/). A custom implementation could

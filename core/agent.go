@@ -349,6 +349,18 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		if runTools == nil {
 			runTools = a.tools
 		}
+		// Per-run scope override (card t_9de5b009): a session rooted in
+		// a workspace folder serves its CWD and trust-gated AGENTS.md
+		// context for THIS run only - the agent's host-level values
+		// (the process working directory) stay untouched for runs
+		// without a session workspace. Empty overrides are unset.
+		runCWD, runPromptContext := a.cwd, a.promptContext
+		if dir := RunWorkspace(ctx); dir != "" {
+			runCWD = dir
+		}
+		if pc := RunPromptContext(ctx); pc != "" {
+			runPromptContext = pc
+		}
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
 			Messages:           messages,
@@ -359,10 +371,10 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			ExtensionInfos:     a.extensionInfos,
 			MaxTurns:           a.maxTurns,
 			MaxToolOutput:      a.maxToolOutput,
-			CWD:                a.cwd,
+			CWD:                runCWD,
 			PromptCustom:       a.promptCustom,
 			PromptAppend:       a.promptAppend,
-			PromptContext:      a.promptContext,
+			PromptContext:      runPromptContext,
 			Events:             events,
 			InjectedMessages:   a.injectedMsgs,
 			UserInput:          a.userInput,

@@ -44,6 +44,12 @@ type Server struct {
 	eph      ephRegistry
 	store    core.StoreProvider
 	settings core.Settings
+	// trust is the optional project-context seam (modules/trust). A
+	// session rooted in a workspace folder resolves its AGENTS.md
+	// context through it at send time (card t_9de5b009); a nil seam
+	// keeps workspace-rooted runs context-free - the file tools still
+	// root, the prompt context just stays empty.
+	trust core.TrustProvider
 	// Kanban is the optional board seam (modules/kanban). A nil value
 	// answers 501 on the /tasks endpoints - the board is optional.
 	Kanban core.KanbanProvider
@@ -135,6 +141,7 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/boards", s.handleBoards)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
+	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/extensions", s.handleExtensions)
 	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
@@ -342,6 +349,14 @@ type chatRequest struct {
 	// copy the LOOP persists through its sink before the first turn
 	// (fork parents already applied). Unexported: never part of the
 	// request wire.
+	// workspace is the session's working folder for THIS run (from the
+	// session's Workspace column, prepared in prepareRun). Unexported:
+	// never part of the request wire.
+	workspace string
+	// workspacePromptContext is the trust-gated AGENTS.md context of
+	// the workspace folder, resolved at prepare time. Unexported:
+	// never part of the request wire.
+	workspacePromptContext string
 	persistInput []core.Message
 	// Ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no
 	// store row, nothing on disk; the `eph-` id (carried on the leading
@@ -480,6 +495,34 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		return nil, err
 	}
 
+	// One session row up front (card t_9de5b009): the model pin, the
+	// workspace scope and the title kick all resolve from the same
+	// read. Ephemeral ids have no row; an unknown id leaves everything
+	// at the legacy defaults.
+	var sess core.Session
+	sessionKnown := false
+	if s.store != nil && req.SessionID != "" && !req.Ephemeral {
+		if v, err := s.store.GetSession(ctx, req.SessionID); err == nil {
+			sess, sessionKnown = v, true
+		}
+	}
+
+	// Model pin: a wire model WINS and sticks (the picker's choice is
+	// what the session remembers from here on, card t_9de5b009); no
+	// wire model serves the session's remembered one. The write is
+	// best-effort - a failed pin leaves the send on the request model.
+	if sessionKnown {
+		if req.Model != "" {
+			if req.Model != sess.Model {
+				if scx, ok := s.store.(core.SessionContextStore); ok {
+					_ = scx.SetSessionModel(ctx, req.SessionID, req.Model)
+				}
+			}
+		} else if sess.Model != "" {
+			req.Model = sess.Model
+		}
+	}
+
 	// Per-run provider pin: model override + thinking level (shared
 	// with the legacy inline path).
 	prov, pinErr := s.pinProvider(req)
@@ -488,15 +531,24 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		return nil, pinErr
 	}
 
-	// Provisional title: one cheap GetSession at request start, and the
-	// title call fires detached before any streaming, so the sidebar
-	// leaves the raw session id while the model is still thinking.
-	// maybeTitleSession re-reads the session and enforces the state
-	// machine before anything is written.
-	if s.store != nil && req.SessionID != "" {
-		if sess, err := s.store.GetSession(ctx, req.SessionID); err == nil && sess.TitleState == 0 {
-			go s.maybeTitleSession(context.WithoutCancel(ctx), prov, *req, "", false)
-		}
+	// Provisional title: the cheap state-machine check rides the same
+	// row (no second GetSession), and the title call fires detached
+	// before any streaming, so the sidebar leaves the raw session id
+	// while the model is still thinking. maybeTitleSession re-reads
+	// the session and enforces the state machine before writing.
+	if sessionKnown && sess.TitleState == 0 {
+		go s.maybeTitleSession(context.WithoutCancel(ctx), prov, *req, "", false)
+	}
+
+	// Workspace scope: a session rooted in a folder roots THIS run's
+	// relative file operations there (the loop and the tools read the
+	// scope off ctx) and serves the folder's trust-gated AGENTS.md
+	// context instead of the process working directory's. Non-tty
+	// resolution skips an untrusted folder's context with a stderr
+	// note - the same gate the host applies at boot.
+	req.workspace = sess.Workspace
+	if sess.Workspace != "" && s.trust != nil {
+		req.workspacePromptContext = s.trust.ResolveContext(sess.Workspace, false, false, false)
 	}
 
 	tools := s.tools
@@ -915,6 +967,11 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	// tools run in THIS session's context: board tools read the session
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
+	// Session workspace (card t_9de5b009): relative file operations
+	// root at the session's folder and the prompt carries the folder's
+	// trust-gated AGENTS.md context (resolved in prepareRun). Empty =
+	// no workspace - today's behavior, the ctx override is absent.
+	ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
 	// Verdict cards v1: the no-store legacy path is still an interactive
 	// turn - verdict.request may issue from here.
 	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
@@ -1262,7 +1319,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				payload.MessageCount = c.MessageCount
 				payload.ToolCount = c.ToolCount
 			}
+			// The pinned model wins; the TUI's model_change trail is the
+			// fallback for sessions that never carried a pin (card t_9de5b009).
 			payload.Model = models[sess.ID]
+			if sess.Model != "" {
+				payload.Model = sess.Model
+			}
 			// computed at read time from the row itself - no counters,
 			// no schema writes (same pattern as the counts)
 			payload.Unread = agent.SessionUnread(sess)
@@ -1474,23 +1536,44 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		// {"archived": true|false} (archive toggle, same no-touch
 		// contract). All are list concerns: pinning, reading and
 		// archiving are not activity, and the webui time buckets read
-		// updated_at.
+		// updated_at. Session context (card t_9de5b009) joins the
+		// same no-touch contract: {"model": "..."} pins the model
+		// the session remembers, {"workspace": "/abs/dir"} roots the
+		// session's file operations ("" clears either).
 		var body struct {
-			Pinned   *bool `json:"pinned"`
-			Read     *bool `json:"read"`
-			Archived *bool `json:"archived"`
+			Pinned    *bool   `json:"pinned"`
+			Read      *bool   `json:"read"`
+			Archived  *bool   `json:"archived"`
+			Model     *string `json:"model"`
+			Workspace *string `json:"workspace"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body.Pinned == nil && body.Read == nil && body.Archived == nil {
-			http.Error(w, "pinned, read or archived must not be missing", http.StatusBadRequest)
+		if body.Pinned == nil && body.Read == nil && body.Archived == nil &&
+			body.Model == nil && body.Workspace == nil {
+			http.Error(w, "pinned, read, archived, model or workspace must not be missing", http.StatusBadRequest)
 			return
 		}
 		if body.Read != nil && !*body.Read {
 			http.Error(w, "read must be true", http.StatusBadRequest)
 			return
+		}
+		var resolvedDir string
+		// model/workspace: "": clears the pin, non-empty: sets it
+		// (trimmed). Workspace additionally must be an existing
+		// directory - rejected before any write lands.
+		if body.Workspace != nil {
+			resolvedDir = ""
+			if *body.Workspace != "" {
+				dir, err := resolveWorkspaceDir(*body.Workspace)
+				if err != nil {
+					http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
+					return
+				}
+				resolvedDir = dir
+			}
 		}
 		if body.Pinned != nil {
 			if err := s.store.SetSessionPinned(r.Context(), id, *body.Pinned); err != nil {
@@ -1508,6 +1591,30 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			if err := s.store.SetSessionArchived(r.Context(), id, *body.Archived); err != nil {
 				http.Error(w, "archive session: "+err.Error(), http.StatusInternalServerError)
 				return
+			}
+		}
+		// Session context rides the optional SessionContextStore seam
+		// - a store without it (fakes, embedders) answers 501 on the
+		// model/workspace fields instead of failing the whole patch.
+		if body.Model != nil || body.Workspace != nil {
+			scx, ok := s.store.(core.SessionContextStore)
+			if !ok {
+				http.Error(w, "session store has no session-context surface", http.StatusNotImplemented)
+				return
+			}
+			if body.Model != nil {
+				if err := scx.SetSessionModel(r.Context(), id, strings.TrimSpace(*body.Model)); err != nil {
+					http.Error(w, "set session model: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+			if body.Workspace != nil {
+				// dir was resolved + validated above; "" (clear) or
+				// the cleaned absolute path lands on the row.
+				if err := scx.SetSessionWorkspace(r.Context(), id, resolvedDir); err != nil {
+					http.Error(w, "set session workspace: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
 			}
 		}
 		sess, err := s.store.GetSession(r.Context(), id)

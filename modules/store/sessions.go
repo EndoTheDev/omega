@@ -26,6 +26,12 @@ var _ core.AgentSessionStore = (*Store)(nil)
 // into the same-agent tree (branching an agent session keeps its own
 // agent this way); label is optional. The id-must-be-new semantics are
 // the same as CreateSession.
+//
+// Sessions in agent homes carry the session-context fields too (card
+// t_9de5b009): model + workspace are row columns shared with the
+// default surface, so a homes-bound session can pin both the same way
+// once the agents arc wires pickers of its own. No reader exists
+// there yet - nothing to do today, the columns ride the row.
 func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, agentName string) error {
 	if agentName == "" {
 		agentName = agent.DefaultAgentName

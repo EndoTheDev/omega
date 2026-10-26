@@ -153,6 +153,19 @@ func fileActionNames() []string {
 	return names
 }
 
+// resolveToolPath roots a tool path argument at the run's session
+// workspace (card t_9de5b009). A session-rooted run resolves RELATIVE
+// paths against that folder; absolute paths pass through untouched. No
+// workspace (or an absolute path) is exactly today's behavior - the
+// path is returned as-is and the process working directory applies.
+func resolveToolPath(ctx context.Context, path string) string {
+	dir := core.RunWorkspace(ctx)
+	if dir == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(dir, path)
+}
+
 // RunFiles dispatches the consolidated files tool: a single operation
 // (action read/write/edit) or an atomic batch via operations. The
 // action enum itself is derived server-side from filesActions (see
@@ -164,6 +177,9 @@ func (p *ToolProvider) RunFiles(ctx context.Context, args map[string]any) (strin
 			return "", err
 		}
 		return p.runFileBatch(ctx, ops)
+	}
+	if v, ok := args["path"].(string); ok {
+		args["path"] = resolveToolPath(ctx, v)
 	}
 	action, _ := args["action"].(string)
 	switch action {
@@ -220,6 +236,12 @@ func parseFileOperations(raw any) ([]fileOp, error) {
 // half-applied multi-file change is impossible. Each file surface is a
 // plain file, not a DB, so snapshot/restore is the rollback.
 func (p *ToolProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, error) {
+	// Root every op at the run's session workspace FIRST (card
+	// t_9de5b009): the snapshot, the dispatch and the error text all
+	// see the same rooted path, and absolute op paths pass through.
+	for i := range ops {
+		ops[i].Path = resolveToolPath(ctx, ops[i].Path)
+	}
 	snap := make(map[string][]byte, len(ops)) // abs path -> bytes; absent from map = file did not exist
 	existed := make(map[string]bool, len(ops))
 	modes := make(map[string]os.FileMode, len(ops)) // abs path -> original mode, for rollback
@@ -374,6 +396,11 @@ func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (strin
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
 		shellKillSetup(cmd)
 	}
+	// A session-rooted run executes INSIDE its workspace (card
+	// t_9de5b009): relative commands (ls, grep, go test...) operate on
+	// the session's folder. No workspace = the process working
+	// directory, exactly as before.
+	cmd.Dir = core.RunWorkspace(ctx)
 	outBuf := &cappedBuffer{}
 	cmd.Stdout = outBuf
 	cmd.Stderr = outBuf
@@ -397,7 +424,14 @@ func shellOutput(b *cappedBuffer) string {
 }
 
 // RunReadFile reads a file with line numbers, honoring offset/limit.
-func (p *ToolProvider) RunReadFile(_ context.Context, args map[string]any) (string, error) {
+func (p *ToolProvider) RunReadFile(ctx context.Context, args map[string]any) (string, error) {
+	// Session workspace rooting (card t_9de5b009): the alias shims and
+	// the fold dispatch root the path before this handler reads it -
+	// resolve again for the direct-call safety (idempotent when
+	// absolute).
+	if v, ok := args["path"].(string); ok {
+		args["path"] = resolveToolPath(ctx, v)
+	}
 	path, err := argString(args, "path")
 	if err != nil {
 		return "", err
@@ -463,7 +497,10 @@ func (p *ToolProvider) RunReadFile(_ context.Context, args map[string]any) (stri
 }
 
 // RunWriteFile writes content to a file, creating parent dirs.
-func (p *ToolProvider) RunWriteFile(_ context.Context, args map[string]any) (string, error) {
+func (p *ToolProvider) RunWriteFile(ctx context.Context, args map[string]any) (string, error) {
+	if v, ok := args["path"].(string); ok {
+		args["path"] = resolveToolPath(ctx, v)
+	}
 	path, err := argString(args, "path")
 	if err != nil {
 		return "", err
@@ -496,7 +533,10 @@ func (p *ToolProvider) RunWriteFile(_ context.Context, args map[string]any) (str
 }
 
 // RunEdit applies a find-and-replace patch to a file.
-func (p *ToolProvider) RunEdit(_ context.Context, args map[string]any) (string, error) {
+func (p *ToolProvider) RunEdit(ctx context.Context, args map[string]any) (string, error) {
+	if v, ok := args["path"].(string); ok {
+		args["path"] = resolveToolPath(ctx, v)
+	}
 	path, err := argString(args, "path")
 	if err != nil {
 		return "", err
