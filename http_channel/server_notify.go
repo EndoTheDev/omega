@@ -34,7 +34,7 @@ func notifyUnavailable(w http.ResponseWriter) {
 
 // handleNotifications serves GET /notifications.
 func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
-	if s.Notifications == nil {
+	if s.Notifications() == nil {
 		notifyUnavailable(w)
 		return
 	}
@@ -65,7 +65,7 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 		}
 		offset = n
 	}
-	notes, unread, err := s.Notifications.List(r.Context(), unreadOnly, limit, offset)
+	notes, unread, err := s.Notifications().List(r.Context(), unreadOnly, limit, offset)
 	if err != nil {
 		http.Error(w, "list notifications: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -79,7 +79,7 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 // handleNotificationsRead serves POST /notifications/read: {"id": N}
 // marks one record, {"all": true} marks everything read.
 func (s *Server) handleNotificationsRead(w http.ResponseWriter, r *http.Request) {
-	if s.Notifications == nil {
+	if s.Notifications() == nil {
 		notifyUnavailable(w)
 		return
 	}
@@ -97,12 +97,12 @@ func (s *Server) handleNotificationsRead(w http.ResponseWriter, r *http.Request)
 	}
 	switch {
 	case body.All:
-		if err := s.Notifications.MarkAllRead(r.Context()); err != nil {
+		if err := s.Notifications().MarkAllRead(r.Context()); err != nil {
 			http.Error(w, "mark all read: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	case body.ID != nil:
-		if err := s.Notifications.MarkRead(r.Context(), *body.ID); err != nil {
+		if err := s.Notifications().MarkRead(r.Context(), *body.ID); err != nil {
 			http.Error(w, "mark read: "+err.Error(), http.StatusNotFound)
 			return
 		}
@@ -119,7 +119,7 @@ func (s *Server) handleNotificationsRead(w http.ResponseWriter, r *http.Request)
 // releases the store subscription - the store itself never holds the
 // response writer.
 func (s *Server) handleNotificationEvents(w http.ResponseWriter, r *http.Request) {
-	if s.Notifications == nil {
+	if s.Notifications() == nil {
 		notifyUnavailable(w)
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Server) handleNotificationEvents(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	frames, cancel := s.Notifications.Subscribe()
+	frames, cancel := s.Notifications().Subscribe()
 	defer cancel()
 
 	// Keepalive ticks guard against idle-stream proxies closing the

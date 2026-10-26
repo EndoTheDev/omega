@@ -20,7 +20,7 @@ func kanbanTestServer(t *testing.T) *Server {
 		t.Fatalf("open board: %v", err)
 	}
 	t.Cleanup(func() { board.Close() })
-	s.Kanban = board
+	s.seams.kanban = board
 	return s
 }
 

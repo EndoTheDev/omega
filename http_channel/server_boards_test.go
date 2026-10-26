@@ -37,7 +37,7 @@ func multiBoardServer(t *testing.T) *httptest2.Server {
 		t.Fatalf("open: %v", err)
 	}
 	board.ConfigureBoards(kanban.BoardsDir(home), kanban.DefaultBoardName, home+"/data/kanban.db")
-	s.Kanban = board
+	s.seams.kanban = board
 	ts := httptest2.NewServer(s.Handler())
 	t.Cleanup(func() {
 		ts.Close()

@@ -127,8 +127,8 @@ func (c *chatCapsule) push(p core.Panel) {
 		return
 	}
 	if err := up(p); err != nil {
-		if srv := c.srv.Load(); srv != nil && srv.logger != nil {
-			srv.logger.Errorf("chat panel push rejected (module %q): %v", chatModuleNamespace, err)
+		if srv := c.srv.Load(); srv != nil && srv.Logger() != nil {
+			srv.Logger().Errorf("chat panel push rejected (module %q): %v", chatModuleNamespace, err)
 		}
 	}
 }

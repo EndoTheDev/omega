@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"maps"
+	"sync"
 )
 
 // ToolAction is one named sub-action of a domain tool. A tool that
@@ -85,9 +86,14 @@ func (t Tool) SchemaParameters() map[string]any {
 // The loop is not set by default — the host must wire one (e.g. via
 // the agent-loop plugin in modules/agent_loop/).
 type Agent struct {
-	provider       Provider
-	tools          map[string]Tool
-	toolProviders  []ToolProvider
+	provider      Provider
+	tools         map[string]Tool
+	toolProviders []ToolProvider
+	// tpMu guards toolProviders: a live module toggle (v0.12 E2)
+	// swaps the set mid-process while concurrent runs and the /tools
+	// inventory read it under the loop.
+	tpMu          sync.RWMutex
+	tpLive        bool // NewFromContext built this agent from a mounted Context
 	maxTurns       int
 	compactor      CompactionProvider
 	maxToolOutput  int
@@ -152,9 +158,30 @@ func (a *Agent) SetPromptContext(s string) {
 }
 
 // SetToolProviders installs additional tool providers (from extensions).
-// Their tools are merged on each Run.
+// Their tools are merged on each Run. The live-toggle path (v0.12 E2)
+// calls this mid-process; concurrent runs read it under the tpMu lock -
+// the loop always receives a snapshot taken under the same lock.
 func (a *Agent) SetToolProviders(tps []ToolProvider) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
 	a.toolProviders = tps
+}
+
+// RefreshToolProviders re-reads the tool set from the mounted Context
+// the agent was built from (NewFromContext): module providers a live
+// toggle appended or removed land here. An agent built without a
+// Context keeps its set - the classic constructor has nothing to
+// re-read. The copy is defensive: the loop and the inventory see a
+// frozen snapshot, the Context keeps mutating underneath.
+func (a *Agent) RefreshToolProviders(ctx *Context) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	if !a.tpLive || ctx == nil {
+		return
+	}
+	providers := make([]ToolProvider, len(ctx.ToolProviders))
+	copy(providers, ctx.ToolProviders)
+	a.toolProviders = providers
 }
 
 // Tools returns a snapshot of the agent's executable tool registry: the
@@ -163,8 +190,11 @@ func (a *Agent) SetToolProviders(tps []ToolProvider) {
 // defensive: callers (e.g. the HTTP channel's /tools listing) can never
 // mutate the agent's underlying maps.
 func (a *Agent) Tools() map[string]Tool {
+	a.tpMu.RLock()
+	providers := a.toolProviders
+	a.tpMu.RUnlock()
 	size := len(a.tools)
-	for _, tp := range a.toolProviders {
+	for _, tp := range providers {
 		if tp != nil {
 			size += len(tp.Tools())
 		}
@@ -173,7 +203,7 @@ func (a *Agent) Tools() map[string]Tool {
 	for name, t := range a.tools {
 		tools[name] = t
 	}
-	for _, tp := range a.toolProviders {
+	for _, tp := range providers {
 		if tp == nil {
 			continue
 		}
@@ -262,6 +292,7 @@ type AgentOptions struct {
 func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag := NewAgent(ctx.Provider, nil, opts.MaxTurns)
 	ag.SetToolProviders(ctx.ToolProviders)
+	ag.tpLive = true // the Context stays the source of truth: live toggles re-read it
 	ag.SetLoopProvider(ctx.Loop)
 	ag.SetPromptBuilder(ctx.PromptBuilder)
 	ag.SetExtensionInfos(ctx.Infos)
@@ -361,11 +392,14 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		if pc := RunPromptContext(ctx); pc != "" {
 			runPromptContext = pc
 		}
+		a.tpMu.RLock()
+		toolProviders := a.toolProviders
+		a.tpMu.RUnlock()
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
 			Messages:           messages,
 			Tools:              runTools,
-			ToolProviders:      a.toolProviders,
+			ToolProviders:      toolProviders,
 			CompactionProvider: a.compactor,
 			PromptBuilder:      a.promptBuilder,
 			ExtensionInfos:     a.extensionInfos,

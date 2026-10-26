@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -43,6 +44,27 @@ func (m *omegaModules) Refusals() []core.Refusal { return m.reg.Refusals() }
 func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) error {
 	if err := m.reg.Toggle(m.pctx, name, enabled, m.deps); err != nil {
 		return err
+	}
+	// The serving channels re-read the Context: a disabled module's
+	// tools, panels, and routes die without a restart, a re-enabled
+	// one's return (E2 - the toggle machinery changed the Context,
+	// the surfaces built from it follow). No LiveSeams-capable channel
+	// means nothing module-dependent is being served.
+	for _, ch := range m.pctx.Channels {
+		rewire, ok := ch.(core.LiveSeams)
+		if !ok {
+			continue
+		}
+		if err := rewire.RewireSeams(m.pctx); err != nil {
+			// The toggle applied and omega.json will record it, but a
+			// served surface failed to re-read: loud, not silent - a
+			// stale route would render a module the runtime lost.
+			err = fmt.Errorf("module %s applied, but the channel re-wire failed: %w", toggleWord(enabled), err)
+			if m.logger != nil {
+				m.logger.Errorf("omega: %v", err)
+			}
+			return err
+		}
 	}
 	off := disabledNow(m.reg)
 	if err := SaveDisabled(m.omegaPath, off); err != nil {

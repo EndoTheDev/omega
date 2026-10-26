@@ -179,6 +179,80 @@ func (c *Canvas) Update(module string, panel core.Panel) error {
 	return nil
 }
 
+// Resync reconciles the runtime against the live Context (v0.12 E2):
+// a module dismounted through the live toggle loses its handlers,
+// panel rows and action index; a provider the remount appended to the
+// Context registers again (registration is the same declarative pass
+// boot's build ran). Modules whose provider is still on the Context
+// keep their state untouched. The callers hold the toggle serialization:
+// this runs after the mount machinery changed the Context and before
+// the serving surface re-reads it.
+func (c *Canvas) Resync(ctx *core.Context) error {
+	// live modules = the providers on the Context that contribute
+	// something (a module name derived from their actions).
+	live := map[string]core.PanelProvider{}
+	c.mu.Lock()
+	for _, p := range ctx.PanelProviders {
+		if p == nil {
+			continue
+		}
+		module := moduleNameOf(p)
+		if module == "" {
+			continue
+		}
+		live[module] = p
+	}
+	for module := range c.handlers {
+		if _, mounted := live[module]; !mounted {
+			delete(c.state, module)
+			delete(c.actions, module)
+			delete(c.handlers, module)
+			c.removeOrder(module)
+		}
+	}
+	c.mu.Unlock()
+	for module, p := range live {
+		c.mu.Lock()
+		_, mounted := c.handlers[module]
+		c.mu.Unlock()
+		if !mounted {
+			if _, err := c.register(p); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// removeOrder drops one module from the snapshot order (caller holds
+// the lock).
+func (c *Canvas) removeOrder(module string) {
+	for i, m := range c.order {
+		if m == module {
+			c.order = append(c.order[:i], c.order[i+1:]...)
+			return
+		}
+	}
+}
+
+// moduleNameOf derives the capsule name a PanelProvider's actions all
+// agree on - the same rule register enforces, without the
+// already-registered error path.
+func moduleNameOf(p core.PanelProvider) string {
+	module := ""
+	for _, panel := range p.Panels() {
+		for _, a := range panel.Actions {
+			if a.Module == "" {
+				continue
+			}
+			if module == "" {
+				module = a.Module
+			}
+		}
+	}
+	return module
+}
+
 // Dispatch routes one action call through the pipe (settled Q4b): the
 // module must be mounted, the action id must be one the module
 // registered on its panels, and then the capsule's handler receives

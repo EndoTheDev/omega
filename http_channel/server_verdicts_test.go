@@ -31,7 +31,7 @@ func verdictServer(t *testing.T) (*httptest.Server, *verdict.Hub) {
 	t.Helper()
 	s := NewServer(nil, nil, nil, nil, nil)
 	h := verdict.NewHub(nil, nil)
-	s.Verdicts = h
+	s.seams.verdicts = h
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, h

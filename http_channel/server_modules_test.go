@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/modules/kanban"
 )
 
 // fakeModules records the toggle calls and plays a canned answer.
@@ -178,5 +179,98 @@ func TestModuleToggleMalformedBody(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest || len(fm.toggled) != 0 {
 		t.Fatalf("an absent enabled must not toggle: %d %v", rec.Code, fm.toggled)
+	}
+}
+// The live re-wire (v0.12 E2): after a toggle the server re-reads the
+// Context instead of the mount-time copies - a disabled module's
+// routes die without a restart, a re-enabled one's return.
+func TestRewireSeamsFollowsTheContext(t *testing.T) {
+	s := NewServer(nil, nil, nil, nil, nil)
+	board, err := kanban.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open board: %v", err)
+	}
+	t.Cleanup(func() { board.Close() })
+	ctx := &core.Context{Kanban: board}
+
+	// mount-shaped: the wired seam answers the board routes
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatalf("rewire (mounted): %v", err)
+	}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tasks", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tasks after wire = %d", rec.Code)
+	}
+
+	// the disable cascade nil'd the seam: one rewire, the route 501s
+	ctx.Kanban = nil
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatalf("rewire (dismounted): %v", err)
+	}
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tasks", nil))
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("GET /tasks after dismount rewire = %d, want 501", rec.Code)
+	}
+
+	// the remount restores it - same call, no restart
+	ctx.Kanban = board
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatalf("rewire (remounted): %v", err)
+	}
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tasks", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tasks after remount rewire = %d", rec.Code)
+	}
+}
+
+// TestRewireRefreshesToolInventory pins the agent half: the /tools
+// inventory is the union the loop runs with, so a module's tools must
+// vanish from it when the module toggles off and return when it
+// toggles back - the agent re-reads the Context on every rewire.
+func TestRewireRefreshesToolInventory(t *testing.T) {
+	provider := &fakeToolProvider{tools: map[string]core.Tool{
+		"kanban.create": {Description: "create a card"},
+	}}
+	ctx := &core.Context{ToolProviders: []core.ToolProvider{provider}}
+	ag := core.NewFromContext(ctx, core.AgentOptions{})
+	s := NewServer(ag, nil, nil, nil, nil)
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatalf("rewire: %v", err)
+	}
+	assertToolsListed(t, s, "kanban.create", true)
+
+	// the module went: its provider is off the Context
+	ctx.ToolProviders = nil
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatalf("rewire after disable: %v", err)
+	}
+	assertToolsListed(t, s, "kanban.create", false)
+
+	// ... and back on
+	ctx.ToolProviders = []core.ToolProvider{provider}
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatalf("rewire after enable: %v", err)
+	}
+	assertToolsListed(t, s, "kanban.create", true)
+}
+
+type fakeToolProvider struct{ tools map[string]core.Tool }
+
+func (f *fakeToolProvider) Tools() map[string]core.Tool { return f.tools }
+
+// assertToolsListed reads the /tools inventory the webui's ToolsList
+// renders and checks one tool's presence.
+func assertToolsListed(t *testing.T, s *Server, name string, want bool) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tools", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tools = %d", rec.Code)
+	}
+	if want != contains(rec.Body.String(), name) {
+		t.Fatalf("tool %q listed=%v, want %v (%s)", name, contains(rec.Body.String(), name), want, rec.Body.String())
 	}
 }
