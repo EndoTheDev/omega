@@ -339,7 +339,7 @@ type Settings interface {
 // ModuleStatus is one module in the registry introspection (v0.12 E2,
 // the settings-toggle small law: the settings capsule RENDERS the
 // registry, core provides the vocabulary). State is "mounted" or
-// "disabled" (the omega.json toggle list). Dependents names the live
+// "disabled" (the config.yaml disabled: toggle list). Dependents names the live
 // modules that require a seam this one alone provides - the Q3 edge
 // semantics surfaced, so a disable confirms with what goes down too.
 type ModuleStatus struct {

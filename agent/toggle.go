@@ -146,7 +146,7 @@ func (r *Registry) logRefusal(name, predicate string, err error) {
 }
 
 // Toggle enables or disables one module live. The disabled-list write
-// (omega.json) is the host's job - the registry owns only the mount
+// (config.yaml disabled: key) is the host's job - the registry owns only the mount
 // machinery, which is the path boot shares (Q7).
 //
 // Disable: the cascade (name + transitive dependents) dismounts in

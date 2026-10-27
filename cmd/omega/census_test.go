@@ -3,12 +3,13 @@ package main
 // The E1 runtime proofs against the REAL plugin set: the census test
 // mirrors the nine removal proofs at runtime - mount every module of
 // buildPlugins, census, DismountAll in reverse topo order, and demand
-// after-dismount == before-mount. Plus the omega.json toggle file.
+// after-dismount == before-mount. Plus the config.yaml disabled: list
+// and its omega.json fold migration.
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -56,68 +57,243 @@ func TestCensusAllModules(t *testing.T) {
 	}
 }
 
-func TestLoadDisabled(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("OMEGA_HOME", home)
-	// Absent file: empty list, every capsule on (Q2).
-	off, err := LoadDisabled("")
-	if err != nil || len(off) != 0 {
-		t.Fatalf("missing omega.json: %v %v", off, err)
-	}
-	// The config/ layout is the primary location.
-	cfgDir := filepath.Join(home, "config")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+// captureStderr redirects os.Stderr for the duration of fn and returns
+// what was written - the fold migration warns on the boot path, which
+// has no logger yet.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(cfgDir, "omega.json")
-	if err := os.WriteFile(path, []byte(`{"disabled": ["kanban"]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	off, err = LoadDisabled("")
-	if err != nil || len(off) != 1 || off[0] != "kanban" {
-		t.Fatalf("config/omega.json not read: %v %v", off, err)
-	}
-	// Sibling of an explicit config.yaml wins.
-	altDir := t.TempDir()
-	cfgPath := filepath.Join(altDir, "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("http_timeout: 5\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(altDir, "omega.json"), []byte(`{"disabled": ["cron", "delegate"]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	off, err = LoadDisabled(cfgPath)
-	if err != nil || len(off) != 2 {
-		t.Fatalf("sibling omega.json not read: %v %v", off, err)
-	}
-	// Malformed JSON fails loud (Q5 - no silent degradation).
-	if err := os.WriteFile(filepath.Join(altDir, "omega.json"), []byte("{nope"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadDisabled(cfgPath); err == nil || !strings.Contains(err.Error(), "omega.json") {
-		t.Fatalf("malformed omega.json must fail loud: %v", err)
-	}
+	old := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+	fn()
+	w.Close()
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	r.Close()
+	return string(buf[:n])
 }
 
-func TestLoadDisabledThroughConfig(t *testing.T) {
+// The migration journey: an install with the v0.12 omega.json sidecar
+// boots once - the disable list folds into config.yaml's disabled:
+// key, the sidecar is deleted, and the boot honors the folded entries
+// in the same run. No silent drops.
+func TestFoldOmegaJSONMigration(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	cfgDir := filepath.Join(home, "config")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("http_timeout: 5\nprovider:\n  model_name: test-model\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "omega.json"),
+		[]byte(`{"disabled": ["kanban"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(map[string][]string{"disabled": {"kanban"}})
-	if err := os.WriteFile(filepath.Join(cfgDir, "omega.json"), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadConfig(filepath.Join(cfgDir, "config.yaml"))
+	t.Setenv("OMEGA_MODEL", "test-model")
+	var warning string
+	cfg, err := func() (Config, error) {
+		var cfg Config
+		var err error
+		warning = captureStderr(t, func() {
+			cfg, err = LoadConfig("")
+		})
+		return cfg, err
+	}()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cfg.Disabled) != 1 || cfg.Disabled[0] != "kanban" {
-		t.Fatalf("toggle list not routed into config: %+v", cfg.Disabled)
+		t.Fatalf("folded entries not honored by this boot: %+v", cfg.Disabled)
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, "omega.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("omega.json survived the fold: %v", statErr)
+	}
+	yamlPath := filepath.Join(cfgDir, "config.yaml")
+	if _, statErr := os.Stat(yamlPath); statErr != nil {
+		t.Fatalf("fold did not create the default config.yaml: %v", statErr)
+	}
+	if !strings.Contains(warning, "kanban") || !strings.Contains(warning, "folded") {
+		t.Fatalf("boot warning must name the folded entries, got: %q", warning)
+	}
+	// Idempotent: the second boot sees no sidecar and warns nothing.
+	again, err := func() (Config, error) {
+		var cfg Config
+		var err error
+		warning = captureStderr(t, func() {
+			cfg, err = LoadConfig("")
+		})
+		return cfg, err
+	}()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Disabled) != 1 || again.Disabled[0] != "kanban" {
+		t.Fatalf("folded state did not survive the reboot: %+v", again.Disabled)
+	}
+	if warning != "" {
+		t.Fatalf("a completed migration must not warn again: %q", warning)
+	}
+}
+
+// Sibling-of-explicit-config.yaml is the primary sidecar location, the
+// same order the old LoadDisabled searched.
+func TestFoldOmegaJSONSiblingAndHomeSearch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	// The fold-created config.yaml carries no provider stanza; the
+	// model rides the env, like the toggle-writing fresh install it
+	// mirrors.
+	t.Setenv("OMEGA_MODEL", "test-model")
+	// A home/config/omega.json folds when no explicit config rides along.
+	cfgDir := filepath.Join(home, "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "omega.json"),
+		[]byte(`{"disabled": ["kanban", "cron", "kanban"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var warning string
+	cfg, err := func() (Config, error) {
+		var cfg Config
+		var err error
+		warning = captureStderr(t, func() {
+			cfg, err = LoadConfig("")
+		})
+		return cfg, err
+	}()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// First-wins dedupe: [kanban cron kanban] folds as [kanban cron].
+	if len(cfg.Disabled) != 2 || cfg.Disabled[0] != "kanban" || cfg.Disabled[1] != "cron" {
+		t.Fatalf("wrong folded list, want [kanban cron]: %+v", cfg.Disabled)
+	}
+	if !strings.Contains(warning, filepath.Join(home, "config", "config.yaml")) {
+		t.Fatalf("warning must name the fold target, got: %q", warning)
+	}
+	// An empty sidecar is dead weight: deleted, nothing folded.
+	if err := os.WriteFile(filepath.Join(cfgDir, "omega.json"),
+		[]byte(`{"disabled": []}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(filepath.Join(cfgDir, "config.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, "omega.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("an empty sidecar must still be buried: %v", statErr)
+	}
+	// Malformed JSON fails the boot loud (Q5 - no silent degradation).
+	if err := os.WriteFile(filepath.Join(cfgDir, "omega.json"),
+		[]byte("{nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(filepath.Join(cfgDir, "config.yaml")); err == nil || !strings.Contains(err.Error(), "omega.json") {
+		t.Fatalf("malformed omega.json must fail loud: %v", err)
+	}
+}
+
+// The plain yaml key: config.yaml carries disabled: directly, no
+// sidecar involved - the list rides the normal decode.
+func TestDisabledPlainYAMLKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	cfgDir := filepath.Join(home, "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(cfgPath,
+		[]byte("http_timeout: 5\nprovider:\n  model_name: test-model\ndisabled:\n  - kanban\n  - delegate\n"),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Disabled) != 2 || cfg.Disabled[0] != "kanban" || cfg.Disabled[1] != "delegate" {
+		t.Fatalf("disabled: key not decoded: %+v", cfg.Disabled)
+	}
+	// And the toggle writer round-trips it: flip kanban on, the file
+	// loses only that entry.
+	if err := writeDisabled(cfgPath, []string{"delegate"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Disabled) != 1 || cfg.Disabled[0] != "delegate" {
+		t.Fatalf("toggle round-trip broke the list: %+v", cfg.Disabled)
+	}
+	if _, statErr := os.Stat(filepath.Join(cfgDir, "omega.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("a plain-key boot must not resurrect omega.json: %v", statErr)
+	}
+	// All-on: the key leaves the document entirely.
+	if err := writeDisabled(cfgPath, nil); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "disabled") {
+		t.Fatalf("an all-on home must carry no toggle state: %q", string(data))
+	}
+}
+
+// The node-level write law: comments, unknown keys, and key order
+// survive a toggle write verbatim - the disabled: key is appended
+// last, the rest of the document is untouched text.
+func TestWriteDisabledPreservesDocument(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	cfgDir := filepath.Join(home, "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "# my hand-tuned config\nprovider:\n  model_name: test-model # keep\nunknown_key: keep-me\nskills:\n  dir: mine\n"
+	path := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDisabled(path, []string{"kanban"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{"# my hand-tuned config", "test-model # keep", "unknown_key: keep-me", "dir: mine"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the write lost %q:\n%s", want, body)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^disabled:\n    - kanban\n?$`).MatchString(body) {
+		t.Fatalf("disabled: must append as the last key (yaml.v3 4-space list indent):\n%s", body)
+	}
+	if !strings.HasSuffix(body, "disabled:\n    - kanban\n") {
+		t.Fatalf("disabled list malformed:\n%s", body)
+	}
+}
+
+// A toggle write must never silently destroy a config.yaml boot has to
+// parse: malformed yaml fails the write loud.
+func TestWriteDisabledLoudOnBrokenFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("provider:\n  [broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDisabled(path, []string{"kanban"}); err == nil {
+		t.Fatal("broken config.yaml must fail the write loud")
+	}
+	// The broken byte is untouched - no half-written state.
+	if data, err := os.ReadFile(path); err == nil && !strings.Contains(string(data), "[broken") {
+		t.Fatal("the failed write altered the file")
 	}
 }

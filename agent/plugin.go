@@ -62,7 +62,7 @@ type Toggleable interface {
 	Toggleable() bool
 }
 
-// filterDisabled applies the omega.json disable list (grill Q1) to the
+// filterDisabled applies the config.yaml `disabled:` list (grill Q1) to the
 // plugin set before anything mounts: a disabled name must exist and
 // name a toggleable capsule (the tier law), and a remaining plugin
 // whose required seam is mounted only by a disabled module fails the
