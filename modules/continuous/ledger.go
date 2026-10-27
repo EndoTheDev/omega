@@ -6,8 +6,14 @@ package continuous
 // call - tool name, args hash, ok/failed, the cheap verifier - stored
 // in the OWNING process's data dir (datadir.AgentHome isolation puts a
 // wake child's rows in <agent>/data/ledger.db automatically). A wake
-// report cites ledger rows; this run ships the citations, claim-level
-// stripping stays a named follow-up (the card's report-shaping note).
+// report cites ledger rows; the shaper strips claim sentences the rows
+// do not back (ruling 11).
+//
+// Verifier scope, kept honest: the cheap check is the file stat ONLY.
+// URL-carrying calls record the URL in the verifier string as a
+// LOCATOR - the row's own ok flag (the tool's result, the fetch's HTTP
+// outcome) is the URL evidence. The verifier never fetches, never
+// stats a URL, never re-checks anything the tool already answered.
 
 import (
 	"context"
@@ -171,6 +177,7 @@ type pendingCall struct {
 	name     string
 	argsHash string
 	argPath  string
+	argURL   string
 }
 
 // argPathFor is the cheap check's target (ruling 11): a path-shaped
@@ -196,7 +203,8 @@ func argPathFor(args map[string]any) string {
 
 // verify is the cheap post-check: a stat of the call's path argument
 // (no re-execution, no network). The path rides the verdict so a
-// report claim can name the row that backs it.
+// report claim can name the row that backs it. The scope stays honest:
+// the verifier's check is the file stat ONLY (see the header).
 func verify(argPath string) string {
 	if argPath == "" {
 		return ""
@@ -205,6 +213,35 @@ func verify(argPath string) string {
 		return "file:exists:" + argPath
 	}
 	return "file:missing:" + argPath
+}
+
+// urlVerifier records a URL-carrying call's object (web.fetch's `url`
+// arg). This is NOT a check: the ok flag on the row - the tool's own
+// result, i.e. the fetch's HTTP outcome - is the evidence. The string
+// exists so the report shaper can match a URL claim onto the row that
+// fetched that URL.
+func urlVerifier(argURL string) string {
+	if argURL == "" {
+		return ""
+	}
+	return "url:" + argURL
+}
+
+// urlFor picks the URL object of a call: web.fetch's `url` key, or the
+// first top-level string argument that already looks like a URL. No
+// key match = no locator (an empty answer, like argPathFor).
+func urlFor(args map[string]any) string {
+	if raw, ok := args["url"].(string); ok {
+		if u := strings.TrimSpace(raw); u != "" && strings.IndexByte(u, 0) < 0 {
+			return u
+		}
+	}
+	for _, raw := range args {
+		if s, ok := raw.(string); ok && (strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")) {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
 }
 
 // argsHash is the cheap stable digest of a call's arguments.
@@ -239,6 +276,7 @@ func (l *Ledger) observer() core.EventObserver {
 				name:     call.ToolCall.Name,
 				argsHash: argsHash(call.ToolCall.Arguments),
 				argPath:  argPathFor(call.ToolCall.Arguments),
+				argURL:   urlFor(call.ToolCall.Arguments),
 			}
 		case core.ToolResultEvent:
 			p, ok := pending[e.Message.ToolCallID]
@@ -247,12 +285,17 @@ func (l *Ledger) observer() core.EventObserver {
 			}
 			delete(pending, e.Message.ToolCallID)
 			row := record{
-				TS:       core.NowISO(),
-				RunID:    spawnRunID,
-				Tool:     p.name,
+				TS:    core.NowISO(),
+				RunID: spawnRunID,
+				Tool:  p.name,
+				// A file stat where a path argument exists; otherwise the
+				// url locator. OK carries the actual verdict.
 				ArgsHash: p.argsHash,
 				OK:       !e.Message.IsError,
 				Verifier: verify(p.argPath),
+			}
+			if row.Verifier == "" {
+				row.Verifier = urlVerifier(p.argURL)
 			}
 			if p.name == "" {
 				row.Tool = "unknown"
