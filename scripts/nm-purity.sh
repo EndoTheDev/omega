@@ -17,7 +17,7 @@ set -euo pipefail
 #
 # Usage:
 #     scripts/nm-purity.sh                 # the kanban canary
-#     scripts/nm-purity.sh --module web    # one named module
+#     scripts/nm-purity.sh --module delegate # one named module
 #     scripts/nm-purity.sh --all           # every capsule (the nightly rotation)
 #
 # Exit codes: 0 all green, 1 one or more modules impure, 2 usage/IO error.
