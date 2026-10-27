@@ -75,7 +75,6 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 
 	beforeTools := len(target.ToolProviders)
 	beforeCmds := len(target.Commands)
-	beforeInfos := len(target.Infos)
 	j.apiMounted = true
 	api := &ExtensionAPI{module: p.Name(), ctx: target, reg: reg, j: j, live: !remount, builtin: isBuiltin(p)}
 	if err := p.MountWithAPI(target, api); err != nil {
@@ -112,10 +111,8 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 	info.Commands = len(target.Commands) - beforeCmds
 	target.Infos = append(target.Infos, info)
 	j.add(contribution{
-		module:   p.Name(),
-		desc:     "inventory info",
 		ctxApply: func(c *core.Context) { c.Infos = append(c.Infos, info) },
-		ctxUndo:  func(c *core.Context) { c.Infos = c.Infos[:beforeInfos] },
+		ctxUndo:  func(c *core.Context) { c.Infos = removeOne(c.Infos, info) },
 		applied:  !remount,
 	})
 	return j, nil
@@ -165,19 +162,6 @@ func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error
 	return nil
 }
 
-// Remount is the live config-change path (Q7): dismount then mount
-// through the one shared code path. A failed mount returns the
-// rejection (Q11) with the module left dismounted - the caller
-// decides whether to re-mount the previous plugin.
-func (r *Registry) Remount(ctx *core.Context, p Plugin, deps core.StartDeps) error {
-	if r.isActive(p.Name()) {
-		if err := r.Dismount(ctx, p.Name()); err != nil {
-			return err
-		}
-	}
-	return r.Mount(ctx, p, deps)
-}
-
 // Dismount removes one mounted module: its fence handles stop first,
 // then the module's own Dismount hook (module-internal state), then
 // the journal plays backward. Every mount is journaled (the universal
@@ -219,8 +203,4 @@ func startCtx(deps core.StartDeps) context.Context {
 		return context.Background()
 	}
 	return deps.Run
-}
-
-func sortToolList(l []core.ToolInfo) {
-	sort.SliceStable(l, func(i, j int) bool { return l[i].Name < l[j].Name })
 }

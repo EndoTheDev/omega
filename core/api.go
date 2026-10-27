@@ -1,13 +1,12 @@
 // The universal-mount vocabulary (v0.12 phase B, ADR block): the
 // types that cross the one typed registration surface (agent's
 // ExtensionAPI). stdlib-only by the core law - this is vocabulary,
-// never behavior: core checks shapes and records refusals, modules
+// never behavior: core records refusals and parses names, modules
 // own their types.
 //
 // Payload contract (settled Q9): payloads crossing a registration
-// carry raw JSON (map[string]any / json.RawMessage) and pass boundary
-// ShapeChecks. Core knows the check vocabulary; the checks themselves
-// live with the module that owns the payload's types.
+// carry raw JSON (map[string]any / json.RawMessage); the modules own
+// the payload's types (binary-purity constraint).
 //
 // Refusal ledger (settled Q12): every boundary rejection records the
 // module, the seam and the failed predicate. Nothing else acts on a
@@ -27,12 +26,6 @@ import (
 	"strings"
 	"time"
 )
-
-// ShapeCheck is one boundary payload check (settled Q9). The value
-// under check is raw JSON as Go sees it (map[string]any, slices,
-// scalars) - the check states what shape the seam accepts; the
-// module's own types stay home (binary-purity constraint).
-type ShapeCheck func(v any) error
 
 // Refusal is one boundary rejection in the refusal ledger (settled
 // Q12). Module names the capsule whose payload was refused, Seam the
