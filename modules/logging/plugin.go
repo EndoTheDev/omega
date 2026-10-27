@@ -29,11 +29,6 @@ func (p *Plugin) ConfigKey() string { return "logging" }
 func (p *Plugin) Provides() []string { return []string{"logging"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("logging: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Creates the logger from
 // config, registers the logging seam, and registers the /logs TUI
 // renderer (a logging plugin left out of buildPlugins takes /logs out

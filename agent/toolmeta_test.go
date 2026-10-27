@@ -20,15 +20,15 @@ type fakeMountPlugin struct {
 	mount    func(ctx *Context) error
 }
 
-func (f fakeMountPlugin) Name() string             { return f.name }
-func (f fakeMountPlugin) Provides() []string       { return f.provides }
-func (f fakeMountPlugin) Requires() []string       { return nil }
-func (f fakeMountPlugin) Mount(ctx *Context) error { return f.mount(ctx) }
+func (f fakeMountPlugin) Name() string                                       { return f.name }
+func (f fakeMountPlugin) Provides() []string                                 { return f.provides }
+func (f fakeMountPlugin) Requires() []string                                 { return nil }
+func (f fakeMountPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error { return f.mount(ctx) }
 
 // mountAllHelper wires MountAll over fake plugins.
 func mountAllHelper(t *testing.T, ps []Plugin, ctx *Context) {
 	t.Helper()
-	if err := MountAll(ps, ctx); err != nil {
+	if _, err := MountAllAPI(ps, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 }

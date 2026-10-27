@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -51,11 +50,6 @@ func (p *Plugin) Provides() []string { return []string{"tools"} }
 // Requires lists seams that must be mounted before this plugin.
 // MCP has no dependencies on other plugins.
 func (p *Plugin) Requires() []string { return nil }
-
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("mcp: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
 
 // MountWithAPI implements agent.APIPlugin. This Mount is the module's
 // whole surface (arc 6 capsule, card t_cf6b7795): the bridge tool

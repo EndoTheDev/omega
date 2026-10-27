@@ -1,7 +1,6 @@
 package prompt
 
 import (
-	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -34,11 +33,6 @@ func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
 // assembler renders sections contributed by other modules at build
 // time, so it has no mount-order dependencies.
 func (p *Plugin) Requires() []string { return nil }
-
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("prompt: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
 
 // MountWithAPI implements agent.APIPlugin: the prompt_builder seam,
 // one registration. The builder reads prompt section contributors

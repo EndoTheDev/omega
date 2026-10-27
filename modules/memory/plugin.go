@@ -1,7 +1,6 @@
 package memory
 
 import (
-	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -28,14 +27,6 @@ func (p *Plugin) ConfigKey() string { return "memory" }
 
 func (p *Plugin) Provides() []string { return []string{"memory", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
-
-// Mount satisfies agent.Plugin (the interface keeps its classic shape
-// until phase F). It is never dispatched: MountWithAPI exists, and
-// APIPlugin wins (the strangler rule). If ever reached it fails loud -
-// memory does not mount the old way, which is the proof of migration.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("memory: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
-}
 
 // MountWithAPI implements agent.APIPlugin. This registration is the
 // module's whole surface (arc 6 capsule, card t_da1fcc76): the seam,

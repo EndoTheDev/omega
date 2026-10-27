@@ -51,7 +51,7 @@ func TestModuleOmissionDropsTUICommands(t *testing.T) {
 		}
 	}
 	ctx := &agent.Context{Configs: agent.RouteConfigs(kept, cfg)}
-	if err := agent.MountAll(kept, ctx); err != nil {
+	if _, err := agent.MountAllAPI(kept, ctx, nil, nil); err != nil {
 		t.Fatalf("mount plugins: %v", err)
 	}
 	var cmds []string

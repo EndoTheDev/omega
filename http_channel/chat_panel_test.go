@@ -213,7 +213,7 @@ func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	plugin := &Plugin{}
 	pctx := &core.Context{Configs: map[string]any{"http_channel": Config{Port: 1}}}
-	if err := plugin.Mount(pctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{plugin}, pctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
 	// Mount registers nothing: the panel exists only once a live

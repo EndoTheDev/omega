@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -127,7 +128,7 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 			"http_channel": Config{Port: port, Bind: []string{"127.0.0.1", "127.0.0.2"}},
 		},
 	}
-	if err := p.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
 	if len(ctx.Channels) != 2 {

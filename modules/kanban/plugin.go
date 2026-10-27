@@ -55,14 +55,6 @@ func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 // edge retired with the mount-time capture (v0.12 phase C1).
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount satisfies agent.Plugin (the interface keeps its classic shape
-// until phase F). It is never dispatched: MountWithAPI exists, and
-// APIPlugin wins (the strangler rule). If ever reached it fails loud -
-// kanban does not mount the old way, which is the proof of migration.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("kanban: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C1)")
-}
-
 // MountWithAPI implements agent.APIPlugin. The store opens here (same
 // resolution the classic body ran); every face registers through the
 // api: the kanban seam, the folded task tool, the live panel capsule,

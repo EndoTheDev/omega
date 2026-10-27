@@ -431,7 +431,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		memory.NewPlugin(),
 		// card t_13a2af8a: mount order is declared data - the
 		// notifications consumers (delegate, kanban, cron) carry
-		// Requires edges naming the seam, and agent.MountAll's topoSort
+		// Requires edges naming the seam, and agent.MountAllAPI's topoSort
 		// is the only ordering. Slice order below is a stable tiebreak
 		// only (it keeps prompt sections in authoring order among
 		// independent plugins; it carries no dependency semantics).

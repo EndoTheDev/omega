@@ -63,7 +63,17 @@ func (c *toggleCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error
 		func() error { return nil })
 }
 
-// classicNoProof writes a slot without any dismount proof.
+// classicNoProof registers nothing: it exists for the Q3 edge and
+// introspection cases, where only its name and provides matter.
+type classicNoProof struct{ name string }
+
+func (p *classicNoProof) Name() string       { return p.name }
+func (p *classicNoProof) Provides() []string { return []string{p.name} }
+func (p *classicNoProof) Requires() []string { return nil }
+func (p *classicNoProof) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error {
+	return nil
+}
+
 // classicWithProof reverses its own writes.
 type classicWithProof struct{ name string }
 

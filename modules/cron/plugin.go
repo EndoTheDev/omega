@@ -56,14 +56,6 @@ func (p *Plugin) Provides() []string { return []string{"cron"} }
 // after MountAllAPI returns).
 func (p *Plugin) Requires() []string { return []string{"notifications"} }
 
-// Mount satisfies agent.Plugin (the interface keeps its classic shape
-// until phase F). It is never dispatched: MountWithAPI exists, and
-// APIPlugin wins (the strangler rule). If ever reached it fails loud -
-// cron does not mount the old way, which is the proof of migration.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("cron: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
-}
-
 // MountWithAPI loads crons.yaml and registers every face: the cron
 // seam, the /cron TUI commands (the module-owns-its-surface law, card
 // t_88bb7dcf: a cron plugin left out of buildPlugins takes /cron out

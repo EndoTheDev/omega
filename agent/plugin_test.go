@@ -49,10 +49,10 @@ type testPlugin struct {
 	mount    func(*Context) error
 }
 
-func (p testPlugin) Name() string             { return p.name }
-func (p testPlugin) Provides() []string       { return p.provides }
-func (p testPlugin) Requires() []string       { return p.requires }
-func (p testPlugin) Mount(ctx *Context) error { return p.mount(ctx) }
+func (p testPlugin) Name() string                                       { return p.name }
+func (p testPlugin) Provides() []string                                 { return p.provides }
+func (p testPlugin) Requires() []string                                 { return p.requires }
+func (p testPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error { return p.mount(ctx) }
 
 func TestMountAllOrdering(t *testing.T) {
 	var order []string
@@ -75,7 +75,7 @@ func TestMountAllOrdering(t *testing.T) {
 	}
 
 	ctx := &Context{}
-	if err := MountAll(plugins, ctx); err != nil {
+	if _, err := MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	if order[0] != "provider" {
@@ -112,7 +112,7 @@ func TestMountAllRequiresEdgeForcesOrder(t *testing.T) {
 	}
 
 	ctx := &Context{}
-	if err := MountAll(plugins, ctx); err != nil {
+	if _, err := MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	seen := map[string]int{}
@@ -132,7 +132,7 @@ func TestMountAllMissingDep(t *testing.T) {
 		mount:    func(ctx *Context) error { return nil },
 	}
 
-	err := MountAll([]Plugin{p}, &Context{})
+	_, err := MountAllAPI([]Plugin{p}, &Context{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected missing dep error")
 	}
@@ -145,7 +145,7 @@ func TestMountAllConflict(t *testing.T) {
 	p1 := testPlugin{name: "p1", provides: []string{"provider"}, mount: func(c *Context) error { return nil }}
 	p2 := testPlugin{name: "p2", provides: []string{"provider"}, mount: func(c *Context) error { return nil }}
 
-	err := MountAll([]Plugin{p1, p2}, &Context{})
+	_, err := MountAllAPI([]Plugin{p1, p2}, &Context{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected conflict error")
 	}
@@ -177,7 +177,7 @@ func TestMountAllAdditiveTools(t *testing.T) {
 	}
 
 	ctx := &Context{}
-	if err := MountAll([]Plugin{p1, p2}, ctx); err != nil {
+	if _, err := MountAllAPI([]Plugin{p1, p2}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	if len(ctx.ToolProviders) != 2 {
@@ -192,7 +192,7 @@ func TestMountAllMountError(t *testing.T) {
 		mount:    func(ctx *Context) error { return errors.New("boom") },
 	}
 
-	err := MountAll([]Plugin{p}, &Context{})
+	_, err := MountAllAPI([]Plugin{p}, &Context{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected mount error, got %v", err)
 	}
@@ -210,7 +210,7 @@ func TestMountAllPopulatesSlots(t *testing.T) {
 	}
 
 	ctx := &Context{}
-	if err := MountAll([]Plugin{p}, ctx); err != nil {
+	if _, err := MountAllAPI([]Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	if ctx.Provider == nil {
@@ -228,7 +228,7 @@ func TestMountAllCircularDep(t *testing.T) {
 	a := testPlugin{name: "a", provides: []string{"a"}, requires: []string{"b"}, mount: func(c *Context) error { return nil }}
 	b := testPlugin{name: "b", provides: []string{"b"}, requires: []string{"a"}, mount: func(c *Context) error { return nil }}
 
-	err := MountAll([]Plugin{a, b}, &Context{})
+	_, err := MountAllAPI([]Plugin{a, b}, &Context{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected circular dependency error")
 	}
@@ -268,7 +268,7 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 	}
 
 	ctx := &Context{}
-	if err := MountAll([]Plugin{p1, p2}, ctx); err != nil {
+	if _, err := MountAllAPI([]Plugin{p1, p2}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 

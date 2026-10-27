@@ -35,11 +35,6 @@ func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections
 // has no dependencies — it only provides tools, which need nothing.
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("tools: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Registers the tool
 // provider, the prompt section, the /tools command and the /files
 // browser renderer. The provider carries the store-door deny-guard

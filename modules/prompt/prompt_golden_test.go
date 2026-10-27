@@ -44,7 +44,7 @@ func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Cont
 		tools.NewPlugin(),
 		NewPlugin(),
 	}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	return ctx

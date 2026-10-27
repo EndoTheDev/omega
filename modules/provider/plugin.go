@@ -33,11 +33,6 @@ func (Plugin) Provides() []string { return []string{"provider"} }
 // Requires lists seam names that must be mounted before this plugin.
 func (Plugin) Requires() []string { return nil }
 
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("provider: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Reads the provider config
 // from Context.Configs (missing config: zero values, type defaults to
 // ollama) and registers the provider seam plus the four commands.

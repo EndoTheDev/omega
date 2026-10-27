@@ -27,7 +27,7 @@ type stubLoggerPlugin struct{}
 func (stubLoggerPlugin) Name() string       { return "logging" }
 func (stubLoggerPlugin) Provides() []string { return []string{"logging"} }
 func (stubLoggerPlugin) Requires() []string { return nil }
-func (stubLoggerPlugin) Mount(ctx *core.Context) error {
+func (stubLoggerPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	ctx.Logger = stubLogger{}
 	return nil
 }
@@ -40,7 +40,7 @@ type stubStorePlugin struct{}
 func (stubStorePlugin) Name() string       { return "store" }
 func (stubStorePlugin) Provides() []string { return []string{"store"} }
 func (stubStorePlugin) Requires() []string { return nil }
-func (stubStorePlugin) Mount(ctx *core.Context) error {
+func (stubStorePlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	ctx.Store = nil // compile-safe: a nil store is the unconfigured host posture
 	return nil
 }
@@ -73,10 +73,6 @@ func TestMountWithAPIShape(t *testing.T) {
 	}
 	if len(ctx.PromptSectioners) != 1 {
 		t.Fatalf("prompt sectioners = %d, want the Verdict Cards contributor", len(ctx.PromptSectioners))
-	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
 	}
 	_ = context.Background()
 }

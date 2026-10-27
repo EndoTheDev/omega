@@ -2698,7 +2698,3 @@ func (s stubSeamer) Provides() []string { return []string{s.seam} }
 func (s stubSeamer) Requires() []string { return nil }
 
 func (s stubSeamer) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
-
-// Mount satisfies the interface until phase F retires it; the stub
-// never registers and is never dispatched (the API mount wins).
-func (s stubSeamer) Mount(ctx *core.Context) error { return nil }

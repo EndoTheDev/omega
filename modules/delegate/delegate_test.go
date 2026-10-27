@@ -63,7 +63,7 @@ type loggingPlugin struct{}
 func (loggingPlugin) Name() string       { return "logging" }
 func (loggingPlugin) Provides() []string { return []string{"logging"} }
 func (loggingPlugin) Requires() []string { return nil }
-func (loggingPlugin) Mount(ctx *core.Context) error {
+func (loggingPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	ctx.Logger = stubLogger{}
 	return nil
 }
@@ -114,10 +114,6 @@ func TestPluginMount(t *testing.T) {
 	if p.delegate.logger == nil {
 		t.Fatal("mount did not capture the logger")
 	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
-	}
 }
 
 // stubNotifier is the minimal core.NotificationsProvider for the
@@ -159,7 +155,7 @@ type stubNotificationsPlugin struct{}
 func (stubNotificationsPlugin) Name() string       { return "notifications" }
 func (stubNotificationsPlugin) Provides() []string { return []string{"notifications"} }
 func (stubNotificationsPlugin) Requires() []string { return nil }
-func (stubNotificationsPlugin) Mount(ctx *core.Context) error {
+func (stubNotificationsPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	ctx.Notifications = stubNotifier{}
 	return nil
 }

@@ -48,15 +48,6 @@ func (p *Plugin) ConfigKey() string { return "notifications" }
 func (p *Plugin) Provides() []string { return []string{"notifications"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount satisfies agent.Plugin (the interface keeps its classic shape
-// until phase F). It is never dispatched: MountWithAPI exists, and
-// APIPlugin wins (the strangler rule). If ever reached it fails loud -
-// notifications does not mount the old way, which is the proof of
-// migration.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("notifications: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Same resolution the classic
 // body ran; without a home AND a config path (exotic embeds) the mount
 // registers nothing and returns nil - every emitter is nil-safe and

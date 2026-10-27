@@ -1,7 +1,6 @@
 package trust
 
 import (
-	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -25,14 +24,6 @@ func (p *Plugin) ConfigKey() string { return "trust" }
 
 func (p *Plugin) Provides() []string { return []string{"trust"} }
 func (p *Plugin) Requires() []string { return nil }
-
-// Mount satisfies agent.Plugin (the interface keeps its classic shape
-// until phase F). It is never dispatched: MountWithAPI exists, and
-// APIPlugin wins (the strangler rule). If ever reached it fails loud -
-// trust does not mount the old way, which is the proof of migration.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("trust: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
-}
 
 // MountWithAPI registers the trust seam - the module's whole surface
 // (arc 6, card t_e1efb979): ResolveContext gates the AGENTS.md project

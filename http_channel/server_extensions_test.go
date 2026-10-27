@@ -3,7 +3,7 @@ package http_channel
 // GET /extensions tests (card t_14f73742): the endpoint must return the
 // real mounted module registry, not a fixture. This test mounts the
 // actual provider/logging/skills/tools/compactor plugins through
-// agent.MountAll into a scratch home (t.TempDir), builds the Agent the
+// agent.MountAllAPI into a scratch home (t.TempDir), builds the Agent the
 // way cmd/omega does (NewFromContext → ctx.Infos), and asserts the wire
 // rows match ctx.Infos: mount order, descriptions from the Describer
 // seam, tool/command counts, and JSON shape (empty seams as arrays, a
@@ -47,7 +47,7 @@ func mountRealRegistry(t *testing.T) *core.Agent {
 		"compactor": core.CompactionConfig{},
 	}
 	ctx := &core.Context{Configs: cfgs}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	// The way the host builds it (core.NewFromContext does

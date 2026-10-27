@@ -150,7 +150,7 @@ func TestConfigParsing(t *testing.T) {
 func TestMountAllIntegration(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}
-	if err := agent.MountAll([]agent.Plugin{p}, ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	if len(ctx.Infos) != 1 || ctx.Infos[0].Name != "mcp" {
