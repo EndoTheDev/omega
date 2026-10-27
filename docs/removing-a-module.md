@@ -77,7 +77,7 @@ its sibling: `docs/migrating-a-module.md`.
    PROOF mount=full: seam mounted, canvas carries the task panel + the board switcher, module-qualified
    PROOF tool wiring: task create pushed the task panel through the live canvas
    PROOF action-pipe: complete_task closed t_d259b564, switch_board answered the switcher
-   PROOF removed: seam absent (the capsule's REST routes left the mux, /tasks answers 404), canvas carries no kanban panel, no task tools, no /board commands
+   PROOF removed: seam absent (the capsule's route patterns left the ledger, the module mux is empty), canvas carries no kanban panel, no task tools, no /board commands
    ```
 
    That is: seam absent (routes 404), canvas panels absent, tool
