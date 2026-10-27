@@ -132,9 +132,9 @@ func TestFormatInsightsThroughMode(t *testing.T) {
 func TestFormatInsightsNoNotable(t *testing.T) {
 	// All NotableStats zero → section omitted.
 	in := &core.Insights{
-		Period:    "7 days",
-		Sessions:  5,
-		Messages:  10,
+		Period:   "7 days",
+		Sessions: 5,
+		Messages: 10,
 	}
 
 	out := agent.FormatInsights(in)
@@ -147,9 +147,9 @@ func TestFormatInsightsNoNotable(t *testing.T) {
 func TestFormatInsightsNoTools(t *testing.T) {
 	// No tools → Top Tools section omitted.
 	in := &core.Insights{
-		Period:    "7 days",
-		Sessions:  5,
-		Messages:  10,
+		Period:   "7 days",
+		Sessions: 5,
+		Messages: 10,
 	}
 
 	out := agent.FormatInsights(in)

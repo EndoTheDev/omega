@@ -19,12 +19,12 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	httpchannel "github.com/EndoTheDev/omega/http_channel"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/cron"
 	"github.com/EndoTheDev/omega/modules/datadir"
 	"github.com/EndoTheDev/omega/modules/delegate"
-	httpchannel "github.com/EndoTheDev/omega/http_channel"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/mcp"
@@ -36,9 +36,9 @@ import (
 	"github.com/EndoTheDev/omega/modules/store"
 	"github.com/EndoTheDev/omega/modules/tools"
 	"github.com/EndoTheDev/omega/modules/trust"
-	"github.com/EndoTheDev/omega/tui"
 	"github.com/EndoTheDev/omega/modules/verdict"
 	"github.com/EndoTheDev/omega/modules/web"
+	"github.com/EndoTheDev/omega/tui"
 )
 
 func main() {
