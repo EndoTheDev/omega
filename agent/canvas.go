@@ -29,6 +29,59 @@ type Canvas struct {
 	handlers map[string]core.PanelProvider    // module -> the capsule's registered handler
 	order    []string                         // module names in mount order
 	emit     func(core.Event)                 // delta emitter, nil-safe
+
+	// tallies is the per-seam accept-counter ledger (v0.12 phase F,
+	// sketch 3's drift alarm): one accepted/refused pair per action
+	// id, counted at this dispatch boundary - the one every action
+	// crosses, declarative or live-provider. Accepted reached the
+	// module handler; refused is what the module said no to.
+	tallies map[string]*seamTally
+}
+
+// seamTally is one accept counter: accepted counts payloads the module
+// handler took, refused counts payloads a decode or check rejected
+// (the module's own no counts - the Q12 ledger records only the
+// boundary-owned ShapeCheck rejections on top of this).
+type seamTally struct {
+	accepted int
+	refused  int
+}
+
+// ActionTally is one accept-counter snapshot (phase F, sketch 3).
+type ActionTally struct {
+	Accepted int
+	Refused  int
+}
+
+// ActionTallies returns the accept counters of every action id that
+// crossed this canvas - the drift alarm the conformance suite diffs
+// across boots and mutation batteries. Copy under the canvas lock: the
+// live map never escapes.
+func (c *Canvas) ActionTallies() map[string]ActionTally {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[string]ActionTally, len(c.tallies))
+	for id, t := range c.tallies {
+		out[id] = ActionTally{Accepted: t.accepted, Refused: t.refused}
+	}
+	return out
+}
+
+// tally records one verdict of the action id at the boundary.
+func (c *Canvas) tally(actionID string, refusable bool) {
+	if c.tallies == nil {
+		c.tallies = make(map[string]*seamTally)
+	}
+	t := c.tallies[actionID]
+	if t == nil {
+		t = &seamTally{}
+		c.tallies[actionID] = t
+	}
+	if refusable {
+		t.refused++
+	} else {
+		t.accepted++
+	}
 }
 
 // NewCanvas builds the runtime from a mounted Context. Each
@@ -273,5 +326,7 @@ func (c *Canvas) Dispatch(call core.ActionCall) (any, error) {
 	if !actionOK {
 		return nil, fmt.Errorf("%w: %q", core.ErrUnknownAction, call.Action)
 	}
-	return handler.HandleAction(call)
+	res, err := handler.HandleAction(call)
+	c.tally(call.Action, err != nil)
+	return res, err
 }

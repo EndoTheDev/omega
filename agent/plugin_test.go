@@ -43,16 +43,20 @@ func (s stubToolProvider) Tools() map[string]core.Tool { return s.tools }
 
 // testPlugin is a configurable Plugin for testing MountAll.
 type testPlugin struct {
-	name     string
-	provides []string
-	requires []string
-	mount    func(*Context) error
+	name       string
+	provides   []string
+	requires   []string
+	mount      func(*Context) error
+	toggleable bool
 }
 
 func (p testPlugin) Name() string                                       { return p.name }
 func (p testPlugin) Provides() []string                                 { return p.provides }
 func (p testPlugin) Requires() []string                                 { return p.requires }
 func (p testPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error { return p.mount(ctx) }
+
+// Toggleable pins the tier-law opt-in for the disable-list proofs.
+func (p testPlugin) Toggleable() bool { return p.toggleable }
 
 func TestMountAllOrdering(t *testing.T) {
 	var order []string
@@ -124,6 +128,10 @@ func TestMountAllRequiresEdgeForcesOrder(t *testing.T) {
 	}
 }
 
+// TestMountAllMissingDep covers the fault-injected Requires edge: a
+// plugin whose dependency is absent from the set refuses the mount
+// loud - no silent degradation, the module name and the seam in the
+// error (the Q3 refusal language, phase F's fault-injection proof).
 func TestMountAllMissingDep(t *testing.T) {
 	p := testPlugin{
 		name:     "compactor",
@@ -138,6 +146,42 @@ func TestMountAllMissingDep(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "requires seam") {
 		t.Fatalf("expected missing dep error, got %v", err)
+	}
+}
+
+// TestMountAllDisabledDepRefuses is the second fault-injected Requires
+// proof (phase F, Q3): the dependency is present in the build but
+// disabled via the omega.json toggle list - the boot must still refuse,
+// naming the seam, the dependent and its disabled provider, with the
+// fix-it in the message. The silent variant (silently mount without the
+// dep) is exactly what the refusal forbids.
+func TestMountAllDisabledDepRefuses(t *testing.T) {
+	p := testPlugin{
+		name:     "compactor",
+		provides: []string{"compactor"},
+		requires: []string{"provider"},
+		mount:    func(ctx *Context) error { return nil },
+	}
+	off := testPlugin{
+		name:       "provider",
+		provides:   []string{"provider"},
+		mount:      func(ctx *Context) error { return nil },
+		toggleable: true,
+	}
+
+	// both mounted: fine.
+	if _, err := MountAllAPI([]Plugin{off, p}, &Context{}, nil, nil); err != nil {
+		t.Fatalf("full set refuses: %v", err)
+	}
+	// provider disabled: the Q3 refusal fires and names every party.
+	_, err := MountAllAPI([]Plugin{off, p}, &Context{}, nil, []string{"provider"})
+	if err == nil {
+		t.Fatal("disabled provider: expected the Q3 refusal, got a silent mount")
+	}
+	for _, want := range []string{"requires seam", "provider", "disabled module", "re-enable"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Q3 refusal lost %q: %v", want, err)
+		}
 	}
 }
 
