@@ -99,6 +99,19 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return err
 		}
 	}
+	// Web tools (v0.13 shell law 1, card t_f76ecdbe): the former
+	// modules/web capsule dissolved into the channel - serving and
+	// these tools are the channel's job, one place, one word. The
+	// pair is engine vocabulary: always mounted with the channel at
+	// its natural names (web.search, web.fetch - the builtin tier
+	// registers natural names, no namespace pairing), never in the
+	// disable list.
+	wt := newWebTools(cfg.WebTools)
+	for name, tool := range wt.Tools() {
+		if err := api.RegisterTool(name, tool); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

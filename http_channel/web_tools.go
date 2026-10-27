@@ -1,4 +1,4 @@
-package web
+package http_channel
 
 import (
 	"bytes"
@@ -13,30 +13,54 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// defaultBaseURL is the upstream mirror used when no BaseURL is
-// configured.
-const defaultBaseURL = "https://ollama.com"
+// WebTools is the web search/fetch tool pair the channel mounts
+// (v0.13 shell law 1, card t_f76ecdbe: the modules/web capsule
+// dissolved into the channel - serving and these tools are the
+// channel's job, one place, one word). The pair is engine vocabulary
+// now: always mounted with the channel at natural names (web.search,
+// web.fetch - the builtin tier carries them, no namespace pairing),
+// never in the disable list.
 
-// Extension provides web search and fetch tools via the configured
+// defaultWebToolsURL is the upstream mirror used when no BaseURL is
+// configured.
+const defaultWebToolsURL = "https://ollama.com"
+
+// WebToolsConfig configures the web search/fetch tools.
+type WebToolsConfig struct {
+	APIKey string `yaml:"api_key"`
+	// BaseURL is the host serving the mirrored /api/web_search and
+	// /api/web_fetch endpoints. Empty falls back to the default
+	// upstream mirror. The host's ConfigSection derives it from the
+	// web.base_url override or the provider host.
+	BaseURL string `yaml:"base_url"`
+}
+
+// DefaultWebTools returns the default web tools configuration.
+func DefaultWebTools() WebToolsConfig {
+	return WebToolsConfig{}
+}
+
+// webTools provides web search and fetch tools via the configured
 // provider host's mirrored /api/web_search and /api/web_fetch
 // endpoints (the auth swap + key rotation happen upstream, same as
 // every other call through that host). It implements
 // core.ToolProvider directly.
-type Extension struct {
+type webTools struct {
 	apiKey  string
 	baseURL string
 }
 
-// New creates a web Extension from config. An empty BaseURL falls
-// back to the default upstream mirror; the API key is whatever the
-// provider seam supplies (the keypool client key when the provider is
-// keypool — the mirror swaps it for a real client key upstream).
-func New(cfg Config) *Extension {
+// newWebTools creates a webTools pair from config. An empty BaseURL
+// falls back to the default upstream mirror; the API key is whatever
+// the provider seam supplies (the keypool client key when the
+// provider is keypool — the mirror swaps it for a real client key
+// upstream).
+func newWebTools(cfg WebToolsConfig) *webTools {
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	if base == "" {
-		base = defaultBaseURL
+		base = defaultWebToolsURL
 	}
-	return &Extension{apiKey: cfg.APIKey, baseURL: base}
+	return &webTools{apiKey: cfg.APIKey, baseURL: base}
 }
 
 // Description constants for the web tools' identity and metadata.
@@ -45,13 +69,13 @@ const (
 	webFetchDesc  = "Fetch a single web page by URL and return its title, main content, and links found on the page."
 )
 
-// Tools returns the web tools as the namespaced pair web.search and
-// web.fetch. The legacy shape - one consolidated "web" domain tool with
-// dotted alias shims - retired with the v0.12 mount migration (Q10:
-// the machine-facing identity is the module.verb pair; alias shims
-// that cannot carry it die). Route through the shared dispatcher so
-// both tools stay one code path.
-func (e *Extension) Tools() map[string]core.Tool {
+// tools returns the web tools as the namespaced pair web.search and
+// web.fetch. The legacy shape - one consolidated "web" domain tool
+// with dotted alias shims - retired with the v0.12 mount migration
+// (Q10: the machine-facing identity is the module.verb pair; alias
+// shims that cannot carry it die). Route through the shared dispatcher
+// so both tools stay one code path.
+func (t *webTools) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"web.search": {
 			Description: webSearchDesc,
@@ -71,7 +95,7 @@ func (e *Extension) Tools() map[string]core.Tool {
 			},
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
 				args["action"] = "search"
-				return e.runWeb(ctx, args)
+				return t.runWeb(ctx, args)
 			},
 		},
 		"web.fetch": {
@@ -88,27 +112,27 @@ func (e *Extension) Tools() map[string]core.Tool {
 			},
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
 				args["action"] = "fetch"
-				return e.runWeb(ctx, args)
+				return t.runWeb(ctx, args)
 			},
 		},
 	}
 }
 
-// runWeb dispatches the consolidated web tool.
-func (e *Extension) runWeb(ctx context.Context, args map[string]any) (string, error) {
+// runWeb dispatches the shared web tool dispatcher.
+func (t *webTools) runWeb(ctx context.Context, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	switch action {
 	case "search":
-		return e.runSearch(ctx, args)
+		return t.runSearch(ctx, args)
 	case "fetch":
-		return e.runFetch(ctx, args)
+		return t.runFetch(ctx, args)
 	default:
 		return "", fmt.Errorf("action is required: one of search, fetch")
 	}
 }
 
 // runSearch handles the web.search tool call.
-func (e *Extension) runSearch(ctx context.Context, args map[string]any) (string, error) {
+func (t *webTools) runSearch(ctx context.Context, args map[string]any) (string, error) {
 	query, _ := args["query"].(string)
 	if query == "" {
 		return "error: query is required", nil
@@ -122,16 +146,16 @@ func (e *Extension) runSearch(ctx context.Context, args map[string]any) (string,
 			maxResults = v
 		}
 	}
-	return e.doSearch(ctx, query, maxResults)
+	return t.doSearch(ctx, query, maxResults)
 }
 
 // runFetch handles the web.fetch tool call.
-func (e *Extension) runFetch(ctx context.Context, args map[string]any) (string, error) {
+func (t *webTools) runFetch(ctx context.Context, args map[string]any) (string, error) {
 	url, _ := args["url"].(string)
 	if url == "" {
 		return "error: url is required", nil
 	}
-	return e.doFetch(ctx, url)
+	return t.doFetch(ctx, url)
 }
 
 type searchRequest struct {
@@ -176,16 +200,16 @@ func httpError(status int, body []byte, what string) string {
 }
 
 // doSearch calls the search endpoint and formats results.
-func (e *Extension) doSearch(ctx context.Context, query string, maxResults int) (string, error) {
-	if e.apiKey == "" {
+func (t *webTools) doSearch(ctx context.Context, query string, maxResults int) (string, error) {
+	if t.apiKey == "" {
 		return "error: API key not set", nil
 	}
 	body, _ := json.Marshal(searchRequest{Query: query, MaxResults: maxResults})
-	req, err := http.NewRequestWithContext(ctx, "POST", e.baseURL+"/api/web_search", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", t.baseURL+"/api/web_search", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Sprintf("error: building request: %v", err), nil
 	}
-	req.Header.Set("Authorization", "Bearer "+e.apiKey)
+	req.Header.Set("Authorization", "Bearer "+t.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := ai.RetryHTTP(req)
@@ -222,16 +246,16 @@ func (e *Extension) doSearch(ctx context.Context, query string, maxResults int) 
 }
 
 // doFetch calls the fetch endpoint and formats the page.
-func (e *Extension) doFetch(ctx context.Context, url string) (string, error) {
-	if e.apiKey == "" {
+func (t *webTools) doFetch(ctx context.Context, url string) (string, error) {
+	if t.apiKey == "" {
 		return "error: API key not set", nil
 	}
 	body, _ := json.Marshal(fetchRequest{URL: url})
-	req, err := http.NewRequestWithContext(ctx, "POST", e.baseURL+"/api/web_fetch", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", t.baseURL+"/api/web_fetch", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Sprintf("error: building request: %v", err), nil
 	}
-	req.Header.Set("Authorization", "Bearer "+e.apiKey)
+	req.Header.Set("Authorization", "Bearer "+t.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := ai.RetryHTTP(req)

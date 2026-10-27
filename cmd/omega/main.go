@@ -37,7 +37,6 @@ import (
 	"github.com/EndoTheDev/omega/modules/tools"
 	"github.com/EndoTheDev/omega/modules/trust"
 	"github.com/EndoTheDev/omega/modules/verdict"
-	"github.com/EndoTheDev/omega/modules/web"
 	"github.com/EndoTheDev/omega/tui"
 )
 
@@ -450,7 +449,6 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		verdict.NewPlugin(),
 		mcpPlugin,
 		delegate.NewPlugin(),
-		web.NewPlugin(),
 		httpchannel.NewPlugin(),
 		tui.NewPlugin(),
 		trust.NewPlugin(),

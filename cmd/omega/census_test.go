@@ -83,7 +83,7 @@ func TestLoadDisabled(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("http_timeout: 5\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(altDir, "omega.json"), []byte(`{"disabled": ["cron", "web"]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(altDir, "omega.json"), []byte(`{"disabled": ["cron", "delegate"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	off, err = LoadDisabled(cfgPath)

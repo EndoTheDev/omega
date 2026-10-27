@@ -19,7 +19,6 @@ import (
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/store"
 	"github.com/EndoTheDev/omega/modules/trust"
-	"github.com/EndoTheDev/omega/modules/web"
 	"gopkg.in/yaml.v3"
 	"time"
 )
@@ -443,7 +442,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":
-		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel}, true
+		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c)}}, true
 	case "skills":
 		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir}, true
 	case "memory":
@@ -452,8 +451,6 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		return logging.Config{Enabled: c.Logging.Enabled, File: c.Logging.File}, true
 	case "compactor":
 		return c.Compaction, true
-	case "web":
-		return web.Config{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c)}, true
 	case "trust":
 		return trust.Config{Home: omegaHome()}, true
 	case "kanban":
@@ -462,11 +459,14 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	return nil, false
 }
 
-// webBaseURL returns the host the web tools target: the explicit
-// web.base_url override when set, otherwise the provider host (with a
-// trailing /v1 stripped, mirroring provider.go's probe), so the
-// keypool mirror serves /api/web_search and /api/web_fetch with the
-// same auth swap + rotation as every other call.
+// webBaseURL returns the host the channel's web.search/web.fetch tools
+// target: the explicit web.base_url override when set, otherwise the
+// provider host (with a trailing /v1 stripped, mirroring provider.go's
+// probe), so the keypool mirror serves /api/web_search and
+// /api/web_fetch with the same auth swap + rotation as every other
+// call. The web config stanza stays a config.yaml top-level key even
+// though the capsule dissolved into the channel (v0.13 shell law 1 -
+// no config churn).
 func webBaseURL(cfg Config) string {
 	if cfg.Web.BaseURL != "" {
 		return cfg.Web.BaseURL
