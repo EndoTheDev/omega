@@ -8,7 +8,7 @@
 // http_channel serializes the same snapshot/deltas/action shapes over
 // SSE/REST in its own phase. Registration is declarative - modules
 // append a core.PanelProvider in Mount; the host builds the Canvas
-// after MountAll, and anything else is a wiring bug.
+// after MountAllAPI, and anything else is a wiring bug.
 package agent
 
 import (

@@ -272,7 +272,7 @@ type LiveSeams interface {
 // Channel is a delivery transport that connects external clients to
 // the agent. Channels are additive: multiple can run simultaneously
 // (HTTP + Discord + Telegram). The host starts all mounted channels
-// after MountAll and stops them on shutdown.
+// after MountAllAPI and stops them on shutdown.
 //
 // Start blocks until the channel stops or the context is cancelled.
 // Each channel creates agents from deps.Ctx as needed — HTTP reuses
@@ -390,7 +390,7 @@ type ChannelDeps struct {
 // turn in a session labeled cron:<name>.
 //
 // Like Channel, Start blocks until the context is cancelled. The
-// serve host starts the mounted Cron after MountAll (with the store
+// serve host starts the mounted Cron after MountAllAPI (with the store
 // open) and stops it on shutdown.
 type CronProvider interface {
 	// Start runs the scheduler until the context is cancelled or Stop

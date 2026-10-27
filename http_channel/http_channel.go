@@ -102,7 +102,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 		c.srv.runs = c.hub
 	}
 	// Canvas transport (arc 3b): the runtime is built from the fully
-	// mounted Context after MountAll - the same registration point
+	// mounted Context after MountAllAPI - the same registration point
 	// every other seam reads (card t_058edeb3). Deltas fan out through
 	// the server's run hub (server_canvas.go). ONE canvas per process
 	// (t_1c9793a8): every bind's server serves the same instance, so

@@ -6,7 +6,7 @@ import (
 
 // Context is the shared service container that extensions mount into.
 // Each slot corresponds to a capability seam. The host creates a Context,
-// runs MountAll to populate it, then passes it to the agent loop.
+// runs MountAllAPI to populate it, then passes it to the agent loop.
 //
 // Seam slots (Provider, Compactor, Store, Skills, Loop, PromptBuilder)
 // are exclusive: one plugin per slot. ToolProviders and Channels are
@@ -74,7 +74,7 @@ type Context struct {
 	Verdicts VerdictsProvider
 
 	// Channels (additive — multiple plugins contribute delivery
-	// transports). The host starts all mounted channels after MountAll.
+	// transports). The host starts all mounted channels after MountAllAPI.
 	Channels []Channel
 
 	// Cross-cutting (set by specific plugins).
@@ -92,7 +92,7 @@ type Context struct {
 	// RunGroup, never assign it directly.
 	Lifecycle *Lifecycle
 
-	// Metadata (built during MountAll).
+	// Metadata (built during MountAllAPI).
 	Infos []ExtensionInfo
 }
 

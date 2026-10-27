@@ -1,6 +1,6 @@
 // The teardown machinery (v0.12 phase E1, implementation sketch 2,
 // grill Q3/Q11): Dismount replays a module's contributions backward;
-// DismountAll replays MountAll's recorded topo order in REVERSE. A
+// DismountAll replays MountAllAPI's recorded topo order in REVERSE. A
 // runtime remount mounts through the scoped Context proxy with split
 // panic semantics: boot re-panics loudly naming the module; a remount
 // panic rolls back, rejects the toggle and the server keeps running.
@@ -24,7 +24,7 @@ type Dismounter interface {
 }
 
 // DismountAll dismounts the mounted plugin set in the REVERSE of
-// MountAll's recorded topo order: last mounted, first removed, so a
+// MountAllAPI's recorded topo order: last mounted, first removed, so a
 // module is always torn down before the seam it consumed. Every
 // module must prove its teardown - journaled (mounted through the
 // ExtensionAPI) or a Dismount implementation - or the proof fails
