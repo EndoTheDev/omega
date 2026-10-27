@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // DefaultTimeout is the per-card default deadline (design Q5): twenty

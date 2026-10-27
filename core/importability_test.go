@@ -18,7 +18,7 @@ import (
 // isStdlib reports whether an import path belongs to the Go standard
 // library. Stdlib paths never contain a dot in their first path
 // segment ("encoding/json", "context"); everything else does
-// ("github.com/...", "omega/ai"), including every golang.org/x and
+// ("github.com/...", "omega/engine/ai"), including every golang.org/x and
 // every omega-internal package.
 func isStdlib(path string) bool {
 	first := path

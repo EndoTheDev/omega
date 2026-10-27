@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // NewSkillsProvider creates a SkillsProvider configured to scan dir.
@@ -32,6 +32,7 @@ func (p *Plugin) Description() string {
 func (p *Plugin) ConfigKey() string { return "skills" }
 
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
+
 // Requires names the logging seam: Mount runs WarnLegacyShape, which
 // reads ctx.Logger to mirror the legacy-format boot warning into the
 // log file. Logging must mount first or the edge is meaningless.

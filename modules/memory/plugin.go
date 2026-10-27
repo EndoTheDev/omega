@@ -1,9 +1,8 @@
 package memory
 
 import (
-
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // Plugin implements agent.Plugin for the memory seam. It opens the

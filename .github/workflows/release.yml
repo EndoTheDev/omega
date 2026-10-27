@@ -37,7 +37,7 @@ jobs:
         # every Go build below embeds whatever is in static/ - the real
         # SPA must be synced BEFORE the first go build
         run: |
-          cd webui
+          cd engine/webui
           npm ci
           sh scripts/build.sh
 

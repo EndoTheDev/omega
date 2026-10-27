@@ -1,7 +1,7 @@
 #!/bin/bash
 # 76-message-variants - the branching journey (t_17365247): the retry fix
 # is user-visible, so it rides the journeys suite as an API-surface check
-# (the variant nav UI belongs to the webui/tui child cards - this recipe
+# (the variant nav UI belongs to the engine/webui and engine/tui child cards - this recipe
 # drives the same endpoints they consume). Invariants, in the customer's
 # words:
 #   send          -> one exchange, NO variants block on the wire (linear

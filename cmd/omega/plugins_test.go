@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // TestBuildPlugins verifies buildPlugins returns all 18 in-process

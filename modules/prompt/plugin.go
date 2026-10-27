@@ -1,9 +1,8 @@
 package prompt
 
 import (
-
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // Plugin is the agent.Plugin adapter for the prompt builder.

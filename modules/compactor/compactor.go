@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // Compactor implements core.CompactionProvider. It holds a reference
