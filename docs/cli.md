@@ -102,14 +102,15 @@ omega insights --days 90
 
 ### `omega agents`
 
-Lists the registered agent profiles (name, description, model, skill
-count, memory size, directory). The default agent always exists; boot
-moves legacy home-root `memory.md`/`user.md` into
-`~/.omega/agents/default/` (a rename, exactly once). `create` scaffolds
-`~/.omega/agents/<name>/` with a commented `config.yaml` (it layers over
-the home config), an empty `skills/`, and an empty `logs/` - memory and
-user files are never seeded. Sessions created as an agent never appear
-in the default agent's session list.
+Lists the registered agent homes (name, description, model, skill
+count, memory size, directory). Main is the home root itself: its
+`memory.md`/`user.md` live at `~/.omega/` (boot retires the former
+`agents/default/` profile and moves its persona files UP, exactly
+once). `create` scaffolds a continuous agent home `~/.omega/agents/<name>/`
+holding `config/config.yaml` (a commented layer over the home config),
+`data/` (the agent's own stores - full data isolation), and an empty
+`skills/`; `user.md`, `memory.md`, and `<name>.log` are created on
+first use. Wake schedules live in the agent's own `config/crons.yaml`.
 
 ```bash
 omega agents
