@@ -11,18 +11,18 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { isNarrowWidth, NARROW_MAX_PX } from "../app/composables/narrow.ts";
-import { isNarrowWidth as cronIsNarrowWidth } from "../../cron/ui/narrow.ts";
-import { isNarrowWidth as logsIsNarrowWidth } from "../../../http_channel/ui/narrow.ts";
-import { isNarrowWidth as skillsIsNarrowWidth } from "../../skills/ui/narrow.ts";
-import { isNarrowWidth as toolsIsNarrowWidth } from "../../tools/ui/narrow.ts";
+import { isNarrowWidth as cronIsNarrowWidth } from "../../modules/cron/ui/narrow.ts";
+import { isNarrowWidth as logsIsNarrowWidth } from "../../http_channel/ui/narrow.ts";
+import { isNarrowWidth as skillsIsNarrowWidth } from "../../modules/skills/ui/narrow.ts";
+import { isNarrowWidth as toolsIsNarrowWidth } from "../../modules/tools/ui/narrow.ts";
 // the recipe's original: the Board's module-owned copy must stay in the
 // fold too (a drag between hosts must show one adaptation, not two)
 import {
   isNarrowWidth as boardIsNarrowWidth,
-} from "../../kanban/ui/board/boardLogic.ts";
+} from "../../modules/kanban/ui/board/boardLogic.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const modules = resolve(root, "..", ".."); // the worktree root
+const modules = resolve(root, ".."); // the checkout root
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
 test("every narrow copy agrees with the shell threshold (shell + all modules)", () => {
@@ -126,9 +126,9 @@ for (const entry of RETROFIT) {
 }
 
 test("FilesTab passes the narrow flag down to the recursive tree", () => {
-  const tab = read(modules, "modules", "ui", "app", "components", "files", "FilesTab.vue");
+  const tab = read(modules, "webui", "app", "components", "files", "FilesTab.vue");
   assert.match(tab, /:narrow="narrow"/, "the host passes its measurement down");
-  const tree = read(modules, "modules", "ui", "app", "components", "files", "FileTree.vue");
+  const tree = read(modules, "webui", "app", "components", "files", "FileTree.vue");
   assert.match(tree, /narrow\?: boolean/, "the child accepts the inherited flag");
   assert.match(tree, /:narrow="narrow"/, "the recursion forwards it");
   assert.match(tree, /\.files-tree\.narrow \.size \{/, "the condensed-columns rule");
@@ -139,7 +139,7 @@ test("FilesTab passes the narrow flag down to the recursive tree", () => {
 test("the sweep's inventory is explicit - settings and the Board keep their adaptations", () => {
   // every inspector surface named by the card; insights/extensions
   // views are not shipped yet (checked at round start, 2026-10-21).
-  const settings = read(modules, "modules", "ui", "app", "components", "settings", "SettingsTab.vue");
+  const settings = read(modules, "webui", "app", "components", "settings", "SettingsTab.vue");
   assert.match(settings, /narrow: narrow/, "settings keeps its narrow adaptation (card t_49d0b308)");
   const board = read(modules, "modules", "kanban", "ui", "Board.vue");
   assert.match(board, /narrow: narrow/, "the Board IS the recipe");

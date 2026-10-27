@@ -38,10 +38,10 @@ test("scanModuleUIs covers the engine ring: second root registers engine ui dirs
     // engine ring: http_channel ships ui/ at the checkout root
     mkdirSync(join(engine, "http_channel", "ui"), { recursive: true });
     writeFileSync(join(engine, "http_channel", "ui", "LogsList.vue"), "<template/>");
-    // the shell tree under an engine root is scanned via modulesRoot
-    // only - a parent-root scan must not re-register it as "modules"
-    mkdirSync(join(engine, "modules", "ui"), { recursive: true });
-    writeFileSync(join(engine, "modules", "ui", "Shell.vue"), "<template/>");
+    // the shell dir never registers - the shell ships its UI in place
+    // (webui/app); a checkout-root scan must not re-register it
+    mkdirSync(join(engine, "webui", "app"), { recursive: true });
+    writeFileSync(join(engine, "webui", "app", "Shell.vue"), "<template/>");
     const found = scanModuleUIs(scratch, engine);
     assert.deepEqual(found.map((f) => f.module), ["http_channel", "tools"]);
   } finally {
@@ -50,14 +50,16 @@ test("scanModuleUIs covers the engine ring: second root registers engine ui dirs
   }
 });
 
-test("scanModuleUIs skips empty ui dirs, dot dirs, and ui itself", () => {
+test("scanModuleUIs skips empty ui dirs, dot dirs, and the shell dir", () => {
   const scratch = makeScratch();
   try {
     // a module with an empty ui/ ships no UI - not a registration
     mkdirSync(join(scratch, "cron", "ui"), { recursive: true });
-    // the shell module never registers inside its own shell
-    mkdirSync(join(scratch, "ui", "ui"), { recursive: true });
-    writeFileSync(join(scratch, "ui", "ui", "Loop.vue"), "<template/>");
+    // the shell dir never registers under a module name - the shell
+    // ships its UI in place (webui/app), registering "webui" would
+    // double-register the shell inside its own shell
+    mkdirSync(join(scratch, "webui", "ui"), { recursive: true });
+    writeFileSync(join(scratch, "webui", "ui", "Loop.vue"), "<template/>");
     // tooling junk dirs are invisible
     mkdirSync(join(scratch, "node_modules", "ui"), { recursive: true });
     writeFileSync(join(scratch, "node_modules", "ui", "Junk.vue"), "<template/>");
@@ -140,7 +142,7 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
 // module dir and the shell mounts whatever the generated list carries ---
 
 test("the canary component lives in the tools module, not the shell", () => {
-  const src = readFileSync(`${root}/../tools/ui/ToolsList.vue`, "utf8");
+  const src = readFileSync(`${root}/../modules/tools/ui/ToolsList.vue`, "utf8");
   assert.ok(src.includes('fetch("/tools")'), "self-contained GET /tools fetch");
   // card t_73994e55: a domain tool's actions[] renders as dotted
   // sub-rows, each action with its own description (memory.add,

@@ -28,7 +28,7 @@ import {
 } from "../app/composables/notifications.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const modules = join(here, "..", "..", "..");
+const modules = join(here, "..", "..");
 
 function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
@@ -155,7 +155,7 @@ test("failed verdicts hold the toast longer than ok ones", () => {
 // --- component source pins (the shell wiring) ---
 
 test("MenuBar hosts the NotificationCenter and re-emits its open intent", () => {
-  const menubar = read("modules", "ui", "app", "components", "shell", "MenuBar.vue");
+  const menubar = read("webui", "app", "components", "shell", "MenuBar.vue");
   assert.ok(menubar.includes("<NotificationCenter"), "bell joins the menubar");
   assert.ok(
     menubar.includes('@open-notification="openNotification"') === false,
@@ -168,7 +168,7 @@ test("MenuBar hosts the NotificationCenter and re-emits its open intent", () => 
 });
 
 test("app.vue routes every notified kind (task -> kanban pane, cron -> tab, chat -> session)", () => {
-  const app = read("modules", "ui", "app", "app.vue");
+  const app = read("webui", "app", "app.vue");
   assert.ok(app.includes("@open-notification="), "MenuBar binding exists");
   assert.ok(app.includes('case "task"'), "task routes");
   assert.ok(app.includes('case "cron"'), "cron routes");
@@ -267,8 +267,8 @@ test("selectBoardFor publishes the stash + the event, skips the empty pick", () 
 // --- arc 4b (t_9339ad05): the toast is a canvas event ---
 
 test("NotificationCenter renders toasts from the canvas - no per-frontend SSE stream", () => {
-  const dock = read("modules", "ui", "app", "components", "notifications", "NotificationCenter.vue");
-  const compo = read("modules", "ui", "app", "composables", "notifications.ts");
+  const dock = read("webui", "app", "components", "notifications", "NotificationCenter.vue");
+  const compo = read("webui", "app", "composables", "notifications.ts");
   // the dock subscribes to the canvas feed, not its own EventSource
   assert.ok(dock.includes("onToastPanel("), "the dock consumes the canvas toast feed");
   assert.ok(dock.includes("decodeToast("), "the dock owns the record-shape read");
@@ -279,7 +279,7 @@ test("NotificationCenter renders toasts from the canvas - no per-frontend SSE st
 });
 
 test("canvas.ts: the toast feed rides both transports, deduped by the fingerprint", () => {
-  const src = read("modules", "ui", "app", "composables", "canvas.ts");
+  const src = read("webui", "app", "composables", "canvas.ts");
   assert.ok(src.includes("function feedToastPanel("), "the funnel exists");
   assert.ok(/applyDelta\(raw: unknown\)[\s\S]*feedToastPanel\(p\)/.test(src), "deltas feed the funnel");
   assert.ok(/applySnapshot\(list: unknown\)[\s\S]*feedToastPanel\(p\)/.test(src), "snapshots feed the funnel (the between-runs catch-up)");

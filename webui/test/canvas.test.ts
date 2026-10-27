@@ -38,7 +38,7 @@ import {
 } from "../app/composables/dockables.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const modules = join(here, "..", "..", "..");
+const modules = join(here, "..", "..");
 
 function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
@@ -351,7 +351,7 @@ test("normalizeCanvasPanel guards the descriptor", () => {
 // --- source pins: the production boundary the node runner cannot import ---
 
 test("CanvasPanel.vue: the generic renderer contract (title + payload view + action buttons)", () => {
-  const src = read("modules", "ui", "app", "components", "canvas", "CanvasPanel.vue");
+  const src = read("webui", "app", "components", "canvas", "CanvasPanel.vue");
   // the descriptor render: title, the kind chip, the JSON payload view
   assert.match(src, /panel\.title/, "renders the descriptor's title");
   assert.match(src, /panel\.kind/, "renders the kind chip");
@@ -370,7 +370,7 @@ test("CanvasPanel.vue: the generic renderer contract (title + payload view + act
   assert.match(src, /toastRowOf\(/, "the toast panel routes through the row pipeline");
   // the row text width-truncates at the pane width (kind/key fields on
   // one line) - the same contract the list panel's rows render under
-  const css = readFileSync(join(modules, "modules", "ui", "app", "assets", "css", "main.css"), "utf8");
+  const css = readFileSync(join(modules, "webui", "app", "assets", "css", "main.css"), "utf8");
   assert.match(
     css,
     /\.canvas-row-text \{[\s\S]*?text-overflow: ellipsis/,
@@ -382,7 +382,7 @@ test("CanvasPanel.vue: the generic renderer contract (title + payload view + act
 });
 
 test("app.vue: the canvas outlet, the boot snapshot, and the delta wiring", () => {
-  const app = read("modules", "ui", "app", "app.vue");
+  const app = read("webui", "app", "app.vue");
   assert.match(app, /#pane-canvas/, "the canvas dock outlet exists");
   assert.match(app, /canvas\.refresh\(\)/, "the snapshot loads at boot (Q3b)");
   assert.match(app, /canvasDelta:\s*\(panel\)/, "the host forwards run-stream deltas");
@@ -394,7 +394,7 @@ test("app.vue: the canvas outlet, the boot snapshot, and the delta wiring", () =
 });
 
 test("chat.ts: canvas deltas forward from every stream handler set", () => {
-  const chat = read("modules", "ui", "app", "composables", "chat.ts");
+  const chat = read("webui", "app", "composables", "chat.ts");
   assert.match(
     chat,
     /onViewModelDelta[^\n]*deps\.canvasDelta\?\.\(panel\)/,
@@ -407,7 +407,7 @@ test("chat.ts: canvas deltas forward from every stream handler set", () => {
 });
 
 test("dockables: canvas is a layout-only registry entry (Q5a law)", () => {
-  const src = read("modules", "ui", "app", "composables", "dockables.ts");
+  const src = read("webui", "app", "composables", "dockables.ts");
   const entry = DOCKABLES.find((d) => d.id === "canvas");
   assert.ok((DOCK_COMPONENTS as readonly string[]).includes("canvas"), "the outlet id exists");
   assert.ok(entry, "the registry entry exists");

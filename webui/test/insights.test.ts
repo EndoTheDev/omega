@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { fetchInsights } from "../app/composables/omega.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const modules = join(here, "..", "..", "..");
+const modules = join(here, "..", "..");
 
 function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
@@ -87,7 +87,7 @@ test("fetchInsights throws the server's message, not a bare status", async () =>
 // --- InsightsTab.vue: the render contract ---
 
 test("the view renders from the payload - every block the TUI prints has a home", () => {
-  const vue = read("modules", "ui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
   // one source: the omega fetch helper, no inline fetch
   assert.match(vue, /fetchInsights/, "the view fetches through omega.ts");
   assert.ok(!/fetch\(\s*["'`\/]/.test(vue), "no private fetch: the endpoint URL lives in omega.ts");
@@ -107,7 +107,7 @@ test("the view renders from the payload - every block the TUI prints has a home"
 });
 
 test("an empty window is honest: text, zeroed payload, no fake rows", () => {
-  const vue = read("modules", "ui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
   // the sessions === 0 branch prints text (mirrors the TUI's
   // "[no sessions in the last N days]"), all-time gets its own voice
   assert.match(vue, /data\.sessions === 0/, "the empty branch exists");
@@ -118,7 +118,7 @@ test("an empty window is honest: text, zeroed payload, no fake rows", () => {
 });
 
 test("the window selector mirrors the TUI arg semantics", () => {
-  const vue = read("modules", "ui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
   assert.match(vue, /:value="0">all time/, "0 = all time option");
   assert.match(vue, /:value="30">30 days/, "30 default in the selector");
   assert.match(vue, /days\.value === null \? null : days\.value/, "first load keeps the server default");
@@ -126,7 +126,7 @@ test("the window selector mirrors the TUI arg semantics", () => {
 });
 
 test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
-  const dockables = read("modules", "ui", "app", "composables", "dockables.ts");
+  const dockables = read("webui", "app", "composables", "dockables.ts");
   assert.match(dockables, /id: "insights"/, "registry entry exists");
   // the home ruling recorded where it lives: right shell, unclosable,
   // capital-I label - the default-visible inspector tab
@@ -142,7 +142,7 @@ test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
   );
   assert.match(dockables, /card t_d7fd3ad3/, "the ruling is recorded at the entry");
   // the app outlet exists (the tab renders wherever it lives)
-  const app = read("modules", "ui", "app", "app.vue");
+  const app = read("webui", "app", "app.vue");
   assert.match(app, /#pane-insights/, "the outlet template exists");
   assert.match(app, /<InsightsTab/, "the view mounts in the outlet");
   // the mobile drawer seats the shell-owned tab before the module
