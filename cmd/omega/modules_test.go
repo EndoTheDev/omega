@@ -79,6 +79,7 @@ func TestSaveDisabledLoudOnBrokenFile(t *testing.T) {
 		t.Fatal("a broken omega.json must fail the write loud")
 	}
 }
+
 // The live re-wire wiring (v0.12 E2): the host's Toggle must push the
 // changed Context onto every LiveSeams-capable channel - the serving
 // surface cannot follow the live Context on its own, the channel only
@@ -100,10 +101,10 @@ func (r *rewireProbe) RewireSeams(ctx *core.Context) error {
 
 type hostToggleCapsule struct{ name string }
 
-func (c *hostToggleCapsule) Name() string            { return c.name }
-func (c *hostToggleCapsule) Provides() []string      { return nil }
-func (c *hostToggleCapsule) Requires() []string      { return nil }
-func (c *hostToggleCapsule) Toggleable() bool        { return true }
+func (c *hostToggleCapsule) Name() string       { return c.name }
+func (c *hostToggleCapsule) Provides() []string { return nil }
+func (c *hostToggleCapsule) Requires() []string { return nil }
+func (c *hostToggleCapsule) Toggleable() bool   { return true }
 func (c *hostToggleCapsule) Mount(*core.Context) error {
 	return errors.New("hostsToggleCapsule mounts through the API")
 }

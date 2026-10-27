@@ -102,11 +102,11 @@ type dependentCapsule struct {
 	toggle   bool
 }
 
-func (c *dependentCapsule) Name() string                  { return c.name }
-func (c *dependentCapsule) Provides() []string            { return nil }
-func (c *dependentCapsule) Requires() []string            { return c.requires }
+func (c *dependentCapsule) Name() string                                            { return c.name }
+func (c *dependentCapsule) Provides() []string                                      { return nil }
+func (c *dependentCapsule) Requires() []string                                      { return c.requires }
 func (c *dependentCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error { return nil }
-func (c *dependentCapsule) Toggleable() bool              { return c.toggle }
+func (c *dependentCapsule) Toggleable() bool                                        { return c.toggle }
 
 func TestBootPanicRePanicsNamed(t *testing.T) {
 	// Sketch 1, first step: a panicking plugin at boot re-panics with

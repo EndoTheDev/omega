@@ -34,7 +34,7 @@ func TestFindAsset(t *testing.T) {
 		{"windows", "amd64", "https://example.com/win.exe"},
 		{"linux", "amd64", "https://example.com/linux"},
 		{"darwin", "arm64", "https://example.com/darwin"},
-		{"darwin", "amd64", ""}, // no matching asset
+		{"darwin", "amd64", ""},  // no matching asset
 		{"freebsd", "amd64", ""}, // no matching asset
 	}
 	for _, tt := range tests {
