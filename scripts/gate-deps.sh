@@ -11,7 +11,9 @@ set -euo pipefail
 #   <importpath>                               a path in the transitive dep closure
 # See gate-deps_testdata/ for the fixtures.
 
-cd "$(dirname "$0")"
+# The script lives in scripts/ but the dep-law scan runs against the
+# module root, so anchor there regardless of the caller's CWD.
+cd "$(dirname "$0")/.."
 MODROOT="$(go list -m -f '{{.Path}}')"
 
 violations=0

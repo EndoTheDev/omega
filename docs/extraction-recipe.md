@@ -24,7 +24,7 @@ One repo becomes two:
   provider choice, session persistence). New module path; a new repo.
 
 The direction law already exists and is already enforced today:
-`gate-deps.sh` fails the build if `ai/` or `agent/` (and transitively
+`scripts/gate-deps.sh` fails the build if `ai/` or `agent/` (and transitively
 anything below `core/`) imports `modules/...`, directly or
 transitively. The extraction changes nothing about that law; it moves
 the enforced line from "import rule inside one repo" to "one module
@@ -38,7 +38,7 @@ direction: the harness depends on the engine, never the reverse.
 | Dir | What it is | Why engine |
 |---|---|---|
 | `core/` | Zero-behavior contract layer: message vocabulary, seam interfaces, Context, canvas panel types, captioner, kanban task vocabulary | stdlib-only by law (core/importability_test.go) |
-| `agent/` | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers | imports core only (verified by gate-deps.sh today) |
+| `agent/` | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers | imports core only (verified by scripts/gate-deps.sh today) |
 | `ai/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `ai.Provider` streaming contract, fake provider | imports core only; imported by engine (agent_loop) and harness capsules alike — it must sit under the engine or the agent loop would reach upward |
 | `modules/agent_loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
 | `modules/tools` | The bare-minimum tools: `shell.run`, `files` (read/write/edit + batch), /files browser, db deny-guard | the north-star ruling; verdict tool status is separate (see §6) |
@@ -247,7 +247,7 @@ compiler-checkable end state.
    every hit is either a HURT from §5 that this step resolves, or a
    finding to file, not a hedge. Target state is zero.
 7. **Build and test both sides.** Engine: `go build ./...`,
-   `go vet ./...`, `go test ./...`, plus `gate-deps.sh` (the dep law
+   `go vet ./...`, `go test ./...`, plus `scripts/gate-deps.sh` (the dep law
    gate keeps working verbatim — it reads go list, not directory
    layout). Harness: the same four commands in the new repo.
 8. **Run the journeys against the rebuilt harness binary.**
@@ -335,7 +335,7 @@ not a hedge. None is fixed by this card except where noted.
 
 No other prod import edge crosses the capsule/engine line today: the
 engine layers (core, agent, ai) import no module at all (go list
-verified, gate-deps.sh enforces), config routing is by name without
+verified, scripts/gate-deps.sh enforces), config routing is by name without
 type coupling except finding 2 (RouteConfigs → ConfigSection → the
 capsule types), and no two capsules share a file (datadir is a shared
 PACKAGE — separate directories, no file-level sharing anywhere).

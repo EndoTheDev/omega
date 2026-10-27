@@ -210,3 +210,51 @@ func TestBootstrapHomeMigratesTrust(t *testing.T) {
 		t.Fatalf("bootstrap invented config/trust.yaml without a source")
 	}
 }
+
+// TestLoggingFileNeverCwd pins the log-path law (card t_0ccda501):
+// the construction default carries no filename, resolveHomePaths routes
+// the empty default and the legacy "omega.log" alias to the home root,
+// and the resolved path can never land in the process CWD.
+func TestLoggingFileNeverCwd(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	t.Chdir(cwd)
+
+	cfg := DefaultConfig()
+	if cfg.Logging.File != "" {
+		t.Errorf("DefaultConfig Logging.File = %q, want empty (no cwd-relative default)", cfg.Logging.File)
+	}
+	if err := resolveHomePaths(&cfg); err != nil {
+		t.Fatalf("resolveHomePaths: %v", err)
+	}
+	want := filepath.Join(home, "omega.log")
+	if cfg.Logging.File != want {
+		t.Errorf("resolved Logging.File = %q, want %q", cfg.Logging.File, want)
+	}
+
+	// The legacy bare alias resolves to the home root too.
+	legacy := DefaultConfig()
+	legacy.Logging.File = "omega.log"
+	if err := resolveHomePaths(&legacy); err != nil {
+		t.Fatalf("resolveHomePaths: %v", err)
+	}
+	if legacy.Logging.File != want {
+		t.Errorf("legacy alias Logging.File = %q, want %q", legacy.Logging.File, want)
+	}
+
+	// An explicit absolute path is left alone.
+	custom := DefaultConfig()
+	custom.Logging.File = filepath.Join(home, "custom", "log.txt")
+	if err := resolveHomePaths(&custom); err != nil {
+		t.Fatalf("resolveHomePaths: %v", err)
+	}
+	if custom.Logging.File != filepath.Join(home, "custom", "log.txt") {
+		t.Errorf("custom Logging.File = %q, want unchanged", custom.Logging.File)
+	}
+
+	// Nothing appeared in the CWD while all of this resolved.
+	if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
+		t.Errorf("log file leaked into CWD: entries=%v err=%v", entries, err)
+	}
+}

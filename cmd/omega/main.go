@@ -402,7 +402,11 @@ func resolveHomePaths(cfg *Config) error {
 	if cfg.Memory.UserProfileFile == "user.md" {
 		cfg.Memory.UserProfileFile = home + "/agents/default/user.md"
 	}
-	if cfg.Logging.File == "omega.log" {
+	if cfg.Logging.File == "" || cfg.Logging.File == "omega.log" {
+		// "" is the construction default; the bare "omega.log" literal
+		// is a legacy alias from configs written before the default went
+		// empty. Both mean the home-rooted log - never a CWD-relative
+		// file (card t_0ccda501).
 		cfg.Logging.File = home + "/omega.log"
 	}
 	if err := os.MkdirAll(home, 0755); err != nil {
