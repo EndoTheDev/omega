@@ -12,6 +12,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	httpchannel "github.com/EndoTheDev/omega/http_channel"
+	"github.com/EndoTheDev/omega/modules/continuous"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/memory"
@@ -41,16 +42,17 @@ type Config struct {
 	// TitleModel is the auxiliary title generator (title_model knob):
 	// maybeTitleSession's cheap calls (provisional + final) route
 	// through it when set. Empty = the main model (today's behavior).
-	TitleModel    string        `yaml:"title_model"`
-	HTTPTimeout   int           `yaml:"http_timeout"`
-	MaxTurns      int           `yaml:"max_turns"`
-	Theme         string        `yaml:"theme"`
-	Notifications string        `yaml:"notifications"`
-	Skills        SkillsConfig  `yaml:"skills"`
-	Memory        MemoryConfig  `yaml:"memory"`
-	Logging       LoggingConfig `yaml:"logging"`
-	Web           WebConfig     `yaml:"web"`
-	Kanban        KanbanConfig  `yaml:"kanban"`
+	TitleModel    string            `yaml:"title_model"`
+	HTTPTimeout   int               `yaml:"http_timeout"`
+	MaxTurns      int               `yaml:"max_turns"`
+	Theme         string            `yaml:"theme"`
+	Notifications string            `yaml:"notifications"`
+	Skills        SkillsConfig      `yaml:"skills"`
+	Memory        MemoryConfig      `yaml:"memory"`
+	Logging       LoggingConfig     `yaml:"logging"`
+	Web           WebConfig         `yaml:"web"`
+	Kanban        KanbanConfig      `yaml:"kanban"`
+	Continuous    continuous.Config `yaml:"continuous"`
 	// Disabled is the omega.json toggle list (v0.12 E1, grill Q1) - a
 	// separate file next to config.yaml, never a config.yaml key.
 	// Loaded by LoadDisabled after the YAML is in.
@@ -455,6 +457,8 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		return trust.Config{Home: omegaHome()}, true
 	case "kanban":
 		return kanbanModule.Config{DBPath: c.Kanban.DBPath}, true
+	case "continuous":
+		return c.Continuous, true
 	}
 	return nil, false
 }

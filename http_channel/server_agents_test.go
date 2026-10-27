@@ -107,7 +107,7 @@ func TestScaffoldEndpoint(t *testing.T) {
 	if res != http.StatusCreated {
 		t.Fatalf("scaffold status = %d", res)
 	}
-	if _, err := os.Stat(filepath.Join(home, "agents", "writer", "config.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, "agents", "writer", "config", "config.yaml")); err != nil {
 		t.Fatalf("scaffold dir missing: %v", err)
 	}
 	// duplicate: 409.

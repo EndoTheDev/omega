@@ -32,15 +32,14 @@ describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
     assert.equal(labels.length, 3, "exactly three entries ship now");
   });
 
-  it("the Continuous placeholder is the disabled entry with the design-pending note", () => {
-    const entry = picker.match(/\{\s*label:\s*"Continuous",[\s\S]*?\},/);
+  it("the Continuous entry is wired - it opens the continuous tab (card t_72ecca67)", () => {
+    const entry = picker.match(/\{[\s\S]{0,300}?label:\s*"Continuous",[\s\S]*?\},/);
     assert.ok(entry, "the Continuous entry exists as its own object");
-    assert.match(entry[0], /disabled:\s*true/, "the placeholder renders disabled");
-    assert.match(
-      entry[0],
-      /design pending - coming with the continuous agents arc/,
-      "the title carries Endo's design-pending note",
-    );
+    assert.doesNotMatch(entry[0], /disabled:\s*true/, "the placeholder is no longer disabled");
+    assert.match(entry[0], /run:\s*\(\)\s*=>\s*emit\("new-continuous"\)/, "the entry emits new-continuous");
+    // card t_55a571ff's disabled-dim rule still holds for any future
+    // disabled entry - the styling stays even now nothing uses it.
+    assert.match(sidebar, /\.new-menu-item:disabled\b/, "the disabled styling survives");
   });
 
   it("the picker renders from the data list - a disabled entry renders inert", () => {

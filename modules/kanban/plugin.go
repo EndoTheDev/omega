@@ -74,7 +74,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	dsn := cfg.DBPath
 	name := ""
 	var boardsNamed bool
-	if home := datadir.Home(); home != "" {
+	ahome, aerr := datadir.AgentHome()
+	if aerr != nil {
+		return fmt.Errorf("kanban board registry: %w", aerr)
+	}
+	if home := ahome; home != "" {
 		pointer, err := ReadPointer(home)
 		if err != nil {
 			return fmt.Errorf("kanban board registry: %w", err)
@@ -99,7 +103,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	p.store = s
 	if boardsNamed {
-		home := datadir.Home()
+		home := ahome
 		s.ConfigureBoards(BoardsDir(home), name, datadir.DBPath(home, "kanban.db"))
 	}
 	p.tools = &ToolProvider{board: s}

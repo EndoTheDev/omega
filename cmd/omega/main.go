@@ -22,6 +22,7 @@ import (
 	httpchannel "github.com/EndoTheDev/omega/http_channel"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
+	"github.com/EndoTheDev/omega/modules/continuous"
 	"github.com/EndoTheDev/omega/modules/cron"
 	"github.com/EndoTheDev/omega/modules/datadir"
 	"github.com/EndoTheDev/omega/modules/delegate"
@@ -98,10 +99,16 @@ func run(args []string) error {
 	// Set OMEGA_HOME early so all child processes inherit it.
 	home := omegaHome()
 	os.Setenv("OMEGA_HOME", home)
-	// Default-agent migration (card t_7e2b7002): agents/ appears on
-	// first boot; legacy home memory.md/user.md move into
-	// agents/default/ - exactly once, before anything reads them.
-	if err := agent.MigrateDefaultAgent(home); err != nil {
+	// Agent-home migration (card t_72ecca67): the retired
+	// agents/default profile's persona files move UP to the home root
+	// (ruling 3) - the reverse of the t_7e2b7002 migration. Exactly
+	// once, before anything reads them.
+	if err := agent.MigrateAgentHomes(home); err != nil {
+		return err
+	}
+	// The ruling-4 row migration right behind it: shared-store agent
+	// rows move into their own homes before any store opens.
+	if err := migrateAgentStores(home); err != nil {
 		return err
 	}
 	// Set OMEGA_SKILLS_DIR so the skills extension can read skills.
@@ -391,15 +398,13 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Skills.Dir = home + "/skills"
 	}
 	if cfg.Memory.File == "memory.md" {
-		// card t_7e2b7002: the default agent's memory files live in its
-		// profile dir - MigrateDefaultAgent (run(), before any command)
-		// moved the legacy home files there. Pointing the default at the
-		// old home path would strand the migrated content and silently
-		// start a fresh memory - the read side must follow the move.
-		cfg.Memory.File = home + "/agents/default/memory.md"
+		// card t_72ecca67 ruling 3: main's persona files live at the
+		// home root (agents/default is retired and its files migrated
+		// UP by MigrateAgentHomes in run(), before any command).
+		cfg.Memory.File = home + "/memory.md"
 	}
 	if cfg.Memory.UserProfileFile == "user.md" {
-		cfg.Memory.UserProfileFile = home + "/agents/default/user.md"
+		cfg.Memory.UserProfileFile = home + "/user.md"
 	}
 	if cfg.Logging.File == "" || cfg.Logging.File == "omega.log" {
 		// "" is the construction default; the bare "omega.log" literal
@@ -454,6 +459,11 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		trust.NewPlugin(),
 		cron.NewPlugin(),
 		kanbanModule.NewPlugin(),
+		// The continuous capsule (card t_72ecca67): agent homes, the
+		// wake subprocess, the canonical chats, the evidence ledger.
+		// The home passes through the host - exe-dir resolution is
+		// cmd/omega business, the capsule never re-guesses it.
+		continuous.NewPluginWithHome(omegaHome()),
 	}, nil
 }
 
@@ -646,9 +656,43 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	return nil
 }
 
+// parseRunSession lifts the --session <id> flag out of the run argv.
+// The flag may sit before or after the prompt; it survives neither
+// config/trust stripping (it is consumed before those run). A missing
+// or empty value is an error - a wake pointing at no session must
+// fail the spawn, not fork a new chat.
+func parseRunSession(args []string) (string, []string, error) {
+	sessionID := ""
+	clean := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--session" {
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("run: --session requires a session id")
+			}
+			sessionID = strings.TrimSpace(args[i+1])
+			if sessionID == "" {
+				return "", nil, fmt.Errorf("run: --session requires a session id")
+			}
+			i++
+			continue
+		}
+		clean = append(clean, args[i])
+	}
+	return sessionID, clean, nil
+}
+
 // cmdRun loads config and runs the agent once with the given prompt,
-// printing the final response.
+// printing the final response. --session <id> binds the run to an
+// existing session: the run persists into that session through a
+// TurnSink (cron-style), input included - the wake-subprocess entry
+// the continuous module spawns against an agent home (card
+// t_72ecca67). Without --session the run persists nothing, exactly as
+// before.
 func cmdRun(configPath string, args []string, trust trustFlags) error {
+	sessionID, args, err := parseRunSession(args)
+	if err != nil {
+		return err
+	}
 	appendPrompts := parseAppendPrompts(args)
 	args = stripAppendPrompts(stripTrustArgs(stripConfigFlag(args)))
 	prompt, images, err := parseFileArgs(args)
@@ -705,6 +749,21 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		userMsg = core.NewUser(prompt)
 	}
 	messages := []core.Message{userMsg}
+	// --session <id>: persist the run into the existing session (the
+	// wake contract). The session must exist - a typo'd id must fail
+	// loud, not fork a new one.
+	if sessionID != "" {
+		if _, err := store.GetSession(context.Background(), sessionID); err != nil {
+			return fmt.Errorf("run: --session %s: %w", sessionID, err)
+		}
+		ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(store, sessionID, ""))
+		// The wake report shape (card t_72ecca67, ruling 11): inside a
+		// wake child the closing message is citation-stripped and
+		// evidence-stamped before it lands in the canonical chat. Any
+		// other process returns the sink untouched.
+		ctx = agent.WithTurnSink(ctx, continuous.WrapWakeSink(agent.RunTurnSink(ctx)))
+		ctx = agent.WithPersistInput(ctx, []core.Message{userMsg})
+	}
 	var response strings.Builder
 	for event := range ag.Run(ctx, messages, nil) {
 		switch e := event.(type) {

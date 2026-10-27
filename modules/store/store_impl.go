@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +28,12 @@ var _ core.StoreProvider = (*Store)(nil)
 // It is safe for concurrent use via *sql.DB.
 type Store struct {
 	db *sql.DB
+	// identity is the store's own agent binding (card t_72ecca67,
+	// ruling 4): OMEGA_AGENT trimmed, "default" collapsing to "".
+	// Empty = main; every session row the store filters must be
+	// main's. Non-empty = a continuous agent's isolated store - the
+	// whole file belongs to that agent, list filters stay off.
+	identity string
 }
 
 // Open opens (creating if needed) the SQLite database at dsn and ensures
@@ -92,7 +99,7 @@ func openStore(dsn string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, identity: storeAgentIdentity()}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -350,16 +357,30 @@ func (s *Store) GetSession(ctx context.Context, id string) (core.Session, error)
 	return sess, nil
 }
 
-// ListSessions returns the sessions of the DEFAULT agent, ordered by
-// creation time. This is the binding that keeps the pre-agent session
-// list, tree, and insights exactly what they were (card t_7e2b7002):
-// sessions created as another agent never appear here - they surface
-// through ListAgentSessions. ComputeInsights has the same consequence
-// and shares it knowingly: agent-owned sessions are v1 shells (no chat
-// runs on them yet), so nothing measurable is missing from the numbers.
+// storeAgentIdentity resolves the store's agent binding at open:
+// OMEGA_AGENT trimmed, "default" collapsing to "" (main).
+func storeAgentIdentity() string {
+	name := strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
+	if name == "default" {
+		return ""
+	}
+	return name
+}
+
+// ListSessions returns the sessions visible to this store, ordered by
+// creation time. For main (no OMEGA_AGENT) that is the default agent's
+// sessions only - the binding that keeps the pre-agent session list,
+// tree, and insights exactly what they were (card t_7e2b7002). For a
+// continuous agent's isolated store (card t_72ecca67, ruling 4) the
+// whole file belongs to that one agent, so the filter stays off: its
+// canonical chat and wake sessions all carry the agent column, and a
+// filter would hide its own history from itself.
 func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+sessionColumns+` FROM sessions WHERE agent = 'default' ORDER BY created_at`)
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE agent = 'default' ORDER BY created_at`
+	if s.identity != "" {
+		query = `SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at`
+	}
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}

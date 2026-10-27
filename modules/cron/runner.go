@@ -45,6 +45,10 @@ type Runner struct {
 	// notifier is the finished-things seam, read from deps.Ctx at
 	// Start (card t_5d9032d3). Nil-safe: no seam, no emission.
 	notifier core.NotificationsProvider
+	// tickEmit is the event-spine wake-tick emitter, wired from
+	// deps.Ctx at Start (card t_72ecca67). Nil = the spine has no
+	// emitter (never started, or no Context): agent wakes go inert.
+	tickEmit func(wakeTickPayload)
 
 	// panels is the capsule's canvas surface, set by the plugin at
 	// Mount (arc 6). Nil-safe: no canvas, no push - a reload still
@@ -96,6 +100,13 @@ func (r *Runner) Start(ctx context.Context, deps core.CronDeps) error {
 		r.memory = deps.Ctx.Memory
 		if r.logger == nil {
 			r.logger = deps.Ctx.Logger
+		}
+		// The wake-tick emitter rides the Context's event spine (card
+		// t_72ecca67): cron owns WHEN, the continuous capsule owns
+		// WHAT happens to the tick. Nil observer set = empty spine,
+		// the wake goes inert by construction.
+		r.tickEmit = func(p wakeTickPayload) {
+			deps.Ctx.EmitTick("cron", "wake", p)
 		}
 	}
 	r.ag = deps.Agent
@@ -160,28 +171,36 @@ func (r *Runner) errorf(format string, args ...any) {
 // --- firing ---
 
 // tryAcquire performs the single-instance-per-job check-and-set.
-// Returns false when the job's previous fire is still running.
-func (r *Runner) tryAcquire(name string) bool {
+// Returns false when the job's previous fire is still running. Keys on
+// the job's StateKey - agent jobs share the name space with main's.
+func (r *Runner) tryAcquire(key string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.running[name] {
+	if r.running[key] {
 		return false
 	}
-	r.running[name] = true
+	r.running[key] = true
 	return true
 }
 
 // release marks the job's fire as finished.
-func (r *Runner) release(name string) {
+func (r *Runner) release(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.running[name] = false
+	r.running[key] = false
 }
 
 // fire runs one job occurrence at time `when` (the scheduled time for
 // catch-up fires, approximately now for regular fires). A fire
 // arriving while the same job is still running is skipped - logged,
 // never queued. Different jobs run in parallel.
+//
+// Agent jobs (card t_72ecca67) never turn in-process: they are WAKES,
+// one tick through the event spine (payload law: raw JSON); the
+// continuous capsule owns what the tick means. Cron owns WHEN only -
+// no session, no notification, no deliver on this side. With the
+// continuous capsule toggled off the tick lands on an empty spine and
+// the wake goes inert; the schedule survives (ruling 14).
 func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	if !job.IsEnabled() {
 		return
@@ -189,11 +208,18 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	if ctx.Err() != nil {
 		return
 	}
-	if !r.tryAcquire(job.Name) {
-		r.logf("job %s: skipped, previous fire still running", job.Name)
+	key := job.StateKey()
+	if !r.tryAcquire(key) {
+		r.logf("job %s: skipped, previous fire still running", key)
 		return
 	}
-	defer r.release(job.Name)
+	defer r.release(key)
+
+	if job.IsAgent() {
+		r.fireAgentWake(job, key)
+		r.recordFire(job, when)
+		return
+	}
 
 	start := r.now()
 	sessionID, err := agent.NewSessionID()
@@ -238,7 +264,10 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 // emitFinished records one finished-things record for the fire (card
 // t_5d9032d3). Metadata only - the job name goes in the title, never
 // prompt or run content. Catch-up fires travel through fire too, so
-// one occurrence = one record regardless of how it fired.
+// one occurrence = one record regardless of how it fired. Agent wakes
+// never ride this: ruling 10 bans cross-home notification writes and
+// unasked messaging - the wake report lands in the agent's own chat,
+// the roster's unread flag is the human's signal.
 func (r *Runner) emitFinished(jobName string, ok bool) {
 	if r.notifier == nil {
 		return
@@ -253,6 +282,29 @@ func (r *Runner) emitFinished(jobName string, ok bool) {
 		Title:    "cron " + jobName + " finished",
 		Verdict:  verdict,
 	})
+}
+
+// wakeTickPayload is the raw-JSON shape of cron's wake ticks (card
+// t_72ecca67). Defined here, parsed over there (modules/continuous):
+// the payload law keeps the two capsules decoupled - raw JSON, no
+// shared Go types across the module boundary.
+type wakeTickPayload struct {
+	Agent  string `json:"agent"`
+	Job    string `json:"job"`
+	Prompt string `json:"prompt"`
+}
+
+// fireAgentWake is the agent-job fire body: one tick through the event
+// spine, then done. Nil tickEmit = the continuous capsule is toggled
+// off - the tick lands on an empty spine, the wake goes inert (the
+// log names it), the schedule stays.
+func (r *Runner) fireAgentWake(job Job, key string) {
+	if r.tickEmit == nil {
+		r.logf("wake %s: continuous not mounted, wake inert", key)
+		return
+	}
+	r.tickEmit(wakeTickPayload{Agent: job.Agent, Job: job.Name, Prompt: job.Prompt})
+	r.logf("wake %s: tick emitted", key)
 }
 
 // agentTurn is the default runTurn: one full agent turn in the cron
@@ -299,10 +351,11 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 
 // recordFire stores the covered fire time and writes cronstate.json.
 // Catch-up fires record the missed scheduled time so a restart before
-// the next scheduled fire does not fire again.
+// the next scheduled fire does not fire again. Keys on StateKey -
+// agent jobs name-space under <agent>/.
 func (r *Runner) recordFire(job Job, when time.Time) {
 	r.mu.Lock()
-	r.lastFire[job.Name] = when.Unix()
+	r.lastFire[job.StateKey()] = when.Unix()
 	r.mu.Unlock()
 	if err := r.saveCronState(); err != nil {
 		r.errorf("job %s: save state: %v", job.Name, err)
@@ -371,7 +424,7 @@ func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 		if !job.IsEnabled() {
 			continue // a missed fire of a disabled job never fires
 		}
-		last, ok := r.lastFireOf(job.Name)
+		last, ok := r.lastFireOf(job.StateKey())
 		if !ok {
 			r.logf("job %s: no recorded last fire, no catch-up", job.Name)
 			continue
@@ -430,7 +483,7 @@ func (r *Runner) scheduleEnabled(ctx context.Context) {
 			r.errorf("job %s: schedule: %v (validated at load, unexpected)", job.Name, err)
 			continue
 		}
-		r.scheduled[job.Name] = true
+		r.scheduled[job.StateKey()] = true
 	}
 	r.sched = c
 	r.mu.Unlock()
@@ -480,7 +533,7 @@ func (r *Runner) Jobs() []core.CronJobInfo {
 	now := r.now()
 	out := make([]core.CronJobInfo, 0, len(jobs))
 	for _, j := range jobs {
-		row := core.CronJobInfo{Name: j.Name, Schedule: j.Schedule, Enabled: j.IsEnabled()}
+		row := core.CronJobInfo{Name: j.Name, Schedule: j.Schedule, Enabled: j.IsEnabled(), Agent: j.Agent}
 		if row.Enabled {
 			if sched, err := scheduleParser.Parse(j.Schedule); err == nil {
 				if next := sched.Next(now); !next.IsZero() {
@@ -490,7 +543,12 @@ func (r *Runner) Jobs() []core.CronJobInfo {
 		}
 		out = append(out, row)
 	}
-	sort.Slice(out, func(i, k int) bool { return out[i].Name < out[k].Name })
+	sort.Slice(out, func(i, k int) bool {
+		if out[i].Agent != out[k].Agent {
+			return out[i].Agent < out[k].Agent
+		}
+		return out[i].Name < out[k].Name
+	})
 	return out
 }
 
@@ -549,17 +607,42 @@ func (r *Runner) lastFireOf(name string) (int64, bool) {
 
 // --- hot reload ---
 
-// watchJobsFile polls crons.yaml for mtime changes and reloads the job
-// set without restart, logging the diff. Mirrors cmd/omega's
-// WatchConfig pattern (poll, not fsnotify). A reload that fails to
-// parse keeps the previous job set in effect. Returns when the context
-// is cancelled or Stop is called.
-func (r *Runner) watchJobsFile(ctx context.Context) {
-	path := homeFile(r.home)
-	var lastMod time.Time
-	if fi, err := os.Stat(path); err == nil {
-		lastMod = fi.ModTime()
+// cronFiles returns every crons.yaml this runner owns (card
+// t_72ecca67, ruling 12): the main home's file AND every agent home's
+// config/crons.yaml. The watcher and the reload both walk this list.
+func (r *Runner) cronFiles() map[string]string {
+	paths := map[string]string{}
+	if p := homeFile(r.home); p != "" {
+		paths[p] = "main"
 	}
+	for _, prof := range agent.LoadProfiles(r.home) {
+		if !prof.Continuous {
+			continue
+		}
+		paths[filepath.Join(prof.Dir, "config", stateFileName)] = prof.Name
+	}
+	return paths
+}
+
+// watchJobsFile polls every crons.yaml (main + agent homes, ruling 12)
+// for mtime changes and reloads the full job set without restart,
+// logging the diff. Mirrors cmd/omega's WatchConfig pattern (poll, not
+// fsnotify). A reload that fails to parse keeps the previous job set
+// in effect. Returns when the context is cancelled or Stop is called.
+func (r *Runner) watchJobsFile(ctx context.Context) {
+	// The signature is path -> mtime; a new agent home or a new agent
+	// file changes the set, the mtime change changes the value.
+	last := map[string]time.Time{}
+	snapshot := func() map[string]time.Time {
+		now := map[string]time.Time{}
+		for path := range r.cronFiles() {
+			if fi, err := os.Stat(path); err == nil {
+				now[path] = fi.ModTime()
+			}
+		}
+		return now
+	}
+	last = snapshot()
 	ticker := time.NewTicker(r.pollInterval)
 	defer ticker.Stop()
 	for {
@@ -570,18 +653,31 @@ func (r *Runner) watchJobsFile(ctx context.Context) {
 			return
 		case <-ticker.C:
 		}
-		fi, err := os.Stat(path)
-		if err != nil || fi.ModTime().Equal(lastMod) {
+		nowSig := snapshot()
+		if sameMtimes(last, nowSig) {
 			continue
 		}
-		lastMod = fi.ModTime()
-		cfg, err := LoadConfig(path)
+		last = nowSig
+		cfg, err := LoadAllConfigs(r.home)
 		if err != nil {
-			r.errorf("%s reload failed (keeping previous jobs): %v", stateFileName, err)
+			r.errorf("crons reload failed (keeping previous jobs): %v", err)
 			continue
 		}
 		r.applyReload(ctx, cfg)
 	}
+}
+
+// sameMtimes compares two mtime maps including key sets.
+func sameMtimes(a, b map[string]time.Time) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if w, ok := b[k]; !ok || !v.Equal(w) {
+			return false
+		}
+	}
+	return true
 }
 
 // applyReload diffs the old job set against the new one, logs it, and
@@ -598,27 +694,29 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 
 	oldSet := make(map[string]Job, len(old))
 	for _, j := range old {
-		oldSet[j.Name] = j
+		oldSet[j.StateKey()] = j
 	}
 	newJobs := cfg.Jobs
 	newSet := make(map[string]Job, len(newJobs))
 	for _, j := range newJobs {
-		newSet[j.Name] = j
+		newSet[j.StateKey()] = j
 	}
 	for _, j := range newJobs {
-		prev, existed := oldSet[j.Name]
+		prev, existed := oldSet[j.StateKey()]
+		// Diff keys are the StateKey: two agents (and main) may carry
+		// the same job name; only a change in the same home logs here.
 		switch {
 		case !existed:
-			r.logf("reload: job added: %s (%s)", j.Name, j.Schedule)
+			r.logf("reload: job added: %s (%s)", j.StateKey(), j.Schedule)
 		case !prev.IsEnabled() && j.IsEnabled():
-			r.logf("reload: job enabled: %s", j.Name)
+			r.logf("reload: job enabled: %s", j.StateKey())
 		case prev.IsEnabled() && !j.IsEnabled():
-			r.logf("reload: job disabled: %s", j.Name)
+			r.logf("reload: job disabled: %s", j.StateKey())
 		}
 	}
 	for _, j := range old {
-		if _, ok := newSet[j.Name]; !ok {
-			r.logf("reload: job removed: %s", j.Name)
+		if _, ok := newSet[j.StateKey()]; !ok {
+			r.logf("reload: job removed: %s", j.StateKey())
 		}
 	}
 

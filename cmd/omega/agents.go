@@ -1,11 +1,11 @@
 package main
 
-// cmd/omega/agents.go: multi-agent profile wiring (card t_7e2b7002).
-// An agent directory (~/agents-home/agents/<name>/config.yaml) LAYERS
-// over the home config: only what it sets overrides. The resolved
-// agent then gets its own skills, memory files, and log file - a
-// delegated child's memory write and log lines never land in the
-// default agent's files.
+// cmd/omega/agents.go: continuous-agent home wiring (card t_72ecca67,
+// settled design; superseding card t_7e2b7002's layer shape).
+// An agent home (agents/<name>/config/config.yaml) LAYERS over the
+// home config: only what it sets overrides. The resolved agent then
+// gets its own skills, memory files, log file, and data dir - a wake's
+// writes never land in another agent's files (full data isolation).
 
 import (
 	"fmt"
@@ -14,6 +14,9 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/modules/datadir"
+	kb "github.com/EndoTheDev/omega/modules/kanban"
+	"github.com/EndoTheDev/omega/modules/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,14 +28,16 @@ func resolveAgentName() string {
 	return strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
 }
 
-// ApplyAgentLayer overlays home/agents/<name>/config.yaml onto cfg and
-// resolves agent-scoped paths for everything that is not shared
-// infrastructure. The provider/model/system_prompt knobs come from the
-// layer; skills, memory, and logging are re-pointed at the agent's own
-// directories so two agents never write each other's files. A missing
-// layer is the caller's problem (profiles are validated before they
-// spawn children) - a malformed layer is a hard error: run half of one
-// agent's config is worse than a loud stop.
+// ApplyAgentLayer overlays agents/<name>/config/config.yaml onto cfg
+// and resolves agent-scoped paths for everything that is not shared
+// infrastructure. The main agent (default) layers nothing: the home
+// config IS its config and its persona files live at the home root
+// (ruling 3). A continuous agent gets its own skills, memory/user
+// files, log file, and data directory so one wake never writes into
+// another agent's home. A missing layer is the caller's problem
+// (profiles are validated before they spawn children) - a malformed
+// layer is a hard error: run half of one agent's config is worse than
+// a loud stop.
 //
 // resolveHomePaths (or its caller) must have already run on cfg: this
 // function overwrites the home-relative defaults with agent ones.
@@ -41,6 +46,9 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	// half-runs on the home config.
 	if _, err := agent.LoadProfile(home, name); err != nil {
 		return err
+	}
+	if name == agent.DefaultAgentName {
+		return nil // main = the home root itself (ruling 1)
 	}
 	data, err := os.ReadFile(agent.AgentConfigPath(home, name))
 	if err != nil {
@@ -52,11 +60,12 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("parse agent config %s: %w", name, err)
 	}
-	// Agent-scoped paths. The db stays shared (one omega.db: sessions
-	// bind by row, not by process); everything the agent WRITES is
-	// scoped to its directory. A path the layer set explicitly wins -
-	// re-read the layer's path knobs so the defaults only apply to
-	// what the layer left unset.
+	// Agent-scoped paths. Sessions, notifications, and boards resolve
+	// through the agent's own data/ (datadir.DataHome honors
+	// OMEGA_AGENT); everything the agent WRITES personal is scoped to
+	// its directory. A path the layer set explicitly wins - re-read
+	// the layer's path knobs so the defaults only apply to what the
+	// layer left unset.
 	var files struct {
 		Skills  SkillsConfig  `yaml:"skills"`
 		Memory  MemoryConfig  `yaml:"memory"`
@@ -79,10 +88,58 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 		cfg.Memory.UserProfileFile = filepath.Join(dir, "user.md")
 	}
 	if files.Logging.File == "" {
-		cfg.Logging.File = filepath.Join(dir, "logs", "omega.log")
+		cfg.Logging.File = filepath.Join(dir, name+".log")
 	}
-	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
+	// Data isolation (ruling 4): the agent's sessions store and boards
+	// resolve under its own data/, not the main home's. resolveHomePaths
+	// already pinned the main-resolved dsn values in; re-point those
+	// defaults. A path the layer set explicitly wins - it is the agent's
+	// own knob, not cross-home traffic.
+	agentDataDir := filepath.Join(dir, "data")
+	if cfg.Store.DBPath == "" || cfg.Store.DBPath == "omega.db" ||
+		cfg.Store.DBPath == datadir.DBPath(home, "omega.db") {
+		cfg.Store.DBPath = filepath.Join(agentDataDir, "omega.db")
+	}
+	if mainBoard, err := kb.PointerDSN(home); err == nil {
+		if cfg.Kanban.DBPath == "" || cfg.Kanban.DBPath == "kanban.db" || cfg.Kanban.DBPath == mainBoard {
+			agentBoard, aerr := kb.PointerDSN(dir)
+			if aerr != nil {
+				return fmt.Errorf("agent %s board registry: %w", name, aerr)
+			}
+			cfg.Kanban.DBPath = agentBoard
+		}
+	}
+	_ = os.MkdirAll(agentDataDir, 0o755)
 	return nil
+}
+
+// migrateAgentStores runs the one-time ruling-4 row migration (card
+// t_72ecca67): agent-tagged sessions left in the main store under the
+// retired shared-db shape move into their agent homes' own stores. No
+// main store and no agents/ directory both mean nothing was ever
+// written - the migration is skipped without creating either. Boot
+// order: after MigrateAgentHomes (persona up first, no reader races
+// the move), before any store opens.
+func migrateAgentStores(home string) error {
+	mainDSN := datadir.DBPath(home, "omega.db")
+	if _, err := os.Stat(mainDSN); err != nil {
+		return nil // no store yet: nothing was ever written
+	}
+	entries, err := os.ReadDir(filepath.Join(home, "agents"))
+	if err != nil {
+		return nil // no agent homes: no taggable rows either
+	}
+	dsns := map[string]string{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name()[0] == '.' || e.Name()[0] == '_' {
+			continue
+		}
+		if err := agent.ValidAgentName(e.Name()); err != nil {
+			continue // malformed dir: never a session owner
+		}
+		dsns[e.Name()] = datadir.DBPath(filepath.Join(home, "agents", e.Name()), "omega.db")
+	}
+	return store.MigrateAgentRows(mainDSN, dsns)
 }
 
 // cmdAgents is the `omega agents` CLI: inventory and scaffold.
@@ -91,7 +148,10 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 //	omega agents create <name> [description...]   scaffold one
 func cmdAgents(args []string) error {
 	home := omegaHome()
-	if err := agent.MigrateDefaultAgent(home); err != nil {
+	if err := agent.MigrateAgentHomes(home); err != nil {
+		return err
+	}
+	if err := migrateAgentStores(home); err != nil {
 		return err
 	}
 	if len(args) == 0 {

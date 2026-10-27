@@ -421,6 +421,10 @@ type CronJobInfo struct {
 	Schedule string `json:"schedule"`
 	Enabled  bool   `json:"enabled"`
 	Next     string `json:"next"`
+	// Agent names the agent home owning the job (card t_72ecca67,
+	// ruling 12): empty for main's own jobs, the agent home's name for
+	// wake jobs. One cron module reads every home.
+	Agent string `json:"agent,omitempty"`
 }
 
 // CronLister is the read-only inspector view over the cron scheduler.

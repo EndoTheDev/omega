@@ -10,7 +10,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | Provider | `ai`        | The `ai.Provider`/`ai.ToolSchema`/`ai.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban, notifications, verdict (19 plugins) + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
+| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban, notifications, verdict, continuous (20 plugins) + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -30,9 +30,12 @@ ai/               Provider contract (ai.Provider aliases core.Provider), retry,
                   HTTP client, think-level ladder, image sniffing
 agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
                   canvas runtime, insights/caption/compaction helpers
-modules/          In-process module packages (21 packages: 19 plugins +
+modules/          In-process module packages (22 packages: 20 plugins +
                   datadir, an imported leaf, + ui, the webui SPA; compiled
                   into omega)
+  modules/continuous  Continuous-agent machinery: agent homes (folder-as-
+                  registration under agents/), wake subprocesses, the
+                  canonical chat, the evidence ledger, the roster REST + webui pane
 http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
 webui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
 docs/             User documentation (cli.md, api.md, webui.md, tui.md,
@@ -49,7 +52,16 @@ bin/              Build output + local runtime (gitignored; skills/ templates tr
   data/           Databases (boot migration moves legacy home-root dbs here)
     omega.db      Session database (gitignored)
     kanban.db      Task board database (gitignored)
+  user.md/memory.md  Main persona files (the home root IS the main agent)
   skills/         Skill files
+  agents/         Continuous-agent homes (folder presence = registration)
+    <name>/
+      config/     The agent's config.yaml layer + its own crons.yaml
+      data/       The agent's stores (omega.db, notifications.db, kanban.db, ledger.db)
+      skills/     The agent's own skills
+      user.md     Persona file
+      memory.md   The agent's memory
+      <name>.log  The agent's wake log (stdout+stderr of wake children)
 ```
 
 A released/installed copy is self-contained: the binary, config/,
