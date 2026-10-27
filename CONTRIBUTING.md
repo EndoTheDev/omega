@@ -25,8 +25,8 @@ Every PR passes the same admission rules, in plain words:
    politely even if the code is perfect. Fit with the roadmap or an
    accepted issue is decided before anything else.
 2. **Same gates as our own cards.** `go build ./...`, `go vet ./...`,
-   `go test ./...`, `-race`, and — when `modules/ui` changes — an SPA
-   regen through the embed lane (`modules/ui/scripts/build.sh`, then
+   `go test ./...`, `-race`, and — when `webui` changes — an SPA
+   regen through the embed lane (`webui/scripts/build.sh`, then
    commit the synced `http_channel/static/`). These gates run
    in **GitHub CI, never on any private machine**. That is explicit
    policy, not a convenience. (Today's CI job runs vet + test + the

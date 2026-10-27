@@ -252,7 +252,7 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	// Exact patterns above win over the catch-all, so the API routes keep
 	// working; the catch-all falls back to index.html for non-file paths
 	// (history-mode routes like /chat/<id>) and 404s for asset misses.
-	// Sync the build with modules/ui/scripts/build.sh before `go build`.
+	// Sync the build with webui/scripts/build.sh before `go build`.
 	// Module REST (phase F): the registered module routes ride the
 	// live Context through the seamSet; requests that reach here fell
 	// through every fixed engine pattern, so the dispatch is: a

@@ -76,6 +76,12 @@ reference: `docs/tui.md`, module-owned command owners.
 
 ## Available modules
 
+The table below lists the toggleable capsules in `modules/`. Note the
+web search/fetch tool pair: it dissolved into the engine's
+`http_channel` package in v0.13 (shell law 1) and is engine vocabulary
+now - natural names `web.search`/`web.fetch`, always mounted, never in
+the disable list. No web module exists.
+
 | Package         | Seam(s)        | Description                                          |
 | --------------- | -------------- | ---------------------------------------------------- |
 | `agent_loop/`   | loop           | Default conversation loop (LoopProvider impl)        |
@@ -89,7 +95,6 @@ reference: `docs/tui.md`, module-owned command owners.
 | `tools/`        | tools, prompt_sections, TUI | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools); /files browser + /tools command |
 | `mcp/`          | tools          | MCP bridge (stdio + Streamable HTTP servers, MCP_SERVERS env or mcp.yaml). The additive born-capsule: the bridge tool provider is the whole surface - every discovered server tool ships server-qualified from the single Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestMCPRemovalProof` - arc 6 capsule |
 | `delegate/`     | tools          | Subagent delegation (consolidated `delegate` tool with task/status actions + one-release alias shims, the ctx.InjectedMessages/PendingDelegations seam, notifications emitter). The wired born-capsule: seam + tool + emitter capture all ship from the same Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestDelegateRemovalProof` - arc 6 capsule |
-| `web/`          | tools          | Web search/fetch (the provider-hosted upstream mirror). The additive born-capsule: the consolidated `web` tool (+ one-release alias shims `web.search`/`web.fetch`) is the whole surface, shipped from the single Mount with the config stanza (ctx.Configs["web"] via ConfigKey); no command, REST route, skills, exclusive seam or canvas panel exists. Removal proof `TestWebRemovalProof` - arc 6 capsule |
 | `verdict/`      | verdicts, tools, prompt_sections, TUI | Verdict cards (the single-answer hub, the blocking `verdict` tool, /verdict command + Verdict Cards prompt section). The interactive born-capsule: seam + tool + command + prompt section all ship from the same Mount; no canvas panel or actions exist (the card renders off the tool call; the /verdicts routes live in http_channel behind the seam-nil guard). Removal proof `TestVerdictRemovalProof` - arc 6 capsule |
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
 | `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
@@ -132,10 +137,10 @@ the root map's module laws and in `docs/architecture.md`.
 ### Module-owned UI
 
 UI for module X lives in `modules/X/ui/`; shell components live in
-`modules/ui/app/components/<area>/`; components only move to a module
+`webui/app/components/<area>/`; components only move to a module
 when the module owns the domain. The registration is a directory: put
 top-level `.vue` components there (e.g. the tools module's
-`ui/ToolsList.vue`) and the webui build (modules/ui/nuxt.config.ts)
+`ui/ToolsList.vue`) and the webui build (webui/nuxt.config.ts)
 discovers them - no manifest, no registry. Each file becomes one panel
 in the shell's inspector, and the module name is the namespace prefix,
 so module and shell component names never collide. A module's UI is

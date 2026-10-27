@@ -76,7 +76,7 @@ entries via `/chat` (see [api.md](api.md)); for one-shot checks prefer
 ## Conflict markers show up in the served web UI
 
 The SPA bundle has been built from conflicted/stash-poisoned source.
-Regenerate, don't hand-fix: `cd modules/ui && bash scripts/build.sh`,
+Regenerate, don't hand-fix: `cd webui && bash scripts/build.sh`,
 then rebuild `go build ./cmd/omega` and verify the served CSS/JS came
 out clean (grep served files, never the `.vue` sources). See
 "poisoned-bundle diagnosis" in [webui.md](webui.md).

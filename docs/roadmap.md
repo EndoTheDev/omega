@@ -43,7 +43,7 @@ and git history.
 - Provider parity: ollama-native tool loop, anthropic Messages API,
   openai-compat gap fixes
 - Module restructure: `extensions/` -> `modules/`, web UI at
-  `modules/ui`, instance home gains `config/` for the yaml files
+  `webui`, instance home gains `config/` for the yaml files
 - First-run seeding removed: memory.md/user.md are agent-created on
   first use, nothing personal ships in file or binary
 

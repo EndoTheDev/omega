@@ -72,8 +72,8 @@ assert_base() {
 d="$tmp/s1-multiff"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "modules/ui/App.vue" "v1" "card: ui one"
-card_commit "$d/dev" "modules/ui/chat.ts" "v1" "card: ui two"
+card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "webui/chat.ts" "v1" "card: ui two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 assert_base "multi-commit ff -> pre-merge tip" "$d/dev" \
@@ -86,8 +86,8 @@ assert_base "multi-commit ff -> pre-merge tip" "$d/dev" \
 d="$tmp/s2-multiff-push"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "modules/ui/App.vue" "v1" "card: ui one"
-card_commit "$d/dev" "modules/ui/chat.ts" "v1" "card: ui two"
+card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "webui/chat.ts" "v1" "card: ui two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 git -C "$d/dev" push -q origin dev
@@ -101,7 +101,7 @@ pass "pushed multi-commit ff -> gate untrusted (bypass, no silent skip)"
 d="$tmp/s3-merge-commit"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "modules/ui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --no-ff -m merge card
 assert_base "real merge commit -> HEAD^1" "$d/dev" \
@@ -136,7 +136,7 @@ pass "root commit -> loud stop (no silent skip)"
 d="$tmp/s6-override"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "modules/ui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 assert_base "--base override -> explicit, trusted" "$d/dev" \
@@ -154,8 +154,8 @@ printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > http_channel/static/bundle.t
 EOF
 chmod +x "$d/fake-build.sh"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "modules/ui/VerdictCard.vue" "v1.1" "card: verdict v1.1"
-card_commit "$d/dev" "modules/ui/chat.ts" "v1.1" "card: chat v1.1"
+card_commit "$d/dev" "webui/VerdictCard.vue" "v1.1" "card: verdict v1.1"
+card_commit "$d/dev" "webui/chat.ts" "v1.1" "card: chat v1.1"
 card_commit "$d/dev" "main.go" "package main // v1.1" "card: go v1.1"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
@@ -208,8 +208,8 @@ printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > http_channel/static/bundle.t
 EOF
 chmod +x "$d/fake-build.sh"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "modules/ui/App.vue" "v2" "card: ui one"
-card_commit "$d/dev" "modules/ui/chat.ts" "v2" "card: chat two"
+card_commit "$d/dev" "webui/App.vue" "v2" "card: ui one"
+card_commit "$d/dev" "webui/chat.ts" "v2" "card: chat two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 git -C "$d/dev" push -q origin dev

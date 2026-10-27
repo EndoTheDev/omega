@@ -78,11 +78,11 @@ class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
   t=$(sqlite3 "$DB" "SELECT lower(title||' '||body) FROM tasks WHERE id='$1';")
   files=$(grep -o 'files:.*' <<<"$t" | head -1)
   if [ -n "$files" ]; then
-    if grep -q "modules/ui\|\.ts\|\.vue\|nuxt" <<<"$files"; then echo webui
+    if grep -q "webui\|\.ts\|\.vue\|nuxt" <<<"$files"; then echo webui
     elif grep -oE '[^ ]+' <<<"$files" | sed 's/^files://' | grep -qv '^docs/'; then echo go
     else echo docs; fi
-  elif grep -q "docs/\|documentation" <<<"$t" && ! grep -q "modules/ui" <<<"$t"; then echo docs
-  elif grep -q "webui\|modules/ui\|nuxt\|spa" <<<"$t"; then echo webui
+  elif grep -q "docs/\|documentation" <<<"$t" && ! grep -q "webui" <<<"$t"; then echo docs
+  elif grep -q "webui\|webui\|nuxt\|spa" <<<"$t"; then echo webui
   else echo go; fi
 }
 

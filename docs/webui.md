@@ -8,7 +8,7 @@ omega binary via `go:embed` and served by the HTTP channel at `/`. An
 installed instance owns port 8099; the dev tree's omega serves 8098.
 The two never touch each other.
 
-Source of truth: `modules/ui/` (contracts below), `http_channel/static/`
+Source of truth: `webui/` (contracts below), `http_channel/static/`
 (the committed built bundle), and the wire contract in [api.md](api.md).
 
 ## Design tokens
@@ -181,7 +181,7 @@ The gutter divider retains magnetic snap rebase mechanics
 ## Testing
 
 ```bash
-node --test "test/*.test.ts"        # from modules/ui — node's built-in runner
+node --test "test/*.test.ts"        # from webui — node's built-in runner
 bash scripts/build.sh               # SPA generate + sync to http_channel/static
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```

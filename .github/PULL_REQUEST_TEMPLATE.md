@@ -18,7 +18,7 @@ and CI is the only place this code runs.
 
 - [ ] Fits the roadmap or an open issue (direction before correctness)
 - [ ] Gates pass in CI: build, vet, test, -race - plus an SPA re-sync
-      via modules/ui/scripts/build.sh if modules/ui changed
+      via webui/scripts/build.sh if webui changed
 - [ ] I understand review is read-only: my code runs only on GitHub CI runners
 - [ ] Security-touch surfaces named: modules/trust/, attach/fetch
       endpoints, config, shell tool, server-side URL fetch - or "none touched"
