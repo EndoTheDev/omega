@@ -12,6 +12,7 @@ omega                 start the interactive TUI (no-arg default)
 omega <path>          start the TUI in <path> (chdir first)
 omega chat            explicit alias for the TUI
 omega run <prompt>    run one prompt to stdout
+omega run --session <id> <prompt>   run bound to an existing session (the wake contract)
 omega serve           start the HTTP server (SSE streaming)
 omega export <id|label> [output]   export a session as JSONL
 omega insights [--days N]          session usage analytics (default: 30 days)
@@ -78,6 +79,19 @@ omega run fix this @docs/cli.md    # file args ride along as context/images
 
 Exit code is 1 and `omega: agent: <error>` prints to stderr when the
 run ends with an error event.
+
+`--session <id>` binds the run to an EXISTING session: the run persists
+every finished message through a TurnSink - input included, provider-
+correct order - instead of printing and dropping. A typo'd id errors
+rather than forking a new session. Inside a continuous-agent wake the
+run's closing message is shaped before it lands: an unbacked or
+contradicted claim sentence strips, a verified one gains its evidence
+ledger citation, and the runtime evidence tail closes the report. Any
+run outside a wake child persists through the sink untouched.
+
+```bash
+omega run --session canonical "check the deploy queue"   # the wake child's shape
+```
 
 ### `omega export`
 
