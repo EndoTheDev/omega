@@ -496,9 +496,9 @@ func waitFor(t *testing.T, limit time.Duration, cond func() bool, trigger func()
 // Start, but the mount pins need the seam provided to mount at all.
 type notificationsPlugin struct{}
 
-func (notificationsPlugin) Name() string                  { return "notifications" }
-func (notificationsPlugin) Provides() []string            { return []string{"notifications"} }
-func (notificationsPlugin) Requires() []string            { return nil }
+func (notificationsPlugin) Name() string                                                  { return "notifications" }
+func (notificationsPlugin) Provides() []string                                            { return []string{"notifications"} }
+func (notificationsPlugin) Requires() []string                                            { return nil }
 func (notificationsPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
 
 // TestPluginMountSetsCronSeam pins the api mount (the only mount since

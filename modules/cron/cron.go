@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/EndoTheDev/omega/agent"
+
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 )
@@ -41,12 +43,36 @@ const (
 //	    prompt: "..."            # required, the user message the run sends
 //	    deliver: journal         # journal | memory | none, default none
 //	    enabled: true            # default true
+//
+// Multi-home (card t_72ecca67, ruling 12): this one module reads the
+// main crons.yaml AND every agent home's config/crons.yaml. Agent jobs
+// carry the owning agent in Agent (set by the loader, never authored in
+// yaml - that file belongs to a different home).
 type Job struct {
 	Name     string `yaml:"name"`
 	Schedule string `yaml:"schedule"`
 	Prompt   string `yaml:"prompt"`
 	Deliver  string `yaml:"deliver"`
 	Enabled  *bool  `yaml:"enabled"`
+	// Agent is the agent home owner, set by LoadAllConfigs. Empty =
+	// main's own job (an in-process turn, today's behavior). Non-empty
+	// = the fire is a WAKE: one tick through the event spine, the
+	// continuous capsule owns what the tick means (cron owns WHEN).
+	Agent string `yaml:"-"`
+}
+
+// IsAgent reports whether the job belongs to an agent home (a wake).
+func (j Job) IsAgent() bool { return j.Agent != "" }
+
+// StateKey names the job persistently: agent jobs share the name space
+// with main's jobs and with each other (two agents can both carry a job
+// literally named wake), so the state, the fire guard and the
+// schedule map key on <agent>/<name> while the yaml name stays local.
+func (j Job) StateKey() string {
+	if j.IsAgent() {
+		return j.Agent + "/" + j.Name
+	}
+	return j.Name
 }
 
 // IsEnabled reports whether the job should run. The enabled field
@@ -81,6 +107,42 @@ func LoadConfig(path string) (*Config, error) {
 	cfg, err := ParseConfig(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// LoadAllConfigs reads the main crons.yaml AND every agent home's
+// config/crons.yaml (card t_72ecca67, ruling 12: ONE cron module for
+// all). Agent jobs are tagged with their owner; names stay local to
+// their file (two agents may both carry wake). A malformed agent file
+// is a load error like a malformed main file - the operator sees the
+// offending home, not a silent skip. A malformed home directory skips
+// silently (agent.LoadProfiles' scan law).
+func LoadAllConfigs(home string) (*Config, error) {
+	cfg, err := LoadConfig(homeFile(home))
+	if err != nil {
+		return nil, fmt.Errorf("main crons: %w", err)
+	}
+	for _, p := range agent.LoadProfiles(home) {
+		if !p.Continuous {
+			continue // main is the root file, already read
+		}
+		path := filepath.Join(p.Dir, "config", stateFileName)
+		agentCfg, err := LoadConfig(path)
+		if err != nil {
+			return nil, fmt.Errorf("agent %s crons: %w", p.Name, err)
+		}
+		for _, j := range agentCfg.Jobs {
+			j.Agent = p.Name
+			// A wake's delivery IS its report message in the agent's
+			// own canonical chat (card t_72ecca67, ruling 10): the
+			// main-home deliver targets have no meaning here, and a
+			// journal write would cross the home boundary.
+			if d := j.DeliverTarget(); d != deliverNone && d != "" {
+				return nil, fmt.Errorf("agent %s job %q: deliver targets are a main-home feature (wakes deliver into the agent's canonical chat)", p.Name, j.Name)
+			}
+			cfg.Jobs = append(cfg.Jobs, j)
+		}
 	}
 	return cfg, nil
 }
