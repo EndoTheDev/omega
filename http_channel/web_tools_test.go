@@ -1,4 +1,4 @@
-package web
+package http_channel
 
 import (
 	"context"
@@ -14,9 +14,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// setBase returns an extension pointed at the given test server.
-func setBase(apiKey, base string) *Extension {
-	return &Extension{apiKey: apiKey, baseURL: base}
+// setBase returns a webTools pair pointed at the given test server.
+func setBase(apiKey, base string) *webTools {
+	return &webTools{apiKey: apiKey, baseURL: base}
 }
 
 // TestDoSearchSuccess verifies the happy path: auth header, request
@@ -266,29 +266,24 @@ func TestHTTPErrorMessage(t *testing.T) {
 // TestNewDefaultBaseURL verifies the fallback to the default upstream
 // mirror and trailing-slash trimming.
 func TestNewDefaultBaseURL(t *testing.T) {
-	if got := New(Config{}).baseURL; got != defaultBaseURL {
-		t.Errorf("empty BaseURL -> %q, want %q", got, defaultBaseURL)
+	if got := newWebTools(WebToolsConfig{}).baseURL; got != defaultWebToolsURL {
+		t.Errorf("empty BaseURL -> %q, want %q", got, defaultWebToolsURL)
 	}
-	if got := New(Config{BaseURL: "http://localhost:11435/"}).baseURL; got != "http://localhost:11435" {
+	if got := newWebTools(WebToolsConfig{BaseURL: "http://localhost:11435/"}).baseURL; got != "http://localhost:11435" {
 		t.Errorf("trailing slash kept: %q", got)
 	}
 }
 
-// TestPluginInterface verifies the Plugin satisfies agent.Plugin.
-func TestPluginInterface(t *testing.T) {
-	var _ agent.Plugin = (*Plugin)(nil)
-}
-
-// TestExtensionImplementsToolProvider verifies Extension satisfies
+// TestWebToolsImplementsToolProvider verifies webTools satisfies
 // core.ToolProvider.
-func TestExtensionImplementsToolProvider(t *testing.T) {
-	var _ core.ToolProvider = (*Extension)(nil)
+func TestWebToolsImplementsToolProvider(t *testing.T) {
+	var _ core.ToolProvider = (*webTools)(nil)
 }
 
 // TestToolsShape checks the namespaced tool pair registers with
 // correct names and per-action parameters.
 func TestToolsShape(t *testing.T) {
-	ext := New(Default()) // no API key, tools still registered
+	ext := newWebTools(DefaultWebTools()) // no API key, tools still registered
 	tools := ext.Tools()
 	for _, name := range []string{"web.search", "web.fetch"} {
 		if _, ok := tools[name]; !ok {
@@ -312,7 +307,7 @@ func TestToolsShape(t *testing.T) {
 // reachable through the shared dispatcher (validation errors, no HTTP
 // calls).
 func TestRunWebRoutesBothActions(t *testing.T) {
-	ext := New(Default())
+	ext := newWebTools(DefaultWebTools())
 	// search routes
 	result, err := ext.runWeb(context.Background(), map[string]any{"action": "search"})
 	if err != nil || result != "error: query is required" {
@@ -335,7 +330,7 @@ func TestRunWebRoutesBothActions(t *testing.T) {
 
 // TestSearchRequiresQuery verifies validation without making HTTP calls.
 func TestSearchRequiresQuery(t *testing.T) {
-	ext := New(Default())
+	ext := newWebTools(DefaultWebTools())
 	result, err := ext.runSearch(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -347,7 +342,7 @@ func TestSearchRequiresQuery(t *testing.T) {
 
 // TestFetchRequiresURL verifies validation without making HTTP calls.
 func TestFetchRequiresURL(t *testing.T) {
-	ext := New(Default())
+	ext := newWebTools(DefaultWebTools())
 	result, err := ext.runFetch(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -359,7 +354,7 @@ func TestFetchRequiresURL(t *testing.T) {
 
 // TestSearchNoAPIKey verifies the no-key guard fires before HTTP.
 func TestSearchNoAPIKey(t *testing.T) {
-	ext := New(Default()) // no key
+	ext := newWebTools(DefaultWebTools()) // no key
 	result, err := ext.doSearch(context.Background(), "test", 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -371,7 +366,7 @@ func TestSearchNoAPIKey(t *testing.T) {
 
 // TestFetchNoAPIKey verifies the no-key guard fires before HTTP.
 func TestFetchNoAPIKey(t *testing.T) {
-	ext := New(Default())
+	ext := newWebTools(DefaultWebTools())
 	result, err := ext.doFetch(context.Background(), "https://example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -381,37 +376,16 @@ func TestFetchNoAPIKey(t *testing.T) {
 	}
 }
 
-// TestMount verifies the api mount registers the ToolProvider on the
-// Context - the ExtensionAPI path is web's only mount since the v0.12
-// phase-C2 migration.
-func TestMount(t *testing.T) {
-	p := NewPlugin()
-	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
-		t.Fatalf("api mount failed: %v", err)
-	}
-	if len(ctx.ToolProviders) != 1 {
-		t.Fatalf("expected 1 ToolProvider, got %d", len(ctx.ToolProviders))
-	}
-	tools := ctx.ToolProviders[0].Tools()
-	if _, ok := tools["web.search"]; !ok {
-		t.Error("mounted provider missing web.search")
-	}
-	if _, ok := tools["web.fetch"]; !ok {
-		t.Error("mounted provider missing web.fetch")
-	}
-	if _, ok := tools["web"]; ok {
-		t.Error("the unprefixed consolidated web tool must be retired")
-	}
-}
-
-// TestMountWithConfig verifies the API key and base URL flow from
-// config to extension.
-func TestMountWithConfig(t *testing.T) {
+// TestChannelMountCarriesWebTools verifies the channel mount registers
+// the web tool pair from the config - the pair's only mount since the
+// v0.13 dissolution (card t_f76ecdbe). Natural names, engine tier:
+// the channel plugin is not Toggleable, so the pair is never
+// disable-list material.
+func TestChannelMountCarriesWebTools(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{
 		Configs: map[string]any{
-			"web": Config{APIKey: "sk-test", BaseURL: "http://host:1"},
+			"http_channel": Config{WebTools: WebToolsConfig{APIKey: "k", BaseURL: "http://host:1"}},
 		},
 	}
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
@@ -421,19 +395,23 @@ func TestMountWithConfig(t *testing.T) {
 		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
 	}
 	tools := ctx.ToolProviders[0].Tools()
-	ws, ok := tools["web.search"]
-	if !ok {
-		t.Fatal("web.search tool not found")
+	for _, name := range []string{"web.search", "web.fetch"} {
+		if _, ok := tools[name]; !ok {
+			t.Errorf("mounted provider missing %s", name)
+		}
 	}
-	if ws.Description == "" {
-		t.Error("web.search tool has empty description")
+	if _, ok := tools["web"]; ok {
+		t.Error("the unprefixed consolidated web tool must be retired")
+	}
+	if _, toggleable := agent.Plugin(p).(agent.Toggleable); toggleable {
+		t.Error("the channel must stay engine vocabulary (not Toggleable)")
 	}
 }
 
-// TestConfigYAMLTags verifies the yaml tags round-trip, so a
+// TestWebToolsConfigYAMLTags verifies the yaml tags round-trip, so a
 // config.yaml stanza lands in the right fields.
-func TestConfigYAMLTags(t *testing.T) {
-	var c Config
+func TestWebToolsConfigYAMLTags(t *testing.T) {
+	var c WebToolsConfig
 	src := []byte("api_key: k\nbase_url: http://h:1\n")
 	if err := yaml.Unmarshal(src, &c); err != nil {
 		t.Fatalf("unmarshal: %v", err)

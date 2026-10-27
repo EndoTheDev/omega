@@ -14,7 +14,6 @@ import (
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/store"
 	"github.com/EndoTheDev/omega/modules/trust"
-	"github.com/EndoTheDev/omega/modules/web"
 )
 
 // TestRunChdirError verifies a non-subcommand argument that is not a
@@ -285,7 +284,6 @@ func TestConfigSectionTable(t *testing.T) {
 		{"verdict", ""},
 		{"mcp", ""},
 		{"delegate", ""},
-		{"web", "web"},
 		{"http_channel", "http_channel"},
 		{"tui", ""},
 		{"trust", "trust"},
@@ -377,7 +375,7 @@ func TestBuildConfigs(t *testing.T) {
 	// board module card t_33487fb6).
 	wantKeys := []string{
 		"store", "provider", "http_channel", "skills",
-		"memory", "logging", "compactor", "web", "trust",
+		"memory", "logging", "compactor", "trust",
 		"kanban",
 	}
 	for _, k := range wantKeys {
@@ -423,6 +421,12 @@ func TestBuildConfigs(t *testing.T) {
 	}
 	if hc.Port != cfg.Server.Port {
 		t.Errorf("http_channel.Port = %d, want %d", hc.Port, cfg.Server.Port)
+	}
+	if hc.WebTools.APIKey != cfg.Provider.APIKey {
+		t.Errorf("http_channel.WebTools.APIKey = %q, want %q", hc.WebTools.APIKey, cfg.Provider.APIKey)
+	}
+	if hc.WebTools.BaseURL != cfg.Provider.Host {
+		t.Errorf("http_channel.WebTools.BaseURL = %q, want %q", hc.WebTools.BaseURL, cfg.Provider.Host)
 	}
 
 	// skills: skills.Config{Dir}
@@ -472,18 +476,6 @@ func TestBuildConfigs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cc, cfg.Compaction) {
 		t.Errorf("compactor = %+v, want %+v", cc, cfg.Compaction)
-	}
-
-	// web: web.Config{APIKey, BaseURL derived from provider host}
-	wc, ok := configs["web"].(web.Config)
-	if !ok {
-		t.Fatalf("web config is %T, want web.Config", configs["web"])
-	}
-	if wc.APIKey != cfg.Provider.APIKey {
-		t.Errorf("web.APIKey = %q, want %q", wc.APIKey, cfg.Provider.APIKey)
-	}
-	if wc.BaseURL != cfg.Provider.Host {
-		t.Errorf("web.BaseURL = %q, want %q", wc.BaseURL, cfg.Provider.Host)
 	}
 
 	// trust: trust.Config{Home} must equal omegaHome() (i.e. OMEGA_HOME).

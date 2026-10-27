@@ -18,6 +18,11 @@ type Config struct {
 	// (provisional + final) route through it when set. Empty = the
 	// main model (today's behavior).
 	TitleModel string `yaml:"title_model"`
+	// WebTools carries the web.search/web.fetch settings (v0.13 shell
+	// law 1: the former modules/web capsule dissolved into the
+	// channel). The host's ConfigSection derives both fields; an
+	// empty BaseURL falls back to the default upstream mirror.
+	WebTools WebToolsConfig
 }
 
 // defaultRunTimeout is the detached-run wall-clock cap: 30 minutes is

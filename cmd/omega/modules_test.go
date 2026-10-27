@@ -18,7 +18,7 @@ import (
 
 func TestSaveDisabledRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.json")
-	if err := SaveDisabled(path, []string{"kanban", "web"}); err != nil {
+	if err := SaveDisabled(path, []string{"kanban", "delegate"}); err != nil {
 		t.Fatal(err)
 	}
 	// LoadDisabled reads the same file boot reads: the write must be
@@ -27,7 +27,7 @@ func TestSaveDisabledRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(off) != 2 || off[0] != "kanban" || off[1] != "web" {
+	if len(off) != 2 || off[0] != "kanban" || off[1] != "delegate" {
 		t.Fatalf("LoadDisabled read %v, want [kanban web]", off)
 	}
 }
