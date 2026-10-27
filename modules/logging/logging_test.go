@@ -201,3 +201,41 @@ func TestFileLoggerPath(t *testing.T) {
 		t.Fatalf("Path() = %q, want %q", got, path)
 	}
 }
+
+// TestNewLoggerEmptyFileIsNop pins the no-cwd law (card t_0ccda501): an
+// empty File (the construction default) yields a NopLogger and creates
+// nothing in the process CWD.
+func TestNewLoggerEmptyFileIsNop(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	l, err := NewLogger(Config{Enabled: true})
+	if err != nil {
+		t.Fatalf("NewLogger with empty File: %v", err)
+	}
+	defer l.Close()
+	if _, ok := l.(NopLogger); !ok {
+		t.Errorf("logger type %T, want NopLogger", l)
+	}
+	if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
+		t.Errorf("log file leaked into CWD: entries=%v err=%v", entries, err)
+	}
+}
+
+// TestPluginMountDefaultNoCwdFile mounts the plugin with its own
+// Default() config (empty File) and pins that no log file appears in
+// the process CWD.
+func TestPluginMountDefaultNoCwdFile(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	p := NewPlugin()
+	ctx := &core.Context{Configs: map[string]any{}}
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+	defer ctx.Logger.Close()
+	if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
+		t.Errorf("log file leaked into CWD: entries=%v err=%v", entries, err)
+	}
+}

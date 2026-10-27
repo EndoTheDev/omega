@@ -82,9 +82,12 @@ func (NopLogger) Errorf(format string, args ...any) {}
 func (NopLogger) Close() error { return nil }
 
 // NewLogger creates a LoggerProvider from config. Returns a NopLogger
-// when disabled, or a FileLogger writing to the configured file.
+// when disabled or when File is empty - an empty path is the
+// construction default (no cwd-relative fallback; resolution is
+// cmd/omega's job), so it must never open a file in the process CWD.
+// A FileLogger writing to the configured file otherwise.
 func NewLogger(cfg Config) (core.LoggerProvider, error) {
-	if !cfg.Enabled {
+	if !cfg.Enabled || cfg.File == "" {
 		return NopLogger{}, nil
 	}
 	return NewFileLogger(cfg.File)

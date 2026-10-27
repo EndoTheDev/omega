@@ -348,7 +348,7 @@ gates_pass() {
       echo "==> go vet"
       go vet $pkglist
       echo "==> dep law"
-      ./gate-deps.sh
+      ./scripts/gate-deps.sh
       echo "==> go test"
       go test $pkglist
       # -race on the package(s) the landing actually touches.

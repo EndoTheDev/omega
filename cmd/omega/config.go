@@ -160,7 +160,11 @@ func DefaultConfig() Config {
 		},
 		Logging: LoggingConfig{
 			Enabled: true,
-			File:    "omega.log",
+			// No default filename here: a bare relative name would
+			// make any early consumer open a log file in the process
+			// CWD. resolveHomePaths computes the home-rooted path
+			// before the logger is created (card t_0ccda501).
+			File: "",
 		},
 		HTTPTimeout:   300,
 		MaxTurns:      100,
