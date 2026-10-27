@@ -51,7 +51,10 @@ Flags:
 // the same home the mount did; a bare handle (no env, no user home)
 // fails loud instead of guessing.
 func cliHome() (string, error) {
-	home := datadir.Home()
+	home, err := datadir.AgentHome()
+	if err != nil {
+		return "", err
+	}
 	if home == "" {
 		return "", fmt.Errorf("kanban: omega home not determinable - set OMEGA_HOME")
 	}

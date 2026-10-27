@@ -14,6 +14,9 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/modules/datadir"
+	kb "github.com/EndoTheDev/omega/modules/kanban"
+	"github.com/EndoTheDev/omega/modules/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -87,8 +90,56 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	if files.Logging.File == "" {
 		cfg.Logging.File = filepath.Join(dir, name+".log")
 	}
-	_ = os.MkdirAll(filepath.Join(dir, "data"), 0o755)
+	// Data isolation (ruling 4): the agent's sessions store and boards
+	// resolve under its own data/, not the main home's. resolveHomePaths
+	// already pinned the main-resolved dsn values in; re-point those
+	// defaults. A path the layer set explicitly wins - it is the agent's
+	// own knob, not cross-home traffic.
+	agentDataDir := filepath.Join(dir, "data")
+	if cfg.Store.DBPath == "" || cfg.Store.DBPath == "omega.db" ||
+		cfg.Store.DBPath == datadir.DBPath(home, "omega.db") {
+		cfg.Store.DBPath = filepath.Join(agentDataDir, "omega.db")
+	}
+	if mainBoard, err := kb.PointerDSN(home); err == nil {
+		if cfg.Kanban.DBPath == "" || cfg.Kanban.DBPath == "kanban.db" || cfg.Kanban.DBPath == mainBoard {
+			agentBoard, aerr := kb.PointerDSN(dir)
+			if aerr != nil {
+				return fmt.Errorf("agent %s board registry: %w", name, aerr)
+			}
+			cfg.Kanban.DBPath = agentBoard
+		}
+	}
+	_ = os.MkdirAll(agentDataDir, 0o755)
 	return nil
+}
+
+// migrateAgentStores runs the one-time ruling-4 row migration (card
+// t_72ecca67): agent-tagged sessions left in the main store under the
+// retired shared-db shape move into their agent homes' own stores. No
+// main store and no agents/ directory both mean nothing was ever
+// written - the migration is skipped without creating either. Boot
+// order: after MigrateAgentHomes (persona up first, no reader races
+// the move), before any store opens.
+func migrateAgentStores(home string) error {
+	mainDSN := datadir.DBPath(home, "omega.db")
+	if _, err := os.Stat(mainDSN); err != nil {
+		return nil // no store yet: nothing was ever written
+	}
+	entries, err := os.ReadDir(filepath.Join(home, "agents"))
+	if err != nil {
+		return nil // no agent homes: no taggable rows either
+	}
+	dsns := map[string]string{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name()[0] == '.' || e.Name()[0] == '_' {
+			continue
+		}
+		if err := agent.ValidAgentName(e.Name()); err != nil {
+			continue // malformed dir: never a session owner
+		}
+		dsns[e.Name()] = datadir.DBPath(filepath.Join(home, "agents", e.Name()), "omega.db")
+	}
+	return store.MigrateAgentRows(mainDSN, dsns)
 }
 
 // cmdAgents is the `omega agents` CLI: inventory and scaffold.
@@ -98,6 +149,9 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 func cmdAgents(args []string) error {
 	home := omegaHome()
 	if err := agent.MigrateAgentHomes(home); err != nil {
+		return err
+	}
+	if err := migrateAgentStores(home); err != nil {
 		return err
 	}
 	if len(args) == 0 {

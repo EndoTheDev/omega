@@ -106,6 +106,11 @@ func run(args []string) error {
 	if err := agent.MigrateAgentHomes(home); err != nil {
 		return err
 	}
+	// The ruling-4 row migration right behind it: shared-store agent
+	// rows move into their own homes before any store opens.
+	if err := migrateAgentStores(home); err != nil {
+		return err
+	}
 	// Set OMEGA_SKILLS_DIR so the skills extension can read skills.
 	os.Setenv("OMEGA_SKILLS_DIR", home+"/skills")
 	// Set OMEGA_BIN so the delegate extension can spawn subagents.

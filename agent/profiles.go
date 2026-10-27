@@ -48,14 +48,14 @@ const DefaultAgentName = "default"
 // ever created by an actual memory write, never seeded). Skills is the
 // deduped scan list the host should configure for this agent.
 type Profile struct {
-	Name         string `json:"name"`
-	Dir          string `json:"dir"`
-	Description  string `json:"description,omitempty"`
-	ProviderType string `json:"provider_type,omitempty"`
-	ModelName    string `json:"model_name,omitempty"`
-	SkillCount   int    `json:"skill_count"`
+	Name         string   `json:"name"`
+	Dir          string   `json:"dir"`
+	Description  string   `json:"description,omitempty"`
+	ProviderType string   `json:"provider_type,omitempty"`
+	ModelName    string   `json:"model_name,omitempty"`
+	SkillCount   int      `json:"skill_count"`
 	Skills       []string `json:"skills,omitempty"`
-	MemorySize   int    `json:"memory_size"`
+	MemorySize   int      `json:"memory_size"`
 	// Filled by store-holding callers (never LoadProfiles):
 	SessionCount int    `json:"session_count"`
 	LastActivity string `json:"last_activity,omitempty"`
