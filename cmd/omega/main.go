@@ -755,6 +755,11 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 			return fmt.Errorf("run: --session %s: %w", sessionID, err)
 		}
 		ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(store, sessionID, ""))
+		// The wake report shape (card t_72ecca67, ruling 11): inside a
+		// wake child the closing message is citation-stripped and
+		// evidence-stamped before it lands in the canonical chat. Any
+		// other process returns the sink untouched.
+		ctx = agent.WithTurnSink(ctx, continuous.WrapWakeSink(agent.RunTurnSink(ctx)))
 		ctx = agent.WithPersistInput(ctx, []core.Message{userMsg})
 	}
 	var response strings.Builder

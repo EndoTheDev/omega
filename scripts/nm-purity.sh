@@ -137,6 +137,18 @@ def scrub(text, modules):
         code = [w for w in words if w not in keywords]
         return bool(code) and all(w in dead_ids for w in code)
 
+    # Sentinels collect_anchors must never deaden: err/ok are
+    # re-declared per statement all over Go code - one wire sighting of
+    # "ptr, err := module.F()" makes ptr dead, never err. And a
+    # statement keyword must never deaden: the := anchor regex on
+    # "if x, err := module.F()" grabs "if" too, and a dead "if" deletes
+    # every conditional in the chunk.
+    reserved = {"err", "ok", "_"}
+
+    def add_anchor(name):
+        if name and name not in reserved and name not in keywords:
+            dead_ids.add(name)
+
     def collect_anchors(ln):
         body = re.sub(r"`[^`]*`", "", ln)
         body = re.sub(r'"(\\.|[^"\\])*"', '""', body)
@@ -144,10 +156,10 @@ def scrub(text, modules):
         if m:
             for tok in re.split(r"[,\s]+", m.group(1).strip()):
                 if tok:
-                    dead_ids.add(tok)
+                    add_anchor(tok)
         m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[^=]", body)
         if m:
-            dead_ids.add(m.group(1))
+            add_anchor(m.group(1))
         # struct-field shape (a deleted field line: NAME TYPE): the
         # field's name dies with it - every .NAME access downstream
         # reads a struct that no longer has it.
@@ -194,7 +206,22 @@ def scrub(text, modules):
                 ln = chunk[i]
                 if is_wire_line(ln):
                     collect_anchors(ln)
-                    i += 1
+                    if ln.rstrip().endswith("{"):
+                        # a wire-headed conditional dies WITH its block:
+                        # the condition is the module's, so every branch
+                        # under it is unreachable wiring. Inner
+                        # declarations die with the block (their
+                        # orphaned references cascade after).
+                        depth3 = ln.count("{") - ln.count("}")
+                        j2 = i + 1
+                        while depth3 > 0 and j2 < len(chunk):
+                            depth3 += chunk[j2].count("{") - chunk[j2].count("}")
+                            j2 += 1
+                        for b in chunk[i + 1:j2]:
+                            collect_anchors(b)
+                        i = j2
+                    else:
+                        i += 1
                     changed = True
                     continue
                 # RHS = single dead value -> the line dies
