@@ -277,7 +277,7 @@ for MOD in "${MODULES[@]}"; do
   # the noun itself: zero occurrences of the word in symbol names
   # (string constants live in rodata, not in symbol names - this is a
   # TYPE/FUNC symbol check, not a string scan)
-  if go tool nm "$WORK/omega" | grep -wq "$MOD"; then
+  if go tool nm "$WORK/omega" 2>/dev/null | grep -wq "$MOD"; then
     echo "nm-purity [$MOD]: FAIL - the module noun survives as a symbol:" >&2
     go tool nm "$WORK/omega" | grep -w "$MOD" | sed 's/^/    /' | head -10 >&2
     fails=$((fails+1)); continue
