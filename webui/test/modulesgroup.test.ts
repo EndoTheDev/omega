@@ -140,6 +140,24 @@ test("SettingsTab hands the query down and counts MODULES in its empty state", (
   );
 });
 
+test("neither writer clobbers the shared collapse set (rmw on both sides)", () => {
+  // the persist is one localStorage key; a toggle that wrote from its
+  // own in-memory set once wiped the other group's key between two
+  // toggles (verify lane, card t_8ac225f1)
+  assert.match(
+    tab,
+    /const stored =[\s\S]{0,80}parseCollapsedKeys\(localStorage\.getItem\(COLLAPSED_KEY\)\)/,
+    "SettingsTab toggles start from the shared storage set",
+  );
+  const listToggle =
+    list.split("function toggleCollapsed")[1]?.split("}")[0] ?? "";
+  assert.match(
+    listToggle,
+    /parseCollapsedKeys\(localStorage\.getItem\(COLLAPSED_KEY\)\)/,
+    "ModuleToggleList toggles read-modify-write the shared set too",
+  );
+});
+
 test("module rows keep the E2 toggle contract (checkbox + annotations)", () => {
   // the collapse re-wrap must not have touched the row surface: the
   // disabled gate, the mounted-checked checkbox, always-on + dependents

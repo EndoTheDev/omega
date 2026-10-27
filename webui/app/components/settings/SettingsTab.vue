@@ -375,7 +375,17 @@
   }
 
   function toggleCollapsed(key: string) {
-    const next = new Set(collapsed.value);
+    // card t_8ac225f1: the persisted set is SHARED - the modules group
+    // (ModuleToggleList) writes keys against the same storage, so every
+    // toggle starts from the storage set plus this pane's own view. A
+    // blind in-memory write clobbered the modules key between two
+    // toggles (found in the verify lane: modules collapsed, provider
+    // toggled, "modules" gone from storage).
+    const stored =
+      typeof window === "undefined"
+        ? collapsed.value
+        : parseCollapsedKeys(localStorage.getItem(COLLAPSED_KEY));
+    const next = new Set([...stored, ...collapsed.value]);
     if (next.has(key)) next.delete(key);
     else next.add(key);
     collapsed.value = next;
