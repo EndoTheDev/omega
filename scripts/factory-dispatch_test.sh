@@ -80,7 +80,7 @@ rm -f "$T4DB"
 # Also pins the bash 5.3 =~ shape: the regex must ride an UNQUOTED var -
 # a quoted RHS is literal in 5.3 and matches nothing.
 tok=$(bash -c '
-source <(sed -n "/^tokens_of()/,/^}/p" "'"$GUARD"'")
+source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "'"$GUARD"'")
 printf "FILES: modules/{cron,memory,delegate}/\nplain modules/x/ text\ncmd;bad {a,b}\n" | tokens_of
 ' 2>/dev/null)
 [ "$(printf "%s\n" "$tok" | grep -c "^modules/")" = "4" ] \
@@ -88,6 +88,93 @@ printf "FILES: modules/{cron,memory,delegate}/\nplain modules/x/ text\ncmd;bad {
 printf "%s" "$tok" | grep -q "^modules/cron/" && ok || bad "T5: modules/cron/ missing from expansion"
 printf "%s" "$tok" | grep -q "^modules/delegate/" && ok || bad "T5: modules/delegate/ missing from expansion"
 printf "%s" "$tok" | grep -q "cmd;bad" && bad "T5: metachar line was eval-expanded (gate failed)" || ok
+
+# T6 (local + CI): guard bug #7 - move-shaped lines. A move line names the
+# card's WHOLE write surface, including source paths the rooted prefix scan
+# can never see (proven live 2026-10-28: t_7e47d18f "webui/ -> engine/webui/"
+# spawned beside the running webui settings card; verdicts read them disjoint).
+# Prose arrows and the literal "moves X to Y" phrase must stay silent.
+tok=$(bash -c '
+source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "'"$GUARD"'")
+printf "%s\n" \
+  "engine ring move: webui/ -> engine/webui/, http_channel/ -> engine/http_channel/" \
+  "moves agent/ ai/ tui/ webui/ + docs + CI paths" \
+  "modules/{cron,memory}/ dissolves into core/" \
+  "an arrow (\`->\`, \`=>\`) in prose with no paths" \
+  | tokens_of
+' 2>/dev/null)
+for want in "webui/" "engine/webui/" "http_channel/" "engine/http_channel/" \
+            "agent/" "ai/" "tui/" "modules/cron/" "modules/memory/" "core/"; do
+  printf "%s" "$tok" | grep -qx "$want" && ok || bad "T6: move token '$want' missing (got: $tok)"
+done
+printf "%s" "$tok" | grep -q "arrow" && bad "T6: prose arrow line leaked tokens" || ok
+
+# T7 (local + CI): the collision itself - a move source token collides with a
+# running card's edited webui file under the existing prefix-overlap law.
+rc=$(bash -c '
+source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p; /^overlaps()/,/^}/p" "'"$GUARD"'")
+ctok=$(mktemp); rtok=$(mktemp)
+printf "engine ring move: webui/ -> engine/webui/\n" | tokens_of >"$ctok"
+printf "webui/app/components/settings/groups.svelte\n" >"$rtok"
+overlaps "$ctok" "$rtok"; r=$?
+rm -f "$ctok" "$rtok"; exit $r
+' 2>/dev/null; echo $?)
+[ "$rc" = "0" ] && ok || bad "T7: move source webui/ did NOT collide with webui/app/ edit (rc=$rc)"
+
+# T8 (local + CI): FILES-override + move law. A FILES line naming only move
+# TARGETS must still surface the SOURCES from the body - the exact t_7e47d18f
+# shape (FILES: engine/..., body says the sources).
+rc=$(bash -c '
+source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "'"$GUARD"'")
+files="FILES: engine/webui/"
+body="$files
+engine ring move: webui/ -> engine/webui/"
+{ tokens_of <<<"$files"; move_paths <<<"$body"; } | grep -qx "webui/" >/dev/null 2>&1
+echo $?
+' 2>/dev/null)
+[ "$rc" = "0" ] && ok || bad "T8: FILES-only-target move card lost its source surface (rc=$rc)"
+
+# T9 (local + CI): end-to-end on a FAKE board, no real dispatch. Pins both
+# fixes of the night: (a) the t_7e47d18f shape - FILES line naming only move
+# TARGETS - collides with a running move card whose body names the sources
+# ("webui/ -> engine/webui/"); (b) the handoff report - re-read running AFTER
+# the stub dispatch, report delta, flag over-run (guard bug #8: hermes dispatch
+# counts running AFTER its reclaim phase requeues claim-expired cards, so the
+# guard snapshot is the stale one).
+FDHOME=$(mktemp -d)
+mkdir -p "$FDHOME/.hermes/kanban/boards/project-omega" "$FDHOME/bin"
+FDB="$FDHOME/.hermes/kanban/boards/project-omega/kanban.db"
+sqlite3 "$FDB" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
+INSERT INTO tasks VALUES('t_move','running','engine ring move','engine ring move: webui/ -> engine/webui/','pibtw:1',NULL,0,'2026-10-28T01:00');
+INSERT INTO tasks VALUES('t_cand','ready','engine ring move implement','FILES: engine/webui/
+engine ring move: webui/ -> engine/webui/',NULL,0,5,'2026-10-28T02:00');" 2>/dev/null
+cat >"$FDHOME/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+# stub dispatch: mimic inner behavior - release_stale_claims drops an expired
+# running card to ready, then spawn MORE cards than the guard requested.
+sqlite3 "$HERMES_STUB_DB" "UPDATE tasks SET status='ready', claim_lock=NULL WHERE id='t_move';"
+sqlite3 "$HERMES_STUB_DB" "INSERT INTO tasks VALUES('t_new1','running','x','',NULL,NULL,0,'2026-10-28T03:00');
+INSERT INTO tasks VALUES('t_new2','running','x','',NULL,NULL,0,'2026-10-28T03:01');
+INSERT INTO tasks VALUES('t_new3','running','x','',NULL,NULL,0,'2026-10-28T03:02');
+INSERT INTO tasks VALUES('t_new4','running','x','',NULL,NULL,0,'2026-10-28T03:03');"
+echo "Spawned: 4 (t_new1 t_new2 t_new3 t_new4)"
+EOF
+chmod +x "$FDHOME/bin/hermes"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB" bash "$GUARD" --dry-run 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T9: dry-run exited $rc"
+printf "%s" "$out" | grep -q "^hold: t_cand" && ok || bad "T9: move card did not hold the webui candidate (out: $out)"
+printf "%s" "$out" | grep -q "dry-run: no dispatch" && ok || bad "T9: dry-run dispatched (out: $out)"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB" bash "$GUARD" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T9: dispatch pass exited $rc (out: $out)"
+printf "%s" "$out" | grep -q "wanted <=3 running (snapshot 1 + slots 2)" && ok || bad "T9: handoff line wrong (out: $out)"
+printf "%s" "$out" | grep -q "after: 4 (delta 3 since snapshot)" && ok || bad "T9: post-call re-read wrong (out: $out)"
+printf "%s" "$out" | grep -q "over-run" && ok || bad "T9: over-run not reported (out: $out)"
+l=$(sqlite3 "$FDB" "SELECT claim_lock IS NULL FROM tasks WHERE id='t_cand';")
+[ "$l" = "1" ] && ok || bad "T9: unpark left t_cand locked ('$l')"
+rm -rf "$FDHOME"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
