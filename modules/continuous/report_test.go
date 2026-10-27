@@ -209,19 +209,101 @@ func TestWrapWakeSinkGatesOnAgentEnv(t *testing.T) {
 }
 
 func TestEvidenceSetsFoldsRows(t *testing.T) {
-	verified, failed, seen := evidenceSets([]record{
+	ev := evidenceSets([]record{
 		row(1, true, "file:exists:/tmp/a.txt"),
 		row(2, false, "file:missing:/tmp/b.txt"),
 		row(3, true, "cmd:ls"),
 		row(4, false, "file:exists:/tmp/c.txt"),
 	})
-	if len(verified["/tmp/a.txt"]) != 1 || verified["/tmp/a.txt"][0] != 1 {
-		t.Errorf("verified table: %v", verified)
+	if len(ev.fileVerified["/tmp/a.txt"]) != 1 || ev.fileVerified["/tmp/a.txt"][0] != 1 {
+		t.Errorf("verified table: %v", ev.fileVerified)
 	}
-	if !failed["/tmp/b.txt"] || !failed["/tmp/c.txt"] {
-		t.Errorf("failed table: %v", failed)
+	if !ev.fileFailed["/tmp/b.txt"] || !ev.fileFailed["/tmp/c.txt"] {
+		t.Errorf("failed table: %v", ev.fileFailed)
 	}
-	if !seen["/tmp/a.txt"] || !seen["/tmp/b.txt"] || seen["x"] {
-		t.Errorf("seen table: %v", seen)
+	if !ev.fileSeen["/tmp/a.txt"] || !ev.fileSeen["/tmp/b.txt"] || ev.fileSeen["x"] {
+		t.Errorf("seen table: %v", ev.fileSeen)
+	}
+}
+
+func TestURLClaimSurvivesWhenTheFetchVerifiedIt(t *testing.T) {
+	rows := []record{
+		row(11, true, "cmd:curl"), // no object, no locator
+		row(12, true, "url:https://example.com/feed"),
+	}
+	out := shapeReport("I fetched https://example.com/feed and read it.", rows)
+	if !strings.Contains(out, "I fetched https://example.com/feed") {
+		t.Errorf("verified URL claim stripped: %q", out)
+	}
+	if !strings.Contains(out, "[ledger #12]") {
+		t.Errorf("URL citation missing: %q", out)
+	}
+}
+
+func TestURLClaimStripsWhenTheFetchFailed(t *testing.T) {
+	rows := []record{row(13, false, "url:https://example.com/feed")}
+	out := shapeReport("I fetched https://example.com/feed and read it.", rows)
+	if strings.Contains(out, "example.com") {
+		t.Errorf("contradicted URL claim survived: %q", out)
+	}
+}
+
+func TestURLClaimStripsWhenTheRunNeverFetchedIt(t *testing.T) {
+	rows := []record{row(14, true, "url:https://other.example/article")}
+	out := shapeReport("I fetched https://example.com/article and read it.", rows)
+	if strings.Contains(out, "example.com") {
+		t.Errorf("unfetched URL claim survived: %q", out)
+	}
+}
+
+func TestURLTrailingSlashAgrees(t *testing.T) {
+	rows := []record{row(15, true, "url:https://example.com/guide/")}
+	out := shapeReport("I fetched https://example.com/guide without trouble.", rows)
+	if !strings.Contains(out, "[ledger #15]") {
+		t.Errorf("trailing-slash URL claim stripped: %q", out)
+	}
+}
+
+func TestURLLocatorWithoutCheckStaysOutOfFileTables(t *testing.T) {
+	ev := evidenceSets([]record{
+		row(16, true, "url:https://example.com/feed"),
+		row(17, false, "url:https://example.com/dead"),
+	})
+	if ev.fileSeen["https://example.com/feed"] || ev.fileFailed["https://example.com/dead"] {
+		t.Errorf("url rows leaked into the file tables: %+v", ev)
+	}
+	if len(ev.urlVerified["https://example.com/feed"]) != 1 {
+		t.Errorf("ok fetch row not verified: %v", ev.urlVerified)
+	}
+	if !ev.urlFailed["https://example.com/dead"] {
+		t.Errorf("failed fetch row not failed: %v", ev.urlFailed)
+	}
+}
+
+func TestMixedClaimStripsUntilEveryTokenIsBacked(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "feed.md")
+	if err := os.WriteFile(log, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// url ok + file missing: the whole claim fails closed
+	rows := []record{
+		row(18, true, "url:https://example.com/feed"),
+		row(19, false, "file:missing:"+log),
+	}
+	out := shapeReport("I fetched https://example.com/feed and wrote it to "+filepath.Base(log)+".", rows)
+	if strings.Contains(out, "[ledger") {
+		t.Errorf("half-backed claim got citations: %q", out)
+	}
+	if strings.Contains(out, filepath.Base(log)) {
+		t.Errorf("half-backed claim survived: %q", out)
+	}
+	rows = []record{
+		row(18, true, "url:https://example.com/feed"),
+		row(20, true, "file:exists:"+log),
+	}
+	out = shapeReport("I fetched https://example.com/feed and wrote it to "+filepath.Base(log)+".", rows)
+	if !strings.Contains(out, "[ledger #18, #20]") {
+		t.Errorf("fully-backed mixed claim uncited: %q", out)
 	}
 }

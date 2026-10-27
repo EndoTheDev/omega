@@ -86,7 +86,9 @@ correct order - instead of printing and dropping. A typo'd id errors
 rather than forking a new session. Inside a continuous-agent wake the
 run's closing message is shaped before it lands: an unbacked or
 contradicted claim sentence strips, a verified one gains its evidence
-ledger citation, and the runtime evidence tail closes the report. Any
+ledger citation (a claim over a URL is backed by the run's own ok
+fetch of that URL; the verifier's cheap check stays the file stat),
+and the runtime evidence tail closes the report. Any
 run outside a wake child persists through the sink untouched.
 
 ```bash
