@@ -20,7 +20,7 @@ import {
   withBoard,
   type BoardInfo,
   type BoardTask,
-} from "../../kanban/ui/board/boardLogic.ts";
+} from "../../modules/kanban/ui/board/boardLogic.ts";
 
 const uiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -92,9 +92,9 @@ test("statuses: the exact hermes grammar, terminal set last", () => {
 // --- structural: the shell mounts the board through the composition
 
 test("board view ships module-owned and the shell mounts it", () => {
-  const boardVue = join(uiRoot, "..", "kanban", "ui", "Board.vue");
-  const logic = join(uiRoot, "..", "kanban", "ui", "board", "boardLogic.ts");
-  const drawer = join(uiRoot, "..", "kanban", "ui", "board", "DetailDrawer.vue");
+  const boardVue = join(uiRoot, "..", "modules", "kanban", "ui", "Board.vue");
+  const logic = join(uiRoot, "..", "modules", "kanban", "ui", "board", "boardLogic.ts");
+  const drawer = join(uiRoot, "..", "modules", "kanban", "ui", "board", "DetailDrawer.vue");
   assert.ok(existsSync(boardVue), "modules/kanban/ui/Board.vue missing");
   assert.ok(existsSync(logic), "modules/kanban/ui/board/boardLogic.ts missing");
   assert.ok(existsSync(drawer), "modules/kanban/ui/board/DetailDrawer.vue missing");
@@ -122,7 +122,7 @@ test("board view ships module-owned and the shell mounts it", () => {
     "the outlet hosts the composition panel",
   );
   // the module declares its dockable title (the DOCK_TAB_TITLE resolver)
-  const kanbanDockable = join(uiRoot, "..", "kanban", "ui", "dockable.json");
+  const kanbanDockable = join(uiRoot, "..", "modules", "kanban", "ui", "dockable.json");
   assert.ok(existsSync(kanbanDockable), "modules/kanban/ui/dockable.json missing");
   assert.deepEqual(JSON.parse(readFileSync(kanbanDockable, "utf8")), { title: "Kanban" });
   assert.match(
@@ -151,7 +151,7 @@ test("pickBootBoard: current flagged row wins, first row is the fallback", () =>
 });
 
 test("board view wires the switcher through every board call", () => {
-  const boardVue = readFileSync(join(uiRoot, "..", "kanban", "ui", "Board.vue"), "utf8");
+  const boardVue = readFileSync(join(uiRoot, "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /id="board-switcher"/, "the dropdown exists");
   assert.match(boardVue, /fetch\(withBoard\("\/tasks", boardName\.value\)\)/, "list calls carry ?board=");
   assert.match(boardVue, /fetchBoards\(\)/, "boot reads the registry");
@@ -160,7 +160,7 @@ test("board view wires the switcher through every board call", () => {
   const rawTaskFetches = boardVue.match(/fetch\(`?\/tasks/g) ?? [];
   assert.equal(rawTaskFetches.length, 0, "all fetches must be withBoard-wrapped");
   // the drawer (inspector) has no self-contained fetch: it receives props
-  const drawer = readFileSync(join(uiRoot, "..", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
+  const drawer = readFileSync(join(uiRoot, "..", "modules", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
   assert.doesNotMatch(drawer, /fetch\(/, "the inspector follows the switch via props");
 });
 
@@ -169,7 +169,7 @@ test("board head keeps the fillet-tuck top spacing", () => {
   // so an 8px spacer above the switcher is fully consumed - the select
   // touches the strip. 10px matches the sibling inspector panels
   // (settings.narrow / insights both carry 10px top padding).
-  const boardVue = readFileSync(join(uiRoot, "..", "kanban", "ui", "Board.vue"), "utf8");
+  const boardVue = readFileSync(join(uiRoot, "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /\.board-head\s*\{[^}]*padding:\s*10px 12px 0/s,
     "head keeps the 10px top spacing that survives the 8px tuck");
   assert.doesNotMatch(boardVue, /padding:\s*8px 12px 0/,

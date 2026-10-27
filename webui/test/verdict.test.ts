@@ -24,7 +24,7 @@ import {
 } from "../app/composables/omega.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const modules = join(here, "..", "..", "..");
+const modules = join(here, "..", ".."); // the checkout root (webui/test -> webui -> root)
 
 function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");

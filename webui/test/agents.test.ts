@@ -22,7 +22,7 @@ import {
 } from "../app/components/agents/agentsRows.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const modules = join(here, "..", "..", "..");
+const modules = join(here, "..", "..");
 
 function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
@@ -65,7 +65,7 @@ test("agents list is never empty by construction: default exists", () => {
 // --- AgentsPanel.vue: the wire contract the deferred mount serves ---
 
 test("AgentsPanel fetches the real endpoints, no omega.ts dependency", () => {
-  const vue = read("modules", "ui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
   assert.match(vue, /["'`]\/agents["'`]/, "GET inventory");
   assert.match(vue, /agents\/\$\{[^}]+\}\/sessions/, "agent-scoped sessions route");
   assert.match(vue, /method: ["'`]POST["'`]/, "scaffold + create-as-agent POSTs");
@@ -73,7 +73,7 @@ test("AgentsPanel fetches the real endpoints, no omega.ts dependency", () => {
 });
 
 test("AgentsPanel exposes the card's primary action and honest empty states", () => {
-  const vue = read("modules", "ui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
   assert.match(vue, /new session as this agent/, "the primary action button");
   assert.match(vue, /no sessions as this agent/, "honest session-list empty state");
   assert.match(vue, /agentsRows/, "renders from the pure model");

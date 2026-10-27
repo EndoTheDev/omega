@@ -14,7 +14,7 @@ import { isNarrowWidth, NARROW_MAX_PX } from "../app/composables/narrow.ts";
 import {
   isNarrowWidth as boardIsNarrowWidth,
   NARROW_MAX_PX as BOARD_NARROW_MAX_PX,
-} from "../../kanban/ui/board/boardLogic.ts";
+} from "../../modules/kanban/ui/board/boardLogic.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -59,8 +59,8 @@ test("the shell narrow composable exists and is mounted-safe", () => {
 });
 
 test("Board.vue mounts its narrow observer on its root", () => {
-  const board = join(root, "..", "kanban", "ui", "Board.vue");
-  const boardEl = join(root, "..", "kanban", "ui", "board", "boardLogic.ts");
+  const board = join(root, "..", "modules", "kanban", "ui", "Board.vue");
+  const boardEl = join(root, "..", "modules", "kanban", "ui", "board", "boardLogic.ts");
   assert.ok(existsSync(board));
   assert.ok(existsSync(boardEl));
   const src = readFileSync(board, "utf8");
