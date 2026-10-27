@@ -373,12 +373,12 @@ func TestBuildConfigs(t *testing.T) {
 	}
 	configs := agent.RouteConfigs(plugins, cfg)
 
-	// All 10 expected keys must be present (kanban joined with the
-	// board module card t_33487fb6).
+	// All 11 expected keys must be present (kanban joined with the
+	// board module card t_33487fb6; continuous with t_72ecca67).
 	wantKeys := []string{
 		"store", "provider", "http_channel", "skills",
 		"memory", "logging", "compactor", "web", "trust",
-		"kanban",
+		"kanban", "continuous",
 	}
 	for _, k := range wantKeys {
 		if _, ok := configs[k]; !ok {
