@@ -7,8 +7,12 @@ omega. Each module implements the `Plugin` interface from
 ## How it works
 
 1. The host collects plugins from compiled-in packages.
-2. `MountAll` sorts plugins by dependencies and mounts each into
-   `Context`.
+2. `agent.MountAllAPI` sorts plugins by dependencies (`Requires()`,
+   topology is the only ordering) and mounts each through the typed
+   `agent.ExtensionAPI` registration surface (`MountWithAPI`) - the
+   only mount path (v0.12 phase F retired the classic seam-assignment
+   `Mount` and its adapters). Every registration is journaled; the
+   dismount replays it backward.
 3. The agent loop reads from `Context` slots directly — zero IPC,
    full type safety.
 
@@ -17,10 +21,18 @@ omega. Each module implements the `Plugin` interface from
 ```go
 type Plugin interface {
     Name() string
-    Provides() []string       // seam names: "provider", "store", etc.
-    Requires() []string       // seam names this plugin needs first
-    Mount(ctx *Context) error // populates ctx slots
+    Provides() []string              // seam names: "provider", "store", etc.
+    Requires() []string              // seam names this plugin needs first
+    MountWithAPI(ctx *Context,       // the one typed registration
+                 api *agent.ExtensionAPI) error // surface (*)
 }
+```
+
+(*) `MountWithAPI` is the ONLY mount method. Every seam claim,
+    additive append, tool, command, panel, route and emitter is a
+    journaled `api.Register*` call inside it - see the census table
+    in the `agent/extensionapi.go` header and the capsule table below
+    for what each registration builds.
 ```
 
 ## Seams
