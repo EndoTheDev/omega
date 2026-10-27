@@ -41,6 +41,7 @@
             @open="openChatTab"
             @new="openChatTab(null)"
             @new-ephemeral="openEphemeralTab"
+            @new-continuous="openContinuousTab"
             @pin="togglePin"
             @archive="toggleArchive"
             @branch="branchChatSession"
@@ -130,6 +131,16 @@
              family). -->
         <template #pane-agents>
           <AgentsPanel
+            v-if="!isMobile"
+            class="pane" />
+        </template>
+
+        <!-- card t_72ecca67 (ruling 18): the continuous roster - the
+             agent homes with last-report preview, next wake, unread;
+             the detail strip rides wake/sleep + evidence; the
+             t_55a571ff picker entry opens it via openContinuousTab. -->
+        <template #pane-continuous>
+          <ContinuousPanel
             v-if="!isMobile"
             class="pane" />
         </template>
@@ -234,6 +245,7 @@
         @open="openChatTab"
         @new="openChatTab(null)"
         @new-ephemeral="openEphemeralTab"
+        @new-continuous="openContinuousTab"
         @pin="togglePin"
         @archive="toggleArchive"
         @remove="askDelete"
@@ -464,6 +476,7 @@
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
   import AgentsPanel from "./components/agents/AgentsPanel.vue";
+  import ContinuousPanel from "./components/agents/ContinuousPanel.vue";
   // card t_14f73742: the extensions inventory joins the inspector (registry:
   // singleton, pinned right) - the outlet renders it when its tab is active
   import ExtensionsTab from "./components/shell/ExtensionsTab.vue";
@@ -1130,6 +1143,15 @@
     const pane = findEdgePane(dock.tree.value, "inspector");
     if (!pane) return;
     dock.openSingleton(pane.id, moduleId as DockComponentName);
+  }
+
+  // card t_72ecca67 (ruling 18): the continuous roster opens with the
+  // wired picker entry (the Continuous placeholder's run()). The
+  // inspector guard is honest: a dropped strip has no host pane.
+  function openContinuousTab() {
+    const pane = findEdgePane(dock.tree.value, "inspector");
+    if (!pane) return;
+    dock.openSingleton(pane.id, "continuous");
   }
 
   function toggleSidebar() {
