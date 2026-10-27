@@ -30,6 +30,23 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+move_paths() {  # stdin -> both sides of every move-shaped line, path tokens only
+  # A MOVE card writes BOTH sides of every move it declares: the target and
+  # the source. The rooted prefix scan in tokens_of can never see sources
+  # like webui/ or engine/ (proven live 2026-10-28: the engine-ring move card
+  # t_7e47d18f "webui/ -> engine/webui/" spawned beside the running webui
+  # settings card t_8ac225f1; the token check read them disjoint and the
+  # worker was killed at ~2 min). Shapes: "A -> B", "A => B", bare source
+  # lists after "moves" ("moves agent/ ai/ webui/"), "A dissolves into B".
+  # Move-shaped detection is LINE-wide: a line that declares a move names its
+  # whole write surface. Each extracted token must carry a slash, so prose
+  # arrows ("an arrow (`->`, `=>`)") and the literal phrase "moves X to Y"
+  # produce nothing. Inflation is the safe direction: extra tokens can only
+  # HOLD more cards, never free one.
+  grep -Ei '\->|=>|\bmoves\b|\bdissolves? into\b' \
+    | grep -oE '[a-zA-Z0-9_.{}-]+/[a-zA-Z0-9_./{}-]*' || true
+}
+
 tokens_of() {  # extract repo paths from free text (body or diff)
   # Brace lists (modules/{a,b}/) expand first: a FILES surface naming a
   # brace list must cover every member (proven 2026-10-26: the c2 card's
@@ -38,14 +55,25 @@ tokens_of() {  # extract repo paths from free text (body or diff)
   # The regex gate bounds eval to path-shaped words: no $, backticks,
   # parens or quotes pass it, so eval can only emit path strings.
   # (bash 5.3: quoted =~ RHS is literal - keep the pattern unquoted-var)
-  local line gate='^[A-Za-z0-9_./{},: -]+$'
-  while IFS= read -r line; do
+  # Move law runs on the brace-expanded stream: a move-shaped line adds its
+  # source paths to the card's write surface - the target side the rooted
+  # scan below already catches when it sits under a watched prefix.
+  local stream expanded line gate='^[A-Za-z0-9_./{},: -]+$'
+  stream=$(cat)
+  # move law pass 1 on the RAW text - brace expansion below shatters sentences
+  # ("A dissolves into B" becomes one-word lines), killing the phrase match
+  move_paths <<<"$stream"
+  expanded=$(while IFS= read -r line; do
     if [[ "$line" == *'{'* && "$line" =~ $gate ]]; then
       eval "printf '%s\n' $line" 2>/dev/null || printf '%s\n' "$line"
     else
       printf '%s\n' "$line"
     fi
-  done | grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
+  done <<<"$stream")
+  # move law pass 2 on the expanded stream - brace-listed moves
+  # ("modules/{cron,memory}/ -> core/") surface their members' sides
+  move_paths <<<"$expanded"
+  printf '%s\n' "$expanded" | grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
 }
 
 candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
@@ -53,7 +81,9 @@ candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win ove
   body=$(sqlite3 "$DB" "SELECT body FROM tasks WHERE id='$1';")
   files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
   if [ -n "$files" ]; then
-    tokens_of <<<"$files"
+    { tokens_of <<<"$files"
+      move_paths <<<"$body"   # a FILES line naming move TARGETS only must not hide the SOURCES
+    } | sort -u
   else
     tokens_of <<<"$body"
   fi
@@ -199,7 +229,32 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
   [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
   [ "$MAXARG" -gt 0 ] && { B=$(( MAXARG - ${#RUNNING[@]} )); [ "$B" -lt "$SLOTS" ] && [ "$B" -ge 0 ] && SLOTS=$B; }   # an explicit --max N bounds total concurrency (running + spawns <= N)
   [ "$SLOTS" -le 0 ] && { echo "no dispatch (--max reached: ${#RUNNING[@]} running)"; exit 0; }
-  hermes kanban dispatch --max $(( ${#RUNNING[@]} + SLOTS )) 2>&1 | grep -E "Spawned|assigned" || true
+  DOUT=$(mktemp)
+  hermes kanban dispatch --max $(( ${#RUNNING[@]} + SLOTS )) >"$DOUT" 2>&1 || true
+  grep -E "Spawned|assigned" "$DOUT" || true
+  # guard bug #8 (2026-10-28, proven twice in one night): the inner dispatcher
+  # spawned past the requested total (guard snapshot 1 running, slots 1, --max 2,
+  # inner spawned 2). hermes kanban dispatch is NOT touched (comment scope); the
+  # guard side owns the accounting. Mechanism, read from hermes source
+  # (hermes_cli/kanban_db_dispatch.py): dispatch_once runs _run_reclaim_phase
+  # BEFORE _tick_spawn_budget counts - release_stale_claims requeues running
+  # cards whose claim_expires elapsed (and stale-heartbeat orphans) back to
+  # 'ready', so the inner's budget-time running count sits BELOW this guard's
+  # pre-pass snapshot and it fills the freed slots. The guard's snapshot is the
+  # stale one. What the guard CAN do: re-read running after the call and report
+  # the delta, so over-runs surface in the tick log instead of hiding.
+  WANT=$(( ${#RUNNING[@]} + SLOTS ))
+  NOWRUN=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+  NEWRUN=$(comm -13 \
+    <(printf '%s\n' "${RUNNING[@]:-}" | sort -u) \
+    <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='running';" | sort -u) \
+    | tr '\n' ' ')
+  echo "handoff: wanted <=$WANT running (snapshot ${#RUNNING[@]} + slots $SLOTS), after: $NOWRUN (delta $(( NOWRUN - ${#RUNNING[@]} )) since snapshot)"
+  [ -n "$NEWRUN" ] && echo "  newly running: $NEWRUN"
+  if [ "$NOWRUN" -gt "$WANT" ]; then
+    echo "over-run: +$(( NOWRUN - WANT )) past the request - inner count was taken after its reclaim phase (release_stale_claims requeues claim-expired running cards first), so its budget read sat below the guard snapshot"
+  fi
+  rm -f "$DOUT"
 else
   echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP)"
 fi
