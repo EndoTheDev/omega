@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // dirName is the fixed database directory name inside an omega home.
@@ -54,6 +56,33 @@ func Home() string {
 		return ""
 	}
 	return filepath.Join(u, ".omega")
+}
+
+// AgentHome resolves the omega home the DATABASE consumers of this
+// process should use: when the process runs as a continuous agent
+// (OMEGA_AGENT set, the spawn contract every wake child and delegated
+// child carries), the answer is the agent's own home so its sessions
+// store, notifications, and boards resolve under <agent>/data/ - full
+// data isolation, ruling 4 of card t_72ecca67. Main and everything
+// without the env answer Home() verbatim. A malformed OMEGA_AGENT
+// value can never escape agents/: invalid names fail the resolution
+// loudly (the caller surfaces the error), never silently fall back -
+// a hostile env var must not point the stores at the wrong home.
+func AgentHome() (string, error) {
+	home := Home()
+	name := strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
+	if name == "" {
+		return home, nil
+	}
+	if name == "default" {
+		// main exists by definition at the root; a child claiming
+		// "default" runs as main (the env is noise, not a target).
+		return home, nil
+	}
+	if err := agent.ValidAgentName(name); err != nil {
+		return "", fmt.Errorf("datadir: OMEGA_AGENT %q: %w", name, err)
+	}
+	return filepath.Join(home, "agents", name), nil
 }
 
 // Migrate performs the boot-time data/ layout migration for one

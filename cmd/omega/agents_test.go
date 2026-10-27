@@ -69,11 +69,10 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 		t.Fatalf("apply layer: %v", err)
 	}
 	dir := agent.AgentDir(home, "scout")
-	// the db path stays the caller's business (data isolation resolves
-	// per-process through datadir.DataHome); memory/user/skills/log
-	// move under the agent home.
-	if cfg.Store.DBPath != filepath.Join(home, "data", "omega.db") {
-		t.Errorf("db path moved: %q", cfg.Store.DBPath)
+	// Data isolation (ruling 4): the store dsn re-points under the
+	// agent's own data dir; memory/user/skills/log move into the home.
+	if cfg.Store.DBPath != filepath.Join(dir, "data", "omega.db") {
+		t.Errorf("store db = %q, want the agent's own data dir", cfg.Store.DBPath)
 	}
 	if cfg.Memory.File != filepath.Join(dir, "memory.md") {
 		t.Errorf("memory = %q, want agent-scoped", cfg.Memory.File)
