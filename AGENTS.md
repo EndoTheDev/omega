@@ -46,7 +46,8 @@ is a review finding; its content lands in its mapped home instead.
   files are gitignored.
 - **Extensions are in-process.** All extensions are Go packages under
   `modules/`. No stdio, no IPC, no runtime loading. The host calls
-  `MountAll` at startup; the agent loop reads from `Context`.
+  `MountAllAPI` at startup - the universal registration surface is the
+  only mount path; the agent loop reads from `Context`.
 - **The agent loop is the only place tools execute.** The HTTP channel
   and TUI route tool calls through the agent, never directly. Each
   run drains a fresh events channel (channel reuse panics on the
@@ -63,10 +64,11 @@ Terse operational rules. Layer references live in `docs/` (map below);
 `modules/README.md` is the extension authoring guide.
 
 - **Plugin contract.** Every extension implements `agent.Plugin`
-  (`Name`, `Provides`, `Requires`, `Mount`). Exclusive seams take one
-  plugin per slot (`provider`, `compactor`, `store`, `skills`, `loop`,
-  `logging`, `memory`, `prompt_builder`, `frontend`, `trust`, `cron`,
-  `kanban`, `notifications`, `verdicts`).
+  (`Name`, `Provides`, `Requires`, `MountWithAPI`). Exclusive seams take
+  one plugin per slot (`provider`, `compactor`, `store`, `skills`,
+  `loop`, `logging`, `memory`, `prompt_builder`, `captioner`,
+  `frontend`, `trust`, `cron`, `kanban`, `notifications`, `verdicts`).
+  15 exclusive slots; `kanban` is a seam claim only (no Context field).
   `tools` and `channel` are additive. Commands register via
   `ctx.Commands` + `ctx.CommandHandler` (chain the previous handler on
   miss); a handler returns `CommandResult` with optional `CmdAction`
@@ -74,13 +76,17 @@ Terse operational rules. Layer references live in `docs/` (map below);
 - **Mount order.** Mount order is declared data: an extension whose
   `Mount()` reads a seam another plugin owns needs a `Requires()` edge
   naming that seam (delegate, kanban and cron require `notifications`).
-  `MountAll`'s topoSort is the only ordering - slice position in
+  `MountAllAPI`'s topoSort is the only ordering - slice position in
   `buildPlugins()` is a stable tiebreak (prompt-section authoring order
   among independent plugins) and carries no dependency semantics.
   Comment-law ordering is retired (card t_13a2af8a).
+- **Goroutine fence.** Modules register Start/Stop lifecycle handles on
+  Context.RunGroup; Mount never starts background work. The host calls
+  Start after the mount commit; StopAll walks handles in reverse. A
+  blocking Start is a fence violation.
 - **Import law.** Modules import `core/` for contracts (types, events,
   seams, messagetree); `agent/` is for the loop runtime and real helpers
-  only (`Plugin`, `MountAll`, `TurnSink`, profiles, `NewSessionID`).
+  only (`Plugin`, `MountAllAPI`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
   (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26):
   `http_channel/` and `tui/` are ENGINE ring, not modules - a module
@@ -91,6 +97,16 @@ Terse operational rules. Layer references live in `docs/` (map below);
   `ctx.ToolProviders` in `Mount()`. Full steps: `modules/README.md`.
 - **Tool merge.** Extension tools merge into the registry at run time;
   built-in tools win on name conflict.
+- **Binary purity.** core carries ZERO module nouns; module-shaped
+  types live in their capsules. Machine law: scripts/nm-purity.sh
+  (kanban canary every push, full rotation on the nightly); capsules
+  with known removal dependencies live in scripts/nm-purity.modules
+  and leave the manifest only by a green removal.
+- **Module REST.** module REST is capsule-registered (api.RegisterRoute,
+  core.ModuleRoute) and served by http_channel/module_routes.go from the
+  live Context; a module-rooted miss answers 404, an absent module's
+  paths ride the SPA catch-all. Seam-nil 501 guards survive only for
+  engine-served seams (store, settings, notifications).
 - **http_channel.** Persistence order is provider-correct and old
   baked sessions are never rewritten: user -> assistant(A + thinking +
   calls) -> tool results -> assistant(B). List-row concerns
@@ -100,7 +116,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   title generation fails silently (last write wins under races). Pure
   logic tests go in `server_pure_test.go`, handler tests in
   `server_test.go`. SPA-affecting changes ship via
-  `modules/ui/scripts/build.sh` with the committed `static/` output in
+  `webui/scripts/build.sh` with the committed `static/` output in
   the same change (`scripts/embed-lane.sh` owns `static/` commits at
   merge time). A rebuilt `server.go` needs a serve restart - the
   binary is a snapshot of its build time.
@@ -162,12 +178,12 @@ Terse operational rules. Layer references live in `docs/` (map below);
 | Area | What it is | Docs |
 | ---- | ---------- | ---- |
 | `ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
-| `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAll`), events, shared types | `docs/architecture.md` |
+| `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
 | `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
 | `http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
 | `tui/` | ENGINE ring (always on, never disabled): terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
 | `modules/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `modules/README.md` (authoring) |
-| `modules/ui/` | Nuxt 4 webui SPA, built output embedded into the binary | `docs/webui.md` |
+| `webui/` | ENGINE shell (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
 | `modules/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
 | `modules/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
 | `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
