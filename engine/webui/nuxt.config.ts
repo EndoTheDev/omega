@@ -7,16 +7,16 @@ import { scanModuleUIs } from "./app/composables/compose";
 // --- module-owned UI composition (build time only) ---
 // A module ships UI by putting .vue components in modules/<name>/ui/;
 // the shell's own components sit in engine/webui/app (it ships nothing under
-// engine-ring panels sit in engine/<name>/ui/ (tier law, card t_ae5423d2);
-// the ring lives under engine/.
+// engine/webui/ui/), and engine-ring panels sit in engine/<name>/ui/
+// (tier law, card t_ae5423d2); the ring lives under engine/.
 // The scan (pure, in app/composables/compose.ts) discovers those dirs;
 // this config (1) registers each as a Nuxt component directory with the
 // module name as namespace prefix, and (2) generates the panel list the
 // shell's inspector mounts. No runtime registry, no plugin protocol.
 const uiRoot = dirname(fileURLToPath(import.meta.url)); // engine/webui/ under the checkout root
-const checkoutRoot = resolve(uiRoot, ".."); // the repo root
-const modulesRoot = resolve(checkoutRoot, "modules"); // modules/
-const engineRoot = resolve(checkoutRoot, "engine"); // engine/ (agent, ai, http_channel, tui, webui)
+const repoRoot = resolve(uiRoot, "../.."); // the repo root (engine/webui is two levels deep)
+const modulesRoot = resolve(repoRoot, "modules"); // modules/
+const engineRoot = resolve(repoRoot, "engine"); // engine/ (agent, ai, http_channel, tui, webui)
 const moduleUIs = scanModuleUIs(modulesRoot, engineRoot);
 
 // One panel per module component file, imports relative to this dir.
