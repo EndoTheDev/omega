@@ -21,14 +21,17 @@ its sibling: `docs/migrating-a-module.md`.
   commands, no panels. `TestModuleOmissionDropsTUICommands`
   (`cmd/omega/plugins_test.go`) and the per-module removal proofs in
   `cmd/omega/removal_test.go` gate this.
-- Per-module REST routes answer 501 through their seam-nil guards -
-  they never outlive the module (the `http_channel` guards:
-  `boardUnavailable` for kanban, the notifications 501, and so on).
-- Core types stay. `core/kanban.go`, `core/seams.go` and friends are
-  the seam vocabulary the layers share; the layer law says layers
-  never import modules, so the types reference no module code. A
-  removal that deleted them would break the seam signature's home.
-  This is intentional residue, not leftover.
+- Module REST routes are registered by the capsule itself
+  (`api.RegisterRoute`, the phase-D vocabulary) and served by
+  `http_channel/module_routes.go` from the live Context. An absent
+  module registered no pattern, so its REST answers 404, not a
+  seam-nil guard - no fallback surface survives the removal.
+- Core stays a pure witness. Since the v0.12 phase-F core-purity
+  move, core carries ZERO module nouns (the machine check is
+  `scripts/nm-purity.sh`): the module-shaped types live in the capsule
+  (`modules/kanban`), so removing a module takes its types with it.
+  Core retains only the shared vocabulary (`core/seams.go`,
+  `core/routes.go`) that is a layer contract, not a module shape.
 
 ## The recipe
 
@@ -52,8 +55,9 @@ its sibling: `docs/migrating-a-module.md`.
    grep -rn 'kanban' docs                         # route tables, command docs, layer table
    ```
 
-   Expect hits in: the seam mount (`api.RegisterKanban` in the module's
-   mount), the REST guards (`http_channel/tasks.go`), the tool registry
+   Expect hits in: the seam claim (`RegisterKanban` in the module's
+   mount), the route table (`modules/kanban/rest.go` registering the
+   patterns through `api.RegisterRoute`), the tool registry
    (the namespaced `kanban.task` tool - the legacy `task`/`task.*`
    names retired with the v0.12 mount migration), the command chain
    (`/board`, `/boards` registered through `api.RegisterCommand`), the
@@ -73,20 +77,29 @@ its sibling: `docs/migrating-a-module.md`.
    PROOF mount=full: seam mounted, canvas carries the task panel + the board switcher, module-qualified
    PROOF tool wiring: task create pushed the task panel through the live canvas
    PROOF action-pipe: complete_task closed t_d259b564, switch_board answered the switcher
-   PROOF removed: seam nil (REST routes fall through to their 501 guard), canvas carries no kanban panel, no task tools, no /board commands; core/kanban.go types remain - documented as intentional
+   PROOF removed: seam absent (the capsule's REST routes left the mux, /tasks answers 404), canvas carries no kanban panel, no task tools, no /board commands
    ```
 
-   That is: seam nil (routes 501), canvas panels absent, tool
+   That is: seam absent (routes 404), canvas panels absent, tool
    registry without the domain tool AND its alias shims, commands
    unregistered, the other modules mounted - the TUI and webui stay
-   alive, the canvas snapshot simply misses the module. The core
-   types compile in the proof on purpose (see the guarantee above).
-6. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
+   alive, the canvas snapshot simply misses the module.
+
+6. **Run the removal through the nm machine.** The final proof is
+   mechanical, not assertive: `scripts/nm-purity.sh --module kanban`
+   scrubs every wire to the module out of a copy of the tree, builds
+   the binary, and asserts zero module-noun symbols in `go tool nm`
+   output. A capsule that cannot pass it has a wire the removal recipe
+   does not model. Capsules with a known dependency (recorded with the
+   compile evidence) live in `scripts/nm-purity.modules`; removing a
+   capsule from that manifest is a claim the rotation proves or
+   refuses on the next run.
+7. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
    before removal (`91-canvas-tab` and the module journeys) and green
    after - the canvas host tab renders whatever is mounted, so it
    passes both ways.
-7. **Data is not code.** A removed module's databases
+8. **Data is not code.** A removed module's databases
    (`<home>/data/kanban.db`, `<home>/data/boards/`) stay on disk.
    Say so in the removal note; never ship a migration that deletes a
    user's boards.

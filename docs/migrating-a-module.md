@@ -30,11 +30,11 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 ## The recipe, in order
 
-1. **Implement `agent.APIPlugin`** on the plugin. Keep the classic
-   `Mount` as a fail-loud stub - it is never dispatched (APIPlugin
-   wins, the strangler rule), but its body is dead and any accidental
-   arrival there must scream. When the last phase-F card deletes the
-   classic surface, the stubs go with it.
+1. **Implement `agent.Plugin`'s `MountWithAPI`.** The classic `Mount`
+   is gone from the interface (phase F): `agent.MountAllAPI` is the
+   only mount path, and the dual-mount parity tests retired with it -
+   the registration surface needs no comparison against a dead
+   assignment.
 
 2. **Map every classic assignment to its registration.** The census
    (`agent/extensionapi.go` header) is the table; the short list:
@@ -70,10 +70,14 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    nil-safe, module absent means nil - so the edge is then a lie and
    dies. Dependencies still read at mount time keep their edge.
 
-5. **Register routes only if the engine serves nothing for you today.**
-   `RegisterRoute` records module REST for phase-D consumption; a
-   capsule served through a Context seam (kanban's `/tasks` rides
-   `ctx.Kanban` through `http_channel`) registers nothing in phase C.
+5. **Register your REST surface through `RegisterRoute`.** Since the
+   phase-F core-purity move the engine holds no module shape:
+   `http_channel/module_routes.go` serves exactly the patterns the
+   capsules registered (missing pattern answers 404, no seam-nil
+   guard). Kanban moved `/tasks*` and `/boards` onto
+   `api.RegisterRoute` in `modules/kanban/rest.go` - the reference.
+   A capsule whose engine handler already exists and degrades to an
+   empty list registers nothing.
 
 6. **Home the CLI subcommand (v0.12 phase D).** `RegisterSubcommand`
    registers the capsule's argv subcommand: a thin name+handler prefix.
@@ -99,8 +103,7 @@ survived:
   (all dispatch flows through the same mount loop, so a one-plugin
   mount is the real mount, not a shortcut). A shape test pins the
   result: seam identity, the registry's tool names, the command table
-  and its fall-through, the panel provider's ids, and the classic
-  stub failing loud.
+  and its fall-through, the panel provider's ids.
 - **A registration can't drift silently.** Every faces test already
   written against the registry (tool lookups, command chains, canvas
   snapshots) keeps passing - names and ids changed exactly once, in
@@ -111,11 +114,11 @@ survived:
   task through the renamespaced id), then mounts without the module
   and asserts nothing survived. It is untouched by the mount-style
   change except for the renamed identities.
-- **The parity law still holds at the framework level.** The generic
-  dual-mount parity test (`agent/extensionapi_test.go`) keeps proving
-  that a registration and the classic assignment it adapted produce
-  identical Contexts - for the remaining (still classic) capsules and
-  for any migrated capsule through its new registrations.
+- **The purity machine proves the exit.** With the classic mount
+  retired, the removal recipe's last step
+  (`scripts/nm-purity.sh --module <m>`) is the proof a migrated
+  capsule exits the binary whole: wire-free compile, zero module
+  symbols in `go tool nm`. See `docs/removing-a-module.md` step 6.
 - **Journeys green** on a private lane in the worktree; the mount
   style change must not move one customer-level assertion.
 

@@ -7,7 +7,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Layer    | Package     | Responsibility                                                                                                                                          |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (22 of them), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: ShapeCheck, Refusal/RefusalSink, ModulePanicError) |
-| Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAll/MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (dual mount, v0.12 phase B), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
+| Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | Provider | `ai`        | The `ai.Provider`/`ai.ToolSchema`/`ai.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
 | Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban, notifications, verdict (19 plugins) + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
@@ -68,13 +68,13 @@ Each package includes test files with no external test framework -
 just the Go testing package. Tests are deterministic via a fake
 provider that scripts stream events.
 
-## Universal mount (v0.12 phase B)
+## Universal mount (v0.12)
 
-The pi-style registration surface lives beside the classic seam
-assignment; both mount styles mount ALL capsules simultaneously and
-produce the same Context. `agent.APIPlugin` is the optional capability
-a plugin implements (like Describer) to mount through the typed
-`agent.ExtensionAPI` view instead of writing Context slots by hand:
+The registration surface is the ONLY mount path. Every capsule
+implements `agent.Plugin`'s `MountWithAPI(ctx, api)` and mounts through
+the typed `agent.ExtensionAPI` view; the classic seam-assignment
+`Mount` and `agent.MountAll` retired in phase F (the adapters, the
+dual-mount parity tests and the fail-loud stubs went with them):
 
 - identity is a namespaced string the tenant half must match
   ("kanban.view"); the registry enforces one name one tenant (a
@@ -88,11 +88,16 @@ a plugin implements (like Describer) to mount through the typed
   a failed check is a refusal in the ledger (module, seam, failed
   predicate), nothing else acts on it yet
 
-The seam census (23 Context surfaces) and its registration mapping
+The seam census (15 exclusive slots) and its registration mapping
 live in the header of `agent/extensionapi.go`; the vocabulary types
 (ShapeCheck, Refusal, RefusalSink, ModulePanicError) live in
-`core/api.go`. Hosts that consume registrations call
-`agent.MountAllAPI` (it returns the registry: claims, module routes,
-the refusal ledger); `agent.MountAll` keeps its classic signature and
-every existing host works unchanged. Capsules migrate in phase C;
-the module authoring recipe is unchanged until then.
+`core/api.go`. Hosts call `agent.MountAllAPI` (it returns the
+registry: claims, module routes, the refusal ledger) - every host
+does, including the binary and the engines. Module REST rides
+`core.ModuleRoute` declarations (`core/routes.go`) registered through
+`RegisterRoute`; `http_channel/module_routes.go` serves exactly what
+the live registry carries, so a disabled capsule's routes answer 404
+and a re-enabled one's return, through the same RewireSeams re-read
+every other served seam follows. Binary purity is machine law:
+`scripts/nm-purity.sh` proves a capsule leaves the binary whole
+(kanban canary every push, full rotation on the nightly).
