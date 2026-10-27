@@ -1987,6 +1987,25 @@ export function toggleNote(m: ModuleRow, enable: boolean): string {
   return `disable ${m.name}?`;
 }
 
+// filterModuleRows narrows the module list live, same contract as
+// filterSettingGroups: a row survives when the case-insensitive query
+// is a substring of its name or description (the two human-readable
+// strings a row renders); rows with no match drop out. An empty (or
+// whitespace-only) query returns everything unchanged. Pure - never
+// touches the caller's arrays.
+export function filterModuleRows(
+  rows: ModuleRow[],
+  query: string,
+): ModuleRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter(
+    (m) =>
+      m.name.toLowerCase().includes(q) ||
+      (m.description ?? "").toLowerCase().includes(q),
+  );
+}
+
 // --- themes: user token themes behind /themes ---
 
 // ThemeMode is the theme select's value space: the three built-in

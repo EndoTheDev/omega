@@ -2332,12 +2332,10 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 .settings.narrow .settings-note,
 .settings.narrow .setting-help { font-size: 10.5px; }
 
-/* ---- v0.12 E2: the module toggle list (registry introspection) ---- */
-.modules-group .modules-head {
-  display: flex;
-  align-items: center;
-  cursor: default;
-}
+/* ---- v0.12 E2: the module toggle list (registry introspection) ----
+   card t_8ac225f1: the head is a button.settings-group-head now (it
+   rides the shared group-head rules - chevron, hover, focus-visible);
+   nothing modules-specific is left in the head styles. */
 .module-row {
   flex-wrap: nowrap;
   max-width: 100%;
