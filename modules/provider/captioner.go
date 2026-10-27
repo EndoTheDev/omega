@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // captionPrompt is the deterministic instruction the vision model gets

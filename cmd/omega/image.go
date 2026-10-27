@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // parseFileArgs splits args into image content and text prompt. Args

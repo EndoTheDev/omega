@@ -85,11 +85,11 @@ Terse operational rules. Layer references live in `docs/` (map below);
   Start after the mount commit; StopAll walks handles in reverse. A
   blocking Start is a fence violation.
 - **Import law.** Modules import `core/` for contracts (types, events,
-  seams, messagetree); `agent/` is for the loop runtime and real helpers
+  seams, messagetree); `engine/agent/` is for the loop runtime and real helpers
   only (`Plugin`, `MountAllAPI`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
   (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26):
-  `http_channel/` and `tui/` are ENGINE ring, not modules - a module
+  `engine/http_channel/` and `engine/tui/` are ENGINE ring, not modules - a module
   importing them is module-imports-engine, not module-imports-module.
 - **New extension recipe.** Create `modules/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
@@ -103,7 +103,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   with known removal dependencies live in scripts/nm-purity.modules
   and leave the manifest only by a green removal.
 - **Module REST.** module REST is capsule-registered (api.RegisterRoute,
-  core.ModuleRoute) and served by http_channel/module_routes.go from the
+  core.ModuleRoute) and served by engine/http_channel/module_routes.go from the
   live Context; a module-rooted miss answers 404, an absent module's
   paths ride the SPA catch-all. Seam-nil 501 guards survive only for
   engine-served seams (store, settings, notifications).
@@ -116,7 +116,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   title generation fails silently (last write wins under races). Pure
   logic tests go in `server_pure_test.go`, handler tests in
   `server_test.go`. SPA-affecting changes ship via
-  `webui/scripts/build.sh` with the committed `static/` output in
+  `engine/webui/scripts/build.sh` with the committed `static/` output in
   the same change (`scripts/embed-lane.sh` owns `static/` commits at
   merge time). A rebuilt `server.go` needs a serve restart - the
   binary is a snapshot of its build time.
@@ -177,13 +177,13 @@ Terse operational rules. Layer references live in `docs/` (map below);
 
 | Area | What it is | Docs |
 | ---- | ---------- | ---- |
-| `ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
-| `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
+| `engine/ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
+| `engine/agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
 | `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
-| `http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
-| `tui/` | ENGINE ring (always on, never disabled): terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
+| `engine/http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
+| `engine/tui/` | ENGINE ring (always on, never disabled): terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
 | `modules/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `modules/README.md` (authoring) |
-| `webui/` | ENGINE shell (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
+| `engine/webui/` | ENGINE shell (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
 | `modules/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
 | `modules/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
 | `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |

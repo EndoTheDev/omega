@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 func TestLoadAllConfigsReadsAgentHomes(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // mockLogger records all Printf/Errorf calls so tests can assert on

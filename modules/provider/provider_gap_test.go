@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // sseAnthropicServer serves a canned anthropic SSE stream shaped like

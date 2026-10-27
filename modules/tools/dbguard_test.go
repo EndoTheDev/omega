@@ -56,14 +56,14 @@ func TestDBGuardDenyShellBasename(t *testing.T) {
 	g := guardFor(t, dir)
 
 	cases := map[string]bool{
-		"sqlite3 /home/x/.omega/omega.db 'select 1'":            true,
-		"cp /home/x/.omega/omega.db-wal /tmp/bak":               true,
-		"cat /home/x/.omega/omega.db-shm":                       true,
-		"ls ~/.omega":                                           false,
-		"echo omega":                                            false,
-		"touch /tmp/omega.config":                               false,
-		"grep omega /etc/passwd":                                false,
-		"cat /home/x/omega.db-notes.md":                         true, // basename grep: dishonest ceiling, but loud
+		"sqlite3 /home/x/.omega/omega.db 'select 1'":           true,
+		"cp /home/x/.omega/omega.db-wal /tmp/bak":              true,
+		"cat /home/x/.omega/omega.db-shm":                      true,
+		"ls ~/.omega":                                          false,
+		"echo omega":                                           false,
+		"touch /tmp/omega.config":                              false,
+		"grep omega /etc/passwd":                               false,
+		"cat /home/x/omega.db-notes.md":                        true, // basename grep: dishonest ceiling, but loud
 		"sqlite3 ${HOME}/.omega/omega.db 'select * from task'": true,
 	}
 	for cmd, want := range cases {

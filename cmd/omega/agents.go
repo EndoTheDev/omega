@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/modules/datadir"
 	kb "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/store"

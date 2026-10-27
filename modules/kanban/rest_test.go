@@ -1,6 +1,6 @@
 package kanban
 
-// The board REST tests (from http_channel/server_tasks_test.go and
+// The board REST tests (from engine/http_channel/server_tasks_test.go and
 // server_boards_test.go, t_d7a7beaa): the capsule serves its own
 // routes since the phase-F move - ?board= picks the board on every
 // task route, GET /boards lists the registry, unknown boards fail
@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // serveRoutes builds an http surface over the routes a mounted

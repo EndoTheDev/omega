@@ -12,7 +12,7 @@
 # empty paragraph only when the snapshot is []. Works on a demoduled
 # build (zero panels) and on the full build (4 panels) alike. The wire
 # contracts (snapshot 200, action-pipe 404 sentinels, delta frames) are
-# pinned by http_channel/server_canvas_test.go; what only a
+# pinned by engine/http_channel/server_canvas_test.go; what only a
 # browser catches is the mount: a canvas tab that fails to render, a
 # store ReferenceError in setup, a pane that never opens. Catches the
 # invisible-to-gates family (the insights tab once shipped unreachable

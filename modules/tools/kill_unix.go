@@ -5,7 +5,7 @@ package tools
 import (
 	"os/exec"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // shellKillSetup is the shell tool's instance of the shared

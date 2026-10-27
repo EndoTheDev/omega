@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // mountAt mounts a fresh plugin on an existing home (OMEGA_HOME must
