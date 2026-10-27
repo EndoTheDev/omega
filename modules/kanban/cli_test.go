@@ -11,8 +11,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
 // captureStdout reroutes os.Stdout through a pipe for the duration of
@@ -165,7 +163,7 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 	}
 }
 
-func listBoardTasks(t *testing.T, home, board string) []core.KanbanTask {
+func listBoardTasks(t *testing.T, home, board string) []KanbanTask {
 	t.Helper()
 	s := openBoardStore(t, home)
 	tasks, err := s.ListTasks(context.Background(), board, "")

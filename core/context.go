@@ -46,6 +46,12 @@ type Context struct {
 	// the same law the webui enforces through directory registration.
 	TUIProviders []TUIProvider
 
+	// Module routes (additive - v0.12 phase F): module-registered REST
+	// routes, journaled through RegisterRoute. The serving channels
+	// re-read it at wire and after every live toggle (core.LiveSeams) -
+	// a disabled module's routes die without a restart.
+	ModuleRoutes []ModuleRoute
+
 	// Panel providers (additive - canvas contract, arc 3a). Modules
 	// that own view-model surface append their PanelProvider during
 	// Mount - one seam declares both the panels and their action
@@ -53,7 +59,6 @@ type Context struct {
 	PanelProviders []PanelProvider
 	Trust          TrustProvider
 	Cron           CronProvider
-	Kanban         KanbanProvider
 	// Notifications is the finished-things store seam (card t_5d9032d3):
 	// kanban completions, cron fires and dispatched chat runs each emit
 	// one record the webui bell serves. Nil when the notifications

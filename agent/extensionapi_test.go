@@ -541,7 +541,6 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterFrontend":        true,
 		"RegisterTrust":           true,
 		"RegisterCron":            true,
-		"RegisterKanban":          true,
 		"RegisterNotifications":   true,
 		"RegisterVerdicts":        true,
 		"RegisterCaptioner":       true,

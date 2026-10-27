@@ -16,7 +16,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
@@ -161,7 +160,7 @@ func cmdKanbanCards(sub string, args []string) error {
 		if title == "" {
 			return fmt.Errorf("create needs a title")
 		}
-		created, err := opts.store.CreateTask(ctx, "", core.KanbanTask{Title: title, Status: opts.status})
+		created, err := opts.store.CreateTask(ctx, "", KanbanTask{Title: title, Status: opts.status})
 		if err != nil {
 			return err
 		}
@@ -171,7 +170,7 @@ func cmdKanbanCards(sub string, args []string) error {
 		if len(rest) != 1 {
 			return fmt.Errorf("done needs exactly one task id")
 		}
-		done, err := opts.store.UpdateTask(ctx, "", rest[0], core.KanbanPatch{Status: StatusDone})
+		done, err := opts.store.UpdateTask(ctx, "", rest[0], KanbanPatch{Status: StatusDone})
 		if err != nil {
 			return err
 		}

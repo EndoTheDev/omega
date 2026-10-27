@@ -18,9 +18,9 @@ import (
 
 // ErrNotFound is returned when a task does not exist (the agent seam's
 // shared sentinel, aliased here so store callers stay short).
-var ErrNotFound = core.ErrTaskNotFound
+var ErrNotFound = ErrTaskNotFound
 
-// Store implements core.KanbanProvider over SQLite. Safe for
+// Store implements KanbanProvider over SQLite. Safe for
 // concurrent use via *sql.DB (WAL + busy_timeout, same recipe as the
 // session store).
 //
@@ -71,8 +71,8 @@ func (s *Store) emitDone(taskID string) {
 // Compile-time assertions: *Store implements the kanban seam plus the
 // optional board-registry capability.
 var (
-	_ core.KanbanProvider = (*Store)(nil)
-	_ core.BoardLister    = (*Store)(nil)
+	_ KanbanProvider = (*Store)(nil)
+	_ BoardLister    = (*Store)(nil)
 )
 
 // Open opens (creating if needed) the board database at dsn and
@@ -186,10 +186,10 @@ func (s *Store) handleFor(board string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Boards implements core.BoardLister: the default board first, then
+// Boards implements BoardLister: the default board first, then
 // the registry directories that hold a kanban.db.
-func (s *Store) Boards(ctx context.Context) ([]core.BoardInfo, error) {
-	out := []core.BoardInfo{{Name: DefaultBoardName, Current: s.currentName() == DefaultBoardName || s.defaultName == ""}}
+func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
+	out := []BoardInfo{{Name: DefaultBoardName, Current: s.currentName() == DefaultBoardName || s.defaultName == ""}}
 	if s.boardsDir == "" {
 		return out, nil
 	}
@@ -207,7 +207,7 @@ func (s *Store) Boards(ctx context.Context) ([]core.BoardInfo, error) {
 		if _, err := os.Stat(filepath.Join(s.boardsDir, e.Name(), "kanban.db")); err != nil {
 			continue
 		}
-		out = append(out, core.BoardInfo{Name: e.Name(), Current: e.Name() == s.defaultName})
+		out = append(out, BoardInfo{Name: e.Name(), Current: e.Name() == s.defaultName})
 	}
 	return out, nil
 }
@@ -283,20 +283,20 @@ CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
 // CreateTask inserts a task on the named board ("" = default). ID,
 // Status (default triage) and CreatedAt are filled by the store;
 // title must be non-empty.
-func (s *Store) CreateTask(ctx context.Context, board string, in core.KanbanTask) (core.KanbanTask, error) {
+func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error) {
 	if strings.TrimSpace(in.Title) == "" {
-		return core.KanbanTask{}, fmt.Errorf("task title is required")
+		return KanbanTask{}, fmt.Errorf("task title is required")
 	}
 	status := in.Status
 	if status == "" {
 		status = StatusTriage
 	}
 	if !IsStatus(status) {
-		return core.KanbanTask{}, fmt.Errorf("illegal status %q", status)
+		return KanbanTask{}, fmt.Errorf("illegal status %q", status)
 	}
 	db, err := s.handleFor(board)
 	if err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	for range 5 {
 		in.ID = newTaskID()
@@ -311,18 +311,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue // id collision: retry with a fresh draw
 			}
-			return core.KanbanTask{}, err
+			return KanbanTask{}, err
 		}
 		if err := recordEvent(ctx, db, in.ID, "created", describeNew(in)); err != nil {
-			return core.KanbanTask{}, err
+			return KanbanTask{}, err
 		}
 		return in, nil
 	}
-	return core.KanbanTask{}, fmt.Errorf("could not allocate a task id after 5 tries")
+	return KanbanTask{}, fmt.Errorf("could not allocate a task id after 5 tries")
 }
 
 // describeNew renders the created-event detail line.
-func describeNew(t core.KanbanTask) string {
+func describeNew(t KanbanTask) string {
 	detail := "status " + t.Status
 	if t.SessionID != "" {
 		detail += ", session " + t.SessionID
@@ -335,7 +335,7 @@ func describeNew(t core.KanbanTask) string {
 
 // ListTasks returns tasks on the named board, newest first. Empty
 // status lists every task.
-func (s *Store) ListTasks(ctx context.Context, board, status string) ([]core.KanbanTask, error) {
+func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
 	db, err := s.handleFor(board)
 	if err != nil {
 		return nil, err
@@ -355,7 +355,7 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]core.Kan
 		return nil, err
 	}
 	defer rows.Close()
-	out := []core.KanbanTask{}
+	out := []KanbanTask{}
 	for rows.Next() {
 		t, err := scanTask(rows)
 		if err != nil {
@@ -366,8 +366,8 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]core.Kan
 	return out, rows.Err()
 }
 
-func scanTask(row interface{ Scan(...any) error }) (*core.KanbanTask, error) {
-	var t core.KanbanTask
+func scanTask(row interface{ Scan(...any) error }) (*KanbanTask, error) {
+	var t KanbanTask
 	err := row.Scan(&t.ID, &t.Title, &t.Body, &t.Assignee, &t.Status,
 		&t.SessionID, &t.Source, &t.CreatedAt, &t.StartedAt, &t.CompletedAt)
 	if err != nil {
@@ -377,24 +377,24 @@ func scanTask(row interface{ Scan(...any) error }) (*core.KanbanTask, error) {
 }
 
 // GetTask returns one task by id on the named board.
-func (s *Store) GetTask(ctx context.Context, board, id string) (core.KanbanTask, error) {
+func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, error) {
 	db, err := s.handleFor(board)
 	if err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	row := db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ?`, id)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return core.KanbanTask{}, ErrNotFound
+		return KanbanTask{}, ErrNotFound
 	}
 	if err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	return *t, nil
 }
 
 // GetTaskComments returns the comment thread, oldest first.
-func (s *Store) GetTaskComments(ctx context.Context, board, taskID string) ([]core.KanbanComment, error) {
+func (s *Store) GetTaskComments(ctx context.Context, board, taskID string) ([]KanbanComment, error) {
 	db, err := s.handleFor(board)
 	if err != nil {
 		return nil, err
@@ -405,9 +405,9 @@ SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = 
 		return nil, err
 	}
 	defer rows.Close()
-	out := []core.KanbanComment{}
+	out := []KanbanComment{}
 	for rows.Next() {
-		var c core.KanbanComment
+		var c KanbanComment
 		if err := rows.Scan(&c.ID, &c.TaskID, &c.Author, &c.Body, &c.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -417,7 +417,7 @@ SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = 
 }
 
 // GetTaskEvents returns the audit trail, oldest first.
-func (s *Store) GetTaskEvents(ctx context.Context, board, taskID string) ([]core.KanbanEvent, error) {
+func (s *Store) GetTaskEvents(ctx context.Context, board, taskID string) ([]KanbanEvent, error) {
 	db, err := s.handleFor(board)
 	if err != nil {
 		return nil, err
@@ -428,9 +428,9 @@ SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? 
 		return nil, err
 	}
 	defer rows.Close()
-	out := []core.KanbanEvent{}
+	out := []KanbanEvent{}
 	for rows.Next() {
-		var e core.KanbanEvent
+		var e KanbanEvent
 		if err := rows.Scan(&e.ID, &e.TaskID, &e.Kind, &e.Detail, &e.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -440,32 +440,32 @@ SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? 
 }
 
 // AddComment appends to the thread and writes the comment event.
-func (s *Store) AddComment(ctx context.Context, board, taskID, author, body string) (core.KanbanComment, error) {
+func (s *Store) AddComment(ctx context.Context, board, taskID, author, body string) (KanbanComment, error) {
 	if strings.TrimSpace(body) == "" {
-		return core.KanbanComment{}, fmt.Errorf("comment body is required")
+		return KanbanComment{}, fmt.Errorf("comment body is required")
 	}
 	if author == "" {
 		author = "user"
 	}
 	db, err := s.handleFor(board)
 	if err != nil {
-		return core.KanbanComment{}, err
+		return KanbanComment{}, err
 	}
 	// the FK needs a live task; GetTask also answers ErrNotFound cleanly
 	if _, err := s.GetTask(ctx, board, taskID); err != nil {
-		return core.KanbanComment{}, err
+		return KanbanComment{}, err
 	}
 	res, err := db.ExecContext(ctx, `
 INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)`,
 		taskID, author, body, now())
 	if err != nil {
-		return core.KanbanComment{}, err
+		return KanbanComment{}, err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return core.KanbanComment{}, err
+		return KanbanComment{}, err
 	}
-	c := core.KanbanComment{ID: id, TaskID: taskID, Author: author, Body: body, CreatedAt: now()}
+	c := KanbanComment{ID: id, TaskID: taskID, Author: author, Body: body, CreatedAt: now()}
 	err = recordEvent(ctx, db, taskID, "comment", "author "+author)
 	return c, err
 }
@@ -475,20 +475,20 @@ INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?
 // completed_at, moving OUT of a settled status clears it; moving INTO
 // running stamps started_at once. The board argument selects which
 // board holds the task - patches cannot move a task across boards.
-func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch core.KanbanPatch) (core.KanbanTask, error) {
+func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch KanbanPatch) (KanbanTask, error) {
 	db, err := s.handleFor(board)
 	if err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	defer tx.Rollback()
 
 	t, err := getTaskTx(ctx, tx, taskID)
 	if err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 
 	// card t_5d9032d3: a task that ENTERS done this update emits one
@@ -499,7 +499,7 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch core
 
 	if patch.Status != "" {
 		if !IsStatus(patch.Status) {
-			return core.KanbanTask{}, fmt.Errorf("illegal status %q", patch.Status)
+			return KanbanTask{}, fmt.Errorf("illegal status %q", patch.Status)
 		}
 		if patch.Status != t.Status {
 			detail := t.Status + " -> " + patch.Status
@@ -522,7 +522,7 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch core
 	}
 	if patch.Title != nil && *patch.Title != t.Title {
 		if strings.TrimSpace(*patch.Title) == "" {
-			return core.KanbanTask{}, fmt.Errorf("task title cannot be empty")
+			return KanbanTask{}, fmt.Errorf("task title cannot be empty")
 		}
 		t.Title = *patch.Title
 		edits = append(edits, "title")
@@ -556,15 +556,15 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
 	started_at=?, completed_at=? WHERE id=?`,
 		t.Title, t.Body, t.Assignee, t.Status, t.SessionID, t.Source,
 		t.StartedAt, t.CompletedAt, t.ID); err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	for _, e := range events {
 		if err := recordEventTx(ctx, tx, taskID, e[0], e[1]); err != nil {
-			return core.KanbanTask{}, err
+			return KanbanTask{}, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	if enteredDone {
 		s.emitDone(taskID)
