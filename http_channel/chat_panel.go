@@ -60,7 +60,7 @@ type chatCapsule struct {
 	// with both settings).
 	batch time.Duration
 
-	mu      sync.Mutex
+	mu sync.Mutex
 	// paintMu serializes one session's panel build+push (t_877f4bce):
 	// a batcher tick past takeDirty builds for ms-scale (the store
 	// read) with no run-liveness check, and endRun can fire inside that

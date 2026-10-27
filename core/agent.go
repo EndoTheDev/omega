@@ -92,8 +92,8 @@ type Agent struct {
 	// tpMu guards toolProviders: a live module toggle (v0.12 E2)
 	// swaps the set mid-process while concurrent runs and the /tools
 	// inventory read it under the loop.
-	tpMu          sync.RWMutex
-	tpLive        bool // NewFromContext built this agent from a mounted Context
+	tpMu           sync.RWMutex
+	tpLive         bool // NewFromContext built this agent from a mounted Context
 	maxTurns       int
 	compactor      CompactionProvider
 	maxToolOutput  int
