@@ -485,9 +485,9 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	// The API mount honors the omega.json toggle list (v0.12 E1, Q1):
-	// disabled capsules skip Mount, and a capsule depending on one
-	// fails the boot naming the edge (Q3).
+	// The API mount honors the config.yaml disabled: toggle list
+	// (v0.12 E1, Q1): disabled capsules skip Mount, and a capsule
+	// depending on one fails the boot naming the edge (Q3).
 	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled)
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
@@ -589,13 +589,14 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	}
 	// The E2 module-toggle surface (Q7): the registry behind the seam,
 	// arming the fence handles exactly like the boot-time StartAll
-	// below, persisting the toggle list to the omega.json boot reads.
+	// below, persisting the toggle list to the config.yaml disabled:
+	// key boot reads.
 	mods := &omegaModules{
-		pctx:      pctx,
-		reg:       reg,
-		deps:      core.StartDeps{Ctx: pctx, Agent: ag, Store: store, Run: ctx},
-		omegaPath: disabledJSONPath(configFile),
-		logger:    logger,
+		pctx:       pctx,
+		reg:        reg,
+		deps:       core.StartDeps{Ctx: pctx, Agent: ag, Store: store, Run: ctx},
+		configPath: configFile,
+		logger:     logger,
 	}
 	WatchConfig(configFile, func(newCfg Config) {
 		hotApply(newCfg, pctx)

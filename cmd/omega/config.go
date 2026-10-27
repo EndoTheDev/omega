@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -53,10 +54,11 @@ type Config struct {
 	Web           WebConfig         `yaml:"web"`
 	Kanban        KanbanConfig      `yaml:"kanban"`
 	Continuous    continuous.Config `yaml:"continuous"`
-	// Disabled is the omega.json toggle list (v0.12 E1, grill Q1) - a
-	// separate file next to config.yaml, never a config.yaml key.
-	// Loaded by LoadDisabled after the YAML is in.
-	Disabled []string `yaml:"-"`
+	// Disabled is the config.yaml `disabled:` toggle list (v0.12 E1,
+	// grill Q1; home moved from the omega.json sidecar to this key in
+	// the v0.13 shell law 3 - the sidecar folds at boot). A plain yaml
+	// key: LoadConfig reads it with everything else.
+	Disabled []string `yaml:"disabled"`
 }
 
 // WebConfig carries optional overrides for the web tools. BaseURL, when
@@ -194,108 +196,196 @@ func LoadConfig(path string) (Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
-	// The toggle list lives beside the config (v0.12 E1): a broken
-	// omega.json fails the boot loud - a silently ignored disable list
-	// would boot modules the operator switched off.
-	off, err := LoadDisabled(path)
+	// The toggle list lives in the config.yaml `disabled:` key (v0.13
+	// shell law 3): fold any leftover omega.json sidecar in before the
+	// decode, so one boot both migrates and honors the operator's off
+	// list. A broken sidecar still fails the boot loud.
+	folded, foldTarget, err := foldOmegaJSON(path)
 	if err != nil {
 		return Config{}, err
 	}
-	cfg.Disabled = off
+	if path == "" {
+		// No --config: skip YAML only when no config.yaml exists on
+		// disk anywhere. A fold (or any prior boot) may have created
+		// the default one - read it, like the omega.json sidecar
+		// search always did for legacy homes.
+		path = resolveConfigPath("")
+		if path == "" && len(folded) > 0 {
+			path = foldTarget
+		}
+	}
+
+	if path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return Config{}, fmt.Errorf("read config: %w", err)
+		}
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return Config{}, fmt.Errorf("parse config: %w", err)
+		}
+	}
+
+	applyEnv(&cfg)
+
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
-// LoadDisabled reads the omega.json module toggle list (grill Q1):
-// {"disabled": ["kanban"]} next to config.yaml (legacy home-root
-// layout included). An absent file is an empty list - every capsule
-// on (Q2). Malformed JSON fails loud.
-func LoadDisabled(configPath string) ([]string, error) {
+// foldOmegaJSON migrates the v0.12 omega.json module toggle list into
+// config.yaml's `disabled:` key (v0.13 shell law 3). Search order: the
+// explicit config's dir, then home/config, then home - the order the
+// sidecar was read in. Every omega.json found folds (union, first-wins
+// dedupe) and is deleted; no silent drops. Entries a config.yaml that
+// already carries the key would also name are reported in the boot
+// warning but never double-written. Returns the folded entries and the
+// config.yaml they landed in.
+func foldOmegaJSON(configPath string) ([]string, string, error) {
+	home := omegaHome()
 	dirs := []string{}
 	if configPath != "" {
 		dirs = append(dirs, filepath.Dir(configPath))
 	}
-	home := omegaHome()
 	dirs = append(dirs, home+"/config", home)
+
+	var entries []string
 	for _, dir := range dirs {
 		if dir == "" {
 			continue
 		}
 		path := filepath.Join(dir, "omega.json")
-		if _, err := os.Stat(path); err != nil {
-			continue
-		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read omega.json: %w", err)
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, "", fmt.Errorf("read omega.json: %w", err)
 		}
 		var doc struct {
 			Disabled []string `json:"disabled"`
 		}
 		if err := json.Unmarshal(data, &doc); err != nil {
-			return nil, fmt.Errorf("parse omega.json: %w", err)
+			return nil, "", fmt.Errorf("parse omega.json: %w", err)
 		}
-		return doc.Disabled, nil
-	}
-	return nil, nil
-}
-
-// disabledJSONPath resolves the omega.json file a toggle write
-// persists to: the omega.json that already exists wins (the same dir
-// search order LoadDisabled uses), else the config/ layout, else next
-// to the active config, else the home root.
-func disabledJSONPath(configFile string) string {
-	home := omegaHome()
-	dirs := []string{}
-	if configFile != "" {
-		dirs = append(dirs, filepath.Dir(configFile))
-	}
-	dirs = append(dirs, home+"/config", home)
-	for _, dir := range dirs {
-		if dir == "" {
+		if len(doc.Disabled) == 0 {
+			// No toggle state: the sidecar is dead weight, bury it.
+			if err := os.Remove(path); err != nil {
+				return nil, "", fmt.Errorf("delete omega.json: %w", err)
+			}
 			continue
 		}
-		path := filepath.Join(dir, "omega.json")
-		if _, err := os.Stat(path); err == nil {
-			return path
+		for _, name := range doc.Disabled {
+			if !slices.Contains(entries, name) {
+				entries = append(entries, name)
+			}
+		}
+		if err := os.Remove(path); err != nil {
+			return nil, "", fmt.Errorf("delete omega.json: %w", err)
 		}
 	}
-	if fi, err := os.Stat(home + "/config"); err == nil && fi.IsDir() {
-		return home + "/config/omega.json"
+	if len(entries) == 0 {
+		return nil, "", nil
 	}
-	if configFile != "" {
-		return filepath.Dir(configFile) + "/omega.json"
+	// The fold lands in the config the boot reads; with none on disk
+	// anywhere, the config/ layout default gets created.
+	target := configPath
+	if target == "" {
+		target = resolveConfigPath("")
+		if target == "" {
+			target = home + "/config/config.yaml"
+		}
 	}
-	return home + "/omega.json"
+	if err := writeDisabled(target, entries); err != nil {
+		return nil, "", err
+	}
+	// Boot warning, loud, naming the folded entries - the list moved
+	// files and the operator should see it happen.
+	fmt.Fprintf(os.Stderr, "omega: folded module disable list %v from omega.json into %s (disabled: key, v0.13 shell law 3)\n", entries, target)
+	return entries, target, nil
 }
 
-// SaveDisabled writes the omega.json toggle list (v0.12 E2): the file
-// boot reads, updated in place. Other keys in the file survive; an
-// empty list removes the key (an all-on home carries no toggle state).
-// Malformed existing JSON fails loud - a write that destroys the file
-// boot must parse is worse than a failed toggle.
-func SaveDisabled(path string, off []string) error {
-	doc := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return fmt.Errorf("parse omega.json: %w", err)
+// writeDisabled writes the config.yaml `disabled:` toggle list: parse,
+// modify, marshal at the yaml node level, so comments, key order, and
+// unknown keys survive (the struct-marshal settings-save path
+// normalizes; this one must not). An empty list removes the key - an
+// all-on home carries no toggle state. Editing a missing config.yaml
+// creates a minimal one holding just the disabled: key; an empty list
+// against a missing file writes nothing. A malformed config.yaml fails
+// loud - a write that destroys the file boot must parse is worse than
+// a failed toggle.
+func writeDisabled(path string, off []string) error {
+	var mapping yaml.Node
+	data, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if len(off) == 0 {
+			return nil // nothing to say, nowhere to say it
 		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read omega.json: %w", err)
+		mapping = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	case err != nil:
+		return fmt.Errorf("read config: %w", err)
+	default:
+		if strings.TrimSpace(string(data)) != "" {
+			var doc yaml.Node
+			if err := yaml.Unmarshal(data, &doc); err != nil {
+				return fmt.Errorf("parse config: %w", err)
+			}
+			if doc.Kind == yaml.DocumentNode && len(doc.Content) == 1 {
+				mapping = *doc.Content[0]
+			} else {
+				mapping = doc
+			}
+		} else {
+			mapping = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		}
 	}
-	if len(off) == 0 {
-		delete(doc, "disabled")
-	} else {
-		doc["disabled"] = off
+	if mapping.Kind != yaml.MappingNode {
+		return fmt.Errorf("config: top-level document is not a mapping - cannot write the disabled: key into %s", path)
 	}
-	out, err := json.MarshalIndent(doc, "", "  ")
+
+	idx := -1
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Kind == yaml.ScalarNode && mapping.Content[i].Value == "disabled" {
+			idx = i
+			break
+		}
+	}
+	offSeq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, name := range off {
+		offSeq.Content = append(offSeq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name})
+	}
+	switch {
+	case len(off) == 0 && idx >= 0:
+		// All-on: the key goes away (an all-on home carries no state).
+		mapping.Content = append(mapping.Content[:idx], mapping.Content[idx+2:]...)
+	case len(off) > 0 && idx >= 0:
+		mapping.Content[idx+1] = offSeq
+	case len(off) > 0:
+		// New key appends last: existing key order is untouched.
+		mapping.Content = append(mapping.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "disabled"}, offSeq)
+	}
+	out, err := yaml.Marshal(&mapping)
 	if err != nil {
-		return fmt.Errorf("encode omega.json: %w", err)
+		return fmt.Errorf("encode config: %w", err)
 	}
-	out = append(out, '\n')
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("create omega.json dir: %w", err)
+		return fmt.Errorf("create config dir: %w", err)
 	}
-	return os.WriteFile(path, out, 0600)
+	mode := os.FileMode(0600)
+	if fi, statErr := os.Stat(path); statErr == nil {
+		mode = fi.Mode()
+	}
+	tmp := path + ".omega-disabled.tmp"
+	if err := os.WriteFile(tmp, out, mode); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		return fmt.Errorf("replace config: %w", err)
+	}
+	return nil
 }
 
 // applyEnv overrides config fields from OMEGA_* environment variables.

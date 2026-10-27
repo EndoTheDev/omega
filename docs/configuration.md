@@ -30,6 +30,26 @@ provider:
 > indented 2 spaces. If they are at the root level, omega will not
 > find them and report "provider.model_name is required".
 
+## Module toggles
+
+The opinionated capsules (kanban, cron, delegate, verdict, mcp,
+trust, notifications, memory, continuous) are
+toggleable: the webui settings pane's MODULES section flips them, or
+you can name them in config.yaml directly:
+
+```yaml
+disabled:
+  - kanban
+  - cron
+```
+
+A `disabled:` entry skips that capsule at boot (its routes answer 404).
+Machine-critical capsules (provider, store, loop, logging) and the
+engine ring (http_channel, tui) are not on the list — booting with
+them disabled fails loud. The v0.12 `omega.json` sidecar is folded
+into this key at boot and deleted; an unknown entry fails the boot
+naming it.
+
 ## Reference
 
 | Key                           | Env var                            | Default                  | Description                                                                                                                                                                                                                                               |
@@ -68,6 +88,7 @@ provider:
 | `vision_model`                | `OMEGA_VISION_MODEL`               | -                        | Captioner model for image messages: images are described once (persisted, content-addressed) and the main model sees the caption as text. Empty = images ride to the main model unchanged (a model that cannot see them fails loudly). Applies on restart |
 | `title_model`                 | `OMEGA_TITLE_MODEL`                | -                        | Cheap model for session-title generation (provisional + final). Empty = the main model. Applies on restart                                                                                                                                                |
 | `notifications`               | `OMEGA_NOTIFICATIONS`              | `bell`                   | Turn-complete notification (bell, desktop, off)                                                                                                                                                                                                           |
+| `disabled`                    | -                                  | (empty)                  | Toggleable capsules to keep off (e.g. `- kanban`). The webui MODULES pane writes the same key; an unknown name fails the boot. Legacy `omega.json` sidecars fold into this key on first boot and are deleted                                               |
 | `continuous.wake_turn_budget` | -                                  | `0`                      | Per-wake turn budget a continuous agent's spawned loop gets (mapped onto `OMEGA_MAX_TURNS` in the child). 0 = the config's own `max_turns` (ruling 17: the ONLY budget - no daily cap, no wallet)                                                        |
 | `continuous.wake_timeout_seconds` | -                              | `1800`                   | Wall-clock fence per wake subprocess: a wedged wake is killed, never queued (crash isolation ruling 9)                                                                                                                                                    |
 
