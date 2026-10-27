@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // The board REST surface (v0.12 phase F): the routes http_channel

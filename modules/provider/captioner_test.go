@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/ai"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 

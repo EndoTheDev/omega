@@ -16,10 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
-	httpchannel "github.com/EndoTheDev/omega/http_channel"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
+	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
+	"github.com/EndoTheDev/omega/engine/tui"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/continuous"
@@ -38,7 +39,6 @@ import (
 	"github.com/EndoTheDev/omega/modules/tools"
 	"github.com/EndoTheDev/omega/modules/trust"
 	"github.com/EndoTheDev/omega/modules/verdict"
-	"github.com/EndoTheDev/omega/tui"
 )
 
 func main() {

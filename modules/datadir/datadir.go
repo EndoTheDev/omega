@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // dirName is the fixed database directory name inside an omega home.

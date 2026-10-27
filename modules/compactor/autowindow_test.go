@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // contextWindowProvider wraps a provider with a forced ModelInfo

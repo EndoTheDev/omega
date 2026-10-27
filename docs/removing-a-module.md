@@ -23,7 +23,7 @@ its sibling: `docs/migrating-a-module.md`.
   `cmd/omega/removal_test.go` gate this.
 - Module REST routes are registered by the capsule itself
   (`api.RegisterRoute`, the phase-D vocabulary) and served by
-  `http_channel/module_routes.go` from the live Context. An absent
+  `engine/http_channel/module_routes.go` from the live Context. An absent
   module registered no pattern, so its REST answers 404, not a
   seam-nil guard - no fallback surface survives the removal.
 - Core stays a pure witness. Since the v0.12 phase-F core-purity

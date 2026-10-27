@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 const keypoolModel = "glm-5.3"

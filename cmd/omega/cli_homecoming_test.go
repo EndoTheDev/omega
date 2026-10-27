@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 func mountWithRegistry(t *testing.T, cfg Config, plugins []agent.Plugin) *agent.Registry {

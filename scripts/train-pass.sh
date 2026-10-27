@@ -368,10 +368,10 @@ gates_pass() {
       fi
     fi
   fi
-  if [ -d webui/test ] && command -v node >/dev/null 2>&1; then
+  if [ -d engine/webui/test ] && command -v node >/dev/null 2>&1; then
     echo "==> webui node suite"
-    (cd webui && node --test 'test/*.test.ts' >/dev/null 2>&1) || {
-      echo "webui suite failed - rerun (cd webui && node --test 'test/*.test.ts') for detail" >&2
+    (cd engine/webui && node --test 'test/*.test.ts' >/dev/null 2>&1) || {
+      echo "webui suite failed - rerun (cd engine/webui && node --test 'test/*.test.ts') for detail" >&2
       exit 1
     }
   fi
@@ -403,7 +403,7 @@ set -e
 if [ "$gates_rc" != "0" ]; then
   tail -25 "$gates_log" >&2 || true
   git reset -q --hard "$pre"
-  git clean -qfd http_channel/static >/dev/null 2>&1 || true
+  git clean -qfd engine/http_channel/static >/dev/null 2>&1 || true
   note "red gate (rc $gates_rc) - un-landed: dev back to $pre"
   board_comment "$tid" "train: red gate on $mergesha - un-landed, back to ready. Failure evidence (tail):
 

@@ -2,7 +2,7 @@
 
 Modules are in-process Go packages that provide capabilities to
 omega. Each module implements the `Plugin` interface from
-`agent/plugin.go` and mounts into a shared `Context`.
+`engine/agent/plugin.go` and mounts into a shared `Context`.
 
 ## How it works
 
@@ -31,7 +31,7 @@ type Plugin interface {
 (*) `MountWithAPI` is the ONLY mount method. Every seam claim,
     additive append, tool, command, panel, route and emitter is a
     journaled `api.Register*` call inside it - see the census table
-    in the `agent/extensionapi.go` header and the capsule table below
+    in the `engine/agent/extensionapi.go` header and the capsule table below
     for what each registration builds.
 ```
 
@@ -99,8 +99,8 @@ the disable list. No web module exists.
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
 | `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
 | `notifications/` | notifications, panels | Finished-things store (SQLite, the bell) + the first module capsule: list panel with row mark-read actions through the action pipe, the toast as a canvas event, emitter wiring via the same registration (arc 4b) |
-| `http_channel/` | channel, panels | HTTP/SSE delivery channel (omega serve transport) + the chat canvas panel (chat-last 1/3, Start-gated registration per 2b): the conversation rides the snapshot + deltas + action pipe contract; the /chat REST + SSE wire stays untouched |
-| `tui/`          | frontend, panels | Terminal frontend (Bubble Tea TUI, themes, @file) + the module-owned chat capsule (chat-last 2b): the chat pane renders from the canvas panel's payload and deltas, stop/retry actions ride the pipe; one chat panel per live frontend by construction (registration rides the live Frontend.Run) |
+| `engine/http_channel/` | channel, panels | HTTP/SSE delivery channel (omega serve transport) + the chat canvas panel (chat-last 1/3, Start-gated registration per 2b): the conversation rides the snapshot + deltas + action pipe contract; the /chat REST + SSE wire stays untouched |
+| `engine/tui/`          | frontend, panels | Terminal frontend (Bubble Tea TUI, themes, @file) + the module-owned chat capsule (chat-last 2b): the chat pane renders from the canvas panel's payload and deltas, stop/retry actions ride the pipe; one chat panel per live frontend by construction (registration rides the live Frontend.Run) |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before the frontends launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
 | `cron/`         | cron, TUI, panels | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron, the jobs canvas panel - arc 6 capsule) |
 
@@ -137,10 +137,10 @@ the root map's module laws and in `docs/architecture.md`.
 ### Module-owned UI
 
 UI for module X lives in `modules/X/ui/`; shell components live in
-`webui/app/components/<area>/`; components only move to a module
+`engine/webui/app/components/<area>/`; components only move to a module
 when the module owns the domain. The registration is a directory: put
 top-level `.vue` components there (e.g. the tools module's
-`ui/ToolsList.vue`) and the webui build (webui/nuxt.config.ts)
+`ui/ToolsList.vue`) and the webui build (engine/webui/nuxt.config.ts)
 discovers them - no manifest, no registry. Each file becomes one panel
 in the shell's inspector, and the module name is the namespace prefix,
 so module and shell component names never collide. A module's UI is

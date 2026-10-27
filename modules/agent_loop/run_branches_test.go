@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // ---------------------------------------------------------------------------

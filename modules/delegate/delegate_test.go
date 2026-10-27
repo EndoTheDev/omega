@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // TestCompile verifies the package compiles and the interfaces are satisfied.

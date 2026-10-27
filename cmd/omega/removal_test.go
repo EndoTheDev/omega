@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/modules/kanban"
 )
 
@@ -1589,7 +1589,6 @@ func TestTrustRemovalProof(t *testing.T) {
 	_ = core.TrustProvider(nil)
 	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core/seams.go TrustProvider remains - documented as intentional")
 }
-
 
 // sameStrings is the order-sensitive slice equality the Provides()
 // posture assertion uses.

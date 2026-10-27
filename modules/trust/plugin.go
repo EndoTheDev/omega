@@ -1,9 +1,8 @@
 package trust
 
 import (
-
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // Plugin adapts the trust Provider to the agent.Plugin interface.

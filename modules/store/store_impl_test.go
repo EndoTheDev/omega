@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 func newTestStore(t *testing.T) *Store {

@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // omegaModules implements core.ModuleToggles for the serve host.

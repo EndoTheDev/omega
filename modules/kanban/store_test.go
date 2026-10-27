@@ -3,7 +3,6 @@ package kanban
 import (
 	"context"
 	"testing"
-
 )
 
 func testStore(t *testing.T) *Store {
