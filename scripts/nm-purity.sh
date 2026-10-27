@@ -157,9 +157,6 @@ def scrub(text, modules):
             for tok in re.split(r"[,\s]+", m.group(1).strip()):
                 if tok:
                     add_anchor(tok)
-        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[^=]", body)
-        if m:
-            add_anchor(m.group(1))
         # struct-field shape (a deleted field line: NAME TYPE): the
         # field's name dies with it - every .NAME access downstream
         # reads a struct that no longer has it.
