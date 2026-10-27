@@ -151,7 +151,7 @@ func TestMountAllMissingDep(t *testing.T) {
 
 // TestMountAllDisabledDepRefuses is the second fault-injected Requires
 // proof (phase F, Q3): the dependency is present in the build but
-// disabled via the omega.json toggle list - the boot must still refuse,
+// disabled via the config.yaml disabled: list - the boot must still refuse,
 // naming the seam, the dependent and its disabled provider, with the
 // fix-it in the message. The silent variant (silently mount without the
 // dep) is exactly what the refusal forbids.

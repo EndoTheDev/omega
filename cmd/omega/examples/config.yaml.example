@@ -92,6 +92,16 @@ memory:
   file: memory.md
   user_file: user.md
 
+# Toggleable capsules to keep off (opinionated modules only - kanban,
+# cron, delegate, verdict, mcp, trust, notifications, memory,
+# continuous). The webui settings pane's MODULES section writes this
+# same key; a name that is not a module or not toggleable fails the
+# boot. A legacy omega.json sidecar folds into this key on first boot
+# and is deleted.
+# disabled:
+#   - kanban
+#   - cron
+
 # Operational logging. Writes startup messages, warnings, and errors
 # to a log file in OMEGA_HOME.
 logging:

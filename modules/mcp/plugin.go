@@ -98,7 +98,7 @@ func (b bridgeToolProvider) Tools() map[string]core.Tool {
 }
 
 // Toggleable marks the MCP bridge as a module capsule (v0.12 E1): the
-// omega.json disable list may name it.
+// config.yaml disabled: list may name it.
 func (p *Plugin) Toggleable() bool { return true }
 
 // Compile-time assertion that the plugin is a Plugin.

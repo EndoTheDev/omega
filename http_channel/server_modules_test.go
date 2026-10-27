@@ -117,7 +117,7 @@ func TestModuleToggleAppliesThroughSeam(t *testing.T) {
 
 func TestModuleToggleRejectionCarriesLedgerText(t *testing.T) {
 	// Q11: the roll-back rejection is the body; the pane surfaces it.
-	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("kanban", "disabled", true)}, err: errors.New(`module "kanban" panicked: boom (hint: add "kanban" to "disabled" in omega.json)`)}
+	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("kanban", "disabled", true)}, err: errors.New(`module "kanban" panicked: boom (hint: add "kanban" to "disabled" in config.yaml)`)}
 	s := NewServer(nil, nil, nil, nil, fm)
 	req := httptest.NewRequest(http.MethodPut, "/modules/kanban", stringBody(`{"enabled":true}`))
 	rec := httptest.NewRecorder()
@@ -125,7 +125,7 @@ func TestModuleToggleRejectionCarriesLedgerText(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("the rejection must answer 400, got %d", rec.Code)
 	}
-	if !contains(rec.Body.String(), "panicked") || !contains(rec.Body.String(), "omega.json") {
+	if !contains(rec.Body.String(), "panicked") || !contains(rec.Body.String(), "config.yaml") {
 		t.Fatalf("the rejection text lost the ModulePanicError shape: %s", rec.Body.String())
 	}
 }

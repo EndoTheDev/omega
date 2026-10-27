@@ -60,7 +60,7 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 			Name:  p.Name(),
 			Cause: fmt.Sprint(rec),
 			Suggestion: fmt.Sprintf(
-				"add %q to \"disabled\" in omega.json", p.Name()),
+				"add %q to \"disabled\" in config.yaml", p.Name()),
 		}
 		if remount {
 			// The Context side died with the scoped proxy - the

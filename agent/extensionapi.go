@@ -82,7 +82,7 @@ func isBuiltin(p Plugin) bool {
 // MountAllAPI mounts the plugin set and returns the
 // registration registry: claims, module routes and the refusal
 // ledger. The refusals sink is host-supplied; nil builds the default
-// in-process refusal ledger. disabled names the modules omega.json
+// in-process refusal ledger. disabled names the modules config.yaml
 // toggles off (Q1): Mount skips them; a remaining plugin depending on
 // a disabled module fails the boot naming the edge (Q3). A boot panic
 // re-panics as *core.ModulePanicError - die loud naming the module
