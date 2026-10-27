@@ -25,10 +25,13 @@ jobs:
           go-version: '1.26'
       - run: go vet ./...
       - run: go test ./...
-      - name: Shell scratch-repo suite (drift gate + release suggest)
+      - name: Binary-purity canary (scripts/nm-purity.sh - the kanban module must never survive its own removal build)
+        run: scripts/nm-purity.sh
+      - name: Shell scratch-repo suite (drift gate + release suggest + purity negatives)
         run: |
           bash scripts/drift-gate_test.sh
           bash scripts/release-suggest_test.sh
+          bash scripts/nm-purity_test.sh
 
   drift:
     runs-on: ubuntu-latest

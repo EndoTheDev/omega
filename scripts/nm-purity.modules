@@ -1,0 +1,16 @@
+# nm-purity rotation manifest (v0.12 phase F).
+#
+# One capsule per entry: NAME + reason (the compile evidence from
+# scripts/nm-purity.sh). Entries here FAIL standalone removal today and
+# are SKIPPED by `nm-purity.sh --all` with this reason printed - the
+# nightly reports them instead of going red on a known finding.
+#
+# Removing an entry from this file is a claim: "this capsule now exits
+# the binary whole" - the rotation proves or refuses it on the next run.
+# The law: a capsule leaves this list only by getting its removal green.
+
+compactor   wire the scrub cannot model: cmd/omega/settings.go type-asserts the seam (pctx.Compactor.(*compactor.Compactor) at two sites); the strand-after-delete leaves the settings renderer un-compilable
+data-dir    has a dependent module: modules/kanban imports modules/datadir (boards.go PointerDSN wiring) - the removal takes kanban with it
+mcp         anchor strands: mcpPlugin,err := NewPluginFromEnv() + the re-assign block; deleting the wire strands sibling err-blocks (declared-and-not-used) that the scrub cannot re-home
+prompt      identifier collision: a local variable named prompt in cmd/omega/update.go shares the module's package alias; the removal needs the local renamed first (host code change, beyond mechanical scrub)
+store       has a dependent module: modules/tools imports modules/store - the removal takes tools with it
