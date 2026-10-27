@@ -6,10 +6,9 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/core"
 )
 
-func toolProvider(t *testing.T) (*ToolProvider, core.KanbanProvider) {
+func toolProvider(t *testing.T) (*ToolProvider, KanbanProvider) {
 	t.Helper()
 	s, err := Open(":memory:")
 	if err != nil {

@@ -44,15 +44,15 @@ func capture(t *testing.T, c *capsule) *[]core.Panel {
 func TestCapsulePanelsDeclare(t *testing.T) {
 	c, _ := testCapsule(t)
 	ctx := context.Background()
-	open, err := c.store.CreateTask(ctx, "", core.KanbanTask{Title: "unsettled work"})
+	open, err := c.store.CreateTask(ctx, "", KanbanTask{Title: "unsettled work"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	done, err := c.store.CreateTask(ctx, "", core.KanbanTask{Title: "already shipped"})
+	done, err := c.store.CreateTask(ctx, "", KanbanTask{Title: "already shipped"})
 	if err != nil {
 		t.Fatalf("create 2: %v", err)
 	}
-	if _, err := c.store.UpdateTask(ctx, "", done.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
+	if _, err := c.store.UpdateTask(ctx, "", done.ID, KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestCapsuleCompleteAction(t *testing.T) {
 	c, _ := testCapsule(t)
 	pushed := capture(t, c)
 	ctx := context.Background()
-	in, err := c.store.CreateTask(ctx, "", core.KanbanTask{Title: "wire the drawer"})
+	in, err := c.store.CreateTask(ctx, "", KanbanTask{Title: "wire the drawer"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestCapsuleTaskPanelFollowsSessionBoard(t *testing.T) {
 	s := testStore(t)
 	s.ConfigureBoards(BoardsDir(home), "main", "")
 	ctx := context.Background()
-	if _, err := s.CreateTask(ctx, "aux", core.KanbanTask{Title: "aux-resident work"}); err != nil {
+	if _, err := s.CreateTask(ctx, "aux", KanbanTask{Title: "aux-resident work"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	active := ""
@@ -381,7 +381,7 @@ func payloadOf(t *testing.T, v any) string {
 func TestCapsuleSilentWithoutSink(t *testing.T) {
 	c, _ := testCapsule(t)
 	ctx := context.Background()
-	in, err := c.store.CreateTask(ctx, "", core.KanbanTask{Title: "quiet work"})
+	in, err := c.store.CreateTask(ctx, "", KanbanTask{Title: "quiet work"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

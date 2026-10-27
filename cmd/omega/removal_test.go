@@ -16,6 +16,7 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/modules/kanban"
 )
 
 // TestNotificationsRemovalProof is the arc 4b removal proof (card
@@ -41,6 +42,15 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
+	}
+	var kbPlugin *kanban.Plugin
+	for _, pl := range plugins {
+		if kb, ok := pl.(*kanban.Plugin); ok {
+			kbPlugin = kb
+		}
+	}
+	if kbPlugin == nil {
+		t.Fatal("FULL MOUNT: the kanban capsule is absent from buildPlugins")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
@@ -170,16 +180,16 @@ func payloadJSON(v any) string {
 //     switcher, the task tool's mutations push through the same
 //     registration that declares the panels, and the action pipe
 //     completes a task and runs a board switch.
-//  2. WITHOUT kanban: the seam is nil (the REST routes' 501 guard),
-//     the canvas carries no kanban panel, the tool registry has no
-//     task tools, and the /board commands are unregistered. Nothing
-//     else in the tree depends on the module - no Requires edge names
-//     kanban, so the removal takes no dependents with it.
+//  2. WITHOUT kanban: the REST routes are gone (the served surface
+//     answers 404 - no route registered, nothing to guard), the canvas
+//     carries no kanban panel, the tool registry has no task tools,
+//     and the /board commands are unregistered. Nothing else in the
+//     tree depends on the module - no Requires edge names kanban, so
+//     the removal takes no dependents with it.
 //
-// The core types stay (core/kanban.go, the KanbanProvider seam
-// signature references them; layers never import modules) - that is
-// documented as intentional, and this test compiles a core.KanbanTask
-// to prove it.
+// The module nouns live in the capsule now (phase F): the board types
+// are package kanban, core carries zero of them - the binary-purity
+// nm check (scripts/nm-purity.sh) is the machine law on top of this.
 func TestKanbanRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -189,12 +199,27 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
+	var kbPlugin *kanban.Plugin
+	for _, pl := range plugins {
+		if kb, ok := pl.(*kanban.Plugin); ok {
+			kbPlugin = kb
+		}
+	}
+	if kbPlugin == nil {
+		t.Fatal("FULL MOUNT: the kanban capsule is absent from buildPlugins")
+	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Kanban == nil {
-		t.Fatal("FULL MOUNT: kanban seam nil - the module did not mount")
+	routes := map[string]string{}
+	for _, rt := range ctx.ModuleRoutes {
+		routes[rt.Pattern] = rt.Module
+	}
+	for _, want := range []string{"GET /tasks", "POST /tasks", "GET /tasks/{id}", "PATCH /tasks/{id}", "POST /tasks/{id}/comments", "GET /boards"} {
+		if routes[want] != "kanban" {
+			t.Fatalf("FULL MOUNT: route %q missing or foreign-tenanted: %v", want, routes)
+		}
 	}
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
@@ -218,7 +243,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if !foundTasks || !foundBoards {
 		t.Fatalf("FULL MOUNT: capsule panels missing (tasks=%v boards=%v): %+v", foundTasks, foundBoards, canvas.Snapshot())
 	}
-	t.Log("PROOF mount=full: seam mounted, canvas carries the task panel + the board switcher, module-qualified")
+	t.Log("PROOF mount=full: the capsule owns its REST routes through RegisterRoute, the canvas carries the task panel + the board switcher, module-qualified")
 
 	// the task tool mutates: its panel refresh pushes through the
 	// registration - the wiring lives in the module, not any transport
@@ -261,7 +286,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "kanban.complete_task", Args: json.RawMessage(`{"id": "` + id + `"}`)}); err != nil {
 		t.Fatalf("dispatch kanban.complete_task: %v", err)
 	}
-	kt, err := ctx.Kanban.GetTask(cctx, "", id)
+	kt, err := kbPlugin.Store().GetTask(cctx, "", id)
 	if err != nil {
 		t.Fatalf("get task: %v", err)
 	}
@@ -286,8 +311,10 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.Kanban != nil {
-		t.Fatal("REMOVED MOUNT: kanban seam still mounted")
+	for _, rt := range ctx2.ModuleRoutes {
+		if rt.Module == "kanban" {
+			t.Fatalf("REMOVED MOUNT: route %q survived the removal", rt.Pattern)
+		}
 	}
 	noCanvas, err := agent.NewCanvas(ctx2, nil)
 	if err != nil {
@@ -326,11 +353,11 @@ func TestKanbanRemovalProof(t *testing.T) {
 			t.Fatalf("REMOVED MOUNT: command %q survived the removal", cmd.Name)
 		}
 	}
-	// core types remain - intentional (the seam signature references
-	// them; layers never import modules). Compile-time proof:
-	_ = core.KanbanTask{}
-	_ = core.KanbanProvider(nil)
-	t.Log("PROOF removed: seam nil (REST routes fall through to their 501 guard), canvas carries no kanban panel, no task tools, no /board commands; core/kanban.go types remain - documented as intentional")
+	// the module nouns live in the capsule (phase F): the board types
+	// are package kanban, the served surface rides ctx.ModuleRoutes.
+	_ = kanban.KanbanTask{}
+	_ = kanban.KanbanProvider(nil)
+	t.Log("PROOF removed: no kanban route registered (the served /tasks answers 404), canvas carries no kanban panel, no task tools, no /board commands; module nouns live in package kanban, core carries zero")
 }
 
 // pluginTool finds one registered tool by name across the mounted
@@ -1545,8 +1572,14 @@ func TestTrustRemovalProof(t *testing.T) {
 	if ctx2.Notifications == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
-	if ctx2.Kanban == nil {
-		t.Fatal("REMOVED MOUNT: kanban seam lost - the removal must not take a module it does not own")
+	kRoutes := false
+	for _, rt := range ctx2.ModuleRoutes {
+		if rt.Module == "kanban" {
+			kRoutes = true
+		}
+	}
+	if !kRoutes {
+		t.Fatal("REMOVED MOUNT: kanban routes lost - the removal must not take a module it does not own")
 	}
 	// data is not code: the persisted trust store (and its entries)
 	// stays on disk after the removal
@@ -1762,8 +1795,14 @@ func TestWebRemovalProof(t *testing.T) {
 	if ctx2.Notifications == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
-	if ctx2.Kanban == nil {
-		t.Fatal("REMOVED MOUNT: kanban seam lost - the removal must not take a module it does not own")
+	kRoutes := false
+	for _, rt := range ctx2.ModuleRoutes {
+		if rt.Module == "kanban" {
+			kRoutes = true
+		}
+	}
+	if !kRoutes {
+		t.Fatal("REMOVED MOUNT: kanban routes lost - the removal must not take a module it does not own")
 	}
 	// data is not code: the extension is stateless - no store, no db
 	// files - so the property holds vacuously. Assert exactly that:

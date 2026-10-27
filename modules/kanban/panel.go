@@ -263,7 +263,7 @@ func (c *capsule) HandleAction(call core.ActionCall) (any, error) {
 		if args.ID == nil || *args.ID == "" {
 			return nil, fmt.Errorf("complete task: id is required")
 		}
-		if _, err := c.store.UpdateTask(context.Background(), c.activeBoard(), *args.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
+		if _, err := c.store.UpdateTask(context.Background(), c.activeBoard(), *args.ID, KanbanPatch{Status: StatusDone}); err != nil {
 			return nil, err
 		}
 		tp := c.taskPanel()

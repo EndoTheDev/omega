@@ -97,8 +97,17 @@ type Server struct {
 // accessors the handlers use. The lock matters because the toggle path
 // rewrites every field while any of these handlers may be mid-request.
 type seamSet struct {
-	mu            sync.RWMutex
-	kanban        core.KanbanProvider
+	mu sync.RWMutex
+	// modules is the module-rest mux rebuilt from ctx.ModuleRoutes at
+	// every rewire (boot, mount, live toggle): the routes a mounted
+	// module registered, nothing else. A nil mux sends every request
+	// to the SPA fallback - no module routes, no module paths.
+	modules *http.ServeMux
+	// routeRoots are the first path segments module routes own, the
+	// 404 lane: a URL rooted at a module route that matches no
+	// registered pattern answers 404, not the SPA shell. Empty when
+	// no routes: history-mode routes like /tasks-off-webui stay SPA.
+	routeRoots    map[string]bool
 	skills        core.SkillsProvider
 	cron          core.CronProvider
 	logger        core.LoggerProvider
@@ -110,13 +119,36 @@ type seamSet struct {
 // Accessors, one per seam. All nil-safe: the nil seam is the contract
 // the handlers degrade through (501 / empty list / context-free run).
 
-func (s *Server) Kanban() core.KanbanProvider             { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.kanban }
-func (s *Server) Skills() core.SkillsProvider             { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.skills }
-func (s *Server) Cron() core.CronProvider                 { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.cron }
-func (s *Server) Logger() core.LoggerProvider             { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.logger }
-func (s *Server) Notifications() core.NotificationsProvider { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.notifications }
-func (s *Server) Verdicts() core.VerdictsProvider         { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.verdicts }
-func (s *Server) Trust() core.TrustProvider               { s.seams.mu.RLock(); defer s.seams.mu.RUnlock(); return s.seams.trust }
+func (s *Server) Skills() core.SkillsProvider {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	return s.seams.skills
+}
+func (s *Server) Cron() core.CronProvider {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	return s.seams.cron
+}
+func (s *Server) Logger() core.LoggerProvider {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	return s.seams.logger
+}
+func (s *Server) Notifications() core.NotificationsProvider {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	return s.seams.notifications
+}
+func (s *Server) Verdicts() core.VerdictsProvider {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	return s.seams.verdicts
+}
+func (s *Server) Trust() core.TrustProvider {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	return s.seams.trust
+}
 
 // rewireSeams re-reads the module seams from the live Context: the
 // route surface above, the canvas panel registry, and the agent's tool
@@ -127,8 +159,10 @@ func (s *Server) Trust() core.TrustProvider               { s.seams.mu.RLock(); 
 // module's surface returns (E2 journal: the toggle machinery changed
 // the Context; this re-reads it).
 func (s *Server) rewireSeams(ctx *core.Context) error {
+	modmux, roots := moduleRouter(ctx.ModuleRoutes)
 	s.seams.mu.Lock()
-	s.seams.kanban = ctx.Kanban
+	s.seams.modules = modmux
+	s.seams.routeRoots = roots
 	s.seams.skills = ctx.Skills
 	s.seams.cron = ctx.Cron
 	s.seams.logger = ctx.Logger
@@ -175,10 +209,6 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/sessions/{id}/branch", s.handleSessionBranch)
 	mux.HandleFunc("/sessions/{id}/export", s.handleSessionExport)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
-	mux.HandleFunc("/tasks", s.handleTasks)
-	mux.HandleFunc("/tasks/{id}/comments", s.handleTaskComments)
-	mux.HandleFunc("/tasks/{id}", s.handleTaskByID)
-	mux.HandleFunc("/boards", s.handleBoards)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
@@ -223,7 +253,12 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	// working; the catch-all falls back to index.html for non-file paths
 	// (history-mode routes like /chat/<id>) and 404s for asset misses.
 	// Sync the build with modules/ui/scripts/build.sh before `go build`.
-	mux.Handle("/", spaHandler(webuiFS))
+	// Module REST (phase F): the registered module routes ride the
+	// live Context through the seamSet; requests that reach here fell
+	// through every fixed engine pattern, so the dispatch is: a
+	// module-route root consults the capsule mux (missing pattern
+	// answers 404), anything else serves the SPA shell.
+	mux.HandleFunc("/", s.handleModuleOrSPA)
 	s.httpSrv = &http.Server{Handler: mux}
 	return s
 }
@@ -402,7 +437,7 @@ type chatRequest struct {
 	// the workspace folder, resolved at prepare time. Unexported:
 	// never part of the request wire.
 	workspacePromptContext string
-	persistInput []core.Message
+	persistInput           []core.Message
 	// Ephemeral (card t_d96a5cd5): the run is a NO-PERSIST chat - no
 	// store row, nothing on disk; the `eph-` id (carried on the leading
 	// `session` frame) lives in the server's in-memory registry until

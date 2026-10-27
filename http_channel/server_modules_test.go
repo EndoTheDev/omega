@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/modules/kanban"
 )
 
 // fakeModules records the toggle calls and plays a canned answer.
@@ -181,19 +180,18 @@ func TestModuleToggleMalformedBody(t *testing.T) {
 		t.Fatalf("an absent enabled must not toggle: %d %v", rec.Code, fm.toggled)
 	}
 }
+
 // The live re-wire (v0.12 E2): after a toggle the server re-reads the
 // Context instead of the mount-time copies - a disabled module's
 // routes die without a restart, a re-enabled one's return.
 func TestRewireSeamsFollowsTheContext(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil)
-	board, err := kanban.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open board: %v", err)
-	}
-	t.Cleanup(func() { board.Close() })
-	ctx := &core.Context{Kanban: board}
+	served := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	ctx := &core.Context{ModuleRoutes: []core.ModuleRoute{{Module: "kanban", Pattern: "GET /tasks", Handler: served}}}
 
-	// mount-shaped: the wired seam answers the board routes
+	// mount-shaped: the wired routes answer the module paths
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire (mounted): %v", err)
 	}
@@ -203,20 +201,23 @@ func TestRewireSeamsFollowsTheContext(t *testing.T) {
 		t.Fatalf("GET /tasks after wire = %d", rec.Code)
 	}
 
-	// the disable cascade nil'd the seam: one rewire, the route 501s
-	ctx.Kanban = nil
+	// the disable cascade removed the route: one rewire, the engine
+	// holds nothing module-shaped - the path falls through to the SPA
+	// shell like any unknown browser route (the phase-F law: the route
+	// surface lives exactly while its module mounts; the modules
+	// inventory, not a 404 guard, is what tells the API caller)
+	ctx.ModuleRoutes = nil
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire (dismounted): %v", err)
 	}
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tasks", nil))
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("GET /tasks after dismount rewire = %d, want 501", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tasks after dismount rewire = %d, want the SPA fallthrough", rec.Code)
 	}
 
 	// the remount restores it - same call, no restart
-	ctx.Kanban = board
-	if err := s.rewireSeams(ctx); err != nil {
+	if err := s.rewireSeams(&core.Context{ModuleRoutes: []core.ModuleRoute{{Module: "kanban", Pattern: "GET /tasks", Handler: served}}}); err != nil {
 		t.Fatalf("rewire (remounted): %v", err)
 	}
 	rec = httptest.NewRecorder()

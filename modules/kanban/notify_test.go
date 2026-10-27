@@ -40,13 +40,13 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 	s.SetNotifier(n)
 	ctx := context.Background()
 
-	in, err := s.CreateTask(ctx, "", core.KanbanTask{Title: "wire the drawer"})
+	in, err := s.CreateTask(ctx, "", KanbanTask{Title: "wire the drawer"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	// a non-done move emits nothing
-	if _, err := s.UpdateTask(ctx, "", in.ID, core.KanbanPatch{Status: "running"}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", in.ID, KanbanPatch{Status: "running"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	n.mu.Lock()
@@ -57,7 +57,7 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 	}
 
 	// entering done emits exactly one, metadata only
-	if _, err := s.UpdateTask(ctx, "", in.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", in.ID, KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatalf("update to done: %v", err)
 	}
 	n.mu.Lock()
@@ -75,7 +75,7 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 
 	// a second done move (already settled, completed_at untouched)
 	// emits nothing - one transition, one record
-	if _, err := s.UpdateTask(ctx, "", in.ID, core.KanbanPatch{Status: StatusDone}); err != nil {
+	if _, err := s.UpdateTask(ctx, "", in.ID, KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatalf("re-close: %v", err)
 	}
 	count = len(n.got)

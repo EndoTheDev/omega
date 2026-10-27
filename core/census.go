@@ -42,6 +42,11 @@ type CensusSnapshot struct {
 	InjectedMessages   bool
 	PendingDelegations bool
 
+	// Routes are the registered module REST route patterns, in
+	// registration order - the module surface the serving channels
+	// re-read live (E2). Sort-stable like Panels.
+	Routes []string
+
 	// Handles are the run-group entries as "owner/name" plus an
 	// started marker folded into the string, in registration order.
 	Handles []string
@@ -50,6 +55,9 @@ type CensusSnapshot struct {
 // Census snapshots every registration surface of ctx.
 func Census(ctx *Context) CensusSnapshot {
 	s := CensusSnapshot{Slots: map[string]bool{}}
+	for _, rt := range ctx.ModuleRoutes {
+		s.Routes = append(s.Routes, rt.Pattern)
+	}
 	for _, slot := range []struct {
 		name string
 		set  bool
@@ -66,7 +74,6 @@ func Census(ctx *Context) CensusSnapshot {
 		{"frontend", ctx.Frontend != nil},
 		{"trust", ctx.Trust != nil},
 		{"cron", ctx.Cron != nil},
-		{"kanban", ctx.Kanban != nil},
 		{"notifications", ctx.Notifications != nil},
 		{"verdicts", ctx.Verdicts != nil},
 	} {

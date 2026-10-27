@@ -21,7 +21,6 @@
 //	 Frontend                      RegisterFrontend
 //	 Trust                         RegisterTrust
 //	 Cron                          RegisterCron
-//	 Kanban                        RegisterKanban
 //	 Notifications                 RegisterNotifications
 //	 Verdicts                      RegisterVerdicts
 //	 Captioner                     RegisterCaptioner (host-built after
@@ -165,14 +164,11 @@ type Registry struct {
 	toggleMu     sync.Mutex
 }
 
-// Route is one module-registered REST route. Nothing serves it in
-// phase B (zero behavior change); the http channel reads these off
-// the registry when the route seam migrates (phase D).
-type Route struct {
-	Module  string
-	Pattern string // an http.ServeMux pattern ("GET /x/{id}")
-	Handler func(http.ResponseWriter, *http.Request)
-}
+// Route is one module-registered REST route - the core.ModuleRoute
+// alias: the shape rides the live Context (phase F), the registry
+// keeps the claim ledger and the registration order. Nothing serves
+// these from the registry; the channels read ctx.ModuleRoutes.
+type Route = core.ModuleRoute
 
 // Routes returns the registered module routes in registration order.
 func (r *Registry) Routes() []Route {
@@ -369,11 +365,11 @@ type ExtensionAPI struct {
 	j       *journal // this mount's contribution journal (v0.12 E1)
 	live    bool     // true = writes are already on the live Context (boot)
 	builtin bool     // the capsule ships built-in vocabulary (not Toggleable)
-	tools  map[string]core.Tool
-	wired  bool // the one tool provider is already on ctx.ToolProviders
-	panels map[string]core.Panel
-	order  []string
-	acts   map[string]registeredAction
+	tools   map[string]core.Tool
+	wired   bool // the one tool provider is already on ctx.ToolProviders
+	panels  map[string]core.Panel
+	order   []string
+	acts    map[string]registeredAction
 	// panelProviders holds the live registered providers (the dynamic
 	// capsule shape) - commit lands them on ctx.PanelProviders.
 	panelProviders []core.PanelProvider
@@ -760,9 +756,25 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 		api.reg.routes = append(api.reg.routes, Route{Module: api.module, Pattern: pattern, Handler: h})
 	}
 	api.reg.mu.Unlock()
-	api.j.add(contribution{ // registry is always live; undo frees the claim and the route
+	if api.ctx != nil { // remount: api.ctx is the scoped proxy; boot: the live Context
+		api.ctx.ModuleRoutes = append(api.ctx.ModuleRoutes, Route{Module: api.module, Pattern: pattern, Handler: h})
+	}
+	route := Route{Module: module, Pattern: pattern, Handler: h} // ctxApply must not alias the loop's rt
+	api.j.add(contribution{                                      // registry is always live; the Context side follows the mount path
 		module: module,
 		desc:   "route " + pattern,
+		ctxApply: func(c *core.Context) {
+			c.ModuleRoutes = append(c.ModuleRoutes, route)
+		},
+		ctxUndo: func(c *core.Context) {
+			for i, rt := range c.ModuleRoutes {
+				if rt.Module == module && rt.Pattern == pattern {
+					c.ModuleRoutes = append(c.ModuleRoutes[:i], c.ModuleRoutes[i+1:]...)
+					break
+				}
+			}
+		},
+		applied: api.live,
 		regUndo: func(r *Registry) {
 			r.mu.Lock()
 			routes := make([]Route, 0, len(r.routes))
@@ -1142,17 +1154,6 @@ func (api *ExtensionAPI) RegisterCron(cr core.CronProvider) error {
 	return api.mountSeam("cron",
 		func(c *core.Context) { c.Cron = cr },
 		func(c *core.Context) { c.Cron = prev })
-}
-
-// RegisterKanban maps the kanban seam.
-func (api *ExtensionAPI) RegisterKanban(k core.KanbanProvider) error {
-	if k == nil {
-		return fmt.Errorf("kanban %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Kanban
-	return api.mountSeam("kanban",
-		func(c *core.Context) { c.Kanban = k },
-		func(c *core.Context) { c.Kanban = prev })
 }
 
 // RegisterNotifications maps the notifications seam.

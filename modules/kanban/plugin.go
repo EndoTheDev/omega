@@ -33,6 +33,10 @@ var _ agent.Plugin = (*Plugin)(nil)
 // NewPlugin returns a kanban Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
+// Store returns the mounted board store (the host and the proof
+// surfaces read through it; nil before Mount).
+func (p *Plugin) Store() *Store { return p.store }
+
 func (p *Plugin) Name() string { return "kanban" }
 
 // Description implements agent.Describer.
@@ -109,7 +113,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	p.capsule = newCapsule(s, p.tools.sessionBoard, p.setSessionBoard)
 	p.tools.capsule = p.capsule
 	for _, step := range []func() error{
-		func() error { return api.RegisterKanban(s) },
+		func() error { return p.registerRoutes(api) },
 		func() error {
 			for toolName, tool := range p.tools.Tools() {
 				if err := api.RegisterTool(toolName, tool); err != nil {
@@ -234,7 +238,7 @@ func (p *Plugin) setSessionBoard(name string) {
 // ToolProvider exposes the board as agent tools. The tools take the
 // provider seam instead of *Store so embedders can swap implementations.
 type ToolProvider struct {
-	board core.KanbanProvider
+	board KanbanProvider
 
 	// capsule is the module's canvas surface (panel.go, arc 5). Set at
 	// Mount; every tool mutation refreshes the task panel through it.
@@ -422,7 +426,7 @@ func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (stri
 }
 
 func (p *ToolProvider) runCreate(ctx context.Context, board string, args map[string]any) (string, error) {
-	in := core.KanbanTask{
+	in := KanbanTask{
 		Title:     str(args["title"]),
 		Body:      str(args["body"]),
 		Assignee:  str(args["assignee"]),
@@ -458,7 +462,7 @@ func (p *ToolProvider) runList(ctx context.Context, board string, args map[strin
 
 func (p *ToolProvider) runUpdate(ctx context.Context, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
-	patch := core.KanbanPatch{
+	patch := KanbanPatch{
 		Status: str(args["status"]),
 		Title:  optStr(args["title"]),
 		Body:   optStr(args["body"]),
@@ -487,7 +491,7 @@ func (p *ToolProvider) runComment(ctx context.Context, board string, args map[st
 
 func (p *ToolProvider) runComplete(ctx context.Context, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
-	out, err := p.board.UpdateTask(ctx, board, id, core.KanbanPatch{Status: StatusDone})
+	out, err := p.board.UpdateTask(ctx, board, id, KanbanPatch{Status: StatusDone})
 	if err != nil {
 		return "", err
 	}
@@ -504,7 +508,7 @@ func (p *ToolProvider) runLink(ctx context.Context, board string, args map[strin
 		return "", fmt.Errorf("no session id: pass session_id")
 	}
 	sptr := sess
-	out, err := p.board.UpdateTask(ctx, board, id, core.KanbanPatch{SessionID: &sptr})
+	out, err := p.board.UpdateTask(ctx, board, id, KanbanPatch{SessionID: &sptr})
 	if err != nil {
 		return "", err
 	}

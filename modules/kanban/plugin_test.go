@@ -45,14 +45,23 @@ func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 }
 
 // TestMountWithAPIShape pins the migrated mount's registrations: the
-// seam lands, the one namespaced tool registers, the commands take
-// their table order with a chain that falls through to the miss
-// error, the live panel provider lands with module-qualified, namespaced
-// action ids, and the classic Mount fails loud.
+// REST routes land on ctx.ModuleRoutes, the one namespaced tool
+// registers, the commands take their table order with a chain that
+// falls through to the miss error, and the live panel provider lands
+// with module-qualified, namespaced action ids.
 func TestMountWithAPIShape(t *testing.T) {
-	p, ctx, _ := mountPlugin(t)
-	if ctx.Kanban != p.store {
-		t.Fatal("seam mismatch: ctx.Kanban is not the mounted store")
+	_, ctx, _ := mountPlugin(t)
+	patterns := map[string]bool{}
+	for _, rt := range ctx.ModuleRoutes {
+		if rt.Module != "kanban" {
+			t.Fatalf("route %q foreign-tenanted: %q", rt.Pattern, rt.Module)
+		}
+		patterns[rt.Pattern] = true
+	}
+	for _, want := range []string{"GET /tasks", "POST /tasks", "GET /tasks/{id}", "PATCH /tasks/{id}", "POST /tasks/{id}/comments", "GET /boards"} {
+		if !patterns[want] {
+			t.Fatalf("route %q not registered: %v", want, patterns)
+		}
 	}
 	// the tool registry: exactly the folded namespaced tool
 	names := map[string]int{}

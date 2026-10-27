@@ -3,19 +3,17 @@ package kanban
 import (
 	"context"
 	"database/sql"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
 // getTaskTx scans one task inside an open transaction.
-func getTaskTx(ctx context.Context, tx *sql.Tx, taskID string) (core.KanbanTask, error) {
+func getTaskTx(ctx context.Context, tx *sql.Tx, taskID string) (KanbanTask, error) {
 	row := tx.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ?`, taskID)
 	t, err := scanTask(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return core.KanbanTask{}, ErrNotFound
+			return KanbanTask{}, ErrNotFound
 		}
-		return core.KanbanTask{}, err
+		return KanbanTask{}, err
 	}
 	return *t, nil
 }
