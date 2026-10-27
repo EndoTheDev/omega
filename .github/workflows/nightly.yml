@@ -51,6 +51,9 @@ jobs:
           go vet ./...
           go test ./...
 
+      - name: Binary-purity rotation (every capsule must leave the binary whole)
+        run: scripts/nm-purity.sh --all
+
       - name: Boot the validation lane (no provider on purpose)
         run: |
           mkdir -p "$RUNNER_TEMP/omega-lane"

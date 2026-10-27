@@ -26,7 +26,9 @@ MODULES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --all)
-      # shellcheck disable=SC2012
+      # rotation: every capsule not in the removal-needs manifest
+      # (scripts/nm-purity.modules). Manifest entries are reported as
+      # SKIP with their reason - a known finding, not a nightly red.
       for d in modules/*/; do MODULES+=("$(basename "$d")"); done ;;
     --module) shift; MODULES+=("$1") ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
@@ -35,6 +37,29 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ ${#MODULES[@]} -gt 0 ] || MODULES=(kanban)
+
+MANIFEST="$(cd "$(dirname "$0")" && pwd)/nm-purity.modules"
+MANIFESTED=()
+if [ -f "$MANIFEST" ]; then
+  # shellcheck disable=SC2207
+  MANIFESTED=($(sed -e 's/#.*$//' -e 's/[[:space:]].*$//' "$MANIFEST" | grep -v '^$'))
+fi
+
+RUN=()
+for MOD in "${MODULES[@]}"; do
+  skip=""
+  for M in "${MANIFESTED[@]:-}"; do
+    [ "$MOD" = "$M" ] && skip="$M"
+  done
+  if [ -n "$skip" ]; then
+    reason="$(grep -E "^$MOD[[:space:]]" "$MANIFEST" | sed -e 's/^[^[:space:]]*//' -e 's/^[[:space:]]*//' )"
+    echo "nm-purity [$MOD]: SKIP - removal-needs manifest: $reason"
+  else
+    RUN+=("$MOD")
+  fi
+done
+[ ${#RUN[@]} -gt 0 ] || { echo "nm-purity: every requested module is manifested - nothing to prove" >&2; exit 2; }
+MODULES=("${RUN[@]}")
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/nm-purity.XXXXXX")"
