@@ -36,6 +36,7 @@ export const DOCK_COMPONENTS = [
   "skills",
   "tools",
   "agents",
+  "continuous",
   "settings",
   "kanban",
   "extensions",
@@ -197,6 +198,23 @@ export const DOCKABLES: readonly DockableComponent[] = [
         "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
         "M5.5 19a6.5 6.5 0 0 1 13 0",
       ],
+    },
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    // card t_72ecca67 (ruling 18): the continuous roster - the agent
+    // homes with last-report preview, next wake, unread state; the
+    // detail strip rides the wake/sleep buttons and the evidence
+    // view; the create flow wires the t_55a571ff sidebar placeholder.
+    // The tab label joins the Title Case siblings.
+    id: "continuous",
+    title: "Continuous",
+    // the wake pulse: a filled dot inside one frame
+    icon: {
+      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
+      paths: ["M12 9a3 3 0 1 0 .0001 0"],
     },
     policy: "singleton",
     area: "right",
