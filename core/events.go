@@ -4,6 +4,8 @@
 // dependencies outside stdlib (factory-flow ADR, v0.11 arc 1b2).
 package core
 
+import "encoding/json"
+
 // Event is the sealed interface for all agent events.
 type Event interface {
 	isEvent()
@@ -72,3 +74,33 @@ type AssistantMessageEvent struct {
 }
 
 func (AssistantMessageEvent) isEvent() {}
+
+// EventObserver is a module subscription on the run event spine (card
+// t_72ecca67, M3): mounted by the continuous-agents ledger, runnable by
+// any spine consumer the future needs. Observers block ONE goroutine of
+// the live run - the tee forwards events to the host consumer only
+// after every observer returned - so an observer must be cheap (one
+// local sqlite insert, a stat, never network). Observers see the full
+// spine: ToolCallEvent (before execution) and ToolResultEvent (after),
+// in encounter order.
+type EventObserver func(Event)
+
+// TickEvent is a module-emitted spine payload (card t_72ecca67, M4):
+// cron owns WHEN and fires a wake tick; continuous owns WHAT and
+// consumes it. The v0.12 payload law holds: the emitter namespace is a
+// namespaced string, the payload travels as raw JSON, and no consumer
+// ever parses another module's Go types.
+type TickEvent struct {
+	Module  string          `json:"module"`  // the emitting capsule ("cron")
+	Kind    string          `json:"kind"`    // the tick vocabulary ("wake")
+	Payload json.RawMessage `json:"payload"` // the raw JSON payload
+}
+
+func (TickEvent) isEvent() {}
+
+// Tick returns the event's tick data as a TickEvent, or zero when ev is
+// not one (single type-assertion site for spine consumers).
+func Tick(ev Event) (TickEvent, bool) {
+	t, ok := ev.(TickEvent)
+	return t, ok
+}

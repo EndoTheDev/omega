@@ -109,6 +109,26 @@ type Agent struct {
 	pendingDeleg   func() int
 	loop           LoopProvider
 	logger         LoggerProvider
+	// eventObserverSource reads the Context's spine subscriptions at
+	// each Run (card t_72ecca67, M3). Nil-safe: an Agent built without
+	// NewFromContext runs observer-free.
+	eventObserverSource func() []EventObserver
+}
+
+// EventObservers returns the agent's spine snapshot source; nil is the
+// empty subscription set (a bare Agent has none).
+func (a *Agent) eventObservers() []EventObserver {
+	if a.eventObserverSource == nil {
+		return nil
+	}
+	return a.eventObserverSource()
+}
+
+// SetEventObserverSource wires the Context's spine subscriptions (a
+// snapshot per run - a live toggle's remount re-reads it on the next
+// run, never mid-run).
+func (a *Agent) SetEventObserverSource(src func() []EventObserver) {
+	a.eventObserverSource = src
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
@@ -302,6 +322,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag.SetPromptAppend(opts.PromptAppend)
 	ag.SetPromptContext(opts.PromptContext)
 	ag.SetCWD(opts.CWD)
+	ag.SetEventObserverSource(ctx.EventObservers)
 	if ctx.Compactor != nil {
 		ag.SetCompactionProvider(ctx.Compactor)
 	}
@@ -360,11 +381,30 @@ func (a *Agent) Run(ctx context.Context, messages []Message, tools map[string]To
 // derived from Provider() via WithModel, carrying a per-request model.
 // Returns a channel of events, closed when the run ends.
 func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages []Message, tools map[string]Tool) <-chan Event {
-	events := make(chan Event)
+	inner := make(chan Event)
+	events := inner
+	// The event spine (card t_72ecca67, M3): a snapshot of the
+	// registered observers forwards every event to before the host
+	// consumer sees it. Inline, never buffered: a slow observer slows
+	// the run (the contract says cheap), but an event can NEVER be
+	// delivered to the host before the observers saw it.
+	if obs := a.eventObservers(); len(obs) > 0 {
+		forwarded := make(chan Event)
+		events = forwarded
+		go func() {
+			defer close(forwarded)
+			for e := range inner {
+				for _, o := range obs {
+					o(e)
+				}
+				forwarded <- e
+			}
+		}()
+	}
 	go func() {
-		defer close(events)
+		defer close(inner)
 		if a.loop == nil {
-			events <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
+			inner <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
 			return
 		}
 		// Image captioning (vision_model knob): captioned copies go to
@@ -373,7 +413,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		// provider 400 about unseen pixels.
 		messages, err := a.applyCaptions(ctx, messages)
 		if err != nil {
-			events <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
+			inner <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
 			return
 		}
 		runTools := tools
@@ -409,7 +449,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			PromptCustom:       a.promptCustom,
 			PromptAppend:       a.promptAppend,
 			PromptContext:      runPromptContext,
-			Events:             events,
+			Events:             inner,
 			InjectedMessages:   a.injectedMsgs,
 			UserInput:          a.userInput,
 			PendingDelegations: a.pendingDeleg,

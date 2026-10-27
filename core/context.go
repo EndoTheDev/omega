@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"sync"
 )
 
 // Context is the shared service container that extensions mount into.
@@ -12,6 +14,14 @@ import (
 // are exclusive: one plugin per slot. ToolProviders and Channels are
 // additive: multiple plugins contribute.
 type Context struct {
+	// Event observers (card t_72ecca67, M3): additive subscriptions on
+	// the run event spine. A module appends its observer at mount (the
+	// evidence ledger of the continuous-agents arc) and the agent's
+	// runs forward every event through the snapshot taken at run start.
+	// Pointer-held so a Context value-copy (dismount replay) shares the
+	// one guard instead of copying it.
+	eventOb *eventObserverSet
+
 	// Seam slots (exclusive — one plugin per slot).
 	Provider      Provider
 	Compactor     CompactionProvider
@@ -105,4 +115,62 @@ func (c *Context) RunGroup() *Lifecycle {
 		c.Lifecycle = &Lifecycle{}
 	}
 	return c.Lifecycle
+}
+
+// eventObserverSet guards the Context's spine subscriptions. Heap-held
+// behind a pointer: a Context value-copy shares the set instead of
+// copying its guard (vet law).
+type eventObserverSet struct {
+	mu  sync.Mutex
+	obs []EventObserver
+}
+
+func (c *Context) obsSet() *eventObserverSet {
+	if c.eventOb == nil {
+		c.eventOb = &eventObserverSet{}
+	}
+	return c.eventOb
+}
+
+// AddEventObserver subscribes one observer to the run event spine
+// (card t_72ecca67, M3). Modules call it during MountWithAPI with their
+// own closure; the run forwards events through the snapshot taken at
+// run start, so a registration lands for every later run. Post-mount
+// safe: the guard covers a live toggle's remount.
+func (c *Context) AddEventObserver(o EventObserver) {
+	s := c.obsSet()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.obs = append(s.obs, o)
+}
+
+// EventObservers snapshots the spine subscriptions at run start.
+func (c *Context) EventObservers() []EventObserver {
+	s := c.eventOb
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]EventObserver, len(s.obs))
+	copy(out, s.obs)
+	return out
+}
+
+// EmitTick fires one module tick through the spine (card t_72ecca67,
+// M4): every registered observer receives it synchronously, and the
+// emitter returns after the spine drained. The payload travels as raw
+// JSON (the payload law); a marshal failure never blocks the emitter -
+// it degrades to an empty payload, the loud consumers validate and
+// refuse. Observers are cheap by contract; a tick emitter runs on the
+// module's own goroutine, never on a run's.
+func (c *Context) EmitTick(module, kind string, payload any) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = nil
+	}
+	tick := TickEvent{Module: module, Kind: kind, Payload: raw}
+	for _, o := range c.EventObservers() {
+		o(tick)
+	}
 }
