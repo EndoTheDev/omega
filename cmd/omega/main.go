@@ -99,10 +99,11 @@ func run(args []string) error {
 	// Set OMEGA_HOME early so all child processes inherit it.
 	home := omegaHome()
 	os.Setenv("OMEGA_HOME", home)
-	// Default-agent migration (card t_7e2b7002): agents/ appears on
-	// first boot; legacy home memory.md/user.md move into
-	// agents/default/ - exactly once, before anything reads them.
-	if err := agent.MigrateDefaultAgent(home); err != nil {
+	// Agent-home migration (card t_72ecca67): the retired
+	// agents/default profile's persona files move UP to the home root
+	// (ruling 3) - the reverse of the t_7e2b7002 migration. Exactly
+	// once, before anything reads them.
+	if err := agent.MigrateAgentHomes(home); err != nil {
 		return err
 	}
 	// Set OMEGA_SKILLS_DIR so the skills extension can read skills.
@@ -392,15 +393,13 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Skills.Dir = home + "/skills"
 	}
 	if cfg.Memory.File == "memory.md" {
-		// card t_7e2b7002: the default agent's memory files live in its
-		// profile dir - MigrateDefaultAgent (run(), before any command)
-		// moved the legacy home files there. Pointing the default at the
-		// old home path would strand the migrated content and silently
-		// start a fresh memory - the read side must follow the move.
-		cfg.Memory.File = home + "/agents/default/memory.md"
+		// card t_72ecca67 ruling 3: main's persona files live at the
+		// home root (agents/default is retired and its files migrated
+		// UP by MigrateAgentHomes in run(), before any command).
+		cfg.Memory.File = home + "/memory.md"
 	}
 	if cfg.Memory.UserProfileFile == "user.md" {
-		cfg.Memory.UserProfileFile = home + "/agents/default/user.md"
+		cfg.Memory.UserProfileFile = home + "/user.md"
 	}
 	if cfg.Logging.File == "omega.log" {
 		cfg.Logging.File = home + "/omega.log"

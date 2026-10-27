@@ -1,10 +1,11 @@
 package main
 
-// agents_test.go: the agent layering + CLI (card t_7e2b7002). The
-// layering laws: the agent's provider/model/system_prompt win, shared
-// infrastructure (db path) does not move, and every agent-writable
-// path re-points into the agent's own directory unless the layer set
-// it explicitly.
+// agents_test.go: the agent layering + CLI (card t_72ecca67, settled
+// continuous-agent design; the layering laws: the agent's provider/
+// model/system_prompt win, shared infrastructure does not move, and
+// every agent-writable personal path re-points into the agent's own
+// home unless the layer set it explicitly. Session/notify/boards data
+// isolation resolves through the agent's data/ dir, not this layer.)
 
 import (
 	"os"
@@ -60,15 +61,17 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 	}
 	cfg := agentLayerBase()
 	cfg.Store.DBPath = filepath.Join(home, "data", "omega.db")
-	cfg.Memory.File = filepath.Join(home, "agents", "default", "memory.md")
-	cfg.Memory.UserProfileFile = filepath.Join(home, "agents", "default", "user.md")
+	cfg.Memory.File = filepath.Join(home, "memory.md")
+	cfg.Memory.UserProfileFile = filepath.Join(home, "user.md")
 	cfg.Logging.File = filepath.Join(home, "omega.log")
 	cfg.Skills.Dir = filepath.Join(home, "skills")
 	if err := ApplyAgentLayer(&cfg, home, "scout"); err != nil {
 		t.Fatalf("apply layer: %v", err)
 	}
 	dir := agent.AgentDir(home, "scout")
-	// the db stays shared; memory/user/skills/log move under the agent.
+	// the db path stays the caller's business (data isolation resolves
+	// per-process through datadir.DataHome); memory/user/skills/log
+	// move under the agent home.
 	if cfg.Store.DBPath != filepath.Join(home, "data", "omega.db") {
 		t.Errorf("db path moved: %q", cfg.Store.DBPath)
 	}
@@ -84,8 +87,8 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 	if cfg.Skills.SharedDir != filepath.Join(home, "skills", "shared") {
 		t.Errorf("shared dir = %q, want home/skills/shared", cfg.Skills.SharedDir)
 	}
-	if cfg.Logging.File != filepath.Join(dir, "logs", "omega.log") {
-		t.Errorf("log = %q, want agent logs dir", cfg.Logging.File)
+	if cfg.Logging.File != filepath.Join(dir, "scout.log") {
+		t.Errorf("log = %q, want the agent's own <name>.log (ruling 1: no logs/ dir)", cfg.Logging.File)
 	}
 }
 
@@ -158,12 +161,11 @@ func TestResolveAgentName(t *testing.T) {
 	}
 }
 
-func TestResolveHomePathsDefaultMemoryFollowsMigration(t *testing.T) {
+func TestResolveHomePathsMainPersonaAtRoot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	if err := agent.MigrateDefaultAgent(home); err != nil {
-		t.Fatal(err)
-	}
+	// the settled default: main's persona files live at the home root
+	// (ruling 3) - the home config's relative defaults resolve there.
 	cfg := DefaultConfig()
 	if cfg.Memory.File != "memory.md" || cfg.Memory.UserProfileFile != "user.md" {
 		t.Fatalf("precondition: defaults, got %q / %q", cfg.Memory.File, cfg.Memory.UserProfileFile)
@@ -171,11 +173,24 @@ func TestResolveHomePathsDefaultMemoryFollowsMigration(t *testing.T) {
 	if err := resolveHomePaths(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Memory.File != filepath.Join(home, "agents", "default", "memory.md") {
-		t.Errorf("memory.file = %q, want the default agent's profile dir", cfg.Memory.File)
+	if cfg.Memory.File != filepath.Join(home, "memory.md") {
+		t.Errorf("memory.file = %q, want the home root (ruling 3)", cfg.Memory.File)
 	}
-	if cfg.Memory.UserProfileFile != filepath.Join(home, "agents", "default", "user.md") {
-		t.Errorf("user profile = %q, want the default agent's profile dir", cfg.Memory.UserProfileFile)
+	if cfg.Memory.UserProfileFile != filepath.Join(home, "user.md") {
+		t.Errorf("user profile = %q, want the home root", cfg.Memory.UserProfileFile)
+	}
+}
+
+func TestApplyAgentLayerMainLayersNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	cfg := agentLayerBase()
+	cfg.Memory.File = filepath.Join(home, "memory.md")
+	if err := ApplyAgentLayer(&cfg, home, agent.DefaultAgentName); err != nil {
+		t.Fatalf("apply main layer: %v", err)
+	}
+	if cfg.Memory.File != filepath.Join(home, "memory.md") {
+		t.Errorf("main persona file moved: %q (main = the home root, ruling 1)", cfg.Memory.File)
 	}
 }
 
