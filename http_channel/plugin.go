@@ -48,10 +48,10 @@ func (p *Plugin) ConfigKey() string { return "http_channel" }
 func (p *Plugin) Provides() []string { return []string{"channel"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount creates an HTTPChannel from config and appends it to
+// MountWithAPI creates an HTTPChannel from config and registers it on
 // ctx.Channels. The host starts it (and any other mounted channels)
-// after MountAll completes.
-func (p *Plugin) Mount(ctx *core.Context) error {
+// after the mount completes.
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["http_channel"].(Config); ok {
 		cfg = c
@@ -95,7 +95,9 @@ func (p *Plugin) Mount(ctx *core.Context) error {
 			canvas:     p.canvas,
 		}
 		p.mounted = append(p.mounted, ch)
-		ctx.Channels = append(ctx.Channels, ch)
+		if err := api.RegisterChannel(ch); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -1,20 +1,13 @@
-// The universal mount surface (v0.12 phase B, the dual-mount phase).
-// One typed registration vocabulary in the pi style: a capsule calls
-// api.Register*(...) instead of assigning Context slots directly. Both
-// mount styles live simultaneously this phase - classic capsules keep
-// assigning seams in Mount, zero behavior change - and the adapters
-// below make both styles converge on the same Context, so the parity
-// test mounts one capsule both ways and demands identical behavior.
-// Migrating the capsules themselves is phase C.
+// The universal mount surface (v0.12 phase F - the universal API is
+// the ONLY mount path; the classic seam-assignment ceremony and the
+// dual mount of phase B are retired). A capsule calls
+// api.Register*(...) at MountWithAPI - one typed registration
+// vocabulary in the pi style, every seam claim, additive append and
+// payload boundary a journaled registration the dismount replays
+// backward.
 //
-// Adaptation shape: every registration lands on the exact field the
-// classic seam assignment writes (same slice, same append, same
-// chain-on-miss command wrapper). An APIPlugin mounting is therefore
-// behaviorally indistinguishable from the same capsule's classic
-// Mount writing the same fields by hand.
-//
-// THE SEAM CENSUS (23 surfaces on the post-B0 tree; the adapters map
-// every one of them to a registration):
+// THE SEAM CENSUS (23 surfaces on the post-B0 tree; the registrations
+// cover every one of them):
 //
 //	Exclusive slots (15)           Registration
 //	 Provider                      RegisterProvider
@@ -32,7 +25,7 @@
 //	 Notifications                 RegisterNotifications
 //	 Verdicts                      RegisterVerdicts
 //	 Captioner                     RegisterCaptioner (host-built after
-//	                               MountAll today; carried for census
+//	                               the mount today; carried for census
 //	                               completeness)
 //
 //	Additive surfaces (8)          Registration
@@ -52,7 +45,7 @@
 //	 InjectedMessages              RegisterDelegation
 //	 PendingDelegations            RegisterDelegation
 //
-// Two families have no classic seam and carry no adapter: routes
+// Two families have no Context field of their own: routes
 // (RegisterRoute - module REST; the http channel consumes it with the
 // phase-D route migration) and emitters (RegisterEmitter - the
 // finished-things handoff the capsules capture directly today).
@@ -81,18 +74,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// APIPlugin is the optional capability MountAll dispatches on (the
-// same pattern as Describer). A plugin implementing it mounts through
-// the pi-style registration surface instead of the classic Mount -
-// both methods may exist on the migration path; the API one wins
-// (strangler: adapters first, the classic body retires in phase F).
-// Plugins implementing only Plugin mount exactly as before.
-type APIPlugin interface {
-	// MountWithAPI mounts the plugin through its registrations.
-	MountWithAPI(ctx *Context, api *ExtensionAPI) error
-}
-
-// ExtensionAPI.tier: whether the mounting capsule ships built-in
+// ExtensionAPI tier: whether the mounting capsule ships built-in
 // vocabulary (machine-critical, not toggleable - provider, store,
 // skills, tools, the loop) or module vocabulary (the opinionated
 // capsules). Module registrations must carry the capsule's own
@@ -104,16 +86,7 @@ func isBuiltin(p Plugin) bool {
 	return !toggleable
 }
 
-// MountAll keeps its classic signature: every existing call site and
-// test mounts unchanged. Hosts that consume registrations (module
-// routes, the refusal ledger) or honor a disable list call MountAllAPI
-// instead.
-func MountAll(plugins []Plugin, ctx *Context) error {
-	_, err := MountAllAPI(plugins, ctx, nil, nil)
-	return err
-}
-
-// MountAllAPI mounts the plugin set like MountAll and returns the
+// MountAllAPI mounts the plugin set and returns the
 // registration registry: claims, module routes and the refusal
 // ledger. The refusals sink is host-supplied; nil builds the default
 // in-process refusal ledger. disabled names the modules omega.json
@@ -322,8 +295,8 @@ func (r *Registry) releaseClaim(key, module string) {
 
 // claimSlot records the one-tenant rule on a bare seam name ("store",
 // "kanban" - the exclusive slots; the same key the provides sweep
-// recorded for classic capsules, so classic and API styles conflict
-// together). The owner map holds seam names and "module.verb" pairs;
+// recorded, so the sweep and the registration agree on tenancy).
+// The owner map holds seam names and "module.verb" pairs;
 // ParseSeamName guarantees the shapes never collide.
 func (r *Registry) claimSlot(seam, module string) error {
 	r.mu.Lock()
@@ -336,7 +309,8 @@ func (r *Registry) claimSlot(seam, module string) error {
 }
 
 // claimSlotQuiet records a provides-sweep claim already conflict-
-// checked - it never errors, it only lands the tenant.
+// checked (the provides sweep is declared data: Provides stays the
+// topo + census source) - it never errors, it only lands the tenant.
 func (r *Registry) claimSlotQuiet(seam, module string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -384,10 +358,10 @@ func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
 }
 
 // ExtensionAPI is one capsule's namespaced view of the mount surface,
-// created by MountAll for a plugin that implements APIPlugin. Every
+// created by the mount loop for every plugin of the build. Every
 // enforcement below carries the capsule's plugin name as the tenant;
-// the methods adapt each registration onto the exact Context field
-// the classic mount would assign.
+// the methods land each registration on the Context surface it owns
+// - journaled so the dismount replays them backward.
 type ExtensionAPI struct {
 	module  string
 	ctx     *core.Context
@@ -867,7 +841,7 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 // RegisterEmitter registers the capsule's finished-things hook: at
 // mount end the mounted Notifications seam is handed to it (nil when
 // the notifications module is absent - emitters stay nil-safe). The
-// classic direct capture keeps working; the hook is the migrated
+// the hook is the registration-shape
 // shape (phase C).
 func (api *ExtensionAPI) RegisterEmitter(fn func(n core.NotificationsProvider)) error {
 	if fn == nil {
@@ -1203,8 +1177,8 @@ func (api *ExtensionAPI) RegisterVerdicts(v core.VerdictsProvider) error {
 		func(c *core.Context) { c.Verdicts = prev })
 }
 
-// RegisterCaptioner maps the captioner seam (host-built after
-// MountAll today; carried so the census has no gaps).
+// RegisterCaptioner maps the captioner seam (host-built after the
+// mount today; carried so the census has no gaps).
 func (api *ExtensionAPI) RegisterCaptioner(cp core.Captioner) error {
 	if cp == nil {
 		return fmt.Errorf("captioner %q: a registration carries its captioner", api.module)
