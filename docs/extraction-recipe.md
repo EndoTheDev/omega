@@ -44,12 +44,13 @@ direction: the harness depends on the engine, never the reverse.
 | `modules/tools` | The bare-minimum tools: `shell.run`, `files` (read/write/edit + batch), /files browser, db deny-guard | the north-star ruling; verdict tool status is separate (see §6) |
 | `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
 | `tui` | The terminal connector: the TUI shell, canvas pane rendering | frontend seam implementation on the engine side |
-| `modules/ui` | The webui SPA source (Nuxt/TS, no Go) — embedded into http_channel's `static/` | part of the connector/canvas runtime |
+| `webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) — build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module) |
 | `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell | see HURT-4: today's shell is NOT yet minimal |
 
 ### The harness side (moves to TigerClaw)
 
-Verified against `buildPlugins()` in cmd/omega/main.go (19 plugins,
+Verified against `buildPlugins()` in cmd/omega/main.go (18 plugins
+since the v0.13 dissolution took the web capsule into the channel,
 order is data, not semantics — MountAll's topoSort is the only
 ordering) plus the plugins' `Provides()` declarations:
 
@@ -61,7 +62,6 @@ ordering) plus the plugins' `Provides()` declarations:
 | `modules/memory` | memory | memory, tools, prompt_sections | memory |
 | `modules/delegate` | delegate | tools | (none) |
 | `modules/mcp` | mcp | tools | (none) |
-| `modules/web` | web | tools | web |
 | `modules/notifications` | notifications | notifications | notifications |
 | `modules/trust` | trust | trust | trust |
 | `modules/compactor` | compactor | compactor | compactor |
@@ -87,21 +87,28 @@ is PENDING: the ruling leaves the verdict tool's home unresolved
 
 ### The cross-check (paste)
 
+The paste below is the pre-dissolution snapshot (2e9ae66) - historical
+evidence, not the current tree (v0.13 removed `modules/web`; `ui`
+became the checkout-root `webui/`):
+
 `ls modules/` at 2e9ae66, alphabetical:
 
     agent_loop compactor cron datadir delegate http_channel kanban
     logging mcp memory notifications prompt provider skills store
     tools trust tui ui verdict web
 
-buildPlugins() registers, in authoring order: logging, agent_loop,
+buildPlugins() registered, in authoring order: logging, agent_loop,
 provider, store, skills, compactor, memory, notifications, prompt,
 tools, verdict, mcp, delegate, web, http_channel, tui, trust, cron,
 kanban — 19.
 
-Difference, accounted for: `datadir` and `ui` are not plugins
-(datadir is an imported leaf; ui is the SPA), and `modules/README.md`
-is prose. 21 dirs + README = 19 plugins + 2 non-plugins. The table
-above and the registration agree one-for-one.
+Difference, accounted for: `datadir` and `ui` were not plugins
+(datadir is an imported leaf; ui was the SPA source, since moved to
+the checkout root as `webui/`), and `modules/README.md`
+is prose. 21 dirs + README = 19 plugins + 2 non-plugins, one-for-one -
+minus the dissolved web capsule (v0.13: 18 plugins, webui outside
+modules/) for the current tree. The registration rows above track the
+current tree and agree one-for-one.
 
 ### The verified seam inventory: 22
 

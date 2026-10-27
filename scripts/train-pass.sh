@@ -368,10 +368,10 @@ gates_pass() {
       fi
     fi
   fi
-  if [ -d modules/ui/test ] && command -v node >/dev/null 2>&1; then
+  if [ -d webui/test ] && command -v node >/dev/null 2>&1; then
     echo "==> webui node suite"
-    (cd modules/ui && node --test 'test/*.test.ts' >/dev/null 2>&1) || {
-      echo "webui suite failed - rerun (cd modules/ui && node --test 'test/*.test.ts') for detail" >&2
+    (cd webui && node --test 'test/*.test.ts' >/dev/null 2>&1) || {
+      echo "webui suite failed - rerun (cd webui && node --test 'test/*.test.ts') for detail" >&2
       exit 1
     }
   fi

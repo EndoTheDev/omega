@@ -34,8 +34,8 @@ new_repo() {
 	git -C "$TMP" init -q
 	git -C "$TMP" config user.email t@t
 	git -C "$TMP" config user.name t
-	mkdir -p "$TMP/modules/ui/app" "$TMP/modules/tools/ui" "$TMP/cmd"
-	echo "source v1" >"$TMP/modules/ui/app/Foo.vue"
+	mkdir -p "$TMP/webui/app" "$TMP/modules/tools/ui" "$TMP/cmd"
+	echo "source v1" >"$TMP/webui/app/Foo.vue"
 	echo "tool v1" >"$TMP/modules/tools/ui/Bar.vue"
 	echo 'package main' >"$TMP/cmd/omega.go"
 	mk_mock
@@ -104,13 +104,13 @@ check "go-only merge: no build ran" test ! -f "$TMP.mock/canary-mock-ran"
 check "go-only merge: no lane commit" test "$(git -C "$TMP" rev-list --count HEAD)" -eq 2
 check "go-only merge: change-gate skip logged" contains "change gate" "$TMP/run.out"
 
-# modules/ui source change -> regen + lane commit
+# webui source change -> regen + lane commit
 STAMP="s1"
-echo "source v2" >"$TMP/modules/ui/app/Foo.vue"
+echo "source v2" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui change: Foo v2"
 run --base "$BASE" "card t_test1"
-check "modules/ui change: exit 0" test "$rc" -eq 0
-check "modules/ui change: build ran" test -f "$TMP.mock/canary-mock-ran"
+check "webui change: exit 0" test "$rc" -eq 0
+check "webui change: build ran" test -f "$TMP.mock/canary-mock-ran"
 git -C "$TMP" log -1 --pretty=%s >"$TMP/head.msg"
 check "lane commit message has the context" contains "embed-lane: rebuild webui bundle for card t_test1" "$TMP/head.msg"
 git -C "$TMP" diff-tree -r --name-only HEAD~1 HEAD >"$TMP/lane-diff.txt"
@@ -142,7 +142,7 @@ check "modules/*/ui change: lane commit created" contains "embed-lane: rebuild w
 
 # fail-loud: broken build aborts, static/ untouched, no commit
 STAMP="s3"
-echo "source v3" >"$TMP/modules/ui/app/Foo.vue"
+echo "source v3" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui change: Foo v3"
 before_static="$(git -C "$TMP" rev-parse HEAD:http_channel/static)"
 MOCK_FAIL=1 run --base "$(git -C "$TMP" rev-parse HEAD~1)" "card t_test3"
@@ -165,7 +165,7 @@ check "no --base on a root commit: error logged" contains "no parent commit" "$O
 
 # linear (fast-forward-landed) HEAD: default base = HEAD^1 works
 STAMP="s1"
-echo "source v2" >"$TMP/modules/ui/app/Foo.vue"
+echo "source v2" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui commit: Foo v2 (linear landing)"
 run
 check "linear HEAD: default base = HEAD^1 -> rc 0" test "$rc" -eq 0
@@ -187,7 +187,7 @@ check "merge HEAD: default base = first parent (lane commit created)" contains "
 new_repo
 STAMP="pa"
 git -C "$TMP" checkout -q -b wui-a "$BASE"
-echo "aa: source" >"$TMP/modules/ui/app/Foo.vue"
+echo "aa: source" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "branch A: component 1"
 git -C "$TMP" checkout -q "$MAIN_BRANCH"
 git -C "$TMP" checkout -q -b wui-b "$BASE"

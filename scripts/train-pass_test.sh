@@ -8,7 +8,7 @@ set -uo pipefail
 # The hermes CLI is a stub; the board is a fixture sqlite db carrying the
 # few tables the train touches (same columns as the live schema). Gates
 # are overridden with TRAIN_GATES_CMD - the real gate list is repo-shaped
-# (go.mod / modules/ui / journeys presence) and is exercised for real on
+# (go.mod / webui / journeys presence) and is exercised for real on
 # every actual landing run against dev.
 
 TRAIN="$(cd "$(dirname "$0")" && pwd)/train-pass.sh"

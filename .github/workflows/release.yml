@@ -33,11 +33,11 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Build modules/ui (embedded SPA)
+      - name: Build webui (embedded SPA)
         # every Go build below embeds whatever is in static/ - the real
         # SPA must be synced BEFORE the first go build
         run: |
-          cd modules/ui
+          cd webui
           npm ci
           sh scripts/build.sh
 
