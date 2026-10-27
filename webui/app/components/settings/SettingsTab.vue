@@ -19,7 +19,9 @@
       {{ loadError }}
     </p>
     <div class="settings-body">
-      <p v-if="!loadError && visibleGroups.length === 0" class="settings-empty">
+      <p
+      v-if="!loadError && visibleGroups.length === 0 && !modulesVisible"
+      class="settings-empty">
         no settings match "{{ query.trim() }}"
       </p>
 
@@ -116,9 +118,12 @@
         </template>
       </template>
     </section>
-    <!-- v0.12 E2: the live module toggle list sits under the knob
-         groups, same body scroll (registry introspection rendered). -->
-    <ModuleToggleList />
+    <!-- v0.12 E2, card t_8ac225f1: the live module toggle list rides
+         the shared group treatment now - it collapses via the same
+         persisted set and the search narrows its rows, inside the
+         component. The parent only passes the query down and tracks
+         whether the section currently renders (empty-state truth). -->
+    <ModuleToggleList :query="query" @visible="onModulesVisible" />
     </div>
     <!-- save row stays pinned below the scrollable body -->
     <div v-if="dirtyCount > 0" class="settings-save-row">
@@ -162,8 +167,9 @@
     type ThemeMode,
     type UserTheme,  } from "~/composables/omega";
   import { useNarrow } from "~/composables/narrow";
-  // v0.12 E2: the live module toggle list - registry introspection
-  // rendered under the knob groups.
+  // v0.12 E2, card t_8ac225f1: the live module toggle list - registry
+  // introspection rendered under the knob groups, with the shared
+  // group-head treatment (collapse + search) living in the component.
   import ModuleToggleList from "./ModuleToggleList.vue";
   import type { ToolDisplay } from "~/composables/toolDisplay";
   // card t_d7fd3ad3 item 6: the dock group's client knob rides the shared
@@ -208,6 +214,15 @@
   const saveError = ref<string | null>(null);
   const saving = ref(false);
   const query = ref("");
+
+  // card t_8ac225f1: the modules group reports whether it currently
+  // renders (the seam may be absent, or the search matched none of
+  // its rows) - the empty-state message must stay truthful: it shows
+  // only when neither the knob groups nor the modules list matched.
+  const modulesVisible = ref(false);
+  const onModulesVisible = (v: boolean) => {
+    modulesVisible.value = v;
+  };
 
   // Card 5: settings is a dock TAB, not an overlay - the tab opens once
   // and stays mounted, so the load-on-open watch dies with the drawer
@@ -360,7 +375,17 @@
   }
 
   function toggleCollapsed(key: string) {
-    const next = new Set(collapsed.value);
+    // card t_8ac225f1: the persisted set is SHARED - the modules group
+    // (ModuleToggleList) writes keys against the same storage, so every
+    // toggle starts from the storage set plus this pane's own view. A
+    // blind in-memory write clobbered the modules key between two
+    // toggles (found in the verify lane: modules collapsed, provider
+    // toggled, "modules" gone from storage).
+    const stored =
+      typeof window === "undefined"
+        ? collapsed.value
+        : parseCollapsedKeys(localStorage.getItem(COLLAPSED_KEY));
+    const next = new Set([...stored, ...collapsed.value]);
     if (next.has(key)) next.delete(key);
     else next.add(key);
     collapsed.value = next;
