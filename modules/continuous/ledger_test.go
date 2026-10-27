@@ -109,6 +109,48 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 	}
 }
 
+func TestLedgerObserverRecordsURLLocator(t *testing.T) {
+	lg, err := OpenLedger(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	obs := lg.observer()
+
+	// web.fetch with a url argument: the verifier carries the url
+	// LOCATOR (no stat, no fetch - the ok flag is the HTTP outcome).
+	mk := func(id string, ok bool) {
+		obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
+			ID: id, Name: "web.fetch", Arguments: map[string]any{"url": "https://example.com/feed"},
+		}}})
+		obs(core.ToolResultEvent{Message: core.ToolResult{Content: "seen", ToolCallID: id, IsError: !ok}})
+	}
+	mk("f1", true)
+	mk("f2", false)
+	// a path-arg call wins the file stat; no url locator leaks in.
+	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
+		ID: "f3", Name: "web.fetch", Arguments: map[string]any{"url": "https://example.com/a", "file_path": "/tmp/a.bin"},
+	}}})
+	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "dl", ToolCallID: "f3"}})
+
+	rows, err := lg.All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(rows))
+	}
+	if rows[2].Verifier != "url:https://example.com/feed" || !rows[2].OK {
+		t.Errorf("ok fetch row = %+v", rows[2])
+	}
+	if rows[1].Verifier != "url:https://example.com/feed" || rows[1].OK {
+		t.Errorf("failed fetch row = %+v", rows[1])
+	}
+	if rows[0].Verifier != "file:missing:/tmp/a.bin" || !rows[0].OK {
+		t.Errorf("path+url row = %+v", rows[0])
+	}
+}
+
 func TestLedgerArgsHashStable(t *testing.T) {
 	a := map[string]any{"path": "x", "cmd": "y"}
 	b := map[string]any{"cmd": "y", "path": "x"}

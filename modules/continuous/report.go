@@ -14,9 +14,12 @@ package continuous
 //     report; a run that called no tools gets no tail (nothing to
 //     cite, never a fabricated verdict).
 //
-// The cheap verifier covers file paths only (ruling 11's file stat);
-// URL and free-text claims have no cheap evidence and fail closed -
-// they strip. Tuning that heuristics is a named follow-up, not here.
+// Verifier scope, kept honest (ruling 11): the cheap check is the file
+// stat ONLY. URL claims ride their own fetch: a claim over a URL is
+// backed when the run's ledger carries an ok row FOR that URL (the
+// fetch tool's own result, the HTTP outcome) and strips when the fetch
+// failed or the run never fetched it - fail closed either way. The
+// verifier string `url:...` is a locator, not a check.
 
 import (
 	"context"
@@ -96,14 +99,28 @@ var pathTokens = regexp.MustCompile(`https?://[\w.@%+=:/~#?&-]+|(?:\.{1,2}/|~/|/
 // maxTailRows caps the id list the evidence tail names.
 const maxTailRows = 12
 
+// evidence is the run's folded ledger tables. File tokens match the
+// file tables (the verifier's stat), URL tokens the url tables (the
+// fetch row's ok/fail). A claim is backed only when EVERY token it
+// names resolves seen and unfailed, and at least one token carries a
+// verifiable row.
+type evidence struct {
+	fileVerified map[string][]int64
+	fileFailed   map[string]bool
+	fileSeen     map[string]bool
+	urlVerified  map[string][]int64
+	urlFailed    map[string]bool
+	urlSeen      map[string]bool
+}
+
 // shapeReport is the pure shaping core: content + rows -> report. The
 // sink feeds it the run's ledger rows; tests feed it fixtures.
 func shapeReport(content string, rows []record) string {
-	verified, failed, seen := evidenceSets(rows)
+	ev := evidenceSets(rows)
 	paragraphs := strings.Split(content, "\n")
 	out := make([]string, 0, len(paragraphs))
 	for _, para := range paragraphs {
-		out = append(out, shapeParagraph(para, verified, failed, seen, rows)...)
+		out = append(out, shapeParagraph(para, ev, rows)...)
 	}
 	text := strings.Join(out, "\n")
 	if tail := evidenceTail(rows); tail != "" {
@@ -121,15 +138,15 @@ func shapeReport(content string, rows []record) string {
 
 // shapeParagraph shapes one line: sentence-split, claims judged,
 // stripped sentences dropped whole.
-func shapeParagraph(para string, verified map[string][]int64, failed, seen map[string]bool, rows []record) []string {
+func shapeParagraph(para string, ev evidence, rows []record) []string {
 	if strings.TrimSpace(para) == "" {
 		return []string{para}
 	}
 	kept := []string{}
 	for _, sent := range splitSentences(para) {
-		switch judgeSentence(sent, verified, failed, seen) {
+		switch judgeSentence(sent, ev) {
 		case "cite":
-			kept = append(kept, citeSentence(sent, verified, rows))
+			kept = append(kept, citeSentence(sent, ev, rows))
 		case "strip":
 			// a claim with no evidence does not land
 		default: // "keep"
@@ -161,21 +178,32 @@ func splitSentences(line string) []string {
 	return out
 }
 
-// judgeSentence answers keep / cite / strip for one sentence.
-func judgeSentence(sent string, verified map[string][]int64, failed, seen map[string]bool) string {
+// judgeSentence answers keep / cite / strip for one sentence. A
+// sentence's tokens split by kind: file-like tokens judge against the
+// file (stat) tables, URL tokens against the url (fetch row) tables.
+func judgeSentence(sent string, ev evidence) string {
 	if !claimVerbs.MatchString(sent) {
 		return "keep"
 	}
-	paths := matchPaths(sent, verified, failed)
-	if len(paths) == 0 {
+	paths := matchPaths(sent, ev)
+	urls := matchURLs(sent, ev)
+	if len(paths) == 0 && len(urls) == 0 {
 		return "keep" // a verb with no checkable object is not a claim
 	}
 	citable, backed := 0, true
 	for _, p := range paths {
-		if failed[p] || !seen[p] {
+		if ev.fileFailed[p] || !ev.fileSeen[p] {
 			backed = false
 		}
-		if len(verified[p]) > 0 {
+		if len(ev.fileVerified[p]) > 0 {
+			citable++
+		}
+	}
+	for _, u := range urls {
+		if ev.urlFailed[u] || !ev.urlSeen[u] {
+			backed = false
+		}
+		if len(ev.urlVerified[u]) > 0 {
 			citable++
 		}
 	}
@@ -187,22 +215,52 @@ func judgeSentence(sent string, verified map[string][]int64, failed, seen map[st
 
 // matchPaths extracts the sentence's file-like tokens and resolves
 // each onto the ledger's path key for the same file.
-func matchPaths(sent string, verified map[string][]int64, failed map[string]bool) []string {
-	raw := pathTokens.FindAllString(sent, -1)
-	seenAny := map[string]bool{}
+func matchPaths(sent string, ev evidence) []string {
 	var out []string
-	for _, tok := range raw {
+	seenAny := map[string]bool{}
+	for _, tok := range pathTokens.FindAllString(sent, -1) {
 		tok = strings.Trim(tok, "`\"'.,;:!?")
-		if tok == "" || isNumericToken(tok) {
-			continue // versions and dates are not claims
+		if tok == "" || isNumericToken(tok) || isURLToken(tok) {
+			continue // URLs judge in matchURLs; versions are prose
 		}
-		p := resolve(tok, verified, failed)
+		p := resolve(tok, ev)
 		if !seenAny[p] {
 			seenAny[p] = true
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// matchURLs extracts the sentence's http(s) tokens, normalized, and
+// resolves each onto the ledger's url key for the same fetch. Every
+// miss resolves to the token itself (unseen -> strips).
+func matchURLs(sent string, ev evidence) []string {
+	var out []string
+	seenAny := map[string]bool{}
+	for _, tok := range pathTokens.FindAllString(sent, -1) {
+		tok = strings.Trim(tok, "`\"'.,;:!?)(")
+		if !isURLToken(tok) {
+			continue
+		}
+		u := normURL(tok)
+		if !seenAny[u] {
+			seenAny[u] = true
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// isURLToken reports whether a raw token is an http(s) URL.
+func isURLToken(tok string) bool {
+	return strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://")
+}
+
+// normURL is the URL match key: trimmed, trailing slash folded away -
+// a fetched page and the claim over it agree modulo the slash.
+func normURL(u string) string {
+	return strings.TrimSuffix(strings.TrimSpace(u), "/")
 }
 
 // isNumericToken skips bare numbers, versions, and dotted dates: "1.5"
@@ -223,18 +281,18 @@ func isNumericToken(tok string) bool {
 // resolve maps a claim token onto the ledger's path key for the same
 // file: exact, or the row path's basename when the token is file-like.
 // Every miss resolves to the token itself (unseen -> strip).
-func resolve(tok string, verified map[string][]int64, failed map[string]bool) string {
+func resolve(tok string, ev evidence) string {
 	token := strings.TrimPrefix(strings.TrimPrefix(tok, "./"), "~/")
-	present := func(p string) bool { return verified[p] != nil || failed[p] }
+	present := func(p string) bool { return ev.fileVerified[p] != nil || ev.fileFailed[p] }
 	if present(token) {
 		return token
 	}
-	for p := range verified {
+	for p := range ev.fileVerified {
 		if strings.HasSuffix(p, "/"+token) {
 			return p
 		}
 	}
-	for p := range failed {
+	for p := range ev.fileFailed {
 		if strings.HasSuffix(p, "/"+token) {
 			return p
 		}
@@ -242,40 +300,68 @@ func resolve(tok string, verified map[string][]int64, failed map[string]bool) st
 	return token
 }
 
-// evidenceSets folds the run's rows into the claim tables.
-func evidenceSets(rows []record) (verified map[string][]int64, failed, seen map[string]bool) {
-	verified = map[string][]int64{}
-	failed = map[string]bool{}
-	seen = map[string]bool{}
+// evidenceSets folds the run's rows into the claim tables. Rows with a
+// file-stat verifier fold the file tables; rows with a url locator
+// fold the url tables (the row's ok flag is the fetch's verdict);
+// anything else carried nothing cheap to check.
+func evidenceSets(rows []record) evidence {
+	ev := evidence{
+		fileVerified: map[string][]int64{},
+		fileFailed:   map[string]bool{},
+		fileSeen:     map[string]bool{},
+		urlVerified:  map[string][]int64{},
+		urlFailed:    map[string]bool{},
+		urlSeen:      map[string]bool{},
+	}
 	for _, r := range rows {
-		i := strings.Index(r.Verifier, ":")
-		if !strings.HasPrefix(r.Verifier, "file:") || i < 0 {
-			continue // the call carried nothing cheap to check
-		}
-		rest := r.Verifier[i+1:]
-		exists := strings.HasPrefix(rest, "exists:")
-		path := strings.TrimPrefix(strings.TrimPrefix(rest, "exists:"), "missing:")
-		if path == "" {
-			continue
-		}
-		seen[path] = true
 		switch {
-		case r.OK && exists:
-			verified[path] = append(verified[path], r.ID)
-		case !r.OK || !exists:
-			failed[path] = true
+		case strings.HasPrefix(r.Verifier, "file:"):
+			i := strings.Index(r.Verifier, ":")
+			if i < 0 {
+				continue
+			}
+			rest := r.Verifier[i+1:]
+			exists := strings.HasPrefix(rest, "exists:")
+			path := strings.TrimPrefix(strings.TrimPrefix(rest, "exists:"), "missing:")
+			if path == "" {
+				continue
+			}
+			ev.fileSeen[path] = true
+			switch {
+			case r.OK && exists:
+				ev.fileVerified[path] = append(ev.fileVerified[path], r.ID)
+			case !r.OK || !exists:
+				ev.fileFailed[path] = true
+			}
+		case strings.HasPrefix(r.Verifier, "url:"):
+			u := normURL(strings.TrimPrefix(r.Verifier, "url:"))
+			if u == "" {
+				continue
+			}
+			ev.urlSeen[u] = true
+			switch {
+			case r.OK:
+				ev.urlVerified[u] = append(ev.urlVerified[u], r.ID)
+			default:
+				ev.urlFailed[u] = true
+			}
 		}
 	}
-	return verified, failed, seen
+	return ev
 }
 
-// citeSentence appends the sentence's backing row ids. Citations are
-// runtime text (the evidence ledger owns their truth); the ids come
-// straight from the rows.
-func citeSentence(sent string, verified map[string][]int64, rows []record) string {
+// citeSentence appends the sentence's backing row ids, file rows and
+// url rows alike. Citations are runtime text (the evidence ledger owns
+// their truth); the ids come straight from the rows.
+func citeSentence(sent string, ev evidence, rows []record) string {
 	ids := map[int64]bool{}
-	for _, p := range matchPaths(sent, verified, nil) {
-		for _, id := range verified[p] {
+	for _, p := range matchPaths(sent, ev) {
+		for _, id := range ev.fileVerified[p] {
+			ids[id] = true
+		}
+	}
+	for _, u := range matchURLs(sent, ev) {
+		for _, id := range ev.urlVerified[u] {
 			ids[id] = true
 		}
 	}
