@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // newTestMemory creates a FileMemory with temp files and small limits.
@@ -414,8 +414,8 @@ func TestMemoryToolRemove(t *testing.T) {
 	tp := &memoryToolProvider{mem: fm}
 
 	result, _ := tp.runMemory(context.Background(), map[string]any{
-		"action":  "remove",
-		"target":  "memory",
+		"action":   "remove",
+		"target":   "memory",
 		"old_text": "Remove",
 	})
 

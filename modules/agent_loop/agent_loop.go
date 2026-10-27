@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/ai"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.

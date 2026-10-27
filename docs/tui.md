@@ -3,7 +3,7 @@
 The shell owns slash commands for the input loop, layout and theme;
 feature slash commands are owned by their module (card t_88bb7dcf).
 Each module registers its commands during `Mount()` through the
-`agent.TUIProvider` seam (`agent/tui.go`) - the same law the webui
+`agent.TUIProvider` seam (`engine/agent/tui.go`) - the same law the webui
 enforces through directory registration (`modules/<name>/ui/`):
 
 - remove a module's `buildPlugins` registration (or build-tag a

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Dependency-law gate: ai/ and agent/ never import modules/, directly or
+# Dependency-law gate: engine/ai/ and engine/agent/ never import modules/, directly or
 # transitively. Modules may import agent and ai; the layers below never
 # reach back. Standalone or in the build.sh cascade (after vet).
 #
@@ -24,11 +24,11 @@ violation() {
 
 gen() {
 	# -test pulls in each layer package's test files; second call yields
-	# the flat transitive closure of ai/ and agent/.
+	# the flat transitive closure of engine/ai/ and engine/agent/.
 	go list -test -f \
 		'{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}' \
-		./ai/... ./agent/... &&
-	go list -deps -test ./ai/... ./agent/...
+		./engine/ai/... ./engine/agent/... &&
+	go list -deps -test ./engine/ai/... ./engine/agent/...
 }
 
 scan() {
@@ -49,7 +49,7 @@ scan() {
 					done
 				done ;;
 			"$MODROOT"/modules/*)
-				violation "ai/agent dep closure includes $line" ;;
+				violation "engine engine/ai/agent dep closure includes $line" ;;
 		esac
 	done
 }
@@ -62,6 +62,6 @@ else
 fi
 
 if [ "$violations" -gt 0 ]; then
-	echo "$violations dep-law violation(s): modules/ never appears in the ai/agent import graph"
+	echo "$violations dep-law violation(s): modules/ never appears in the engine/ai/agent import graph"
 	exit 1
 fi

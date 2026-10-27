@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // Compile-time interface checks.
 var (
 	_ core.PromptBuilder = (*PromptBuilder)(nil)
-	_ agent.Plugin        = (*Plugin)(nil)
+	_ agent.Plugin       = (*Plugin)(nil)
 )
 
 // stubSectioner contributes canned sections; used to pin the

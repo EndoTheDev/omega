@@ -61,7 +61,7 @@ and git history.
   contract, chat tabs with same-session multi-tab streaming
 - Session archive + delete, cancel/retry in the composer
 - Store-is-the-only-door: the tool layer refuses direct database
-  writes, enforcing the agent/store boundary
+  writes, enforcing the engine/agent/store boundary
 - Context compaction auto-window (provider-aware), trust + config
   layout migration, magnetic pane snapping, process-group kill fix
   for cancelled shell runs, status bar durability (uptime, version,

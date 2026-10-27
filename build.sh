@@ -10,14 +10,14 @@ mkdir -p bin
 
 echo "==> vet"
 go vet $(go list ./... | grep -v '/bin/')
-echo "==> dep law (ai/ and agent/ never import modules/)"
+echo "==> dep law (engine/ai/ and engine/agent/ never import modules/)"
 if OMEGA_GATE_FIXTURE=scripts/gate-deps_testdata/bad.txt ./scripts/gate-deps.sh; then
 	echo "self-test broken: fixture violation not detected"
 	exit 1
 fi
 ./scripts/gate-deps.sh
 echo "==> webui bundle gate (no conflict markers in the embedded SPA)"
-if grep -rqE '<<<<<<<|Stashed changes' http_channel/static/; then
+if grep -rqE '<<<<<<<|Stashed changes' engine/http_channel/static/; then
 	echo "conflict markers in the embedded SPA - regenerate via modules/ui/scripts/build.sh"
 	exit 1
 fi

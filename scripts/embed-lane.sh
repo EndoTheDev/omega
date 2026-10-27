@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# embed-lane.sh - the ONE lane that owns http_channel/static/.
+# embed-lane.sh - the ONE lane that owns engine/http_channel/static/.
 #
-# Webui cards commit SOURCE ONLY (webui/ and modules/<name>/ui/).
+# Webui cards commit SOURCE ONLY (engine/webui/ and modules/<name>/ui/).
 # The committed SPA bundle is regenerated and committed here, right
 # after a source merge lands, so no branch ever diverges static/ and
 # parallel webui cards can never collide on it. go build = complete
@@ -20,7 +20,7 @@ set -euo pipefail
 #                 gate rather than risk skipping a needed regen.
 #
 # Guards:
-#   - change gate: if <base>..HEAD touches no webui source (webui/
+#   - change gate: if <base>..HEAD touches no webui source (engine/webui/
 #     or modules/*/ui/), skip regeneration entirely - Go-only merges
 #     pay nothing.
 #   - hash gate: after the build, a bundle that is CONTENT-identical to
@@ -30,22 +30,22 @@ set -euo pipefail
 #     comparing, so regenerating unchanged source skips instead of
 #     churning build ids into history.
 #   - fail-loud: any build failure aborts the merge pass loudly.
-#     static/ is NEVER hand-resolved; it is regenerated, or the merge
+#     engine/http_channel/static/ is NEVER hand-resolved; it is regenerated, or the merge
 #     fails. (The root build.sh conflict-marker gate stays as belt
 #     and suspenders; this script re-checks before committing.)
 #
 # Test/offline override:
 #   EMBED_LANE_BUILD_CMD - the command that regenerates the bundle.
-#   The real pass uses webui/scripts/build.sh.
+#   The real pass uses engine/webui/scripts/build.sh.
 
-STATIC="http_channel/static"
+STATIC="engine/http_channel/static"
 LANE_PREFIX="embed-lane: rebuild webui bundle for"
 
 # ui_changed <base> <head>: non-empty output when the diff touches
 # webui source (additions, edits, renames AND deletions - removing a
 # component changes the bundle too).
 ui_changed() {
-	git diff --name-only "$1" "$2" -- "webui" ":(glob)modules/*/ui/**"
+	git diff --name-only "$1" "$2" -- "engine/webui" ":(glob)modules/*/ui/**"
 }
 
 # strip_volatile: nuxt build ids (uuids) and epoch-millisecond build
@@ -155,9 +155,9 @@ usage() {
 
 regen_bundle() {
 	echo "==> embed-lane: regenerating the webui bundle (source changed)"
-	if ! "${EMBED_LANE_BUILD_CMD:-webui/scripts/build.sh}"; then
+	if ! "${EMBED_LANE_BUILD_CMD:-engine/webui/scripts/build.sh}"; then
 		echo "FATAL: embed-lane: webui build FAILED - the merge pass aborts here." >&2
-		echo "       static/ is NEVER hand-resolved: fix the ui source or the" >&2
+		echo "       engine/http_channel/static/ is NEVER hand-resolved: fix the ui source or the" >&2
 		echo "       build, then rerun embed-lane (regeneration is the only path)." >&2
 		exit 1
 	fi

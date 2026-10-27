@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // captureSink is a RefusalSink that records every ledger entry - the

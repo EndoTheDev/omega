@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/agent"
-	httpchannel "github.com/EndoTheDev/omega/http_channel"
+	"github.com/EndoTheDev/omega/engine/agent"
+	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/modules/continuous"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"

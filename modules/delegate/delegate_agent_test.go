@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // writeAgentStub is the writeStub pattern plus an OMEGA_AGENT line.

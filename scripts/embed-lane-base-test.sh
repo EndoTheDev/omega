@@ -72,8 +72,8 @@ assert_base() {
 d="$tmp/s1-multiff"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
-card_commit "$d/dev" "webui/chat.ts" "v1" "card: ui two"
+card_commit "$d/dev" "engine/webui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "engine/webui/chat.ts" "v1" "card: ui two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 assert_base "multi-commit ff -> pre-merge tip" "$d/dev" \
@@ -86,8 +86,8 @@ assert_base "multi-commit ff -> pre-merge tip" "$d/dev" \
 d="$tmp/s2-multiff-push"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
-card_commit "$d/dev" "webui/chat.ts" "v1" "card: ui two"
+card_commit "$d/dev" "engine/webui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "engine/webui/chat.ts" "v1" "card: ui two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 git -C "$d/dev" push -q origin dev
@@ -101,7 +101,7 @@ pass "pushed multi-commit ff -> gate untrusted (bypass, no silent skip)"
 d="$tmp/s3-merge-commit"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "engine/webui/App.vue" "v1" "card: ui one"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --no-ff -m merge card
 assert_base "real merge commit -> HEAD^1" "$d/dev" \
@@ -136,7 +136,7 @@ pass "root commit -> loud stop (no silent skip)"
 d="$tmp/s6-override"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "webui/App.vue" "v1" "card: ui one"
+card_commit "$d/dev" "engine/webui/App.vue" "v1" "card: ui one"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 assert_base "--base override -> explicit, trusted" "$d/dev" \
@@ -149,13 +149,13 @@ assert_base "--base override -> explicit, trusted" "$d/dev" \
 d="$tmp/s7-e2e-webui"
 make_repo "$d"
 cat >"$d/fake-build.sh" <<'EOF'
-mkdir -p http_channel/static
-printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > http_channel/static/bundle.txt
+mkdir -p engine/http_channel/static
+printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > engine/http_channel/static/bundle.txt
 EOF
 chmod +x "$d/fake-build.sh"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "webui/VerdictCard.vue" "v1.1" "card: verdict v1.1"
-card_commit "$d/dev" "webui/chat.ts" "v1.1" "card: chat v1.1"
+card_commit "$d/dev" "engine/webui/VerdictCard.vue" "v1.1" "card: verdict v1.1"
+card_commit "$d/dev" "engine/webui/chat.ts" "v1.1" "card: chat v1.1"
 card_commit "$d/dev" "main.go" "package main // v1.1" "card: go v1.1"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
@@ -170,7 +170,7 @@ case "$out" in
 *"lane commit "*) : ;;
 *) fail "e2e: expected a lane commit after regen" ;;
 esac
-grep -q "bundle v0" "$d/dev/http_channel/static/bundle.txt" ||
+grep -q "bundle v0" "$d/dev/engine/http_channel/static/bundle.txt" ||
 	fail "e2e: static bundle not regenerated"
 pass "e2e: bundle regenerated and lane-committed"
 
@@ -186,8 +186,8 @@ esac
 d="$tmp/s8-e2e-goonly"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "agent/x.go" "package agent" "card: go one"
-card_commit "$d/dev" "agent/y.go" "package agent" "card: go two"
+card_commit "$d/dev" "engine/agent/x.go" "package agent" "card: go one"
+card_commit "$d/dev" "engine/agent/y.go" "package agent" "card: go two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 premerge="$(git -C "$d/dev" rev-parse --short origin/dev)"
@@ -203,13 +203,13 @@ esac
 d="$tmp/s9-e2e-unproven"
 make_repo "$d"
 cat >"$d/fake-build.sh" <<'EOF'
-mkdir -p http_channel/static
-printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > http_channel/static/bundle.txt
+mkdir -p engine/http_channel/static
+printf 'bundle %s\n' "${FAKE_BUNDLE_VERSION:-v0}" > engine/http_channel/static/bundle.txt
 EOF
 chmod +x "$d/fake-build.sh"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "webui/App.vue" "v2" "card: ui one"
-card_commit "$d/dev" "webui/chat.ts" "v2" "card: chat two"
+card_commit "$d/dev" "engine/webui/App.vue" "v2" "card: ui one"
+card_commit "$d/dev" "engine/webui/chat.ts" "v2" "card: chat two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 git -C "$d/dev" push -q origin dev

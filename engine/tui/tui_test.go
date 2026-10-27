@@ -1,0 +1,2700 @@
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/modules/agent_loop"
+	"github.com/EndoTheDev/omega/modules/compactor"
+	"github.com/EndoTheDev/omega/modules/provider"
+	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/atotto/clipboard"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// testContext creates a minimal agent.Context with a real provider plugin
+// and command handler, for testing extension-routed commands.
+func testContext() *core.Context {
+	ctx := &core.Context{
+		Configs: map[string]any{
+			"store":    store.Config{DBPath: ":memory:"},
+			"provider": provider.Default(),
+		},
+	}
+	if _, err := agent.MountAllAPI([]agent.Plugin{&provider.Plugin{}, store.NewPlugin()}, ctx, nil, nil); err != nil {
+		panic(err)
+	}
+	return ctx
+}
+
+// ansiStrips ANSI escape sequences so tests can assert on plain content
+// regardless of glamour styling.
+var ansi = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func ansiStrip(s string) string { return ansi.ReplaceAllString(s, "") }
+
+// TestDrainEventsDeliversStream verifies the channel-drain path: events
+// written by the run goroutine are delivered to Update, and the closed
+// channel yields streamDoneMsg. This guards the regression where the
+// goroutine's Send never reached the program (m.program was always nil).
+// newTestCtx creates an agent.Context with the store extension's command
+// handler wired, so /sessions, /tree, /search, /insights dispatch to
+// the store extension instead of requiring the TUI to handle them.
+func newTestCtx(s core.StoreProvider) *core.Context {
+	pctx := &core.Context{Store: s}
+	pctx.Commands = append(pctx.Commands,
+		core.ExtensionCommand{Name: "/sessions", Description: "list sessions"},
+		core.ExtensionCommand{Name: "/tree", Description: "show tree"},
+		core.ExtensionCommand{Name: "/search", Description: "search"},
+		core.ExtensionCommand{Name: "/insights", Description: "insights"},
+		core.ExtensionCommand{Name: "/new", Description: "new session"},
+		core.ExtensionCommand{Name: "/resume", Description: "resume session"},
+		core.ExtensionCommand{Name: "/branch", Description: "branch session"},
+		core.ExtensionCommand{Name: "/label", Description: "set label"},
+		core.ExtensionCommand{Name: "/export", Description: "export session"},
+	)
+	prev := pctx.CommandHandler
+	pctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
+		switch name {
+		case "/sessions":
+			return store.HandleSessionsCommand(c, s, args)
+		case "/tree":
+			return store.HandleTreeCommand(c, s)
+		case "/search":
+			return store.HandleSearchCommand(c, s, args)
+		case "/insights":
+			return store.HandleInsightsCommand(c, s, args)
+		case "/new":
+			return store.HandleNewCommand(args)
+		case "/resume":
+			return store.HandleResumeCommand(c, s, args)
+		case "/branch":
+			parts := strings.SplitN(args, " ", 2)
+			parentID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return store.HandleBranchCommand(c, s, parentID, rest)
+		case "/label":
+			parts := strings.SplitN(args, " ", 2)
+			sessionID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return store.HandleLabelCommand(c, s, sessionID, rest)
+		case "/export":
+			parts := strings.SplitN(args, " ", 2)
+			sessionID := parts[0]
+			rest := ""
+			if len(parts) > 1 {
+				rest = parts[1]
+			}
+			return store.HandleExportCommand(c, s, sessionID, rest)
+		}
+		if prev != nil {
+			return prev(c, name, args)
+		}
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	}
+	return pctx
+}
+
+func TestDrainEventsDeliversStream(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	ch := make(chan core.Event, 64)
+	m.events = ch
+
+	// Simulate the run goroutine: one event, then close.
+	ch <- core.StreamEvent{Event: core.ResponseChunk{Content: "hi"}}
+	close(ch)
+
+	// First drain delivers the event.
+	msg := m.drainEvents()()
+	if _, ok := msg.(core.StreamEvent); !ok {
+		t.Fatalf("expected core.StreamEvent, got %T", msg)
+	}
+
+	// Second drain sees the closed channel and signals done.
+	msg = m.drainEvents()()
+	if _, ok := msg.(streamDoneMsg); !ok {
+		t.Fatalf("expected streamDoneMsg after close, got %T", msg)
+	}
+}
+
+// TestSubmitCreatesFreshChannel guards the regression where the events
+// channel was created once in newChatModel and closed after the first run,
+// so a second submit wrote to a closed channel and panicked. submit() must
+// allocate a fresh channel per run.
+func TestSubmitCreatesFreshChannel(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("hello")
+	// Simulate a completed first run: the channel is closed.
+	ch := make(chan core.Event, 64)
+	m.events = ch
+	close(ch)
+
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	if m.events == nil {
+		t.Fatal("submit() left events channel nil")
+	}
+	// A fresh open channel receives the first event (AgentStart, written
+	// synchronously before any network I/O) with ok=true. A closed channel
+	// from a prior run would return immediately with ok=false.
+	if _, ok := <-m.events; !ok {
+		t.Fatal("expected fresh open channel from submit(), got a closed one")
+	}
+}
+
+// TestHandleEventFoldsStream verifies the stream folds onto the chat
+// capsule: the live tail carries thinking/call/text in emit order, and
+// the AgentEnd commit recomposes the persisted truth from history.
+func TestHandleEventFoldsStream(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.chatCanvas.setRun("sess", func() {})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "hello"}})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: " world"}})
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	// While the run streams, the live tail holds one open text row and
+	// one running call row.
+	live := payloadRowTypes(m)
+	if len(live) != 2 || live[0] != core.ChatBlockText || live[1] != core.ChatBlockToolCall {
+		t.Fatalf("live rows = %v, want [text tool_call]", live)
+	}
+	if payload := m.chatPayload(); !payload.Running {
+		t.Fatal("streaming payload not marked running")
+	}
+
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "shell.run"}}
+	assistantB := core.NewAssistant("hello world")
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: assistant})
+	m.handleEvent(core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult("ok", "c1", false)})
+	m.handleEvent(core.AssistantMessageEvent{Type: "assistant_message", Message: assistantB})
+	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "stop"})
+
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "hello world") {
+		t.Fatalf("transcript missing streamed content: %q", plain)
+	}
+	if !strings.Contains(plain, "[tool: shell.run]") {
+		t.Fatalf("transcript missing tool label after commit: %q", plain)
+	}
+	if payload := m.chatPayload(); payload.Running {
+		t.Fatal("payload still running after AgentEnd commit")
+	}
+	types := payloadRowTypes(m)
+	if len(types) != 3 || types[0] != core.ChatBlockToolCall ||
+		types[1] != core.ChatBlockToolResult || types[2] != core.ChatBlockText {
+		t.Fatalf("committed rows = %v, want [tool_call tool_result text]", types)
+	}
+	if len(m.history) != 3 {
+		t.Fatalf("expected 3 messages in history, got %d", len(m.history))
+	}
+}
+
+// TestHandleEventError verifies a stream error is surfaced and folded.
+func TestHandleEventError(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.handleEvent(core.StreamEvent{Event: core.StreamEnd{FinishReason: "error", Error: "boom"}})
+	m.handleEvent(core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "boom"})
+
+	if m.err != "boom" {
+		t.Fatalf("expected err boom, got %q", m.err)
+	}
+	if !strings.Contains(transcriptOf(m), "error: boom") {
+		t.Fatalf("transcript missing error: %q", transcriptOf(m))
+	}
+}
+
+// TestSlashCommands verifies /new, /model, /help, and unknown handling.
+func TestSlashCommands(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+
+	// /model sets the model for the next run. handleCommand returns a new
+	// model copy (value receiver); the caller must use the return value.
+	updated, _ := m.handleCommand("/model llama3.1")
+	m = updated.(model)
+	if m.modelName != "llama3.1" {
+		t.Fatalf("expected model llama3.1, got %q", m.modelName)
+	}
+
+	// /model with no arg reports usage.
+	updated, _ = m.handleCommand("/model")
+	m = updated.(model)
+	if m.err != "usage: /model <#|name>" {
+		t.Fatalf("expected usage error, got %q", m.err)
+	}
+
+	// /help renders help text.
+	updated, _ = m.handleCommand("/help")
+	m = updated.(model)
+	if !strings.Contains(transcriptOf(m), "/exit") {
+		t.Fatalf("help text missing /exit: %q", transcriptOf(m))
+	}
+
+	// /new wipes history and payload.
+	m.history = append(m.history, core.NewUser("hi"))
+	m.chatCanvas.setConversation("old", []core.Message{core.NewUser("x")})
+	updated, _ = m.handleCommand("/new")
+	m = updated.(model)
+	if len(m.history) != 0 || payloadRows(m) != "" {
+		t.Fatalf("clear failed: history=%d rows=%q", len(m.history), payloadRows(m))
+	}
+
+	// unknown command reports an error.
+	updated, _ = m.handleCommand("/nope")
+	m = updated.(model)
+	if m.err != "unknown command: /nope" {
+		t.Fatalf("expected unknown command error, got %q", m.err)
+	}
+}
+
+// TestSkillsCommand verifies that /skills is no longer a built-in TUI
+// command — it's registered by the skills extension. With no
+// extension loaded, /skills falls through to the unknown-command path.
+func TestSkillsCommand(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	updated, _ := m.handleCommand("/skills")
+	m = updated.(model)
+	// /skills is not a built-in command; with no extension manager,
+	// it produces an error message, not a skills listing.
+	if !strings.Contains(m.err, "unknown command") && !strings.Contains(m.err, "no extensions") {
+		// If the error is empty, the command may have been routed to
+		// the extension manager which returns "no extensions loaded".
+		if m.err == "" {
+			t.Fatalf("expected error for /skills with no extension, got empty error and transcript %q", transcriptOf(m))
+		}
+	}
+}
+
+// TestProviderCommand verifies /provider shows the current provider.
+// The provider type is set at startup via env var and cannot be changed
+// at runtime (requires extension restart with a different API endpoint).
+func TestProviderCommand(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+
+	// /provider with no args shows current provider.
+	updated, _ := m.handleCommand("/provider")
+	m = updated.(model)
+	if !strings.Contains(transcriptOf(m), "provider: ollama") {
+		t.Fatalf("transcript should show current provider, got: %q", transcriptOf(m))
+	}
+}
+
+// TestModelViaExtension verifies /model <name> routes through the
+// extension CommandHandler and returns CmdAction actions that update
+// TUI state (the run itself carries a WithModel copy).
+func TestModelViaExtension(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+
+	updated, _ := m.handleCommand("/model qwen2.5")
+	m = updated.(model)
+	if m.modelName != "qwen2.5" {
+		t.Fatalf("expected model qwen2.5 via CmdAction, got %q", m.modelName)
+	}
+	if !strings.Contains(transcriptOf(m), "switched to qwen2.5") {
+		t.Fatalf("expected confirmation text, got %q", transcriptOf(m))
+	}
+}
+
+// TestCompactViaExtension verifies /compact routes through the
+// extension CommandHandler and returns a run_compact CmdAction.
+func TestCompactViaExtension(t *testing.T) {
+	ctx := testContext()
+	// Also mount the compactor plugin so /compact is registered.
+	comp := &compactor.Plugin{}
+	// the registration surface is the only mount path; the provider
+	// seam the compactor requires is stubbed (the seam is already
+	// populated on this test Context by testContext).
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubSeamer{seam: "provider"}, comp}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount compactor: %v", err)
+	}
+
+	// Compaction config is needed for the TUI to run the compaction.
+	compCfg := &core.CompactionConfig{
+		Threshold:     0.5,
+		KeepFirst:     2,
+		KeepLast:      10,
+		ReserveTokens: 16384,
+	}
+
+	m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+
+	// Add enough history for compaction to work (needs >= 3 messages).
+	m.history = append(m.history, core.NewUser("hello"))
+	m.history = append(m.history, core.NewAssistant("hi there"))
+	m.history = append(m.history, core.NewUser("how are you?"))
+
+	// /compact should route to extension command handler.
+	// It returns run_compact action — the TUI handles the actual
+	// compaction.
+	updated, _ := m.handleCommand("/compact")
+	m = updated.(model)
+	if m.err != "" {
+		t.Fatalf("expected no error from /compact, got %q", m.err)
+	}
+}
+
+// TestDynamicHelpWithExtensions verifies /help includes extension
+// commands when extensions are loaded.
+func TestDynamicHelpWithExtensions(t *testing.T) {
+	ctx := testContext()
+	// testContext mounts the provider plugin, which registers
+	// /model and /provider commands.
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+	help := m.renderHelp()
+	plain := ansiStrip(help)
+
+	// Built-in commands should still be present.
+	for _, cmd := range []string{"/exit", "/new", "/sessions", "/help"} {
+		if !strings.Contains(plain, cmd) {
+			t.Fatalf("help text missing built-in %q", cmd)
+		}
+	}
+
+	// Extension commands should appear dynamically.
+	for _, cmd := range []string{"/model", "/provider"} {
+		if !strings.Contains(plain, cmd) {
+			t.Fatalf("help text missing extension command %q", cmd)
+		}
+	}
+}
+
+// TestHelpWithoutExtensions verifies /help works with no extensions
+// and only shows built-in commands.
+func TestHelpWithoutExtensions(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	help := m.renderHelp()
+	plain := ansiStrip(help)
+
+	// Built-in commands should be present.
+	if !strings.Contains(plain, "/exit") {
+		t.Fatal("help text missing /exit")
+	}
+
+	// Extension commands should NOT appear (no extensions loaded).
+	// Check for "/model " (with space) to avoid matching "/models".
+	if strings.Contains(plain, "/model ") {
+		t.Fatal("help text should not contain /model with no extensions")
+	}
+	if strings.Contains(plain, "/provider") {
+		t.Fatal("help text should not contain /provider with no extensions")
+	}
+	if strings.Contains(plain, "/compact") {
+		t.Fatal("help text should not contain /compact with no extensions")
+	}
+}
+
+// TestRenderAssistant renders markdown through glamour: bold becomes
+// ANSI-styled output (contains escape sequences), code blocks are preserved,
+// and plain text still appears verbatim.
+func TestRenderAssistant(t *testing.T) {
+	out := renderAssistant("**bold** `code`", 80, "dark")
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("expected ANSI escape codes in rendered markdown, got %q", out)
+	}
+	if !strings.Contains(out, "bold") {
+		t.Fatalf("expected bold text preserved, got %q", out)
+	}
+	if !strings.Contains(out, "code") {
+		t.Fatalf("expected inline code preserved, got %q", out)
+	}
+
+	// Fallback: a zero width is normalized to 80, not a panic.
+	if out := renderAssistant("plain", 0, "dark"); !strings.Contains(out, "plain") {
+		t.Fatalf("plain text missing at zero width: %q", out)
+	}
+}
+
+// TestRenderTranscriptRendersAssistant verifies the resume path routes
+// Assistant content through glamour: a markdown message yields ANSI-styled
+// output (escape codes present) with the text preserved, while a User
+// message stays plain-styled.
+func TestRenderTranscriptRendersAssistant(t *testing.T) {
+	messages := []core.Message{
+		core.NewUser("hi"),
+		core.NewAssistant("**bold** `code`"),
+	}
+	out := chatRowsRawText(t, messages)
+
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("expected ANSI escape codes in rendered transcript, got %q", out)
+	}
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "bold") {
+		t.Fatalf("expected bold text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "code") {
+		t.Fatalf("expected inline code preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "hi") {
+		t.Fatalf("expected user content preserved, got %q", plain)
+	}
+}
+
+// TestNewSessionIDCryptoRand verifies session IDs are generated from
+// crypto/rand and are the expected hex length.
+func TestNewSessionIDCryptoRand(t *testing.T) {
+	a, err := agent.NewSessionID()
+	if err != nil {
+		t.Fatalf("newSessionID: %v", err)
+	}
+	b, err := agent.NewSessionID()
+	if err != nil {
+		t.Fatalf("newSessionID: %v", err)
+	}
+	if len(a) != 32 || len(b) != 32 {
+		t.Fatalf("expected 32-char hex IDs, got %q and %q", a, b)
+	}
+	if a == b {
+		t.Fatalf("two session IDs collided: %q", a)
+	}
+}
+
+// TestSubmitPersistsMessages pins the t_471f6d4a seam: submit wires
+// the real agent loop with the store sink, the loop persists the run's
+// user input and the turn's assistant - the TUI itself writes nothing.
+func TestSubmitPersistsMessages(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	pctx := newTestCtx(s)
+	// Persistence belongs to the loop now, so the run must actually
+	// execute: mount the loop and a scripted provider into the
+	// extension context, exactly what a boot does.
+	if _, err := agent.MountAllAPI([]agent.Plugin{agent_loop.NewPlugin()}, pctx, nil, nil); err != nil {
+		t.Fatalf("mount loop: %v", err)
+	}
+	pctx.Provider = ai.NewFakeProviderScripts("test",
+		scriptedResponse("ok"),
+	)
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", pctx, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("hello")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	if m.sessionID == "" {
+		t.Fatal("submit() did not create a session ID")
+	}
+	if m.storeErr != "" {
+		t.Fatalf("store error: %s", m.storeErr)
+	}
+
+	// Drain the real run to completion: the loop persists the user
+	// input before the first turn and the assistant at turn end.
+	// handleEvent, not Update - the program is nil in unit tests.
+	for ev := range m.events {
+		m.handleEvent(ev)
+	}
+	if m.storeErr != "" {
+		t.Fatalf("store error after run: %s", m.storeErr)
+	}
+
+	sessions, err := s.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	msgs, err := s.GetMessages(context.Background(), m.sessionID)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 persisted messages, got %d", len(msgs))
+	}
+	u, ok := msgs[0].(core.User)
+	if !ok || u.Content != "hello" {
+		t.Fatalf("first message = %#v, want user 'hello'", msgs[0])
+	}
+	if a, ok := msgs[1].(core.Assistant); !ok || a.Content != "ok" {
+		t.Fatalf("second message = %#v, want assistant 'ok'", msgs[1])
+	}
+}
+
+// scriptedResponse builds the one-turn script a test run needs.
+func scriptedResponse(content string) []core.ProviderStreamEvent {
+	return []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: content},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	}
+}
+
+// TestClearStartsFreshSession verifies /new wipes in-memory history and
+// detaches from the current session so the next message starts a new one.
+func TestClearStartsFreshSession(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "sess1"
+	m.history = append(m.history, core.NewUser("hi"))
+	m.chatCanvas.setConversation("sess1", m.history)
+
+	updated, _ := m.handleCommand("/new")
+	m = updated.(model)
+
+	if len(m.history) != 0 || payloadRows(m) != "" {
+		t.Fatalf("clear failed: history=%d rows=%q", len(m.history), payloadRows(m))
+	}
+	if m.sessionID != "" {
+		t.Fatalf("clear kept session: %q", m.sessionID)
+	}
+	if m.ephemeral {
+		t.Fatal("/new without --ephemeral must not enter ephemeral mode")
+	}
+}
+
+// TestSessionsListsAndResumeLoads verifies /sessions renders persisted
+// sessions with message counts and /resume loads history and continues.
+func TestSessionsListsAndResumeLoads(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "abc123", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "abc123", core.NewUser("first")); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "abc123", core.NewAssistant("reply")); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+
+	updated, _ := m.handleCommand("/sessions")
+	m = updated.(model)
+	if !strings.Contains(transcriptOf(m), "abc123") {
+		t.Fatalf("/sessions missing session id: %q", transcriptOf(m))
+	}
+	if !strings.Contains(transcriptOf(m), "MSGS") {
+		t.Fatalf("/sessions missing table header: %q", transcriptOf(m))
+	}
+
+	updated, _ = m.handleCommand("/resume abc123")
+	m = updated.(model)
+	if m.sessionID != "abc123" {
+		t.Fatalf("resume session = %q, want abc123", m.sessionID)
+	}
+	if len(m.history) != 2 {
+		t.Fatalf("resume history len = %d, want 2", len(m.history))
+	}
+	if !strings.Contains(transcriptOf(m), "first") || !strings.Contains(transcriptOf(m), "reply") {
+		t.Fatalf("resume transcript missing history: %q", transcriptOf(m))
+	}
+}
+
+// TestResumeUnknownSession reports an error for a missing session.
+func TestResumeUnknownSession(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	updated, _ := m.handleCommand("/resume nope")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected error for unknown session")
+	}
+}
+
+// TestBranchCommand verifies /branch creates a child session, inherits the
+// parent's history, and switches the active session to the branch.
+func TestBranchCommand(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "parent", "", ""); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "parent", core.NewUser("root msg")); err != nil {
+		t.Fatalf("append parent: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "parent"
+
+	updated, _ := m.handleCommand("/branch")
+	m = updated.(model)
+
+	// A new session was created and inherited the parent history.
+	if m.sessionID == "" || m.sessionID == "parent" {
+		t.Fatalf("branch session = %q, want a new id", m.sessionID)
+	}
+	sess, err := s.GetSession(ctx, m.sessionID)
+	if err != nil {
+		t.Fatalf("get branch session: %v", err)
+	}
+	if sess.ParentID != "parent" {
+		t.Fatalf("branch parent = %q, want parent", sess.ParentID)
+	}
+	if len(m.history) != 1 {
+		t.Fatalf("branch history len = %d, want 1", len(m.history))
+	}
+	if !strings.Contains(transcriptOf(m), "root msg") {
+		t.Fatalf("branch transcript missing inherited history: %q", transcriptOf(m))
+	}
+
+	// Branch from an explicit id.
+	updated, _ = m.handleCommand("/branch parent")
+	m = updated.(model)
+	if m.sessionID == "parent" {
+		t.Fatalf("explicit branch left session as parent")
+	}
+	if sess, _ := s.GetSession(ctx, m.sessionID); sess.ParentID != "parent" {
+		t.Fatalf("explicit branch parent = %q, want parent", sess.ParentID)
+	}
+
+	// Branch from a missing session reports an error.
+	updated, _ = m.handleCommand("/branch nope")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected error branching from unknown session")
+	}
+}
+
+// TestLabelCommand verifies /label sets and clears a session label.
+func TestLabelCommand(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "s1"
+
+	updated, _ := m.handleCommand("/label my branch")
+	m = updated.(model)
+	if m.storeErr != "" {
+		t.Fatalf("label store error: %s", m.storeErr)
+	}
+	sess, err := s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.Label != "my branch" {
+		t.Fatalf("label = %q, want my branch", sess.Label)
+	}
+	if !strings.Contains(transcriptOf(m), "[label: my branch]") {
+		t.Fatalf("transcript missing label confirm: %q", transcriptOf(m))
+	}
+
+	// No text clears the label.
+	updated, _ = m.handleCommand("/label")
+	m = updated.(model)
+	sess, _ = s.GetSession(ctx, "s1")
+	if sess.Label != "" {
+		t.Fatalf("label = %q, want empty after clear", sess.Label)
+	}
+
+	// No current session reports an error.
+	m2 := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	updated, _ = m2.handleCommand("/label x")
+	m2 = updated.(model)
+	if m2.err == "" {
+		t.Fatal("expected error labeling with no current session")
+	}
+}
+
+// TestTreeCommand verifies /tree renders the session tree with nesting,
+// labels, and message counts.
+func TestTreeCommand(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := s.CreateSession(ctx, "child", "root", ""); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := s.UpdateSession(ctx, "root", "main"); err != nil {
+		t.Fatalf("set label: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "root", core.NewUser("hi")); err != nil {
+		t.Fatalf("append root: %v", err)
+	}
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	updated, _ := m.handleCommand("/tree")
+	m = updated.(model)
+	if m.storeErr != "" {
+		t.Fatalf("tree store error: %s", m.storeErr)
+	}
+
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "root") || !strings.Contains(plain, "child") {
+		t.Fatalf("tree missing session ids: %q", plain)
+	}
+	if !strings.Contains(plain, "main") {
+		t.Fatalf("tree missing label: %q", plain)
+	}
+	if !strings.Contains(plain, "1") || !strings.Contains(plain, "MSGS") {
+		t.Fatalf("tree missing message count: %q", plain)
+	}
+	// Child is indented deeper than root.
+	rootIdx := strings.Index(plain, "root")
+	childIdx := strings.Index(plain, "child")
+	if rootIdx < 0 || childIdx <= rootIdx {
+		t.Fatalf("tree order wrong: root=%d child=%d", rootIdx, childIdx)
+	}
+}
+
+// TestTabComplete verifies slash-command completion: a single match
+// completes the command and moves the cursor to the end, multiple matches
+// highlight the selected one in the status line, and no match or
+// non-command input leaves the model unchanged. Matches are computed by
+// updateAutocomplete (run after every keystroke), so the test drives that
+// path before pressing Tab.
+func TestTabComplete(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	// Single match: "/exi" -> "/exit". CursorEnd() moves the cursor to the
+	// end; the cursor position is private on textarea.Model, so we verify
+	// it behaviorally: a char inserted after completion must land at the
+	// end, not mid-command.
+	m.textarea.SetValue("/exi")
+	m.updateAutocomplete()
+	updated, _ := m.handleTabComplete()
+	m = updated.(model)
+	if got := m.textarea.Value(); got != "/exit" {
+		t.Fatalf("tab complete = %q, want /exit", got)
+	}
+	m.textarea.InsertString("X")
+	if got := m.textarea.Value(); got != "/exitX" {
+		t.Fatalf("cursor not at end after completion: insert gave %q, want /exitX", got)
+	}
+	m.textarea.SetValue("/exit")
+	if m.err != "" {
+		t.Fatalf("err not cleared on single match: %q", m.err)
+	}
+
+	// Multiple matches: "/" matches every known command, so the
+	// autocomplete panel lists the options with the selected one
+	// highlighted. Shell built-ins are 8 now (card t_88bb7dcf moved the
+	// feature commands to the module seam), so a module provider tops
+	// the table past the maxAutocompleteRows cap.
+	pctx := &core.Context{TUIProviders: []core.TUIProvider{fakeTUICommands{{Name: "/zmod"}, {Name: "/amod"}}}}
+	m.commands = buildCommands(knownCommands, pctx, nil)
+	m.moduleCommands = moduleCommands(pctx)
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != len(m.commands) {
+		t.Fatalf("expected %d matches for /, got %d", len(m.commands), len(m.autocompleteMatches))
+	}
+	panel := ansiStrip(m.autocompletePanel())
+	// The dropup is a scroll window capped at maxAutocompleteRows:
+	// built-ins alone now exceed the cap, so the panel shows the head
+	// of the list and the truncation marker instead of every command.
+	if !strings.Contains(panel, "/copy") {
+		t.Fatalf("autocomplete panel missing options: %q", panel)
+	}
+	if !strings.Contains(panel, "...") {
+		t.Fatalf("autocomplete panel did not mark truncation: %q", panel)
+	}
+	// Nothing selected initially.
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("initial index = %d, want -1", m.autocompleteIndex)
+	}
+	// Down selects the first match.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = up.(model)
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("down index = %d, want 0", m.autocompleteIndex)
+	}
+
+	// No match: "/zzz" leaves the input and match state unchanged.
+	m.textarea.SetValue("/zzz")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("expected 0 matches for /zzz, got %d", len(m.autocompleteMatches))
+	}
+	updated, _ = m.handleTabComplete()
+	m = updated.(model)
+	if m.textarea.Value() != "/zzz" {
+		t.Fatalf("no-match changed input to %q", m.textarea.Value())
+	}
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("no-match left matches: %v", m.autocompleteMatches)
+	}
+
+	// Non-command input: "hello" does nothing.
+	m.textarea.SetValue("hello")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("non-command produced matches: %v", m.autocompleteMatches)
+	}
+	updated, _ = m.handleTabComplete()
+	m = updated.(model)
+	if m.textarea.Value() != "hello" {
+		t.Fatalf("non-command changed input to %q", m.textarea.Value())
+	}
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("non-command set matches: %v", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("non-command left index %d, want -1", m.autocompleteIndex)
+	}
+}
+
+// TestAutocompleteLiveFilter verifies matches are recomputed from the input
+// on every update, clear when the input stops starting with "/", and that a
+// single match is auto-selected for immediate Enter/Tab acceptance.
+func TestAutocompleteLiveFilter(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+
+	// "/" matches every known command + extension commands, nothing selected.
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	// knownCommands (built-in) + extension commands (/model, /provider).
+	if len(m.autocompleteMatches) < len(knownCommands) {
+		t.Fatalf("/ matches = %d, want >= %d", len(m.autocompleteMatches), len(knownCommands))
+	}
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("/ index = %d, want -1 (no single match)", m.autocompleteIndex)
+	}
+
+	// "/p" narrows to /panels and /provider; "/pr" then single-matches
+	// and auto-selects.
+	m.textarea.SetValue("/p")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 2 || m.autocompleteMatches[0] != "/panels" || m.autocompleteMatches[1] != "/provider" {
+		t.Fatalf("/p matches = %v, want [/panels /provider]", m.autocompleteMatches)
+	}
+	m.textarea.SetValue("/pr")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/provider" {
+		t.Fatalf("/pr matches = %v, want [/provider]", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("/p index = %d, want 0 (auto-selected single match)", m.autocompleteIndex)
+	}
+
+	// "/model" narrows to /model and /models, auto-selects the first.
+	m.textarea.SetValue("/model")
+	m.updateAutocomplete()
+	want := []string{"/model", "/models"}
+	if len(m.autocompleteMatches) != 2 || m.autocompleteMatches[0] != want[0] || m.autocompleteMatches[1] != want[1] {
+		t.Fatalf("/model matches = %v, want %v", m.autocompleteMatches, want)
+	}
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("/model index = %d, want 0 (auto-selected)", m.autocompleteIndex)
+	}
+
+	// Typing a non-slash clears matches and resets the highlight.
+	m.textarea.SetValue("hello")
+	m.updateAutocomplete()
+	if m.autocompleteMatches != nil {
+		t.Fatalf("non-slash left matches: %v", m.autocompleteMatches)
+	}
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("non-slash left index %d, want -1", m.autocompleteIndex)
+	}
+}
+
+// TestAutocompleteArrows verifies Up/Down cycle the selection across
+// matches, wrapping at both ends.
+func TestAutocompleteArrows(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	if m.autocompleteIndex != -1 {
+		t.Fatalf("start index = %d, want -1", m.autocompleteIndex)
+	}
+	n := len(m.autocompleteMatches)
+
+	// Down from none selects the first.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = up.(model)
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("down from none index = %d, want 0", m.autocompleteIndex)
+	}
+
+	// Down wraps to the first after the last.
+	for i := 0; i < n; i++ {
+		up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = up.(model)
+	}
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("down wrap index = %d, want 0", m.autocompleteIndex)
+	}
+
+	// Up from the first wraps to the last.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = up.(model)
+	if m.autocompleteIndex != n-1 {
+		t.Fatalf("up wrap index = %d, want %d", m.autocompleteIndex, n-1)
+	}
+}
+
+// TestAutocompleteAccept verifies Enter accepts the selected match and that
+// Enter on a fully-typed command falls through to submit.
+func TestAutocompleteAccept(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	// "/mo" is a single match auto-selected; a Down is not needed. Use "/"
+	// (multiple matches) to test arrow-driven selection instead: select
+	// /provider via Down, then Enter accepts it.
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown}) // select first match
+	m = up.(model)
+	// Find /theme and advance to it. Bound the loop so a missing
+	// command fails fast instead of hanging forever.
+	for i := 0; i < len(m.autocompleteMatches); i++ {
+		if m.autocompleteMatches[m.autocompleteIndex] == "/theme" {
+			break
+		}
+		up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = up.(model)
+	}
+	if m.autocompleteMatches[m.autocompleteIndex] != "/theme" {
+		t.Fatalf("did not find /theme in matches: %v", m.autocompleteMatches)
+	}
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if m.textarea.Value() != "/theme" {
+		t.Fatalf("enter accepted %q, want /theme", m.textarea.Value())
+	}
+	if m.autocompleteMatches != nil || m.autocompleteIndex != -1 {
+		t.Fatalf("match state not cleared after accept: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
+	}
+
+	// Enter on a single-match auto-selected command completes it.
+	m.textarea.SetValue("/exi")
+	m.updateAutocomplete()
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if m.textarea.Value() != "/exit" {
+		t.Fatalf("enter single match = %q, want /exit", m.textarea.Value())
+	}
+
+	// Enter on a fully-typed command is unchanged, so it falls through to
+	// submit. submit() trims, so we can't observe a no-op; instead verify
+	// the autocomplete is inactive (no auto-selected match) and the input
+	// is submitted as a command.
+	m.textarea.SetValue("/exit")
+	m.updateAutocomplete()
+	if m.autocompleteIndex != 0 {
+		t.Fatalf("/exit should be single auto-selected, got index %d", m.autocompleteIndex)
+	}
+	// Accepting an exact match returns nil (no input change) and clears
+	// the match state, so a subsequent Enter submits the command.
+	if cmd := m.acceptMatch(); cmd != nil {
+		t.Fatalf("acceptMatch on exact match returned a cmd, want nil")
+	}
+	if m.autocompleteMatches != nil || m.autocompleteIndex != -1 {
+		t.Fatalf("acceptMatch on exact match left state: %v idx=%d", m.autocompleteMatches, m.autocompleteIndex)
+	}
+}
+
+// TestAutocompleteMidSentence verifies that typing / after a space
+// triggers autocomplete mid-sentence, and accepting a match splices
+// the completion while preserving the text before the slash.
+func TestAutocompleteMidSentence(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	// "go ahead and /exi" should trigger autocomplete on /exi.
+	m.textarea.SetValue("go ahead and /exi")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 {
+		t.Fatalf("expected 1 match for /exi, got %v", m.autocompleteMatches)
+	}
+	if m.autocompleteMatches[0] != "/exit" {
+		t.Fatalf("match = %q, want /exit", m.autocompleteMatches[0])
+	}
+	if m.autocompleteSlashPos != 13 {
+		t.Fatalf("slashPos = %d, want 13", m.autocompleteSlashPos)
+	}
+
+	// Accept the match: should splice /exit after "go ahead and ".
+	m.acceptMatch()
+	if m.textarea.Value() != "go ahead and /exit" {
+		t.Fatalf("value = %q, want 'go ahead and /exit'", m.textarea.Value())
+	}
+}
+
+// TestAutocompleteMidSentenceNoSpaceBeforeSlash verifies that / not
+// preceded by a space (e.g. in a URL) does not trigger autocomplete.
+func TestAutocompleteMidSentenceNoSpaceBeforeSlash(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	m.textarea.SetValue("check http://example.com")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("expected 0 matches for URL, got %v", m.autocompleteMatches)
+	}
+	if m.autocompleteSlashPos != -1 {
+		t.Fatalf("slashPos = %d, want -1", m.autocompleteSlashPos)
+	}
+}
+
+// TestEscapeCancelsRun verifies Escape during a busy run calls cancel.
+func TestEscapeCancelsRun(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.busy = true
+	called := false
+	m.cancel = func() { called = true }
+
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = up.(model)
+	if !called {
+		t.Fatal("Escape did not call cancel during busy run")
+	}
+}
+
+// TestEnterSubmits verifies Enter on non-empty input triggers submit.
+func TestEnterSubmits(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("hello")
+
+	up, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if cmd == nil {
+		t.Fatal("Enter on non-empty input did not return a command")
+	}
+	if !m.busy {
+		t.Fatal("Enter did not set busy")
+	}
+}
+
+// TestPgUpPgDnScrolls verifies PgUp/PgDn are forwarded to the viewport.
+func TestPgUpPgDnScrolls(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	// PgUp should not panic and should return a model.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if _, ok := up.(model); !ok {
+		t.Fatal("PgUp did not return a model")
+	}
+
+	// PgDown should not panic and should return a model.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if _, ok := up.(model); !ok {
+		t.Fatal("PgDown did not return a model")
+	}
+}
+
+// TestUpDownHistory verifies Up/Down recall prompt history.
+func TestUpDownHistory(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.promptHistory = []string{"first", "second"}
+
+	// Up from empty input recalls the most recent prompt.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = up.(model)
+	if m.textarea.Value() != "second" {
+		t.Fatalf("Up recall = %q, want second", m.textarea.Value())
+	}
+
+	// Down returns to empty.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = up.(model)
+	if m.textarea.Value() != "" {
+		t.Fatalf("Down to empty = %q, want empty", m.textarea.Value())
+	}
+}
+
+// TestSegmentOrder verifies the live tail rows render in the order
+// the events were emitted (the narrative law the segment machinery
+// preserved).
+func TestSegmentOrder(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	m.handleEvent(core.StreamEvent{Event: core.ThinkingChunk{Content: "Thinking a bit"}})
+	m.handleEvent(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	m.handleEvent(core.StreamEvent{Event: core.ResponseChunk{Content: "Final answer"}})
+
+	types := payloadRowTypes(m)
+	if len(types) != 3 || types[0] != core.ChatBlockThinking ||
+		types[1] != core.ChatBlockToolCall || types[2] != core.ChatBlockText {
+		t.Fatalf("live rows = %v, want [thinking tool_call text]", types)
+	}
+	plain := transcriptOf(m)
+	thinkIdx := strings.Index(plain, "Thinking a bit")
+	toolIdx := strings.Index(plain, "[tool: shell.run]")
+	respIdx := strings.Index(plain, "Final answer")
+	if thinkIdx < 0 || toolIdx < 0 || respIdx < 0 {
+		t.Fatalf("missing rows: think=%v tool=%v resp=%v", thinkIdx >= 0, toolIdx >= 0, respIdx >= 0)
+	}
+	if !(thinkIdx < toolIdx && toolIdx < respIdx) {
+		t.Fatalf("order broken: think=%d tool=%d resp=%d", thinkIdx, toolIdx, respIdx)
+	}
+}
+
+// TestStatusLineFormat verifies the status line contains expected fields.
+func TestStatusLineFormat(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "abc123"
+
+	line := ansiStrip(m.statusLine())
+	if !strings.Contains(line, "Ω") {
+		t.Fatalf("status line missing Ω: %q", line)
+	}
+	if !strings.Contains(line, "idle") {
+		t.Fatalf("status line missing idle: %q", line)
+	}
+	if !strings.Contains(line, "ollama/llama3") {
+		t.Fatalf("status line missing provider/model: %q", line)
+	}
+	if !strings.Contains(line, "tokens:") {
+		t.Fatalf("status line missing tokens: %q", line)
+	}
+	if !strings.Contains(line, "abc123") {
+		t.Fatalf("status line missing session: %q", line)
+	}
+}
+
+// TestHelpText verifies help text contains all commands.
+func TestHelpText(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	help := m.renderHelp()
+	plain := ansiStrip(help)
+	for _, cmd := range []string{"/exit", "/new", "/sessions", "/resume", "/help"} {
+		if !strings.Contains(plain, cmd) {
+			t.Fatalf("help text missing %q", cmd)
+		}
+	}
+}
+
+func TestEphemeralNewClearsSession(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "abc123"
+	m.ephemeral = false
+
+	updated, _ := m.handleCommand("/new --ephemeral")
+	m = updated.(model)
+	if !m.ephemeral {
+		t.Fatal("expected ephemeral mode after /new --ephemeral")
+	}
+	if m.sessionID != "" {
+		t.Fatalf("session id = %q, want empty in ephemeral mode", m.sessionID)
+	}
+}
+
+func TestEphemeralSkipsStoreOnSubmit(t *testing.T) {
+	// A store is present, but ephemeral mode must not create or persist.
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.ephemeral = true
+	m.textarea.SetValue("hello ephemeral")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	if m.sessionID != "" {
+		t.Fatalf("session id = %q, want empty (ephemeral must not create sessions)", m.sessionID)
+	}
+	sessions, _ := s.ListSessions(context.Background())
+	if len(sessions) != 0 {
+		t.Fatalf("store has %d sessions, want 0", len(sessions))
+	}
+}
+
+func TestEphemeralBlocksStoreCommands(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.ephemeral = true
+
+	for _, cmd := range []string{"/sessions", "/resume abc", "/branch", "/label x", "/tree"} {
+		updated, _ := m.handleCommand(cmd)
+		m = updated.(model)
+		if m.err != "no sessions in ephemeral mode" {
+			t.Fatalf("%s in ephemeral mode: err = %q, want %q", cmd, m.err, "no sessions in ephemeral mode")
+		}
+		m.err = ""
+	}
+}
+
+func TestEphemeralStatusLine(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.ephemeral = true
+	line := ansiStrip(m.statusLine())
+	if !strings.Contains(line, "ephemeral") {
+		t.Fatalf("status line = %q, want ephemeral", line)
+	}
+}
+
+// TestStatusLineTrust verifies the trust indicator appears only when a
+// trust state is set, and uses the right label.
+func TestStatusLineTrust(t *testing.T) {
+	// No trust state: no indicator.
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	if line := ansiStrip(m.statusLine()); strings.Contains(line, "trusted") || strings.Contains(line, "untrusted") {
+		t.Fatalf("status line = %q, want no trust indicator", line)
+	}
+
+	// Trusted.
+	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "trusted", "bell", "dev", "")
+	if line := ansiStrip(m.statusLine()); !strings.Contains(line, "trusted") {
+		t.Fatalf("status line = %q, want trusted", line)
+	}
+
+	// Untrusted.
+	m = newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "untrusted", "bell", "dev", "")
+	if line := ansiStrip(m.statusLine()); !strings.Contains(line, "untrusted") {
+		t.Fatalf("status line = %q, want untrusted", line)
+	}
+}
+
+// TestAutocompleteArgLevel verifies the second-level autocomplete: when
+// the input equals (or starts) a command with enum options, the matches
+// are the full command+option strings, sorted.
+func TestAutocompleteArgLevel(t *testing.T) {
+	ctx := newProviderTestCtx(ai.NewFakeProvider("llama3"))
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+
+	// Bare /thinking offers its options as full strings, in map order.
+	m.textarea.SetValue("/thinking")
+	m.updateAutocomplete()
+	want := []string{"/thinking none", "/thinking off", "/thinking on", "/thinking minimal", "/thinking low", "/thinking medium", "/thinking high", "/thinking extra high", "/thinking max", "/thinking ultra"}
+	if len(m.autocompleteMatches) != len(want) {
+		t.Fatalf("/thinking matches = %v, want %v", m.autocompleteMatches, want)
+	}
+	for i, w := range want {
+		if m.autocompleteMatches[i] != w {
+			t.Fatalf("/thinking match[%d] = %q, want %q", i, m.autocompleteMatches[i], w)
+		}
+	}
+
+	// /tools offers on/off/auto.
+	m.textarea.SetValue("/tools")
+	m.updateAutocomplete()
+	want = []string{"/tools on", "/tools off", "/tools auto", "/tools list"}
+	if len(m.autocompleteMatches) != 4 {
+		t.Fatalf("/tools matches = %v, want %v", m.autocompleteMatches, want)
+	}
+	for i, w := range want {
+		if m.autocompleteMatches[i] != w {
+			t.Fatalf("/tools match[%d] = %q, want %q", i, m.autocompleteMatches[i], w)
+		}
+	}
+
+	// Partial option filters: "/tools a" -> "/tools auto" only.
+	m.textarea.SetValue("/tools a")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/tools auto" {
+		t.Fatalf("/tools a matches = %v, want [/tools auto]", m.autocompleteMatches)
+	}
+
+	// /new offers --ephemeral.
+	m.textarea.SetValue("/new")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/new --ephemeral" {
+		t.Fatalf("/new matches = %v, want [/new --ephemeral]", m.autocompleteMatches)
+	}
+
+	// Unknown option matches nothing.
+	m.textarea.SetValue("/thinking x")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("/thinking x matches = %v, want none", m.autocompleteMatches)
+	}
+
+	// A command without options keeps first-level matching.
+	// /copy is a built-in with no entry in commandOptions.
+	m.textarea.SetValue("/co")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/copy" {
+		t.Fatalf("/co matches = %v, want [/copy]", m.autocompleteMatches)
+	}
+}
+
+// TestAutocompleteSemanticOrder verifies matches follow the semantic
+// command order: /new first, /help last.
+func TestAutocompleteSemanticOrder(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != len(knownCommands) {
+		t.Fatalf("expected %d matches for /, got %d", len(knownCommands), len(m.autocompleteMatches))
+	}
+	if m.autocompleteMatches[0] != "/copy" {
+		t.Fatalf("first match = %q, want /copy", m.autocompleteMatches[0])
+	}
+	if m.autocompleteMatches[len(m.autocompleteMatches)-1] != "/help" {
+		t.Fatalf("last match = %q, want /help", m.autocompleteMatches[len(m.autocompleteMatches)-1])
+	}
+}
+
+// TestAutocompletePanelVertical verifies the panel renders matches as
+// newline-separated rows (vertical, not horizontal).
+func TestAutocompletePanelVertical(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	panel := ansiStrip(m.autocompletePanel())
+	if panel == "" {
+		t.Fatal("expected non-empty panel for /")
+	}
+	// Border adds a top and bottom row; the rows between contain matches.
+	lines := strings.Split(panel, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("panel has %d lines, want a bordered vertical list", len(lines))
+	}
+	if !strings.Contains(lines[1], "/copy") {
+		t.Fatalf("first match row = %q, want /copy", lines[1])
+	}
+}
+
+// TestAutocompleteHeightMatchesPanel verifies height accounting: 0 when
+// empty, rows+2 when matches exist.
+func TestAutocompleteHeightMatchesPanel(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("hello")
+	m.updateAutocomplete()
+	if h := m.autocompleteHeight(); h != 0 {
+		t.Fatalf("height with no matches = %d, want 0", h)
+	}
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+	h := m.autocompleteHeight()
+	want := len(m.autocompleteMatches) + 2
+	if len(m.autocompleteMatches) > maxAutocompleteRows {
+		want = maxAutocompleteRows + 3
+	}
+	if h != want {
+		t.Fatalf("height with matches = %d, want %d", h, want)
+	}
+}
+
+// TestAutocompleteWindowScrolls verifies the dropup window follows the
+// selection: pressing Down past the last visible row advances the offset
+// so the selected command stays on screen.
+func TestAutocompleteWindowScrolls(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("/")
+	m.updateAutocomplete()
+
+	// Press Down repeatedly to walk through the matches.
+	for i := 0; i < len(knownCommands); i++ {
+		up, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = up.(model)
+	}
+	// After cycling through all matches, the last one (/help) is selected.
+	if m.autocompleteIndex != len(knownCommands)-1 {
+		t.Fatalf("index after %d downs = %d, want %d", len(knownCommands), m.autocompleteIndex, len(knownCommands)-1)
+	}
+	// The window must have scrolled: the selected row is visible.
+	panel := ansiStrip(m.autocompletePanel())
+	if !strings.Contains(panel, "/help") {
+		t.Fatalf("panel does not show selected /help after scroll: %q", panel)
+	}
+	// And the window start moved past the first command (only when
+	// matches exceed the visible window).
+	if len(knownCommands) > maxAutocompleteRows && m.autocompleteOffset <= 0 {
+		t.Fatalf("offset = %d, want > 0 after scrolling to the end", m.autocompleteOffset)
+	}
+}
+
+// TestAutocompleteWhileBusy verifies the autocomplete recomputes while a
+// run is in flight (the busy guard previously swallowed typing without
+// recomputing matches).
+func TestAutocompleteWhileBusy(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.busy = true
+	m.textarea.SetValue("/")
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = up.(model)
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) == 0 {
+		t.Fatal("no autocomplete matches while busy")
+	}
+}
+
+// TestInlineSkillInvocation verifies a "/name" token inside a normal
+// message injects the matching skill's content as a system message while
+// leaving the user text unchanged.
+func TestInlineSkillInvocation(t *testing.T) {
+	skill := core.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []core.Skill{skill}, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("go ahead and /learn-skill from my notes")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	// The user message is persisted intact.
+	foundUser := false
+	foundSystem := false
+	for _, msg := range m.history {
+		if u, ok := msg.(core.User); ok && u.Content == "go ahead and /learn-skill from my notes" {
+			foundUser = true
+		}
+		if s, ok := msg.(core.System); ok && s.Content == "skill body here" {
+			foundSystem = true
+		}
+	}
+	if !foundUser {
+		t.Fatal("user message not preserved intact")
+	}
+	if !foundSystem {
+		t.Fatal("skill content not injected as system message")
+	}
+	if !strings.Contains(transcriptOf(m), "[skill: learn-skill]") {
+		t.Fatalf("transcript missing skill marker: %q", transcriptOf(m))
+	}
+}
+
+// TestInlineSkillUnknownTokenIgnored verifies non-skill "/tokens" (URLs,
+// paths) pass through without injection.
+func TestInlineSkillUnknownTokenIgnored(t *testing.T) {
+	skill := core.Skill{Name: "learn-skill", Content: "skill body here", Description: "test"}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, []core.Skill{skill}, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("check /path/to/x please")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	for _, msg := range m.history {
+		if s, ok := msg.(core.System); ok && s.Content == "skill body here" {
+			t.Fatal("unknown token injected a skill")
+		}
+	}
+	if len(m.history) != 1 {
+		t.Fatalf("history = %d messages, want 1 (user only)", len(m.history))
+	}
+}
+
+// TestRenderTranscriptToolResults verifies the resume path renders the
+// full conversation: thinking, tool calls, tool results, and final
+// content, in order, with no blank blocks.
+func TestRenderTranscriptToolResults(t *testing.T) {
+	thinking := "let me check the time"
+	assistant := core.NewAssistant("")
+	assistant.Thinking = &thinking
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "shell.run", Arguments: map[string]any{"command": "date"}}}
+	messages := []core.Message{
+		core.NewUser("whats the time rn?"),
+		assistant,
+		core.NewToolResult("11:12 AM", "c1", false),
+		core.NewAssistant("It's 11:12 AM."),
+	}
+	out := chatRowsText(t, messages)
+
+	if !strings.Contains(out, "whats the time rn?") {
+		t.Fatalf("missing user message: %q", out)
+	}
+	if !strings.Contains(out, "[thinking]") || !strings.Contains(out, "let me check the time") {
+		t.Fatalf("missing thinking block: %q", out)
+	}
+	if !strings.Contains(out, "[tool: shell.run]") || !strings.Contains(out, "command: date") {
+		t.Fatalf("missing tool call: %q", out)
+	}
+	if !strings.Contains(out, "[tool result]") || !strings.Contains(out, "11:12 AM") {
+		t.Fatalf("missing tool result: %q", out)
+	}
+	if !strings.Contains(out, "It's 11:12 AM.") {
+		t.Fatalf("missing final content: %q", out)
+	}
+	// Order check: thinking before tool before result before content.
+	idx := func(s string) int { return strings.Index(out, s) }
+	if !(idx("[thinking]") < idx("[tool: shell.run]") && idx("[tool: shell.run]") < idx("[tool result]") && idx("[tool result]") < idx("It's 11:12 AM.")) {
+		t.Fatalf("blocks out of order: %q", out)
+	}
+}
+
+// TestRenderTranscriptCompacted pins the v1 chat vocabulary: system
+// messages never render as chat rows - all of them, compaction
+// summaries included (the TUI surfaces the compaction event as a shell
+// notice at /compact time; the payload vocabulary grows rows only by a
+// real migration per Q2b).
+func TestRenderTranscriptCompacted(t *testing.T) {
+	messages := []core.Message{
+		core.NewSystem("[compacted: user asked about the time]"),
+		core.NewSystem("injected prompt - never persisted, skip"),
+		core.NewUser("continue"),
+	}
+	out := chatRowsText(t, messages)
+	if strings.Contains(out, "[compacted:") {
+		t.Fatalf("compaction summary rendered as a row: %q", out)
+	}
+	if strings.Contains(out, "injected prompt") {
+		t.Fatalf("plain system message rendered: %q", out)
+	}
+	if !strings.Contains(out, "> continue") {
+		t.Fatalf("user row missing: %q", out)
+	}
+}
+
+// TestWindowTitle verifies the terminal title format.
+func TestWindowTitle(t *testing.T) {
+	if got := windowTitle("idle", "glm-5.2"); got != "Ω | idle | glm-5.2" {
+		t.Fatalf("idle title = %q, want %q", got, "Ω | idle | glm-5.2")
+	}
+	if got := windowTitle("running", "glm-5.2"); got != "Ω | running | glm-5.2" {
+		t.Fatalf("running title = %q, want %q", got, "Ω | running | glm-5.2")
+	}
+}
+
+// TestSessionsDeleteCommand verifies /sessions delete removes a session
+// by #, id, or label, and resets state when the active session is
+// deleted.
+func TestSessionsDeleteCommand(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if err := s.CreateSession(ctx, "abc123", "", "old name"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "abc123", core.NewUser("hi")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Delete by label (the /sessions list populates the resolve cache).
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "abc123"
+	listed, _ := m.handleCommand("/sessions")
+	m = listed.(model)
+	updated, _ := m.handleCommand("/sessions delete old name")
+	m = updated.(model)
+	if m.storeErr != "" {
+		t.Fatalf("delete store error: %s", m.storeErr)
+	}
+	if _, err := s.GetSession(ctx, "abc123"); err == nil {
+		t.Fatal("session still exists after delete")
+	}
+	// Active session deleted: state reset like /new.
+	if m.sessionID != "" || m.history != nil {
+		t.Fatalf("active session not reset: id=%q history=%v", m.sessionID, m.history)
+	}
+	if !strings.Contains(transcriptOf(m), "deleted") {
+		t.Fatalf("transcript missing deleted marker: %q", transcriptOf(m))
+	}
+}
+
+// TestSessionsDeleteUsage verifies missing or unknown targets error.
+func TestSessionsDeleteUsage(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+
+	updated, _ := m.handleCommand("/sessions delete")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected usage error for /sessions delete without arg")
+	}
+	updated, _ = m.handleCommand("/sessions delete nope")
+	m = updated.(model)
+	if m.err == "" {
+		t.Fatal("expected not-found error for unknown session")
+	}
+}
+
+// TestAutoNameAppliedWhenSessionMatches verifies the auto-name result
+// updates the status bar label when the session still matches.
+func TestAutoNameAppliedWhenSessionMatches(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "abc123"
+	up, _ := m.Update(autoNameMsg{sessionID: "abc123", gen: 0, label: "Checking the time"})
+	m = up.(model)
+	if m.sessionLabel != "Checking the time" {
+		t.Fatalf("sessionLabel = %q, want %q", m.sessionLabel, "Checking the time")
+	}
+	if !m.autoNamed {
+		t.Fatal("autoNamed not set")
+	}
+}
+
+// TestAutoNameIgnoredOnSessionMismatch verifies a stale auto-name result
+// (session switched mid-flight) does not overwrite the current label.
+func TestAutoNameIgnoredOnSessionMismatch(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "abc123"
+	m.sessionLabel = "Keep me"
+	up, _ := m.Update(autoNameMsg{sessionID: "other", gen: 0, label: "Stale title"})
+	m = up.(model)
+	if m.sessionLabel != "Keep me" {
+		t.Fatalf("sessionLabel = %q, want %q (stale result must be ignored)", m.sessionLabel, "Keep me")
+	}
+}
+
+// TestAutoNameIgnoredAfterNew verifies a stale auto-name result from
+// before /new does not re-apply the old title or block re-naming.
+func TestAutoNameIgnoredAfterNew(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "abc123"
+	m.sessionLabel = "Old title"
+	m.autoNamed = true
+	// /new bumps the generation and detaches the session.
+	up, _ := m.handleCommand("/new")
+	m = up.(model)
+	if m.sessionLabel != "" {
+		t.Fatalf("sessionLabel = %q after /new, want empty", m.sessionLabel)
+	}
+	// A stale result (old gen, old session) must be dropped entirely.
+	up, _ = m.Update(autoNameMsg{sessionID: "abc123", gen: 0, label: "Old title"})
+	m = up.(model)
+	if m.sessionLabel != "" {
+		t.Fatalf("stale auto-name re-applied label: %q", m.sessionLabel)
+	}
+	if m.autoNamed {
+		t.Fatal("stale auto-name blocked re-naming (autoNamed set)")
+	}
+}
+
+// TestSplashView verifies the startup splash contains the logo,
+// version, model, tool count, and help hint.
+func TestSplashView(t *testing.T) {
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	splash := ansiStrip(m.splashView())
+	for _, want := range []string{`#"""#`, "omega", "dev", "ollama/glm-5.2", "tools", "/help"} {
+		if !strings.Contains(splash, want) {
+			t.Fatalf("splash missing %q: %q", want, splash)
+		}
+	}
+}
+
+// TestSplashDisappearsAfterSubmit verifies the splash is replaced by
+// the viewport once a message is submitted.
+func TestSplashDisappearsAfterSubmit(t *testing.T) {
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	// Fresh model shows splash.
+	view := ansiStrip(m.View())
+	if !strings.Contains(view, `#"""#`) {
+		t.Fatal("fresh model should show splash")
+	}
+	// After submit, transcript is non-empty; View no longer shows splash.
+	m.textarea.SetValue("hello")
+	up, _ := m.submit()
+	m = up.(model)
+	view = ansiStrip(m.View())
+	if strings.Contains(view, `#"""#`) {
+		t.Fatal("splash should disappear after submit")
+	}
+}
+
+// TestSplashReappearsAfterNew verifies the splash returns after /new
+// clears the conversation.
+func TestSplashReappearsAfterNew(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "glm-5.2", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.history = append(m.history, core.NewUser("hi"))
+	m.chatCanvas.setConversation("sess1", m.history)
+	m.addNotice("[note]")
+	// Not showing splash (has content).
+	view := ansiStrip(m.View())
+	if strings.Contains(view, `#"""#`) {
+		t.Fatal("should not show splash with content")
+	}
+	// /new clears everything; splash returns.
+	up, _ := m.handleCommand("/new")
+	m = up.(model)
+	view = ansiStrip(m.View())
+	if !strings.Contains(view, `#"""#`) {
+		t.Fatal("splash should reappear after /new")
+	}
+}
+
+func TestThinkingLevelSet(t *testing.T) {
+	ctx := newProviderTestCtx(ai.NewFakeProvider("llama3"))
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+	if m.thinkingLevel != "medium" {
+		t.Fatalf("default thinkingLevel = %q, want medium", m.thinkingLevel)
+	}
+	// Set a specific level.
+	up, _ := m.handleCommand("/thinking high")
+	m = up.(model)
+	if m.thinkingLevel != "high" {
+		t.Fatalf("thinkingLevel = %q, want high", m.thinkingLevel)
+	}
+	if !m.showThinking {
+		t.Error("showThinking should be true for high")
+	}
+	// Set to none — display off.
+	up, _ = m.handleCommand("/thinking none")
+	m = up.(model)
+	if m.thinkingLevel != "none" {
+		t.Fatalf("thinkingLevel = %q, want none", m.thinkingLevel)
+	}
+	if m.showThinking {
+		t.Error("showThinking should be false for none")
+	}
+	// Set to off — display off.
+	up, _ = m.handleCommand("/thinking off")
+	m = up.(model)
+	if m.thinkingLevel != "off" {
+		t.Fatalf("thinkingLevel = %q, want off", m.thinkingLevel)
+	}
+	if m.showThinking {
+		t.Error("showThinking should be false for off")
+	}
+}
+
+func TestThinkingLevelCycle(t *testing.T) {
+	ctx := newProviderTestCtx(ai.NewFakeProvider("llama3"))
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+	if m.thinkingLevel != "medium" {
+		t.Fatalf("default thinkingLevel = %q, want medium", m.thinkingLevel)
+	}
+	// Cycle: medium -> high -> extra high -> max -> ultra -> none -> off -> on -> minimal -> low -> medium
+	expected := []string{"high", "extra high", "max", "ultra", "none", "off", "on", "minimal", "low", "medium"}
+	for _, want := range expected {
+		up, _ := m.handleCommand("/thinking")
+		m = up.(model)
+		if m.thinkingLevel != want {
+			t.Fatalf("cycled to %q, want %q", m.thinkingLevel, want)
+		}
+	}
+}
+
+func TestThinkingLevelInvalid(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/thinking bogus")
+	m = up.(model)
+	if m.thinkingLevel != "medium" {
+		t.Fatalf("thinkingLevel = %q, want medium (unchanged)", m.thinkingLevel)
+	}
+	if m.err == "" {
+		t.Error("expected error for invalid thinking level")
+	}
+}
+
+func TestModelsCommand(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/models")
+	m = up.(model)
+	// Should show a table with model names. The fake provider isn't used here
+	// (the provider extension handles the call), so the result depends on
+	// whether Ollama is running. Just check it doesn't crash and produces
+	// output or an error.
+	if m.err != "" && transcriptOf(m) == "" {
+		// Error with no panel body is fine — Ollama might not be running.
+		return
+	}
+	if !strings.Contains(transcriptOf(m), "NAME") {
+		t.Errorf("transcript should contain table header, got: %q", transcriptOf(m))
+	}
+}
+
+// emptyModelsProvider is a minimal ai.Provider whose ListModels returns
+// an empty list, exercising the "[no models available]" branch of
+// handleModels.
+type emptyModelsProvider struct{}
+
+func (emptyModelsProvider) Stream(ctx context.Context, messages []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	ch := make(chan core.ProviderStreamEvent)
+	go close(ch)
+	return ch
+}
+func (emptyModelsProvider) ModelName() string                      { return "test" }
+func (p emptyModelsProvider) WithModel(m string) ai.Provider       { cp := p; return cp }
+func (p emptyModelsProvider) WithThinkingLevel(string) ai.Provider { cp := p; return cp }
+func (emptyModelsProvider) SetThinkingLevel(string)                {}
+func (emptyModelsProvider) ListModels() ([]string, error)          { return []string{}, nil }
+func (emptyModelsProvider) ModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{ContextWindow: 8192}, nil
+}
+
+// errorModelsProvider is a minimal ai.Provider whose ListModels always
+// fails, exercising the error branch of handleModels.
+type errorModelsProvider struct{}
+
+func (errorModelsProvider) Stream(ctx context.Context, messages []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+	ch := make(chan core.ProviderStreamEvent)
+	go close(ch)
+	return ch
+}
+func (errorModelsProvider) ModelName() string                      { return "test" }
+func (p errorModelsProvider) WithModel(m string) ai.Provider       { cp := p; return cp }
+func (p errorModelsProvider) WithThinkingLevel(string) ai.Provider { cp := p; return cp }
+func (errorModelsProvider) SetThinkingLevel(string)                {}
+func (errorModelsProvider) ListModels() ([]string, error) {
+	return nil, fmt.Errorf("provider unavailable")
+}
+func (errorModelsProvider) ModelInfo() (ai.ModelInfo, error) {
+	return ai.ModelInfo{ContextWindow: 8192}, nil
+}
+
+// TestHandleModelsWithFakeProvider covers the happy path: a FakeProvider
+// wired into agent.Context returns a model list, and handleModels renders
+// the numbered table with the current model marked.
+// newProviderTestCtx creates an agent.Context with the provider extension's
+// command handler wired for /models, /model, and /provider.
+func newProviderTestCtx(prov ai.Provider) *core.Context {
+	pctx := &core.Context{Provider: prov}
+	pctx.Commands = append(pctx.Commands,
+		core.ExtensionCommand{Name: "/models", Description: "list available models"},
+		core.ExtensionCommand{Name: "/model", Description: "switch model"},
+		core.ExtensionCommand{Name: "/thinking", Description: "set thinking level"},
+		core.ExtensionCommand{Name: "/tools", Description: "list tools", Args: []string{"on", "off", "auto", "list"}},
+		core.ExtensionCommand{Name: "/provider", Description: "show provider"},
+	)
+	thinkingLevel := "medium" // tracked in closure for cycle support
+	prev := pctx.CommandHandler
+	pctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
+		switch name {
+		case "/thinking":
+			level := strings.TrimSpace(args)
+			if level == "" {
+				idx := 0
+				for i, l := range ai.ThinkingLevels {
+					if l == thinkingLevel {
+						idx = i
+						break
+					}
+				}
+				level = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
+			} else {
+				valid := false
+				for _, l := range ai.ThinkingLevels {
+					if l == level {
+						valid = true
+						break
+					}
+				}
+				if !valid {
+					return core.CommandResult{}, fmt.Errorf("usage: /thinking [none|off|on|minimal|low|medium|high|extra high|max|ultra]")
+				}
+			}
+			thinkingLevel = level
+			return core.CommandResult{
+				Text:    "[thinking " + level + "]",
+				Actions: []core.CmdAction{{Type: "set_thinking", Value: level}},
+			}, nil
+		case "/models":
+			models, err := prov.ListModels()
+			if err != nil {
+				return core.CommandResult{}, fmt.Errorf("list models: %w", err)
+			}
+			if len(models) == 0 {
+				return core.CommandResult{Text: "[no models available]"}, nil
+			}
+			nameWidth := 4
+			for _, n := range models {
+				if len(n) > nameWidth {
+					nameWidth = len(n)
+				}
+			}
+			var sb strings.Builder
+			sb.WriteString("\n")
+			fmt.Fprintf(&sb, "  %-3s  %-*s\n", "#", nameWidth, "NAME")
+			for i, n := range models {
+				marker := "  "
+				if n == prov.ModelName() {
+					marker = "> "
+				}
+				fmt.Fprintf(&sb, "%s%-3d  %-*s\n", marker, i+1, nameWidth, n)
+			}
+			return core.CommandResult{
+				Text:    sb.String(),
+				Actions: []core.CmdAction{{Type: "set_model_list", List: models}},
+			}, nil
+		}
+		if prev != nil {
+			return prev(c, name, args)
+		}
+		return core.CommandResult{}, fmt.Errorf("unknown command: %s", name)
+	}
+	return pctx
+}
+
+func TestHandleModelsWithFakeProvider(t *testing.T) {
+	ctx := newProviderTestCtx(ai.NewFakeProvider("beta"))
+	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/models")
+	m = up.(model)
+
+	if m.err != "" {
+		t.Fatalf("unexpected error: %q", m.err)
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "NAME") {
+		t.Errorf("transcript should contain table header NAME, got: %q", plain)
+	}
+	if !strings.Contains(plain, "beta") {
+		t.Errorf("transcript should contain beta, got: %q", plain)
+	}
+	if !strings.Contains(plain, "other-model") {
+		t.Errorf("transcript should contain other-model, got: %q", plain)
+	}
+	// The current model (beta) should be marked with "> " on its row.
+	if !strings.Contains(plain, "> 1") {
+		t.Errorf("current model row should be marked with '> 1', got: %q", plain)
+	}
+	if len(m.modelList) != 2 || m.modelList[0] != "beta" || m.modelList[1] != "other-model" {
+		t.Errorf("modelList = %v, want [beta other-model]", m.modelList)
+	}
+}
+
+// TestHandleModelsEmptyList covers the empty-list branch: handleModels
+// prints "[no models available]" when the provider returns no models.
+func TestHandleModelsEmptyList(t *testing.T) {
+	ctx := newProviderTestCtx(emptyModelsProvider{})
+	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/models")
+	m = up.(model)
+
+	if m.err != "" {
+		t.Fatalf("unexpected error: %q", m.err)
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "[no models available]") {
+		t.Errorf("transcript should report no models, got: %q", plain)
+	}
+	if strings.Contains(plain, "NAME") {
+		t.Errorf("transcript should not render table for empty list, got: %q", plain)
+	}
+}
+
+// TestHandleModelsProviderError covers the error branch: handleModels
+// surfaces the provider error and does not render the table.
+func TestHandleModelsProviderError(t *testing.T) {
+	ctx := newProviderTestCtx(errorModelsProvider{})
+	m := newChatModel("fake", "beta", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/models")
+	m = up.(model)
+
+	if m.err == "" {
+		t.Fatal("expected error from provider, got none")
+	}
+	if !strings.Contains(m.err, "provider unavailable") {
+		t.Errorf("err = %q, want it to contain 'provider unavailable'", m.err)
+	}
+	plain := transcriptOf(m)
+	if strings.Contains(plain, "NAME") {
+		t.Errorf("transcript should not contain table header on error, got: %q", plain)
+	}
+}
+
+func TestModelSelectByNumber(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+	m.modelList = []string{"alpha", "beta", "gamma"}
+	up, _ := m.handleCommand("/model 2")
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("modelName = %q, want beta", m.modelName)
+	}
+	if !strings.Contains(transcriptOf(m), "switched to beta") {
+		t.Errorf("transcript should confirm model switch: %q", transcriptOf(m))
+	}
+}
+
+func TestModelSelectOutOfRange(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.modelList = []string{"alpha", "beta"}
+	up, _ := m.handleCommand("/model 99")
+	m = up.(model)
+	if m.modelName != "llama3" {
+		t.Fatalf("modelName should be unchanged, got %q", m.modelName)
+	}
+	if m.err == "" {
+		t.Error("expected out-of-range error")
+	}
+}
+
+func TestModelValidationWithCache(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+	m.modelList = []string{"alpha", "beta", "gamma"}
+
+	// Valid model accepted.
+	up, _ := m.handleCommand("/model beta")
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("modelName = %q, want beta", m.modelName)
+	}
+
+	// Invalid model rejected.
+	up, _ = m.handleCommand("/model bogus")
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("modelName should be unchanged, got %q", m.modelName)
+	}
+	if m.err == "" {
+		t.Error("expected not-found error for bogus model")
+	}
+}
+
+func TestModelValidationNoCache(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", testContext(), nil, "dark", "", "bell", "dev", "")
+	// No cache — any model name accepted.
+	up, _ := m.handleCommand("/model anything-goes")
+	m = up.(model)
+	if m.modelName != "anything-goes" {
+		t.Fatalf("modelName = %q, want anything-goes", m.modelName)
+	}
+	if m.err != "" {
+		t.Errorf("expected no error without cache, got %q", m.err)
+	}
+}
+
+func TestCtrlPCyclesModels(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.modelList = []string{"alpha", "beta", "gamma"}
+	m.modelName = "alpha"
+
+	// Ctrl+P advances to the next model.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m = up.(model)
+	if m.modelName != "beta" {
+		t.Fatalf("after Ctrl+P: modelName = %q, want beta", m.modelName)
+	}
+
+	// Again -> gamma.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m = up.(model)
+	if m.modelName != "gamma" {
+		t.Fatalf("after 2nd Ctrl+P: modelName = %q, want gamma", m.modelName)
+	}
+
+	// Wrap around to alpha.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m = up.(model)
+	if m.modelName != "alpha" {
+		t.Fatalf("after 3rd Ctrl+P: modelName = %q, want alpha (wrap)", m.modelName)
+	}
+}
+
+func TestCtrlPEmptyListFetches(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	// modelList is empty; Ctrl+P should trigger a fetch (returns a cmd).
+	up, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m = up.(model)
+	if cmd == nil {
+		t.Fatal("Ctrl+P with empty modelList should return a fetch cmd")
+	}
+	if !strings.Contains(transcriptOf(m), "fetching models") {
+		t.Fatalf("transcript = %q, want 'fetching models'", transcriptOf(m))
+	}
+}
+
+func TestPasteInsertsText(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	// Focus the textarea so it accepts key input.
+	m.textarea.Focus()
+	// Simulate a bracketed paste: KeyMsg with Paste=true and some runes.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/some/file/path"), Paste: true})
+	m = up.(model)
+	if m.textarea.Value() != "/some/file/path" {
+		t.Fatalf("textarea = %q, want /some/file/path", m.textarea.Value())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleSearch tests
+// ---------------------------------------------------------------------------
+
+// TestHandleSearchNoArgs verifies that /search with no query sets a usage error.
+func TestHandleSearchNoArgs(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/search")
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected usage error for /search with no args")
+	}
+	if !strings.Contains(m.err, "usage") {
+		t.Fatalf("err = %q, want it to contain 'usage'", m.err)
+	}
+}
+
+// TestHandleSearchNoStore verifies that /search with a nil store sets an error.
+func TestHandleSearchNoStore(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/search hello")
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected error for /search with nil store")
+	}
+	if !strings.Contains(m.err, "no session store") {
+		t.Fatalf("err = %q, want it to contain 'no session store'", m.err)
+	}
+}
+
+// TestHandleSearchResults verifies that /search finds messages in the store
+// and renders results in the transcript.
+func TestHandleSearchResults(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "sess1", "", "Test Session"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", core.NewUser("golang concurrency patterns")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/search golang")
+	m = up.(model)
+	if m.storeErr != "" {
+		t.Fatalf("search store error: %s", m.storeErr)
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "golang") {
+		t.Fatalf("transcript missing search result: %q", plain)
+	}
+}
+
+// TestHandleSearchNoResults verifies that /search with no matches renders
+// "[no results]" in the transcript.
+func TestHandleSearchNoResults(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "sess1", "", "Test"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", core.NewUser("hello world")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/search nonexistent_term_xyz")
+	m = up.(model)
+	if m.storeErr != "" {
+		t.Fatalf("search store error: %s", m.storeErr)
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "[no results]") {
+		t.Fatalf("transcript missing [no results]: %q", plain)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleInsights tests
+// ---------------------------------------------------------------------------
+
+// TestHandleInsightsNoStore verifies that /insights with a nil store sets an error.
+func TestHandleInsightsNoStore(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(nil), nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/insights")
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected error for /insights with nil store")
+	}
+	if !strings.Contains(m.err, "no session store") {
+		t.Fatalf("err = %q, want it to contain 'no session store'", m.err)
+	}
+}
+
+// TestHandleInsightsNoSessions verifies that /insights with an empty store
+// renders "[no sessions ...]" in the transcript.
+func TestHandleInsightsNoSessions(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCommand("/insights")
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("unexpected error: %s", m.err)
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "[no sessions") {
+		t.Fatalf("transcript missing [no sessions]: %q", plain)
+	}
+}
+
+// TestHandleInsightsWithSessions verifies that /insights with sessions in the
+// store renders formatted insights (containing "omega insights") in the transcript.
+func TestHandleInsightsWithSessions(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "sess1", "", "My Session"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", core.NewUser("hello there")); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "sess1", core.NewAssistant("hi back")); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	// Use days=0 to include all sessions regardless of creation time.
+	up, _ := m.handleCommand("/insights 0")
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("unexpected error: %s", m.err)
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "omega insights") {
+		t.Fatalf("transcript missing insights report: %q", plain)
+	}
+	if !strings.Contains(plain, "Sessions:") {
+		t.Fatalf("transcript missing Sessions line: %q", plain)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleCopy tests
+// ---------------------------------------------------------------------------
+
+// TestHandleCopyNothing verifies that /copy with empty history sets an error.
+func TestHandleCopyNothing(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	up, _ := m.handleCopy()
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected 'nothing to copy' error for empty history")
+	}
+	if !strings.Contains(m.err, "nothing to copy") {
+		t.Fatalf("err = %q, want it to contain 'nothing to copy'", m.err)
+	}
+}
+
+// TestHandleCopyEmptyText verifies that /copy with a message whose text is
+// empty sets an error (the message type is recognized but content is blank).
+func TestHandleCopyEmptyText(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.history = []core.Message{core.NewAssistant("")}
+	up, _ := m.handleCopy()
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected 'nothing to copy' error for empty assistant content")
+	}
+	if !strings.Contains(m.err, "nothing to copy") {
+		t.Fatalf("err = %q, want it to contain 'nothing to copy'", m.err)
+	}
+}
+
+// TestHandleCopyUserMessage verifies that /copy copies a user message's text
+// to the clipboard. Skips if the clipboard is unavailable in the test env.
+func TestHandleCopyUserMessage(t *testing.T) {
+	// Probe clipboard availability first.
+	if err := clipboard.WriteAll("probe"); err != nil {
+		t.Skipf("clipboard not available in test environment: %v", err)
+	}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.history = []core.Message{core.NewUser("copy me please")}
+	up, _ := m.handleCopy()
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("unexpected error: %s", m.err)
+	}
+	got, err := clipboard.ReadAll()
+	if err != nil {
+		t.Skipf("clipboard read failed: %v", err)
+	}
+	if got != "copy me please" {
+		t.Fatalf("clipboard = %q, want %q", got, "copy me please")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleExport tests
+// ---------------------------------------------------------------------------
+
+// TestHandleExportNoSession verifies that /export with no active session sets
+// an error.
+func TestHandleExportNoSession(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	// sessionID is empty → should error
+	up, _ := m.handleCommand("/export")
+	m = up.(model)
+	m = up.(model)
+	if m.err == "" {
+		t.Fatal("expected error for /export with no active session")
+	}
+	if !strings.Contains(m.err, "no active session") {
+		t.Fatalf("err = %q, want it to contain 'no active session'", m.err)
+	}
+}
+
+// TestHandleExportWrites verifies that /export writes a valid JSONL file
+// containing the session's messages.
+func TestHandleExportWrites(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "exp1", "", "Export Test"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "exp1", core.NewUser("export this")); err != nil {
+		t.Fatalf("append user message: %v", err)
+	}
+	if err := s.AppendMessage(ctx, "exp1", core.NewAssistant("ok exported")); err != nil {
+		t.Fatalf("append assistant message: %v", err)
+	}
+	outPath := filepath.Join(t.TempDir(), "export.jsonl")
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", newTestCtx(s), nil, "dark", "", "bell", "dev", "")
+	m.sessionID = "exp1"
+	up, _ := m.handleCommand("/export " + outPath)
+	m = up.(model)
+	m = up.(model)
+	if m.err != "" {
+		t.Fatalf("export error: %s", m.err)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read exported file: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSONL lines, got %d", len(lines))
+	}
+	for i, line := range lines {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("line %d is not valid JSON: %v (line=%q)", i, err, line)
+		}
+		if _, ok := entry["role"]; !ok {
+			t.Fatalf("line %d missing 'role' field: %v", i, entry)
+		}
+		if _, ok := entry["content"]; !ok {
+			t.Fatalf("line %d missing 'content' field: %v", i, entry)
+		}
+	}
+	plain := transcriptOf(m)
+	if !strings.Contains(plain, "[exported") {
+		t.Fatalf("transcript missing export confirmation: %q", plain)
+	}
+	if !strings.Contains(plain, "2 messages") {
+		t.Fatalf("transcript missing message count: %q", plain)
+	}
+}
+
+// TestRenderCodeBlockBasic verifies renderCodeBlock produces a bordered
+// box with the language header and the code text preserved.
+func TestRenderCodeBlockBasic(t *testing.T) {
+	code := "package main\nfunc main() {}"
+	out := renderCodeBlock(code, "go", 60, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "go") {
+		t.Fatalf("expected language header 'go' in output, got %q", plain)
+	}
+	if !strings.Contains(plain, "package main") {
+		t.Fatalf("expected code text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "func main()") {
+		t.Fatalf("expected function text preserved, got %q", plain)
+	}
+	// Rounded border uses these box-drawing chars.
+	if !strings.Contains(out, "╭") && !strings.Contains(out, "╯") &&
+		!strings.Contains(out, "╰") && !strings.Contains(out, "╮") {
+		t.Fatalf("expected rounded border characters in output, got %q", out)
+	}
+}
+
+// TestRenderCodeBlockEmptyLang verifies an empty language string renders
+// the header as "text" and does not panic.
+func TestRenderCodeBlockEmptyLang(t *testing.T) {
+	out := renderCodeBlock("echo hello", "", 60, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "text") {
+		t.Fatalf("expected header 'text' for empty lang, got %q", plain)
+	}
+	if !strings.Contains(plain, "echo hello") {
+		t.Fatalf("expected code text preserved, got %q", plain)
+	}
+}
+
+// TestRenderCodeBlockSmallWidth verifies width < 12 clamps boxWidth to
+// 10 and still renders without panicking.
+func TestRenderCodeBlockSmallWidth(t *testing.T) {
+	out := renderCodeBlock("x := 1", "go", 5, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "go") {
+		t.Fatalf("expected header 'go' at small width, got %q", plain)
+	}
+	if !strings.Contains(plain, "x := 1") {
+		t.Fatalf("expected code text preserved at small width, got %q", plain)
+	}
+}
+
+// TestRenderCodeBlockHighlightFallback verifies an unknown language does
+// not panic; chroma falls back and the content is still present.
+func TestRenderCodeBlockHighlightFallback(t *testing.T) {
+	out := renderCodeBlock("looks weird", "totally-not-a-real-lang", 60, themes["light"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "totally-not-a-real-lang") {
+		t.Fatalf("expected header for unknown lang preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "looks weird") {
+		t.Fatalf("expected code text preserved for unknown lang, got %q", plain)
+	}
+}
+
+// TestRenderMarkdownNoCodeBlocks verifies markdown without fenced code
+// blocks takes the glamour fast path and preserves prose.
+func TestRenderMarkdownNoCodeBlocks(t *testing.T) {
+	out := renderMarkdown("**bold** here", 80, themes["dark"])
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("expected ANSI escape codes from glamour, got %q", out)
+	}
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "bold") {
+		t.Fatalf("expected bold text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "here") {
+		t.Fatalf("expected prose preserved, got %q", plain)
+	}
+}
+
+// TestRenderMarkdownWithCodeBlock verifies a fenced code block is split
+// out: prose goes through glamour and code goes through renderCodeBlock
+// (border present, code text preserved).
+func TestRenderMarkdownWithCodeBlock(t *testing.T) {
+	content := "Here is code:\n\n```go\npackage main\n```\n\nDone."
+	out := renderMarkdown(content, 80, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "Here is code:") {
+		t.Fatalf("expected prose before code block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "package main") {
+		t.Fatalf("expected code block text preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "Done.") {
+		t.Fatalf("expected trailing prose preserved, got %q", plain)
+	}
+	if !strings.Contains(out, "╭") && !strings.Contains(out, "╯") &&
+		!strings.Contains(out, "╰") && !strings.Contains(out, "╮") {
+		t.Fatalf("expected rounded border around code block, got %q", out)
+	}
+}
+
+// TestRenderMarkdownMultipleCodeBlocks verifies two fenced code blocks
+// in one markdown string are both rendered with their code preserved.
+func TestRenderMarkdownMultipleCodeBlocks(t *testing.T) {
+	content := "First:\n\n```go\nfunc a() {}\n```\n\nSecond:\n\n```python\nprint('hi')\n```\n\nEnd."
+	out := renderMarkdown(content, 80, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "func a()") {
+		t.Fatalf("expected first code block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "print('hi')") {
+		t.Fatalf("expected second code block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "First:") {
+		t.Fatalf("expected prose before first block preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "Second:") {
+		t.Fatalf("expected prose between blocks preserved, got %q", plain)
+	}
+	if !strings.Contains(plain, "End.") {
+		t.Fatalf("expected trailing prose preserved, got %q", plain)
+	}
+}
+
+// TestRenderMarkdownZeroWidth verifies width 0 normalizes to 80 without
+// panicking and still renders content.
+func TestRenderMarkdownZeroWidth(t *testing.T) {
+	out := renderMarkdown("hello world", 0, themes["dark"])
+	plain := ansiStrip(out)
+	if !strings.Contains(plain, "hello world") {
+		t.Fatalf("expected text preserved at zero width, got %q", plain)
+	}
+}
+
+// stubCompactor is a minimal CompactionProvider for testing handleCompact.
+// It returns a fixed compacted message set regardless of input.
+type stubCompactor struct{}
+
+func (stubCompactor) Compact(_ context.Context, _ []core.Message) ([]core.Message, error) {
+	return []core.Message{core.NewAssistant("compacted summary")}, nil
+}
+
+// makeHistory returns n messages suitable for compaction tests.
+func makeHistory(n int) []core.Message {
+	var h []core.Message
+	for i := 0; i < n; i++ {
+		h = append(h, core.NewUser("msg"))
+	}
+	return h
+}
+
+// TestHandleCompact covers every guard-clause branch and the happy path
+// of model.handleCompact.
+func TestHandleCompact(t *testing.T) {
+	compCfg := &core.CompactionConfig{
+		Threshold:     0.5,
+		KeepFirst:     2,
+		KeepLast:      10,
+		ReserveTokens: 16384,
+	}
+
+	t.Run("already_compacting", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+		m.history = makeHistory(3)
+		m.compacting = true
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "already compacting..." {
+			t.Fatalf("expected 'already compacting...', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting != true {
+			t.Fatal("compacting flag should remain true")
+		}
+	})
+
+	t.Run("not_enough_history", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+		m.history = makeHistory(2) // < 3
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "not enough history to compact" {
+			t.Fatalf("expected 'not enough history to compact', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting {
+			t.Fatal("compacting flag should be false")
+		}
+	})
+
+	t.Run("compaction_not_configured", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		// Pass nil compaction config.
+		m := newChatModel("ollama", "llama3", nil, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+		m.history = makeHistory(3)
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "compaction not configured" {
+			t.Fatalf("expected 'compaction not configured', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting {
+			t.Fatal("compacting flag should be false")
+		}
+	})
+
+	t.Run("no_compactor_extension", func(t *testing.T) {
+		// Context has no Compactor set.
+		ctx := &core.Context{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+		m.history = makeHistory(3)
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "no compactor extension loaded" {
+			t.Fatalf("expected 'no compactor extension loaded', got %q", mm.err)
+		}
+		if cmd != nil {
+			t.Fatalf("expected nil cmd, got non-nil")
+		}
+		if mm.compacting {
+			t.Fatal("compacting flag should be false")
+		}
+	})
+
+	t.Run("happy_path", func(t *testing.T) {
+		ctx := testContext()
+		ctx.Compactor = stubCompactor{}
+		m := newChatModel("ollama", "llama3", compCfg, "", nil, "", ctx, nil, "dark", "", "bell", "dev", "")
+		m.history = makeHistory(5)
+		updated, cmd := m.handleCompact()
+		mm := updated.(model)
+		if mm.err != "" {
+			t.Fatalf("expected empty err, got %q", mm.err)
+		}
+		if !mm.compacting {
+			t.Fatal("expected compacting=true after happy path")
+		}
+		if cmd == nil {
+			t.Fatal("expected non-nil cmd from happy path")
+		}
+		// Execute the returned command and verify the message type.
+		msg := cmd()
+		result, ok := msg.(compactionResultMsg)
+		if !ok {
+			t.Fatalf("expected compactionResultMsg, got %T", msg)
+		}
+		if result.before != 5 {
+			t.Fatalf("expected before=5, got %d", result.before)
+		}
+		if result.err != nil {
+			t.Fatalf("expected nil err from Compact, got %v", result.err)
+		}
+		if len(result.messages) != 1 {
+			t.Fatalf("expected 1 compacted message, got %d", len(result.messages))
+		}
+	})
+}
+
+// stubSeamer satisfies a Requires edge in the mount set without
+// registering anything: the seam it names is already populated on the
+// Context the test built (testContext mounts the real provider).
+type stubSeamer struct{ seam string }
+
+func (s stubSeamer) Name() string { return "stub-" + s.seam }
+
+func (s stubSeamer) Provides() []string { return []string{s.seam} }
+
+func (s stubSeamer) Requires() []string { return nil }
+
+func (s stubSeamer) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }

@@ -38,8 +38,8 @@ func mockMCPServer(t *testing.T, sessionID string) *httptest.Server {
 			w.Header().Set("Content-Type", "application/json")
 			resp := mcpResponse{
 				JSONRPC: "2.0",
-				ID:     int64(intVal(req["id"])),
-				Result: json.RawMessage(`{"protocolVersion":"2025-11-25","serverInfo":{"name":"mock","version":"1.0"}}`),
+				ID:      int64(intVal(req["id"])),
+				Result:  json.RawMessage(`{"protocolVersion":"2025-11-25","serverInfo":{"name":"mock","version":"1.0"}}`),
 			}
 			json.NewEncoder(w).Encode(resp)
 
@@ -58,8 +58,8 @@ func mockMCPServer(t *testing.T, sessionID string) *httptest.Server {
 			out, _ := json.Marshal(tools)
 			resp := mcpResponse{
 				JSONRPC: "2.0",
-				ID:     int64(intVal(req["id"])),
-				Result: out,
+				ID:      int64(intVal(req["id"])),
+				Result:  out,
 			}
 			json.NewEncoder(w).Encode(resp)
 
@@ -74,8 +74,8 @@ func mockMCPServer(t *testing.T, sessionID string) *httptest.Server {
 			out, _ := json.Marshal(callResult)
 			resp := mcpResponse{
 				JSONRPC: "2.0",
-				ID:     int64(intVal(req["id"])),
-				Result: out,
+				ID:      int64(intVal(req["id"])),
+				Result:  out,
 			}
 			json.NewEncoder(w).Encode(resp)
 
@@ -84,8 +84,8 @@ func mockMCPServer(t *testing.T, sessionID string) *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 			resp := mcpResponse{
 				JSONRPC: "2.0",
-				ID:     int64(intVal(req["id"])),
-				Error:  &mcpError{Code: -32601, Message: "method not found"},
+				ID:      int64(intVal(req["id"])),
+				Error:   &mcpError{Code: -32601, Message: "method not found"},
 			}
 			json.NewEncoder(w).Encode(resp)
 		}
@@ -294,8 +294,8 @@ func TestHTTPInitialize(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			resp := mcpResponse{
 				JSONRPC: "2.0",
-				ID:     int64(intVal(req["id"])),
-				Result: json.RawMessage(`{"protocolVersion":"2025-11-25"}`),
+				ID:      int64(intVal(req["id"])),
+				Result:  json.RawMessage(`{"protocolVersion":"2025-11-25"}`),
 			}
 			json.NewEncoder(w).Encode(resp)
 		case "notifications/initialized":

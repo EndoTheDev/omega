@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // entrySep is the delimiter between entries in the memory files.
@@ -36,23 +36,23 @@ const (
 type FileMemory struct {
 	mu sync.Mutex
 
-	memoryFile     string
-	userFile        string
-	memoryLimit     int
-	userLimit       int
-	memoryEnabled   bool
-	userEnabled     bool
+	memoryFile    string
+	userFile      string
+	memoryLimit   int
+	userLimit     int
+	memoryEnabled bool
+	userEnabled   bool
 }
 
 // NewFileMemory creates a FileMemory from config.
 func NewFileMemory(cfg Config) *FileMemory {
 	return &FileMemory{
-		memoryFile:     cfg.File,
-		userFile:       cfg.UserProfileFile,
-		memoryLimit:    cfg.CharLimit,
-		userLimit:      cfg.UserProfileCharLimit,
-		memoryEnabled:  cfg.Enabled,
-		userEnabled:    cfg.UserProfileEnabled,
+		memoryFile:    cfg.File,
+		userFile:      cfg.UserProfileFile,
+		memoryLimit:   cfg.CharLimit,
+		userLimit:     cfg.UserProfileCharLimit,
+		memoryEnabled: cfg.Enabled,
+		userEnabled:   cfg.UserProfileEnabled,
 	}
 }
 

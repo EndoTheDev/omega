@@ -7,7 +7,7 @@ Written 2026-10-25 against dev @ 2e9ae66. Every dir list and seam
 count here was re-verified against the real build at that commit:
 `ls modules/`, `buildPlugins()` (cmd/omega/main.go:308), the seam
 declarations in the module plugins, and the seam inventory in
-core/seams.go + agent/turnsink.go (+ canvas, caption). Numbers that
+core/seams.go + engine/agent/turnsink.go (+ canvas, caption). Numbers that
 differ from older notes are corrected here, not inherited.
 
 ## 0. What the split is
@@ -24,7 +24,7 @@ One repo becomes two:
   provider choice, session persistence). New module path; a new repo.
 
 The direction law already exists and is already enforced today:
-`scripts/gate-deps.sh` fails the build if `ai/` or `agent/` (and transitively
+`scripts/gate-deps.sh` fails the build if `engine/ai/` or `engine/agent/` (and transitively
 anything below `core/`) imports `modules/...`, directly or
 transitively. The extraction changes nothing about that law; it moves
 the enforced line from "import rule inside one repo" to "one module
@@ -38,13 +38,13 @@ direction: the harness depends on the engine, never the reverse.
 | Dir | What it is | Why engine |
 |---|---|---|
 | `core/` | Zero-behavior contract layer: message vocabulary, seam interfaces, Context, canvas panel types, captioner, kanban task vocabulary | stdlib-only by law (core/importability_test.go) |
-| `agent/` | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers | imports core only (verified by scripts/gate-deps.sh today) |
-| `ai/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `ai.Provider` streaming contract, fake provider | imports core only; imported by engine (agent_loop) and harness capsules alike — it must sit under the engine or the agent loop would reach upward |
+| `engine/agent/` | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers | imports core only (verified by scripts/gate-deps.sh today) |
+| `engine/ai/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `ai.Provider` streaming contract, fake provider | imports core only; imported by engine (agent_loop) and harness capsules alike — it must sit under the engine or the agent loop would reach upward |
 | `modules/agent_loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
 | `modules/tools` | The bare-minimum tools: `shell.run`, `files` (read/write/edit + batch), /files browser, db deny-guard | the north-star ruling; verdict tool status is separate (see §6) |
 | `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
 | `tui` | The terminal connector: the TUI shell, canvas pane rendering | frontend seam implementation on the engine side |
-| `webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) — build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module) |
+| `engine/webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) — build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module) |
 | `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell | see HURT-4: today's shell is NOT yet minimal |
 
 ### The harness side (moves to TigerClaw)
@@ -89,7 +89,7 @@ is PENDING: the ruling leaves the verdict tool's home unresolved
 
 The paste below is the pre-dissolution snapshot (2e9ae66) - historical
 evidence, not the current tree (v0.13 removed `modules/web`; `ui`
-became the checkout-root `webui/`):
+became the checkout-root `engine/webui/`):
 
 `ls modules/` at 2e9ae66, alphabetical:
 
@@ -104,7 +104,7 @@ kanban — 19.
 
 Difference, accounted for: `datadir` and `ui` were not plugins
 (datadir is an imported leaf; ui was the SPA source, since moved to
-the checkout root as `webui/`), and `modules/README.md`
+the checkout root as `engine/webui/`), and `modules/README.md`
 is prose. 21 dirs + README = 19 plugins + 2 non-plugins, one-for-one -
 minus the dissolved web capsule (v0.13: 18 plugins, webui outside
 modules/) for the current tree. The registration rows above track the
@@ -122,11 +122,11 @@ core/seams.go holds 19 seam interfaces (line numbers at 2e9ae66):
     Frontend 480, TrustProvider 488, NotificationsProvider 512
 
 plus three seams that live on their own because the run loop and the
-rendering surfaces need them: `TurnSink` (agent/turnsink.go:17),
+rendering surfaces need them: `TurnSink` (engine/agent/turnsink.go:17),
 `PanelProvider` (core/canvas.go:166, the canvas registration seam),
 `Captioner` (core/caption.go:20). 19 + 3 = 22.
 
-`agent/plugin.go:84` declares 14 of them exclusive (two providers
+`engine/agent/plugin.go:84` declares 14 of them exclusive (two providers
 conflict); `tools` is additive. The split does not change a single
 one of these declarations — they are already layer-blind, which is
 precisely why the recipe can be mechanical.
@@ -165,10 +165,10 @@ The harness inherits the rest of the deps (sqlite, cron scheduler,
 beeep) through its own moved capsules when `go mod tidy` runs on the
 harness side.
 
-ai/: nothing "lives" there by accident. After the split ai/ stays
+engine/ai/: nothing "lives" there by accident. After the split engine/ai/ stays
 engine-side exactly as it is (imports core + stdlib only); the
 provider capsule (harness) and the loop (engine) both keep importing
-it. No file in ai/ moves. `core/message_types.go:277` documents why
+it. No file in engine/ai/ moves. `core/message_types.go:277` documents why
 MessageRole had to land in core rather than ai — that history stays
 put too.
 
@@ -187,16 +187,16 @@ file needs to move for this surface to hold:
   `PanelAction`, `ViewModelDelta`, `ChatPayload`), `ExtensionInfo`,
   `Insights`, `Session`/`ActiveView`, kanban task vocabulary
   (core/kanban.go:11).
-- **agent** — the wiring: `Plugin` (agent/plugin.go:19, the contract
+- **agent** — the wiring: `Plugin` (engine/agent/plugin.go:19, the contract
   every capsule implements), `Describer`/`ConfigSource`
-  (agent/plugin.go:42,51), `RouteConfigs` (agent/plugin.go:61),
-  `MountAll` (agent/plugin.go:106), `Context = core.Context`
-  (agent/plugin.go:15), the TurnSink seam with `WithTurnSink` /
-  `RunTurnSink` / `WithPersistInput` (agent/turnsink.go), session
+  (engine/agent/plugin.go:42,51), `RouteConfigs` (engine/agent/plugin.go:61),
+  `MountAll` (engine/agent/plugin.go:106), `Context = core.Context`
+  (engine/agent/plugin.go:15), the TurnSink seam with `WithTurnSink` /
+  `RunTurnSink` / `WithPersistInput` (engine/agent/turnsink.go), session
   ctx helpers (`WithSessionID`, `SessionIDFromContext`, `WithDeniedTools`)
-  (agent/sessionctx.go), the canvas runtime (agent/canvas.go),
-  `FormatInsights` (agent/insights.go), caption helpers
-  (agent/caption.go — aliases of core types).
+  (engine/agent/sessionctx.go), the canvas runtime (engine/agent/canvas.go),
+  `FormatInsights` (engine/agent/insights.go), caption helpers
+  (engine/agent/caption.go — aliases of core types).
 - **ai** — the runtime plumbing: `ai.Provider` (the module-boundary
   address of the provider contract — a Go alias of the same interface,
   `type Provider = core.Provider`; not a second streaming contract),
@@ -242,8 +242,8 @@ compiler-checkable end state.
 5. **Update imports inside moved capsules.** Mechanical, per capsule:
    package paths change only where they referenced the old single
    module — `github.com/EndoTheDev/omega/modules/<x>` becomes
-   the harness module path. Imports of `omega/core`, `omega/agent`,
-   `omega/ai` are rewritten by the compiler pointing at the engine's
+   the harness module path. Imports of `omega/core`, `omega/engine/agent`,
+   `omega/engine/ai` are rewritten by the compiler pointing at the engine's
    require line (import lines stay literally the same path if the
    replace directive is a filesystem path — that is the point of
    replace). `gofmt -w` + `go build` in both repos is the check.
@@ -275,7 +275,7 @@ Places the recipe could not be written cleanly. Each is a finding,
 not a hedge. None is fixed by this card except where noted.
 
 1. **tui imports the store capsule for one helper function**
-   — tui/tui.go:23 imports
+   — engine/tui/tui.go:23 imports
    `github.com/EndoTheDev/omega/modules/store`; the only
    package-qualified use is `store.SessionDisplayName(...)` at
    tui.go:1525 (the other `store.X` greps are calls through the

@@ -16,7 +16,7 @@ No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP and serves the embedded webui SPA (built by
-webui/scripts/build.sh, committed in http_channel/static/,
+engine/webui/scripts/build.sh, committed in engine/http_channel/static/,
 baked in at compile time).
 
 ## Project Structure
@@ -26,9 +26,9 @@ cmd/omega/        Single binary entry point (serve, run, health, chat, update)
 cmd/omega/examples/  Config templates, embedded for first-run bootstrap
 core/             Zero-behavior contracts: message vocabulary, seam interfaces,
                   Context, canvas panel types, captioner, kanban vocabulary
-ai/               Provider contract (ai.Provider aliases core.Provider), retry,
+engine/ai/               Provider contract (ai.Provider aliases core.Provider), retry,
                   HTTP client, think-level ladder, image sniffing
-agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
+engine/agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
                   canvas runtime, insights/caption/compaction helpers
 modules/          In-process module packages (22 packages: 20 plugins +
                   datadir, an imported leaf, + ui, the webui SPA; compiled
@@ -36,7 +36,7 @@ modules/          In-process module packages (22 packages: 20 plugins +
   modules/continuous  Continuous-agent machinery: agent homes (folder-as-
                   registration under agents/), wake subprocesses, the
                   canonical chat, the evidence ledger, the roster REST + webui pane
-http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
+engine/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
 webui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
 docs/             User documentation (cli.md, api.md, webui.md, tui.md,
                   configuration.md, architecture.md, troubleshooting.md, roadmap.md)
@@ -101,13 +101,13 @@ dual-mount parity tests and the fail-loud stubs went with them):
   (module, seam, failed predicate) records toggle-level refusals
 
 The seam census (15 exclusive slots) and its registration mapping
-live in the header of `agent/extensionapi.go`; the vocabulary types
+live in the header of `engine/agent/extensionapi.go`; the vocabulary types
 (Refusal, RefusalSink, ModulePanicError) live in
 `core/api.go`. Hosts call `agent.MountAllAPI` (it returns the
 registry: claims, module routes, the refusal ledger) - every host
 does, including the binary and the engines. Module REST rides
 `core.ModuleRoute` declarations (`core/routes.go`) registered through
-`RegisterRoute`; `http_channel/module_routes.go` serves exactly what
+`RegisterRoute`; `engine/http_channel/module_routes.go` serves exactly what
 the live registry carries, so a disabled capsule's routes answer 404
 and a re-enabled one's return, through the same RewireSeams re-read
 every other served seam follows. Binary purity is machine law:

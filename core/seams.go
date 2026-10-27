@@ -589,7 +589,7 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 }
 
 // Frontend is the user-facing interface seam. The default implementation
-// is the terminal TUI (tui/). A custom implementation could
+// is the terminal TUI (engine/tui/). A custom implementation could
 // serve a web UI or any other interactive frontend. The host calls Run
 // after mounting all extensions; Run blocks until the frontend exits.
 type Frontend interface {

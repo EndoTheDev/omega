@@ -7,7 +7,7 @@ surface omega has — **loopback only by default**; extra binds (e.g. a
 Tailscale IP for Traefik) are an explicit `server.bind` opt-in, and
 the public edge always sits behind an auth wall.
 
-Routes are registered in `http_channel/server.go`. Anything
+Routes are registered in `engine/http_channel/server.go`. Anything
 documented below that is not in that mux is not real.
 
 | Route                                | Methods    | Notes                                          |

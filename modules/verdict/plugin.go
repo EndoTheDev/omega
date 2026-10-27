@@ -1,9 +1,8 @@
 package verdict
 
 import (
-
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // Plugin mounts the verdicts seam and its surfaces: the
@@ -54,7 +53,7 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 // off the tool call; nothing rendered a verdict panel before the arc).
 // The /verdicts REST routes live in http_channel behind the
 // verdicts seam's nil guard - unmount answers 501 by construction.
-// The shell's busy-Enter answer path (tui/tui_verdict.go)
+// The shell's busy-Enter answer path (engine/tui/tui_verdict.go)
 // reads the same seam and is nil-guarded: no mount, no intercept.
 // Take verdict.NewPlugin() out of buildPlugins() and every face above
 // vanishes; the proof is TestVerdictRemovalProof

@@ -37,7 +37,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    assignment.
 
 2. **Map every classic assignment to its registration.** The census
-   (`agent/extensionapi.go` header) is the table; the short list:
+   (`engine/agent/extensionapi.go` header) is the table; the short list:
 
    | Classic assignment                    | Registration                |
    | ------------------------------------- | --------------------------- |
@@ -71,7 +71,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 5. **Register your REST surface through `RegisterRoute`.** Since the
    phase-F core-purity move the engine holds no module shape:
-   `http_channel/module_routes.go` serves exactly the patterns the
+   `engine/http_channel/module_routes.go` serves exactly the patterns the
    capsules registered (missing pattern answers 404, no seam-nil
    guard). Kanban moved `/tasks*` and `/boards` onto
    `api.RegisterRoute` in `modules/kanban/rest.go` - the reference.

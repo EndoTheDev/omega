@@ -255,7 +255,7 @@ func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
 	a.extensionInfos = infos
 }
 
-// SetCaptioner installs the image captioner (agent/caption.go). When
+// SetCaptioner installs the image captioner (engine/agent/caption.go). When
 // set, image-carrying user messages are described once before the loop
 // and the loop-visible text carries the caption. Nil = images untouched.
 func (a *Agent) SetCaptioner(c Captioner) {
