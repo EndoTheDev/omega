@@ -95,6 +95,9 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+        "/modules", // t_8ac225f1: the settings tab's modules group fetches
+        // the live introspection in dev too (same-origin embedded in
+        // production) - without this route the group renders nothing
         "/boards",
         // card t_078a2c35: the canvas view-model pipe (GET /ui/canvas +
         // POST /ui/actions) is same-origin embedded in production; the

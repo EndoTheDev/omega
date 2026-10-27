@@ -4,13 +4,44 @@
        settings-toggle small law). Engine ring modules never appear:
        the server filters them before the wire (tier law). A host
        without the toggle seam (501) renders nothing - same fallback
-       the settings pane uses for missing knobs. -->
-  <section v-if="loaded" ref="rootEl" class="settings-group modules-group">
-    <div class="settings-group-head modules-head">
+       the settings pane uses for missing knobs.
+       Card t_8ac225f1: modules is a FIRST-CLASS settings group now -
+       the same group-head treatment as the ten knob groups (chevron
+       button, aria-expanded, click-to-toggle, persisted collapse via
+       the shared omega.settings-collapsed storage), and the search
+       box narrows its rows like every other group's knobs. -->
+  <section
+    v-if="loaded && (!searching || visibleRows.length > 0)"
+    ref="rootEl"
+    class="settings-group modules-group">
+    <!-- full-row clickable header, byte-for-byte the same interaction
+         as SettingsTab's group loop: chevron prefix, whole header
+         toggles, aria-expanded. A group is hidden when collapsed,
+         EXCEPT while a search narrows the list - matching results
+         must never hide the sections that found them. -->
+    <button
+      class="settings-group-head"
+      type="button"
+      :aria-expanded="!isCollapsed"
+      @click="toggleCollapsed">
+      <svg
+        class="bucket-chevron"
+        :class="{ open: !isCollapsed }"
+        width="8"
+        height="8"
+        viewBox="0 0 8 8"
+        aria-hidden="true">
+        <path
+          d="M2.5 1L6 4L2.5 7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.2" />
+      </svg>
       <span class="settings-group-title">modules</span>
-    </div>
+    </button>
+    <template v-if="!isCollapsed">
     <label
-      v-for="m in modules"
+      v-for="m in visibleRows"
       :key="rowKey(m)"
       class="setting-row module-row"
       :class="{ 'module-off': m.state === 'disabled', narrow: narrow }">
@@ -34,18 +65,33 @@
     <p v-for="r in refusals" :key="r.at + r.module" class="module-refusal">
       {{ r.module }}: {{ r.err }}
     </p>
+    </template>
   </section>
 </template>
 
 <script setup lang="ts">
-  import { onMounted, ref } from "vue";
+  import { computed, onMounted, ref, watch } from "vue";
   import {
     fetchModules,
+    filterModuleRows,
     toggleModule,
+    parseCollapsedKeys,
+    serializeCollapsedKeys,
     type ModuleRow,
     type ModuleRefusal,
   } from "~/composables/omega";
   import { useNarrow } from "~/composables/narrow";
+
+  // the settings search narrows this group's rows too: the parent
+  // hands its live query down (empty = no narrowing).
+  const props = defineProps<{ query?: string }>();
+
+  // the parent tracks whether this section currently renders at all
+  // (the seam may be absent, or a search matched no rows) so the
+  // pane's "no settings match" empty state stays truthful.
+  const emit = defineEmits<{
+    (e: "visible", value: boolean): void;
+  }>();
 
   // width-driven adaptation: the inspector column measures ~240-320px,
   // the rows stack below the shared threshold (same mechanic as
@@ -58,6 +104,56 @@
   const refusals = ref<ModuleRefusal[]>([]);
   const toggleError = ref<string | null>(null);
   const busy = ref<string | null>(null);
+
+  // --- collapse + search: the same mechanic as the knob groups ---
+  // collapsed follows the SHARED settings persistence (the same
+  // localStorage key and parse helpers SettingsTab uses; the group
+  // key is "modules"). Search wins over collapse: while a query
+  // narrows the list, the group shows its matches.
+  const COLLAPSED_KEY = "omega.settings-collapsed";
+  const collapsed = ref(false);
+
+  function restoreCollapsed() {
+    if (typeof window === "undefined") return;
+    // a missing persisted set (or a stale payload) restores expanded -
+    // parseCollapsedKeys' tolerance covers unknown keys and junk.
+    collapsed.value = parseCollapsedKeys(
+      localStorage.getItem(COLLAPSED_KEY),
+    ).has("modules");
+  }
+
+  function toggleCollapsed() {
+    collapsed.value = !collapsed.value;
+    if (typeof window !== "undefined") {
+      // read-modify-write the shared set: the other groups' keys must
+      // survive this group's toggle (and vice versa, via SettingsTab).
+      const next = parseCollapsedKeys(localStorage.getItem(COLLAPSED_KEY));
+      if (collapsed.value) next.add("modules");
+      else next.delete("modules");
+      localStorage.setItem(COLLAPSED_KEY, serializeCollapsedKeys(next));
+    }
+  }
+
+  const searching = computed(() => (props.query ?? "").trim().length > 0);
+  const visibleRows = computed<ModuleRow[]>(() =>
+    filterModuleRows(modules.value, props.query ?? ""),
+  );
+  // a search that narrows the groups must not also swallow their rows
+  const isCollapsed = computed(
+    () => collapsed.value && !searching.value,
+  );
+
+  restoreCollapsed();
+
+  // the parent's empty-state needs the live visibility, not a stale one
+  const sectionVisible = computed(
+    () => loaded.value && (!searching.value || visibleRows.value.length > 0),
+  );
+  watch(
+    sectionVisible,
+    (v) => emit("visible", v),
+    { immediate: true },
+  );
 
   // The two-step confirm (no modal in the inspector column): the first
   // click arms the row - the note names what goes down with it (the
