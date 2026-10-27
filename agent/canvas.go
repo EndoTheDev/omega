@@ -67,8 +67,13 @@ func (c *Canvas) ActionTallies() map[string]ActionTally {
 	return out
 }
 
-// tally records one verdict of the action id at the boundary.
+// tally records one verdict of the action id at the boundary. Locks
+// the canvas mutex itself: the single call site (Dispatch) is past
+// its own critical section, and concurrent Dispatchers race the map
+// otherwise (the -race proof demanded this guard).
 func (c *Canvas) tally(actionID string, refusable bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.tallies == nil {
 		c.tallies = make(map[string]*seamTally)
 	}
