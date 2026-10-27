@@ -24,4 +24,4 @@ fi
 npx nuxt generate
 rm -rf ../http_channel/static
 cp -r dist ../http_channel/static
-echo "synced webui/dist -> http_channel/static"
+echo "synced engine/webui/dist -> engine/http_channel/static"
