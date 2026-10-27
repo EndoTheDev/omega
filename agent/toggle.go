@@ -304,6 +304,7 @@ func censusGrew(before, after core.CensusSnapshot) []string {
 	out = append(out, listAdded("tools", before.Tools, after.Tools)...)
 	out = append(out, listAdded("commands", before.Commands, after.Commands)...)
 	out = append(out, listAdded("panels", before.Panels, after.Panels)...)
+	out = append(out, listAdded("routes", before.Routes, after.Routes)...)
 	out = append(out, listAdded("handles", before.Handles, after.Handles)...)
 	if after.Channels > before.Channels {
 		out = append(out, "channels")
@@ -338,6 +339,7 @@ func censusShrank(before, after core.CensusSnapshot) []string {
 	out = append(out, listAdded("tools", after.Tools, before.Tools)...)
 	out = append(out, listAdded("commands", after.Commands, before.Commands)...)
 	out = append(out, listAdded("panels", after.Panels, before.Panels)...)
+	out = append(out, listAdded("routes", after.Routes, before.Routes)...)
 	out = append(out, listAdded("handles", after.Handles, before.Handles)...)
 	if after.Channels < before.Channels {
 		out = append(out, "channels")

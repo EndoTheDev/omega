@@ -23,21 +23,18 @@
 //	 Cron                          RegisterCron
 //	 Notifications                 RegisterNotifications
 //	 Verdicts                      RegisterVerdicts
-//	 Captioner                     RegisterCaptioner (host-built after
-//	                               the mount today; carried for census
-//	                               completeness)
+//	 Captioner                     host-built after the mount today
 //
-//	Additive surfaces (8)          Registration
-//	 ToolProviders                 RegisterTool
+//	 Additive surfaces (8)          Registration
+//	 ToolProviders                 RegisterTool / RegisterRuntimeTools
 //	 PromptSectioners              RegisterPromptSectioner
 //	 TUIProviders                  RegisterRenderer
-//	RegisterPanel / RegisterAction   (declarative: static descriptors
-//	                                + checked action-pipe handlers)
-//	RegisterPanelProvider            (live: a stateful core.PanelProvider
-//	                                - Panels() computed per snapshot, a
-//	                                core.PanelUpdateSink pushing through
-//	                                mutations; kanban's capsule is the
-//	                                reference)
+//	 PanelProviders                RegisterPanelProvider (a stateful
+//	                              core.PanelProvider - Panels()
+//	                              computed per snapshot, a
+//	                              core.PanelUpdateSink pushing through
+//	                              mutations; kanban's capsule is the
+//	                              reference)
 //	 Channels                      RegisterChannel
 //	 Commands + CommandHandler     RegisterCommand
 //	 CLI subcommands (phase D)     RegisterSubcommand
@@ -60,15 +57,12 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -367,27 +361,22 @@ type ExtensionAPI struct {
 	builtin bool     // the capsule ships built-in vocabulary (not Toggleable)
 	tools   map[string]core.Tool
 	wired   bool // the one tool provider is already on ctx.ToolProviders
-	panels  map[string]core.Panel
-	order   []string
-	acts    map[string]registeredAction
-	// panelProviders holds the live registered providers (the dynamic
-	// capsule shape) - commit lands them on ctx.PanelProviders.
+	// panelProviders holds the registered providers - each lands on
+	// ctx.PanelProviders at commit.
 	panelProviders []core.PanelProvider
 }
 
 // writeSlot records the mount's write into the journal and applies it
 // to the mounting Context (boot: the live Context; remount: the
 // scoped proxy). apply runs immediately; undo plays backward at
-// dismount time. Append writes capture their start index in the undo
-// closure the call site builds.
-func (api *ExtensionAPI) writeSlot(desc string, apply func(*core.Context), undo func(*core.Context)) {
+// dismount time and removes exactly the captured element
+// (removeOne) - never a slice truncation.
+func (api *ExtensionAPI) writeSlot(apply func(*core.Context), undo func(*core.Context)) {
 	applied := api.live
 	if apply != nil {
 		apply(api.ctx)
 	}
 	api.j.add(contribution{
-		module:   api.module,
-		desc:     desc,
 		ctxApply: apply,
 		ctxUndo:  undo,
 		applied:  applied,
@@ -402,8 +391,6 @@ func (api *ExtensionAPI) claimRecorded(key string) error {
 	}
 	module := api.module
 	api.j.add(contribution{
-		module:  api.module,
-		desc:    "claim " + key,
 		regUndo: func(r *Registry) { r.releaseClaim(key, module) },
 	})
 	return nil
@@ -426,10 +413,7 @@ func (api *ExtensionAPI) claim(name string) error {
 	}
 	api.reg.owner[name] = api.module
 	if api.j != nil { // nil only in tests building the api by hand; journal the release
-		module := api.module
 		api.j.add(contribution{
-			module:  module,
-			desc:    "claim " + name,
 			regUndo: func(r *Registry) { r.releaseClaim(name, module) },
 		})
 	}
@@ -462,12 +446,10 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	api.tools[name] = t
 	if !api.wired {
 		api.wired = true
-		before := len(api.ctx.ToolProviders)
 		provider := toolMap(api.tools)
 		api.writeSlot(
-			"tool provider (tools: "+name+")",
 			func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, provider) },
-			func(c *core.Context) { c.ToolProviders = c.ToolProviders[:before] },
+			func(c *core.Context) { c.ToolProviders = removeOne[core.ToolProvider](c.ToolProviders, provider) },
 		)
 	}
 	return nil
@@ -487,7 +469,7 @@ func (m toolMap) Tools() map[string]core.Tool { return m }
 // being legal to SERVE. The provider is appended whole (it re-reads
 // its live set on every Tools() call, the classic bridge shape). The
 // capsule claims its own namespace ONCE as the guard ("mcp." - the
-// guard claim is journaled like every other), and the tools ride
+// guard is journaled like every other), and the tools ride
 // beneath it as runtime data. Binary purity holds: removing the module
 // removes all of them regardless of naming. The one-dot law is not
 // weakened anywhere - no multi-dot parse, no flattening.
@@ -500,92 +482,23 @@ func (api *ExtensionAPI) RegisterRuntimeTools(p core.ToolProvider) error {
 		return err
 	}
 	api.j.add(contribution{
-		module:  module,
-		desc:    "runtime tools guard " + module + ".",
 		regUndo: func(r *Registry) { r.releaseClaim("ns:"+module+".", module) },
 	})
-	before := len(api.ctx.ToolProviders)
 	api.writeSlot(
-		fmt.Sprintf("runtime tools (%d under guard %s.)", len(p.Tools()), module),
 		func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, p) },
-		func(c *core.Context) { c.ToolProviders = c.ToolProviders[:before] },
+		func(c *core.Context) { c.ToolProviders = removeOne(c.ToolProviders, p) },
 	)
 	return nil
 }
 
-// RegisterPanel declares one panel descriptor (PanelProviders,
-// additive). The api path assembles one panel provider per module at
-// commit - the shape the canvas registers must be single per module.
-// Actions are stamped with the capsule's namespace: a descriptor
-// carrying another module's name (or an unprefixed action id) is a
-// fail-loud error.
-func (api *ExtensionAPI) RegisterPanel(p core.Panel) error {
-	if p.ID == "" {
-		return fmt.Errorf("panel %q: a registered panel carries its id", api.module)
-	}
-	if api.panels == nil {
-		api.panels = make(map[string]core.Panel)
-	}
-	if _, dup := api.panels[p.ID]; !dup {
-		api.order = append(api.order, p.ID)
-	}
-	stamped := make([]core.PanelAction, len(p.Actions))
-	for i, a := range p.Actions {
-		if a.Module == "" {
-			a.Module = api.module
-		}
-		if a.Module != api.module {
-			return fmt.Errorf("panel %q action %q claims module %q - the api mounts %q only", p.ID, a.ID, a.Module, api.module)
-		}
-		if _, _, err := core.ParseSeamName(a.ID); err != nil {
-			return err
-		}
-		stamped[i] = a
-	}
-	p.Actions = stamped
-	api.panels[p.ID] = p
-	return nil
-}
-
-// registeredAction is one action-pipe registration: the handler plus
-// its optional boundary ShapeCheck (Q9), keyed by the namespaced
-// action id.
-type registeredAction struct {
-	check   core.ShapeCheck
-	handler func(v any) (any, error)
-}
-
-// RegisterAction binds an action-pipe handler, optionally with its
-// boundary ShapeCheck: the proof seam of the payload contract (Q9).
-// The handler receives the decoded raw JSON; a failing check refusal
-// (Q12, the handler never fires). Registration resolves against the
-// declared panels at commit - an action id declared on no panel is a
-// fail-loud error.
-func (api *ExtensionAPI) RegisterAction(id string, check core.ShapeCheck, handler func(v any) (any, error)) error {
-	if err := api.claim(id); err != nil {
-		return err
-	}
-	if handler == nil {
-		return fmt.Errorf("action %q: a registration carries its handler", id)
-	}
-	if api.acts == nil {
-		api.acts = make(map[string]registeredAction)
-	}
-	api.acts[id] = registeredAction{check: check, handler: handler}
-	return nil
-}
-
-// RegisterPanelProvider registers a live panel provider - the dynamic
-// capsule shape the declarative registrations cannot express: its
-// Panels() computes the snapshot from its own state on every read and
-// a core.PanelUpdateSink (installed by the canvas at registration)
+// RegisterPanelProvider registers a panel provider: its Panels()
+// computes the snapshot from its own state on every read and a
+// core.PanelUpdateSink (installed by the canvas at registration)
 // pushes deltas around module-face mutations. Kanban's capsule is the
-// reference (phase C1, the migration that surfaced this gap). The
-// validation is the declarative path's, applied to the provider's
-// current declaration: every panel carries its id, every action id is
-// a namespaced pair claimed by this capsule. The real provider lands
-// on ctx.PanelProviders at commit - the exact append the classic
-// mount makes.
+// reference (phase C1). The validation: every panel carries its id,
+// every action id is a namespaced pair claimed by this capsule. The
+// provider lands on ctx.PanelProviders at commit - the exact append
+// the classic mount makes.
 func (api *ExtensionAPI) RegisterPanelProvider(p core.PanelProvider) error {
 	if p == nil {
 		return fmt.Errorf("panel provider %q: a registration carries its provider", api.module)
@@ -611,120 +524,28 @@ func (api *ExtensionAPI) RegisterPanelProvider(p core.PanelProvider) error {
 	return nil
 }
 
-// commit assembles the module's panel surface and appends it to
-// ctx.PanelProviders - the exact slice the classic mount appends to:
-// the declarative registrations assemble one provider, the live
-// registered providers land as themselves. Called by the mount loop
-// after MountWithAPI returns; validation failures abort the mount
-// (fail loud, Q5).
+// commit appends the module's registered panel providers to
+// ctx.PanelProviders - the exact slice the classic mount appends to.
+// Called by the mount loop after MountWithAPI returns; validation
+// failures abort the mount (fail loud, Q5).
 func (api *ExtensionAPI) commit() error {
-	if len(api.panels) > 0 {
-		for id := range api.acts {
-			declared := false
-			for _, panel := range api.panels {
-				for _, pa := range panel.Actions {
-					if pa.ID == id {
-						declared = true
-					}
-				}
-			}
-			if !declared {
-				return fmt.Errorf("action %q is declared on no panel of %q - register it on the panel descriptor", id, api.module)
-			}
-		}
-		before := len(api.ctx.PanelProviders)
-		provider := &apiPanels{
-			module: api.module,
-			reg:    api.reg,
-			panels: api.panels,
-			order:  api.order,
-			acts:   api.acts,
-		}
-		api.writeSlot(
-			"declarative panels",
-			func(c *core.Context) { c.PanelProviders = append(c.PanelProviders, provider) },
-			func(c *core.Context) { c.PanelProviders = c.PanelProviders[:before] },
-		)
-	}
 	if len(api.panelProviders) > 0 {
-		before := len(api.ctx.PanelProviders)
 		providers := api.panelProviders
 		api.writeSlot(
-			"live panel providers",
 			func(c *core.Context) {
 				for _, p := range providers {
 					c.PanelProviders = append(c.PanelProviders, p)
 				}
 			},
-			func(c *core.Context) { c.PanelProviders = c.PanelProviders[:before] },
+			func(c *core.Context) {
+				for _, p := range providers {
+					c.PanelProviders = removeOne(c.PanelProviders, p)
+				}
+			},
 		)
 	}
 	return nil
 }
-
-// apiPanels is the assembled provider of the declarative panel
-// registrations - the action pipe's boundary. Every call crossing it
-// decodes raw JSON and runs the registered ShapeCheck before the
-// handler; a failure is refused (Q12) and the handler never sees the
-// payload.
-type apiPanels struct {
-	module string
-	reg    *Registry
-	panels map[string]core.Panel
-	order  []string
-	acts   map[string]registeredAction
-}
-
-// Panels implements core.PanelProvider.
-func (p *apiPanels) Panels() []core.Panel {
-	out := make([]core.Panel, 0, len(p.order))
-	for _, id := range p.order {
-		out = append(out, p.panels[id])
-	}
-	return out
-}
-
-// HandleAction implements core.PanelProvider: the one seam with a
-// working boundary ShapeCheck in phase B (SKETCH 3's first step).
-func (p *apiPanels) HandleAction(call core.ActionCall) (any, error) {
-	entry, ok := p.acts[call.Action]
-	if !ok {
-		// The canvas route-checks before Dispatch; this defense names
-		// the shape for direct callers.
-		return nil, fmt.Errorf("%w: %q", core.ErrUnknownAction, call.Action)
-	}
-	var v any
-	if msg := bytes.TrimSpace(call.Args); len(msg) > 0 {
-		if err := json.Unmarshal(msg, &v); err != nil {
-			p.refuse(call, err)
-			return nil, fmt.Errorf("action %q: args are not valid JSON: %w", call.Action, err)
-		}
-	}
-	if entry.check != nil {
-		if err := entry.check(v); err != nil {
-			p.refuse(call, err)
-			return nil, fmt.Errorf("action %q: refused by %s: %w", call.Action, call.Module, err)
-		}
-	}
-	return entry.handler(v)
-}
-
-// refuse records the rejection in the ledger (Q12): module, seam,
-// failed predicate (the action id carries the check) and the error.
-func (p *apiPanels) refuse(call core.ActionCall, err error) {
-	if p.reg == nil || p.reg.refusals == nil {
-		return
-	}
-	p.reg.refusals.Log(core.Refusal{
-		Module:    call.Module,
-		Seam:      "panels",
-		Predicate: call.Action,
-		Err:       err,
-		At:        time.Now(),
-	})
-}
-
-// RegisterRoute registers one module REST route (the phase-D vocabulary;
 
 // RegisterRoute registers one module REST route (the phase-D vocabulary;
 // validated and recorded, nothing serves it in phase B). The pattern
@@ -761,8 +582,6 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 	}
 	route := Route{Module: module, Pattern: pattern, Handler: h} // ctxApply must not alias the loop's rt
 	api.j.add(contribution{                                      // registry is always live; the Context side follows the mount path
-		module: module,
-		desc:   "route " + pattern,
 		ctxApply: func(c *core.Context) {
 			c.ModuleRoutes = append(c.ModuleRoutes, route)
 		},
@@ -831,8 +650,6 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 	}
 	api.reg.mu.Unlock()
 	api.j.add(contribution{
-		module: module,
-		desc:   "subcommand " + name,
 		regUndo: func(r *Registry) {
 			r.mu.Lock()
 			subs := make([]Subcommand, 0, len(r.subcmds))
@@ -864,8 +681,6 @@ func (api *ExtensionAPI) RegisterEmitter(fn func(n core.NotificationsProvider)) 
 	api.reg.emitter = append(api.reg.emitter, emitterReg{module: api.module, fn: fn})
 	api.reg.mu.Unlock()
 	api.j.add(contribution{
-		module: module,
-		desc:   "emitter hook",
 		regUndo: func(r *Registry) {
 			r.mu.Lock()
 			hooks := make([]emitterReg, 0, len(r.emitter))
@@ -896,11 +711,9 @@ func (api *ExtensionAPI) RegisterRenderer(r core.TUIProvider) error {
 	if r == nil {
 		return fmt.Errorf("renderer %q: a registration carries its provider", api.module)
 	}
-	before := len(api.ctx.TUIProviders)
 	api.writeSlot(
-		"renderer",
 		func(c *core.Context) { c.TUIProviders = append(c.TUIProviders, r) },
-		func(c *core.Context) { c.TUIProviders = c.TUIProviders[:before] },
+		func(c *core.Context) { c.TUIProviders = removeOne(c.TUIProviders, r) },
 	)
 	return nil
 }
@@ -910,11 +723,9 @@ func (api *ExtensionAPI) RegisterPromptSectioner(p core.PromptSectioner) error {
 	if p == nil {
 		return fmt.Errorf("prompt sectioner %q: a registration carries its provider", api.module)
 	}
-	before := len(api.ctx.PromptSectioners)
 	api.writeSlot(
-		"prompt sectioner",
 		func(c *core.Context) { c.PromptSectioners = append(c.PromptSectioners, p) },
-		func(c *core.Context) { c.PromptSectioners = c.PromptSectioners[:before] },
+		func(c *core.Context) { c.PromptSectioners = removeOne(c.PromptSectioners, p) },
 	)
 	return nil
 }
@@ -924,11 +735,9 @@ func (api *ExtensionAPI) RegisterChannel(ch core.Channel) error {
 	if ch == nil {
 		return fmt.Errorf("channel %q: a registration carries its channel", api.module)
 	}
-	before := len(api.ctx.Channels)
 	api.writeSlot(
-		"channel",
 		func(c *core.Context) { c.Channels = append(c.Channels, ch) },
-		func(c *core.Context) { c.Channels = c.Channels[:before] },
+		func(c *core.Context) { c.Channels = removeOne(c.Channels, ch) },
 	)
 	return nil
 }
@@ -948,17 +757,13 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 	if err := api.claimRecorded(strings.TrimPrefix(name, "/")); err != nil {
 		return err
 	}
-	before := len(api.ctx.Commands)
+	cmd := core.ExtensionCommand{Name: name, Description: description, Args: args}
 	api.writeSlot(
-		"command "+name,
-		func(c *core.Context) {
-			c.Commands = append(c.Commands, core.ExtensionCommand{Name: name, Description: description, Args: args})
-		},
-		func(c *core.Context) { c.Commands = c.Commands[:before] },
+		func(c *core.Context) { c.Commands = append(c.Commands, cmd) },
+		func(c *core.Context) { c.Commands = removeOne(c.Commands, cmd) },
 	)
 	prev := api.ctx.CommandHandler
 	api.writeSlot(
-		"command handler chain "+name,
 		func(c *core.Context) {
 			inner := c.CommandHandler // chain on the target Context's current handler
 			c.CommandHandler = func(ctx context.Context, n, a string) (core.CommandResult, error) {
@@ -982,13 +787,11 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 func (api *ExtensionAPI) RegisterDelegation(injected <-chan core.InjectedMessage, pending func() int) error {
 	prevInj := api.ctx.InjectedMessages
 	api.writeSlot(
-		"injected messages",
 		func(c *core.Context) { c.InjectedMessages = injected },
 		func(c *core.Context) { c.InjectedMessages = prevInj },
 	)
 	prevPending := api.ctx.PendingDelegations
 	api.writeSlot(
-		"pending delegations",
 		func(c *core.Context) { c.PendingDelegations = pending },
 		func(c *core.Context) { c.PendingDelegations = prevPending },
 	)
@@ -1010,7 +813,6 @@ func (api *ExtensionAPI) RegisterLifecycle(name string, start func(ctx context.C
 	}
 	module := api.module
 	api.writeSlot(
-		"lifecycle handle "+name,
 		func(c *core.Context) {
 			c.RunGroup().Register(module, core.LifecycleHandle{Name: name, Start: start, Stop: stop})
 		},
@@ -1031,7 +833,7 @@ func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo 
 	if err := api.claimRecorded(seam); err != nil {
 		return err
 	}
-	api.writeSlot("slot "+seam, apply, undo)
+	api.writeSlot(apply, undo)
 	return nil
 }
 
@@ -1176,16 +978,4 @@ func (api *ExtensionAPI) RegisterVerdicts(v core.VerdictsProvider) error {
 	return api.mountSeam("verdicts",
 		func(c *core.Context) { c.Verdicts = v },
 		func(c *core.Context) { c.Verdicts = prev })
-}
-
-// RegisterCaptioner maps the captioner seam (host-built after the
-// mount today; carried so the census has no gaps).
-func (api *ExtensionAPI) RegisterCaptioner(cp core.Captioner) error {
-	if cp == nil {
-		return fmt.Errorf("captioner %q: a registration carries its captioner", api.module)
-	}
-	prev := api.ctx.Captioner
-	return api.mountSeam("captioner",
-		func(c *core.Context) { c.Captioner = cp },
-		func(c *core.Context) { c.Captioner = prev })
 }

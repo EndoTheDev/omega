@@ -39,9 +39,8 @@ type Canvas struct {
 }
 
 // seamTally is one accept counter: accepted counts payloads the module
-// handler took, refused counts payloads a decode or check rejected
-// (the module's own no counts - the Q12 ledger records only the
-// boundary-owned ShapeCheck rejections on top of this).
+// handler took, refused counts payloads a decode or handler rejection
+// (the module's own no counts).
 type seamTally struct {
 	accepted int
 	refused  int

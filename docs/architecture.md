@@ -6,7 +6,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 
 | Layer    | Package     | Responsibility                                                                                                                                          |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (22 of them), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: ShapeCheck, Refusal/RefusalSink, ModulePanicError) |
+| Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (22 of them), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError) |
 | Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | Provider | `ai`        | The `ai.Provider`/`ai.ToolSchema`/`ai.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
@@ -83,14 +83,14 @@ dual-mount parity tests and the fail-loud stubs went with them):
 - machine-facing names (tool names, panel action ids) carry the
   prefix; user-facing names (slash commands, route patterns) keep
   their natural shape and are owner-recorded
-- payloads crossing a registration are raw JSON; the action pipe
-  (the canvas action seam) carries the working boundary ShapeCheck -
-  a failed check is a refusal in the ledger (module, seam, failed
-  predicate), nothing else acts on it yet
+- payloads crossing a registration are raw JSON; the canvas action
+  seam refuses unknown modules or action ids at dispatch - module
+  handlers own their payload shapes (binary purity), the ledger
+  (module, seam, failed predicate) records toggle-level refusals
 
 The seam census (15 exclusive slots) and its registration mapping
 live in the header of `agent/extensionapi.go`; the vocabulary types
-(ShapeCheck, Refusal, RefusalSink, ModulePanicError) live in
+(Refusal, RefusalSink, ModulePanicError) live in
 `core/api.go`. Hosts call `agent.MountAllAPI` (it returns the
 registry: claims, module routes, the refusal ledger) - every host
 does, including the binary and the engines. Module REST rides

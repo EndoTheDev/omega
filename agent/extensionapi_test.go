@@ -1,13 +1,10 @@
 package agent
 
-// The dual-mount tests (v0.12 phase B). The centerpiece is the parity
-// law: one capsule mounts BOTH ways, and the resulting Contexts are
-// behaviorally identical - the adapters converge on the exact fields
-// the classic seam assignment writes. Around it: the identity law
-// (namespaced machine-facing names, Q10), the one-tenant rule (Q5),
-// clean-idempotent replacement (Q7), the census enforcement (every
-// seam maps to a registration), and the action pipe's working boundary
-// ShapeCheck with its failing-refusal path (Q9/Q12, SKETCH 3 step one).
+// The registration-surface tests (v0.12 phase B onward). The identity
+// law (namespaced machine-facing names, Q10), the one-tenant rule
+// (Q5), clean-idempotent replacement (Q7), the census enforcement
+// (every seam maps to a registration), the CLI subcommand law (Q6),
+// the emitter handoff and the subcommand registry.
 
 import (
 	"context"
@@ -92,19 +89,6 @@ func (p *notifierPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return nil
 }
 
-// plugPanel is the shared panel descriptor: the same declarations both
-// mount styles carry, the same echo behavior to compare.
-func plugPanel() core.Panel {
-	return core.Panel{
-		ID:    "plug.main",
-		Title: "plug",
-		Kind:  "status",
-		Actions: []core.PanelAction{
-			{ID: "plug.act", Label: "echo", Module: "plug"},
-		},
-	}
-}
-
 // fakeStore satisfies the full StoreProvider seam with no-ops - parity
 // compares the identity and inventory of the reference, the store
 // itself never runs.
@@ -169,54 +153,6 @@ func (fakeStore) SetSessionTitle(ctx context.Context, sessionID, title string, f
 }
 func (fakeStore) SessionModels(ctx context.Context) (map[string]string, error) { return nil, nil }
 
-// apiCapsule mounts the same capability set through registrations.
-type apiCapsule struct {
-	routes int // observed on the registry after the mount
-}
-
-func (*apiCapsule) Name() string { return "plug" }
-func (*apiCapsule) Provides() []string {
-	return []string{"store", "tools", "tui", "panels", "prompt_sections", "channel", "logging", "loop", "compactor"}
-}
-func (*apiCapsule) Requires() []string { return []string{"notifications"} }
-
-func (*apiCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	for _, step := range []func() error{
-		func() error { return api.RegisterStore(fakeStore{}) },
-		func() error { return api.RegisterLogger(&plugLogger{}) },
-		func() error { return api.RegisterLoop(plugLoop{}) },
-		func() error { return api.RegisterCompactor(plugCompactor{}) },
-		func() error { return api.RegisterTool("plug.echo", echoTool()) },
-		func() error { return api.RegisterPromptSectioner(plugSectioner{}) },
-		func() error { return api.RegisterRenderer(plugTUI{}) },
-		func() error { return api.RegisterPanel(plugPanel()) },
-		func() error {
-			return api.RegisterAction("plug.act", nil, func(v any) (any, error) { return v, nil })
-		},
-		func() error { return api.RegisterChannel(plugChannel{}) },
-		func() error {
-			return api.RegisterCommand("/plug", "parity command", nil,
-				func(ctx context.Context, name, args string) (core.CommandResult, error) {
-					if name != "/plug" {
-						return core.CommandResult{}, fmt.Errorf("unknown command %q", name)
-					}
-					return core.CommandResult{Text: "plug ran"}, nil
-				})
-		},
-		func() error {
-			return api.RegisterRoute("GET /plug", func(w http.ResponseWriter, r *http.Request) {})
-		},
-		func() error {
-			return api.RegisterEmitter(func(n core.NotificationsProvider) { emitterSeen = n })
-		},
-	} {
-		if err := step(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 var emitterSeen core.NotificationsProvider
 
 // TestNamespaceEnforcement pins Q10: a machine-facing registration
@@ -246,10 +182,6 @@ func (b badNamespace) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	// A name with no namespace at all.
 	if err := api.RegisterTool("nodot", echoTool()); err == nil {
 		return fmt.Errorf("un-namespaced tool name accepted")
-	}
-	// A panel action id under another namespace.
-	if err := api.RegisterPanel(core.Panel{ID: "plug.main", Actions: []core.PanelAction{{ID: "evil.act", Module: "evil"}}}); err == nil {
-		return fmt.Errorf("foreign-tenant panel action accepted")
 	}
 	return fmt.Errorf("all namespace violations were rejected (this error fails the mount on purpose, Q5 fail-loud)")
 }
@@ -371,119 +303,6 @@ func (replaceCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.RegisterRoute("GET /plug", func(w http.ResponseWriter, r *http.Request) {})
 }
 
-// TestActionShapeCheckProof is SKETCH 3's first step, end-to-end: a
-// registration-bound ShapeCheck guards the action pipe through the
-// real canvas runtime. A legal payload runs the handler; a bad shape
-// is refused - handler never fires - and the refusal lands in the
-// ledger with module, seam and failed predicate (Q12).
-func TestActionShapeCheckProof(t *testing.T) {
-	var ctx Context
-	// The check: the payload must be an object carrying a number "n".
-	numCheck := func(v any) error {
-		m, ok := v.(map[string]any)
-		if !ok {
-			return fmt.Errorf("payload must be an object")
-		}
-		if _, ok := m["n"].(float64); !ok {
-			return fmt.Errorf("field n must be a number")
-		}
-		return nil
-	}
-	reg, err := MountAllAPI([]Plugin{proofCapsule{check: numCheck}}, &ctx, nil, nil)
-	if err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-	canvas, err := NewCanvas(&ctx, nil)
-	if err != nil {
-		t.Fatalf("canvas: %v", err)
-	}
-
-	// Legal shape runs: the decoded map reaches the handler.
-	out, err := canvas.Dispatch(core.ActionCall{Module: "plug", Action: "plug.act", Args: json.RawMessage(`{"n":1}`)})
-	if err != nil {
-		t.Fatalf("legal payload must pass the shape check: %v", err)
-	}
-	if m, ok := out.(map[string]any); !ok || m["n"] != float64(1) {
-		t.Errorf("handler got %+v", out)
-	}
-	if len(reg.Refusals()) != 0 {
-		t.Errorf("a legal payload records no refusal: %+v", reg.Refusals())
-	}
-
-	// Bad shape is refused: handler never fires, ledger holds module,
-	// seam and failed predicate.
-	handledByCheck = 0
-	before := len(reg.Refusals())
-	_, err = canvas.Dispatch(core.ActionCall{Module: "plug", Action: "plug.act", Args: json.RawMessage(`{"n":"x"}`)})
-	if err == nil {
-		t.Fatalf("the bad shape must be refused")
-	}
-	if handledByCheck != 0 {
-		t.Errorf("the refused handler must never run (it ran %d times)", handledByCheck)
-	}
-	refusals := reg.Refusals()
-	if len(refusals) != before+1 {
-		t.Fatalf("one refusal must land, have %+v", refusals)
-	}
-	r := refusals[len(refusals)-1]
-	if r.Module != "plug" || r.Seam != "panels" || r.Predicate != "plug.act" || r.Err == nil {
-		t.Errorf("refusal carries module, seam, failed predicate and error: %+v", r)
-	}
-
-	// Not-even-JSON is refused at the decode boundary.
-	before = len(reg.Refusals())
-	_, err = canvas.Dispatch(core.ActionCall{Module: "plug", Action: "plug.act", Args: json.RawMessage(`not the one`)})
-	if err == nil {
-		t.Fatalf("unparseable payload must be refused")
-	}
-	if handledByCheck != 0 {
-		t.Errorf("the decode-refused handler must never run")
-	}
-	if got := len(reg.Refusals()); got != before+1 {
-		t.Fatalf("one more refusal must land, have %d", got)
-	}
-
-	// No args at all: an argless action call (the omitempty omission)
-	// reaches its handler as a nil payload and passes - on an action
-	// registered without a check.
-	handledByCheck = 0
-	out, err = canvas.Dispatch(core.ActionCall{Module: "plug", Action: "plug.ping"})
-	if err != nil {
-		t.Fatalf("argless call passes the boundary: %v", err)
-	}
-	if out != "pong" {
-		t.Errorf("argless call reaches its handler: %+v", out)
-	}
-}
-
-var handledByCheck int
-
-// proofCapsule registers one panel action with a boundary ShapeCheck -
-// the one working proof seam of phase B.
-type proofCapsule struct{ check core.ShapeCheck }
-
-func (proofCapsule) Name() string       { return "plug" }
-func (proofCapsule) Provides() []string { return []string{"panels"} }
-func (proofCapsule) Requires() []string { return nil }
-func (p proofCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	if err := api.RegisterPanel(core.Panel{
-		ID: "plug.main",
-		Actions: []core.PanelAction{
-			{ID: "plug.act", Label: "act"},
-			{ID: "plug.ping", Label: "ping"},
-		},
-	}); err != nil {
-		return err
-	}
-	if err := api.RegisterAction("plug.act", p.check, func(v any) (any, error) {
-		handledByCheck++
-		return v, nil
-	}); err != nil {
-		return err
-	}
-	return api.RegisterAction("plug.ping", nil, func(v any) (any, error) { return "pong", nil })
-}
-
 // TestEmitterHandoffNilSafe: with the notifications module absent the
 // emitter hook receives nil - the same deal the classic nil-guard
 // capture has. The capsule requires nothing, so the mount completes
@@ -513,15 +332,13 @@ func (nilEmitterCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 }
 
 // TestCensusEnforcement walks the registration surface and demands the
-// census: all 23 seam mappings ride a registration (15 exclusive
+// census: the 23 seam surfaces ride a registration (15 exclusive
 // slots, 8 additive surfaces - the delegation pipe carries both its
-// fields) plus the two no-classic-seam families (routes, emitters) and
-// the action-pipe registration. A name going missing breaks the census.
+// fields) plus the two no-classic-seam families (routes, emitters).
+// A name going missing breaks the census.
 func TestCensusEnforcement(t *testing.T) {
 	want := map[string]bool{
 		"RegisterTool":            true,
-		"RegisterPanel":           true,
-		"RegisterAction":          true,
 		"RegisterPanelProvider":   true,
 		"RegisterRoute":           true,
 		"RegisterCommand":         true,
@@ -543,7 +360,6 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterCron":            true,
 		"RegisterNotifications":   true,
 		"RegisterVerdicts":        true,
-		"RegisterCaptioner":       true,
 	}
 	got := map[string]bool{}
 	typ := reflect.TypeOf(&ExtensionAPI{})

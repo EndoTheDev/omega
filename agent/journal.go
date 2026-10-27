@@ -9,7 +9,11 @@
 // That split is the load-bearing guarantee of live toggling.
 package agent
 
-import "github.com/EndoTheDev/omega/core"
+import (
+	"reflect"
+
+	"github.com/EndoTheDev/omega/core"
+)
 
 // contribution is one journaled write. ctxApply/ctxUndo are the
 // forward and backward Context writes (nil for registry-only
@@ -19,8 +23,6 @@ import "github.com/EndoTheDev/omega/core"
 // writes apply directly; remount writes apply to the scoped proxy
 // and turn live only at commit.
 type contribution struct {
-	module   string
-	desc     string
 	ctxApply func(*core.Context)
 	ctxUndo  func(*core.Context)
 	regUndo  func(*Registry)
@@ -46,10 +48,6 @@ func (j *journal) add(c contribution) {
 	j.entries = append(j.entries, c)
 }
 
-// len reports the journal size - the zero the panic tests demand: a
-// rejected remount leaves zero contributions behind.
-func (j *journal) length() int { return len(j.entries) }
-
 // commit replays every contribution whose Context write is not yet
 // live onto live, in order (the sketch's "commit replays forward").
 // Registry-side records are already live: they land during
@@ -66,7 +64,10 @@ func (j *journal) commit(live *core.Context) {
 
 // undo plays the journal backward: Context writes reversed in reverse
 // order, then registry records removed. This is the boot-recorded
-// dismount path (Dismount, DismountAll).
+// dismount path (Dismount, DismountAll). The Context undos remove by
+// identity (removeOne): a dismount deletes only this module's own
+// appends, never a slice truncation that eats a later module's
+// surface when dismounts leave mount order.
 func (j *journal) undo(ctx *core.Context, reg *Registry) {
 	for i := len(j.entries) - 1; i >= 0; i-- {
 		e := j.entries[i]
@@ -89,4 +90,36 @@ func (j *journal) playBackRegistry(reg *Registry) {
 			e.regUndo(reg)
 		}
 	}
+}
+
+// removeOne deletes the first element of s identical to want and
+// returns the result. Not-found returns s unchanged: the undo removes
+// exactly this module's own contribution, never a slice truncation -
+// a truncation deletes a later module's append whenever dismounts
+// leave strict reverse mount order (the gate audit, live toggles).
+func removeOne[T any](s []T, want T) []T {
+	for i, v := range s {
+		if identical(v, want) {
+			out := make([]T, 0, len(s)-1)
+			out = append(out, s[:i]...)
+			out = append(out, s[i+1:]...)
+			return out
+		}
+	}
+	return s
+}
+
+// identical reports element identity: reference identity for pointer,
+// map, channel and unsafe-pointer values, deep equality otherwise
+// (structs and their payloads).
+func identical(a, b any) bool {
+	pa, pb := reflect.ValueOf(a), reflect.ValueOf(b)
+	switch pa.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Chan, reflect.UnsafePointer:
+		if pb.Kind() == pa.Kind() {
+			return pa.Pointer() == pb.Pointer()
+		}
+		return false
+	}
+	return reflect.DeepEqual(a, b)
 }

@@ -411,3 +411,127 @@ func TestToggleChurnFlatGoroutines(t *testing.T) {
 type dumpWriter struct{ *strings.Builder }
 
 func (w dumpWriter) Write(p []byte) (int, error) { return w.Builder.Write(p) }
+
+// interPanel is a fixture panel provider: one panel, one namespaced
+// action.
+type interPanel struct{ name string }
+
+func (p interPanel) Panels() []core.Panel {
+	return []core.Panel{{
+		ID:    p.name + ".main",
+		Title: p.name,
+		Kind:  "status",
+		Actions: []core.PanelAction{
+			{ID: p.name + ".act", Label: "act", Module: p.name},
+		},
+	}}
+}
+
+func (p interPanel) HandleAction(core.ActionCall) (any, error) { return nil, nil }
+
+type interTUI struct{ name string }
+
+func (interTUI) TUICommands() []core.TUICommand { return nil }
+func (interTUI) HandleTUICommand(string, string, core.TUIConsole) core.TUIResult {
+	return core.TUIResult{}
+}
+
+type interSectioner struct{ name string }
+
+func (interSectioner) PromptSections(core.PromptBuildOptions) []core.PromptSection { return nil }
+
+type interChannel struct{ name string }
+
+func (interChannel) Start(context.Context, core.ChannelDeps) error { return nil }
+func (interChannel) Stop() error                                   { return nil }
+
+// interCapsule registers every additive surface the journal appends
+// to: tool, panel provider, command, route, renderer, sectioner,
+// channel.
+type interCapsule struct{ name string }
+
+func (c *interCapsule) Name() string       { return c.name }
+func (c *interCapsule) Provides() []string { return nil }
+func (c *interCapsule) Requires() []string { return nil }
+func (c *interCapsule) Toggleable() bool   { return true }
+func (c *interCapsule) Mount(*core.Context) error {
+	return errors.New("interCapsule mounts through the API")
+}
+
+func (c *interCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error {
+	tool := core.Tool{
+		Description: "inter",
+		Run: func(context.Context, map[string]any) (string, error) {
+			return c.name, nil
+		},
+	}
+	if err := api.RegisterTool(c.name+".probe", tool); err != nil {
+		return err
+	}
+	if err := api.RegisterPanelProvider(interPanel{c.name}); err != nil {
+		return err
+	}
+	if err := api.RegisterCommand("/"+c.name, "inter probe", nil,
+		func(context.Context, string, string) (core.CommandResult, error) {
+			return core.CommandResult{}, nil
+		}); err != nil {
+		return err
+	}
+	if err := api.RegisterRoute("GET /"+c.name, func(w http.ResponseWriter, r *http.Request) {}); err != nil {
+		return err
+	}
+	if err := api.RegisterRenderer(interTUI{}); err != nil {
+		return err
+	}
+	if err := api.RegisterPromptSectioner(interSectioner{}); err != nil {
+		return err
+	}
+	return api.RegisterChannel(&interChannel{})
+}
+
+// TestInterleavedDismountKeepsLaterSurface is the gate audit's repro
+// (A1): two modules mount, the FIRST dismounts. The journal undo must
+// remove only the first's own contributions - an index truncation
+// deletes every later module's append off the live Context while the
+// registry still reports it mounted. The second's tool must still
+// answer, and the whole census must equal a mount that never included
+// the first.
+func TestInterleavedDismountKeepsLaterSurface(t *testing.T) {
+	ctx := &core.Context{}
+	reg, err := MountAllAPI([]Plugin{&interCapsule{name: "early"}, &interCapsule{name: "late"}}, ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Dismount(ctx, "early"); err != nil {
+		t.Fatal(err)
+	}
+	if !reg.isActive("late") {
+		t.Fatal("late lost its mounted state when early dismounted")
+	}
+	// late's tool must still answer on the live surface.
+	found := false
+	for _, tp := range ctx.ToolProviders {
+		for name, tool := range tp.Tools() {
+			if name != "late.probe" {
+				continue
+			}
+			found = true
+			got, err := tool.Run(context.Background(), nil)
+			if err != nil || got != "late" {
+				t.Fatalf("late's tool must still answer: %q, %v", got, err)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("late's tool vanished from the live Context when early dismounted")
+	}
+	// The whole census must match a mount that never included early.
+	rest := &core.Context{}
+	if _, err := MountAllAPI([]Plugin{&interCapsule{name: "late"}}, rest, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := core.Census(ctx); !got.Equal(core.Census(rest)) {
+		t.Fatalf("census after dismounting early differs from the late-only mount: %v",
+			got.Diff(core.Census(rest)))
+	}
+}

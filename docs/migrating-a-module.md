@@ -44,8 +44,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    | Exclusive seam (one per slot)         | the slot's `Register*`      |
    | `ctx.ToolProviders` append            | `RegisterTool` per tool     |
    | `ctx.Commands` + handler wrapper      | `RegisterCommand` per name  |
-   | `ctx.PanelProviders` append (static)  | `RegisterPanel` + `RegisterAction` |
-   | `ctx.PanelProviders` append (live)    | `RegisterPanelProvider`     |
+   | `ctx.PanelProviders` append            | `RegisterPanelProvider`     |
    | notifications capture (`ctx.Notifications`, nil-guarded) | `RegisterEmitter` |
 
    `RegisterCommand` builds the chain-on-miss wrapper for you: each

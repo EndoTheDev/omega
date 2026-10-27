@@ -133,6 +133,7 @@ func (s CensusSnapshot) Equal(o CensusSnapshot) bool {
 	return maps.Equal(s.Slots, o.Slots) &&
 		slices.Equal(s.Tools, o.Tools) &&
 		slices.Equal(s.Commands, o.Commands) &&
+		slices.Equal(s.Routes, o.Routes) &&
 		s.Channels == o.Channels &&
 		s.TUIProviders == o.TUIProviders &&
 		s.PromptSectioners == o.PromptSectioners &&
@@ -171,6 +172,7 @@ func (s CensusSnapshot) Diff(o CensusSnapshot) []string {
 	fail("tools", s.Tools, o.Tools)
 	fail("commands", s.Commands, o.Commands)
 	fail("panels", s.Panels, o.Panels)
+	fail("routes", s.Routes, o.Routes)
 	fail("handles", s.Handles, o.Handles)
 	if s.Channels != o.Channels {
 		out = append(out, "channels")
