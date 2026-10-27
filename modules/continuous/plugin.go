@@ -84,11 +84,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// surface no tool registry reaches. Per-agent stores fall out of
 	// the data isolation: this process's rows land in the data dir
 	// datadir.AgentHome names (the wake child carries OMEGA_AGENT).
+	// AgentHome answers a HOME; the ledger is a data-dir consumer.
 	ledgerData, err := datadir.AgentHome()
 	if err != nil {
 		return fmt.Errorf("continuous: ledger home: %w", err)
 	}
-	ledger, err := OpenLedger(ledgerData)
+	ledger, err := OpenLedger(datadir.Dir(ledgerData))
 	if err != nil {
 		return fmt.Errorf("continuous: ledger: %w", err)
 	}

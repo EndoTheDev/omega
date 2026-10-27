@@ -23,41 +23,75 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 	}
 	defer lg.Close()
 
+	obs := lg.observer()
+	call := func(id, name string, args map[string]any, isError bool) {
+		obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
+			ID: id, Name: name, Arguments: args,
+		}}})
+		obs(core.ToolResultEvent{Message: core.ToolResult{
+			Content: "seen", ToolCallID: id, IsError: isError,
+		}})
+	}
+
+	// A successful call whose path exists at RESULT time - the shell
+	// row's file was never absent.
 	existing := filepath.Join(t.TempDir(), "note.txt")
 	if err := os.WriteFile(existing, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	obs := lg.observer()
+	call("t1", "shell", map[string]any{"cmd": "ls", "path": existing}, false)
 
-	// One successful call with a path argument: the cheap verifier is
-	// the stat (file:exists), the args hash is 16 hex.
-	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
-		ID: "t1", Name: "shell", Arguments: map[string]any{"cmd": "ls", "path": existing},
-	}}})
-	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "ok", ToolCallID: "t1"}})
+	// A failed call on a missing path.
+	call("t2", "read", map[string]any{"path": "/no/such/file/anywhere"}, true)
 
-	// One failed call with a missing path.
+	// A write whose file materializes between call and result: the
+	// stat runs at result time, so a creator reads file:exists after.
+	created := filepath.Join(t.TempDir(), "fresh.md")
 	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
-		ID: "t2", Name: "read", Arguments: map[string]any{"path": "/no/such/file/anywhere"},
+		ID: "t3", Name: "write", Arguments: map[string]any{"path": created},
 	}}})
-	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "no", ToolCallID: "t2", IsError: true}})
+	if _, err := os.Stat(created); err == nil {
+		t.Fatal("created must not exist before its result lands")
+	}
+	if err := os.WriteFile(created, []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "wrote", ToolCallID: "t3"}})
 
 	// A result with no sighted call is skipped (never invented).
 	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "ghost", ToolCallID: "ghost"}})
+
+	// A call whose file is deleted BEFORE its result lands reads
+	// missing even though the write succeeds - the end state is truth.
+	gone := filepath.Join(t.TempDir(), "gone.txt")
+	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
+		ID: "t4", Name: "write", Arguments: map[string]any{"path": gone},
+	}}})
+	if err := os.WriteFile(gone, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(gone)
+	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "wrote", ToolCallID: "t4"}})
 
 	rows, err := lg.All(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("ledger rows = %d, want 2", len(rows))
+	if len(rows) != 4 {
+		t.Fatalf("ledger rows = %d, want 4", len(rows))
 	}
-	// All() returns newest first; t2 (read, failed) is row 0.
-	if rows[0].Tool != "read" || rows[0].OK || rows[0].Verifier != "file:missing" {
-		t.Errorf("row 0 = %+v", rows[0])
+	// All() returns newest first.
+	if rows[0].Tool != "write" || !rows[0].OK || rows[0].Verifier != "file:missing:"+gone {
+		t.Errorf("row 0 (deleted end state) = %+v", rows[0])
 	}
-	if rows[1].Tool != "shell" || !rows[1].OK || rows[1].Verifier != "file:exists" {
-		t.Errorf("row 1 = %+v", rows[1])
+	if rows[1].Tool != "write" || !rows[1].OK || rows[1].Verifier != "file:exists:"+created {
+		t.Errorf("row 1 (creator) = %+v", rows[1])
+	}
+	if rows[2].Tool != "read" || rows[2].OK || rows[2].Verifier != "file:missing:/no/such/file/anywhere" {
+		t.Errorf("row 2 = %+v", rows[2])
+	}
+	if rows[3].Tool != "shell" || !rows[3].OK || rows[3].Verifier != "file:exists:"+existing {
+		t.Errorf("row 3 = %+v", rows[3])
 	}
 	for _, r := range rows {
 		if r.ID == 0 || r.TS == "" || r.RunID == "" {
@@ -70,8 +104,8 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 			t.Errorf("ts %q: %v", r.TS, err)
 		}
 	}
-	if n, err := lg.Count(context.Background()); err != nil || n != 2 {
-		t.Errorf("count = %d %v, want 2", n, err)
+	if n, err := lg.Count(context.Background()); err != nil || n != 4 {
+		t.Errorf("count = %d %v, want 4", n, err)
 	}
 }
 

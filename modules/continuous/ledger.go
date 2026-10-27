@@ -170,13 +170,15 @@ var spawnRunID = fmt.Sprintf("run-%x-%d", os.Getpid(), time.Now().UnixNano())
 type pendingCall struct {
 	name     string
 	argsHash string
-	verifier string
+	argPath  string
 }
 
-// verifierFor is the cheap post-check (ruling 11) computed at call
-// time: no re-execution, no network - a stat of a path-shaped
-// argument if the call carried one, otherwise empty.
-func verifierFor(args map[string]any) string {
+// argPathFor is the cheap check's target (ruling 11): a path-shaped
+// argument if the call carried one, otherwise empty. The STAT happens
+// at result time - a call that CREATES its file must read as an
+// existing file after the call, so the verifier describes the
+// end state the report's claims are about.
+func argPathFor(args map[string]any) string {
 	candidates := []string{"path", "file", "file_path", "dir", "directory", "folder"}
 	for _, key := range candidates {
 		if raw, ok := args[key]; ok {
@@ -185,14 +187,24 @@ func verifierFor(args map[string]any) string {
 				if strings.ContainsAny(cleaned, "\x00") {
 					return ""
 				}
-				if _, err := os.Stat(cleaned); err == nil {
-					return "file:exists"
-				}
-				return "file:missing"
+				return cleaned
 			}
 		}
 	}
 	return ""
+}
+
+// verify is the cheap post-check: a stat of the call's path argument
+// (no re-execution, no network). The path rides the verdict so a
+// report claim can name the row that backs it.
+func verify(argPath string) string {
+	if argPath == "" {
+		return ""
+	}
+	if _, err := os.Stat(argPath); err == nil {
+		return "file:exists:" + argPath
+	}
+	return "file:missing:" + argPath
 }
 
 // argsHash is the cheap stable digest of a call's arguments.
@@ -226,7 +238,7 @@ func (l *Ledger) observer() core.EventObserver {
 			pending[call.ToolCall.ID] = pendingCall{
 				name:     call.ToolCall.Name,
 				argsHash: argsHash(call.ToolCall.Arguments),
-				verifier: verifierFor(call.ToolCall.Arguments),
+				argPath:  argPathFor(call.ToolCall.Arguments),
 			}
 		case core.ToolResultEvent:
 			p, ok := pending[e.Message.ToolCallID]
@@ -240,7 +252,7 @@ func (l *Ledger) observer() core.EventObserver {
 				Tool:     p.name,
 				ArgsHash: p.argsHash,
 				OK:       !e.Message.IsError,
-				Verifier: p.verifier,
+				Verifier: verify(p.argPath),
 			}
 			if p.name == "" {
 				row.Tool = "unknown"
