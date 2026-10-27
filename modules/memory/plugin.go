@@ -56,5 +56,5 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 func NewPlugin() *Plugin { return &Plugin{} }
 
 // Toggleable marks this capsule as a module capsule (v0.12 E1, the
-// tier law): the omega.json disable list may name it.
+// tier law): the config.yaml disabled: list may name it.
 func (p *Plugin) Toggleable() bool { return true }

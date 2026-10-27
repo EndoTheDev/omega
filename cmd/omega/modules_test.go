@@ -1,82 +1,91 @@
 package main
 
-// The E2 host-side tests: the omega.json write boot shares with the
-// UI toggle (Q7's one code path - the file LoadDisabled reads is the
-// file SaveDisabled writes), and the disabled-list derivation from
-// the live registry.
+// The E2 host-side tests: the config.yaml `disabled:` write boot
+// shares with the UI toggle (Q7's one code path - the key LoadConfig
+// decodes is the key writeDisabled writes), and the disabled-list
+// derivation from the live registry.
 
 import (
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
-func TestSaveDisabledRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "omega.json")
-	if err := SaveDisabled(path, []string{"kanban", "delegate"}); err != nil {
+const toggleYAML = "provider:\n  model_name: test-model\n"
+
+func TestWriteDisabledRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(toggleYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// LoadDisabled reads the same file boot reads: the write must be
+	if err := writeDisabled(path, []string{"kanban", "delegate"}); err != nil {
+		t.Fatal(err)
+	}
+	// LoadConfig decodes the same file boot reads: the write must be
 	// legible to it (one code path, Q7).
-	off, err := LoadDisabled(path)
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(off) != 2 || off[0] != "kanban" || off[1] != "delegate" {
-		t.Fatalf("LoadDisabled read %v, want [kanban web]", off)
+	if len(cfg.Disabled) != 2 || cfg.Disabled[0] != "kanban" || cfg.Disabled[1] != "delegate" {
+		t.Fatalf("LoadConfig read %v, want [kanban delegate]", cfg.Disabled)
+	}
+	// Missing config.yaml with an empty list: nothing to say, nowhere
+	// to say it - and no litter file either.
+	fresh := filepath.Join(t.TempDir(), "config.yaml")
+	if err := writeDisabled(fresh, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fresh); !os.IsNotExist(err) {
+		t.Fatalf("an empty all-on write created a file: %v", err)
 	}
 }
 
-func TestSaveDisabledPreservesOtherKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "omega.json")
-	if err := os.WriteFile(path, []byte(`{"note":"hand-written"}`), 0600); err != nil {
+func TestWriteDisabledMissingFileCreates(t *testing.T) {
+	// Fresh install with toggle state but no config.yaml: the write
+	// creates a minimal one holding just the disabled: key. The boot
+	// that precedes it carried the model by env (no file to read).
+	t.Setenv("OMEGA_MODEL", "test-model")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := writeDisabled(path, []string{"kanban"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveDisabled(path, []string{"kanban"}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(data)
-	if !contains(body, "hand-written") || !contains(body, "kanban") {
-		t.Fatalf("the write lost keys: %s", body)
+	if len(cfg.Disabled) != 1 || cfg.Disabled[0] != "kanban" {
+		t.Fatalf("created config not legible: %+v", cfg.Disabled)
 	}
 }
 
-func TestSaveDisabledEmptyRemovesKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "omega.json")
-	if err := SaveDisabled(path, []string{"kanban"}); err != nil {
+func TestWriteDisabledEmptyRemovesKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(toggleYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveDisabled(path, nil); err != nil {
+	if err := writeDisabled(path, []string{"kanban"}); err != nil {
 		t.Fatal(err)
 	}
-	off, err := LoadDisabled(path)
+	if err := writeDisabled(path, nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(off) != 0 {
-		t.Fatalf("the empty list must clear the toggle state, got %v", off)
+	if len(cfg.Disabled) != 0 {
+		t.Fatalf("the empty list must clear the toggle state, got %v", cfg.Disabled)
 	}
-}
-
-func TestSaveDisabledLoudOnBrokenFile(t *testing.T) {
-	// A malformed omega.json must fail the write loud: boot parses
-	// this file, and a silent overwrite would destroy the state boot
-	// needs.
-	path := filepath.Join(t.TempDir(), "omega.json")
-	if err := os.WriteFile(path, []byte(`{disabled`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := SaveDisabled(path, []string{"kanban"}); err == nil {
-		t.Fatal("a broken omega.json must fail the write loud")
+	if d, _ := os.ReadFile(path); !strings.Contains(string(d), "model_name") || strings.Contains(string(d), "kanban") {
+		t.Fatalf("the key removal did not leave just the original document: %q", string(d))
 	}
 }
 
@@ -123,7 +132,7 @@ func TestToggleRewiresChannels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := &omegaModules{pctx: pctx, reg: reg, omegaPath: filepath.Join(t.TempDir(), "omega.json")}
+	m := &omegaModules{pctx: pctx, reg: reg, configPath: filepath.Join(t.TempDir(), "config.yaml")}
 	if err := m.Toggle(context.Background(), "mod", false); err != nil {
 		t.Fatal(err)
 	}

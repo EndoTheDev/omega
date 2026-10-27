@@ -123,7 +123,7 @@ func TestBootPanicRePanicsNamed(t *testing.T) {
 		if mpe.Name != "panicker" {
 			t.Fatalf("boot panic names %q, want panicker", mpe.Name)
 		}
-		if !strings.Contains(mpe.Suggestion, "disabled") || !strings.Contains(mpe.Suggestion, "omega.json") {
+		if !strings.Contains(mpe.Suggestion, "disabled") || !strings.Contains(mpe.Suggestion, "config.yaml") {
 			t.Fatalf("fix-it hint missing: %q", mpe.Suggestion)
 		}
 	}()
