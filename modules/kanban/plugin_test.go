@@ -105,10 +105,6 @@ func TestMountWithAPIShape(t *testing.T) {
 			}
 		}
 	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
-	}
 }
 
 func TestMountResolvesPointerBoard(t *testing.T) {

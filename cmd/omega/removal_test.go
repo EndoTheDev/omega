@@ -43,7 +43,7 @@ func TestNotificationsRemovalProof(t *testing.T) {
 		t.Fatalf("buildPlugins: %v", err)
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Notifications == nil {
@@ -126,7 +126,7 @@ func TestNotificationsRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Notifications != nil {
@@ -190,7 +190,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 		t.Fatalf("buildPlugins: %v", err)
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Kanban == nil {
@@ -283,7 +283,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Kanban != nil {
@@ -387,7 +387,7 @@ func TestCronRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Cron == nil {
@@ -441,7 +441,7 @@ func TestCronRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Cron != nil {
@@ -549,7 +549,7 @@ func TestMemoryRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Memory == nil {
@@ -629,7 +629,7 @@ func TestMemoryRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Memory != nil {
@@ -723,7 +723,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.InjectedMessages == nil {
@@ -857,7 +857,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.InjectedMessages != nil {
@@ -1011,7 +1011,7 @@ for line in sys.stdin:
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 
@@ -1071,7 +1071,7 @@ for line in sys.stdin:
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	// the tool registry: no proof.* tool, and nothing answered the env
@@ -1170,7 +1170,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Verdicts == nil {
@@ -1296,7 +1296,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Verdicts != nil {
@@ -1402,7 +1402,7 @@ func TestTrustRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Trust == nil {
@@ -1495,7 +1495,7 @@ func TestTrustRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Trust != nil {
@@ -1643,7 +1643,7 @@ func TestWebRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if err := agent.MountAll(plugins, ctx); err != nil {
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 
@@ -1718,7 +1718,7 @@ func TestWebRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if err := agent.MountAll(removed, ctx2); err != nil {
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	// the tool registry: no web-shaped tool survives - domain tool and

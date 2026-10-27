@@ -33,11 +33,6 @@ func (p *Plugin) ConfigKey() string { return "store" }
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("store: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Opens the store from
 // config, registers the store seam, the sessions.search tool provider
 // and the eleven session commands. The store connection is host-owned

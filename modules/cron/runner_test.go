@@ -499,7 +499,7 @@ type notificationsPlugin struct{}
 func (notificationsPlugin) Name() string                  { return "notifications" }
 func (notificationsPlugin) Provides() []string            { return []string{"notifications"} }
 func (notificationsPlugin) Requires() []string            { return nil }
-func (notificationsPlugin) Mount(ctx *core.Context) error { return nil }
+func (notificationsPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
 
 // TestPluginMountSetsCronSeam pins the api mount (the only mount since
 // the v0.12 phase-C2 migration).
@@ -514,10 +514,6 @@ func TestPluginMountSetsCronSeam(t *testing.T) {
 	}
 	if p.Provides()[0] != "cron" {
 		t.Fatalf("provides = %v", p.Provides())
-	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
 	}
 }
 

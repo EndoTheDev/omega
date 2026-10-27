@@ -37,11 +37,6 @@ func (p *Plugin) Provides() []string { return []string{"skills", "tools", "promp
 // log file. Logging must mount first or the edge is meaningless.
 func (p *Plugin) Requires() []string { return []string{"logging"} }
 
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("skills: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Populates the skills seam,
 // the skills.read tool, the prompt section, and the /skills command.
 // The skills directory is read from ctx.Configs.

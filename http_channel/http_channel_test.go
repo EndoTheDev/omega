@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -14,7 +15,7 @@ func TestPluginMount(t *testing.T) {
 			"http_channel": Config{Port: 9999},
 		},
 	}
-	if err := p.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
 	if len(ctx.Channels) != 1 {
@@ -33,7 +34,7 @@ func TestPluginMountDefaultConfig(t *testing.T) {
 	// No config on the Context — plugin falls back to defaults.
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if err := p.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
 	if len(ctx.Channels) != 1 {
@@ -58,10 +59,10 @@ func TestPluginMountMultiple(t *testing.T) {
 	}
 
 	p := NewPlugin()
-	if err := p.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount 1: %v", err)
 	}
-	if err := p.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount 2: %v", err)
 	}
 	if len(ctx.Channels) != 2 {
@@ -76,7 +77,7 @@ func TestPluginMountBindList(t *testing.T) {
 		"http_channel": Config{Port: 9999, Bind: []string{"127.0.0.1", "100.101.126.30"}},
 	}}
 	p := NewPlugin()
-	if err := p.Mount(ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
 	if len(ctx.Channels) != 2 {

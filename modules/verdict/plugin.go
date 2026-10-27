@@ -1,7 +1,6 @@
 package verdict
 
 import (
-	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -41,14 +40,6 @@ func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
-
-// Mount satisfies agent.Plugin (the interface keeps its classic shape
-// until phase F). It is never dispatched: MountWithAPI exists, and
-// APIPlugin wins (the strangler rule). If ever reached it fails loud -
-// verdict does not mount the old way, which is the proof of migration.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("verdict: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase C2, docs/migrating-a-module.md)")
-}
 
 // MountWithAPI builds the hub from the seams the mount reads in place
 // (store, logging - the Requires edges stay, recipe law 4) and

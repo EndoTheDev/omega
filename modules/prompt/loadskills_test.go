@@ -52,7 +52,7 @@ func TestBuildPromptWithSkillsSection(t *testing.T) {
 			"logging": logging.Config{Enabled: false},
 		},
 	}
-	if err := agent.MountAll([]agent.Plugin{logging.NewPlugin(), skills.NewPlugin(), NewPlugin()}, ctx); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{logging.NewPlugin(), skills.NewPlugin(), NewPlugin()}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), core.PromptBuildOptions{})

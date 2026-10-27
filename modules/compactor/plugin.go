@@ -26,11 +26,6 @@ func (p *Plugin) ConfigKey() string { return "compactor" }
 func (p *Plugin) Provides() []string { return []string{"compactor"} }
 func (p *Plugin) Requires() []string { return []string{"provider"} }
 
-// Mount is the retired classic body (v0.12 phase F). Fail loud.
-func (p *Plugin) Mount(ctx *core.Context) error {
-	return fmt.Errorf("compactor: classic mount retired - the capsule mounts through the ExtensionAPI (v0.12 phase F)")
-}
-
 // MountWithAPI implements agent.APIPlugin. Reads CompactionConfig from
 // ctx.Configs, wires the provider from the already-mounted provider
 // slot (the Requires edge orders the read), registers the compactor

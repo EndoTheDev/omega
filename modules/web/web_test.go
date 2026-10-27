@@ -403,9 +403,6 @@ func TestMount(t *testing.T) {
 	if _, ok := tools["web"]; ok {
 		t.Error("the unprefixed consolidated web tool must be retired")
 	}
-	if err := p.Mount(ctx); err == nil {
-		t.Error("the retired classic mount must fail loud")
-	}
 }
 
 // TestMountWithConfig verifies the API key and base URL flow from

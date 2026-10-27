@@ -81,13 +81,16 @@ func (plugNotifier) Subscribe() (<-chan core.Notification, func()) {
 	return ch, func() { close(ch) }
 }
 
-// notifierPlugin mounts the notifications seam both parity runs need.
+// notifierPlugin mounts the notifications seam (the notifications edge).
 type notifierPlugin struct{ n core.NotificationsProvider }
 
-func (p *notifierPlugin) Name() string             { return "notifier" }
-func (p *notifierPlugin) Provides() []string       { return []string{"notifications"} }
-func (p *notifierPlugin) Requires() []string       { return nil }
-func (p *notifierPlugin) Mount(ctx *Context) error { ctx.Notifications = p.n; return nil }
+func (p *notifierPlugin) Name() string       { return "notifier" }
+func (p *notifierPlugin) Provides() []string { return []string{"notifications"} }
+func (p *notifierPlugin) Requires() []string { return nil }
+func (p *notifierPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
+	ctx.Notifications = p.n
+	return nil
+}
 
 // plugPanel is the shared panel descriptor: the same declarations both
 // mount styles carry, the same echo behavior to compare.
@@ -100,60 +103,6 @@ func plugPanel() core.Panel {
 			{ID: "plug.act", Label: "echo", Module: "plug"},
 		},
 	}
-}
-
-func decodeArgs(raw json.RawMessage) any {
-	if len(raw) == 0 {
-		return nil
-	}
-	var v any
-	_ = json.Unmarshal(raw, &v)
-	return v
-}
-
-// classicCapsule mounts the classic way: direct seam assignment.
-type classicCapsule struct {
-	notifier core.NotificationsProvider // captured in Mount
-}
-
-func (*classicCapsule) Name() string { return "plug" }
-func (*classicCapsule) Provides() []string {
-	return []string{"store", "tools", "tui", "panels", "prompt_sections", "channel", "logging", "loop", "compactor"}
-}
-func (*classicCapsule) Requires() []string { return []string{"notifications"} }
-
-func (c *classicCapsule) Mount(ctx *Context) error {
-	c.notifier = ctx.Notifications
-	ctx.Store = fakeStore{}
-	ctx.Logger = &plugLogger{}
-	ctx.Loop = plugLoop{}
-	ctx.Compactor = plugCompactor{}
-	ctx.ToolProviders = append(ctx.ToolProviders, toolMap(map[string]core.Tool{"plug.echo": echoTool()}))
-	ctx.PromptSectioners = append(ctx.PromptSectioners, plugSectioner{})
-	ctx.TUIProviders = append(ctx.TUIProviders, plugTUI{})
-	ctx.PanelProviders = append(ctx.PanelProviders, classicPanels{})
-	ctx.Channels = append(ctx.Channels, plugChannel{})
-	ctx.Commands = append(ctx.Commands, core.ExtensionCommand{Name: "/plug", Description: "parity command"})
-	prev := ctx.CommandHandler
-	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
-		if name != "/plug" {
-			if prev != nil {
-				return prev(c, name, args)
-			}
-			return core.CommandResult{}, fmt.Errorf("unknown command %q", name)
-		}
-		return core.CommandResult{Text: "plug ran"}, nil
-	}
-	return nil
-}
-
-// classicPanels is the classic action handler: raw call in, decoded
-// args echoed back - the same behavior the registration style produces.
-type classicPanels struct{}
-
-func (classicPanels) Panels() []core.Panel { return []core.Panel{plugPanel()} }
-func (classicPanels) HandleAction(call core.ActionCall) (any, error) {
-	return decodeArgs(call.Args), nil
 }
 
 // fakeStore satisfies the full StoreProvider seam with no-ops - parity
@@ -225,16 +174,11 @@ type apiCapsule struct {
 	routes int // observed on the registry after the mount
 }
 
-func (*apiCapsule) Name() string       { return "plug" }
-func (*apiCapsule) Provides() []string { return (*classicCapsule)(nil).Provides() }
-func (*apiCapsule) Requires() []string { return []string{"notifications"} }
-
-// Mount satisfies Plugin; MountAll dispatches APIPlugin, the body is
-// never reached (the strangler rule - the classic body retires in
-// phase F).
-func (*apiCapsule) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
+func (*apiCapsule) Name() string { return "plug" }
+func (*apiCapsule) Provides() []string {
+	return []string{"store", "tools", "tui", "panels", "prompt_sections", "channel", "logging", "loop", "compactor"}
 }
+func (*apiCapsule) Requires() []string { return []string{"notifications"} }
 
 func (*apiCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	for _, step := range []func() error{
@@ -275,139 +219,6 @@ func (*apiCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 
 var emitterSeen core.NotificationsProvider
 
-// TestDualMountParity mounts the same capability set both ways and
-// demands identical behavior - the phase-B law (zero behavior change).
-func TestDualMountParity(t *testing.T) {
-	notifier := &plugNotifier{}
-	emitterSeen = nil
-
-	var classicCtx, apiCtx Context
-	classic := &classicCapsule{}
-	if _, err := MountAllAPI([]Plugin{&notifierPlugin{n: notifier}, classic}, &classicCtx, nil, nil); err != nil {
-		t.Fatalf("classic mount: %v", err)
-	}
-	reg, err := MountAllAPI([]Plugin{&notifierPlugin{n: notifier}, &apiCapsule{}}, &apiCtx, nil, nil)
-	if err != nil {
-		t.Fatalf("api mount: %v", err)
-	}
-
-	// Exclusive slots: the same adapters in both styles (compared by
-	// type - each side is its own instance, the behavior is the law).
-	if fmt.Sprintf("%T", classicCtx.Logger) != fmt.Sprintf("%T", apiCtx.Logger) {
-		t.Errorf("logger parity: %T vs %T", classicCtx.Logger, apiCtx.Logger)
-	}
-	if fmt.Sprintf("%T", classicCtx.Loop) != fmt.Sprintf("%T", apiCtx.Loop) {
-		t.Errorf("loop parity: %T vs %T", classicCtx.Loop, apiCtx.Loop)
-	}
-	if fmt.Sprintf("%T", classicCtx.Compactor) != fmt.Sprintf("%T", apiCtx.Compactor) {
-		t.Errorf("compactor parity: %T vs %T", classicCtx.Compactor, apiCtx.Compactor)
-	}
-	if classicCtx.Store == nil || apiCtx.Store == nil {
-		t.Fatalf("store parity: nil store on %v side", map[bool]string{true: "classic", false: "api"}[classicCtx.Store == nil])
-	}
-
-	// The finished-things seam: the classic capsule captured it in
-	// Mount, the api capsule received it at mount end - same instance.
-	if classic.notifier != notifier {
-		t.Errorf("classic capture got %T, want the mounted notifier", classic.notifier)
-	}
-	if emitterSeen != notifier {
-		t.Errorf("emitter handoff got %T, want the mounted notifier", emitterSeen)
-	}
-
-	// Tools: same map shape, same tool behavior. (Run funcs are
-	// distinct closures per mount - equality is on the inventory and
-	// the behavior, not the pointers.)
-	if len(classicCtx.ToolProviders) != 1 || len(apiCtx.ToolProviders) != 1 {
-		t.Fatalf("tool provider parity: %d classic vs %d api", len(classicCtx.ToolProviders), len(apiCtx.ToolProviders))
-	}
-	classicTools := classicCtx.ToolProviders[0].Tools()
-	apiTools := apiCtx.ToolProviders[0].Tools()
-	if len(classicTools) != len(apiTools) {
-		t.Errorf("tool count parity: %d vs %d", len(classicTools), len(apiTools))
-	}
-	for name := range classicTools {
-		if apiTools[name].Description != classicTools[name].Description {
-			t.Errorf("tool %q parity: %q vs %q", name, classicTools[name].Description, apiTools[name].Description)
-		}
-	}
-	args := map[string]any{"v": "x"}
-	o1, err1 := classicTools["plug.echo"].Run(context.Background(), args)
-	o2, err2 := apiTools["plug.echo"].Run(context.Background(), args)
-	if o1 != o2 || err1 != nil || err2 != nil {
-		t.Errorf("tool run parity: %q/%v vs %q/%v", o1, err1, o2, err2)
-	}
-
-	// Inventory counts agree - /extensions sees both styles the same.
-	if len(classicCtx.Infos) != 2 || len(apiCtx.Infos) != 2 {
-		t.Fatalf("infos parity: %d vs %d", len(classicCtx.Infos), len(apiCtx.Infos))
-	}
-	classicInfo, apiInfo := classicCtx.Infos[1], apiCtx.Infos[1]
-	if classicInfo.Tools != apiInfo.Tools || classicInfo.Commands != apiInfo.Commands {
-		t.Errorf("inventory parity: %+v vs %+v", classicInfo, apiInfo)
-	}
-
-	// Commands: same table, same handler behavior (own name runs; a
-	// foreign name falls through the chain and errors identically).
-	if !reflect.DeepEqual(classicCtx.Commands, apiCtx.Commands) {
-		t.Errorf("command table parity: %v vs %v", classicCtx.Commands, apiCtx.Commands)
-	}
-	for _, name := range []string{"/plug", "/unknown"} {
-		r1, err1 := classicCtx.CommandHandler(context.Background(), name, "x")
-		r2, err2 := apiCtx.CommandHandler(context.Background(), name, "x")
-		if !reflect.DeepEqual(r1, r2) || fmt.Sprint(err1) != fmt.Sprint(err2) {
-			t.Errorf("command %q parity: (%+v/%v) vs (%+v/%v)", name, r1, err1, r2, err2)
-		}
-	}
-
-	// Panels: the canvas built over each context snapshots and
-	// dispatches identically.
-	classicCanvas, err := NewCanvas(&classicCtx, nil)
-	if err != nil {
-		t.Fatalf("classic canvas: %v", err)
-	}
-	apiCanvas, err := NewCanvas(&apiCtx, nil)
-	if err != nil {
-		t.Fatalf("api canvas: %v", err)
-	}
-	if !reflect.DeepEqual(classicCanvas.Snapshot(), apiCanvas.Snapshot()) {
-		t.Errorf("snapshot parity:\n%+v\nvs\n%+v", classicCanvas.Snapshot(), apiCanvas.Snapshot())
-	}
-	good := core.ActionCall{Module: "plug", Action: "plug.act", Args: json.RawMessage(`{"v":"x"}`)}
-	r1, err1 := classicCanvas.Dispatch(good)
-	r2, err2 := apiCanvas.Dispatch(good)
-	if !reflect.DeepEqual(r1, r2) || err1 != nil || err2 != nil {
-		t.Errorf("action parity: (%+v/%v) vs (%+v/%v)", r1, err1, r2, err2)
-	}
-
-	// Additive slices: same length, same type set.
-	if len(classicCtx.TUIProviders) != len(apiCtx.TUIProviders) ||
-		len(classicCtx.PromptSectioners) != len(apiCtx.PromptSectioners) ||
-		len(classicCtx.Channels) != len(apiCtx.Channels) {
-		t.Errorf("additive parity: tui %d/%d sections %d/%d channels %d/%d",
-			len(classicCtx.TUIProviders), len(apiCtx.TUIProviders),
-			len(classicCtx.PromptSectioners), len(apiCtx.PromptSectioners),
-			len(classicCtx.Channels), len(apiCtx.Channels))
-	}
-	if fmt.Sprintf("%T", classicCtx.TUIProviders[0]) != fmt.Sprintf("%T", apiCtx.TUIProviders[0]) {
-		t.Errorf("renderer parity: %T vs %T", classicCtx.TUIProviders[0], apiCtx.TUIProviders[0])
-	}
-	if fmt.Sprintf("%T", classicCtx.Channels[0]) != fmt.Sprintf("%T", apiCtx.Channels[0]) {
-		t.Errorf("channel parity: %T vs %T", classicCtx.Channels[0], apiCtx.Channels[0])
-	}
-
-	// The registry consumed the classic provides sweep too - the
-	// exclusive claims landed before any API mount, so a late api
-	// claim of a classically mounted seam fails loud (covered in
-	// TestOneTenant); here the routes the api path registered.
-	if routes := reg.Routes(); len(routes) != 1 || routes[0].Module != "plug" || routes[0].Pattern != "GET /plug" {
-		t.Errorf("registered routes: %+v", reg.Routes())
-	}
-	if len(reg.Refusals()) != 0 {
-		t.Errorf("clean mount must record no refusals: %+v", reg.Refusals())
-	}
-}
-
 // TestNamespaceEnforcement pins Q10: a machine-facing registration
 // must carry its own module prefix; anything else fails loud at
 // registration.
@@ -427,10 +238,6 @@ type badNamespace struct{ seen error }
 func (badNamespace) Name() string       { return "plug" }
 func (badNamespace) Provides() []string { return nil }
 func (badNamespace) Requires() []string { return nil }
-func (badNamespace) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
-}
-
 func (b badNamespace) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	// A name under another module's namespace.
 	if err := api.RegisterTool("evil.echo", echoTool()); err == nil {
@@ -489,10 +296,13 @@ func TestOneTenant(t *testing.T) {
 // classicStore claims the store seam the classic way.
 type classicStore struct{}
 
-func (classicStore) Name() string             { return "classic" }
-func (classicStore) Provides() []string       { return []string{"store"} }
-func (classicStore) Requires() []string       { return nil }
-func (classicStore) Mount(ctx *Context) error { ctx.Store = fakeStore{}; return nil }
+func (classicStore) Name() string       { return "classic" }
+func (classicStore) Provides() []string { return []string{"store"} }
+func (classicStore) Requires() []string { return nil }
+func (classicStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
+	ctx.Store = fakeStore{}
+	return nil
+}
 
 // apiStoreClaimer claims the store seam through the api, declaring no
 // provides (the registry ledger is the tenant record).
@@ -501,9 +311,6 @@ type apiStoreClaimer struct{}
 func (apiStoreClaimer) Name() string       { return "claimant" }
 func (apiStoreClaimer) Provides() []string { return nil }
 func (apiStoreClaimer) Requires() []string { return nil }
-func (apiStoreClaimer) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
-}
 func (apiStoreClaimer) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.RegisterStore(fakeStore{})
 }
@@ -515,9 +322,6 @@ type secondStore struct{}
 func (secondStore) Name() string       { return "second" }
 func (secondStore) Provides() []string { return []string{"store"} }
 func (secondStore) Requires() []string { return nil }
-func (secondStore) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
-}
 func (secondStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.RegisterStore(fakeStore{})
 }
@@ -550,9 +354,6 @@ type replaceCapsule struct{}
 func (replaceCapsule) Name() string       { return "plug" }
 func (replaceCapsule) Provides() []string { return nil }
 func (replaceCapsule) Requires() []string { return nil }
-func (replaceCapsule) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
-}
 func (replaceCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	first := echoTool()
 	first.Description = "first"
@@ -664,9 +465,6 @@ type proofCapsule struct{ check core.ShapeCheck }
 func (proofCapsule) Name() string       { return "plug" }
 func (proofCapsule) Provides() []string { return []string{"panels"} }
 func (proofCapsule) Requires() []string { return nil }
-func (proofCapsule) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
-}
 func (p proofCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	if err := api.RegisterPanel(core.Panel{
 		ID: "plug.main",
@@ -776,9 +574,6 @@ type subCapsule struct {
 func (p *subCapsule) Name() string       { return p.name }
 func (p *subCapsule) Provides() []string { return nil }
 func (p *subCapsule) Requires() []string { return nil }
-func (p *subCapsule) Mount(ctx *Context) error {
-	return errors.New("not dispatched - mounted through the api")
-}
 func (p *subCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	handler := p.handler
 	if handler == nil {

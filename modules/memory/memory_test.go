@@ -670,10 +670,6 @@ func TestPluginMount(t *testing.T) {
 	if _, ok := tools["memory"]; ok {
 		t.Fatal("the unprefixed memory tool must be retired")
 	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
-	}
 }
 
 // TestPromptSections verifies FileMemory contributes its snapshot as an

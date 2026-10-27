@@ -26,8 +26,4 @@ func TestMountWithAPIShape(t *testing.T) {
 	if _, ok := ctx.Trust.(*Provider); !ok {
 		t.Fatalf("unexpected seam implementation: %T", ctx.Trust)
 	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
-	}
 }

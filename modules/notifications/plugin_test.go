@@ -36,7 +36,7 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	t.Setenv("OMEGA_HOME", home)
 	ctx := &core.Context{Configs: map[string]any{}}
 	bg := context.Background()
-	p, ctx := mountCtx(t, ctx)
+	_, ctx = mountCtx(t, ctx)
 	if ctx.Notifications == nil {
 		t.Fatalf("mount did not fill the seam")
 	}
@@ -64,7 +64,6 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	if strings.Contains(res.Text, "nightly") {
 		t.Fatalf("unread table still shows a read record: %q", res.Text)
 	}
-	_ = p
 }
 
 // TestMountWithAPIShape pins the migrated mount's registrations: the
@@ -76,7 +75,7 @@ func TestMountWithAPIShape(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	ctx := &core.Context{Configs: map[string]any{}}
-	p, ctx := mountCtx(t, ctx)
+	_, ctx = mountCtx(t, ctx)
 
 	if ctx.Notifications == nil {
 		t.Fatal("seam mismatch: ctx.Notifications is nil after the api mount")
@@ -122,10 +121,6 @@ func TestMountWithAPIShape(t *testing.T) {
 	if _, err := ctx.CommandHandler(context.Background(), "/notes", ""); err == nil ||
 		!strings.Contains(fmt.Sprint(err), "no handler for /notes") {
 		t.Fatalf("foreign command must fall through to the miss error, got %v", err)
-	}
-	// the classic mount path is dead: reaching it fails loud
-	if err := p.Mount(ctx); err == nil {
-		t.Fatal("the retired classic mount must fail loud")
 	}
 }
 
