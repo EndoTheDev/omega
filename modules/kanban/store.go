@@ -42,7 +42,7 @@ type Store struct {
 	named map[string]*sql.DB
 
 	// notifier is the finished-things seam (card t_5d9032d3), wired by
-	// the kanban plugin after MountAll order places notifications
+	// the kanban plugin after MountAllAPI order places notifications
 	// first. Nil-safe: a store without the seam just doesn't notify.
 	notifier core.NotificationsProvider
 }

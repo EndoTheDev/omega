@@ -13,7 +13,7 @@ type Plugin struct {
 	delegate *Delegate
 }
 
-// NewPlugin returns a delegate Plugin ready for MountAll.
+// NewPlugin returns a delegate Plugin ready for MountAllAPI.
 func NewPlugin() *Plugin {
 	return &Plugin{delegate: NewDelegate()}
 }

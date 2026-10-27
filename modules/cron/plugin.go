@@ -12,7 +12,7 @@ import (
 
 // Plugin adapts the cron Runner into omega's plugin system. It
 // provides the "cron" seam (exclusive) - the serve host starts the
-// runner after MountAll with the store open.
+// runner after MountAllAPI with the store open.
 type Plugin struct {
 	cfg     *Config
 	home    string
