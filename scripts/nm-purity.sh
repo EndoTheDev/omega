@@ -82,6 +82,7 @@ def scrub(text, modules):
     mnames = [m for m in modules]
     lines = text.split("\n")
     dead_ids = set()
+    dead_fields = set()
 
     # 1. import lines + alias discovery (file-level)
     keep = []
@@ -137,14 +138,22 @@ def scrub(text, modules):
         return bool(code) and all(w in dead_ids for w in code)
 
     def collect_anchors(ln):
-        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*)\s*:=", ln)
+        body = re.sub(r"`[^`]*`", "", ln)
+        body = re.sub(r'"(\\.|[^"\\])*"', '""', body)
+        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*)\s*:=", body)
         if m:
             for tok in re.split(r"[,\s]+", m.group(1).strip()):
                 if tok:
                     dead_ids.add(tok)
-        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[^=]", ln)
+        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[^=]", body)
         if m:
             dead_ids.add(m.group(1))
+        # struct-field shape (a deleted field line: NAME TYPE): the
+        # field's name dies with it - every .NAME access downstream
+        # reads a struct that no longer has it.
+        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s+[A-Za-z_\*\[\]][\w\.\*\[\],\s]*$", body)
+        if m and m.group(1) not in keywords:
+            dead_fields.add(m.group(1))
 
     def is_wire_line(ln):
         body = re.sub(r"`[^`]*`", "", ln)
@@ -153,15 +162,29 @@ def scrub(text, modules):
         for ident in dead_ids:
             if re.search(r"\b" + re.escape(ident) + r"\.", body):
                 return True
+        # a deleted struct field's access sites are wires too
+        for ident in dead_fields:
+            if re.search(r"\." + re.escape(ident) + r"\b", body):
+                return True
         stripped = ln.strip()
         # a bare identifier or identifier list (list items, re-assigns)
         if re.match(r"^(" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r")\s*(,\s*)*$", stripped):
             return True
         return False
 
+    # mark_word: chunk GUARD matcher. Unlike dead_word it reads quoted
+    # strings - a switch case naming the module in a string (case
+    # "x":), a config-section key, is a wire into the chunk even
+    # though the word appears nowhere else in live code. Marking only
+    # ENTERS the fixpoint; every deletion still needs a wire rule.
+    def mark_word(ln):
+        body = re.sub(r"`[^`]*`", " ` ", ln)
+        m = re.search(r"\b((" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r"))\b", body)
+        return m.group(1) if m else None
+
     def scrub_chunk(chunk):
         # a chunk untouched by the module keeps every line
-        if not any(dead_word(ln) for ln in chunk):
+        if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
             return chunk
         for _ in range(15):
             changed = False
@@ -182,11 +205,26 @@ def scrub(text, modules):
                     continue
                 m = re.match(r"^(\s*)(if|for|switch)\b", ln)
                 if m:
-                    depth2 = ln.rstrip().count("{") - ln.rstrip().count("}")
-                    j = i + 1
-                    while depth2 > 0 and j < len(chunk):
-                        depth2 += chunk[j].count("{") - chunk[j].count("}")
+                    # block extent: a statement head whose first line
+                    # carries no open brace either opens the body on a
+                    # LATER line (multi-line condition) or is a
+                    # one-liner. Scan forward from the head line: the
+                    # block ends when braces balance after a body
+                    # opened, or the head line closes itself.
+                    depth2 = 0
+                    opened = False
+                    j = i
+                    while j < len(chunk):
+                        d2 = chunk[j].count("{") - chunk[j].count("}")
+                        if d2 > 0:
+                            opened = True
+                        depth2 += d2
                         j += 1
+                        if depth2 == 0 and (opened or not chunk[j - 1].rstrip().endswith(
+                                ("||", "&&", ",", "(", "["))):
+                            break
+                    if not opened:
+                        j = i + 1  # head line only (the old one-liner read)
                     if depth2 == 0:
                         block = chunk[i:j]
                         code = [b for b in block[1:-1]

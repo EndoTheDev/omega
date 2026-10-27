@@ -17,7 +17,7 @@ func TestBuildPlugins(t *testing.T) {
 		t.Fatalf("buildPlugins returned error: %v", err)
 	}
 
-	const want = 19 // +kanban (t_33487fb6), +notifications (t_5d9032d3), +verdict (t_2ecf9c51)
+	const want = 20 // +kanban (t_33487fb6), +notifications (t_5d9032d3), +verdict (t_2ecf9c51), +continuous (t_72ecca67)
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}
