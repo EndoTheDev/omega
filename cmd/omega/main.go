@@ -22,6 +22,7 @@ import (
 	httpchannel "github.com/EndoTheDev/omega/http_channel"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
+	"github.com/EndoTheDev/omega/modules/continuous"
 	"github.com/EndoTheDev/omega/modules/cron"
 	"github.com/EndoTheDev/omega/modules/datadir"
 	"github.com/EndoTheDev/omega/modules/delegate"
@@ -456,6 +457,11 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		trust.NewPlugin(),
 		cron.NewPlugin(),
 		kanbanModule.NewPlugin(),
+		// The continuous capsule (card t_72ecca67): agent homes, the
+		// wake subprocess, the canonical chats, the evidence ledger.
+		// The home passes through the host - exe-dir resolution is
+		// cmd/omega business, the capsule never re-guesses it.
+		continuous.NewPluginWithHome(omegaHome()),
 	}, nil
 }
 
@@ -648,9 +654,43 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	return nil
 }
 
+// parseRunSession lifts the --session <id> flag out of the run argv.
+// The flag may sit before or after the prompt; it survives neither
+// config/trust stripping (it is consumed before those run). A missing
+// or empty value is an error - a wake pointing at no session must
+// fail the spawn, not fork a new chat.
+func parseRunSession(args []string) (string, []string, error) {
+	sessionID := ""
+	clean := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--session" {
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("run: --session requires a session id")
+			}
+			sessionID = strings.TrimSpace(args[i+1])
+			if sessionID == "" {
+				return "", nil, fmt.Errorf("run: --session requires a session id")
+			}
+			i++
+			continue
+		}
+		clean = append(clean, args[i])
+	}
+	return sessionID, clean, nil
+}
+
 // cmdRun loads config and runs the agent once with the given prompt,
-// printing the final response.
+// printing the final response. --session <id> binds the run to an
+// existing session: the run persists into that session through a
+// TurnSink (cron-style), input included - the wake-subprocess entry
+// the continuous module spawns against an agent home (card
+// t_72ecca67). Without --session the run persists nothing, exactly as
+// before.
 func cmdRun(configPath string, args []string, trust trustFlags) error {
+	sessionID, args, err := parseRunSession(args)
+	if err != nil {
+		return err
+	}
 	appendPrompts := parseAppendPrompts(args)
 	args = stripAppendPrompts(stripTrustArgs(stripConfigFlag(args)))
 	prompt, images, err := parseFileArgs(args)
@@ -707,6 +747,16 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		userMsg = core.NewUser(prompt)
 	}
 	messages := []core.Message{userMsg}
+	// --session <id>: persist the run into the existing session (the
+	// wake contract). The session must exist - a typo'd id must fail
+	// loud, not fork a new one.
+	if sessionID != "" {
+		if _, err := store.GetSession(context.Background(), sessionID); err != nil {
+			return fmt.Errorf("run: --session %s: %w", sessionID, err)
+		}
+		ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(store, sessionID, ""))
+		ctx = agent.WithPersistInput(ctx, []core.Message{userMsg})
+	}
 	var response strings.Builder
 	for event := range ag.Run(ctx, messages, nil) {
 		switch e := event.(type) {
