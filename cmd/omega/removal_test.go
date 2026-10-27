@@ -357,7 +357,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 	// are package kanban, the served surface rides ctx.ModuleRoutes.
 	_ = kanban.KanbanTask{}
 	_ = kanban.KanbanProvider(nil)
-	t.Log("PROOF removed: no kanban route registered (the served /tasks answers 404), canvas carries no kanban panel, no task tools, no /board commands; module nouns live in package kanban, core carries zero")
+	t.Log("PROOF removed: no kanban route registered (the patterns left the ledger and the module mux), canvas carries no kanban panel, no task tools, no /board commands; module nouns live in package kanban, core carries zero")
 }
 
 // pluginTool finds one registered tool by name across the mounted

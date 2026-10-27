@@ -43,8 +43,12 @@ documented below that is not in that mux is not real.
 
 Optional seams degrade with a status code, never a panic: no store ->
 `/sessions*` and `/sessions/search` answer 501; no settings seam ->
-`/settings` answers 501; no kanban mount -> `/tasks*` and `/boards`
-answer 501.
+`/settings` answers 501. Module REST (`/tasks*`, `/boards`) is
+capsule-registered (v0.12 phase F): the engine serves it from the live
+registry (`module_routes.go`) - a registered-pattern miss answers 404,
+and with the module absent its paths fall to the SPA catch-all (the
+engine holds no knowledge of the module's roots - that ignorance is
+the binary-purity law).
 
 Session titles generate on first exchange via a detached second agent
 run (`context.WithoutCancel`); failures are silent and rapid first
@@ -234,9 +238,10 @@ window help reports what startup auto-probed).
 
 ### /boards (multi-board registry)
 
-- `GET /boards` — the board registry, the current board flagged. Answers
-  501 when the kanban seam is not mounted or the provider lacks the
-  listing capability (single-board implementations stay legal).
+- `GET /boards` — the board registry, the current board flagged.
+  Registered by the capsule while the module is mounted (see module
+  REST above); an error from the handler is the capsule's own answer
+  (single-board implementations stay legal).
 
 ### /tasks (kanban)
 
@@ -258,7 +263,9 @@ window help reports what startup auto-probed).
   `"web"`, so the board can tell a human UI comment from an agent tool
   comment.
 
-All answer 501 when the kanban seam is not mounted.
+All registered by the capsule (`modules/kanban/rest.go`) and served
+from the live registry - absent module, unregistered path (the SPA
+catch-all answers it).
 
 ### Finished things (notifications)
 

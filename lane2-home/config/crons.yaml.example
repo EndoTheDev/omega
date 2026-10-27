@@ -1,0 +1,44 @@
+# Omega cron jobs. Copy to crons.yaml and edit.
+# Place in OMEGA_HOME (binary directory, or ~/.omega/).
+#
+# Schedules are standard 5-field cron (minute hour day month weekday),
+# evaluated in the server's local time. No seconds, no @descriptors.
+# Each fire runs the prompt as a full agent turn in a session labeled
+# cron:<name>.
+#
+# deliver targets (what happens to the run's final message):
+#   none    - session only (default)
+#   journal - appended to <OMEGA_HOME>/journal/YYYY-MM-DD.md
+#   memory  - stored via the memory extension
+#
+# omega can propose jobs in conversation but never writes this file
+# itself - copy it by hand.
+#
+# jobs:
+#   - name: daily-journal        # required, unique, [a-z0-9-]
+#     schedule: "0 8 * * *"      # required, 5-field cron
+#     prompt: "..."              # required, the user message the run sends
+#     deliver: journal           # journal | memory | none, default none
+#     enabled: true              # default true
+
+jobs:
+  - name: daily-journal
+    schedule: "0 8 * * *"
+    prompt: "Summarize yesterday's omega sessions into a concise daily journal entry - what happened, notable token usage, anything worth remembering."
+    deliver: journal
+
+  - name: insights-digest
+    schedule: "0 9 * * 0"
+    prompt: "Compute a weekly usage digest from the /sessions data - token totals per session, activity by day, patterns or anomalies worth flagging. Report only."
+
+  - name: backup
+    schedule: "0 3 * * *"
+    prompt: "Backup this omega home: copy omega.db and config.yaml into <OMEGA_HOME>/backups/<today's date>/ (create the directory if missing), then keep only the 14 newest backup directories and report what was copied and pruned."
+
+  - name: session-hygiene
+    schedule: "0 4 * * 0"
+    prompt: "Review this week's omega sessions for hygiene issues - untitled sessions, stale labels, oversized tool outputs, repeated questions. Produce a report only; never delete or modify anything."
+
+  - name: improver-reflection
+    schedule: "30 4 * * 0"
+    prompt: "Reflect on the omega codebase's state this week and propose a short list of concrete next improvements as a written proposal in this session only - no file edits, no crons.yaml changes, propose don't apply."
