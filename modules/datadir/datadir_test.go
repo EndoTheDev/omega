@@ -203,3 +203,32 @@ func TestHome(t *testing.T) {
 		t.Errorf("Home fallback = %q, want a ~/.omega path", got)
 	}
 }
+
+func TestAgentHome(t *testing.T) {
+	t.Setenv("OMEGA_HOME", "/explicit/home")
+	// no env: main - verbatim home.
+	t.Setenv("OMEGA_AGENT", "")
+	if got, err := AgentHome(); err != nil || got != "/explicit/home" {
+		t.Errorf("AgentHome without OMEGA_AGENT = %q %v, want the home root", got, err)
+	}
+	// "default" is main: the env is noise, not a target.
+	t.Setenv("OMEGA_AGENT", "default")
+	if got, err := AgentHome(); err != nil || got != "/explicit/home" {
+		t.Errorf("AgentHome(default) = %q %v, want the home root", got, err)
+	}
+	// a continuous agent homes at agents/<name>.
+	t.Setenv("OMEGA_AGENT", "scout")
+	if got, err := AgentHome(); err != nil || got != "/explicit/home/agents/scout" {
+		t.Errorf("AgentHome(scout) = %q %v, want /explicit/home/agents/scout", got, err)
+	}
+	// hostile names never escape agents/.
+	t.Setenv("OMEGA_AGENT", "../../etc")
+	if got, err := AgentHome(); err == nil || got != "" {
+		t.Errorf("path-shaped OMEGA_AGENT accepted: %q %v", got, err)
+	}
+	// whitespace is trimmed (the spawn contract trims nothing).
+	t.Setenv("OMEGA_AGENT", " scout ")
+	if got, err := AgentHome(); err != nil || got != "/explicit/home/agents/scout" {
+		t.Errorf("AgentHome whitespace = %q %v", got, err)
+	}
+}

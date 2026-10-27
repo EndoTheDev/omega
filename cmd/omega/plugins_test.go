@@ -20,8 +20,8 @@ func TestBuildPlugins(t *testing.T) {
 	// 19 in the web-module era; 18 since v0.13 shell law 1 dissolved
 	// the web capsule into the channel (t_f76ecdbe) after the earlier
 	// +kanban (t_33487fb6), +notifications (t_5d9032d3), +verdict
-	// (t_2ecf9c51) additions.
-	const want = 18
+	// (t_2ecf9c51) additions; +continuous (t_72ecca67) = 19 again.
+	const want = 19
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

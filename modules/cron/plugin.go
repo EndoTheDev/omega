@@ -70,7 +70,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	cfg := p.cfg
 	if cfg == nil {
 		var err error
-		cfg, err = LoadConfig(homeFile(home))
+		// One cron module for every home (card t_72ecca67, ruling 12):
+		// the main crons.yaml AND each agent home's config/crons.yaml.
+		cfg, err = LoadAllConfigs(home)
 		if err != nil {
 			return err
 		}

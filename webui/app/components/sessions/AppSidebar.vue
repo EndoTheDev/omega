@@ -308,6 +308,10 @@
     // new-ephemeral (card t_d96a5cd5): the dropdown's no-persist entry
     // - app.vue mints a composer-first ephemeral tab
     (e: "new-ephemeral"): void;
+    // new-continuous (card t_72ecca67, ruling 18): the picker's wired
+    // entry opens the continuous roster tab (the create flow lives in
+    // the panel's header form)
+    (e: "new-continuous"): void;
     (e: "pin", id: string, pinned: boolean): void;
     // archive/unarchive: the row moves to (or out of) the archived group
     // at the list bottom instantly - the optimistic patch flips the flag
@@ -348,9 +352,12 @@
       run: () => pickNew(true),
     },
     {
+      // card t_72ecca67: the placeholder is wired - the emit opens the
+      // continuous roster tab (ruling 18), the create flow lives in
+      // ContinuousPanel's header form (name, directive, schedule).
       label: "Continuous",
-      title: "design pending - coming with the continuous agents arc",
-      disabled: true,
+      title: "continuous agents - wake schedules, canonical chats",
+      run: () => emit("new-continuous"),
     },
   ];
   function pickNew(ephemeral: boolean) {

@@ -12,6 +12,7 @@ omega                 start the interactive TUI (no-arg default)
 omega <path>          start the TUI in <path> (chdir first)
 omega chat            explicit alias for the TUI
 omega run <prompt>    run one prompt to stdout
+omega run --session <id> <prompt>   run bound to an existing session (the wake contract)
 omega serve           start the HTTP server (SSE streaming)
 omega export <id|label> [output]   export a session as JSONL
 omega insights [--days N]          session usage analytics (default: 30 days)
@@ -79,6 +80,19 @@ omega run fix this @docs/cli.md    # file args ride along as context/images
 Exit code is 1 and `omega: agent: <error>` prints to stderr when the
 run ends with an error event.
 
+`--session <id>` binds the run to an EXISTING session: the run persists
+every finished message through a TurnSink - input included, provider-
+correct order - instead of printing and dropping. A typo'd id errors
+rather than forking a new session. Inside a continuous-agent wake the
+run's closing message is shaped before it lands: an unbacked or
+contradicted claim sentence strips, a verified one gains its evidence
+ledger citation, and the runtime evidence tail closes the report. Any
+run outside a wake child persists through the sink untouched.
+
+```bash
+omega run --session canonical "check the deploy queue"   # the wake child's shape
+```
+
 ### `omega export`
 
 Writes a session's messages as JSONL (one `{"role","content"}` object
@@ -102,14 +116,15 @@ omega insights --days 90
 
 ### `omega agents`
 
-Lists the registered agent profiles (name, description, model, skill
-count, memory size, directory). The default agent always exists; boot
-moves legacy home-root `memory.md`/`user.md` into
-`~/.omega/agents/default/` (a rename, exactly once). `create` scaffolds
-`~/.omega/agents/<name>/` with a commented `config.yaml` (it layers over
-the home config), an empty `skills/`, and an empty `logs/` - memory and
-user files are never seeded. Sessions created as an agent never appear
-in the default agent's session list.
+Lists the registered agent homes (name, description, model, skill
+count, memory size, directory). Main is the home root itself: its
+`memory.md`/`user.md` live at `~/.omega/` (boot retires the former
+`agents/default/` profile and moves its persona files UP, exactly
+once). `create` scaffolds a continuous agent home `~/.omega/agents/<name>/`
+holding `config/config.yaml` (a commented layer over the home config),
+`data/` (the agent's own stores - full data isolation), and an empty
+`skills/`; `user.md`, `memory.md`, and `<name>.log` are created on
+first use. Wake schedules live in the agent's own `config/crons.yaml`.
 
 ```bash
 omega agents

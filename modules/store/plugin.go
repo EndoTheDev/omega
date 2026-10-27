@@ -46,8 +46,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	dsn := cfg.DBPath
 	if dsn == "" || dsn == "omega.db" {
 		// <home>/data/omega.db - the host (cmd/omega resolveHomePaths)
-		// passes an absolute path for the exe-dir home case.
-		if home := datadir.Home(); home != "" {
+		// passes an absolute path for the exe-dir home case. Data
+		// isolation: a process running AS an agent resolves into the
+		// agent's own data dir (datadir.AgentHome).
+		home, aerr := datadir.AgentHome()
+		if aerr != nil {
+			return fmt.Errorf("store data home: %w", aerr)
+		}
+		if home != "" {
 			dsn = datadir.DBPath(home, "omega.db")
 		} else {
 			dsn = "omega.db"

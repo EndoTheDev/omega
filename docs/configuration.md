@@ -68,6 +68,25 @@ provider:
 | `vision_model`                | `OMEGA_VISION_MODEL`               | -                        | Captioner model for image messages: images are described once (persisted, content-addressed) and the main model sees the caption as text. Empty = images ride to the main model unchanged (a model that cannot see them fails loudly). Applies on restart |
 | `title_model`                 | `OMEGA_TITLE_MODEL`                | -                        | Cheap model for session-title generation (provisional + final). Empty = the main model. Applies on restart                                                                                                                                                |
 | `notifications`               | `OMEGA_NOTIFICATIONS`              | `bell`                   | Turn-complete notification (bell, desktop, off)                                                                                                                                                                                                           |
+| `continuous.wake_turn_budget` | -                                  | `0`                      | Per-wake turn budget a continuous agent's spawned loop gets (mapped onto `OMEGA_MAX_TURNS` in the child). 0 = the config's own `max_turns` (ruling 17: the ONLY budget - no daily cap, no wallet)                                                        |
+| `continuous.wake_timeout_seconds` | -                              | `1800`                   | Wall-clock fence per wake subprocess: a wedged wake is killed, never queued (crash isolation ruling 9)                                                                                                                                                    |
+
+## Continuous agents
+
+Module capsules own their config sections; the continuous capsule's
+knobs sit in the reference table above. The rest of the shape is
+file-based, not config: agent homes live at `<home>/agents/<name>/`
+(folder presence is registration - there is no registry file), each
+holding its own `config/` (a config.yaml layer over the home config
+plus that agent's own human-owned `crons.yaml` - the agent has no tool
+that touches it, ruling 15), `data/` (its own session, notification,
+board, and evidence-ledger stores), `skills/`, `user.md`, `memory.md`,
+and `<name>.log`. Schedules ride the cron module's WHEN; the wake
+subprocess and the report shape live in the continuous module. The
+webui roster pane + detail strip (ruling 18) ride the module's REST
+face: `GET /continuous/roster`, `GET|POST /continuous/{name}/chat`,
+`GET /continuous/{name}/evidence`, `POST /continuous/{name}/sleep`,
+`POST /continuous` (create).
 
 ## Providers
 

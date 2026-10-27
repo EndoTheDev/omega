@@ -62,7 +62,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	path := cfg.DBPath
 	if path == "" {
-		home := datadir.Home()
+		home, aerr := datadir.AgentHome()
+		if aerr != nil {
+			return fmt.Errorf("notifications data home: %w", aerr)
+		}
 		if home == "" {
 			return nil
 		}
