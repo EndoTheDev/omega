@@ -14,7 +14,10 @@ import (
 type Context = core.Context
 
 // Plugin is the contract every extension implements. The host collects
-// plugins, sorts them by dependencies, and mounts each into a Context.
+// plugins, sorts them by dependencies, and mounts each into a Context
+// through the registration surface (v0.12 phase F: the universal
+// mount is the only mount path - the classic seam-assignment ceremony
+// and its adapters are retired).
 type Plugin interface {
 	// Name is shown in the /extensions listing.
 	Name() string
@@ -23,10 +26,13 @@ type Plugin interface {
 	// provide the same one. The "tools" seam is additive.
 	Provides() []string
 	// Requires lists seam names that must be mounted before this
-	// plugin. MountAll uses these for topological ordering.
+	// plugin. MountAllAPI uses these for topological ordering.
 	Requires() []string
-	// Mount populates Context slots. Called once, in dependency order.
-	Mount(ctx *Context) error
+	// MountWithAPI mounts the plugin through its registrations: the
+	// one typed registration surface (pi-style ExtensionAPI), where
+	// every seam claim, additive append and payload boundary is a
+	// journaled registration that dismount replays backward.
+	MountWithAPI(ctx *Context, api *ExtensionAPI) error
 }
 
 // Describer is an optional Plugin capability. Description is a one-
@@ -131,7 +137,7 @@ type ConfigSource interface {
 // ConfigKey) receives the matching section as Configs[key]; sections
 // the host does not provide are absent, and the plugin falls back to
 // its default at Mount. Call once per host wiring, after the plugins
-// are collected and before MountAll.
+// are collected and before the mount.
 func RouteConfigs(plugins []Plugin, raw ConfigSource) map[string]any {
 	configs := make(map[string]any)
 	if raw == nil {
@@ -172,15 +178,14 @@ var exclusiveSeams = map[string]bool{
 	"verdicts":       true,
 }
 
-// MountAll lives in extensionapi.go: it keeps its classic signature
-// and delegates to MountAllAPI, which owns the plugin-set wiring
+// MountAllAPI lives in extensionapi.go: it owns the plugin-set wiring
 // (provides sweep for conflicts, topo sort, mount dispatch, emitter
-// delivery) in both mount styles.
+// delivery).
 
 // buildProvidesMap builds the seam -> plugin name map and detects conflicts
 // where two plugins provide the same exclusive seam. The exclusive
-// claims also land on the registry's owner ledger, so classic provides
-// and API seam registrations conflict with each other, not just among
+// claims also land on the registry's owner ledger, so the provides
+// sweep and the registrations conflict with each other, not just among
 // themselves (one name, one tenant - Q5).
 func buildProvidesMap(plugins []Plugin, reg *Registry) (map[string]string, error) {
 	provides := make(map[string]string)
@@ -251,7 +256,6 @@ func topoSort(plugins []Plugin, provides map[string]string) ([]Plugin, error) {
 	return ordered, nil
 }
 
-// mountPlugins lives in extensionapi.go - it is the dispatch point of
-// the dual mount (APIPlugin -> registration surface, Plugin ->
-// classic Mount) and records what it contributed so /extensions can
-// display accurate counts.
+// mountOne lives in dismount.go - the one mount path (registration
+// surface only) - and records what a plugin contributed so /extensions
+// can display accurate counts.

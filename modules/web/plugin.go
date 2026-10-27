@@ -15,7 +15,7 @@ type Plugin struct{}
 // agent.APIPlugin.
 var (
 	_ agent.Plugin    = (*Plugin)(nil)
-	_ agent.APIPlugin = (*Plugin)(nil)
+	_ agent.Plugin = (*Plugin)(nil)
 )
 
 // NewPlugin returns a web Plugin.

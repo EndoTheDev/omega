@@ -64,22 +64,16 @@ func (c *toggleCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error
 }
 
 // classicNoProof writes a slot without any dismount proof.
-type classicNoProof struct{ name string }
-
-func (p *classicNoProof) Name() string                  { return p.name }
-func (p *classicNoProof) Provides() []string            { return []string{p.name} }
-func (p *classicNoProof) Requires() []string            { return nil }
-func (p *classicNoProof) Mount(ctx *core.Context) error { return nil }
-
 // classicWithProof reverses its own writes.
 type classicWithProof struct{ name string }
 
 func (p *classicWithProof) Name() string       { return p.name }
 func (p *classicWithProof) Provides() []string { return []string{p.name} }
 func (p *classicWithProof) Requires() []string { return nil }
-func (p *classicWithProof) Mount(ctx *core.Context) error {
-	ctx.Commands = append(ctx.Commands, core.ExtensionCommand{Name: "/" + p.name})
-	return nil
+func (p *classicWithProof) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error {
+	return api.RegisterCommand("/"+p.name, "", nil, func(_ context.Context, _ string, _ string) (core.CommandResult, error) {
+		return core.CommandResult{}, nil
+	})
 }
 func (p *classicWithProof) Dismount(ctx *core.Context) error {
 	for i, c := range ctx.Commands {
@@ -101,7 +95,7 @@ type dependentCapsule struct {
 func (c *dependentCapsule) Name() string                  { return c.name }
 func (c *dependentCapsule) Provides() []string            { return nil }
 func (c *dependentCapsule) Requires() []string            { return c.requires }
-func (c *dependentCapsule) Mount(ctx *core.Context) error { return nil }
+func (c *dependentCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error { return nil }
 func (c *dependentCapsule) Toggleable() bool              { return c.toggle }
 
 func TestBootPanicRePanicsNamed(t *testing.T) {
@@ -255,21 +249,6 @@ func TestDismountAllReverseTopo(t *testing.T) {
 	}
 }
 
-func TestDismountAllFailsLoudWithoutProof(t *testing.T) {
-	ctx := &core.Context{}
-	reg, err := MountAllAPI([]Plugin{&classicNoProof{name: "mystery"}}, ctx, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = DismountAll(reg, ctx)
-	if err == nil {
-		t.Fatal("a module with no dismount proof must fail loud")
-	}
-	if !strings.Contains(err.Error(), "mystery") {
-		t.Fatalf("failure must name the module: %v", err)
-	}
-}
-
 func TestClassicDismount(t *testing.T) {
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&classicWithProof{name: "manual"}}, ctx, nil, nil)
@@ -326,7 +305,7 @@ func TestDisableList(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Tier law: a machine-critical module is not disableable.
-	_, err = MountAllAPI([]Plugin{&classicNoProof{name: "store"}}, ctx, nil, []string{"store"})
+	_, err = MountAllAPI([]Plugin{&dependentCapsule{name: "store"}}, ctx, nil, []string{"store"})
 	if err == nil || !strings.Contains(err.Error(), "not toggleable") {
 		t.Fatalf("tier law: disabling machine-critical module must fail: %v", err)
 	}
@@ -347,9 +326,6 @@ func (c *churnCapsule) Provides() []string           { return nil }
 func (c *churnCapsule) Requires() []string           { return nil }
 func (c *churnCapsule) Toggleable() bool             { return true }
 func (c *churnCapsule) Dismount(*core.Context) error { return nil }
-func (c *churnCapsule) Mount(*core.Context) error {
-	return errors.New("churnCapsule mounts through the API")
-}
 func (c *churnCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error {
 	return api.RegisterLifecycle("churn.pump",
 		func(_ context.Context, _ core.StartDeps) error {

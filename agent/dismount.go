@@ -14,12 +14,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Dismounter is an optional Plugin capability (v0.12 E1): a module
-// whose Mount writes the Context directly (the classic style) proves
-// its teardown by reversing exactly what it appended. Modules mounted
-// through the ExtensionAPI are journaled and dismount automatically -
-// they implement Dismounter only for module-internal teardown beyond
-// the Context (state the mount opened that the registry cannot see).
+// Dismounter is an optional Plugin capability (v0.12 E1): module-
+// internal teardown beyond the Context - state the mount opened that
+// the journal cannot see (a connection, a watcher). Context surface
+// is journaled and dismounts automatically.
 type Dismounter interface {
 	// Dismount removes every registration the mount made.
 	Dismount(ctx *core.Context) error
@@ -78,16 +76,12 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 	beforeTools := len(target.ToolProviders)
 	beforeCmds := len(target.Commands)
 	beforeInfos := len(target.Infos)
-	if ap, ok := p.(APIPlugin); ok {
-		j.apiMounted = true
-		api := &ExtensionAPI{module: p.Name(), ctx: target, reg: reg, j: j, live: !remount, builtin: isBuiltin(p)}
-		if err := ap.MountWithAPI(target, api); err != nil {
-			return j, fmt.Errorf("mount %q: %w", p.Name(), err)
-		}
-		if err := api.commit(); err != nil {
-			return j, fmt.Errorf("mount %q: %w", p.Name(), err)
-		}
-	} else if err := p.Mount(target); err != nil {
+	j.apiMounted = true
+	api := &ExtensionAPI{module: p.Name(), ctx: target, reg: reg, j: j, live: !remount, builtin: isBuiltin(p)}
+	if err := p.MountWithAPI(target, api); err != nil {
+		return j, fmt.Errorf("mount %q: %w", p.Name(), err)
+	}
+	if err := api.commit(); err != nil {
 		return j, fmt.Errorf("mount %q: %w", p.Name(), err)
 	}
 	info := core.ExtensionInfo{
@@ -186,9 +180,8 @@ func (r *Registry) Remount(ctx *core.Context, p Plugin, deps core.StartDeps) err
 
 // Dismount removes one mounted module: its fence handles stop first,
 // then the module's own Dismount hook (module-internal state), then
-// the journal plays backward. A module with neither a journal (never
-// mounted through the ExtensionAPI) nor a Dismount implementation has
-// no dismount proof and the call fails loud naming it.
+// the journal plays backward. Every mount is journaled (the universal
+// mount is the only mount path) - the Context surface always reverses.
 func (r *Registry) Dismount(ctx *core.Context, name string) error {
 	r.mu.Lock()
 	j := r.journals[name]
