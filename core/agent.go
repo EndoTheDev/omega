@@ -89,9 +89,10 @@ type Agent struct {
 	provider      Provider
 	tools         map[string]Tool
 	toolProviders []ToolProvider
-	// tpMu guards toolProviders: a live module toggle (v0.12 E2)
-	// swaps the set mid-process while concurrent runs and the /tools
-	// inventory read it under the loop.
+	// tpMu guards toolProviders and extensionInfos: a live module
+	// toggle (v0.12 E2) swaps both sets mid-process while concurrent
+	// runs and the /tools and /extensions inventories read them under
+	// the loop.
 	tpMu           sync.RWMutex
 	tpLive         bool // NewFromContext built this agent from a mounted Context
 	maxTurns       int
@@ -241,17 +242,42 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb
 }
 
-// ExtensionInfos returns the metadata about loaded extensions set at
-// mount time (name, description, seams, tool/command counts). The
-// http_channel inspector surfaces it on GET /extensions - the webui
-// parity of the TUI /extensions listing.
+// ExtensionInfos returns the metadata about loaded extensions (name,
+// description, seams, tool/command counts). The http_channel inspector
+// surfaces it on GET /extensions - the webui parity of the TUI
+// /extensions listing.
 func (a *Agent) ExtensionInfos() []ExtensionInfo {
+	a.tpMu.RLock()
+	defer a.tpMu.RUnlock()
 	return a.extensionInfos
 }
 
 // SetExtensionInfos sets the metadata about loaded extensions, used
 // for prompt building and the /extensions command.
 func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	a.extensionInfos = infos
+}
+
+// RefreshExtensionInfos re-reads the extension metadata from the
+// mounted Context the agent was built from (NewFromContext): the
+// toggle journal keeps ctx.Infos exact across live module toggles
+// (dismount ctxUndo, remount ctxApply), so a serving surface that
+// re-reads it after every successful toggle (core.LiveSeams, the same
+// law as RefreshToolProviders) always lists what is actually mounted.
+// An agent built without a Context keeps its set - the classic
+// constructor has nothing to re-read. The copy is defensive: the
+// inventory sees a frozen snapshot, the Context keeps mutating
+// underneath.
+func (a *Agent) RefreshExtensionInfos(ctx *Context) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	if !a.tpLive || ctx == nil {
+		return
+	}
+	infos := make([]ExtensionInfo, len(ctx.Infos))
+	copy(infos, ctx.Infos)
 	a.extensionInfos = infos
 }
 
