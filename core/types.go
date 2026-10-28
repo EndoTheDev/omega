@@ -92,6 +92,11 @@ type ExtensionInfo struct {
 	Commands    int
 	Seams       []string   // declared seam types ("prompt_builder", "compactor", etc.)
 	ToolList    []ToolInfo // tools provided by this extension (name + description)
+	// CommandNames lists the slash commands this extension registered
+	// (registration order, leading slash included) - the webui
+	// extensions-tab expansion renders these verbatim, so the count and
+	// the names stay one fact, not two.
+	CommandNames []string
 }
 
 // PromptBuildOptions carries context for extension-built system prompts.

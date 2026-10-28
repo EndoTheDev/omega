@@ -60,6 +60,13 @@ type extensionListing struct {
 	Tools       int      `json:"tools"`
 	Commands    int      `json:"commands"`
 	Seams       []string `json:"seams"`
+	// tool_names / command_names carry the EXPANSION detail (card
+	// t_210a0d19): the webui extensions tab lists this module's tools
+	// and slash commands inside its expanded row. Names ride the wire;
+	// descriptions do not (the inspector column is ~300px - a list of
+	// verbatim names fits, prompt-quality prose does not).
+	ToolNames    []string `json:"tool_names"`
+	CommandNames []string `json:"command_names"`
 }
 
 // handleExtensions serves GET /extensions: the loaded-extension
@@ -79,12 +86,22 @@ func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 		if seams == nil {
 			seams = []string{}
 		}
+		toolNames := make([]string, 0, len(e.ToolList))
+		for _, t := range e.ToolList {
+			toolNames = append(toolNames, t.Name)
+		}
+		commandNames := e.CommandNames
+		if commandNames == nil {
+			commandNames = []string{}
+		}
 		out = append(out, extensionListing{
-			Name:        e.Name,
-			Description: e.Description,
-			Tools:       e.Tools,
-			Commands:    e.Commands,
-			Seams:       seams,
+			Name:         e.Name,
+			Description:  e.Description,
+			Tools:        e.Tools,
+			Commands:     e.Commands,
+			Seams:        seams,
+			ToolNames:    toolNames,
+			CommandNames: commandNames,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -110,6 +110,34 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 		if row.Seams == nil {
 			t.Errorf("%s: seams must be an array on the wire, not null", row.Name)
 		}
+		// Expansion detail (card t_210a0d19): the name arrays ride the
+		// same wire and must agree with the counts - the webui's expanded
+		// row renders them verbatim, a count/name split would lie.
+		if row.ToolNames == nil || len(row.ToolNames) != row.Tools {
+			t.Errorf("%s: tool_names %v, want %d names", row.Name, row.ToolNames, row.Tools)
+		}
+		if row.CommandNames == nil || len(row.CommandNames) != row.Commands {
+			t.Errorf("%s: command_names %v, want %d names", row.Name, row.CommandNames, row.Commands)
+		}
+	}
+	// Skill inventory names ride verbatim: find the skills row's provider
+	// tool, and the /skills slash command in its command_names.
+	for _, row := range got {
+		if row.Name != "skills" {
+			continue
+		}
+		found := false
+		for _, n := range row.ToolNames {
+			if n == "skills.read" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("skills: tool_names %v does not name the skills provider tool", row.ToolNames)
+		}
+		if len(row.CommandNames) != 1 || row.CommandNames[0] != "/skills" {
+			t.Errorf("skills: command_names %v, want [\"/skills\"]", row.CommandNames)
+		}
 	}
 }
 

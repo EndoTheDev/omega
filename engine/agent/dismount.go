@@ -108,6 +108,9 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 		}
 	}
 	sort.SliceStable(info.ToolList, func(i, j int) bool { return info.ToolList[i].Name < info.ToolList[j].Name })
+	for _, cmd := range target.Commands[beforeCmds:] {
+		info.CommandNames = append(info.CommandNames, cmd.Name)
+	}
 	info.Commands = len(target.Commands) - beforeCmds
 	target.Infos = append(target.Infos, info)
 	j.add(contribution{
