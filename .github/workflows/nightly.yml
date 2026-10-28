@@ -77,6 +77,34 @@ jobs:
         env:
           JOURNEY_BASE_URL: http://127.0.0.1:8098
 
+      - name: Journey evidence to the run summary (on red)
+        # The logs API needs a token the vault PATs do not carry
+        # (Actions:read); the run summary is anonymous-readable, so a
+        # red run self-documents instead of waiting on credentials.
+        if: failure()
+        run: |
+          EVID=""
+          for root in "$RUNNER_TEMP" "${TMPDIR:-/tmp}" /tmp; do
+            EVID="$(ls -dt "$root"/omega-journeys-evidence.* 2>/dev/null | head -1 || true)"
+            [ -n "$EVID" ] && break
+          done
+          if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
+            {
+              echo "## :x: Journeys red - no evidence dir found (infra exit: chrome or lane dead)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## :x: Journeys red - evidence (per journey, last 40 lines)"
+            for f in "$EVID"/*.log; do
+              echo ""
+              echo "### $(basename "$f" .log)"
+              echo '```'
+              tail -40 "$f"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compute the nightly version (patch+1 of the newest stable)
         id: ver
         run: |
