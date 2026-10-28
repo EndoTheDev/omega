@@ -221,15 +221,17 @@ def scrub(text, modules):
         # a struct field typed by a dead host-config type - the tag is
         # string-stripped above, so the line body reads `Skills
         # SkillsConfig`; the field's own name dies with it (access
-        # sites read a struct that no longer carries it)
-        m = re.match(r"^([A-Za-z_]\w*)\s+\*?([A-Za-z_]\w*)\s*(//.*)?$", body)
-        if m and m.group(2) in dead_ids:
+        # sites read a struct that no longer carries it). The head word
+        # must not be a keyword: `package cron` is a package clause,
+        # not a field.
+        m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_]\w*)\s*(//.*)?$", body)
+        if m and m.group(2) in dead_ids and m.group(1) not in keywords:
             dead_fields.add(m.group(1))
             return True
         # a composite-literal key typed by a dead host-config type
         # (`Kanban: KanbanConfig{` in DefaultConfig): dies with its
         # braces - the wire-headed block rule below eats the literal
-        m = re.match(r"^([A-Za-z_]\w*)\s*:\s*\*?([A-Za-z_]\w*)\{", body)
+        m = re.match(r"^\s*([A-Za-z_]\w*)\s*:\s*\*?([A-Za-z_]\w*)\{", body)
         if m and m.group(2) in dead_ids:
             dead_fields.add(m.group(1))
             return True
