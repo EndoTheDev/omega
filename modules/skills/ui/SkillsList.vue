@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeUnmount, onMounted, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
 
   // Module-owned UI (card t_db430fea): the loaded skill inventory,
@@ -55,10 +55,20 @@
   // list stays, read-only.
   const toggleable = ref(false);
 
-  function rows() {
+  // rows are a computed (the AgentsPanel shape): RegistryList binds
+  // `rows` straight into the template, where an unwrap gives the array
+  // - a plain function would make the `v-if="rows.length"` gate read
+  // the ARITY (0), and the list would never render (the t_504a78ca
+  // bug: data fetched, tabs empty). Structural RegistryRow: module UI
+  // imports no shell code, so the type rides inference.
+  const rows = computed(() => {
     const set = new Set(fold.value);
-    return skills.value.map((s) => ({ name: s.name, description: s.description, disabled: set.has(s.name) || false }));
-  }
+    return skills.value.map((s) => ({
+      name: s.name,
+      description: s.description,
+      disabled: set.has(s.name),
+    }));
+  });
 
   async function load(): Promise<void> {
     const res = await fetch("/skills");

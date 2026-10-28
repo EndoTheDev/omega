@@ -58,3 +58,14 @@ test("ToolsList consumes the shared component and the fold wire", () => {
   // (expandable), not as always-visible sub-rows
   assert.ok(src.includes("t.name}.${a.name}"), "dotted action detail naming");
 });
+
+// t_504a78ca regression: RegistryList gates with `v-if="rows.length"`.
+// rows as a plain function makes .length the ARITY (0) - data loads,
+// the tab renders empty. The rows binding must hand RegistryList an
+// array (computed, the AgentsPanel shape), not a function.
+test("ToolsList builds rows as a computed (arity trap: a plain function rows() renders empty)", () => {
+  const src = readFileSync(join(root, "modules", "tools", "ui", "ToolsList.vue"), "utf8");
+  assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");
+  assert.ok(!src.includes("function rows()"), "no plain-function row builder under :rows");
+  assert.ok(src.includes(':rows="rows"'), "the shared component gets the rows binding");
+});
