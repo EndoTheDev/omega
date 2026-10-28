@@ -98,4 +98,17 @@ describe("the continuous registry + wiring", () => {
     assert.match(panel, /createSchedule/, "schedule field");
     assert.match(panel, /fetch\("\/continuous",\s*\{[\s\S]*?method: "POST"/, "POST /continuous");
   });
+
+  // t_1ba868bb: the roster's agents' sessions open like normal sessions
+  // in the main pane (Hermes bots parity) - the detail strip lists the
+  // agent's main-store bound rows and every row is a click target that
+  // rides the shared opener; the canonical chat is NOT one (it lives in
+  // the agent's own store, ruling 6 - never a main-pane session id).
+  it("roster session rows emit open-session through the shared opener", () => {
+    assert.match(panel, /@click="openSession\(s\.id\)"/, "every session row is a click target");
+    assert.match(panel, /emit\("open-session", id\)/, "the panel emits the row's session id");
+    assert.match(panel, /agents\/\$\{encodeURIComponent\(a\.name\)\}\/sessions/, "sessions come from the agent's main-store list");
+    assert.match(panel, /no sessions to open/, "honest empty state (the canonical chat lives in the strip above)");
+    assert.match(app, /<ContinuousPanel[\s\S]*?@open-session="openChatTab"/, "app.vue routes the emit to the main-pane opener");
+  });
 });

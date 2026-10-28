@@ -287,7 +287,7 @@ func TestVariantGuards(t *testing.T) {
 	if got := (model{}).variantGuards(); got != "no store available" {
 		t.Fatalf("store guard: %q", got)
 	}
-	m := model{store: &mockStore{}}
+	m := model{store: &minimalStore{}}
 	if got := m.variantGuards(); got != "no active session" {
 		t.Fatalf("session guard: %q", got)
 	}

@@ -4,7 +4,8 @@
 #   1  fresh load: the bottom shell renders (edge-bottom pane, 200 default
 #      rung) with the logs tab live and polling - and sits UNDER the main
 #      panel (geometry, not just presence)
-#   2  divider drag resizes its height on the +200 snap ladder (200 -> 400)
+#   2  divider drag grows the bottom panel to the 50% cap (400 rung unreachable
+#      below half the content box - v0.14.4 card t_e539ba29 law, merge e36e555)
 #   3  reload persists the resized tree
 #   4  close/reopen: the menubar toggle round-trips the panel; closure
 #      SURVIVES a reload (the record's closed-edge set, card t_aa9dbada),
@@ -58,11 +59,14 @@ under=$(jsq '(() => {
 })()')
 assert_eq "$under" "1" "bottom panel renders under the main panel"
 
-# --- 2: divider drag (+200 ladder: 200 -> 400) --------------------------
-# the bottom divider is the column root's LAST divider in the DOM.
+# --- 2: divider drag (grows to the 50% cap; the 400 rung sits below it) ---
 # t_be305778: the shell anchors to the viewport bottom - drag UP GROWS it
 # (the divider is its top edge); the drag-down variant was the inverted
 # gesture this card fixed.
+# t_e539ba29 (v0.14.4 law): BOTTOM_MAX_FRACTION 0.65 -> 0.5, so at this
+# journey's fixed 1280x800 viewport the cap is 364 (half of the 728px
+# content box) and the +200 rung at 400 is unreachable - keep the 364 in
+# sync if header/statusbar chrome heights change.
 divx=$(jsq '(() => {
   const ds = document.querySelectorAll(".dock-divider");
   return Math.round(ds[ds.length - 1].getBoundingClientRect().x) + 2;
@@ -79,14 +83,14 @@ ab mouse move "$divx" $((divy - 200)) >/dev/null 2>&1
 ab mouse up >/dev/null 2>&1
 sleep 0.4
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom").getBoundingClientRect().height)')
-assert_eq "$height" "400" "divider drag resizes the bottom panel; 400 is the +200 ladder rung (snap zone 385..415)"
+assert_eq "$height" "364" "divider drag grows the bottom panel to the 50% cap (364 at 1280x800; the 400 rung is unreachable below it)"
 
 # --- 3: the resized tree survives a reload ------------------------------
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? 0)')
-assert_eq "$height" "400" "reload restores the bottom panel at the resized height"
+assert_eq "$height" "364" "reload restores the bottom panel at the capped height"
 tab=$(jsq '(() => {
   const pane = document.querySelector(".dock-pane.edge-bottom");
   return pane ? (pane.querySelector(".dock-tab")?.textContent.trim() ?? "") : "";
@@ -108,7 +112,7 @@ sleep 0.6
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 assert_eq "$bottom" "1" "the menubar toggle reopens the bottom panel"
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom").getBoundingClientRect().height)')
-assert_eq "$height" "400" "reopen restores the remembered height (400)"
+assert_eq "$height" "364" "reopen restores the remembered height (364, the cap)"
 
 # --- 5: mobile - the cell zero-collapses, state survives ----------------
 ab set viewport 420 840 >/dev/null 2>&1
@@ -127,7 +131,7 @@ assert_eq "$toggle" "true" "mobile: the bottom-panel toggle is visible under 768
 ab set viewport 1280 800 >/dev/null 2>&1
 sleep 1.2
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
-assert_eq "$height" "400" "desktop again: the panel is back at its height (state survived mobile)"
+assert_eq "$height" "364" "desktop again: the panel is back at the capped height (state survived mobile)"
 
 # and logs stays reachable on mobile the bottom-only way (Endo's
 # ruling, 3dbb9c5: logs is bottom-hosted only - the inspector drawer

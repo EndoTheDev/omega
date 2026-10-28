@@ -224,7 +224,7 @@ func mountRegistry(cfg Config) (*agent.Registry, *agent.Context, error) {
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	reg, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled)
+	reg, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled.Modules)
 	if err != nil {
 		return nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
@@ -476,21 +476,34 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels. The
 // mount registry rides along for the E2 module-toggle surface.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, *agent.Registry, error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, *agent.Registry, *continuous.Plugin, error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
 	}
 	ctx := &agent.Context{
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
+		// v0.14.1: the disabled.tools fold rides the Context - every
+		// NewFromContext agent installs the guard, every live toggle
+		// rewrites it here before the serving surface re-reads.
+		DisabledTools: cfg.Disabled.Tools,
 	}
-	// The API mount honors the config.yaml disabled: toggle list
+	// The API mount honors the config.yaml disabled.modules toggle list
 	// (v0.12 E1, Q1): disabled capsules skip Mount, and a capsule
 	// depending on one fails the boot naming the edge (Q3).
-	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled)
+	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled.Modules)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
+	}
+	// The registry-toggle adapter needs the one continuous plugin
+	// instance the mount created (agent soft-toggles live-swap its
+	// machine); a second buildPlugins would hand back a different one.
+	var cont *continuous.Plugin
+	for _, p := range plugins {
+		if cp, ok := p.(*continuous.Plugin); ok {
+			cont = cp
+		}
 	}
 
 	// The store resolves BEFORE the agent is built: the captioner
@@ -498,13 +511,13 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 	// NewFromContext copies ctx.Captioner onto every agent it creates.
 	if ctx.Store != nil {
 		if err := ctx.Store.Open(cfg.Store.DBPath); err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
 		}
 	} else {
 		ctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
 		s, err := store.Open(":memory:")
 		if err != nil {
-			return nil, nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
 		}
 		ctx.Store = s
 	}
@@ -519,7 +532,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		CWD:           cwd(),
 	})
 
-	return ag, ctx.Store, ctx.Logger, ctx, reg, nil
+	return ag, ctx.Store, ctx.Logger, ctx, reg, cont, nil
 }
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
@@ -559,7 +572,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return err
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, pctx, reg, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, reg, cont, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -590,25 +603,46 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// The E2 module-toggle surface (Q7): the registry behind the seam,
 	// arming the fence handles exactly like the boot-time StartAll
 	// below, persisting the toggle list to the config.yaml disabled:
-	// key boot reads.
+	// key boot reads. v0.14.1 adds the registry-toggle seam next to it:
+	// the skills/tools/agents namespaces of the same fold, one shared
+	// live fold pointer so a module toggle and a registry toggle can
+	// never clobber each other's namespaces.
+	fold := &DisabledNamespaces{
+		Modules: cfg.Disabled.Modules,
+		Skills:  cfg.Disabled.Skills,
+		Tools:   cfg.Disabled.Tools,
+		Agents:  cfg.Disabled.Agents,
+	}
 	mods := &omegaModules{
 		pctx:       pctx,
 		reg:        reg,
+		fold:       fold,
 		deps:       core.StartDeps{Ctx: pctx, Agent: ag, Store: store, Run: ctx},
 		configPath: configFile,
 		logger:     logger,
 	}
+	registries := &omegaRegistries{
+		pctx:       pctx,
+		reg:        reg,
+		fold:       fold,
+		configPath: configFile,
+		home:       omegaHome(),
+		cont:       cont,
+		logger:     logger,
+	}
 	WatchConfig(configFile, func(newCfg Config) {
 		hotApply(newCfg, pctx)
+		registries.Sync(newCfg.Disabled) // hand edits follow the toggle path
 	})
 	errCh := make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
 		deps := core.ChannelDeps{
-			Ctx:      pctx,
-			Store:    store,
-			Settings: &omegaSettings{path: configFile, pctx: pctx},
-			Modules:  mods,
-			Version:  omegaVersion,
+			Ctx:        pctx,
+			Store:      store,
+			Settings:   &omegaSettings{path: configFile, pctx: pctx},
+			Modules:    mods,
+			Registries: registries,
+			Version:    omegaVersion,
 		}
 		go func(c core.Channel) {
 			errCh <- c.Start(ctx, deps)
@@ -721,7 +755,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		}
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, _, _, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, _, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -805,7 +839,7 @@ func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error 
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
 	}
-	if _, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled); err != nil {
+	if _, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled.Modules); err != nil {
 		return fmt.Errorf("mount extensions: %w", err)
 	}
 	if pctx.Logger != nil {

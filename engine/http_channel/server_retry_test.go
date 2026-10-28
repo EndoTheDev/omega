@@ -87,7 +87,7 @@ func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httpt
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := NewServer(a, nil, st, nil, nil)
+	s := NewServer(a, nil, st, nil, nil, nil)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return s, prov, st, ts

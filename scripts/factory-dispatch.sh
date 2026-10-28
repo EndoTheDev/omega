@@ -73,7 +73,14 @@ tokens_of() {  # extract repo paths from free text (body or diff)
   # move law pass 2 on the expanded stream - brace-listed moves
   # ("modules/{cron,memory}/ -> core/") surface their members' sides
   move_paths <<<"$expanded"
-  printf '%s\n' "$expanded" | grep -oE '\b(modules|cmd|docs|scripts|agent|ai|\.github|internal)/[a-zA-Z0-9_./-]+' || true
+  # The rooted scan must watch every top-level code dir. The list predates
+  # the engine-ring reorg: engine/ and core/ were missing, so engine/webui
+  # paths produced ZERO tokens on both sides (running surface AND candidate
+  # FILES lines). Empty candidate tokens can never overlap, so every webui
+  # card read false-legal beside a running webui card (proven 2026-10-28:
+  # dry-run called t_210a0d19 legal beside running t_372b9e9a while both
+  # name engine/webui/app/components/ and engine/webui/test/).
+  printf '%s\n' "$expanded" | grep -oE '\b(modules|cmd|docs|scripts|agent|ai|engine|core|deploy|diag|\.github|internal)/[a-zA-Z0-9_./-]+' || true
 }
 
 candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
@@ -234,6 +241,7 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
     # 2 zombie-running made B below zero, SLOTS kept its cap-derived 2, the
     # inner got --max 4 on a reclaim-emptied pool and spawned 4.
     DISPATCH_MAX="$MAXARG"
+    SLOTS="$(( MAXARG - ${#RUNNING[@]} ))"
   else
     SLOTS=$(( CAP - ${#RUNNING[@]} ))
     [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass

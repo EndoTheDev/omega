@@ -96,9 +96,14 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+        "/commands", "/commands/dispatch", // t_07aed3f9: the palette's GET
+        // /commands (extension registry rows) and POST /commands/dispatch
+        // (module command + skill dispatch) fetch the API root in dev too
         "/modules", // t_8ac225f1: the settings tab's modules group fetches
         // the live introspection in dev too (same-origin embedded in
         // production) - without this route the group renders nothing
+        "/disabled", // t_372b9e9a: the registry-browser tabs' fold reads
+        // (GET /disabled, PUT /disabled/skills|tools|agents) in dev too
         "/boards",
         // card t_078a2c35: the canvas view-model pipe (GET /ui/canvas +
         // POST /ui/actions) is same-origin embedded in production; the

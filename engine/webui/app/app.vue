@@ -128,21 +128,27 @@
 
         <!-- card t_7e2b7002: the agents panel - profile inventory with
              scaffold + new-session-as-agent (own fetch, inspector
-             family). -->
+             family). t_1ba868bb: the session rows and the created
+             session open through openChatTab - the same main-pane
+             opener a sidebar row uses (Hermes bots parity). -->
         <template #pane-agents>
           <AgentsPanel
             v-if="!isMobile"
-            class="pane" />
+            class="pane"
+            @open-session="openChatTab" />
         </template>
 
         <!-- card t_72ecca67 (ruling 18): the continuous roster - the
              agent homes with last-report preview, next wake, unread;
              the detail strip rides wake/sleep + evidence; the
-             t_55a571ff picker entry opens it via openContinuousTab. -->
+             t_55a571ff picker entry opens it via openContinuousTab.
+             t_1ba868bb: the detail's session rows open through
+             openChatTab - same main-pane opener, no degraded mode. -->
         <template #pane-continuous>
           <ContinuousPanel
             v-if="!isMobile"
-            class="pane" />
+            class="pane"
+            @open-session="openChatTab" />
         </template>
 
         <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry
@@ -461,7 +467,7 @@
   // snapshot lands at boot; the deltas ride the run streams through the
   // host's canvasDelta dep. Panel presence lives in the store, never a
   // hardcoded list (Q5a).
-  import { createCanvasStore } from "./composables/canvas";
+  import { createCanvasStore, emitLocalToast } from "./composables/canvas";
   import CanvasPanel from "./components/canvas/CanvasPanel.vue";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
@@ -549,6 +555,27 @@
   // whole tree. The components resolve it via injection. ---
   const dock = createDock(window.localStorage);
   provide(DOCK_API_KEY, dock);
+  // card t_d54c718a (v0.14.4 ruling 6): a repaired layout surfaces ONCE
+  // at boot - one toast for the whole receipt, never one per repair,
+  // never a silent default-tree fallback. The record rides the local
+  // emit funnel (canvas.ts emitLocalToast, the same subscriber set +
+  // fingerprint dedupe as the canvas feed); read stays true, so the
+  // receipt never counts unread in the bell. onMounted puts the emit
+  // after the NotificationCenter subscription (children mount first) -
+  // the boot itself never waits on this.
+  onMounted(() => {
+    const repairs = dock.bootRepairs;
+    if (repairs.length === 0) return;
+    emitLocalToast({
+      id: 0,
+      kind: "chat",
+      source_id: "dock-layout",
+      title: `layout repaired: ${repairs.length} constraints eased`,
+      verdict: "ok",
+      created_at: new Date().toISOString(),
+      read: true,
+    });
+  });
   // the sidebars are FIXED panes (card t_4ae27e0d): no open/close state
   // exists on desktop. drawerOpen/inspectorOpen are the MOBILE overlay
   // flags only; the MenuBar toggles surface at every breakpoint (card
@@ -657,6 +684,124 @@
   // deltas through the host's canvasDelta dep.
   const canvas = createCanvasStore();
 
+  // --- the webui shell commands (t_07aed3f9) ---
+  //
+  // runCommand is the palette's local executor: "/" never reaches the
+  // agent. Every verb is a webui-native equivalent of the TUI's local
+  // handler set (minus /exit - nothing to quit). The command output
+  // rides the tab's statusLine like every other notice. The function
+  // is hoisted above createChatHost only because it closes over `host`
+  // (retry); invocations happen after both exist, so the TDZ never
+  // bites.
+  async function runCommand(stateKey: string, text: string): Promise<boolean> {
+    const fields = text.split(/\s+/);
+    const name = fields[0] ?? "";
+    const arg = fields.slice(1).join(" ").trim();
+    const st = host.states.get(stateKey);
+    const note = (line: string) => {
+      if (st) st.statusLine = line;
+    };
+    switch (name) {
+      case "/help": {
+        note(
+          "commands: /copy /extensions /fork /help /new /panels /retry /sessions /theme /variant - plus module commands and /<skill-name>; @file @session:<id> @skill:<name> on any send",
+        );
+        return true;
+      }
+      case "/theme": {
+        if (!arg) {
+          const user = userThemes.value.map((t) => t.name).join(", ");
+          note(`themes: dark, light, auto${user ? ", " + user : ""} (usage: /theme <name>)`);
+          return true;
+        }
+        if (arg === "dark" || arg === "light" || arg === "auto") {
+          setTheme(arg);
+          note(`theme: ${arg}`);
+          return true;
+        }
+        const user = userThemes.value.find(
+          (t) => t.name.toLowerCase() === arg.toLowerCase() || t.id === arg,
+        );
+        if (user && !user.error) {
+          setTheme(`theme:${user.id}`);
+          note(`theme: ${user.name}`);
+          return true;
+        }
+        note(`theme: unknown theme "${arg}"`);
+        return true;
+      }
+      case "/fork": {
+        // the newest anchored message becomes the next send's FROM point
+        const payload = normalizeChatPayload(host.chatPanel()?.payload);
+        const rows = payload?.rows ?? [];
+        for (let i = rows.length - 1; i >= 0; i--) {
+          const r = rows[i]!;
+          if (r.role === "assistant" && r.id) {
+            host.setFork(stateKey, r.id);
+            note("fork: the next send continues from the newest response");
+            return true;
+          }
+        }
+        note("fork: no anchored message on this session (use the fork affordance on a response block)");
+        return true;
+      }
+      case "/retry": {
+        const ok = await host.retry(stateKey);
+        if (ok) return true;
+        note("retry: nothing to replay (no idle bound session)");
+        return true;
+      }
+      case "/variant": {
+        const variants = st?.variants ?? [];
+        if (!variants.length) note("variants: none on the active path");
+        else note(`variants: ${variants.length} branch point(s), ${variants.reduce((n, v) => n + v.count, 0)} sibling(s) - use the < n > switcher on a response block`);
+        return true;
+      }
+      case "/copy": {
+        const payload = normalizeChatPayload(host.chatPanel()?.payload);
+        const rows = payload?.rows ?? [];
+        let text2 = "";
+        for (let i = rows.length - 1; i >= 0 && !text2; i--) {
+          const r = rows[i]!;
+          if (r.role === "assistant") {
+            text2 = (r.blocks ?? [])
+              .filter((b) => b.type === "text" && b.content)
+              .map((b) => b.content!)
+              .join("\n");
+          }
+        }
+        if (!text2) {
+          note("copy: no assistant response to copy");
+          return true;
+        }
+        await navigator.clipboard.writeText(text2);
+        note("copied the last response to the clipboard");
+        return true;
+      }
+      case "/new": {
+        openChatTab(null);
+        return true;
+      }
+      case "/sessions": {
+        if (!sidebarDocked.value) toggleSidebar();
+        return true;
+      }
+      case "/panels":
+      case "/extensions": {
+        const target = name === "/panels" ? "canvas" : "extensions";
+        if (!findEdgePane(dock.tree.value, "inspector")) {
+          dock.toggleEdge("inspector", "after");
+        }
+        openModuleTab(target);
+        if (!st) return true;
+        note(name === "/panels" ? "canvas: the panels tab is up" : "extensions: the inventory tab is up");
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
   // session (the runHub run slot is per session). ---
@@ -675,6 +820,9 @@
     // the snapshot refetch: variant selects and action-driven repaints
     // (the deltas ride run streams only)
     canvasRefresh: () => canvas.refresh(),
+    // the webui shell commands (t_07aed3f9): theme, panes, fork, retry,
+    // copy / new / sessions - all local, never an agent round-trip
+    runCommand: (key, text) => runCommand(key, text),
   });
 
   // --- main-view: chat vs the module-owned board (kanban). Ported

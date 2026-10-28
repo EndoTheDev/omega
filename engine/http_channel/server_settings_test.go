@@ -73,7 +73,7 @@ func (f *fakeSettings) current(key string) any {
 
 // settingsServer wires a server with a fake seam.
 func settingsServer(s core.Settings) *httptest.Server {
-	return httptest.NewServer(NewServer(nil, nil, nil, s, nil).Handler())
+	return httptest.NewServer(NewServer(nil, nil, nil, s, nil, nil).Handler())
 }
 
 func TestSettingsGET(t *testing.T) {
@@ -162,7 +162,7 @@ func TestSettingsNilSeamGives501(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodPut} {
 		req, _ := http.NewRequest(method, "/settings", nil)
 		rec := httptest.NewRecorder()
-		NewServer(nil, nil, nil, nil, nil).Handler().ServeHTTP(rec, req)
+		NewServer(nil, nil, nil, nil, nil, nil).Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotImplemented {
 			t.Errorf("%s: code %d, want 501", method, rec.Code)
 		}
@@ -189,7 +189,7 @@ func TestSettingsPUTRejectsBadBodies(t *testing.T) {
 			}
 			resp.Header.Set("Content-Type", "application/json")
 			got := httptest.NewRecorder()
-			NewServer(nil, nil, nil, &fakeSettings{}, nil).Handler().ServeHTTP(got, resp)
+			NewServer(nil, nil, nil, &fakeSettings{}, nil, nil).Handler().ServeHTTP(got, resp)
 			if got.Code != tc.want {
 				t.Errorf("code %d, want %d", got.Code, tc.want)
 			}
@@ -222,7 +222,7 @@ func TestSettingsMethodsRestricted(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodDelete} {
 		req, _ := http.NewRequest(method, "/settings", nil)
 		rec := httptest.NewRecorder()
-		NewServer(nil, nil, nil, &fakeSettings{}, nil).Handler().ServeHTTP(rec, req)
+		NewServer(nil, nil, nil, &fakeSettings{}, nil, nil).Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s: code %d, want 405", method, rec.Code)
 		}

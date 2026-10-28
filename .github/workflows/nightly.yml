@@ -72,10 +72,59 @@ jobs:
 
       - name: Validation journeys
         run: |
+          set -o pipefail
           npm i -g agent-browser && agent-browser install
-          scripts/journeys/run.sh
+          scripts/journeys/run.sh 2>&1 | tee "$RUNNER_TEMP/journeys-stdout.log"
         env:
           JOURNEY_BASE_URL: http://127.0.0.1:8098
+
+      - name: Journey evidence to the run summary (on red)
+        # Two channels: the run summary (signed-in view) and error
+        # annotations (anonymous-readable on the run page - the logs API
+        # needs Actions:read, which no vault PAT carries, so a red run
+        # must self-document without credentials).
+        if: failure()
+        run: |
+          EVID=""
+          for root in "$RUNNER_TEMP" "${TMPDIR:-/tmp}" /tmp; do
+            EVID="$(ls -dt "$root"/omega-journeys-evidence.* 2>/dev/null | head -1 || true)"
+            [ -n "$EVID" ] && break
+          done
+          # anonymous channel: suite stdout first (infra deaths print
+          # nothing into journey logs), then one annotation per red log
+          if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
+            tail_lines="$(grep -vE ' (green|running)$' "$RUNNER_TEMP/journeys-stdout.log" | tail -12 | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journeys suite output (noise stripped)::$tail_lines"
+          fi
+          if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
+            echo "::error::journeys red - no evidence dir found (infra exit: chrome or lane dead)"
+            echo "## :x: Journeys red - no evidence dir found (infra exit: chrome or lane dead)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## :x: Journeys red - evidence (per journey, last 40 lines)"
+            if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
+              echo ""
+              echo "### suite output (last 30 lines)"
+              echo '```'
+              tail -30 "$RUNNER_TEMP/journeys-stdout.log"
+              echo '```'
+            fi
+            for f in "$EVID"/*.log; do
+              echo ""
+              echo "### $(basename "$f" .log)"
+              echo '```'
+              tail -40 "$f"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          for f in "$EVID"/*.log; do
+            [ -e "$f" ] || continue
+            if ! grep -q ' RED$' "$f"; then continue; fi
+            name="$(basename "$f" .log)"
+            tail_lines="$(tail -8 "$f" | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journey red: $name::$tail_lines"
+          done
 
       - name: Compute the nightly version (patch+1 of the newest stable)
         id: ver

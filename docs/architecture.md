@@ -6,7 +6,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 
 | Layer    | Package     | Responsibility                                                                                                                                          |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (22 of them), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError) |
+| Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (23 of them, `RegistryToggles` newest: the config.yaml `disabled:` registry-browser toggle fold), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError) |
 | Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | Provider | `ai`        | The `ai.Provider`/`ai.ToolSchema`/`ai.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
 | CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |

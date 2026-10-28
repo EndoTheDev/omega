@@ -105,6 +105,25 @@
         v-else
         class="continuous-status">no messages yet</p>
 
+      <h4 class="continuous-sub">sessions</h4>
+      <ol
+        v-if="agentSessions.length"
+        class="continuous-sessions"
+        role="list">
+        <li
+          v-for="s in agentSessions"
+          :key="s.id"
+          class="continuous-session-row"
+          :title="`open ${agentSessionTitle(s)} in the main pane`"
+          @click="openSession(s.id)">
+          <span class="continuous-session-title">{{ agentSessionTitle(s) }}</span>
+          <span class="continuous-session-meta">{{ s.id }}</span>
+        </li>
+      </ol>
+      <p
+        v-else
+        class="continuous-status">no sessions to open</p>
+
       <h4 class="continuous-sub">evidence</h4>
       <p class="continuous-evidence-sum">{{ evidenceSummary(evidence) }}</p>
       <ol
@@ -140,12 +159,28 @@ import {
   type OmegaContinuousRow,
   type OmegaEvidenceRow,
 } from "./continuousRows.ts";
+import { agentSessionTitle, type OmegaAgentSession } from "./agentsRows.ts";
+
+// emit("open-session", id) is the Hermes-bots parity handoff (card
+// t_1ba868bb): app.vue routes the id through openChatTab - the same
+// main-pane opener a sidebar session row uses. The roster's openable
+// sessions are the agent's main-store bound rows (GET
+// /agents/{name}/sessions); the canonical chat stays in the strip
+// above - it lives in the agent's own store (ruling 6), never a
+// main-pane session id.
+const emit = defineEmits<{ (e: "open-session", id: string): void }>();
+
+// openSession: one emit, no panel-local transcript (card t_1ba868bb).
+function openSession(id: string): void {
+  emit("open-session", id);
+}
 
 const roster = ref<OmegaContinuousRow[]>([]);
 const detail = ref<OmegaContinuousRow | null>(null);
 const selected = ref("");
 const chat = ref<OmegaChatMessage[]>([]);
 const evidence = ref<OmegaEvidenceRow[]>([]);
+const agentSessions = ref<OmegaAgentSession[]>([]);
 const loading = ref(false);
 const loadError = ref("");
 const showCreate = ref(false);
@@ -180,6 +215,7 @@ async function select(a: OmegaContinuousRow): Promise<void> {
   detail.value = a;
   chat.value = [];
   evidence.value = [];
+  agentSessions.value = [];
   wakeMsg.value = "";
   try {
     const res = await fetch(`/continuous/${encodeURIComponent(a.name)}/chat`);
@@ -195,6 +231,14 @@ async function select(a: OmegaContinuousRow): Promise<void> {
     evidence.value = ((await res.json()) as OmegaEvidenceRow[]) ?? [];
   } catch {
     evidence.value = [];
+  }
+  // the openable sessions (card t_1ba868bb): the agent's main-store
+  // bound rows - a read, the detail stays on a failed fetch.
+  try {
+    const res = await fetch(`/agents/${encodeURIComponent(a.name)}/sessions`);
+    if (res.ok) agentSessions.value = ((await res.json()) as OmegaAgentSession[]) ?? [];
+  } catch {
+    agentSessions.value = [];
   }
 }
 
@@ -392,7 +436,8 @@ defineExpose({ load, select, roster, detail, chat, evidence });
   text-transform: lowercase;
 }
 .continuous-chat,
-.continuous-evidence {
+.continuous-evidence,
+.continuous-sessions {
   list-style: none;
   display: flex;
   flex-direction: column;
@@ -407,6 +452,27 @@ defineExpose({ load, select, roster, detail, chat, evidence });
   font-size: 11px;
   padding: 3px 0;
   white-space: pre-wrap;
+}
+/* the open affordance (card t_1ba868bb): a session row rides the
+   main-pane opener, exactly like a sessions-list row. */
+.continuous-session-row {
+  border-bottom: 1px solid var(--z2);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 6px;
+  padding: 3px 0;
+}
+.continuous-session-row:hover {
+  background: var(--z2);
+}
+.continuous-session-meta {
+  color: var(--text-dim);
+  font-family: monospace;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .continuous-evidence-row {
   display: flex;

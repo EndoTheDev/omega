@@ -565,13 +565,24 @@ describe("serialize / deserialize", () => {
     assert.equal(
       deserialize(
         JSON.stringify({
-          v: 3,
-          tree: { kind: "pane", id: "n1", tabs: [], active: 0, fixed: null },
+          v: 99,
+          tree: { kind: "pane", id: "n1", tabs: [{ component: "future" }], active: 0, fixed: 100 },
         }),
       ),
       null,
-      "future version forces migration instead of crashing",
+      "a future version forces migration instead of crashing",
     );
+    // v:3 is a KNOWN version now (px-on-disk): a valid v:3 record loads
+    const v3 = deserialize(
+      JSON.stringify({
+        v: 3,
+        tree: { kind: "split", id: "n1", direction: "row", px: [500, 500], children: [
+          { kind: "pane", id: "n2", tabs: [{ component: "chat" }], active: 0, fixed: null },
+          { kind: "pane", id: "n3", tabs: [{ component: "files" }], active: 0, fixed: null },
+        ] },
+      }),
+    );
+    assert.ok(v3, "the strict reader reads v:3");
   });
   it("v2 round-trips the edge markers and the free tab arrangement", () => {
     let t: DockNode = defaultTree();
@@ -593,7 +604,7 @@ describe("serialize / deserialize", () => {
   it("marker-bearing v2 trees deserialize; bogus markers fall back to main", () => {
     const t = defaultTree();
     const back = deserializeLayout(serialize(t))!;
-    assert.equal(back.version, 2);
+    assert.equal(back.version, 3, "the record shape is v:3 (px on disk)");
     assert.equal(findPane(back.tree, asSplit(t).children[0].id)!.edge, "left");
     assert.equal(findPane(back.tree, asSplit(t).children[2].id)!.edge, "right");
     const bogus = JSON.parse(serialize(t));
@@ -1425,7 +1436,7 @@ describe("v1 layout migration (t_d6b657a7)", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const loaded = deserializeLayout(mem.getItem(DOCK_LAYOUT_KEY))!;
-    assert.equal(loaded.version, 2, "the migrated tree persisted as v2");
+    assert.equal(loaded.version, 3, "the migrated tree persisted as v3 (px on disk)");
     assert.equal(findPane(loaded.tree, "n2")!.edge, "left");
     assert.equal(findPane(loaded.tree, "n4")!.edge, "right");
   });
@@ -1529,6 +1540,53 @@ describe("closed-edge persistence (card t_aa9dbada)", () => {
     await flush(); // the migrated closure persists as record data
     const after = createDock(mem as unknown as Storage);
     assert.equal(findEdgePane(after.tree.value, "bottom"), null, "the migrated closure persists");
+  });
+});
+
+// card t_f1898589: the v:3 writer poisons its own record when a pane omits
+// the fixed field - splitPxShares' `fixed !== null` check passes for
+// undefined, the emit returns the undefined raw, JSON.stringify turns it
+// into null, and the strict reader rejects the whole record on boot (the
+// layout resets on every reload). The writer must NEVER emit a null px.
+describe("v:3 px shares tolerate a pane that omits fixed (t_f1898589)", () => {
+  it("serialize emits finite positive px; the record loads back", () => {
+    // a pane built WITHOUT the fixed field (the shape a sloppy factory
+    // produces - makePane defaults null, bypasses get undefined)
+    const noFixedA = {
+      kind: "pane", id: nextNodeId(), tabs: [{ component: "sidebar" }], active: 0,
+    } as unknown as DockPane;
+    const noFixedB = {
+      kind: "pane", id: nextNodeId(), tabs: [{ component: "chat" }], active: 0,
+    } as unknown as DockPane;
+    const tree: DockNode = makeSplit("row", [noFixedA, noFixedB]);
+    tree.sizes = [0.25, 0.75];
+
+    const rec = JSON.parse(serialize(tree)) as {
+      v: 3;
+      tree: { kind: "split"; px: unknown[]; children: unknown[] };
+    };
+    assert.equal(rec.v, 3);
+    const px = rec.tree.px;
+    assert.ok(Array.isArray(px), "the split record carries px shares");
+    for (const p of px)
+      assert.ok(
+        typeof p === "number" && Number.isFinite(p) && p > 0,
+        `every px entry is a finite positive number, got ${JSON.stringify(px)}`,
+      );
+
+    const loaded = deserializeLayout(serialize(tree));
+    assert.ok(loaded, "the record the writer just produced must deserialize");
+    const back = asSplit(loaded!.tree);
+    assert.deepEqual(
+      asPane(back.children[0]!).tabs.map((t) => t.component),
+      ["sidebar"],
+      "tab 0 round-trips",
+    );
+    assert.deepEqual(
+      asPane(back.children[1]!).tabs.map((t) => t.component),
+      ["chat"],
+      "tab 1 round-trips",
+    );
   });
 });
 
