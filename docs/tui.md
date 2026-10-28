@@ -89,6 +89,24 @@ the cron module (`modules/cron/`).
 4. Rebuild: `scripts/build.sh` (embed the lane bundle only when the
    webui changed; `scripts/embed-lane.sh` owns `static/` commits).
 
+## @ mentions
+
+`@<path>` tokens in a message attach files to the send: an image file
+goes to the provider as an image, a text file is inlined, a glob
+(`@*.go`) expands to the matching files. `@session:<id>` injects the
+session's message history, `@skill:<name>` injects the skill content.
+Paths resolve against the TUI process cwd; a token that does not
+resolve is sent literally - the send is never blocked, and a
+`[@foo.txt not resolved - sent literally]` notice tells you when.
+
+Typing `@` (at input start or after a space) opens the same
+autocomplete panel as `/`: candidates are cwd files, `session:` refs
+(current session first, then saved session ids) and `skill:` names,
+filtered as you type, accepted with Tab/Enter. The panel and the
+notice are affordances only - resolution never rewrites the send
+semantics; see `engine/tui/image.go` (`extractImages`). A mid-word `@`
+(an email address, a handle) is never treated as a mention.
+
 ## Keybindings
 
 | Key       | Action                                            |
