@@ -3,9 +3,9 @@ name: CI
 on:
   push:
     branches: [master, dev]
-    # ponytail: docs-only pushes skip CI (minutes back). Tradeoff named:
-    # the drift gate also skips those pushes - drift state stays as of the
-    # last code push, next code push restores it. Acceptable during soak.
+    # ponytail: docs-only pushes skip CI (minutes back). The drift gate
+    # lives in its own workflow (drift.yml) and still measures every push,
+    # docs pushes included.
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -32,13 +32,3 @@ jobs:
           bash scripts/drift-gate_test.sh
           bash scripts/release-suggest_test.sh
           bash scripts/nm-purity_test.sh
-
-  drift:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Drift gate (FAIL RED when dev is over 10 commits or over 7 days ahead of master)
-        run: scripts/drift-gate.sh
