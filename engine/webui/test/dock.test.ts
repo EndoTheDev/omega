@@ -1543,6 +1543,53 @@ describe("closed-edge persistence (card t_aa9dbada)", () => {
   });
 });
 
+// card t_f1898589: the v:3 writer poisons its own record when a pane omits
+// the fixed field - splitPxShares' `fixed !== null` check passes for
+// undefined, the emit returns the undefined raw, JSON.stringify turns it
+// into null, and the strict reader rejects the whole record on boot (the
+// layout resets on every reload). The writer must NEVER emit a null px.
+describe("v:3 px shares tolerate a pane that omits fixed (t_f1898589)", () => {
+  it("serialize emits finite positive px; the record loads back", () => {
+    // a pane built WITHOUT the fixed field (the shape a sloppy factory
+    // produces - makePane defaults null, bypasses get undefined)
+    const noFixedA = {
+      kind: "pane", id: nextNodeId(), tabs: [{ component: "sidebar" }], active: 0,
+    } as unknown as DockPane;
+    const noFixedB = {
+      kind: "pane", id: nextNodeId(), tabs: [{ component: "chat" }], active: 0,
+    } as unknown as DockPane;
+    const tree: DockNode = makeSplit("row", [noFixedA, noFixedB]);
+    tree.sizes = [0.25, 0.75];
+
+    const rec = JSON.parse(serialize(tree)) as {
+      v: 3;
+      tree: { kind: "split"; px: unknown[]; children: unknown[] };
+    };
+    assert.equal(rec.v, 3);
+    const px = rec.tree.px;
+    assert.ok(Array.isArray(px), "the split record carries px shares");
+    for (const p of px)
+      assert.ok(
+        typeof p === "number" && Number.isFinite(p) && p > 0,
+        `every px entry is a finite positive number, got ${JSON.stringify(px)}`,
+      );
+
+    const loaded = deserializeLayout(serialize(tree));
+    assert.ok(loaded, "the record the writer just produced must deserialize");
+    const back = asSplit(loaded!.tree);
+    assert.deepEqual(
+      asPane(back.children[0]!).tabs.map((t) => t.component),
+      ["sidebar"],
+      "tab 0 round-trips",
+    );
+    assert.deepEqual(
+      asPane(back.children[1]!).tabs.map((t) => t.component),
+      ["chat"],
+      "tab 1 round-trips",
+    );
+  });
+});
+
 // tiny Storage stand-in shared by the loader tests above
 class MemoryStorage {
   private m = new Map<string, string>();

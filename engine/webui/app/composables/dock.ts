@@ -1862,24 +1862,34 @@ function validateClosedEdges(raw: unknown): DockEdgeComponent[] | undefined {
     6: never two formulas). Fixed panes keep their px; every other child
     (a flexible pane, a nested split) takes round(remaining * frac/sum of
     the flexible fractions) - the render's own share law, so a recorded
-    px re-derives the exact fractions it came from. */
+    px re-derives the exact fractions it came from.
+    Card t_f1898589: the fixed test is a finite-number guard (isFixed:
+    typeof number AND Number.isFinite), never an identity check against
+    null - a pane carrying fixed === undefined (or NaN) previously
+    passed `fixed !== null` and the emit returned the undefined raw,
+    JSON turned it into a null px entry, and the strict reader
+    rejected the WHOLE record the writer itself produced (layout reset
+    on every reload). This function must never emit a non-finite px;
+    anything unreadable takes the flexible branch. */
 export function splitPxShares(
   split: DockSplit,
   containerPx: number = V2_NOMINAL_CONTAINER_PX,
 ): number[] {
+  const isFixed = (c: DockNode): c is DockPane & { fixed: number } =>
+    isPane(c) && typeof c.fixed === "number" && Number.isFinite(c.fixed);
   const fixedSum = split.children.reduce(
-    (a, c) => a + (isPane(c) && c.fixed !== null ? c.fixed : 0),
+    (a, c) => a + (isFixed(c) ? c.fixed : 0),
     0,
   );
   let flexFrac = 0;
   for (let k = 0; k < split.children.length; k++) {
     const c = split.children[k]!;
-    if (isPane(c) && c.fixed !== null) continue;
+    if (isFixed(c)) continue;
     flexFrac += split.sizes[k] ?? 1 / split.children.length;
   }
   const remaining = Math.max(0, containerPx - fixedSum);
   return split.children.map((c, k) => {
-    if (isPane(c) && c.fixed !== null) return c.fixed;
+    if (isFixed(c)) return c.fixed;
     const frac = split.sizes[k] ?? 1 / split.children.length;
     const rel = flexFrac > 0 ? frac / flexFrac : 1 / Math.max(1, split.children.length);
     return Math.max(0, Math.round(remaining * rel));
