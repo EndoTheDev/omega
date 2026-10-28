@@ -62,6 +62,10 @@ export type { DockComponentName, DockableComponentLike };
 export { PANE_OPEN_MIN };
 
 export const DOCK_LAYOUT_KEY = "omega.dock-layout";
+/** v0.14.4 ruling 6 BACKUP LAW: before the first auto-persist of a
+    REPAIRED layout, the raw record is copied here - a repair-chain bug
+    must never destroy the only copy of the user's layout. */
+export const DOCK_LAYOUT_BAK_KEY = "omega.dock-layout.bak";
 
 // pre-dock pane state. Consumed ONCE by migrateLayout (first boot without a
 // dock key), then untouched - the tree is the single source of truth after.
@@ -187,6 +191,10 @@ export interface DockSplit {
   children: DockNode[];
   /** fractions of the content box, parallel to children (fixed panes ignore theirs) */
   sizes: number[];
+  /** v:3 RECORD only: the children's integer px shares on disk. In-memory
+      trees always carry fraction sizes; the reader derives them (px_i /
+      sum). Never render: DockSplit.vue reads sizes. */
+  px?: number[];
 }
 export type DockNode = DockSplit | DockPane;
 
@@ -1594,7 +1602,12 @@ export function clamp(v: number, lo: number, hi: number): number {
 // closed); a reload restores THAT state, the loader stops re-asserting an
 // open shape over it. The field is optional (older records lack it) and v2
 // readers that predate it ignore it - no version bump, no compat shim.
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
+/** v:2 -> v:3 migration container: persisted fractions convert to integer
+    px against this NOMINAL container (a constant, not the live viewport,
+    so the migration is deterministic offline; the render derives
+    fractions from px again and lands the same ratios). */
+const V2_NOMINAL_CONTAINER_PX = 1000;
 
 /** the closed-edge flags on a layout record: undefined when the record
     predates the field (the legacy bottom-flag migration reads that), a
@@ -1607,24 +1620,85 @@ function validateClosedEdges(raw: unknown): DockEdgeComponent[] | undefined {
   );
 }
 
+/** the px shares one split's children hold against `containerPx` - the
+    ONE formula both the v:3 writer and the round-trip gate read (ruling
+    6: never two formulas). Fixed panes keep their px; every other child
+    (a flexible pane, a nested split) takes round(remaining * frac/sum of
+    the flexible fractions) - the render's own share law, so a recorded
+    px re-derives the exact fractions it came from. */
+export function splitPxShares(
+  split: DockSplit,
+  containerPx: number = V2_NOMINAL_CONTAINER_PX,
+): number[] {
+  const fixedSum = split.children.reduce(
+    (a, c) => a + (isPane(c) && c.fixed !== null ? c.fixed : 0),
+    0,
+  );
+  let flexFrac = 0;
+  for (let k = 0; k < split.children.length; k++) {
+    const c = split.children[k]!;
+    if (isPane(c) && c.fixed !== null) continue;
+    flexFrac += split.sizes[k] ?? 1 / split.children.length;
+  }
+  const remaining = Math.max(0, containerPx - fixedSum);
+  return split.children.map((c, k) => {
+    if (isPane(c) && c.fixed !== null) return c.fixed;
+    const frac = split.sizes[k] ?? 1 / split.children.length;
+    const rel = flexFrac > 0 ? frac / flexFrac : 1 / Math.max(1, split.children.length);
+    return Math.max(0, Math.round(remaining * rel));
+  });
+}
+
+/** deep copy carrying the v:3 record shape: integer px split shares in
+    place of fraction sizes (fractions derive at load; impossible widths
+    become unrepresentable, ruling 6). Pane nodes pass through verbatim
+    (fixed px IS px already). The shape is deliberately the RECORD's
+    (split px, no sizes) - JSON.parse reads it back through validateNode. */
+type RecordNode =
+  | { kind: "split"; id: string; direction: "row" | "column"; children: RecordNode[]; px: number[] }
+  | { kind: "pane"; id: string; tabs: DockTab[]; active: number; fixed: number | null; edge?: "left" | "right" | "bottom" };
+
+function recordTree(tree: DockNode, containerPx: number): RecordNode {
+  const walk = (n: DockNode): RecordNode => {
+    if (isPane(n)) {
+      return {
+        kind: "pane", id: n.id, tabs: n.tabs, active: n.active, fixed: n.fixed,
+        ...(n.edge ? { edge: n.edge } : {}),
+      };
+    }
+    return {
+      kind: "split",
+      id: n.id,
+      direction: n.direction,
+      children: n.children.map(walk),
+      px: splitPxShares(n, containerPx),
+    };
+  };
+  return walk(tree);
+}
+
 export function serialize(
   tree: DockNode,
   closedEdges: readonly DockEdgeComponent[] = [],
+  containerPx: number = V2_NOMINAL_CONTAINER_PX,
 ): string {
-  return JSON.stringify({ v: LAYOUT_VERSION, tree, closedEdges });
+  return JSON.stringify({ v: LAYOUT_VERSION, tree: recordTree(tree, containerPx), closedEdges });
 }
 
 export interface LoadedLayout {
   tree: DockNode;
-  /** the persisted version: 1 needs the era migration, 2 loads as-is */
-  version: 1 | 2;
+  /** the persisted version: 1 needs the era migration, 2 loads as-is,
+      3 is the px-on-disk shape (sizes derive) */
+  version: 1 | 2 | 3;
   /** which pinned shells the record says the user left closed; missing on
       records that predate the field (the legacy bottom flag migrates them) */
   closedEdges?: DockEdgeComponent[];
 }
 
 /** validates + parses a persisted layout. Returns null for anything the
-    engine cannot safely render (old/foreign/corrupt) so callers migrate. */
+    engine cannot safely render (old/foreign/corrupt) so callers migrate.
+    The STRICT reader: v1/v2/v3 records that fully validate load; anything
+    else stays a null (the total path is parseAnyLayout below). */
 export function deserializeLayout(raw: string | null): LoadedLayout | null {
   if (!raw) return null;
   let parsed: unknown;
@@ -1635,17 +1709,33 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown };
-  if (rec.v !== 1 && rec.v !== 2) return null;
+  if (rec.v !== 1 && rec.v !== 2 && rec.v !== 3) return null;
   const tree = validateNode(rec.tree);
   if (!tree) return null;
   const closedEdges = validateClosedEdges(rec.closedEdges);
-  return { tree, version: rec.v, ...(closedEdges ? { closedEdges } : {}) };
+  return { tree, version: rec.v as 1 | 2 | 3, ...(closedEdges ? { closedEdges } : {}) };
 }
 
 /** the plain tree-only read (every caller that does not care about the
     persisted version) */
 export function deserialize(raw: string | null): DockNode | null {
   return deserializeLayout(raw)?.tree ?? null;
+}
+
+/** the px shares of a RAW split record -> fractions, or null when the
+    shares cannot seat the children (the strict reader rejects, the total
+    reader repairs) */
+function fractionsFromPxShare(raw: unknown, width: number): number[] | null {
+  const arr = Array.isArray(raw) ? (raw as unknown[]) : null;
+  if (!arr || arr.length !== width) return null;
+  const px: number[] = [];
+  for (const p of arr) {
+    if (typeof p !== "number" || !Number.isFinite(p) || p <= 0) return null;
+    px.push(Math.round(p));
+  }
+  const sum = px.reduce((a, s) => a + s, 0);
+  if (sum <= 0) return null;
+  return px.map((s) => s / sum);
 }
 
 function validateNode(raw: unknown): DockNode | null {
@@ -1662,18 +1752,12 @@ function validateNode(raw: unknown): DockNode | null {
       children.push(v);
     }
     if (children.length < 2) return null; // splits with one child were hoisted
-    const sizes: number[] = [];
-    for (const s of n.sizes as unknown[]) {
-      if (typeof s !== "number" || !Number.isFinite(s) || s <= 0) return null;
-      sizes.push(s);
-    }
-    return {
-      kind: "split",
-      id: n.id,
-      direction: n.direction,
-      children,
-      sizes: normalizeSizes(children.length, sizes),
-    };
+    // v:3 record: the children's shares ride px (fractions derive); a
+    // fraction-sizes shape stays valid for pre-v:3 records
+    const derived = fractionsFromPxShare(n.px, children.length);
+    const sizes = derived ?? normalizeSizesFromRecord(n.sizes, children.length);
+    if (!sizes) return null;
+    return { kind: "split", id: n.id, direction: n.direction, children, sizes };
   }
   if (n.kind !== "pane") return null;
   if (!Array.isArray(n.tabs)) return null;
@@ -1708,6 +1792,229 @@ function validateNode(raw: unknown): DockNode | null {
     ? clamp(Math.trunc(n.active), 0, Math.max(0, tabs.length - 1))
     : 0;
   return { kind: "pane", id: n.id, tabs, active, fixed, ...(edge ? { edge } : {}) };
+}
+
+/** the strict fraction-sizes read (validateNode's pre-v:3 path): every
+    entry finite and positive, normalized; a count mismatch re-normalizes
+    to equal shares. Returns null only when an entry is unusable. */
+function normalizeSizesFromRecord(raw: unknown, width: number): number[] | null {
+  if (!Array.isArray(raw)) return null;
+  const sizes: number[] = [];
+  for (const s of raw as unknown[]) {
+    if (typeof s !== "number" || !Number.isFinite(s) || s <= 0) return null;
+    sizes.push(s);
+  }
+  return normalizeSizes(width, sizes);
+}
+
+// --- the TOTAL deserializer (v0.14.4 ruling 6) ---------------------------------
+
+const MAX_LAYOUT_DEPTH = 32;
+
+export interface ParsedLayout {
+  tree: DockNode;
+  version: 1 | 2 | 3;
+  closedEdges?: DockEdgeComponent[];
+  /** the repair receipt: one plain phrase per constraint eased. Empty on
+      a clean load; surfaces once as a toast (createDock keeps it). */
+  repairs: string[];
+}
+
+/** consumes ANY JSON shape and hands back a renderable tree - no throw
+    path, no null (the caller's `fallback` boots the default arrangement,
+    ALWAYS receipted). The repair table: garbage/non-object -> default
+    tree; unknown kind -> drop node; split with fewer than 2 surviving
+    children -> hoist the survivor; bad/colliding ids -> re-mint;
+    non-finite or negative fixed -> null; sub-floor px -> clamp to 128;
+    active out of range -> clamp; depth past 32 -> collapse deepest. */
+export function parseAnyLayout(raw: string | null, fallback: () => DockNode): ParsedLayout {
+  if (!raw) {
+    if (raw === null) return { tree: fallback(), version: 2, repairs: [] };
+    return { tree: fallback(), version: 2, repairs: ["the record was empty: booted the layout default"] };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { tree: fallback(), version: 2, repairs: ["the record was not valid JSON: booted the layout default"] };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { tree: fallback(), version: 2, repairs: ["the record was not a layout object: booted the layout default"] };
+  }
+  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown };
+  const v = rec.v === 1 || rec.v === 2 || rec.v === 3 ? rec.v : 2;
+  const repairs: string[] =
+    typeof rec.v === "number" && rec.v !== v
+      ? [`unknown layout version: read as v${v}-era`]
+      : [];
+  const seen = new Set<string>();
+  const tree = tolerantNode(rec.tree, repairs, seen, { depth: 0, v });
+  if (!tree) {
+    repairs.push("no renderable tree in the record: booted the layout default");
+    return { tree: fallback(), version: v, repairs };
+  }
+  const closedEdges = validateClosedEdges(rec.closedEdges);
+  return { tree, version: v, ...(closedEdges ? { closedEdges } : {}), repairs };
+}
+
+interface TolerantEnv {
+  depth: number;
+  v: 1 | 2 | 3;
+}
+
+function tolerantNode(
+  raw: unknown,
+  repairs: string[],
+  seen: Set<string>,
+  env: TolerantEnv,
+): DockNode | null {
+  if (env.depth > MAX_LAYOUT_DEPTH) {
+    repairs.push(`the tree collapsed past depth ${MAX_LAYOUT_DEPTH}`);
+    return null;
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    if (env.depth > 0) repairs.push("an unreadable node was dropped");
+    return null;
+  }
+  const n = raw as Record<string, unknown>;
+  // ids: well-formed and unique, else re-minted (the repair receipt tells)
+  const usableId = typeof n.id === "string" && /^n[0-9a-z]+$/.test(n.id) ? n.id : null;
+  const id = usableId && !seen.has(usableId) ? usableId : nextNodeId();
+  if (id !== usableId) {
+    repairs.push(`a node id (${usableId ?? "unreadable"}) re-minted as ${id}`);
+  }
+  seen.add(id);
+
+  if (n.kind === "split") {
+    if ((n.direction !== "row" && n.direction !== "column") || !Array.isArray(n.children)) {
+      repairs.push(`split ${id} had an unreadable shape`);
+      return null;
+    }
+    const children: DockNode[] = [];
+    for (const c of n.children as unknown[]) {
+      const t = tolerantNode(c, repairs, seen, { depth: env.depth + 1, v: env.v });
+      if (t) children.push(t);
+    }
+    if (children.length === 0) {
+      repairs.push(`split ${id} lost every child`);
+      return null;
+    }
+    if (children.length === 1) return children[0]!; // hoist the survivor
+    const sizes = tolerantSplitSizes(n, children.length, repairs, env.v);
+    return { kind: "split", id, direction: n.direction, children, sizes };
+  }
+  if (n.kind !== "pane") {
+    repairs.push(`a node of kind "${typeof n.kind === "string" ? n.kind : "kindless"}" was dropped`);
+    return null;
+  }
+
+  const tabs: DockTab[] = [];
+  if (Array.isArray(n.tabs)) {
+    for (const t of n.tabs as unknown[]) {
+      if (!t || typeof t !== "object") {
+        repairs.push("an unreadable tab record was dropped");
+        continue;
+      }
+      const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown };
+      if (
+        typeof tab.component !== "string" ||
+        !(
+          (DOCK_COMPONENTS as readonly string[]).includes(tab.component) ||
+          (LEGACY_DOCK_COMPONENTS as readonly string[]).includes(tab.component)
+        )
+      ) {
+        repairs.push(`a tab (${typeof tab.component === "string" ? tab.component : "kindless"}) was dropped`);
+        continue;
+      }
+      const nt: DockTab =
+        typeof tab.sessionRef === "string" && tab.sessionRef
+          ? { component: tab.component as DockComponentName, sessionRef: tab.sessionRef }
+          : { component: tab.component as DockComponentName };
+      if (typeof tab.key === "string" && tab.key) nt.key = tab.key;
+      tabs.push(nt);
+    }
+  } else {
+    repairs.push("a pane's tabs list was unreadable: the pane booted empty");
+  }
+  let fixed: number | null = null;
+  if (typeof n.fixed === "number") {
+    if (!Number.isFinite(n.fixed) || n.fixed < 0) {
+      repairs.push("a pane's unreadable fixed px was released (the pane stays flexible)");
+    } else if (n.fixed < MIN_PANE_PX) {
+      fixed = MIN_PANE_PX;
+      repairs.push("a pane's sub-floor px clamped to the 128 floor");
+    } else {
+      fixed = n.fixed;
+    }
+  } else if (n.fixed !== undefined && n.fixed !== null) {
+    repairs.push("a pane's unreadable fixed px was released (the pane stays flexible)");
+  }
+  let active = 0;
+  if (typeof n.active === "number" && Number.isFinite(n.active)) {
+    active = clamp(Math.trunc(n.active), 0, Math.max(0, tabs.length - 1));
+    if (active !== Math.trunc(n.active)) {
+      repairs.push("a pane's out-of-range active tab clamped into range");
+    }
+  }
+  const edge = n.edge === "left" || n.edge === "right" || n.edge === "bottom" ? n.edge : undefined;
+  return { kind: "pane", id, tabs, active, fixed, ...(edge ? { edge } : {}) };
+}
+
+/** a split's fractions from whatever the record carries: v:3 px shares
+    derive fractions (px_i / sum, floor-clamped); fraction sizes
+    normalize as before, then v:2 records migrate to px (fraction *
+    nominal container, floored at 128) and re-derive - the "impossible"
+    widths die here. */
+function tolerantSplitSizes(
+  n: Record<string, unknown>,
+  childCount: number,
+  repairs: string[],
+  v: 1 | 2 | 3,
+): number[] {
+  if (Array.isArray(n.px) && (n.px as unknown[]).length === childCount) {
+    const px: number[] = [];
+    let ok = true;
+    for (const entry of n.px as unknown[]) {
+      if (typeof entry !== "number" || !Number.isFinite(entry)) {
+        repairs.push("a split's px shares were unreadable: fraction fallback");
+        ok = false;
+        break;
+      }
+      if (entry < MIN_PANE_PX) {
+        repairs.push("a split's px share below the floor clamped to 128");
+        px.push(MIN_PANE_PX);
+      } else {
+        px.push(Math.round(entry));
+      }
+    }
+    if (ok) {
+      const sum = px.reduce((a, s) => a + s, 0);
+      if (sum > 0) return px.map((s) => s / sum);
+      repairs.push("a split's px shares summed to zero: equal shares assumed");
+    }
+  }
+  const raw = Array.isArray(n.sizes) ? (n.sizes as unknown[]) : [];
+  const sizes: number[] = [];
+  for (let i = 0; i < childCount; i++) {
+    const s = raw[i];
+    if (typeof s === "number" && Number.isFinite(s) && s > 0) sizes.push(s);
+    else {
+      sizes.push(1 / childCount);
+      repairs.push("a split's unreadable share re-normalized to equal");
+    }
+  }
+  const norm = normalizeSizes(childCount, sizes);
+  if (v === 1) return norm;
+  // the v:2 px migration: fraction * nominal container -> px, floored,
+  // fractions re-derived (the deltas ARE the receipt - impossible widths
+  // become unrepresentable)
+  const px = norm.map((f) => Math.max(MIN_PANE_PX, Math.round(f * V2_NOMINAL_CONTAINER_PX)));
+  const sum = px.reduce((a, s) => a + s, 0);
+  const migrated = px.map((p) => p / sum);
+  if (migrated.some((f, i) => Math.abs(f - norm[i]!) > 1e-9)) {
+    repairs.push(`v2 fraction shares migrated to px (nominal ${V2_NOMINAL_CONTAINER_PX}px, 128 floor)`);
+  }
+  return migrated;
 }
 
 // --- migration (first boot without a dock key) ---------------------------------
@@ -1796,6 +2103,42 @@ export function graftSplit(root: DockNode, replacement: DockSplit): DockNode {
   return isSplit(copy) && walk(copy) ? copy : root;
 }
 
+/** the round-trip gate's compare (v0.14.4 ruling 6): panes match on
+    identity/content, splits on direction + child shapes + px shares
+    within one rounding px (the parse re-derives fractions from the
+    record's integer px; a re-rounding off by one is NOT drift). Exported
+    for the tests that pin the record/live-tree equivalence. */
+export function treeShapesMatch(a: DockNode, b: DockNode): boolean {
+  if (isPane(a)) {
+    if (!isPane(b)) return false;
+    const tabEq =
+      a.tabs.length === b.tabs.length &&
+      a.tabs.every(
+        (t, i) =>
+          t.component === b.tabs[i]!.component &&
+          (t.sessionRef ?? undefined) === (b.tabs[i]!.sessionRef ?? undefined) &&
+          (t.key ?? undefined) === (b.tabs[i]!.key ?? undefined),
+      );
+    return (
+      a.id === b.id &&
+      a.active === b.active &&
+      (a.fixed ?? null) === (b.fixed ?? null) &&
+      (a.edge ?? undefined) === (b.edge ?? undefined) &&
+      tabEq
+    );
+  }
+  if (isPane(b)) return false;
+  if (a.direction !== b.direction || a.children.length !== b.children.length) return false;
+  const pa = splitPxShares(a);
+  const pb = splitPxShares(b);
+  for (let i = 0; i < a.children.length; i++) {
+    if (Math.abs(pa[i]! - pb[i]!) > 1) return false;
+    if (!treeShapesMatch(a.children[i]!, b.children[i]!)) return false;
+    if (a.children[i]!.id !== b.children[i]!.id) return false;
+  }
+  return true;
+}
+
 export interface DockApi {
   /** the reactive root (swap on every op; deep-watched for persistence) */
   tree: Ref<DockNode>;
@@ -1803,6 +2146,9 @@ export interface DockApi {
       singleton semantics (card t_30ee04fb): a singleton exists at most
       once, so its presence check reads EVERY tab, not just active ones */
   has: (component: DockComponentName) => boolean;
+  /** this boot's repair receipt (v0.14.4 ruling 6) - empty on a clean
+      load; the shell surfaces it once as a toast. */
+  bootRepairs: readonly string[];
   /** open a component as the pane's single tab (empty-pane menu path) */
   setComponent: (paneId: string, component: DockComponentName) => void;
   /** card 2 tabs: activate a tab within its pane */
@@ -1920,7 +2266,7 @@ export function createDock(store: Storage): DockApi {
   // the same modernization: markers derived, shells re-asserted, sessions
   // forced into the left bar, missing inspector singletons restored.
   const stored = store.getItem(DOCK_LAYOUT_KEY);
-  const loaded = stored ? deserializeLayout(stored) : null;
+  const loaded = parseAnyLayout(stored, () => migrateLegacy((k) => store.getItem(k)));
   // card t_aa9dbada: the closed-edge set rides the record - the reload
   // restores the visibility the user left (no shaped re-assertion over it).
   // A record that predates the field migrates its bottom closure from the
@@ -1929,10 +2275,8 @@ export function createDock(store: Storage): DockApi {
     loaded?.closedEdges ??
     (store.getItem(BOTTOM_CLOSED_KEY) === "1" ? ["bottom"] : []);
   store.removeItem(BOTTOM_CLOSED_KEY);
-  let initial = loaded
-    ? loaded.tree
-    : migrateLegacy((k) => store.getItem(k));
-  if (loaded?.version === 1) {
+  let initial = loaded.tree;
+  if (loaded.version === 1) {
     // v1-era semantics only: the inspector group's tab list was fixed
     // chrome then - every era tree gains its missing right-area tabs
     initial = upgradeInspectorTabs(expandInspectorTabs(initial));
@@ -1961,9 +2305,28 @@ export function createDock(store: Storage): DockApi {
   // the copy and reseeds on reopen)
   initial = rehomeLogsTab(initial);
   initial = assignChatKeys(initial);
-  // a modernized/fixed-shape-repaired load persists at once (now as v2) so
+  // v0.14.4 ruling 6 BACKUP LAW: a REPAIRED record copies its raw form
+  // ONCE, BEFORE the first auto-persist - the repair chain must never be
+  // able to rewrite history, so the boot's own re-persist happens after.
+  if (stored && loaded.repairs.length > 0) {
+    store.setItem(DOCK_LAYOUT_BAK_KEY, stored);
+  }
+  // the ONE gated writer (ruling 6): every record write re-reads through
+  // the total deserializer and shape-compares against the tree it came
+  // from; a mismatch (writer bug, encoder drift) warns and refuses the
+  // write - the previous record on disk stays, which IS the last-good.
+  const gatedPersist = (t: DockNode) => {
+    const candidate = serialize(t, closedEdges);
+    const back = parseAnyLayout(candidate, () => t);
+    if (!treeShapesMatch(back.tree, t)) {
+      console.warn("dock: layout round-trip mismatch - the write was refused, last-good kept");
+      return;
+    }
+    store.setItem(DOCK_LAYOUT_KEY, candidate);
+  };
+  // a modernized/fixed-shape-repaired load persists at once (now as v3) so
   // the next boot sees the modern tree even if no mutation fires this session
-  if (stored) store.setItem(DOCK_LAYOUT_KEY, serialize(initial, closedEdges));
+  if (stored) gatedPersist(initial);
   // shallowRef: the tree stays PLAIN data (structuredClone rejects proxies);
   // every op swaps the root, so reactivity rides the ref change alone
   const tree = shallowRef(initial) as Ref<DockNode>;
@@ -1975,7 +2338,7 @@ export function createDock(store: Storage): DockApi {
   watch(
     tree,
     (t) => {
-      store.setItem(DOCK_LAYOUT_KEY, serialize(t, closedEdges));
+      gatedPersist(t);
     },
     { deep: true },
   );
@@ -2152,6 +2515,7 @@ export function createDock(store: Storage): DockApi {
   };
 
   return {
+    bootRepairs: loaded.repairs,
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
     dockDropToZone: dockDropToZoneIn,
     openSingleton: openSingletonIn,
