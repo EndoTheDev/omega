@@ -96,30 +96,3 @@ export const ghostRegistry = {
   },
 };
 
-// --- the divider's snap readout (ruling 5: px/% numerals near snap rungs) ---
-
-export interface ResizeReadout {
-  /** the controlled pane's live px (the pure drag math's own value) */
-  px: number;
-  /** its share of the content box, 0..1 */
-  pct: number;
-  /** the snap rung the drag sits inside (null = free drag) */
-  rung: number | null;
-  /** the one-line badge text */
-  text: string;
-}
-
-/** PURE readout formatter: the numerals under the divider's drag. Pure. */
-export function resizeReadout(px: number, contentPx: number, step: number): ResizeReadout {
-  const pct = contentPx > 0 && Number.isFinite(contentPx) ? px / contentPx : 0;
-  const n = Math.round(px / step);
-  const cand = n >= 1 ? n * step : null;
-  const rung = cand !== null && Math.abs(px - cand) <= 15 ? cand : null;
-  const base = `${px}px (${Math.round(pct * 100)}%)`;
-  return {
-    px,
-    pct,
-    rung,
-    text: rung !== null ? `${base} \u2192 snap ${rung}px` : base,
-  };
-}
