@@ -85,6 +85,64 @@ export const CHAT_FLOOR_PX = 320;
     view is the high-share failure mode. */
 export const BOTTOM_MAX_FRACTION = 0.5;
 
+// --- leaf contracts (v0.14.4 ruling 7) -------------------------------------
+
+/** a leaf's sizing constraints. A pane shipping NO contract resolves to
+    today's constants exactly (ruling 7): fixed -> the 128 drag floor,
+    flexible -> the 320 wall, the +320 attractor ladder (the bottom keeps
+    its +200 ladder), no ceiling except the shells' geometry (the bottom's
+    max share). maxPx/maxFrac ceilings and `preferred` feed the resolver,
+    which runs on drag, load AND window resize (maxFrac is viewport-
+    relative - the one new runtime behavior). `anchor` declares the magnet
+    edge (sidebars: leading; the bottom shell: bottom). The contract is
+    serialized in the layout record from v:3 on; relaxation order keys on
+    the pane class (shells 2, chat-hosting 1, plain 0) - not carried here
+    (it rides the record, milestone v:3). */
+export interface PaneContract {
+  /** the hard floor: a drag/squeeze never starves the pane below it */
+  minPx: number;
+  /** absolute px ceiling (null = unbounded) */
+  maxPx: number | null;
+  /** share-of-container ceiling (null = unbounded) */
+  maxFrac: number | null;
+  /** the width the pane asks to reopen at (shells: their remembered px) */
+  preferred: number;
+  anchor: "leading" | "trailing" | "bottom";
+}
+
+/** the primary sidebar's factory: min 128, prefers 320, leading anchor -
+    the snap rungs {320, 640} stay the shared +320 ladder (SNAP_STEP).
+    maxFrac omitted for now: the edge shells' give-way math is the
+    narrowSqueeze resolver's job (milestone: window resize wire-up). */
+export function edgeShellContract(): PaneContract {
+  return { minPx: MIN_PANE_PX, maxPx: null, maxFrac: null, preferred: 320, anchor: "leading" };
+}
+
+/** the chat pane's factory: the 320 wall, flexible otherwise. */
+export function chatPaneContract(): PaneContract {
+  return { minPx: CHAT_FLOOR_PX, maxPx: null, maxFrac: null, preferred: 0, anchor: "leading" };
+}
+
+/** the bottom shell's factory: min 128, prefers 200, capped at the max
+    share (viewport-relative), bottom-anchored. */
+export function bottomShellContract(): PaneContract {
+  return { minPx: MIN_PANE_PX, maxPx: null, maxFrac: BOTTOM_MAX_FRACTION, preferred: 200, anchor: "bottom" };
+}
+
+/** the drag floor a pane contracts to RIGHT NOW - the resolver the
+    divider's cap math reads (it runs on drag; load + resize join when
+    contracts serialize in v:3). Fixed panes drag down to the shared 128
+    floor; a flexible pane walls at its contract min, defaulting to the
+    chat's 320. This is the pre-contract ternary
+    (`pane.fixed !== null ? 128 : 320`) reproduced verbatim - no pane
+    carries a contract until v:3, so every characterized drag outcome
+    holds unchanged. */
+export function contractFloorOf(node: DockNode): number {
+  if (!isPane(node)) return CHAT_FLOOR_PX; // a nested split absorbs like a flexible pane
+  if (node.fixed !== null) return MIN_PANE_PX;
+  return node.contract?.minPx ?? CHAT_FLOOR_PX;
+}
+
 // component names panes may host: the dockable registry is the single
 // source (see the re-exports above)
 
@@ -113,6 +171,10 @@ export interface DockPane {
       shell pane unclosable as a whole, but its TABS are free (everything
       drags everywhere except sessions). */
   edge?: "left" | "right" | "bottom";
+  /** v0.14.4 ruling 7: the leaf's sizing constraints. Optional - an
+      absent contract resolves to today's constants via contractFloorOf,
+      which is the pre-contract behavior verbatim. Serialized from v:3. */
+  contract?: PaneContract;
 }
 /** the pinned shells' markers (the toggle/find API's domain names) */
 export type DockEdgeComponent = "sidebar" | "inspector" | "bottom";
@@ -1456,9 +1518,9 @@ export function dragSplitDivider(
     if (req < MIN_PANE_PX) {
       return { split: next, collapsedPaneId: lp.id, pushedPaneId: null };
     }
-    // drag controls the LEFT pane; right absorbs: its floor is 128 if fixed,
-    // 320 if flexible (the chat)
-    const hi = capFor(isPane(rp) && rp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX);
+    // drag controls the LEFT pane; right absorbs: its floor is the
+    // resolver's (128 for fixed, 320 for a flexible pane with no contract)
+    const hi = capFor(contractFloorOf(rp));
     const s = squeeze(req, hi, i + 1, 1);
     (next.children[li] as DockPane).fixed = applySnap(s.px, MIN_PANE_PX, s.cap);
     return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
@@ -1477,12 +1539,12 @@ export function dragSplitDivider(
       if (req < MIN_PANE_PX) {
         return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
       }
-      // the absorbing neighbor above: fixed floors at 128, flexible walls
-      // at the chat's 320. Endo's comment (2026-10-26): the growth cap
+      // the absorbing neighbor above: the resolver's floor (128 fixed,
+      // 320 flexible). Endo's comment (2026-10-26): the growth cap
       // ALSO stops at the max share - a swallowed window strands the
       // divider offscreen (bottom-anchored geometry), ungrabbable
       const hi = Math.min(
-        capFor(isPane(lp) && lp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX),
+        capFor(contractFloorOf(lp)),
         Math.max(MIN_PANE_PX, Math.floor(contentPx * BOTTOM_MAX_FRACTION)),
       );
       const s = squeeze(req, hi, li - 1, -1);
@@ -1494,8 +1556,8 @@ export function dragSplitDivider(
       return { split: next, collapsedPaneId: rp.id, pushedPaneId: null };
     }
     // mirror (the old invert=true divider): dragging left widens the fixed
-    // right pane; the flexible left flexes at its 320 floor
-    const hi = capFor(isPane(lp) && lp.fixed !== null ? MIN_PANE_PX : CHAT_FLOOR_PX);
+    // right pane; the flexible left flexes at the resolver's floor
+    const hi = capFor(contractFloorOf(lp));
     const s = squeeze(req, hi, li - 1, -1);
     (next.children[i] as DockPane).fixed = applySnap(s.px, MIN_PANE_PX, s.cap);
     return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
@@ -1506,7 +1568,7 @@ export function dragSplitDivider(
   // exact px attractor like the fixed path so any divider feels identical
   const content = Math.max(1, room);
   const pxLo = MIN_PANE_PX;
-  const pxHi = Math.max(MIN_PANE_PX, room - CHAT_FLOOR_PX);
+  const pxHi = Math.max(MIN_PANE_PX, room - contractFloorOf(rp));
   const finalLeft = applySnap(clamp(pxOf(li) + deltaPx, pxLo, pxHi), pxLo, pxHi);
   const shift = (finalLeft - pxOf(li)) / content;
   next.sizes = next.sizes.map((s, k) =>
