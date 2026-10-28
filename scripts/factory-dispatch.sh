@@ -234,6 +234,7 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
     # 2 zombie-running made B below zero, SLOTS kept its cap-derived 2, the
     # inner got --max 4 on a reclaim-emptied pool and spawned 4.
     DISPATCH_MAX="$MAXARG"
+    SLOTS="$(( MAXARG - ${#RUNNING[@]} ))"
   else
     SLOTS=$(( CAP - ${#RUNNING[@]} ))
     [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass

@@ -176,6 +176,29 @@ l=$(sqlite3 "$FDB" "SELECT claim_lock IS NULL FROM tasks WHERE id='t_cand';")
 [ "$l" = "1" ] && ok || bad "T9: unpark left t_cand locked ('$l')"
 rm -rf "$FDHOME"
 
+# T10 (local + CI): guard bug #10 (proven live 2026-10-28) - the explicit
+# --max N path never set SLOTS, so the handoff echo died under set -u AFTER
+# the spawn ("SLOTS: unbound variable", exit 1, every later line skipped).
+# Same stub shape as T9, one running card, --max 2: the pass must exit 0 and
+# report the true slot count (2 - 1 = 1).
+FDHOME=$(mktemp -d)
+mkdir -p "$FDHOME/.hermes/kanban/boards/project-omega" "$FDHOME/bin"
+FDB="$FDHOME/.hermes/kanban/boards/project-omega/kanban.db"
+sqlite3 "$FDB" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
+INSERT INTO tasks VALUES('t_go','running','nm purity','FILES: scripts/nm-purity.sh','pibtw:1',NULL,0,'2026-10-28T01:00');
+INSERT INTO tasks VALUES('t_web','ready','webui fix','FILES: engine/webui/',NULL,0,5,'2026-10-28T02:00');" 2>/dev/null
+cat >"$FDHOME/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+echo "Spawned: 1 (t_web)"
+EOF
+chmod +x "$FDHOME/bin/hermes"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" bash "$GUARD" --max 2 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T10: --max 2 pass exited $rc - SLOTS unset on the explicit path (out: $out)"
+printf "%s" "$out" | grep -q "wanted <=2 running (snapshot 1 + slots 1)" && ok || bad "T10: handoff line wrong (out: $out)"
+rm -rf "$FDHOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
