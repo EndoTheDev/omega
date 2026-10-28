@@ -46,19 +46,11 @@
         type="button"
         :aria-expanded="!isCollapsed(group.key)"
         @click="toggleCollapsed(group.key)">
-        <svg
+        <Icon
           class="bucket-chevron"
           :class="{ open: !isCollapsed(group.key) }"
-          width="8"
-          height="8"
-          viewBox="0 0 8 8"
-          aria-hidden="true">
-          <path
-            d="M2.5 1L6 4L2.5 7"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.2" />
-        </svg>
+          name="chevron-down"
+          :size="12" />
         <span class="settings-group-title">{{ group.label }}</span>
       </button>
       <template v-if="!isCollapsed(group.key)">
@@ -165,6 +157,8 @@
     type UserTheme,  } from "~/composables/omega";
   import { useNarrow } from "~/composables/narrow";
   import type { ToolDisplay } from "~/composables/toolDisplay";
+  // card t_502b8e81: the iconset wrapper - the group collapser chevron
+  import Icon from "../ui/Icon.vue";
   // card t_d7fd3ad3 item 6: the dock group's client knob rides the shared
   // bottom-width mode ref (the applier in app.vue reads the same signal)
   import {

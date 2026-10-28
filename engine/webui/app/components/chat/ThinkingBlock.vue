@@ -3,6 +3,10 @@
     class="thinking"
     :open="streaming">
     <summary>
+      <!-- card t_502b8e81: the thinking block wears its iconset glyph -->
+      <Icon
+        name="brain"
+        class="thinking-ic" />
       <span class="thinking-label">thinking</span>
       <span
         v-if="elapsedLabel"
@@ -27,6 +31,8 @@
 
 <script setup lang="ts">
   import { useElapsed } from "../../composables/useElapsed";
+  // card t_502b8e81: the iconset wrapper - brain on the thinking block
+  import Icon from "../ui/Icon.vue";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import type { VariantBlock } from "../../composables/omega";
 

@@ -68,12 +68,19 @@ describe("AppSidebar: the caret affordance (card t_a0a466c6)", () => {
     assert.match(hover, /background:\s*var\(--z2\)/, "the caret zone's hover background");
   });
 
-  it("the chevron renders at 12x12, up from the invisible 8x8", () => {
-    const svg = sidebar.match(
-      /<svg[^>]*class="new-caret-chevron"[\s\S]*?<\/svg>/,
-    )?.[0] ?? "";
-    assert.match(svg, /width="12"/, "12px wide");
-    assert.match(svg, /height="12"/, "12px tall");
-    assert.doesNotMatch(svg, /width="8"/, "the 8px chevron is gone");
+  it("the chevron renders at 12x12 through the iconset wrapper (card t_502b8e81)", () => {
+    // the hand-rolled svg is gone - the caret is the wrapper's
+    // chevron-down at 12, the 8px inline chevron with it
+    const at = sidebar.indexOf('class="new-caret-chevron"');
+    assert.notEqual(at, -1, "the caret chip is the wrapper's chevron-down");
+    const start = sidebar.lastIndexOf("<Icon", at);
+    const end = sidebar.indexOf("/>", at);
+    const chunk = sidebar.slice(start, end);
+    assert.match(chunk, /name="chevron-down"/, "the vocabulary name");
+    assert.match(chunk, /:size="12"/, "12px, up from the invisible 8x8");
+    assert.ok(
+      !sidebar.includes("<svg"),
+      "no hand-rolled svg in the sidebar any more",
+    );
   });
 });
