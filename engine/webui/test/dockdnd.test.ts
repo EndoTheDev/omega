@@ -22,6 +22,7 @@ import {
   findPane,
   allNodes,
   isPane,
+  isSplit,
   paneCount,
   type DockNode,
   type DockPane,
@@ -172,24 +173,32 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.equal(dockDropToZone(root, a.id, 0, a.id, "left"), root);
   });
 
-  it("edge shells keep their shape: split zones refuse, center groups", () => {
-    // A(chat) | B(files, pinned right shell) - A's ONLY tab moves to B's
-    // center. Endo ruling 2026-10-25: A is the LAST MAIN pane, so it
-    // survives the move as the empty launcher (the move-out auto-close
-    // exception); the pinned shell itself never closes either (it may
-    // sit empty)
+  it("edge shells GROW (v0.14.4 ruling 1): sidebar rows refuse, column grows, center groups", () => {
+    // A(chat) | B(files, pinned right shell). A's row-zones refuse (a
+    // sidebar stacks rows ONLY), A's bottom zone GROWS the root (the
+    // dragged tab seats in the fresh leaf, B's content moves to the first
+    // leaf), and A's center still groups into the grown first leaf. Endo
+    // ruling 2026-10-25 keeps the last-main-pane launcher for center moves.
     const a = makePane("chat");
     const b = makePane("files", 240, "right");
     const root = makeSplit("row", [a, b]);
-    assert.equal(dockDropToZone(root, a.id, 0, b.id, "left"), root, "shells don't split");
-    assert.equal(dockDropToZone(root, a.id, 0, b.id, "bottom"), root);
+    assert.equal(dockDropToZone(root, a.id, 0, b.id, "left"), root, "a sidebar stacks rows only");
+    assert.equal(dockDropToZone(root, a.id, 0, b.id, "right"), root);
+    const grown = dockDropToZone(root, a.id, 0, b.id, "bottom");
+    const B = paneOf(grown, b.id)!;
+    assert.ok(B.grown, "the right root grew a local split");
+    assert.equal(B.grown!.direction, "column");
+    assert.equal(B.tabs.length, 0, "the root's classic bar emptied");
+    const shellLeaf = B.grown!.children[0] as DockPane;
+    assert.deepEqual(shellLeaf.tabs.map((t) => t.component), ["files"], "the shell's content moved to the first leaf");
+    const fresh = B.grown!.children[1] as DockPane;
+    assert.deepEqual(fresh.tabs.map((t) => t.component), ["chat"], "the dragged tab seats in the fresh leaf");
     const center = dockDropToZone(root, a.id, 0, b.id, "center");
-    const B = paneOf(center, b.id);
-    assert.deepEqual(B.tabs.map((t) => t.component), ["files", "chat"], "center still groups");
-    const A = findPane(center, a.id);
-    assert.ok(A, "the emptied source pane survives (the last main pane never closes)");
-    assert.equal(A!.tabs.length, 0, "A sits empty as the launcher");
-    assert.equal(paneCount(center), 2, "both panes stay");
+    const BC = paneOf(center, b.id);
+    assert.deepEqual(BC.tabs.map((t) => t.component), ["files", "chat"], "center still groups");
+    const AC = findPane(center, a.id);
+    assert.ok(AC, "the emptied source pane survives (the last main pane never closes)");
+    assert.equal(AC!.tabs.length, 0, "A sits empty as the launcher");
   });
 
   it("the LOCKED tab (sessions) refuses every zone landing outside left", () => {
@@ -221,7 +230,9 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   // first-appearance order. Within one prediction the ids are real -
   // freshPaneId names the exact pane in predicted.tree.
 
-  /** canonical structural signature: ids -> #n by DFS first appearance. */
+  /** canonical structural signature: ids -> #n by DFS first appearance.
+      The grown root's local split rides through the same canon (v0.14.4
+      ruling 1 - predictions and commits must match INSIDE roots too). */
   function canon(t: DockNode): unknown {
     const ids = new Map<string, string>();
     const nid = (id: string) => {
@@ -230,7 +241,11 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     };
     const walk = (n: DockNode): unknown =>
       isPane(n)
-        ? { kind: "p", id: nid(n.id), fixed: n.fixed, edge: n.edge ?? null, active: n.active, tabs: n.tabs }
+        ? {
+            kind: "p", id: nid(n.id), fixed: n.fixed, edge: n.edge ?? null,
+            active: n.active, tabs: n.tabs,
+            grown: n.grown && isSplit(n.grown) ? walk(n.grown) : null,
+          }
         : { kind: "s", id: nid(n.id), dir: n.direction, sizes: n.sizes, children: n.children.map(walk) };
     return walk(t);
   }
@@ -324,23 +339,37 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
       expectRefusal(predictDockDrop(root, a.id, 0, "n999", zone));
       expectRefusal(predictDockDrop(root, a.id, 7, b.id, zone));
     }
-    // shells keep their shape: split zones refuse even on vanished source
+    // v0.14.4 ruling 1: the SHELL's body drop grows its root now - the
+    // sidebar's row zones refuse (stacked rows only), the column zones
+    // grow; a vanished source refuses every zone as before
     const a2 = makePane("chat");
     const b2 = makePane("files", 240, "right");
     const sroot = makeSplit("row", [a2, b2]);
-    for (const zone of ["left", "right", "top", "bottom"] as const) {
+    for (const zone of ["left", "right"] as const) {
       assert.equal(dockDropToZone(sroot, a2.id, 0, b2.id, zone), sroot);
       assert.equal(dockDropToZone(sroot, "n999", 0, b2.id, zone), sroot);
+      expectRefusal(predictDockDrop(sroot, a2.id, 0, b2.id, zone));
+    }
+    for (const zone of ["top", "bottom"] as const) {
+      assert.notEqual(dockDropToZone(sroot, a2.id, 0, b2.id, zone), sroot, `${zone}: growth`);
+      assert.equal(dockDropToZone(sroot, "n999", 0, b2.id, zone), sroot, `${zone}: vanished source`);
+      const p = expectDrop(predictDockDrop(sroot, a2.id, 0, b2.id, zone), zone);
+      sameShape(p.tree, dockDropToZone(structuredClone(sroot), a2.id, 0, b2.id, zone));
     }
   });
 
-  it("shells: split zones refuse with a reason, center predicts the group", () => {
+  it("shells: sidebar row zones refuse with a reason, column zones grow, center predicts the group", () => {
     const a = makePane("chat");
     const b = makePane("files", 240, "right");
     const root = makeSplit("row", [a, b]);
-    for (const zone of ["left", "right", "top", "bottom"] as const) {
-      expectRefusal(predictDockDrop(root, a.id, 0, b.id, zone));
+    for (const zone of ["left", "right"] as const) {
+      assert.equal(expectRefusal(predictDockDrop(root, a.id, 0, b.id, zone)), "sidebars stack rows only");
       assert.equal(dockDropToZone(root, a.id, 0, b.id, zone), root);
+    }
+    for (const zone of ["top", "bottom"] as const) {
+      const p = expectDrop(predictDockDrop(root, a.id, 0, b.id, zone), zone);
+      sameShape(p.tree, dockDropToZone(structuredClone(root), a.id, 0, b.id, zone));
+      assert.ok(paneOf(p.tree, b.id)!.grown, `${zone}: the root grew`);
     }
     const center = expectDrop(predictDockDrop(root, a.id, 0, b.id, "center"), "shell center still groups");
     sameShape(center.tree, dockDropToZone(root, a.id, 0, b.id, "center"));
