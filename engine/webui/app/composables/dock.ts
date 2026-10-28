@@ -78,8 +78,12 @@ export const CHAT_FLOOR_PX = 320;
     split's content box. A drag past it (the pane swallowing the
     window) strands the divider offscreen - the pane is bottom-anchored,
     so its TOP edge (= the divider) climbs out of view and cannot be
-    grabbed back. 0.65 leaves the chat its floor with room to read. */
-export const BOTTOM_MAX_FRACTION = 0.65;
+    grabbed back. t_e539ba29 (2026-10-28): 0.65 still leaves the chat a
+    cramped strip under the composer (the max-up screenshot); 0.5 keeps
+    the pane and the chat honest halves - the anti-stranding rationale
+    only gets SAFER as the number drops, and the divider climbing out of
+    view is the high-share failure mode. */
+export const BOTTOM_MAX_FRACTION = 0.5;
 
 // component names panes may host: the dockable registry is the single
 // source (see the re-exports above)
@@ -2021,11 +2025,19 @@ export function createDock(store: Storage): DockApi {
   };
 
   // Endo's comment (2026-10-26): the bottom shell's FULLSCREEN toggle -
-  // the pane's tabbar button flips it; the column split renders ONLY
-  // the shell (the main row above hides). Session-only on purpose: a
-  // reload never boots into fullscreen (the stored height + the
-  // render clamp keep the divider grabbable; fullscreen is a view, not
-  // a layout state).
+  // the pane's tabbar button flips it. t_e539ba29 (2026-10-28, source
+  // read: the comment said "renders ONLY the shell, the main row above
+  // hides" - WRONG, and DockPane.vue's ruling already recorded the truth):
+  // the band leaves the flow (position absolute over the pane-area
+  // between the sidebar insets) and the column keeps rendering its split
+  // children - the main row above stays visible with BOTH sidebars live
+  // and self-toggled ("the sidebars never hide - Endo"), the sidebars'
+  // resize dividers stay visible/draggable, and the row's chat sits under
+  // the band. Only the root's own horizontal divider hides while
+  // fullscreen (bottompanel.css: it points at nothing once the band is
+  // out of flow). Session-only on purpose: a reload never boots into
+  // fullscreen (the stored height + the render clamp keep the divider
+  // grabbable; fullscreen is a view, not a layout state).
   const bottomFullscreen = ref(false);
   const toggleBottomFullscreen = () => {
     bottomFullscreen.value = !bottomFullscreen.value;
