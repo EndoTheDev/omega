@@ -74,9 +74,20 @@ test("SkillsList consumes the shared component and the fold wire", () => {
   assert.ok(src.includes('kind="skills"'), "the skills namespace rides to the note law");
   assert.ok(src.includes('fetch("/skills")'), "self-contained inventory fetch");
   assert.ok(src.includes("/disabled/skills"), "the toggle PUTs the skills namespace");
-  assert.ok(src.includes("withDisabledFlags") || src.includes("new Set(fold.value)"), "flags merge by name");
+  assert.ok(src.includes("new Set(fold.value)"), "flags merge by name");
   assert.ok(!src.includes("composables/omega"), "no shell client dependency - module UI carries its own wiring");
   assert.ok(src.includes("status === 501") && src.includes("toggleable.value = false"), "a missing seam renders read-only");
+});
+
+// t_504a78ca regression: RegistryList gates with `v-if="rows.length"`.
+// rows as a plain function makes .length the ARITY (0) - data loads,
+// the tab renders empty. The rows binding must hand RegistryList an
+// array (computed, the AgentsPanel shape), not a function.
+test("SkillsList builds rows as a computed (arity trap: a plain function rows() renders empty)", () => {
+  const src = readFileSync(join(root, "modules", "skills", "ui", "SkillsList.vue"), "utf8");
+  assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");
+  assert.ok(!src.includes("function rows()"), "no plain-function row builder under :rows");
+  assert.ok(src.includes(':rows="rows"'), "the shared component gets the rows binding");
 });
 
 // --- filterRegistryRows: the shared narrowing contract ---

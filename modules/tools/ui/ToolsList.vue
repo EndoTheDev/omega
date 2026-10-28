@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeUnmount, onMounted, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
 
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
@@ -68,17 +68,21 @@
   // the row model: the domain context stays the description, the
   // actions collapse into dotted detail lines (the row expands, the
   // same mechanism every registry-browser row rides).
-  function rows() {
+  // rows are a computed (the AgentsPanel shape): RegistryList binds
+  // `rows` straight into the template, where an unwrap gives the array
+  // - a plain function would make the `v-if="rows.length"` gate read
+  // the ARITY (0), and the list would never render (the t_504a78ca
+  // bug: data fetched, tabs empty). Structural RegistryRow: module UI
+  // imports no shell code, so the type rides inference.
+  const rows = computed(() => {
     const set = new Set(fold.value);
     return tools.value.map((t) => ({
       name: t.name,
       description: t.description,
-      detail: (t.actions ?? []).map(
-        (a) => `${t.name}.${a.name} - ${a.description}`,
-      ),
-      disabled: set.has(t.name) || false,
+      detail: (t.actions ?? []).map((a) => `${t.name}.${a.name} - ${a.description}`),
+      disabled: set.has(t.name),
     }));
-  }
+  });
 
   async function load(): Promise<void> {
     const res = await fetch("/tools");
