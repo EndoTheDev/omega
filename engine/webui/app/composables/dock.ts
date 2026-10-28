@@ -1190,41 +1190,58 @@ export function splitPane(
   return insertPane(tree, paneId, direction, side, makePane(null));
 }
 
-/** card t_0e833eae: the docking drop - a tab released on a ZONE of another
-    pane's body. center: the existing body-drop semantics (move to the end
-    of the target's bar). left/right/top/bottom: the target splits with the
-    zone's direction+side and the dragged tab lands IN the new half-pane
-    (VS Code editor-group docking: drop left -> the target splits, the
-    dragged tab takes the left half). Refusals return the tree unchanged:
-    same-pane gestures (zones are cross-pane only - body drops of a pane's
-    own tab keep the focus-only read), a vanished pane mid-gesture, and
-    EDGE SHELLS on a split zone (the shells keep their fixed shape; their
-    center accepts the tab like any bar). moveTab's own locked-tab law
-    still guards every landing (sessions dock-drops nowhere but left). */
-export function dockDropToZone(
+/** v0.14.4 ruling 5 (the load-bearing law): ONE pure formula behind BOTH
+    the commit and the ghost preview. Returns the resulting tree plus the
+    id of the fresh split pane (null for a center group, which mints no
+    pane), or a refusal with its reason - the ghost renders hatched-red
+    from the reason, the store commits from the tree. The center zone
+    keeps the existing body-drop semantics (move to the end of the
+    target's bar); left/right/top/bottom split the target with the zone's
+    direction+side and the dragged tab lands IN the new half-pane (VS Code
+    editor-group docking: drop left -> the target splits, the dragged tab
+    takes the left half). Refusals: zones never self-dock (body drops of a
+    pane's own tab keep the focus-only read), a vanished pane mid-gesture,
+    the shells on a split zone (their fixed shape), and the LOCKED tab -
+    it never leaves the left shell and never lands in a fresh pane. */
+export type DockDropPrediction =
+  | { tree: DockNode; freshPaneId: string | null }
+  | { refused: true; reason: string };
+
+export function predictDockDrop(
   tree: DockNode,
   fromPaneId: string,
   fromIndex: number,
   toPaneId: string,
   zone: DragZone,
-): DockNode {
-  if (fromPaneId === toPaneId) return tree; // zones never self-dock
+): DockDropPrediction {
+  if (fromPaneId === toPaneId) return { refused: true, reason: "zones never self-dock" };
   const from = findPane(tree, fromPaneId);
   const to = findPane(tree, toPaneId);
-  if (!from || !to || !from.tabs[fromIndex]) return tree;
+  if (!from || !to || !from.tabs[fromIndex]) {
+    return { refused: true, reason: "a pane of the gesture vanished" };
+  }
+  const locked = isLockedTab(from.tabs[fromIndex]!.component);
   const split = zoneSplitOf(zone);
-  if (!split) return moveTab(tree, fromPaneId, fromIndex, toPaneId, to.tabs.length);
-  if (isPinnedPane(to)) return tree; // shells keep their shape
+  if (!split) {
+    // center: the moveTab locked-tab law owns the refusal (sessions only
+    // ever lands back in the left shell) - report it before the call so
+    // the ghost's refusal is visible without executing the commit
+    if (locked && to.edge !== "left") {
+      return { refused: true, reason: "the locked tab never leaves the left shell" };
+    }
+    return { tree: moveTab(tree, fromPaneId, fromIndex, toPaneId, to.tabs.length), freshPaneId: null };
+  }
+  if (isPinnedPane(to)) return { refused: true, reason: "the shells keep their shape" };
   // the LOCKED tab can never land in a fresh split pane (it is a main
   // pane, not the left shell) - refuse BEFORE splitting, so a refused
   // release never reshapes the tree around a landing that never happens
-  if (isLockedTab(from.tabs[fromIndex]!.component)) return tree;
+  if (locked) return { refused: true, reason: "the locked tab never lands in a fresh pane" };
   // split the target, then seat the tab: the fresh pane is the node the
   // insertion minted (id diff - insertPane mints its own ids)
   const before = new Set<string>();
   for (const n of allNodes(tree)) if (isPane(n)) before.add(n.id);
   const after = insertPane(tree, toPaneId, split.direction, split.side, makePane(null));
-  if (after === tree) return tree; // target vanished mid-gesture
+  if (after === tree) return { refused: true, reason: "the target vanished mid-gesture" };
   let freshId: string | null = null;
   for (const n of allNodes(after)) {
     if (isPane(n) && !before.has(n.id)) {
@@ -1232,8 +1249,23 @@ export function dockDropToZone(
       break;
     }
   }
-  if (!freshId) return after;
-  return moveTab(after, fromPaneId, fromIndex, freshId, 0);
+  if (!freshId) return { tree: after, freshPaneId: null };
+  return { tree: moveTab(after, fromPaneId, fromIndex, freshId, 0), freshPaneId: freshId };
+}
+
+/** the commit path: a thin read of the predictor (v0.14.4 ruling 5 -
+    never a second formula). Any refusal is the tree unchanged, exactly
+    as before the predictor existed. moveTab's own locked-tab law still
+    guards every landing (sessions dock-drops nowhere but left). */
+export function dockDropToZone(
+  tree: DockNode,
+  fromPaneId: string,
+  fromIndex: number,
+  toPaneId: string,
+  zone: DragZone,
+): DockNode {
+  const p = predictDockDrop(tree, fromPaneId, fromIndex, toPaneId, zone);
+  return "refused" in p ? tree : p.tree;
 }
 
 // --- chat tab session binding (card t_4f0e88f2) -------------------------------
