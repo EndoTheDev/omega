@@ -2698,3 +2698,140 @@ func (s stubSeamer) Provides() []string { return []string{s.seam} }
 func (s stubSeamer) Requires() []string { return nil }
 
 func (s stubSeamer) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
+
+// TestAtAutocomplete verifies @ mention completion: a standalone @token
+// at input start or after a space opens the panel with cwd files,
+// session: refs and skill: names filtered by prefix; a mid-word @ (an
+// email address) never triggers. Reuses the slash completion panel
+// (t_72078471).
+func TestAtAutocomplete(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "notes.md"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	skills := []core.Skill{{Name: "review", Content: "review it"}}
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, skills, "dark", "", "bell", "dev", dir)
+	m.sessionID = "sess-123"
+
+	// Typing @ filters both cwd files and namespaced refs by prefix.
+	m.textarea.SetValue("@s")
+	m.updateAutocomplete()
+	got := strings.Join(m.autocompleteMatches, ",")
+	want := "@session:sess-123,@skill:review"
+	if got != want {
+		t.Fatalf("matches = %q, want %q", got, want)
+	}
+	if m.autocompleteSlashPos != 0 || m.autocompleteTokenEnd != 2 {
+		t.Fatalf("token window = %d..%d, want 0..2", m.autocompleteSlashPos, m.autocompleteTokenEnd)
+	}
+
+	// Narrowing filters to exactly one file, which auto-selects.
+	m.textarea.SetValue("@ot")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "@other.txt" || m.autocompleteIndex != 0 {
+		t.Fatalf("matches = %v idx = %d, want [@other.txt] idx 0", m.autocompleteMatches, m.autocompleteIndex)
+	}
+
+	// Enter accepts the selected match without submitting.
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = up.(model)
+	if m.textarea.Value() != "@other.txt" {
+		t.Fatalf("enter accept = %q, want @other.txt", m.textarea.Value())
+	}
+	if m.busy {
+		t.Fatal("enter on @ completion submitted the run")
+	}
+
+	// Mid-sentence: text after the token survives the splice.
+	m.textarea.SetValue("look at @sk please")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "@skill:review" {
+		t.Fatalf("matches = %v, want [@skill:review]", m.autocompleteMatches)
+	}
+	m.acceptMatch()
+	if got := m.textarea.Value(); got != "look at @skill:review please" {
+		t.Fatalf("value = %q, want 'look at @skill:review please'", got)
+	}
+
+	// A mid-word @ is an email address, not a mention: no panel.
+	m.textarea.SetValue("email me at foo@ba")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("mid-word @ opened the panel: %v", m.autocompleteMatches)
+	}
+
+	// No candidates: the panel stays closed.
+	m.textarea.SetValue("@zzz")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		t.Fatalf("no-candidate matches = %v, want none", m.autocompleteMatches)
+	}
+}
+
+// TestSlashStillWinsOverAt ensures the two triggers coexist: the later
+// token being typed owns the panel, and / behavior is untouched.
+func TestSlashStillWinsOverAt(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+
+	// After an earlier @mention, typing / later opens the slash panel.
+	m.textarea.SetValue("@old.txt /exi")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 1 || m.autocompleteMatches[0] != "/exit" {
+		t.Fatalf("matches = %v, want [/exit]", m.autocompleteMatches)
+	}
+
+	// Typing @ later flips the panel back to mention candidates.
+	m.textarea.SetValue("@old.txt /exi @n")
+	m.updateAutocomplete()
+	if len(m.autocompleteMatches) != 0 {
+		// cwd is empty in this test, so no file named n* exists; the
+		// @ candidates list is empty and the panel closes.
+		t.Fatalf("later @ left slash matches alive: %v", m.autocompleteMatches)
+	}
+	if m.autocompleteSlashPos == -1 || m.autocompleteTokenEnd == -1 {
+		t.Fatalf("@ trigger not recorded: pos=%d end=%d", m.autocompleteSlashPos, m.autocompleteTokenEnd)
+	}
+}
+
+// TestSubmitUnresolvedTokenNotice verifies the not-resolved notice
+// fires on submit (same channel as the image error notice) while the
+// literal token still goes through to the model.
+func TestSubmitUnresolvedTokenNotice(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	m.textarea.SetValue("check @nonexistent.txt please")
+	updated, _ := m.submit()
+	m = updated.(model)
+
+	var notices []string
+	for _, n := range m.notices {
+		notices = append(notices, ansiStrip(n.text))
+	}
+	joined := strings.Join(notices, "\n")
+	if !strings.Contains(joined, "@nonexistent.txt not resolved - sent literally") {
+		t.Fatalf("notices = %q, want the not-resolved notice", joined)
+	}
+	if strings.Contains(joined, "image error") {
+		t.Fatalf("notices = %q, unexpected image error", joined)
+	}
+	if len(m.history) != 1 {
+		t.Fatalf("history = %d messages, want the literal send", len(m.history))
+	}
+	if !strings.Contains(agent.MessageText(m.history[0]), "@nonexistent.txt") {
+		t.Fatalf("message = %q, want the literal @ token sent through", agent.MessageText(m.history[0]))
+	}
+}
+
+// TestHelpDocumentsAtMentions verifies /help surfaces the @ section:
+// the easter egg becomes a documented feature.
+func TestHelpDocumentsAtMentions(t *testing.T) {
+	m := newChatModel("ollama", "llama3", nil, "", nil, "", nil, nil, "dark", "", "bell", "dev", "")
+	help := ansiStrip(m.renderHelp())
+	for _, frag := range []string{"@<file>", "@<glob>", "@session:<id>", "@skill:<name>", "sent literally"} {
+		if !strings.Contains(help, frag) {
+			t.Fatalf("help missing @ fragment %q", frag)
+		}
+	}
+}

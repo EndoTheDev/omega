@@ -173,7 +173,7 @@ func TestExtractImagesWithImage(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	input := "what is @" + path + " showing?"
-	prompt, images, err := extractImages(input, nil, nil)
+	prompt, images, _, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestExtractImagesWithImage(t *testing.T) {
 
 func TestExtractImagesNoFile(t *testing.T) {
 	input := "email me at user@gmail.com please"
-	prompt, images, err := extractImages(input, nil, nil)
+	prompt, images, _, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestExtractImagesWithTextFile(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	input := "summarize @" + path
-	prompt, images, err := extractImages(input, nil, nil)
+	prompt, images, _, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestExtractImagesMultipleImages(t *testing.T) {
 	os.WriteFile(path2, jpegHeader, 0o644)
 
 	input := "compare @" + path1 + " and @" + path2
-	prompt, images, err := extractImages(input, nil, nil)
+	prompt, images, _, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestExtractImagesMultipleImages(t *testing.T) {
 
 func TestExtractImagesNoTokens(t *testing.T) {
 	input := "just a regular message"
-	prompt, images, err := extractImages(input, nil, nil)
+	prompt, images, _, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestExtractImagesSkillInjection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prompt, images, err := extractImages(tt.input, nil, tt.skills)
+			prompt, images, _, err := extractImages(tt.input, nil, tt.skills)
 			if err != nil {
 				t.Fatalf("extractImages: %v", err)
 			}
@@ -371,7 +371,7 @@ func TestExtractImagesSessionInjection(t *testing.T) {
 			},
 		}
 		input := "ctx @session:abc please"
-		prompt, images, err := extractImages(input, store, nil)
+		prompt, images, _, err := extractImages(input, store, nil)
 		if err != nil {
 			t.Fatalf("extractImages: %v", err)
 		}
@@ -392,7 +392,7 @@ func TestExtractImagesSessionInjection(t *testing.T) {
 	t.Run("store error leaves token", func(t *testing.T) {
 		store := &mockStore{err: errors.New("db down")}
 		input := "ctx @session:abc please"
-		prompt, images, err := extractImages(input, store, nil)
+		prompt, images, _, err := extractImages(input, store, nil)
 		if err != nil {
 			t.Fatalf("extractImages: %v", err)
 		}
@@ -406,7 +406,7 @@ func TestExtractImagesSessionInjection(t *testing.T) {
 
 	t.Run("nil store leaves token", func(t *testing.T) {
 		input := "ctx @session:abc please"
-		prompt, images, err := extractImages(input, nil, nil)
+		prompt, images, _, err := extractImages(input, nil, nil)
 		if err != nil {
 			t.Fatalf("extractImages: %v", err)
 		}
@@ -432,7 +432,7 @@ func TestExtractImagesGlobExpansion(t *testing.T) {
 		}
 		pattern := filepath.Join(dir, "*.go")
 		input := "review @" + pattern + " now"
-		prompt, images, err := extractImages(input, nil, nil)
+		prompt, images, _, err := extractImages(input, nil, nil)
 		if err != nil {
 			t.Fatalf("extractImages: %v", err)
 		}
@@ -451,7 +451,7 @@ func TestExtractImagesGlobExpansion(t *testing.T) {
 		dir := t.TempDir()
 		pattern := filepath.Join(dir, "*.nomatch")
 		input := "review @" + pattern + " now"
-		prompt, images, err := extractImages(input, nil, nil)
+		prompt, images, _, err := extractImages(input, nil, nil)
 		if err != nil {
 			t.Fatalf("extractImages: %v", err)
 		}
@@ -467,7 +467,7 @@ func TestExtractImagesGlobExpansion(t *testing.T) {
 func TestExtractImagesDirectoryToken(t *testing.T) {
 	dir := t.TempDir()
 	input := "read @" + dir + " now"
-	prompt, images, err := extractImages(input, nil, nil)
+	prompt, images, _, err := extractImages(input, nil, nil)
 	if err != nil {
 		t.Fatalf("extractImages: %v", err)
 	}
@@ -476,5 +476,86 @@ func TestExtractImagesDirectoryToken(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "@"+dir) {
 		t.Fatalf("prompt %q should leave directory token as-is", prompt)
+	}
+}
+
+// TestExtractImagesUnresolvedReports verifies the not-resolved protocol:
+// a standalone @token that fails to resolve stays literal in the prompt
+// AND is reported so the TUI can surface a notice (t_72078471). The
+// token never blocks the send.
+func TestExtractImagesUnresolvedReports(t *testing.T) {
+	input := "check @nonexistent.txt please"
+	prompt, images, unresolved, err := extractImages(input, nil, nil)
+	if err != nil {
+		t.Fatalf("extractImages: %v", err)
+	}
+	if len(images) != 0 {
+		t.Fatalf("images = %d, want 0", len(images))
+	}
+	if prompt != input {
+		t.Fatalf("prompt = %q, want unchanged %q", prompt, input)
+	}
+	if len(unresolved) != 1 || unresolved[0] != "@nonexistent.txt" {
+		t.Fatalf("unresolved = %v, want [@nonexistent.txt]", unresolved)
+	}
+}
+
+// TestExtractImagesMidWordNotUnresolved verifies a mid-word @ (email
+// address, handle) resolves nothing and is never reported: it is a
+// name, not a file reference.
+func TestExtractImagesMidWordNotUnresolved(t *testing.T) {
+	input := "email me at user@gmail.com please"
+	_, _, unresolved, err := extractImages(input, nil, nil)
+	if err != nil {
+		t.Fatalf("extractImages: %v", err)
+	}
+	if len(unresolved) != 0 {
+		t.Fatalf("unresolved = %v, want none for a mid-word @", unresolved)
+	}
+}
+
+// TestExtractImagesUnresolvedPrefixedTokens verifies the @-namespaced
+// species report their misses like plain paths do.
+func TestExtractImagesUnresolvedPrefixedTokens(t *testing.T) {
+	input := "@skill:nope and @session:gone and @*.nomatch"
+	_, _, unresolved, err := extractImages(input, nil, nil)
+	if err != nil {
+		t.Fatalf("extractImages: %v", err)
+	}
+	want := map[string]bool{"@skill:nope": false, "@session:gone": false, "@*.nomatch": false}
+	for _, tok := range unresolved {
+		if _, ok := want[tok]; !ok {
+			t.Fatalf("unexpected unresolved token %q (full list %v)", tok, unresolved)
+		}
+		want[tok] = true
+	}
+	for tok, seen := range want {
+		if !seen {
+			t.Fatalf("missing unresolved token %q (full list %v)", tok, unresolved)
+		}
+	}
+}
+
+// TestExtractImagesResolvedNotUnresolved verifies resolved tokens never
+// land in the unresolved list alongside literal ones.
+func TestExtractImagesResolvedNotUnresolved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "real.txt")
+	if err := os.WriteFile(path, []byte("content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	input := "@" + path + " vs @missing.txt"
+	prompt, _, unresolved, err := extractImages(input, nil, nil)
+	if err != nil {
+		t.Fatalf("extractImages: %v", err)
+	}
+	if len(unresolved) != 1 || unresolved[0] != "@missing.txt" {
+		t.Fatalf("unresolved = %v, want [@missing.txt]", unresolved)
+	}
+	if !strings.Contains(prompt, "content") {
+		t.Fatalf("prompt = %q, want resolved @%s inlined", prompt, path)
+	}
+	if !strings.Contains(prompt, "@missing.txt") {
+		t.Fatalf("prompt = %q, want the missing token left literal", prompt)
 	}
 }
