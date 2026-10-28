@@ -137,6 +137,24 @@ export function step(status: string, dir: -1 | 1): string | null {
   return BOARD_STATUSES[j];
 }
 
+// --- board removal (card t_95c5527f): the remove control beside the
+// switcher. "main" is the legacy default board (DefaultBoardName on the
+// Go side); its control stays disabled and the API refuses it anyway -
+// DeleteBoard is the law, this is just the double-take before firing.
+
+export const DEFAULT_BOARD_NAME = "main";
+
+/** true when a named board may carry the remove control: anything but
+ * the default board, and never the empty registry selection. */
+export function canRemoveBoard(name: string): boolean {
+  return name !== "" && name !== DEFAULT_BOARD_NAME;
+}
+
+/** the DELETE path for removing a registry board (name always encoded). */
+export function boardDeletePath(name: string): string {
+  return `/boards/${encodeURIComponent(name)}`;
+}
+
 /**
  * age renders a card's created_at as a compact relative age
  * ("now", "42m", "3h", "5d"). Unparseable stamps render nothing.
