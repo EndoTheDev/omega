@@ -969,7 +969,15 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m = m.invokeInlineSkills(input)
 
 	// Extract @file references: load images as base64, inline text files.
-	prompt, images, unresolved, imgErr := extractImages(input, m.store, m.skills)
+	// The expansion law is core.ExpandAtMentions - the webui submit path
+	// runs the same function (deletability: removing the TUI does not
+	// remove @-mentions from the webui).
+	prompt, images, unresolved, imgErr := core.ExpandAtMentions(input, core.AtMentionEnv{
+		Store:       m.store,
+		Skills:      m.skills,
+		DetectImage: ai.DetectImage,
+		MessageText: agent.MessageText,
+	})
 	if imgErr != nil {
 		m.addNotice("\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n")
 	}

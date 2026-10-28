@@ -1974,13 +1974,70 @@ labels stopped short of the right edge. */
 
 /* ---- composer: floating card inside the chat pane ---- */
 .composer {
-  position: relative; /* anchor for the expand button */
+  position: relative; /* anchor for the expand button and the palette */
   margin: 0 12px 12px;
   background: var(--z1-raised);
   border: 1px solid var(--stroke);
   border-radius: var(--r-card);
   display: flex;
   flex-direction: column;
+}
+
+/* ---- the / command palette + @ mention picker (t_07aed3f9) ----
+   The same dropdown grammar as .model-pop (the themed listbox), anchored
+   ABOVE the composer so it never covers the draft; z-index above the
+   attach strip and the expand button. */
+.composer-palette {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+  margin: 0;
+  padding: 4px;
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-2);
+  z-index: 30;
+  max-width: 480px;
+}
+.palette-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.palette-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: var(--r-chip);
+  cursor: pointer;
+  min-width: 0;
+}
+.palette-list li:hover,
+.palette-list li.active { background: var(--z1-raised); }
+.palette-list li.active { color: var(--text); }
+.palette-name {
+  font-family: var(--mono);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.palette-list li.active .palette-name { color: var(--accent); }
+.palette-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.palette-list li.palette-none {
+  color: var(--text-dim);
+  cursor: default;
+  display: block;
 }
 
 /* appears once content exceeds the 4-row cap - grows the composer further */

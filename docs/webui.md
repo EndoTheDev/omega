@@ -140,6 +140,36 @@ The gutter divider retains magnetic snap rebase mechanics
 - Retry/fork/variants never exist on an ephemeral tab — the store
   tree they replay is absent. The server 400s the flag combination.
 
+## The composer's `/` palette and `@` mentions (card t_07aed3f9)
+
+Parity with the TUI (`engine/tui/tui.go` is the spec, not a new
+design):
+
+- **`/` at input start opens the command palette.** Rows: the webui's
+  shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` —
+  the TUI's knownCommands minus `/exit`, plus `/new` and `/sessions`;
+  `/copy /extensions /fork /help /panels /retry /theme /variant` map
+  to webui-native local actions), then extension commands from
+  `GET /commands`, then skills as `/<skill-name>` rows — the TUI's
+  `buildCommands` assembly order. Typing filters case-insensitively
+  over name AND description; ArrowUp/ArrowDown navigate, Enter picks
+  or (with the draft not in palette mode) submits, Esc dismisses.
+- **Shell commands act LOCALLY and never hit the agent.** `/fork`,
+  `/retry`, `/variant`, `/theme` and friends run through the app's own
+  handler; extension commands and `/<skill-name>` go to
+  `POST /commands/dispatch` (engine-local execution — a module command
+  returns its result text; a skill returns content the NEXT send arms
+  as a system preamble). api.md's "Commands" section documents the
+  wire.
+- **`@` opens the mention picker.** A bare `@` (or a non-prefixed
+  token) lists workspace files plus the two prefix rows;
+  `@session:` lists sessions, `@skill:` lists skills. Picking inserts
+  the completed token at the caret. The picker only helps TYPE tokens
+  — expansion is SERVER-SIDE on the `/chat` submit path through the
+  one `core.ExpandAtMentions` law the TUI submit path also calls
+  (`core/atmention.go`). The browser never reads or expands files;
+  unresolvable tokens stay literal in the message.
+
 ## Component map
 
 - `app.vue` — orchestrator: open/create routing (open in the main pane,
@@ -160,7 +190,8 @@ The gutter divider retains magnetic snap rebase mechanics
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the
-  msg-retry chip, card t_95d2bc34),
+  msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
+  picker, see below),
   `ModelSelect` + `ThinkingSelect` (custom listboxes — a native
   `<select>` popup is OS chrome that cannot be themed), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
