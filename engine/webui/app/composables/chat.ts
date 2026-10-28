@@ -118,6 +118,9 @@ export interface ChatState {
   // dispatch resolved a skill's content server-side and holds it here;
   // the NEXT send carries it as a system preamble (the TUI appended a
   // System message to its history the same way). Consumed on submit.
+  // Live-verified on a store-backed session: the preamble persists as a
+  // system row (it rides later sends' context, the TUI's behavior), and
+  // /transcript drops system rows - no visible bubble anywhere.
   pendingSkill: { name: string; content: string } | null;
 }
 

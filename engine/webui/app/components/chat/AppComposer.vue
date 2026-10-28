@@ -65,6 +65,7 @@
          types the tokens. -->
     <div
       v-if="paletteOpen"
+      ref="paletteEl"
       class="composer-palette"
       role="listbox"
       id="composer-palette">
@@ -421,9 +422,19 @@
     return filterCommands(query, paletteCommands(extCmds.value, skillRows.value));
   });
 
-  // the dropdown never spills past PALETTE_MAX rows - it scrolls
-  const PALETTE_MAX = 10;
+  // the dropdown scrolls in CSS (.palette-list max-height + overflow-y):
+  // the cap only guards a runaway extension roster from rendering the
+  // whole DOM, it doesn't truncate a reachable row
+  const PALETTE_MAX = 100;
   const paletteItems = computed(() => allItems.value.slice(0, PALETTE_MAX));
+
+  // keep the keyboard highlight visible while the list scrolls
+  const paletteEl = ref<HTMLElement | null>(null);
+  watch(active, (i) => {
+    const opts = paletteEl.value?.querySelectorAll('[role=option]');
+    const el = i >= 0 && opts ? opts[i] : null;
+    el?.scrollIntoView({ block: 'nearest' });
+  });
 
   watch(paletteItems, (items) => {
     if (items.length === 0) active.value = -1;
