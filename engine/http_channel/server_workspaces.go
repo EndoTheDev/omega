@@ -98,3 +98,53 @@ func (s *Server) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": abs, "parent": parent, "dirs": out})
 }
+
+// workspaceFile is one /workspaces/files row: the name and whether it
+// is a directory (the @ picker filters to files).
+type workspaceFile struct {
+	Name  string `json:"name"`
+	IsDir bool   `json:"is_dir"`
+}
+
+// handleWorkspaceFiles serves GET /workspaces/files?path=<abs>, listing
+// one validated directory's first-level entries. It backs the @ mention
+// picker when a workspace intent (or a pinned session workspace) is
+// set: the token the picker inserts expands SERVER-side against the
+// session workspace at run time, so the listing must read THAT folder,
+// not the process working directory /files/browse is jailed to (card
+// t_ea7e6a58). Read-only, one level deep, hidden entries filtered, the
+// same absolute-path + symlink rules as the browse endpoint.
+func (s *Server) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	raw := r.URL.Query().Get("path")
+	abs, err := resolveWorkspaceDir(raw)
+	if err != nil {
+		fileError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		fileError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	out := make([]workspaceFile, 0, len(entries))
+	for _, e := range entries {
+		// hidden entries stay invisible (same rule as the browse walk)
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		out = append(out, workspaceFile{Name: e.Name(), IsDir: e.IsDir()})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	// a runaway folder never floods the DOM - the picker slices its
+	// rows further; the cap only bounds this endpoint's payload
+	if len(out) > 500 {
+		out = out[:500]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"path": abs, "entries": out})
+}

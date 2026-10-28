@@ -110,9 +110,11 @@
       <!-- control row order (v0.14.3, user ruling): workspace FIRST,
            then the model name, then the effort pill - the folder the
            session runs in is the row's first citizen -->
+      <!-- the workspace chip (t_9de5b009, draft intent t_ea7e6a58):
+           enabled pre-session too - unbound, it holds the draft's
+           folder intent; bound, it rides the session row -->
       <WorkspaceSelect
         :workspace="workspace"
-        :disabled="!workspaceBound"
         @update:workspace="$emit('update:workspace', $event)" />
       <ModelSelect
         :model="model"
@@ -149,7 +151,7 @@
   import {
     dataUrl,
     mediaTypeFromBase64,
-    fetchFilesBrowse,
+    fetchMentionFiles,
     fetchSessions,
     type OmegaImage,
   } from "../../composables/omega";
@@ -174,12 +176,11 @@
     // THIS session's run is streaming: the send button is CANCEL now
     busy: boolean;
     thinking: string;
-    // the session's remembered working folder ("" = none) - the chip
-    // shows it, picking a new one emits update:workspace
+    // the working folder the chip shows: a bound session's pinned row
+    // folder, or - while the tab is unbound - the draft's workspace
+    // intent (t_ea7e6a58). Picking a new one emits update:workspace
+    // with either meaning; the parent stores it.
     workspace?: string;
-    // false when no session is bound yet: a folder pins on a SESSION
-    // row, and a draft has nothing to pin on - the chip disables
-    workspaceBound?: boolean;
     // pending image attachments - owned by the app: the transcript
     // bubble and the interrupted retry both need them
     attachments: OmegaImage[];
@@ -361,7 +362,10 @@
   async function loadMentionRows() {
     const [sess, files] = await Promise.all([
       fetchSessions().catch(() => []),
-      fetchFilesBrowse("").catch(() => ({ entries: [] })),
+      // the @ file rows root at the workspace the send will run in: a
+      // draft intent (or a pinned row folder, t_ea7e6a58) lists ITS
+      // first-level files; rootless keeps the process-CWD read
+      fetchMentionFiles(props.workspace).catch(() => ({ entries: [] })),
     ]);
     sessionRows.value = sess.map((s) => ({ id: s.id, label: s.label || "" }));
     fileRows.value = files.entries
