@@ -25,19 +25,11 @@
               :aria-expanded="isExpanded(row.name)"
               :title="isExpanded(row.name) ? 'Collapse' : 'Expand'"
               @click="toggleExpand(row.name)">
-              <svg
+              <Icon
                 class="extension-chevron"
                 :class="{ open: isExpanded(row.name) }"
-                width="8"
-                height="8"
-                viewBox="0 0 8 8"
-                aria-hidden="true">
-                <path
-                  d="M2.5 1L6 4L2.5 7"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.2" />
-              </svg>
+                name="chevron-down"
+                :size="12" />
             </button>
             <span class="extension-name">{{ row.name }}</span>
             <!-- the lifecycle cockpit (card t_210a0d19): the toggle rides
@@ -190,6 +182,8 @@
     type PanelRef,
   } from "./extensionsRows";
   import { modulePanels } from "../../composables/module-panels.generated";
+  // card t_502b8e81: the iconset wrapper - the row expander chevron
+  import Icon from "../ui/Icon.vue";
   import { useNarrow } from "~/composables/narrow";
 
   // `open` is the mobile drawer overlay state (desktop tabs never pass

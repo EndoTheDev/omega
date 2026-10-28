@@ -603,6 +603,10 @@ body {
    until hover so the label leads) */
 .dock-item-icon { flex: none; opacity: 0.75; }
 .dock-menu-btn:hover .dock-item-icon, .dock-empty-btn:hover .dock-item-icon { opacity: 1; }
+/* card t_502b8e81: the icon-only sidebar tab chip - dim at rest, the
+   active tab's icon lights with the orange state like the old label */
+.dock-tab-ic { flex: none; opacity: 0.75; }
+.dock-tab.active .dock-tab-ic, .dock-tab:hover .dock-tab-ic { opacity: 1; }
 .dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
 .dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
 
@@ -1678,6 +1682,8 @@ labels stopped short of the right edge. */
   min-height: 44px;
 }
 .thinking summary::-webkit-details-marker { display: none; }
+/* card t_502b8e81: the brain glyph rides the summary (dim like the label) */
+.thinking-ic { color: var(--text-dim); flex: none; }
 .thinking-label {
   font-family: var(--mono);
   font-size: 12px;
@@ -1738,15 +1744,14 @@ labels stopped short of the right edge. */
 .toolcall summary::-webkit-details-marker { display: none; }
 .toolcall summary:hover { background: var(--z1-raised); }
 
-.tool-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
+/* card t_502b8e81: the status dot became the tools-tab wrench - the
+   status color rides the icon (currentColor), not a fill */
+.tool-ic {
+  color: var(--accent);
   flex-shrink: 0;
 }
-.tool-dot.done { background: var(--ok); }
-.tool-dot.error { background: var(--err); }
+.tool-ic.done { color: var(--ok); }
+.tool-ic.error { color: var(--err); }
 
 .tool-name {
   font-family: var(--mono);

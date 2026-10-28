@@ -19,7 +19,8 @@ export function registerScratchSingleton(): () => void {
   DOCKABLES.push({
     id: SCRATCH_ID,
     title: "scratch",
-    icon: { paths: ["M4 4h16v16H4z"] },
+    // card t_502b8e81: the registry icon is an iconset NAME now
+    icon: "module",
     policy: "singleton",
     area: "main",
     closable: true,

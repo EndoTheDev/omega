@@ -11,6 +11,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { DockableSpec } from "./dockables";
+// card t_502b8e81: a declared icon is a NAME in the webui iconset -
+// membership is checked at build time so a typo never reaches render
+import { ICON_NAMES } from "./icons.ts";
 
 // One discovered module UI directory.
 export interface ModuleUI {
@@ -79,19 +82,9 @@ export function scanModuleUIs(...roots: string[]): ModuleUI[] {
 const DOCKABLE_POLICIES = new Set(["singleton", "multi"]);
 
 function validIcon(v: unknown): boolean {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
-  const i = v as { paths?: unknown; rect?: unknown };
-  const pathsOk =
-    i.paths === undefined ||
-    (Array.isArray(i.paths) && i.paths.every((p) => typeof p === "string" && p !== ""));
-  const r = i.rect as { x?: unknown; y?: unknown; width?: unknown; height?: unknown; rx?: unknown } | undefined;
-  const rectOk =
-    i.rect === undefined ||
-    (r !== null && typeof r === "object" && !Array.isArray(r) &&
-      ["x", "y", "width", "height"].every((k) => typeof r?.[k as keyof typeof r] === "number") &&
-      (r?.rx === undefined || typeof r?.rx === "number"));
-  const hasInk = (Array.isArray(i.paths) && i.paths.length > 0) || i.rect !== undefined;
-  return pathsOk && rectOk && hasInk;
+  return typeof v === "string" &&
+    v !== "" &&
+    (ICON_NAMES as readonly string[]).includes(v);
 }
 
 function readDockableSpec(dir: string): DockableSpec | null {
