@@ -20,13 +20,15 @@
           v-else
           class="chev file"
           role="presentation" />
-        <!-- VS Code-style row glyph (card t_467a0386): folder filled when
-             open / outlined collapsed, files by extension, unknown =
-             generic. Static inline SVG from a kind table - currentColor
-             only, the row's dim/hover state carries the color. -->
-        <span
+        <!-- VS Code-style row glyph (card t_467a0386, iconified card
+             t_502b8e81): folder filled when open / outlined collapsed,
+             files by extension, unknown = generic. An iconset NAME from
+             the pure table - currentColor only, the row's dim/hover
+             state carries the color. -->
+        <Icon
           class="glyph"
-          v-html="rowGlyphSvg(entry)"
+          :name="rowGlyphIcon(entry)"
+          :size="13"
           role="presentation" />
         <span class="name"
           >{{ entry.name
@@ -74,7 +76,9 @@
     serializeExpandedPaths,
   } from "../../composables/omega";
   import type { FileEntry } from "../../composables/omega";
-  import { folderSvg, glyphKindFor, glyphSvg } from "./rowicon";
+  import { folderIcon, glyphKindFor, glyphIcon } from "./rowicon";
+  // card t_502b8e81: the iconset wrapper - the tree's row glyphs
+  import Icon from "../ui/Icon.vue";
 
   // Inspector file tree (VS Code-style): one row per entry, chevron rows
   // expand in place, and expanding a directory lazy-loads exactly one
@@ -186,10 +190,10 @@
     return joinRelPath(props.base, entry.name);
   }
 
-  // the row's inline SVG: folders by open state, files by extension
-  function rowGlyphSvg(entry: FileEntry): string {
-    if (entry.is_dir) return folderSvg(isOpen(entryPath(entry)));
-    return glyphSvg(glyphKindFor(entry.name));
+  // the row's iconset name: folders by open state, files by extension
+  function rowGlyphIcon(entry: FileEntry): string {
+    if (entry.is_dir) return folderIcon(isOpen(entryPath(entry)));
+    return glyphIcon(glyphKindFor(entry.name));
   }
 
   function childrenOf(path: string): FileEntry[] {

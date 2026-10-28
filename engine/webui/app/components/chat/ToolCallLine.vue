@@ -3,8 +3,11 @@
     ref="el"
     class="toolcall">
     <summary @click="onSummaryClick">
-      <span
-        class="tool-dot"
+      <!-- card t_502b8e81: the status dot became the tools-tab wrench -
+           one name one meaning; the status colors ride the same class -->
+      <Icon
+        name="tools"
+        class="tool-ic"
         :class="status" />
       <span class="tool-name">{{ name }}</span>
       <span
@@ -42,6 +45,8 @@
 <script setup lang="ts">
   import { nextTick, onMounted, ref, watch } from "vue";
 
+  // card t_502b8e81: the iconset wrapper - wrench on the tool call line
+  import Icon from "../ui/Icon.vue";
   import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
   import { useElapsed } from "../../composables/useElapsed";
   import VariantSwitcher from "./VariantSwitcher.vue";

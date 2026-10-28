@@ -27,19 +27,12 @@
             :aria-expanded="newMenuOpen"
             title="New chat type"
             @click="newMenuOpen = !newMenuOpen">
-            <svg
+            <!-- card t_502b8e81: the chevron is a vocabulary entry -->
+            <Icon
               class="new-caret-chevron"
               :class="{ open: newMenuOpen }"
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              aria-hidden="true">
-              <path
-                d="M2.5 4L6 7.5L9.5 4"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5" />
-            </svg>
+              name="chevron-down"
+              :size="12" />
           </button>
         </div>
         <div
@@ -87,19 +80,11 @@
             class="bucket-label"
             :aria-expanded="!collapsed.has(section.label)"
             @click="toggleCollapsed(section.label)">
-            <svg
+            <Icon
               class="bucket-chevron"
               :class="{ open: !collapsed.has(section.label) }"
-              width="8"
-              height="8"
-              viewBox="0 0 8 8"
-              aria-hidden="true">
-              <path
-                d="M2.5 1L6 4L2.5 7"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.2" />
-            </svg>
+              name="chevron-down"
+              :size="12" />
             {{ section.label }}
           </button>
         </li>
@@ -125,9 +110,12 @@
               <span
                 class="glyph glyph-dot"
                 aria-hidden="true"></span>
+              <!-- card t_502b8e81: the pinned star is a vocabulary entry -->
               <span
                 class="glyph glyph-star"
-                aria-hidden="true">&#9733;</span>
+                aria-hidden="true"><Icon
+                  name="star"
+                  :size="12" /></span>
             </button>
             <span class="session-title">{{ s.label || s.id }}</span>
             <!-- branch badge (t_6bf696e4): parented sessions carry the
@@ -164,34 +152,18 @@
                 title="Branch session (fork, inherits the history)"
                 aria-label="Branch session"
                 @click.stop="$emit('branch', s.id)">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true">
-                  <path
-                    d="M4 2v6a3 3 0 0 0 3 3h5M9 8l3 3-3 3"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2" />
-                </svg>
+                <Icon
+                  name="branch"
+                  :size="13" />
               </button>
               <button
                 class="icon-btn row-act"
                 title="Rename session"
                 aria-label="Rename session"
                 @click.stop="startRename(s.id)">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true">
-                  <path
-                    d="M11.5 2.5l2 2L6 12l-2.7.7L4 10z"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2" />
-                </svg>
+                <Icon
+                  name="pencil"
+                  :size="13" />
               </button>
               <a
                 class="icon-btn row-act row-export"
@@ -199,64 +171,32 @@
                 :download="s.id + '.jsonl'"
                 title="Export session (JSONL)"
                 aria-label="Export session as JSONL">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true">
-                  <path
-                    d="M8 2v7M5 6.5L8 9.5l3-3M3 12.5h10"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2" />
-                </svg>
+                <Icon
+                  name="download"
+                  :size="13" />
               </a>
               <button
                 class="icon-btn row-act"
                 :title="s.archived ? 'Unarchive session' : 'Archive session'"
                 :aria-label="s.archived ? 'Unarchive session' : 'Archive session'"
                 @click.stop="$emit('archive', s.id, !s.archived)">
-                <svg
+                <Icon
                   v-if="!s.archived"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true">
-                  <path
-                    d="M2 4.5h12v3H2zM3.5 7.5v5h9v-5M6.25 10h3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2" />
-                </svg>
-                <svg
+                  name="archive"
+                  :size="13" />
+                <Icon
                   v-else
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true">
-                  <path
-                    d="M2 4.5h12v3H2zM3.5 7.5v5h9v-5M6.25 10h3.5M8 10V6.5"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2" />
-                </svg>
+                  name="unarchive"
+                  :size="13" />
               </button>
               <button
                 class="icon-btn row-act row-delete"
                 title="Delete session"
                 aria-label="Delete session"
                 @click.stop="$emit('remove', s.id)">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true">
-                  <path
-                    d="M3.5 4.5h9M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.8 7v4M9.2 7v4"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.2" />
-                </svg>
+                <Icon
+                  name="trash"
+                  :size="13" />
               </button>
             </span>
             <span
@@ -276,6 +216,8 @@
 
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onUnmounted, ref, watch } from "vue";
+  // card t_502b8e81: the iconset wrapper - every glyph in the sidebar
+  import Icon from "../ui/Icon.vue";
   import {
     bucketSessions,
     commitSessionRename,

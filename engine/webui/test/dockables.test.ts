@@ -162,13 +162,13 @@ describe("the dockable registry", () => {
     }
   });
 
-  it("carries the contract fields: non-empty title, ink, one policy, an area", () => {
+  it("carries the contract fields: non-empty title, an iconset name, one policy, an area", () => {
     for (const d of DOCKABLES) {
       assert.ok(d.title.length > 0, `${d.id}: title`);
-      const hasInk =
-        d.icon.rect !== undefined ||
-        (d.icon.paths.length > 0 && d.icon.paths.every((p) => p.length > 0));
-      assert.ok(hasInk, `${d.id}: icon has ink`);
+      // card t_502b8e81: the registry icon is a NAME in the iconset -
+      // the iconset test pins the union; here only the shape is contract
+      assert.equal(typeof d.icon, "string", `${d.id}: icon is a name`);
+      assert.ok((d.icon as string).length > 0, `${d.id}: icon non-empty`);
       assert.ok(
         d.policy === "singleton" || d.policy === "multi",
         `${d.id}: policy is one of the two`,
@@ -724,13 +724,14 @@ describe("dockablesFromPanels", () => {
     assert.equal(entry.id, MODULE);
     assert.equal(entry.title, MODULE);
     assert.equal(entry.policy, "singleton");
-    assert.ok(entry.icon.paths.length > 0 || entry.icon.rect !== undefined);
+    assert.equal(typeof entry.icon, "string", "module default icon is a name");
+    assert.ok(entry.icon.length > 0);
   });
 
   it("honors a full declaration", () => {
     const spec = {
       title: "board",
-      icon: { paths: ["M4 4h16v16H4z"] },
+      icon: "module",
       policy: "multi" as const,
     };
     const [entry] = dockablesFromPanels([{ module: MODULE, dockable: spec }]);

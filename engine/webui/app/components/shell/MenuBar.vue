@@ -15,48 +15,17 @@
       aria-label="Toggle left sidebar"
       :title="sidebarOpen ? 'Close left sidebar' : 'Open left sidebar'"
       @click="$emit('toggle-sidebar')">
-      <svg
+      <!-- card t_502b8e81: the six hand-rolled toggle SVGs collapse into
+           the wrapper's panel-*-open/close vocabulary (state = which
+           icon, same one-name-one-meaning family) -->
+      <Icon
         v-if="sidebarOpen"
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M9 3v18m7-6l-3-3l3-3" />
-        </g>
-      </svg>
-      <svg
+        name="panel-left-close"
+        :size="16" />
+      <Icon
         v-else
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M9 3v18m5-12l3 3l-3 3" />
-        </g>
-      </svg>
+        name="panel-left-open"
+        :size="16" />
     </button>
     <!-- card t_33f8756c: the three edge toggles read left | bottom | right,
          matching the screen edge each one controls (the old order was
@@ -71,96 +40,28 @@
       aria-label="Toggle bottom panel"
       :title="bottomOpen ? 'Close bottom panel' : 'Open bottom panel'"
       @click="toggleBottom">
-      <svg
+      <Icon
         v-if="bottomOpen"
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M3 15h18m9 6l-3-3m3 3l3-3" />
-        </g>
-      </svg>
-      <svg
+        name="panel-bottom-close"
+        :size="16" />
+      <Icon
         v-else
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M3 15h18m9 6v-6m0 0l-3 3m3-3l3 3" />
-        </g>
-      </svg>
+        name="panel-bottom-open"
+        :size="16" />
     </button>
     <button
       class="icon-btn edge-toggle"
       aria-label="Toggle right sidebar"
       :title="inspectorOpen ? 'Close right sidebar' : 'Open right sidebar'"
       @click="$emit('toggle-inspector')">
-      <svg
+      <Icon
         v-if="inspectorOpen"
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M15 3v18M8 9l3 3l-3 3" />
-        </g>
-      </svg>
-      <svg
+        name="panel-right-close"
+        :size="16" />
+      <Icon
         v-else
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <rect
-            width="18"
-            height="18"
-            x="3"
-            y="3"
-            rx="2" />
-          <path d="M15 3v18m-5-6l-3-3l3-3" />
-        </g>
-      </svg>
+        name="panel-right-open"
+        :size="16" />
     </button>
     <!-- the settings gear is GONE (card t_47b776ad): settings is a
          dock-tab singleton opened from the pane '+' menu, not the window
@@ -180,6 +81,8 @@
   // open flags so the chevrons stay honest on mobile too.
   import { computed, inject } from "vue";
   import { DOCK_API_KEY, findEdgePane } from "../../composables/dock";
+  // card t_502b8e81: the iconset wrapper - the toggles are panel-*-open/close
+  import Icon from "../ui/Icon.vue";
   // card t_5d9032d3: the finished-things bell (badge, dropdown panel,
   // live toasts) - the shell hosts it, app.vue routes its open intents.
   import NotificationCenter from "../notifications/NotificationCenter.vue";
