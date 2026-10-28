@@ -678,6 +678,124 @@
   // deltas through the host's canvasDelta dep.
   const canvas = createCanvasStore();
 
+  // --- the webui shell commands (t_07aed3f9) ---
+  //
+  // runCommand is the palette's local executor: "/" never reaches the
+  // agent. Every verb is a webui-native equivalent of the TUI's local
+  // handler set (minus /exit - nothing to quit). The command output
+  // rides the tab's statusLine like every other notice. The function
+  // is hoisted above createChatHost only because it closes over `host`
+  // (retry); invocations happen after both exist, so the TDZ never
+  // bites.
+  async function runCommand(stateKey: string, text: string): Promise<boolean> {
+    const fields = text.split(/\s+/);
+    const name = fields[0] ?? "";
+    const arg = fields.slice(1).join(" ").trim();
+    const st = host.states.get(stateKey);
+    const note = (line: string) => {
+      if (st) st.statusLine = line;
+    };
+    switch (name) {
+      case "/help": {
+        note(
+          "commands: /copy /extensions /fork /help /new /panels /retry /sessions /theme /variant - plus module commands and /<skill-name>; @file @session:<id> @skill:<name> on any send",
+        );
+        return true;
+      }
+      case "/theme": {
+        if (!arg) {
+          const user = userThemes.value.map((t) => t.name).join(", ");
+          note(`themes: dark, light, auto${user ? ", " + user : ""} (usage: /theme <name>)`);
+          return true;
+        }
+        if (arg === "dark" || arg === "light" || arg === "auto") {
+          setTheme(arg);
+          note(`theme: ${arg}`);
+          return true;
+        }
+        const user = userThemes.value.find(
+          (t) => t.name.toLowerCase() === arg.toLowerCase() || t.id === arg,
+        );
+        if (user && !user.error) {
+          setTheme(`theme:${user.id}`);
+          note(`theme: ${user.name}`);
+          return true;
+        }
+        note(`theme: unknown theme "${arg}"`);
+        return true;
+      }
+      case "/fork": {
+        // the newest anchored message becomes the next send's FROM point
+        const payload = normalizeChatPayload(host.chatPanel()?.payload);
+        const rows = payload?.rows ?? [];
+        for (let i = rows.length - 1; i >= 0; i--) {
+          const r = rows[i]!;
+          if (r.role === "assistant" && r.id) {
+            host.setFork(stateKey, r.id);
+            note("fork: the next send continues from the newest response");
+            return true;
+          }
+        }
+        note("fork: no anchored message on this session (use the fork affordance on a response block)");
+        return true;
+      }
+      case "/retry": {
+        const ok = await host.retry(stateKey);
+        if (ok) return true;
+        note("retry: nothing to replay (no idle bound session)");
+        return true;
+      }
+      case "/variant": {
+        const variants = st?.variants ?? [];
+        if (!variants.length) note("variants: none on the active path");
+        else note(`variants: ${variants.length} branch point(s), ${variants.reduce((n, v) => n + v.count, 0)} sibling(s) - use the < n > switcher on a response block`);
+        return true;
+      }
+      case "/copy": {
+        const payload = normalizeChatPayload(host.chatPanel()?.payload);
+        const rows = payload?.rows ?? [];
+        let text2 = "";
+        for (let i = rows.length - 1; i >= 0 && !text2; i--) {
+          const r = rows[i]!;
+          if (r.role === "assistant") {
+            text2 = (r.blocks ?? [])
+              .filter((b) => b.type === "text" && b.content)
+              .map((b) => b.content!)
+              .join("\n");
+          }
+        }
+        if (!text2) {
+          note("copy: no assistant response to copy");
+          return true;
+        }
+        await navigator.clipboard.writeText(text2);
+        note("copied the last response to the clipboard");
+        return true;
+      }
+      case "/new": {
+        openChatTab(null);
+        return true;
+      }
+      case "/sessions": {
+        if (!sidebarDocked.value) toggleSidebar();
+        return true;
+      }
+      case "/panels":
+      case "/extensions": {
+        const target = name === "/panels" ? "canvas" : "extensions";
+        if (!findEdgePane(dock.tree.value, "inspector")) {
+          dock.toggleEdge("inspector", "after");
+        }
+        openModuleTab(target);
+        if (!st) return true;
+        note(name === "/panels" ? "canvas: the panels tab is up" : "extensions: the inventory tab is up");
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
   // session (the runHub run slot is per session). ---
@@ -696,6 +814,9 @@
     // the snapshot refetch: variant selects and action-driven repaints
     // (the deltas ride run streams only)
     canvasRefresh: () => canvas.refresh(),
+    // the webui shell commands (t_07aed3f9): theme, panes, fork, retry,
+    // copy / new / sessions - all local, never an agent round-trip
+    runCommand: (key, text) => runCommand(key, text),
   });
 
   // --- main-view: chat vs the module-owned board (kanban). Ported
