@@ -76,7 +76,7 @@
   // rendered cells at gesture start and hands everything to the store,
   // whose pure math owns floors (128 drag / 320 chat) and the snap
   // ladder (+320, panes.ts).
-  import { inject, ref } from "vue";
+  import { inject, onBeforeUnmount, onMounted, ref } from "vue";
   import { snapCandidateAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
@@ -185,6 +185,9 @@
       if (dragging.value !== null) return; // another divider's gesture owns this pointer
       dragging.value = dividerIndex;
       startPx = measure();
+      // v0.14.4 ruling 10: a RESIZE is ONE layout op per gesture - the
+      // snapshot lands at gesture start; per-tick moves ring nothing
+      api.beginResize();
       pointerState.base = null; // fresh gesture: the reducer re-derives the base
     }
     if (!startPx) return;
@@ -244,4 +247,23 @@
   function onEnd() {
     dropGesture();
   }
+
+  // v0.14.4 ruling 10: Modifier-Z at the dock root walks the layout back
+  // one op. Only the ROOT split instance binds (cellStyle null = root);
+  // text fields keep their native undo, shift-Z stays untouched (the ring
+  // walks BACK only). The store reports false on an empty ring.
+  function onUndoKey(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    api.undoLayout();
+  }
+  onMounted(() => {
+    if (!props.cellStyle) window.addEventListener("keydown", onUndoKey);
+  });
+  onBeforeUnmount(() => {
+    window.removeEventListener("keydown", onUndoKey);
+  });
 </script>
