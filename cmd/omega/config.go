@@ -534,7 +534,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":
-		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c)}}, true
+		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
 		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir}, true
 	case "memory":
@@ -560,10 +560,13 @@ func (c Config) ConfigSection(name string) (any, bool) {
 // /api/web_fetch with the same auth swap + rotation as every other
 // call. The web config stanza stays a config.yaml top-level key even
 // though the capsule dissolved into the channel (v0.13 shell law 1 -
-// no config churn).
-func webBaseURL(cfg Config) string {
-	if cfg.Web.BaseURL != "" {
-		return cfg.Web.BaseURL
+// no config churn). The fields arrive as arguments, not as the Config
+// value: removing the provider capsule scrubs every cfg.Provider
+// access site, and a helper reading whole Config would strand this
+// branch with the module gone (missing return).
+func webBaseURL(baseURL, providerHost string) string {
+	if baseURL != "" {
+		return baseURL
 	}
-	return strings.TrimSuffix(cfg.Provider.Host, "/v1")
+	return strings.TrimSuffix(providerHost, "/v1")
 }

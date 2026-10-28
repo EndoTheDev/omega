@@ -77,12 +77,51 @@ trap 'rm -rf "$TMP"' EXIT
 cat > "$TMP/scrub.py" <<'PYEOF'
 import re, sys
 
+# Host config vocabulary, shared across every file in one run: the
+# module's config struct is module-shaped vocabulary wherever it sits,
+# and the aggregate Config field naming it is read in many files. The
+# class is narrow on purpose: a `type <Noun>Config` host struct and the
+# aggregate field typed by it (or by the module alias: `Continuous
+# continuous.Config`). The noun in the type NAME is the marker -
+# trustFlags-style hosts that merely mention the word are not config
+# structs and are left alone.
+SharedTypes = {}
+SharedFields = {}
+
+def seed_shared(names, files):
+    """Collect each module noun's host config vocabulary by scanning
+    the ORIGINAL (pre-scrub) tree, so the vocabulary is known before
+    the first file is rewritten."""
+    for name in names:
+        SharedTypes.setdefault(name, set())
+        SharedFields.setdefault(name, set())
+        for fname in files:
+            with open(fname) as f:
+                text = f.read()
+            # strip line comments: a doc comment naming the struct is
+            # prose, not a declaration
+            body = re.sub(r"//[^\n]*", "", text)
+            for m in re.finditer(r"^type\s+([A-Za-z_]\w*[Cc]onfig)\b", body, re.M):
+                if name in m.group(1).lower():
+                    SharedTypes[name].add(m.group(1))
+            for line in body.split("\n"):
+                m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_][\w\.]*)\s*$", line)
+                if m and name in m.group(2).lower() and m.group(2).lower().endswith("config"):
+                    SharedFields[name].add(m.group(1))
+
 def scrub(text, modules):
     """modules: list of module names. Returns scrubbed text."""
     mnames = [m for m in modules]
     lines = text.split("\n")
     dead_ids = set()
     dead_fields = set()
+
+    # the module itself, plus its host config vocabulary (the
+    # <Noun>Config struct type and the aggregate field naming it)
+    for name in mnames:
+        dead_ids.add(name)
+        dead_ids.update(SharedTypes.get(name, ()))
+        dead_fields.update(SharedFields.get(name, ()))
 
     # 1. import lines + alias discovery (file-level)
     keep = []
@@ -177,7 +216,22 @@ def scrub(text, modules):
                 return True
         stripped = ln.strip()
         # a bare identifier or identifier list (list items, re-assigns)
-        if re.match(r"^(" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r")\s*(,\s*)*$", stripped):
+        if re.match(r"^((" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r"))\s*(,\s*)*$", stripped):
+            return True
+        # a struct field typed by a dead host-config type - the tag is
+        # string-stripped above, so the line body reads `Skills
+        # SkillsConfig`; the field's own name dies with it (access
+        # sites read a struct that no longer carries it)
+        m = re.match(r"^([A-Za-z_]\w*)\s+\*?([A-Za-z_]\w*)\s*(//.*)?$", body)
+        if m and m.group(2) in dead_ids:
+            dead_fields.add(m.group(1))
+            return True
+        # a composite-literal key typed by a dead host-config type
+        # (`Kanban: KanbanConfig{` in DefaultConfig): dies with its
+        # braces - the wire-headed block rule below eats the literal
+        m = re.match(r"^([A-Za-z_]\w*)\s*:\s*\*?([A-Za-z_]\w*)\{", body)
+        if m and m.group(2) in dead_ids:
+            dead_fields.add(m.group(1))
             return True
         return False
 
@@ -189,12 +243,28 @@ def scrub(text, modules):
     def mark_word(ln):
         body = re.sub(r"`[^`]*`", " ` ", ln)
         m = re.search(r"\b((" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r"))\b", body)
-        return m.group(1) if m else None
+        if m:
+            return m.group(1)
+        # a dead host-config field's access sites are wires into the
+        # chunk even when the chunk nowhere names the module (the
+        # applyEnv entry table, the settings key handlers)
+        for ident in sorted(dead_fields):
+            if re.search(r"\." + re.escape(ident) + r"\b", body):
+                return ident
+        return None
 
     def scrub_chunk(chunk):
         # a chunk untouched by the module keeps every line
         if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
             return chunk
+        # a host-config type named for the module dies whole: struct,
+        # doc comment and all (the leading comment belongs to it)
+        i0 = 0
+        while i0 < len(chunk) and (not chunk[i0].strip() or chunk[i0].lstrip().startswith("//")):
+            i0 += 1
+        m = re.match(r"type\s+([A-Za-z_]\w*)\b", chunk[i0].strip()) if i0 < len(chunk) else None
+        if m and m.group(1) in dead_ids:
+            return []
         for _ in range(15):
             changed = False
             out = []
@@ -293,7 +363,9 @@ def scrub(text, modules):
 
 if __name__ == "__main__":
     modspecs = [s.split("=")[-1] for s in sys.argv[2:]]
-    for fname in sys.argv[1].split(","):
+    files = sys.argv[1].split(",")
+    seed_shared(modspecs, files)
+    for fname in files:
         with open(fname) as f:
             text = f.read()
         with open(fname, "w") as f:
@@ -331,17 +403,35 @@ for MOD in "${MODULES[@]}"; do
     sed 's/^/    /' "$TMP/$MOD.build.log" | head -10 >&2
     fails=$((fails+1)); continue
   fi
-  if go tool nm "$WORK/omega" | grep -F "modules/$MOD" > "$TMP/$MOD.nm.log" 2>&1; then
+  # the symbol table reads once into a file; every check below greps
+  # the file. Piping nm straight into grep -q was a silent no-op under
+  # pipefail: grep exits at the first match, the upstream nm dies of
+  # SIGPIPE, and the pipeline exit 141 reads as no-match - the noun
+  # check fired or not on a race.
+  if ! go tool nm "$WORK/omega" > "$TMP/$MOD.nm" 2>"$TMP/$MOD.nm.err"; then
+    echo "nm-purity [$MOD]: FAIL - go tool nm could not read the binary:" >&2
+    sed 's/^/    /' "$TMP/$MOD.nm.err" | head -5 >&2
+    fails=$((fails+1)); continue
+  fi
+  if grep -F "modules/$MOD" "$TMP/$MOD.nm" > "$TMP/$MOD.nm.log" 2>&1; then
     echo "nm-purity [$MOD]: FAIL - module symbols in the binary:" >&2
     sed 's/^/    /' "$TMP/$MOD.nm.log" | head -10 >&2
     fails=$((fails+1)); continue
   fi
-  # the noun itself: zero occurrences of the word in symbol names
+  # the noun itself: zero occurrences of the word in OMEGA-OWNED symbol
+  # names. The law owns omega's vocabulary, not third parties': symbol
+  # paths under the omega module, main-package symbols, and type
+  # descriptors naming a main-scope type ([^/]main\. - never a /main/
+  # third-party path component) carry the noun; github.com/robfig/cron
+  # (modules/continuous's scheduler), modernc.org/memory (the sqlite
+  # driver) and the crypto/internal stdlib are somebody else's names
+  # and stay in the binary no matter how cleanly a module leaves.
   # (string constants live in rodata, not in symbol names - this is a
   # TYPE/FUNC symbol check, not a string scan)
-  if go tool nm "$WORK/omega" 2>/dev/null | grep -wq "$MOD"; then
-    echo "nm-purity [$MOD]: FAIL - the module noun survives as a symbol:" >&2
-    go tool nm "$WORK/omega" | grep -w "$MOD" | sed 's/^/    /' | head -10 >&2
+  grep -E 'github\.com/EndoTheDev/omega/|(^|[^/])main\.' "$TMP/$MOD.nm" > "$TMP/$MOD.own" 2>/dev/null || true
+  if grep -w "$MOD" "$TMP/$MOD.own" > "$TMP/$MOD.noun.log" 2>&1; then
+    echo "nm-purity [$MOD]: FAIL - the module noun survives as an omega-owned symbol:" >&2
+    sed 's/^/    /' "$TMP/$MOD.noun.log" | head -10 >&2
     fails=$((fails+1)); continue
   fi
   echo "nm-purity [$MOD]: GREEN - zero module symbols in the binary"
