@@ -1,19 +1,26 @@
 // omega webui: unit tests for the divider law (card t_bc321318, Endo
-// ruling 2026-10-25: structural dividers run THROUGH). The render-free
+// ruling 2026-10-25: structural dividers run THROUGH; amended t_e539ba29,
+// Endo ruling 2026-10-28: the COLUMN divider's resting line died - it
+// stacked with the chat card's bottom edge and the tab strip's border-top
+// into three hairlines that read as "lines going through the divider",
+// with the Logs chip sitting on the topmost seam). The render-free
 // suite can't measure boxes, so it pins the sheet instead - the family
 // maxheight.test.ts established: parse main.css + bottompanel.css and
 // make the rules carry the law. Pinned here:
-//   1. the resting divider paints a 1px centered structural line, full
-//      cross-extent, vertical (row splits) and horizontal (column splits)
-//   2. no border-radius on the handle (the line runs edge-to-edge)
-//   3. hover/snap keep their full-band backgrounds (they replace the line)
-//   4. the pane-area layout layer owns the frame's horizontal edges (the
+//   1. the resting VERTICAL (row-split) divider paints a 1px centered
+//      structural line, full cross-extent
+//   2. the resting HORIZONTAL (column-split) divider paints NOTHING -
+//      the pane header below owns the seam (t_e539ba29)
+//   3. no border-radius on the handle (the hover band runs edge-to-edge)
+//   4. hover/snap keep their full-band backgrounds (they ARE the line
+//      while the pointer is on the handle)
+//   5. the pane-area layout layer owns the frame's horizontal edges (the
 //      ::before/::after strokes under the cards, desktop-gated)
-//   5. the root row's vertical dividers ride the sidebars' overhang - the
-//      line reaches the pane bottom row beside the band, not above it
-//   6. the root column divider reaches 2px past its insets (T-junctions
+//   6. the root row's vertical dividers ride the sidebars' overhang - the
+//      hover band reaches the pane bottom row beside the band
+//   7. the root column divider reaches 2px past its insets (T-junctions
 //      land on the vertical lines' columns), fallback clean in full mode
-//   7. the pane header's seam is a REAL border-bottom on .dock-tabbar -
+//   8. the pane header's seam is a REAL border-bottom on .dock-tabbar -
 //      opaque children never break it (supersedes the where-chrome-shows
 //      inset-shadow read of t_f6c1b5fe)
 // Run: node --test engine/webui/test/ (node >= 23)
@@ -107,7 +114,7 @@ function gradientOf(orientation: "to right" | "to bottom"): string {
   return `linear-gradient(${orientation}, transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px)`.replace(/\s+/g, " ");
 }
 
-describe("divider law (t_bc321318: structural lines run THROUGH)", () => {
+describe("divider law (t_bc321318 through-lines; t_e539ba29 column rests invisible)", () => {
   it("the vertical divider paints a full-extent 1px structural line", () => {
     const body = find(MAIN, ".dock-divider").body.replace(/\s+/g, " ");
     assert.ok(
@@ -116,13 +123,21 @@ describe("divider law (t_bc321318: structural lines run THROUGH)", () => {
     );
   });
 
-  it("the horizontal divider paints its full-extent 1px line", () => {
+  it("the horizontal divider rests INVISIBLE - the pane header owns the seam", () => {
     const body = find(MAIN, ".dock-split.column > .dock-divider").body
       .replace(/\s+/g, " ");
     assert.ok(
-      body.includes(gradientOf("to bottom")),
-      "column-split divider carries the centered horizontal line gradient",
+      !body.includes("linear-gradient"),
+      "no resting gradient left on the column divider",
     );
+    // the guard rule kills the base (row-line) gradient ONLY at rest -
+    // hover/drag/snap must outpaint it (t_e539ba29: the (0,3,0) column
+    // rule out-ranked the (0,2,0) bands and the handle never highlighted)
+    const guard = find(
+      MAIN,
+      ".dock-split.column > .dock-divider:not(:hover):not(.active):not(.snap)",
+    ).body.replace(/\s+/g, " ");
+    assert.match(guard, /background:\s*none/);
   });
 
   it("the handle has no border-radius - the line runs edge-to-edge", () => {
