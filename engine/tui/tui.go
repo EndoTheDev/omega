@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -308,10 +309,11 @@ type model struct {
 	storeErr             string          // store open/persistence error, shown in the status line
 	promptHistory        []string        // previously submitted prompts, for Up/Down recall
 	historyIndex         int             // position in promptHistory; 0 = empty/current input
-	autocompleteMatches  []string        // slash commands matching the current input
+	autocompleteMatches  []string        // slash/mention candidates matching the current input
 	autocompleteIndex    int             // highlighted match; -1 = none selected
 	autocompleteOffset   int             // first visible row in the dropup window
-	autocompleteSlashPos int             // byte offset of the / triggering autocomplete, -1 = none
+	autocompleteSlashPos int             // byte offset of the trigger token (/ or @) starting autocomplete, -1 = none
+	autocompleteTokenEnd int             // byte offset just past the trigger token (-1 = none); acceptMatch splices there
 	screenHeight         int             // terminal height from the last resize
 	skills               []core.Skill    // loaded skills, for autocomplete and invocation
 	extensions           *core.Context   // plugin context (provider, compactor, commands, etc.)
@@ -493,6 +495,7 @@ func newChatModel(providerType, modelName string, compaction *core.CompactionCon
 		moduleCommands:       moduleCommands(pctx),
 		autocompleteIndex:    -1,
 		autocompleteSlashPos: -1,
+		autocompleteTokenEnd: -1,
 		showThinking:         true,
 		thinkingLevel:        "medium",
 		showToolResults:      true,
@@ -966,9 +969,15 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m = m.invokeInlineSkills(input)
 
 	// Extract @file references: load images as base64, inline text files.
-	prompt, images, imgErr := extractImages(input, m.store, m.skills)
+	prompt, images, unresolved, imgErr := extractImages(input, m.store, m.skills)
 	if imgErr != nil {
 		m.addNotice("\n" + m.theme.Error.Render("[image error: "+imgErr.Error()+"]") + "\n")
+	}
+	// Unresolvable tokens ride along literally (that is the resolution
+	// protocol - never block the send); the notice is the user's only
+	// signal that what they typed is not what the model will see.
+	if len(unresolved) > 0 {
+		m.addNotice("\n" + m.theme.Info.Render("["+strings.Join(unresolved, ", ")+" not resolved - sent literally]") + "\n")
 	}
 	var msg core.Message
 	if len(images) > 0 {
@@ -1413,45 +1422,77 @@ func findSlashToken(val string) int {
 	return -1
 }
 
-// updateAutocomplete recomputes the live slash-command matches from the
-// current input. It runs after every keystroke. The autocomplete triggers
-// when a / appears at the start of the input or after a space, so skills
-// can be autocompleted mid-sentence (e.g. "go ahead and /lear...").
-// Two levels: a bare command matches against knownCommands; a command
-// with enum arguments (see commandOptions) matches against its options.
-func (m *model) updateAutocomplete() {
-	val := m.textarea.Value()
-	slashPos := findSlashToken(val)
-	if slashPos < 0 {
-		m.autocompleteMatches = nil
-		m.autocompleteIndex = -1
-		m.autocompleteOffset = 0
-		m.autocompleteSlashPos = -1
-		m.resizeTextarea() // panel closed; give the rows back to the viewport
-		return
-	}
-	m.autocompleteSlashPos = slashPos
-	// Extract the partial command after the slash.
-	partial := val[slashPos:]
-	matches := m.autocompleteMatches[:0]
-	// Split at the first space: cmd is the command part.
-	cmd, _, _ := strings.Cut(partial, " ")
-	if options, ok := autocompleteOptions(m.extensions)[cmd]; ok {
-		// Second level: match options by prefix. Full strings so
-		// acceptMatch replaces the whole token unchanged.
-		for _, opt := range options {
-			full := cmd + " " + opt
-			if strings.HasPrefix(full, partial) {
-				matches = append(matches, full)
-			}
+// findAtToken returns the byte offsets of the last @ in val that starts
+// a mention: position 0 or preceded by a space (mirrors findSlashToken;
+// a mid-word @ is an email address or handle, not a file reference).
+// The token runs to the next space or newline (or end of input); the
+// end offset is returned second so acceptMatch can splice a completion
+// without swallowing the words that follow. Returns (-1, 0) when there
+// is no mention.
+func findAtToken(val string) (int, int) {
+	for i := len(val) - 1; i >= 0; i-- {
+		if val[i] != '@' {
+			continue
 		}
-	} else {
-		for _, c := range m.commands {
-			if strings.HasPrefix(c, partial) {
-				matches = append(matches, c)
+		if i != 0 && val[i-1] != ' ' {
+			continue
+		}
+		end := i + 1
+		for end < len(val) && val[end] != ' ' && val[end] != '\n' {
+			end++
+		}
+		return i, end
+	}
+	return -1, 0
+}
+
+// atCandidates builds the @ completion pool: cwd file names, session
+// refs (the current session first, then cached session ids) and skill
+// refs. Candidates are full tokens with the leading @, so the panel
+// lists exactly what acceptMatch inserts.
+func (m *model) atCandidates() []string {
+	var cands []string
+	if entries, err := os.ReadDir(m.cwd); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
 			}
+			cands = append(cands, "@"+e.Name())
 		}
 	}
+	if m.sessionID != "" {
+		cands = append(cands, "@session:"+m.sessionID)
+	}
+	// Populate the session cache once, like /sessions delete does;
+	// the ids are then free on every later keystroke.
+	if m.store != nil && len(m.sessionList) == 0 {
+		m.sessionList, _ = m.store.ListSessions(context.Background())
+	}
+	for _, s := range m.sessionList {
+		if s.ID != m.sessionID {
+			cands = append(cands, "@session:"+s.ID)
+		}
+	}
+	for _, s := range m.skills {
+		cands = append(cands, "@skill:"+s.Name)
+	}
+	return cands
+}
+
+// clearAutocomplete closes the completion panel and returns the rows
+// to the viewport.
+func (m *model) clearAutocomplete() {
+	m.autocompleteMatches = nil
+	m.autocompleteIndex = -1
+	m.autocompleteOffset = 0
+	m.autocompleteSlashPos = -1
+	m.autocompleteTokenEnd = -1
+	m.resizeTextarea() // panel closed; give the rows back to the viewport
+}
+
+// setAutocompleteMatches installs the match list and clamps the
+// selection and scroll window (shared by the / and @ triggers).
+func (m *model) setAutocompleteMatches(matches []string) {
 	m.autocompleteMatches = matches
 	// Keep the highlight in range. A single match is auto-selected so
 	// Enter/Tab accept it immediately without an explicit arrow.
@@ -1471,8 +1512,69 @@ func (m *model) updateAutocomplete() {
 	m.resizeTextarea()
 }
 
+// updateAutocomplete recomputes the live autocomplete matches from the
+// current input. It runs after every keystroke. Both triggers fire on
+// a token at the start of the input or after a space, so skills and
+// mentions can be autocompleted mid-sentence (e.g. "go ahead and
+// /lear..."). Two levels for /: a bare command matches against
+// knownCommands; a command with enum arguments (see commandOptions)
+// matches against its options. For @ the completion pool is the cwd
+// files, session: refs and skill: names. When both a / and a @ token
+// qualify the later one wins - the newest token is the one being typed.
+func (m *model) updateAutocomplete() {
+	val := m.textarea.Value()
+	atPos, atEnd := findAtToken(val)
+	slashPos := findSlashToken(val)
+	if slashPos < 0 && atPos < 0 {
+		m.clearAutocomplete()
+		return
+	}
+	if atPos > slashPos {
+		// @ mention: match candidates by prefix. Full tokens so
+		// acceptMatch replaces the whole mention unchanged.
+		m.autocompleteSlashPos = atPos
+		m.autocompleteTokenEnd = atEnd
+		partial := val[atPos:atEnd]
+		var matches []string
+		for _, cand := range m.atCandidates() {
+			if strings.HasPrefix(cand, partial) {
+				matches = append(matches, cand)
+			}
+		}
+		m.setAutocompleteMatches(matches)
+		return
+	}
+	// / slash command.
+	m.autocompleteSlashPos = slashPos
+	m.autocompleteTokenEnd = len(val)
+	// Extract the partial command after the slash.
+	partial := val[slashPos:]
+	var matches []string
+	// Split at the first space: cmd is the command part.
+	cmd, _, _ := strings.Cut(partial, " ")
+	if options, ok := autocompleteOptions(m.extensions)[cmd]; ok {
+		// Second level: match options by prefix. Full strings so
+		// acceptMatch replaces the whole token unchanged.
+		for _, opt := range options {
+			full := cmd + " " + opt
+			if strings.HasPrefix(full, partial) {
+				matches = append(matches, full)
+			}
+		}
+	} else {
+		for _, c := range m.commands {
+			if strings.HasPrefix(c, partial) {
+				matches = append(matches, c)
+			}
+		}
+	}
+	m.setAutocompleteMatches(matches)
+}
+
 // acceptMatch accepts the selected match into the textarea. It splices
-// the completion at the slash position, preserving any text before it.
+// the completion at the trigger token position, preserving any text
+// before it and the tail after the token (a mid-sentence @ mention keeps
+// its following words; for / the token always runs to the end of input).
 // It returns a command (never nil) when it actually changed the input;
 // nil when the token already equals the match, so Enter falls through
 // to submit.
@@ -1484,12 +1586,17 @@ func (m *model) acceptMatch() tea.Cmd {
 	m.autocompleteMatches = nil
 	m.autocompleteIndex = -1
 	val := m.textarea.Value()
-	slashPos := m.autocompleteSlashPos
-	if slashPos < 0 {
-		slashPos = 0
+	pos := m.autocompleteSlashPos
+	if pos < 0 {
+		pos = 0
 	}
-	// Build the new value: everything before the slash + the completion.
-	newVal := val[:slashPos] + completion
+	end := m.autocompleteTokenEnd
+	if end < pos {
+		end = len(val)
+	}
+	// Build the new value: everything before the token + the completion
+	// + whatever followed the token.
+	newVal := val[:pos] + completion + val[end:]
 	// Check if the current token already equals the completion.
 	if newVal == val {
 		return nil
@@ -2682,6 +2789,9 @@ func (m model) renderHelp() string {
 	sb.WriteString("\n")
 	sb.WriteString("  type a message and press enter to send\n")
 	sb.WriteString("  ctrl+j inserts a newline (multi-line input)\n")
+	sb.WriteString("  @<file> attaches an image or inlines a text file, @<glob> inlines every\n")
+	sb.WriteString("  match, @session:<id> injects session history, @skill:<name> injects a\n")
+	sb.WriteString("  skill (unresolved @tokens are sent literally; a notice tells you when)\n")
 	sb.WriteString("\n")
 	header := fmt.Sprintf("  %-*s  %s", maxCmd, "COMMAND", "DESCRIPTION")
 	sb.WriteString(m.theme.Info.Render(header))
