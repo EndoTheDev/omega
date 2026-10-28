@@ -1738,12 +1738,18 @@ export async function fetchSessions(): Promise<Session[]> {
 // description (omitted when the module doesn't implement agent.Describer).
 // has-ui is NOT on the wire - the shell derives it from the composition
 // manifest (modules/<name>/ui/dockable.json) at build time.
+// tool_names / command_names (card t_210a0d19) carry the EXPANSION
+// detail - the verbatim tools the module provides and the slash
+// commands it registered. Optional on the type: a pre-210a0d19 host
+// serves rows without them, and the row model folds that to empty.
 export interface OmegaExtension {
   name: string;
   description?: string;
   tools: number;
   commands: number;
   seams: string[];
+  tool_names?: string[];
+  command_names?: string[];
 }
 
 export async function fetchExtensions(): Promise<OmegaExtension[]> {
@@ -1987,24 +1993,9 @@ export function toggleNote(m: ModuleRow, enable: boolean): string {
   return `disable ${m.name}?`;
 }
 
-// filterModuleRows narrows the module list live, same contract as
-// filterSettingGroups: a row survives when the case-insensitive query
-// is a substring of its name or description (the two human-readable
-// strings a row renders); rows with no match drop out. An empty (or
-// whitespace-only) query returns everything unchanged. Pure - never
-// touches the caller's arrays.
-export function filterModuleRows(
-  rows: ModuleRow[],
-  query: string,
-): ModuleRow[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return rows;
-  return rows.filter(
-    (m) =>
-      m.name.toLowerCase().includes(q) ||
-      (m.description ?? "").toLowerCase().includes(q),
-  );
-}
+// (card t_210a0d19: the settings MODULES group is gone and the
+// extensions tab lists every row with no search - the module row
+// narrowing helper left with its only consumer.)
 
 // --- themes: user token themes behind /themes ---
 

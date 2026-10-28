@@ -1,177 +1,154 @@
-// omega webui: card t_8ac225f1 - the MODULES settings group collapses
-// like the other ten. Pins the pure search narrowing (filterModuleRows
-// in composables/omega.ts, same contract as filterSettingGroups) and
-// the component wiring (structural source assertions: the node suite
-// has no DOM, so what is pinned is the wiring, not the paint).
-// Run: node --test engine/webui/test/ (node >= 23 runs TS natively)
+// omega webui: card t_210a0d19 - the module toggles MOVE out of settings.
+// The MODULES settings group is gone; the EXTENSIONS tab is the module
+// lifecycle cockpit (live state + toggle on every row, expansion reveals
+// the module's tools, commands and panels). Pins the swap in one pass:
+// the settings side must show no module references, the extensions side
+// must carry the toggle law the settings group obeyed. Structural source
+// assertions (the node suite has no DOM: what is pinned is the wiring,
+// not the paint). Run: node --test engine/webui/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import {
-  filterModuleRows,
-  type ModuleRow,
-} from "../app/composables/omega.ts";
-
-const row = (over: Partial<ModuleRow>): ModuleRow => ({
-  name: "kanban",
-  state: "mounted",
-  toggleable: true,
-  ...over,
-});
-
-const ROWS: ModuleRow[] = [
-  row({ name: "kanban", description: "the task board" }),
-  row({ name: "cron", state: "disabled" }),
-  row({ name: "tools", description: "tool listing" }),
-];
-
-// --- filterModuleRows: the search box narrows the module rows ---
-
-test("empty query returns every row unchanged", () => {
-  assert.deepEqual(filterModuleRows(ROWS, ""), ROWS);
-  assert.deepEqual(filterModuleRows(ROWS, "   "), ROWS);
-});
-
-test("query matches the row name case-insensitively and drops the rest", () => {
-  const out = filterModuleRows(ROWS, "CRON");
-  assert.equal(out.length, 1);
-  assert.equal(out[0].name, "cron");
-});
-
-test("query matches the description too", () => {
-  const out = filterModuleRows(ROWS, "task board");
-  assert.equal(out.length, 1);
-  assert.equal(out[0].name, "kanban");
-});
-
-test("no match anywhere yields zero rows (the group hides)", () => {
-  assert.deepEqual(filterModuleRows(ROWS, "zzz"), []);
-});
-
-test("filtering never mutates the caller's rows", () => {
-  filterModuleRows(ROWS, "cron");
-  assert.equal(ROWS.length, 3);
-});
-
-// --- the component wiring: MODULES is a first-class settings group ---
-
 const root = fileURLToPath(new URL("..", import.meta.url));
-const list = readFileSync(
-  `${root}/app/components/settings/ModuleToggleList.vue`,
-  "utf8",
-);
-const tab = readFileSync(
-  `${root}/app/components/settings/SettingsTab.vue`,
-  "utf8",
-);
+const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-test("MODULES collapses like other groups: same head button as the knob groups", () => {
-  // byte-for-byte the SettingsTab group head's interaction: the shared
-  // button class, the chevron prefix, aria-expanded, click toggles
+const tab = read("app/components/settings/SettingsTab.vue");
+const extTab = read("app/components/shell/ExtensionsTab.vue");
+const rowModel = read("app/components/shell/extensionsRows.ts");
+
+// --- the settings side: MODULES is gone, the knobs stay ---
+
+test("the MODULES section is removed from settings entirely", () => {
   assert.ok(
-    list.includes('class="settings-group-head"'),
-    "the head rides button.settings-group-head (shared rules + styling)",
+    !existsSync(`${root}/app/components/settings/ModuleToggleList.vue`),
+    "the old settings toggle component is deleted (the surface moved)",
   );
-  assert.match(list, /class="bucket-chevron"/, "the shared chevron prefix");
-  assert.match(list, /:aria-expanded="!isCollapsed"/, "the a11y state");
-  assert.match(list, /@click="toggleCollapsed"/, "whole header toggles");
-  // body hidden while collapsed, exactly like the knob groups' loop
-  assert.match(list, /v-if="!isCollapsed"/, "collapsed body hidden");
-  // and the dead div-head is gone from the stylesheet
   assert.ok(
-    !readFileSync(`${root}/app/assets/css/main.css`, "utf8").includes(
-      ".modules-head",
-    ),
-    "no modules-specific head styles left",
+    !tab.includes("ModuleToggleList"),
+    "SettingsTab no longer mounts the module list",
+  );
+  assert.ok(
+    !tab.includes("modulesVisible"),
+    "the empty-state truth helper for the module group is gone",
+  );
+  assert.ok(
+    !read("app/composables/omega.ts").includes("filterModuleRows"),
+    "the module search narrowing is gone (the extensions tab has no search)",
   );
 });
 
-test("collapse state persists in the SHARED settings collapse storage", () => {
-  assert.match(
-    list,
-    /COLLAPSED_KEY = "omega\.settings-collapsed"/,
-    "the same localStorage key SettingsTab persists its groups under",
-  );
-  assert.match(
-    list,
-    /parseCollapsedKeys[\s\S]*serializeCollapsedKeys/,
-    "the same round-trip helpers, so other groups' keys survive",
-  );
-  // the group's key in that shared set
-  assert.match(
-    list,
-    /has\("modules"\)/,
-    "restores from the shared set under key modules",
-  );
-  assert.match(list, /next\.add\("modules"\)/, "toggle writes key modules");
-  assert.match(list, /next\.delete\("modules"\)/, "untoggle drops key modules");
-});
-
-test("search wins over collapse and narrows the module rows", () => {
-  assert.match(
-    list,
-    /filterModuleRows/,
-    "the shared narrowing helper narrows the rows",
-  );
-  assert.match(
-    list,
-    /v-if="loaded && \(!searching \|\| visibleRows\.length > 0\)"/,
-    "a search that matched no rows hides the group (like the knob groups)",
-  );
-  assert.match(
-    list,
-    /collapsed\.value && !searching\.value/,
-    "a live query forces the group open (search-wins rule)",
-  );
-});
-
-test("SettingsTab hands the query down and counts MODULES in its empty state", () => {
+test("settings keeps only config knobs, and search narrows them", () => {
+  // the removal must not have touched the knob surface
+  assert.match(tab, /filterSettingGroups\(allGroups\.value, query\.value\)/,
+    "the knob groups still narrow under the live query");
+  assert.match(tab, /class="settings-group"/, "the knob group renderer stands");
+  // the empty state is groups-only again
   assert.match(
     tab,
-    /<ModuleToggleList :query="query" @visible="onModulesVisible" \/>/,
-    "the parent passes its live query and tracks the section's visibility",
-  );
-  assert.match(
-    tab,
-    /visibleGroups\.length === 0 && !modulesVisible/,
-    "'no settings match' shows only when neither groups nor modules matched",
+    /visibleGroups\.length === 0"[\s\S]{0,80}no settings match/,
+    "'no settings match' keys off the knob groups alone",
   );
 });
 
-test("neither writer clobbers the shared collapse set (rmw on both sides)", () => {
-  // the persist is one localStorage key; a toggle that wrote from its
-  // own in-memory set once wiped the other group's key between two
-  // toggles (verify lane, card t_8ac225f1)
+test("the handoff note rides the settings source", () => {
   assert.match(
     tab,
-    /const stored =[\s\S]{0,80}parseCollapsedKeys\(localStorage\.getItem\(COLLAPSED_KEY\)\)/,
-    "SettingsTab toggles start from the shared storage set",
-  );
-  const listToggle =
-    list.split("function toggleCollapsed")[1]?.split("}")[0] ?? "";
-  assert.match(
-    listToggle,
-    /parseCollapsedKeys\(localStorage\.getItem\(COLLAPSED_KEY\)\)/,
-    "ModuleToggleList toggles read-modify-write the shared set too",
+    /t_210a0d19: the MODULES group is gone from settings/,
+    "the reader learns where the toggles went without the board",
   );
 });
 
-test("module rows keep the E2 toggle contract (checkbox + annotations)", () => {
-  // the collapse re-wrap must not have touched the row surface: the
-  // disabled gate, the mounted-checked checkbox, always-on + dependents
+// --- the extensions side: the toggle law lives there now ---
+
+test("the extensions tab rows merge the registry introspection", () => {
+  // the row model fuses the three sources; the component fetches both
+  // endpoints and never rebuilds the mount API client (scope item 4)
   assert.match(
-    list,
-    /:disabled="busy !== null \|\| !m\.toggleable"/,
-    "busy + always-on gate intact",
+    extTab,
+    /fetchModules\(\)/,
+    "the shared /modules client serves the cockpit's state",
   );
-  assert.match(list, /:checked="m\.state === 'mounted'"/, "live state checkbox");
-  assert.match(list, /always on/, "the locked annotation");
   assert.match(
-    list,
-    /dependents: \$\{m\.dependents\.join/, 
-    "the dependents annotation",
+    extTab,
+    /toggleModule\(row\.name, checked\)/,
+    "the toggle round-trips the shared client (no rebuilt mount API)",
   );
-  assert.match(list, /class="module-refusal"/, "the refusal tail rides the body");
+  assert.match(
+    extTab,
+    /seamAvailable/,
+    "a 501 toggle seam degrades the rows, never the inventory",
+  );
+  assert.match(
+    rowModel,
+    /state: m \? m\.state : "engine"/,
+    "an introspection-unknown row is engine ring (tier law)",
+  );
+});
+
+test("module rows keep the E2 toggle contract (two-step arm, annotations)", () => {
+  // the same law the settings group obeyed: the busy gate, the
+  // mounted-checked checkbox, the arm-then-apply confirm, the Q12 tail
+  assert.match(
+    extTab,
+    /:disabled="busy !== null"/,
+    "the busy gate (one flight at a time)",
+  );
+  assert.match(
+    extTab,
+    /:checked="row\.state === 'mounted'"/,
+    "the checkbox re-renders from live server state",
+  );
+  assert.match(extTab, /toggleNote\(/, "the confirm note carries the law");
+  assert.match(
+    extTab,
+    /confirm: apply (disable|enable)\?/,
+    "two-step arm: the second click answers a question",
+  );
+  assert.match(
+    extTab,
+    /dependents: \$\{row\.dependents\.join/,
+    "the dependents annotation rides the resting row",
+  );
+  assert.match(
+    extTab,
+    /class="module-refusal"/,
+    "the refusal tail rides the body (Q12: rejections visible as events)",
+  );
+});
+
+test("engine ring rows never toggle (the tier law stays visual)", () => {
+  assert.match(extTab, /extension-engine/, "the engine badge exists");
+  assert.match(extTab, /row\.state === 'engine'/, "engine rows branch off");
+});
+
+test("expansion reveals the module's tools, commands and panels", () => {
+  // the aria contract + the detail sections keyed off the row model
+  assert.match(
+    extTab,
+    /:aria-expanded="isExpanded\(row\.name\)"/,
+    "the expand button carries the a11y state",
+  );
+  assert.match(extTab, /detail-label">tools</, "the tools section");
+  assert.match(extTab, /detail-label">commands</, "the commands section");
+  assert.match(extTab, /detail-label">panels</, "the panels section");
+  assert.match(
+    extTab,
+    /row\.toolNames\.join/,
+    "the tool names render verbatim from the row model",
+  );
+  assert.match(
+    extTab,
+    /row\.commandNames\.join/,
+    "the command names render verbatim from the row model",
+  );
+  assert.match(
+    extTab,
+    /row\.panels\.join/,
+    "the panel titles render from the composition manifest",
+  );
+  // a disabled module owns the honest empty detail
+  assert.match(extTab, /none \(disabled\)/,
+    "an unmounted module says so instead of a bare none");
 });
