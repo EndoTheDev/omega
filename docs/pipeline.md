@@ -53,6 +53,23 @@ gate + soak automation.
 - **The train never rewrites:** origin/dev must be an ancestor of local
   dev before the pass runs; a diverged origin stops the pass loudly.
 
+## Journey suite run lock (worker verify law)
+
+`scripts/journeys/run.sh` flocks one global run lock
+(`/tmp/omega-journeys.lock`) for the whole suite body. Two suites running
+at once interleave via shared chrome/agent-browser infra and mutual false
+reds (proven 2026-10-28 during the v0.13.0 gate), so the suite never runs
+concurrently:
+
+- The default behavior is refuse: a second suite exits 3 with the holder
+  pid, having created no evidence.
+- A worker verify that may overlap the train pass or the nightly runs
+  `JOURNEY_LOCK_WAIT=600 scripts/journeys/run.sh ...` and queues behind
+  the live suite instead of colliding with it.
+- `scripts/journeys/sweep-chromes.sh` honors the lock: called standalone
+  while a suite is live it skips (exit 0); called from the suite (inherited
+  fd 9) it proceeds.
+
 ## Marker-bisect law
 
 Every landing leaves its marker, so "which landing introduced this" is
