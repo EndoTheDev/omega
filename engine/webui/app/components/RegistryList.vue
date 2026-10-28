@@ -6,7 +6,12 @@
        this renders the rows and drives the two-step toggle (the same
        arm/confirm mechanic the module list rides, no accidental
        first-click flips). A host without the toggle seam (501) renders
-       the list read-only: no checkboxes, the state text only. -->
+       the list read-only: no checkboxes, the state text only.
+       v0.14.3: the insights tab joins as the read-only stat consumer -
+       `showState=false` drops the on/disabled state text (insight rows
+       have no fold), and the generic #side slot seats a row's right
+       cluster (the CSS width bars the plain renderer can't express);
+       existing consumers ride the defaults, byte-identical renders. -->
   <section class="registry-list">
     <p
       v-if="error"
@@ -24,6 +29,11 @@
           <span
             v-if="r.description"
             class="registry-desc">{{ r.description }}</span>
+          <!-- the generic row side: numbers, bars, badges - things the
+               plain name/desc line doesn't express -->
+          <slot
+            name="side"
+            :row="r" />
           <button
             v-if="hasDetail(r)"
             class="registry-expander"
@@ -42,7 +52,7 @@
               : `${r.disabled ? 'enable' : 'disable'} ${r.name}`"
             @change="onToggle(r, ($event.target as HTMLInputElement).checked)" />
           <span
-            v-else
+            v-else-if="showState"
             class="registry-state"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
         </span>
@@ -95,9 +105,10 @@
       error?: string | null;
       loaded?: boolean;
       toggleable?: boolean;
+      showState?: boolean;
       emptyText?: string;
     }>(),
-    { busy: null, error: null, loaded: false, toggleable: false, emptyText: "nothing registered" },
+    { busy: null, error: null, loaded: false, toggleable: false, showState: true, emptyText: "nothing registered" },
   );
 
   // toggle carries the CONFIRMED direction: the parent PUTs and

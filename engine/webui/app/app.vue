@@ -202,27 +202,6 @@
             v-if="!isMobile"
             class="pane" />
         </template>
-        <!-- arc 3c: the canvas host - the generic panel renderer mounts
-             INSIDE this outlet per panel the canvas store holds. The
-             store (snapshot boot fetch + run-stream deltas) is the only
-             source of panel presence (Q5a); the dock never knows one. -->
-        <template #pane-canvas>
-          <div
-            v-if="!isMobile"
-            class="pane canvas-pane">
-            <CanvasPanel
-              v-for="p in canvas.panels"
-              :key="p.id"
-              :panel="p"
-              :state-of="canvas.actionState"
-              @invoke="canvas.invoke" />
-            <p
-              v-if="canvas.panels.length === 0"
-              class="canvas-empty">
-              no panels mounted
-            </p>
-          </div>
-        </template>
       </DockSplit>
     </div>
 
@@ -314,24 +293,9 @@
       <InsightsTab
         v-else-if="inspectorDrawerActiveId === 'insights'"
         class="pane" />
-      <!-- arc 3c: the canvas joins the mobile drawer like every
-           inspector tab - before the module catch-all, which would try
-           InspectorPanel(module="canvas") and render empty -->
-      <div
-        v-else-if="inspectorDrawerActiveId === 'canvas'"
-        class="pane canvas-pane">
-        <CanvasPanel
-          v-for="p in canvas.panels"
-          :key="p.id"
-          :panel="p"
-          :state-of="canvas.actionState"
-          @invoke="canvas.invoke" />
-        <p
-          v-if="canvas.panels.length === 0"
-          class="canvas-empty">
-          no panels mounted
-        </p>
-      </div>
+      <!-- v0.14.3: the canvas drawer branch left with the tab (the fold
+           ruling) - module panels seat through the module catch-all,
+           chat + toasts keep their own surfaces -->
       <InspectorPanel
         v-else-if="inspectorDrawerActiveId"
         class="pane"
@@ -468,7 +432,6 @@
   // host's canvasDelta dep. Panel presence lives in the store, never a
   // hardcoded list (Q5a).
   import { createCanvasStore, emitLocalToast } from "./composables/canvas";
-  import CanvasPanel from "./components/canvas/CanvasPanel.vue";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
   // card t_5d9032d3: notification open intents route here from the bell;
@@ -789,13 +752,14 @@
       case "/panels":
       case "/modules":
       case "/extensions": {
-        const target = name === "/panels" ? "canvas" : "extensions";
+        // v0.14.3: /panels folds into the Modules tab too - the panels
+        // render under their module's expanded row (the fold ruling).
         if (!findEdgePane(dock.tree.value, "inspector")) {
           dock.toggleEdge("inspector", "after");
         }
-        openModuleTab(target);
+        openModuleTab("extensions");
         if (!st) return true;
-        note(name === "/panels" ? "canvas: the panels tab is up" : "modules: the cockpit tab is up");
+        note(name === "/panels" ? "modules: the panels live under the module rows" : "modules: the cockpit tab is up");
         return true;
       }
       default:

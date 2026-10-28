@@ -2,10 +2,12 @@
   <!-- card t_e1e61680: the /insights parity view. card t_d7fd3ad3: the
        home moved - insights is a default-visible SECONDARY-sidebar tab
        now (registry: singleton, unclosable, area "right"), superseding
-       the main-area width ruling. The auto-fit grid stacks its boxes in
-       the ~300px inspector column; no narrow machinery needed. No chart
-       dependency: honest rows and CSS-width bars, the same numbers the
-       TUI prints. -->
+       the main-area width ruling. v0.14.3: the body references the
+       skills/tools tabs - the shared RegistryList (v0.14.1) renders
+       every block but the period summary as read-only rows (no fold:
+       showState=false), with the honest CSS bars riding the row's
+       #side slot. The same numbers the TUI prints, the browser
+       pattern's look. No chart dependency. -->
   <section class="pane insights">
     <header class="insights-head">
       <div>
@@ -54,86 +56,82 @@
     <div
       v-else-if="data"
       class="insights-body">
-      <!-- overview: the TUI report's Overview block -->
-      <div class="insights-grid">
-        <section class="insights-box">
-          <h3>overview</h3>
-          <dl class="insights-overview">
-            <div><dt>sessions</dt><dd>{{ count(data.sessions) }}</dd></div>
-            <div><dt>messages</dt><dd>{{ count(data.messages) }}</dd></div>
-            <div><dt>user messages</dt><dd>{{ count(data.user_messages) }}</dd></div>
-            <div><dt>tool calls</dt><dd>{{ count(data.tool_calls) }}</dd></div>
-            <div><dt>tokens (est.)</dt><dd>{{ count(data.total_tokens) }}</dd></div>
-            <div><dt>avg msgs/session</dt><dd>{{ data.avg_session_msgs.toFixed(1) }}</dd></div>
-          </dl>
-        </section>
+      <!-- overview: the TUI report's Overview block - the period
+           summary keeps its stat rows; the rest of the body is the
+           registry browser's list/row/interaction pattern (v0.14.3,
+           the skills/tools tabs' shared RegistryList). -->
+      <section class="insights-box">
+        <h3>overview</h3>
+        <dl class="insights-overview">
+          <div><dt>sessions</dt><dd>{{ count(data.sessions) }}</dd></div>
+          <div><dt>messages</dt><dd>{{ count(data.messages) }}</dd></div>
+          <div><dt>user messages</dt><dd>{{ count(data.user_messages) }}</dd></div>
+          <div><dt>tool calls</dt><dd>{{ count(data.tool_calls) }}</dd></div>
+          <div><dt>tokens (est.)</dt><dd>{{ count(data.total_tokens) }}</dd></div>
+          <div><dt>avg msgs/session</dt><dd>{{ data.avg_session_msgs.toFixed(1) }}</dd></div>
+        </dl>
+      </section>
 
-        <!-- activity by day: honest CSS bars, one row per weekday -->
-        <section class="insights-box">
-          <h3>activity by day</h3>
-          <table class="insights-table">
-            <tbody>
-              <tr
-                v-for="d in daily"
-                :key="d.day">
-                <th scope="row">{{ d.day }}</th>
-                <td class="insights-bar-cell">
-                  <div
-                    class="insights-bar"
-                    :style="{ width: barPct(d.count) + '%' }" />
-                </td>
-                <td class="insights-count">{{ count(d.count) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
+      <!-- activity by day: one registry row per weekday, the honest CSS
+           bar rides the row's #side slot; the expanded detail names the
+           row's raw count (TUI parity: the same numbers the TUI prints) -->
+      <h3 class="insights-group">activity by day</h3>
+      <RegistryList
+        kind="insights"
+        :rows="dailyRows"
+        :loaded="!!data"
+        :show-state="false"
+        empty-text="no activity recorded">
+        <template #side="{ row }">
+          <span
+            class="insights-bar"
+            :style="{ width: barPct(row.value) + '%' }" />
+          <span class="insights-count">{{ count(row.value) }}</span>
+        </template>
+      </RegistryList>
 
-        <!-- top tools + notable sessions (hidden when zero, like the TUI) -->
-        <section
-          v-if="data.tools.length"
-          class="insights-box">
-          <h3>top tools</h3>
-          <table class="insights-table">
-            <tbody>
-              <tr
-                v-for="t in data.tools"
-                :key="t.name">
-                <th scope="row">{{ t.name }}</th>
-                <td class="insights-bar-cell">
-                  <div
-                    class="insights-bar tool"
-                    :style="{ width: toolPct(t.count) + '%' }" />
-                </td>
-                <td class="insights-count">{{ count(t.count) }}</td>
-                <td class="insights-pct">{{ toolShare(t.count) }}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-        <section
-          v-if="notables.length"
-          class="insights-box">
-          <h3>notable sessions</h3>
-          <dl class="insights-overview">
-            <div
-              v-for="n in notables"
-              :key="n.label">
-              <dt>{{ n.label }}</dt>
-              <dd>{{ count(n.row.value) }} <span class="insights-detail">({{ n.row.detail }})</span></dd>
-            </div>
-          </dl>
-        </section>
-      </div>
+      <!-- top tools (hidden when zero, like the TUI): registry rows with
+           call bars; the expanded detail carries the share of all calls -->
+      <template v-if="data.tools.length">
+        <h3 class="insights-group">top tools</h3>
+        <RegistryList
+          kind="insights"
+          :rows="toolRows"
+          :loaded="!!data"
+          :show-state="false"
+          empty-text="no tool calls yet">
+          <template #side="{ row }">
+            <span
+              class="insights-bar tool"
+              :style="{ width: toolPct(row.value) + '%' }" />
+            <span class="insights-count">{{ count(row.value) }}</span>
+          </template>
+        </RegistryList>
+      </template>
+
+      <!-- notable sessions (hidden when zero, like the TUI): the label
+           row expands into the row's own detail line -->
+      <template v-if="notables.length">
+        <h3 class="insights-group">notable sessions</h3>
+        <RegistryList
+          kind="insights"
+          :rows="notableRows"
+          :loaded="!!data"
+          :show-state="false"
+          empty-text="no notable sessions" />
+      </template>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from "vue";
+  import RegistryList from "../RegistryList.vue";
   import {
     fetchInsights,
     InsightsPayload,
     InsightsDayRow,
+    type RegistryRow,
   } from "../../composables/omega";
 
   const data = ref<InsightsPayload | null>(null);
@@ -150,8 +148,19 @@
   const daily = computed<InsightsDayRow[]>(() =>
     data.value ? [...data.value.daily].sort((a, b) => a.count - b.count) : [],
   );
-  const dailyMax = computed(() => Math.max(...daily.value.map((d) => d.count), 1));
-  const barPct = (c: number) => (c / dailyMax.value) * 100;
+
+  // --- the registry-browser row models (v0.14.3, the skills/tools
+  // pattern on the TUI report's blocks): every block renders through
+  // the shared RegistryList - read-only rows (no fold), the #side slot
+  // carries the honest CSS bar + count the plain name line can't. ---
+  const dailyRows = computed<RegistryRow[]>(() =>
+    daily.value.map((d) => ({
+      name: d.day,
+      detail: [`${count(d.count)} ${d.count === 1 ? "message" : "messages"}`],
+      disabled: false,
+      value: d.count,
+    })),
+  );
 
   const toolMax = computed(() => Math.max(...(data.value?.tools ?? []).map((t) => t.count), 1));
   const toolPct = (c: number) => (c / toolMax.value) * 100;
@@ -159,6 +168,15 @@
     data.value && data.value.tool_calls > 0
       ? Math.round((c / data.value.tool_calls) * 1000) / 10
       : 0;
+
+  const toolRows = computed<RegistryRow[]>(() =>
+    (data.value?.tools ?? []).map((t) => ({
+      name: t.name,
+      detail: [`${toolShare(t.count)}% of all tool calls`],
+      disabled: false,
+      value: t.count,
+    })),
+  );
 
   // notable sessions: a triple of [label, stat]; rows with value 0 are
   // omitted - the TUI prints nothing for them, so neither does this.
@@ -171,8 +189,22 @@
     ].filter((n) => n.row.value > 0);
   });
 
+  const notableRows = computed<RegistryRow[]>(() =>
+    notables.value.map((n) => ({
+      name: n.label,
+      description: `${count(n.row.value)}`,
+      detail: [n.row.detail || "no further detail"],
+      disabled: false,
+      value: n.row.value,
+    })),
+  );
+
+  const dailyMax = () => Math.max(...daily.value.map((d) => d.count), 1);
+  const barPct = (c: number | undefined) => ((c ?? 0) / dailyMax()) * 100;
+
   // thousands separators, matching the TUI's FormatNumber output
-  const count = (n: number): string => n.toLocaleString("en-US");
+  const count = (n: number | undefined): string =>
+    (n ?? 0).toLocaleString("en-US");
 
   async function load() {
     loading.value = true;
@@ -248,11 +280,19 @@
     color: var(--text-dim);
   }
 
-  .insights-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 10px;
-    align-content: start;
+  /* the registry-browser body: group subheads over shared
+     RegistryList sections (v0.14.3); the overview keeps its stat box */
+  .insights-group {
+    margin: 2px 0 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    padding: 0 2px;
+  }
+  .insights-body > .insights-group + .registry-list {
+    padding-top: 2px;
   }
   .insights-box {
     border: 1px solid var(--z1-raised);
@@ -284,40 +324,26 @@
     color: var(--text);
     font-variant-numeric: tabular-nums;
   }
-  .insights-detail { color: var(--text-dim); font-size: 11px; }
 
-  .insights-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  .insights-table th {
-    text-align: left;
-    font-weight: 400;
-    color: var(--text);
-    padding: 2px 6px 2px 0;
-    white-space: nowrap;
-  }
-  .insights-bar-cell {
-    width: 100%;
-    min-width: 60px;
-    padding: 2px 6px 2px 0;
-  }
+  /* the row's honest bar + count, riding the row's #side slot: the
+     same CSS-width bars the TUI prints, no chart dependency */
   .insights-bar {
+    flex: none;
     height: 8px;
     min-width: 1px;
+    max-width: 96px;
     border-radius: 3px;
     background: color-mix(in srgb, var(--accent) 60%, transparent);
+    align-self: center;
   }
   .insights-bar.tool {
     background: color-mix(in srgb, var(--accent) 35%, transparent);
   }
-  .insights-count,
-  .insights-pct {
-    text-align: right;
+  .insights-count {
+    flex: none;
     color: var(--text);
+    font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .insights-pct { color: var(--text-dim); }
 </style>

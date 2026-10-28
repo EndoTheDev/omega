@@ -4,20 +4,32 @@
        browses real directories (/workspaces/browse, dirs only) or takes
        a typed absolute path, and applies the choice to the session row.
        No session binding -> the chip still renders but applies get an
-       error note (nothing to pin on). -->
+       error note (nothing to pin on).
+       v0.14.3 (user screenshot findings): the chip rides the same
+       interactive treatment as its row neighbors (.model-chip: full
+       contrast, chevron, shared narrow squeeze) and shows the CURRENT
+       workspace value - "no workspace" is the empty state, never the
+       static word. The popover keeps its distance from the composer
+       (10px), the close affordance sits in the head (top-right), and
+       the confirm row is one clean footer; rows no longer clip at the
+       popup edge and the muted text carries real contrast. -->
   <div class="ws-select">
     <button
-      class="ws-btn"
+      class="model-chip ws-btn"
       type="button"
       :disabled="disabled"
       :title="btnTitle"
+      :aria-expanded="open"
       @click="toggle">
       <span
         v-if="workspace"
-        class="ws-set">{{ baseName }}</span>
+        class="chip-name">{{ baseName }}</span>
       <span
         v-else
-        class="ws-unset">workspace</span>
+        class="chip-name ws-unset">no workspace</span>
+      <span
+        class="chev"
+        aria-hidden="true">▾</span>
     </button>
     <div
       v-if="open"
@@ -32,6 +44,12 @@
           type="button"
           title="parent directory"
           @click="go(current.parent)">&uarr;</button>
+        <button
+          class="ws-close"
+          type="button"
+          title="close the workspace picker"
+          aria-label="close the workspace picker"
+          @click="toggle">×</button>
       </div>
       <div class="ws-dirs">
         <button
@@ -58,10 +76,6 @@
           class="ws-clear"
           type="button"
           @click="clear">clear</button>
-        <button
-          class="ws-close"
-          type="button"
-          @click="toggle">×</button>
       </div>
     </div>
   </div>
@@ -153,32 +167,20 @@
   .ws-select {
     position: relative;
   }
-  .ws-btn {
-    background: none;
-    border: 1px solid var(--dock-border, #333438);
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 11px;
-    padding: 2px 8px;
-  }
+  /* the chip borrows the global .model-chip treatment (full contrast,
+     chevron, hover, the narrow squeeze); the scoped layer adds only
+     this row's own deltas. Disabled (no session bound) stays dimmed. */
   .ws-btn:disabled {
     opacity: 0.45;
     cursor: default;
   }
-  .ws-set {
-    max-width: 16ch;
-    display: inline-block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    vertical-align: bottom;
-  }
   .ws-unset {
     opacity: 0.55;
+    font-style: italic;
   }
   .ws-pop {
     position: absolute;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + 10px);
     left: 0;
     z-index: 30;
     width: 320px;
@@ -188,14 +190,17 @@
     background: var(--pane-bg, #1c1d21);
     border: 1px solid var(--dock-border, #333438);
     border-radius: 8px;
-    padding: 6px;
-    gap: 4px;
+    padding: 8px;
+    gap: 6px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
   }
   .ws-pop-head {
     display: flex;
     align-items: center;
     gap: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--dock-border, #333438);
   }
   .ws-crumb {
     flex: 1;
@@ -204,7 +209,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
-    opacity: 0.8;
+    color: var(--text, #e8e8ea);
+    opacity: 0.95;
+    font-family: var(--mono, monospace);
   }
   .ws-dirs {
     min-height: 0;
@@ -213,6 +220,9 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
+    /* the breathing room at both ends keeps the first and last row
+       clear of the scroll clipping edge (screenshot finding) */
+    padding: 2px 2px;
   }
   .ws-dir {
     background: none;
@@ -220,29 +230,34 @@
     cursor: pointer;
     text-align: left;
     font-size: 12px;
-    padding: 3px 6px;
+    padding: 4px 8px;
     border-radius: 4px;
+    color: inherit;
   }
   .ws-dir:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.08);
   }
   .ws-slash {
-    opacity: 0.4;
+    opacity: 0.6;
   }
   .ws-empty {
     font-size: 11px;
-    opacity: 0.5;
-    padding: 3px 6px;
+    color: var(--text-dim, #9a9ba1);
+    padding: 4px 8px;
+    margin: 0;
   }
   .ws-error {
     font-size: 11px;
     color: #e66;
-    padding: 3px 6px;
+    padding: 4px 8px;
+    margin: 0;
   }
   .ws-apply-row {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     align-items: center;
+    padding-top: 6px;
+    border-top: 1px solid var(--dock-border, #333438);
   }
   .ws-apply,
   .ws-clear,
@@ -253,7 +268,8 @@
     border-radius: 5px;
     cursor: pointer;
     font-size: 11px;
-    padding: 2px 7px;
+    padding: 4px 9px;
+    color: inherit;
   }
   .ws-apply {
     flex: 1;
@@ -262,9 +278,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .ws-apply:hover,
+  .ws-clear:hover,
+  .ws-up:hover {
+    border-color: var(--text-dim, #9a9ba1);
+    color: var(--text, #e8e8ea);
+  }
   .ws-close {
-    border: none;
-    font-size: 13px;
-    padding: 0 5px;
+    flex: none;
+    font-size: 12px;
+    line-height: 1;
+    padding: 3px 8px;
+    color: var(--text-dim, #9a9ba1);
+  }
+  .ws-close:hover {
+    color: var(--text, #e8e8ea);
+    border-color: var(--text-dim, #9a9ba1);
   }
 </style>

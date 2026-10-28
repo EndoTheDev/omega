@@ -41,7 +41,10 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "extensions",
   "insights",
-  "canvas",
+  // v0.14.3: "canvas" left the registry with its tab (the fold ruling
+  // at the canvas entry's site below) - a persisted pre-fold layout
+  // that still carries a canvas chip drops it with the usual repair
+  // note, like any retired id.
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
@@ -291,24 +294,13 @@ export const DOCKABLES: readonly DockableComponent[] = [
     area: "right",
     closable: false,
   },
-  {
-    // arc 3c: the CANVAS host tab - the shell's one generic surface for
-    // the canvas contract's panels. Shell-owned (like extensions): the
-    // registry entry is LAYOUT only (Q5a law) - which panels render
-    // inside it comes from the canvas store (GET /ui/canvas + the
-    // view_model_delta frames), never from a hardcoded list. No panel
-    // id ever enters this registry; each migration owns its panel kind.
-    id: "canvas",
-    title: "Canvas",
-    // easel: the panel frame on a stand
-    icon: {
-      rect: { x: 4, y: 3, width: 16, height: 12, rx: 2 },
-      paths: ["M12 15v3", "M8 21l4-3 4 3", "M8 7h8", "M8 10h5"],
-    },
-    policy: "singleton",
-    area: "right",
-    closable: false,
-  },
+  // v0.14.3 (card t_b09ee651): the standalone Canvas host tab is GONE.
+  // Its content reduced to duplicates once v0.14.2's module rows carried
+  // every module panel (self-fetching module UIs) and the chat + toast
+  // panels kept their own homes (ChatTab's transcript, the bell). The
+  // canvas CONTRACT is untouched - the store, the snapshot poll, the
+  // action pipe and the deltas all stay; only the generic host tab does.
+  // The /panels palette name now opens the Modules tab.
 ];
 
 /** registry entry for an openable component (panes only host these) */

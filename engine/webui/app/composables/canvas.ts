@@ -2,13 +2,12 @@
 // state. Load = the snapshot (GET /ui/canvas via fetchCanvas); deltas
 // after (view_model_delta frames ride the run streams through
 // StreamHandlers.onViewModelDelta, forwarded by the chat host). PANEL
-// PRESENCE LIVES HERE, never in a hardcoded list (settled Q5a): the
-// dock and the dockables registry stay layout concerns - whatever the
-// canvas lists is what renders, in the plain v1 render (title + JSON
-// payload + actions, settled Q2b; rich kinds arrive with phase 4+
-// migrations). Action calls go through the one action pipe
-// (postCanvasAction, module-qualified, settled Q4b) with optimistic
-// pending state and an error state on 4xx/5xx.
+// PRESENCE LIVES HERE, never in a hardcoded list (settled Q5a). The
+// canvas CONTRACT (snapshot 200, delta frames, the action pipe with
+// optimistic pending/error, v1 descriptor schema) is the tabbed
+// renderer AND the transcript's shared source (chat-last 2a) and the
+// toast funnel's feed (arc 4b) - v0.14.3 folded the standalone host
+// tab into the Modules tab, the contract itself stays.
 //
 // Pure-ish by the house test law: the production shapes this store
 // consumes are the wire shapes the server sends (the arc 3b
@@ -49,37 +48,11 @@ export interface CanvasStore {
   refresh(): Promise<void>;
 }
 
-// formatCanvasPayload is the v1 plain render's payload view:
-// pretty-printed JSON, or the no-payload marker for null. Pure.
-export function formatCanvasPayload(payload: unknown): string {
-  if (payload === null) return "(no payload)";
-  try {
-    return JSON.stringify(payload, null, 2) ?? "(no payload)";
-  } catch {
-    return "(unrenderable payload)";
-  }
-}
-
-// toastRowOf is the toast panel's body (card t_aca53fee): kind "toast"
-// panels carry ONE record row as the payload (the arc 4b wire shape the
-// notifications capsule sends - id/kind/source_id/title/verdict/
-// created_at/read). The renderer must show that record read-only, like
-// one list-panel line (kind + title fields, width-truncated) - the raw
-// JSON dump is debug output, not a panel body. The toast itself still
-// pops transiently through the bell's stack; only the persistent
-// canvas-panel view changes. Pure: returns the payload object (rendered
-// through the row pipeline) or null when there is nothing row-shaped to
-// show (every other kind, a junk payload, an empty seeded toast).
-export function toastRowOf(kind: string, payload: unknown): Record<string, unknown> | null {
-  if (kind !== "toast" || !payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
-  }
-  const p = payload as Record<string, unknown>;
-  if (typeof p.id === "undefined" && typeof p.kind === "undefined" && typeof p.title === "undefined") {
-    return null;
-  }
-  return p;
-}
+// formatCanvasPayload and toastRowOf left with the canvas host tab
+// (v0.14.3's fold ruling): the generic renderer was their only reader,
+// so the deletability law takes both. The toast FEED below stays - the
+// kind "toast" panels still emit through the funnel, the bell owns
+// their rendering.
 
 // createCanvasStore holds the app's canvas. One per page - panels are
 // global state (settled Q10a: panel state is not per-session).
