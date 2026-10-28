@@ -17,6 +17,8 @@ import {
   makePane,
   makeSplit,
   dockDropToZone,
+  predictDockDrop,
+  type DockDropPrediction,
   findPane,
   allNodes,
   isPane,
@@ -204,6 +206,173 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.equal(dockDropToZone(root, a.id, 0, "n999", "left"), root);
     // a vanishing SOURCE index
     assert.equal(dockDropToZone(root, a.id, 7, b.id, "left"), root);
+  });
+});
+
+describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
+  const ZONES = ["left", "right", "top", "bottom", "center"] as const;
+
+  // the load-bearing law (v0.14.4 ruling 5): prediction and commit share
+  // ONE pure function - every zone x every scenario asserts that
+  // predictDockDrop's result matches dockDropToZone's, and that a refusal
+  // matches the commit's tree-unchanged outcome. Two separate calls each
+  // mint their own node ids (insertPane is the only id source), so
+  // cross-call equality is structural: canon() rewrites ids to
+  // first-appearance order. Within one prediction the ids are real -
+  // freshPaneId names the exact pane in predicted.tree.
+
+  /** canonical structural signature: ids -> #n by DFS first appearance. */
+  function canon(t: DockNode): unknown {
+    const ids = new Map<string, string>();
+    const nid = (id: string) => {
+      if (!ids.has(id)) ids.set(id, "#" + ids.size);
+      return ids.get(id);
+    };
+    const walk = (n: DockNode): unknown =>
+      isPane(n)
+        ? { kind: "p", id: nid(n.id), fixed: n.fixed, edge: n.edge ?? null, active: n.active, tabs: n.tabs }
+        : { kind: "s", id: nid(n.id), dir: n.direction, sizes: n.sizes, children: n.children.map(walk) };
+    return walk(t);
+  }
+  const sameShape = (x: DockNode, y: DockNode) => assert.deepEqual(canon(x), canon(y));
+
+  /** narrowing guards (assert.ok cannot narrow the `in` union). */
+  function expectDrop(p: DockDropPrediction, msg?: string): { tree: DockNode; freshPaneId: string | null } {
+    if ("refused" in p) throw new Error(`predicted a drop, got a refusal: ${p.reason}${msg ? ` (${msg})` : ""}`);
+    return p;
+  }
+  function expectRefusal(p: DockDropPrediction): string {
+    if (!("refused" in p)) throw new Error("predicted a drop, expected a refusal");
+    return p.reason;
+  }
+
+  /** id-diff helper: the pane the call actually added, if any. */
+  function addedPane(before: DockNode, after: DockNode): DockPane | null {
+    const prior = new Set<string>();
+    for (const n of allNodes(before)) if (isPane(n)) prior.add(n.id);
+    for (const n of allNodes(after)) {
+      if (isPane(n) && !prior.has(n.id)) return n;
+    }
+    return null;
+  }
+
+  it("every zone on a plain two-pane row: prediction == commit", () => {
+    for (const zone of ZONES) {
+      const { root, a, b } = row();
+      (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
+      // commit first, THEN prediction off the same original: the predictor
+      // never reads the counter state of the commit's minting, so a match
+      // here is a genuine one-formula result, not an ordered accident
+      const committed = dockDropToZone(root, a.id, 1, b.id, zone);
+      const predicted = predictDockDrop(root, a.id, 1, b.id, zone);
+      if ("refused" in predicted) {
+        assert.equal(committed, root, `${zone}: a refusal must match an unchanged commit`);
+        continue;
+      }
+      assert.notEqual(committed, root, `${zone}: sanity - the commit really mutates here`);
+      sameShape(predicted.tree, committed);
+      if (predicted.freshPaneId === null) {
+        assert.equal(addedPane(root, predicted.tree), null, `${zone}: freshPaneId null means no minted pane`);
+        assert.equal(addedPane(root, committed), null, `${zone}: the commit mints nothing either`);
+        continue;
+      }
+      const fresh = addedPane(root, predicted.tree)!;
+      assert.equal(predicted.freshPaneId, fresh.id, `${zone}: freshPaneId names the minted pane of its own call`);
+      assert.deepEqual(fresh.tabs.map((t) => t.component), ["chat"], `${zone}: the tab sits in the fresh pane`);
+      // and the committed fresh pane holds the same tab
+      const committedFresh = addedPane(root, committed)!;
+      assert.deepEqual(committedFresh.tabs.map((t) => t.component), ["chat"], `${zone}: commit seats the tab too`);
+    }
+  });
+
+  it("drop left deep-detail: prediction exposes the fresh pane and lands the tab", () => {
+    const { root, a, b } = row();
+    const predicted = expectDrop(predictDockDrop(root, a.id, 0, b.id, "left"));
+    assert.notEqual(predicted.tree, root);
+    const fresh = addedPane(root, predicted.tree)!;
+    assert.equal(predicted.freshPaneId, fresh.id);
+    const pair = predicted.tree as DockSplit;
+    assert.deepEqual(pair.sizes, [0.5, 0.5]);
+    sameShape(predicted.tree, dockDropToZone(root, a.id, 0, b.id, "left"));
+  });
+
+  it("center predicts a plain move with freshPaneId null", () => {
+    const { root, a, b } = row();
+    (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
+    const predicted = expectDrop(predictDockDrop(root, a.id, 1, b.id, "center"));
+    assert.equal(predicted.freshPaneId, null);
+    assert.equal(addedPane(root, predicted.tree), null, "center mints nothing");
+    sameShape(predicted.tree, dockDropToZone(root, a.id, 1, b.id, "center"));
+  });
+
+  it("refusal matrix: every refusal matches a tree-unchanged commit", () => {
+    // same-pane zones never dock
+    for (const zone of ZONES) {
+      const { root, a } = row();
+      (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
+      assert.equal(dockDropToZone(root, a.id, 0, a.id, zone), root);
+      const reason = expectRefusal(predictDockDrop(root, a.id, 0, a.id, zone));
+      assert.equal(typeof reason, "string");
+    }
+    // vanished counterpart / vanished index refuse
+    const { root, a, b } = row();
+    for (const zone of ZONES) {
+      assert.equal(dockDropToZone(root, "n999", 0, b.id, zone), root);
+      assert.equal(dockDropToZone(root, a.id, 0, "n999", zone), root);
+      assert.equal(dockDropToZone(root, a.id, 7, b.id, zone), root);
+      expectRefusal(predictDockDrop(root, "n999", 0, b.id, zone));
+      expectRefusal(predictDockDrop(root, a.id, 0, "n999", zone));
+      expectRefusal(predictDockDrop(root, a.id, 7, b.id, zone));
+    }
+    // shells keep their shape: split zones refuse even on vanished source
+    const a2 = makePane("chat");
+    const b2 = makePane("files", 240, "right");
+    const sroot = makeSplit("row", [a2, b2]);
+    for (const zone of ["left", "right", "top", "bottom"] as const) {
+      assert.equal(dockDropToZone(sroot, a2.id, 0, b2.id, zone), sroot);
+      assert.equal(dockDropToZone(sroot, "n999", 0, b2.id, zone), sroot);
+    }
+  });
+
+  it("shells: split zones refuse with a reason, center predicts the group", () => {
+    const a = makePane("chat");
+    const b = makePane("files", 240, "right");
+    const root = makeSplit("row", [a, b]);
+    for (const zone of ["left", "right", "top", "bottom"] as const) {
+      expectRefusal(predictDockDrop(root, a.id, 0, b.id, zone));
+      assert.equal(dockDropToZone(root, a.id, 0, b.id, zone), root);
+    }
+    const center = expectDrop(predictDockDrop(root, a.id, 0, b.id, "center"), "shell center still groups");
+    sameShape(center.tree, dockDropToZone(root, a.id, 0, b.id, "center"));
+  });
+
+  it("the LOCKED tab refuses every landing the commit refuses", () => {
+    const left = makePane("sidebar", 240, "left");
+    const chat = makePane("chat");
+    const root = makeSplit("row", [left, chat]);
+    for (const zone of ZONES) {
+      expectRefusal(predictDockDrop(root, left.id, 0, chat.id, zone));
+      assert.equal(dockDropToZone(root, left.id, 0, chat.id, zone), root);
+    }
+    // the one legal landing: center on the left shell itself
+    expectRefusal(predictDockDrop(root, left.id, 0, left.id, "center"));
+    const other = makePane("files");
+    const root2 = makeSplit("row", [left, other, chat]);
+    const ok = expectDrop(predictDockDrop(root2, chat.id, 0, left.id, "center"), "center on left accepts the locked tab");
+    sameShape(ok.tree, dockDropToZone(root2, chat.id, 0, left.id, "center"));
+  });
+
+  it("the predictor is pure: repeated calls match and never touch the input", () => {
+    const { root, a, b } = row();
+    const frozen = JSON.stringify(root);
+    const p1 = expectDrop(predictDockDrop(root, a.id, 0, b.id, "left"));
+    assert.equal(JSON.stringify(root), frozen, "the source tree is untouched");
+    const p2 = expectDrop(predictDockDrop(root, a.id, 0, b.id, "left"));
+    assert.notEqual(p2.tree, p1.tree, "separate calls mint separate ids");
+    sameShape(p2.tree, p1.tree, "the structure is identical anyway");
+    assert.notDeepEqual(p1.tree, root);
+    // and the prediction still equals the commit executed later
+    sameShape(p1.tree, dockDropToZone(root, a.id, 0, b.id, "left"));
   });
 });
 
