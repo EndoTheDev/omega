@@ -77,12 +77,51 @@ trap 'rm -rf "$TMP"' EXIT
 cat > "$TMP/scrub.py" <<'PYEOF'
 import re, sys
 
+# Host config vocabulary, shared across every file in one run: the
+# module's config struct is module-shaped vocabulary wherever it sits,
+# and the aggregate Config field naming it is read in many files. The
+# class is narrow on purpose: a `type <Noun>Config` host struct and the
+# aggregate field typed by it (or by the module alias: `Continuous
+# continuous.Config`). The noun in the type NAME is the marker -
+# trustFlags-style hosts that merely mention the word are not config
+# structs and are left alone.
+SharedTypes = {}
+SharedFields = {}
+
+def seed_shared(names, files):
+    """Collect each module noun's host config vocabulary by scanning
+    the ORIGINAL (pre-scrub) tree, so the vocabulary is known before
+    the first file is rewritten."""
+    for name in names:
+        SharedTypes.setdefault(name, set())
+        SharedFields.setdefault(name, set())
+        for fname in files:
+            with open(fname) as f:
+                text = f.read()
+            # strip line comments: a doc comment naming the struct is
+            # prose, not a declaration
+            body = re.sub(r"//[^\n]*", "", text)
+            for m in re.finditer(r"^type\s+([A-Za-z_]\w*[Cc]onfig)\b", body, re.M):
+                if name in m.group(1).lower():
+                    SharedTypes[name].add(m.group(1))
+            for line in body.split("\n"):
+                m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_][\w\.]*)\s*(\x60[^\x60]*\x60)?\s*$", line)
+                if m and name in m.group(2).lower() and m.group(2).lower().endswith("config"):
+                    SharedFields[name].add(m.group(1))
+
 def scrub(text, modules):
     """modules: list of module names. Returns scrubbed text."""
     mnames = [m for m in modules]
     lines = text.split("\n")
     dead_ids = set()
     dead_fields = set()
+
+    # the module itself, plus its host config vocabulary (the
+    # <Noun>Config struct type and the aggregate field naming it)
+    for name in mnames:
+        dead_ids.add(name)
+        dead_ids.update(SharedTypes.get(name, ()))
+        dead_fields.update(SharedFields.get(name, ()))
 
     # 1. import lines + alias discovery (file-level)
     keep = []
@@ -177,7 +216,24 @@ def scrub(text, modules):
                 return True
         stripped = ln.strip()
         # a bare identifier or identifier list (list items, re-assigns)
-        if re.match(r"^(" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r")\s*(,\s*)*$", stripped):
+        if re.match(r"^((" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r"))\s*(,\s*)*$", stripped):
+            return True
+        # a struct field typed by a dead host-config type - the tag is
+        # string-stripped above, so the line body reads `Skills
+        # SkillsConfig`; the field's own name dies with it (access
+        # sites read a struct that no longer carries it). The head word
+        # must not be a keyword: `package cron` is a package clause,
+        # not a field.
+        m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_]\w*)\s*(//.*)?$", body)
+        if m and m.group(2) in dead_ids and m.group(1) not in keywords:
+            dead_fields.add(m.group(1))
+            return True
+        # a composite-literal key typed by a dead host-config type
+        # (`Kanban: KanbanConfig{` in DefaultConfig): dies with its
+        # braces - the wire-headed block rule below eats the literal
+        m = re.match(r"^\s*([A-Za-z_]\w*)\s*:\s*\*?([A-Za-z_]\w*)\{", body)
+        if m and m.group(2) in dead_ids:
+            dead_fields.add(m.group(1))
             return True
         return False
 
@@ -189,43 +245,102 @@ def scrub(text, modules):
     def mark_word(ln):
         body = re.sub(r"`[^`]*`", " ` ", ln)
         m = re.search(r"\b((" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r"))\b", body)
-        return m.group(1) if m else None
+        if m:
+            return m.group(1)
+        # a dead host-config field's access sites are wires into the
+        # chunk even when the chunk nowhere names the module (the
+        # applyEnv entry table, the settings key handlers)
+        for ident in sorted(dead_fields):
+            if re.search(r"\." + re.escape(ident) + r"\b", body):
+                return ident
+        return None
 
     def scrub_chunk(chunk):
         # a chunk untouched by the module keeps every line
         if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
             return chunk
+        # a host-config type named for the module dies whole: struct,
+        # doc comment and all. The decl may share its chunk with
+        # whatever comes before it - the first type in a file sits in
+        # the same top-level group as the package clause - so scan for
+        # the decl line and cut its brace-balanced span, keeping the
+        # rest of the chunk.
+        for idx, ln in enumerate(chunk):
+            m = re.match(r"type\s+([A-Za-z_]\w*)\b", ln.strip())
+            if m and m.group(1) in dead_ids:
+                s = idx
+                while s > 0 and chunk[s - 1].lstrip().startswith("//"):
+                    s -= 1
+                d4 = 0
+                e = idx
+                while e < len(chunk):
+                    d4 += chunk[e].count("{") - chunk[e].count("}")
+                    if d4 <= 0:
+                        break
+                    e += 1
+                chunk = chunk[:s] + chunk[e + 1:]
+                break
         for _ in range(15):
-            changed = False
-            out = []
+            n = len(chunk)
+            kill = set()
             i = 0
-            while i < len(chunk):
+            while i < n:
                 ln = chunk[i]
                 if is_wire_line(ln):
                     collect_anchors(ln)
+                    delta = ln.count("{") - ln.count("}")
                     if ln.rstrip().endswith("{"):
                         # a wire-headed conditional dies WITH its block:
                         # the condition is the module's, so every branch
                         # under it is unreachable wiring. Inner
                         # declarations die with the block (their
                         # orphaned references cascade after).
-                        depth3 = ln.count("{") - ln.count("}")
                         j2 = i + 1
-                        while depth3 > 0 and j2 < len(chunk):
-                            depth3 += chunk[j2].count("{") - chunk[j2].count("}")
+                        d3 = delta
+                        while d3 > 0 and j2 < n:
+                            d3 += chunk[j2].count("{") - chunk[j2].count("}")
                             j2 += 1
                         for b in chunk[i + 1:j2]:
                             collect_anchors(b)
+                        kill.update(range(i, j2))
                         i = j2
-                    else:
+                        continue
+                    if delta < 0:
+                        # a wire line that CLOSES a construct opened
+                        # above: the tail dies with its whole construct.
+                        # Deleting the `}` alone strands the opener, and
+                        # Go reads the stranded head line as the start of
+                        # the next element (the orphan `{Key: "x", ...`
+                        # head that broke the memory capsule). Walk back
+                        # with a naive LIFO: closers met on the way are
+                        # matched by openers further up and add to the
+                        # debt; the first opener that clears the debt is
+                        # the tail's match, and the region it spans is
+                        # brace-balanced, so it dies whole.
+                        d = -delta
+                        k = i
+                        while d > 0 and k > 0:
+                            k -= 1
+                            c = chunk[k].count("{") - chunk[k].count("}")
+                            if c > 0:
+                                d -= c
+                            else:
+                                d += -c
+                        if d > 0:
+                            k = i  # no opener in this chunk: die alone
+                        for b in chunk[k:i]:
+                            collect_anchors(b)
+                        kill.update(range(k, i + 1))
                         i += 1
-                    changed = True
+                        continue
+                    kill.add(i)
+                    i += 1
                     continue
                 # RHS = single dead value -> the line dies
                 m = re.match(r'^([^=]+)=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(//.*)?$', ln.strip())
                 if m and m.group(2) in dead_ids:
+                    kill.add(i)
                     i += 1
-                    changed = True
                     continue
                 m = re.match(r"^(\s*)(if|for|switch)\b", ln)
                 if m:
@@ -238,7 +353,7 @@ def scrub(text, modules):
                     depth2 = 0
                     opened = False
                     j = i
-                    while j < len(chunk):
+                    while j < n:
                         d2 = chunk[j].count("{") - chunk[j].count("}")
                         if d2 > 0:
                             opened = True
@@ -250,50 +365,86 @@ def scrub(text, modules):
                     if not opened:
                         j = i + 1  # head line only (the old one-liner read)
                     if depth2 == 0:
-                        block = chunk[i:j]
-                        code = [b for b in block[1:-1]
+                        code = [b for b in chunk[i + 1:j - 1]
                                 if b.strip() and not b.strip().startswith("//")]
                         # (a) the condition references a dead identifier
                         if dead_word(ln):
                             for b in code:
                                 collect_anchors(b)
+                            kill.update(range(i, j))
                             i = j
-                            changed = True
                             continue
                         # (b) every code word of the body is dead
                         if code and all(only_dead_words(b) for b in code):
                             for b in code:
                                 collect_anchors(b)
+                            kill.update(range(i, j))
                             i = j
-                            changed = True
                             continue
                         # (c) the body emptied out (comments may remain)
                         if not code or all(b.strip() == "" or b.strip().startswith("//") for b in code):
+                            kill.update(range(i, j))
                             i = j
-                            changed = True
                             continue
+                        # none of (a)(b)(c) fired, or the block never closed
+                        # inside this chunk: the head lives, and the scan
+                        # reaches its body lines one by one
+                        i += 1
+                        continue
                 # orphaned switch case: its body is gone
                 m = re.match(r"^(\s*)(case\b|default:)", ln)
                 nxt = chunk[i + 1].strip() if i + 1 < len(chunk) else "}"
                 if m and (nxt.startswith("case ") or nxt.startswith("default:") or nxt.startswith("}")):
+                    kill.add(i)
                     i += 1
-                    changed = True
                     continue
-                out.append(ln)
                 i += 1
-            chunk = out
-            if not changed:
+            if not kill:
                 break
+            chunk = [ln for idx, ln in enumerate(chunk) if idx not in kill]
         return chunk
 
     out = []
     for ch in chunks:
         out.extend(scrub_chunk(ch))
-    return "\n".join(out)
+    # import pruning: a cascade that ate a package's last client
+    # leaves the import behind, and Go compiles the leftovers loud
+    # ("imported and not used"). An import whose qualifier no longer
+    # appears outside the import lines dies with its clients. Blank
+    # imports stay (their side effect never showed as a qualifier).
+    result = "\n".join(out)
+    import_shapes = re.compile(r'^\s*([A-Za-z_]\w*\s+)?"((?:\\.|[^"\\])*)"\s*(//.*)?$')
+    body = "\n".join(ln for ln in out if not import_shapes.match(ln))
+    pruned = []
+    for ln in out:
+        m = import_shapes.match(ln)
+        # only real import paths are pruning candidates: a line shaped
+        # `word "string"` (return "zz") is not an import, and a quoted
+        # string without a slash is a Go literal, not a module path
+        if not m or "/" not in m.group(2):
+            pruned.append(ln)
+            continue
+        alias = (m.group(1) or "").strip()
+        if alias == "_":
+            pruned.append(ln)
+            continue
+        path = m.group(2)
+        last = path.rstrip("/").split("/")[-1]
+        cands = {last, last.split(".")[0]}
+        if re.match(r"^v\d+$", last) and "/" in path:
+            cands.add(path.rstrip("/").split("/")[-2])
+        alias_used = alias or None
+        hits = alias_used and re.search(r"\b" + re.escape(alias_used) + r"\.", body)
+        if not hits and not any(re.search(r"\b" + re.escape(c) + r"\.", body) for c in cands):
+            continue
+        pruned.append(ln)
+    return "\n".join(pruned)
 
 if __name__ == "__main__":
     modspecs = [s.split("=")[-1] for s in sys.argv[2:]]
-    for fname in sys.argv[1].split(","):
+    files = sys.argv[1].split(",")
+    seed_shared(modspecs, files)
+    for fname in files:
         with open(fname) as f:
             text = f.read()
         with open(fname, "w") as f:
@@ -301,10 +452,9 @@ if __name__ == "__main__":
 PYEOF
 # go files that may carry wires: cmd/ (the binary). Engine layers and
 # core importing a module is illegal already - the purity law says SO,
-# so the scrubber only walks the host.
-mapfile -t GOPATHS < <(find cmd -name '*.go' | sort)
-FALLIST="$TMP/gofiles.txt"
-printf '%s\n' "${GOPATHS[@]}" > "$FALLIST"
+# so the scrubber only walks the host. The list derives from the WORK
+# COPY inside the loop: a fixture sitting uncommitted in the live
+# tree must never enter a proof built from HEAD.
 
 fails=0
 for MOD in "${MODULES[@]}"; do
@@ -316,6 +466,9 @@ for MOD in "${MODULES[@]}"; do
     fails=$((fails+1)); continue
   fi
   rm -rf "$WORK/modules/$MOD"
+
+  ( cd "$WORK" && find cmd -name '*.go' | sort > "$TMP/$MOD.gofiles.txt" )
+  FALLIST="$TMP/$MOD.gofiles.txt"
 
   spec="$MOD=$MOD"
   # the scrub walks the work COPY only - run inside $WORK with relative paths
@@ -331,17 +484,35 @@ for MOD in "${MODULES[@]}"; do
     sed 's/^/    /' "$TMP/$MOD.build.log" | head -10 >&2
     fails=$((fails+1)); continue
   fi
-  if go tool nm "$WORK/omega" | grep -F "modules/$MOD" > "$TMP/$MOD.nm.log" 2>&1; then
+  # the symbol table reads once into a file; every check below greps
+  # the file. Piping nm straight into grep -q was a silent no-op under
+  # pipefail: grep exits at the first match, the upstream nm dies of
+  # SIGPIPE, and the pipeline exit 141 reads as no-match - the noun
+  # check fired or not on a race.
+  if ! go tool nm "$WORK/omega" > "$TMP/$MOD.nm" 2>"$TMP/$MOD.nm.err"; then
+    echo "nm-purity [$MOD]: FAIL - go tool nm could not read the binary:" >&2
+    sed 's/^/    /' "$TMP/$MOD.nm.err" | head -5 >&2
+    fails=$((fails+1)); continue
+  fi
+  if grep -F "modules/$MOD" "$TMP/$MOD.nm" > "$TMP/$MOD.nm.log" 2>&1; then
     echo "nm-purity [$MOD]: FAIL - module symbols in the binary:" >&2
     sed 's/^/    /' "$TMP/$MOD.nm.log" | head -10 >&2
     fails=$((fails+1)); continue
   fi
-  # the noun itself: zero occurrences of the word in symbol names
+  # the noun itself: zero occurrences of the word in OMEGA-OWNED symbol
+  # names. The law owns omega's vocabulary, not third parties': symbol
+  # paths under the omega module, main-package symbols, and type
+  # descriptors naming a main-scope type ([^/]main\. - never a /main/
+  # third-party path component) carry the noun; github.com/robfig/cron
+  # (modules/continuous's scheduler), modernc.org/memory (the sqlite
+  # driver) and the crypto/internal stdlib are somebody else's names
+  # and stay in the binary no matter how cleanly a module leaves.
   # (string constants live in rodata, not in symbol names - this is a
   # TYPE/FUNC symbol check, not a string scan)
-  if go tool nm "$WORK/omega" 2>/dev/null | grep -wq "$MOD"; then
-    echo "nm-purity [$MOD]: FAIL - the module noun survives as a symbol:" >&2
-    go tool nm "$WORK/omega" | grep -w "$MOD" | sed 's/^/    /' | head -10 >&2
+  grep -E 'github\.com/EndoTheDev/omega/|(^|[^/])main\.' "$TMP/$MOD.nm" > "$TMP/$MOD.own" 2>/dev/null || true
+  if grep -w "$MOD" "$TMP/$MOD.own" > "$TMP/$MOD.noun.log" 2>&1; then
+    echo "nm-purity [$MOD]: FAIL - the module noun survives as an omega-owned symbol:" >&2
+    sed 's/^/    /' "$TMP/$MOD.noun.log" | head -10 >&2
     fails=$((fails+1)); continue
   fi
   echo "nm-purity [$MOD]: GREEN - zero module symbols in the binary"
