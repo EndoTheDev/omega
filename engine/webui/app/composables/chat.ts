@@ -49,7 +49,9 @@ import {
   SessionBusyError,
   StreamInterruptedError,
   fetchTranscript,
+  type OmegaMessage,
 } from "./omega.ts";
+import { SHELL_COMMAND_NAMES, dispatchCommand } from "./commands.ts";
 
 // The chat actions are module-qualified on the wire: http_channel owns
 // the chat panel's stop/retry handlers (the pipe checks module + id).
@@ -112,6 +114,11 @@ export interface ChatState {
   // the server record (the contract: close = gone). Retry/fork/
   // variants never exist here: the store tree they replay is absent.
   ephemeral?: boolean;
+  // armed skill injection (card t_07aed3f9): the /skill command
+  // dispatch resolved a skill's content server-side and holds it here;
+  // the NEXT send carries it as a system preamble (the TUI appended a
+  // System message to its history the same way). Consumed on submit.
+  pendingSkill: { name: string; content: string } | null;
 }
 
 /** EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a
@@ -135,6 +142,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   lastChunksPerSecond: 0,
   variants: [],
   forkFrom: null,
+  pendingSkill: null,
 };
 
 /** the app-level callbacks the host needs - the session LIST, the dock
@@ -163,6 +171,11 @@ export interface ChatHostDeps {
   /** the canvas snapshot refetch - variant selects and action calls
       repaint the panel through it (the deltas ride run streams only) */
   canvasRefresh?(): void | Promise<void>;
+  /** the webui shell command handler (t_07aed3f9): /theme /fork
+      /retry /variant /copy /new /sessions /panels /extensions /help
+      act locally in the app - never an agent round-trip. False when
+      the command has nothing to act on here (no session, no rows). */
+  runCommand?(stateKey: string, text: string): boolean | Promise<boolean>;
 }
 
 export interface ChatHost {
@@ -216,6 +229,12 @@ export interface ChatHost {
   /** stop THIS tab's bound session's live run - through the chat
       panel's action pipe (the one canvas route; no REST stop affordance) */
   cancel(key: string): void;
+  /** run a "/" command (t_07aed3f9): shell commands dispatch to the
+      app's local handler; module commands and /<skill-name> dispatch
+      to POST /commands/dispatch (the ctx.CommandHandler chain and the
+      skill content arm - never the agent loop). Returns false when the
+      command surface refused the text outright. */
+  command(key: string, text: string): Promise<boolean>;
   /** retry: the chat panel's retry action through the pipe - the
       server replays the session's last user turn as a sibling variant.
       False while the gate refused or the pipe call failed. */
@@ -378,6 +397,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         variants: [],
         forkFrom: null,
         ephemeral: !!ephemeral,
+        pendingSkill: null,
       };
       states.set(key, fresh);
       st = states.get(key) as ChatState;
@@ -591,12 +611,21 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // takes the panel over and the user turn rides the first delta).
     const images = st.attachments.slice();
     st.attachments = [];
+    // the armed skill (t_07aed3f9) rides THIS send as a system
+    // preamble - the same injection the TUI made into its history; one
+    // send consumes it
+    const messages: OmegaMessage[] = [{ role: "user", content: text, images: images.length ? images : undefined }];
+    if (st.pendingSkill?.content) {
+      messages.unshift({ role: "system", content: st.pendingSkill.content });
+      st.statusLine = `[skill: ${st.pendingSkill.name}] carried with this send`;
+      st.pendingSkill = null;
+    }
     // the anchor is consumed by the send that carries it (cleared only
     // when this submit actually fires the forked body)
     if (fork && st.forkFrom === fork) st.forkFrom = null;
     await runStream(st, (handlers) =>
       streamChat(
-        [{ role: "user", content: text, images: images.length ? images : undefined }],
+        messages,
         st.sessionId,
         {
           ...handlers,
@@ -655,7 +684,45 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     const st = ensureState(key);
     st.attachments = st.attachments.concat(images);
   }
-
+  // command runs a "/" draft (t_07aed3f9). Shell commands go to the
+  // app's local handler (deps.runCommand - theme, panes, fork, retry,
+  // copy: never an agent round-trip). Everything else POSTs
+  // /commands/dispatch: the ctx.CommandHandler chain executes the
+  // module's command server-side, or /<skill-name> resolves into the
+  // skill content the next send arms. A failure lands in statusLine,
+  // never as a swallowed throw.
+  async function command(key: string, text: string): Promise<boolean> {
+    const st = ensureState(key);
+    const fields = text.split(/\s+/);
+    const name = fields[0] ?? "";
+    const args = fields.slice(1).join(" ").trim();
+    if (SHELL_COMMAND_NAMES.has(name)) {
+      if (!deps.runCommand) {
+        st.statusLine = `${name}: shell surface mounted without a handler`;
+        return true;
+      }
+      try {
+        const handled = await deps.runCommand(key, text);
+        if (!handled) st.statusLine = `${name}: nothing to act on here`;
+      } catch (e) {
+        st.statusLine = `${name} failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      return true;
+    }
+    try {
+      const res = await dispatchCommand(name, args);
+      if (res.kind === "skill") {
+        st.pendingSkill = { name: res.name || name.slice(1), content: res.content || "" };
+        st.statusLine = `[skill: ${st.pendingSkill!.name}] armed - the next send carries it`;
+      } else {
+        const line = (res.text || `${name}: done`).split("\n")[0]!;
+        st.statusLine = line.length > 160 ? line.slice(0, 157) + "..." : line;
+      }
+    } catch (e) {
+      st.statusLine = `${name}: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    return true;
+  }
   function removeAttachment(key: string, index: number): void {
     const st = ensureState(key);
     st.attachments = st.attachments.filter((_, i) => i !== index);
@@ -789,6 +856,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     load,
     attach,
     submit,
+    command,
     attachFiles,
     removeAttachment,
     attachUrl,

@@ -46,7 +46,11 @@ export interface OmegaImage {
 }
 
 export interface OmegaMessage {
-  role: "user" | "assistant";
+  // "system" rides the skill-command arm (t_07aed3f9): the dispatch
+  // surface returns a skill's content and the next send carries it as
+  // a system preamble - the TUI injected skill content the same way.
+  // The server's decodeMessages accepts all four roles.
+  role: "user" | "assistant" | "system";
   content: string;
   // image attachments (paste / picker / drag-drop / server-fetched URL),
   // the same shape ai.User.Images round-trips through the backend
