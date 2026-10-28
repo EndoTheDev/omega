@@ -37,12 +37,12 @@ import {
 const asPane = (n: DockNode) => n as DockPane;
 const asSplit = (n: DockNode) => n as DockSplit;
 
-/** a classic single-row tree: left shell | A(chat) | B(canvas) | right shell */
+/** a classic single-row tree: left shell | A(chat) | B(agents) | right shell */
 function rowRoot(): { root: DockSplit; left: DockPane; a: DockPane; b: DockPane; right: DockPane } {
   const left = makePane("sidebar", 240, "left");
   const right = makePane("files", 240, "right");
   const a = makePane("chat");
-  const b = makePane("canvas");
+  const b = makePane("agents");
   const root = makeSplit("row", [left, a, b, right]);
   return { root, left, a, b, right };
 }
@@ -163,10 +163,10 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
       ? (inner.children[1] as DockPane).id
       : (inner.children[0] as DockPane).id;
     const src2 = chatPaneId(pred.tree); // the dragged chat seated inside the root
-    // the capped attempt sources from a DIFFERENT pane (B's canvas tab) -
+    // the capped attempt sources from a DIFFERENT pane (B's agents tab) -
     // the chat pane IS one of the capped pair, and zones never self-dock
     for (const n of allNodesOf(pred.tree)) {
-      if (isPane(n) && n.tabs.some((t) => t.component === "canvas") && !n.edge) {
+      if (isPane(n) && n.tabs.some((t) => t.component === "agents") && !n.edge) {
         const srcB = n.id;
         assert.equal(expectRefusal(predictDockDrop(pred.tree, srcB, 0, siblingId, "bottom")), "this root caps at two split levels");
         assert.equal(dockDropToZone(pred.tree, srcB, 0, siblingId, "bottom"), pred.tree, "a refused split commits nothing");
@@ -184,20 +184,20 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     assert.equal(splitLawRefusal(grown.tree, freshId, "column"), null, "a sidebar leaf may stack further");
     assert.match(splitLawRefusal(grown.tree, freshId, "row") ?? "", /sidebars stack rows only/);
     // a hand-built depth-2 leaf refuses outright
-    const deepLeaf = makePane("canvas");
+    const deepLeaf = makePane("agents");
     L.grown = makeSplit("column", [
-      makePane("canvas"),
+      makePane("agents"),
       makeSplit("column", [deepLeaf, makePane("files")]),
     ]);
     assert.match(splitLawRefusal(grown.tree, deepLeaf.id, "column") ?? "", /caps at two split levels/);
     // the bottom takes both directions and caps identically
     const { root: broot, bottom } = bottomRoot();
-    bottom.grown = makeSplit("column", [deepLeaf, makePane("canvas")]);
+    bottom.grown = makeSplit("column", [deepLeaf, makePane("agents")]);
     assert.equal(splitLawRefusal(broot, deepLeaf.id, "column"), null, "bottom: a depth-1 leaf splits fine");
     assert.equal(splitLawRefusal(broot, deepLeaf.id, "row"), null, "bottom: rows too");
     // depth 2 refuses there as well
     bottom.grown = makeSplit("column", [
-      makePane("canvas"),
+      makePane("agents"),
       makeSplit("row", [deepLeaf, makePane("files")]),
     ]);
     assert.match(splitLawRefusal(broot, deepLeaf.id, "row") ?? "", /caps at two split levels/);
@@ -241,13 +241,13 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
   it("closing one inner leaf among several prunes just that leaf", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
     // three leaves: the third keeps the split alive after the close
-    const l3 = makePane("canvas");
+    const l3 = makePane("agents");
     bottom.grown = makeSplit("row", [shellLeaf, fresh, l3]);
     const first = closeTab(root, shellLeaf.id, 0);
     const B = findPane(first, bottom.id)!;
     assert.ok(B.grown, "the root keeps its split");
     assert.deepEqual(B.tabs.map((t) => t.component), [], "the root's classic bar stays empty");
-    assert.deepEqual(B.grown!.children.map((c) => asPane(c).tabs.map((t) => t.component)), [["chat"], ["canvas"]],
+    assert.deepEqual(B.grown!.children.map((c) => asPane(c).tabs.map((t) => t.component)), [["chat"], ["agents"]],
       "only the fresh and third leaves remain");
   });
 
@@ -272,8 +272,8 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
 
   it("removing a MIDDLE leaf keeps the root grown with normalized sizes", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    // three leaves: l1(canvas) | l2(chat) | l3(canvas2)
-    const l3 = makePane("canvas");
+    // three leaves: l1(agents) | l2(chat) | l3(agents2)
+    const l3 = makePane("agents");
     bottom.grown = makeSplit("row", [shellLeaf, fresh, l3]);
     const out = removePane(root, fresh.id);
     const B = findPane(out, bottom.id)!;

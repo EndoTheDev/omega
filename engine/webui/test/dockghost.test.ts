@@ -25,7 +25,7 @@ const asSplit = (n: DockNode) => n as DockSplit;
 
 function rowRoot(): { root: DockSplit; a: DockPane; b: DockPane } {
   const a = makePane("chat");
-  const b = makePane("canvas");
+  const b = makePane("agents");
   const root = makeSplit("row", [a, b]);
   return { root, a, b };
 }

@@ -41,10 +41,12 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "extensions",
   "insights",
-  // v0.14.3: "canvas" left the registry with its tab (the fold ruling
-  // at the canvas entry's site below) - a persisted pre-fold layout
-  // that still carries a canvas chip drops it with the usual repair
-  // note, like any retired id.
+  // v0.14.3: "canvas" left the registry with its tab (the fold ruling:
+  // v0.14.2's module rows carry every module panel; the chat transcript
+  // and the toast funnel kept their own homes - the generic host tab
+  // had no unique surface left). A persisted pre-fold layout that still
+  // carries a canvas chip drops it with the usual repair note, like any
+  // retired id.
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
@@ -294,13 +296,6 @@ export const DOCKABLES: readonly DockableComponent[] = [
     area: "right",
     closable: false,
   },
-  // v0.14.3 (card t_b09ee651): the standalone Canvas host tab is GONE.
-  // Its content reduced to duplicates once v0.14.2's module rows carried
-  // every module panel (self-fetching module UIs) and the chat + toast
-  // panels kept their own homes (ChatTab's transcript, the bell). The
-  // canvas CONTRACT is untouched - the store, the snapshot poll, the
-  // action pipe and the deltas all stay; only the generic host tab does.
-  // The /panels palette name now opens the Modules tab.
 ];
 
 /** registry entry for an openable component (panes only host these) */

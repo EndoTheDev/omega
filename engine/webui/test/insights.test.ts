@@ -96,7 +96,7 @@ test("the view renders from the payload - every block the TUI prints has a home"
   assert.match(vue, /tool_calls/, "overview: tool calls");
   assert.match(vue, /total_tokens/, "overview: tokens");
   assert.match(vue, /avg_session_msgs/, "overview: average");
-  assert.match(vue, /in daily\b/, "activity by day renders from the daily computed");
+  assert.match(vue, /dailyRows/, "activity by day renders from the daily computed");
   assert.match(vue, /data\.tools/, "top tools renders from tools");
   assert.match(vue, /notable_msgs/, "notable sessions render");
   assert.match(vue, /notable_tokens/, "notable tokens render");
