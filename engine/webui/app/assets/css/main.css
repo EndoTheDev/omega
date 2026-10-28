@@ -210,15 +210,20 @@ body {
    full-width border-top, unchanged); the handle is a hover affordance
    like VS Code's sashes: the grab band finds it, hover/drag/snap light
    the full 4px band, and the row's overhang margins still reach the
-   junction columns. Row splits keep the through-line (their verticals
-   have no header edge to duplicate).
-   The kill rides :not() guards, and that ALSO fixes finding 3: this
-   rule's selector is (0,3,0) - three classes - and always out-rained
-   the (0,2,0) hover/active/snap bands, so the horizontal handle never
-   highlighted at all (the vertical base rule is (0,1,0), which is why
-   only the sidebars ever lit). Inside the guards the rule is inert on
+   junction columns.
+   t_4e2ceca1 (Endo 2026-10-28, follow-up): the ruling is UNIFORM - the
+   row splits' vertical dividers rest invisible too (they kept their
+   stroke after e36e555 and read as a persistent seam in the pane row).
+   The kill rides :not() guards and is GENERIC: this rule's selector is
+   (0,4,0) - a class plus three counted pseudo-classes - and out-rains
+   both base rules (the vertical (0,1,0) and the column (0,3,0)), so all
+   orientations rest as nothing. That ALSO fixes e36e555's finding 3:
+   the narrower (0,3,0) scoped kill always out-rained the (0,2,0)
+   hover/active/snap bands, so the horizontal handle never highlighted
+   at all (the vertical base rule is (0,1,0), which is why only the
+   sidebars ever lit). Inside the guards the rule is inert on
    hover/drag/snap and the generic full-band rules paint instead. */
-.dock-split.column > .dock-divider:not(:hover):not(.active):not(.snap) {
+.dock-divider:not(:hover):not(.active):not(.snap) {
   background: none;
 }
 /* the grab band: 8px above and below the 4px visual - the strip is
