@@ -17,10 +17,15 @@ type LoopProvider interface {
 // LoopOptions carries everything the loop needs to run one agent
 // session. The Agent struct builds this from its configured fields.
 type LoopOptions struct {
-	Provider           Provider
-	Messages           []Message
-	Tools              map[string]Tool
-	ToolProviders      []ToolProvider // additive tool sources (extensions)
+	Provider      Provider
+	Messages      []Message
+	Tools         map[string]Tool
+	ToolProviders []ToolProvider // additive tool sources (extensions)
+	// DisabledTools is the config.yaml disabled.tools opt-out (v0.14.1
+	// registry-browser). The filter runs AFTER the merge: a name no
+	// built-in occupies drops, a built-in keeps its seat (the merge
+	// law is untouched; the fold settles existence, not precedence).
+	DisabledTools      []string
 	CompactionProvider CompactionProvider
 	PromptBuilder      PromptBuilder   // builds system prompt + guidelines
 	ExtensionInfos     []ExtensionInfo // for prompt building context
@@ -371,6 +376,43 @@ type ModuleToggles interface {
 	Refusals() []Refusal
 }
 
+// DisabledNames is the registry-browser toggle state (v0.14.1): the
+// three file/folder registries the webui's skills/tools/agents tabs
+// toggle, each as the names list config.yaml's `disabled:` fold
+// carries for it. Modules have their own seam (ModuleToggles) - this
+// is the sibling for the registry lists.
+type DisabledNames struct {
+	Skills []string `json:"skills"`
+	Tools  []string `json:"tools"`
+	Agents []string `json:"agents"`
+}
+
+// RegistryToggles is the registry-browser toggle seam (v0.14.1). The
+// host wires it next to ModuleToggles: write the config.yaml
+// `disabled:` fold, then apply the live effect (a re-listing and the
+// next session build both honor it). Every Toggle is ONE namespace
+// entry: enabled=false adds, enabled=true removes. A name the owning
+// registry does not know returns an error - silence would persist a
+// name toggle UIs can never show or clear.
+type RegistryToggles interface {
+	// Disabled returns the three lists verbatim.
+	Disabled() DisabledNames
+	// ToggleSkill enables/disables one skill (prompt-build exclusion).
+	ToggleSkill(name string, enabled bool) error
+	// ToggleTool enables/disables one tool (registry exclusion).
+	ToggleTool(name string, enabled bool) error
+	// ToggleAgent soft-disables one agent (roster + wake exclusion,
+	// the home untouched).
+	ToggleAgent(name string, enabled bool) error
+}
+
+// UnknownName marks a toggle error whose name no registry knows - the
+// 404 lane. The error contract for the serving surface: a refused name
+// must be distinguishable from a failed persistence write.
+type UnknownName interface {
+	Unknown() bool
+}
+
 // ChannelDeps carries everything a channel needs to run. Ctx is the
 // fully-wired plugin Context — channels create agents from it. Store
 // persists messages. Settings (optional) exposes the config knobs.
@@ -381,7 +423,11 @@ type ChannelDeps struct {
 	Store    StoreProvider
 	Settings Settings
 	Modules  ModuleToggles
-	Version  string
+	// Registries (optional) exposes the registry-browser toggle seam -
+	// the skills/tools/agents namespaces of the disabled: fold. Nil and
+	// the /disabled endpoints answer 501, like the module seam.
+	Registries RegistryToggles
+	Version    string
 }
 
 // CronProvider schedules omega prompts on cron expressions. The

@@ -15,7 +15,7 @@ import (
 // mux's 405. The engine never imports the module: the route rides the
 // live Context.
 func TestModuleRouterServesAndFallsThrough(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	hits := 0
 	ctx := &core.Context{ModuleRoutes: []core.ModuleRoute{
 		{Module: "probe", Pattern: "GET /tasks/only", Handler: func(w http.ResponseWriter, r *http.Request) {

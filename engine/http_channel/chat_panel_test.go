@@ -266,7 +266,7 @@ func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 	))
 	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -404,7 +404,7 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	gated := newGatedProvider()
 	a := core.NewAgent(gated, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -549,7 +549,7 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
 	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -676,7 +676,7 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)), nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -798,7 +798,7 @@ func TestChatDeltaRidesTheRunStream(t *testing.T) {
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)), nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -947,7 +947,7 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	gated := &gateStore{StoreProvider: st}
-	s := NewServer(a, nil, gated, nil, nil)
+	s := NewServer(a, nil, gated, nil, nil, nil)
 	s.chat.batch = 20 * time.Millisecond
 	// Real wiring order: the canvas registers the capsule, the test
 	// overrides the closure to record (one frontend is live).
@@ -1025,7 +1025,7 @@ func TestUIActionRetryOnLiveRunIsA409(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
 	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)

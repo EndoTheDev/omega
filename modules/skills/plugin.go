@@ -53,6 +53,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 	sp := NewSkillsProvider(dir)
 	sp.SharedDir = cfg.SharedDir
+	sp.SetDisabled(cfg.Disabled)
 	// Legacy-format visibility (card t_5baad951): a folder holding
 	// <name>.md without SKILL.md is invisible to discovery - one boot
 	// warning per hit, never a silent skip. Reading the logging seam

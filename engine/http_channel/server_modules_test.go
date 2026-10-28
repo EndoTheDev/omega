@@ -61,7 +61,7 @@ func TestModulesListHidesEngineRing(t *testing.T) {
 		fakeModule("tui", "mounted", false),
 		fakeModule("store", "mounted", false),
 	}}
-	s := NewServer(nil, nil, nil, nil, fm)
+	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodGet, "/modules", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -85,7 +85,7 @@ func TestModulesListCarriesRefusals(t *testing.T) {
 	fm := &fakeModules{
 		refusals: []core.Refusal{{Module: "kanban", Seam: "toggle", Predicate: "toggle.enable", Err: errors.New("module \"kanban\" panicked: boom"), At: time.Now()}},
 	}
-	s := NewServer(nil, nil, nil, nil, fm)
+	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodGet, "/modules", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -100,7 +100,7 @@ func TestModulesListCarriesRefusals(t *testing.T) {
 
 func TestModuleToggleAppliesThroughSeam(t *testing.T) {
 	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("kanban", "mounted", true)}}
-	s := NewServer(nil, nil, nil, nil, fm)
+	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodPut, "/modules/kanban", stringBody(`{"enabled":false}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -118,7 +118,7 @@ func TestModuleToggleAppliesThroughSeam(t *testing.T) {
 func TestModuleToggleRejectionCarriesLedgerText(t *testing.T) {
 	// Q11: the roll-back rejection is the body; the pane surfaces it.
 	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("kanban", "disabled", true)}, err: errors.New(`module "kanban" panicked: boom (hint: add "kanban" to "disabled" in config.yaml)`)}
-	s := NewServer(nil, nil, nil, nil, fm)
+	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodPut, "/modules/kanban", stringBody(`{"enabled":true}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -132,7 +132,7 @@ func TestModuleToggleRejectionCarriesLedgerText(t *testing.T) {
 
 func TestModulesEngineToggleRejected(t *testing.T) {
 	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("http_channel", "mounted", false)}}
-	s := NewServer(nil, nil, nil, nil, fm)
+	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodPut, "/modules/http_channel", stringBody(`{"enabled":false}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -148,7 +148,7 @@ func TestModulesEngineToggleRejected(t *testing.T) {
 }
 
 func TestModulesMissingSeam501(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/modules"},
 		{http.MethodPut, "/modules/kanban"},
@@ -164,7 +164,7 @@ func TestModulesMissingSeam501(t *testing.T) {
 
 func TestModuleToggleMalformedBody(t *testing.T) {
 	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("kanban", "mounted", true)}}
-	s := NewServer(nil, nil, nil, nil, fm)
+	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodPut, "/modules/kanban", stringBody(`{"enabled":"yes"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -185,7 +185,7 @@ func TestModuleToggleMalformedBody(t *testing.T) {
 // Context instead of the mount-time copies - a disabled module's
 // routes die without a restart, a re-enabled one's return.
 func TestRewireSeamsFollowsTheContext(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	served := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -237,7 +237,7 @@ func TestRewireRefreshesToolInventory(t *testing.T) {
 	}}
 	ctx := &core.Context{ToolProviders: []core.ToolProvider{provider}}
 	ag := core.NewFromContext(ctx, core.AgentOptions{})
-	s := NewServer(ag, nil, nil, nil, nil)
+	s := NewServer(ag, nil, nil, nil, nil, nil)
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire: %v", err)
 	}

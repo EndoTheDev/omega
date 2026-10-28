@@ -46,9 +46,39 @@ type Machine struct {
 	// child's cancel function - the roster's sleep button handle.
 	mu   sync.Mutex
 	live map[string]func()
+	// disabled is the config.yaml disabled.agents fold (v0.14.1), the
+	// soft toggle: a name here stays registered (folder presence IS
+	// registration - never removed from disk) but vanishes from the
+	// roster and every wake trigger. The host swaps the list live
+	// through SetDisabledAgents.
+	disabledMu sync.RWMutex
+	disabled   map[string]bool
 	// spawnExe resolves the binary a wake child runs. os.Executable is
 	// the law; tests swap it so a wake never executes the test binary.
 	spawnExe func() (string, error)
+}
+
+// SetDisabledAgents swaps the soft-disable list live (the host's
+// registry-toggle seam and hot config reload both take this path).
+func (m *Machine) SetDisabledAgents(names []string) {
+	m.disabledMu.Lock()
+	defer m.disabledMu.Unlock()
+	if len(names) == 0 {
+		m.disabled = nil
+		return
+	}
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	m.disabled = set
+}
+
+// agentDisabled reports one agent's soft-disable state.
+func (m *Machine) agentDisabled(name string) bool {
+	m.disabledMu.RLock()
+	defer m.disabledMu.RUnlock()
+	return m.disabled[name]
 }
 
 // setSpawnExe swaps the child-binary resolver (tests only).
@@ -58,7 +88,9 @@ func (m *Machine) setSpawnExe(fn func() (string, error)) {
 
 // NewMachine builds the machinery for the omega home.
 func NewMachine(home string, cfg Config) *Machine {
-	return &Machine{home: home, cfg: cfg, live: map[string]func(){}}
+	m := &Machine{home: home, cfg: cfg, live: map[string]func(){}}
+	m.SetDisabledAgents(cfg.Disabled) // the boot-time disabled.agents fold
+	return m
 }
 
 // CreateHome runs the create flow (ruling 18): name + directive +
@@ -146,13 +178,19 @@ type RosterRow struct {
 }
 
 // Roster scans the agent homes into roster rows. Main is not on the
-// roster: main is the daemon (ruling 1) and never wakes.
+// roster: main is the daemon (ruling 1) and never wakes. A
+// disabled.agents name stays registered - folder presence is
+// registration - and just has NO roster row (v0.14.1: the soft
+// toggle lives on the agents tab, the roster only shows live agents).
 func (m *Machine) Roster() []RosterRow {
 	profiles := agent.LoadProfiles(m.home)
 	rows := make([]RosterRow, 0, len(profiles))
 	for _, p := range profiles {
 		if !p.Continuous {
 			continue // main: the home root, no roster row
+		}
+		if m.agentDisabled(p.Name) {
+			continue // soft-disabled: excluded from the roster
 		}
 		row := RosterRow{Profile: p}
 		row.LastReport, row.LastReportAt, row.Unread = m.canonicalPreview(p.Dir)

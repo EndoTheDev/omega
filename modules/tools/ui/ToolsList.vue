@@ -14,35 +14,20 @@
       class="panel-status">
       loading
     </p>
-    <ul
-      v-else-if="tools.length"
-      class="tools-inventory">
-      <li
-        v-for="t in tools"
-        :key="t.name"
-        class="tools-row">
-        <span class="tools-name">{{ t.name }}</span>
-        <span class="tools-desc">{{ t.description }}</span>
-        <!-- Domain tool: dotted sub-rows, each action with its own
-             one-liner (memory.add / files.write / task.create, ...) -->
-        <ul
-          v-if="t.actions && t.actions.length"
-          class="tools-actions">
-          <li
-            v-for="a in t.actions"
-            :key="a.name"
-            class="tools-action">
-            <span class="tools-action-name">{{ t.name }}.{{ a.name }}</span>
-            <span class="tools-desc">{{ a.description }}</span>
-          </li>
-        </ul>
-      </li>
-    </ul>
-    <p
+    <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern,
+         three consumers). The toggle drives PUT /disabled/tools; a
+         disabled tool is absent from every tool union - the built-in-
+         wins merge law is untouched, the fold filters after it. -->
+    <RegistryList
       v-else
-      class="panel-status">
-      no tools registered
-    </p>
+      kind="tools"
+      :rows="rows"
+      :busy="busy"
+      :error="toggleError"
+      :loaded="loaded"
+      :toggleable="toggleable"
+      empty-text="no tools registered"
+      @toggle="onToggle" />
   </section>
 </template>
 
@@ -53,14 +38,14 @@
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
   // content (card t_db430fea): the tool inventory, sourced from
   // GET /tools and shipped by the tools module itself
-  // (modules/tools/ui/) through the module-UI composition. A tool with
-  // an actions[] array is a domain tool: its row is the domain context,
-  // and each action renders as a dotted sub-row (t_73994e55 action
-  // protocol) with its own description - one metadata source feeds
-  // both this panel and the system prompt.
-  // The fetch is deliberately self-contained - the shell's API client
-  // is shell code; a module's UI carries its own wiring so it can ride
-  // the desktop / VS Code builds alone.
+  // (modules/tools/ui/) through the module-UI composition, plus the
+  // per-tool enable/disable toggle (v0.14.1) against the /disabled
+  // fold. A domain tool's actions[] become the row's expandable
+  // detail: one metadata source feeds this panel, the system prompt,
+  // and the row detail. Self-contained fetch (module UI carries its
+  // own wiring, desktop / VS Code precedent) - the flag merge and the
+  // toggle PUT are small deliberate copies (the narrow.ts copy law);
+  // the SHARED thing is the RegistryList component.
   interface ToolAction {
     name: string;
     description: string;
@@ -71,16 +56,57 @@
     actions?: ToolAction[];
   }
   const tools = ref<ToolInfo[]>([]);
+  const fold = ref<string[]>([]);
   const loaded = ref(false);
   const error = ref("");
+  const busy = ref<string | null>(null);
+  const toggleError = ref<string | null>(null);
+  // false when the host serves no toggle seam (501 on /disabled): the
+  // list stays, read-only.
+  const toggleable = ref(false);
+
+  // the row model: the domain context stays the description, the
+  // actions collapse into dotted detail lines (the row expands, the
+  // same mechanism every registry-browser row rides).
+  function rows() {
+    const set = new Set(fold.value);
+    return tools.value.map((t) => ({
+      name: t.name,
+      description: t.description,
+      detail: (t.actions ?? []).map(
+        (a) => `${t.name}.${a.name} - ${a.description}`,
+      ),
+      disabled: set.has(t.name) || false,
+    }));
+  }
+
+  async function load(): Promise<void> {
+    const res = await fetch("/tools");
+    if (!res.ok) throw new Error(`GET /tools: ${res.status}`);
+    tools.value = await res.json();
+    try {
+      const dRes = await fetch("/disabled");
+      if (dRes.status === 501) {
+        toggleable.value = false; // no seam: read-only
+      } else if (dRes.ok) {
+        const foldBody = (await dRes.json())?.tools;
+        fold.value = Array.isArray(foldBody)
+          ? foldBody.filter((n): n is string => typeof n === "string")
+          : [];
+        toggleable.value = true;
+      }
+    } catch {
+      // /disabled unreachable is not fatal to the LIST; stay read-only
+      // rather than guessing the fold state
+      toggleable.value = false;
+    }
+  }
 
   // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
   // root measures its OWN rendered container and flips the class; the
-  // scoped stylesheet below condenses the domain-tool sub-row
-  // indentation too (it is the widest thing here at ~300px). Same
-  // mechanism as the shell's useNarrow - kept in-module because module
-  // UI imports no shell code (Board precedent); the threshold is
-  // unit-covered in ./narrow.ts.
+  // scoped stylesheet below condenses. Same mechanism as the shell's
+  // useNarrow - kept in-module because module UI imports no shell code
+  // (Board precedent); the threshold is unit-covered in ./narrow.ts.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -111,14 +137,40 @@
 
   onMounted(async () => {
     try {
-      const res = await fetch("/tools");
-      if (!res.ok) throw new Error(`GET /tools: ${res.status}`);
-      tools.value = await res.json();
+      await load();
+      error.value = "";
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
     loaded.value = true;
   });
+
+  // the toggle: PUT answers the fresh fold - rows rebuild from the
+  // reload so the persisted state is what the tab shows. A failed
+  // toggle still refreshes: the error line stands over the truth
+  // (404 = unknown name, 409 = built-in-wins, both loud).
+  async function onToggle(name: string, enabled: boolean): Promise<void> {
+    if (busy.value !== null) return;
+    busy.value = name;
+    toggleError.value = null;
+    try {
+      const res = await fetch("/disabled/tools", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, enabled }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    } catch (e) {
+      toggleError.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      try {
+        await load();
+      } catch {
+        // the rows stay; the error line stands
+      }
+      busy.value = null;
+    }
+  }
 </script>
 
 <style scoped>
@@ -140,62 +192,9 @@
     font-size: 11px;
     opacity: 0.6;
   }
-  .tools-inventory {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .tools-row {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 5px 0;
-    border-bottom: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-  }
-  .tools-row:last-child {
-    border-bottom: none;
-  }
-  .tools-name {
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.9;
-  }
-  .tools-desc {
-    font-size: 11px;
-    opacity: 0.6;
-  }
-  .tools-actions {
-    list-style: none;
-    margin: 2px 0 0 10px;
-    padding: 0;
-  }
-  .tools-action {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 2px 0;
-  }
-  .tools-action-name {
-    font-size: 11px;
-    font-weight: 600;
-    opacity: 0.85;
-  }
-  .tools-action-name::before {
-    content: "\00b7\2002";
-    font-weight: 400;
-    opacity: 0.4;
-  }
   /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome:
-     the action sub-rows lose most of their indent (memory.add style
-     dotted paths keep the domain readable without it) and the title
-     drops a step. */
+     the action detail lines live inside the rows now. */
   .tools-list.narrow {
     padding: 6px 8px 10px;
-  }
-  .tools-list.narrow .tools-actions {
-    margin-left: 4px;
-  }
-  .tools-list.narrow .tools-name {
-    font-size: 11.5px;
   }
 </style>

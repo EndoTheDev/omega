@@ -110,6 +110,17 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // stay, agent wakes go inert (ruling 14).
 func (p *Plugin) Toggleable() bool { return true }
 
+// SetDisabledAgents swaps the disabled.agents soft-toggle list live
+// (v0.14.1 registry-browser: the host's registry-toggle seam and hot
+// config reload route here). Nil before Mount is recorded - the mount
+// reads it first, but a toggle that early never happens (the seam only
+// exists on a wired channel).
+func (p *Plugin) SetDisabledAgents(names []string) {
+	if p.machine != nil {
+		p.machine.SetDisabledAgents(names)
+	}
+}
+
 // routeRow is one REST registration: natural wire shape, tenant-checked
 // at the registry.
 type routeRow struct {

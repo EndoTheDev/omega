@@ -40,6 +40,13 @@ type Context struct {
 	// Tool providers (additive — multiple plugins contribute).
 	ToolProviders []ToolProvider
 
+	// DisabledTools is the config.yaml `disabled.tools` opt-out
+	// (v0.14.1 registry-browser): the host fills it at mount and
+	// updates it on every registry toggle; NewFromContext installs it
+	// on agents and every future rebuild re-reads it. The merge law
+	// (a built-in wins a name conflict) runs before the filter.
+	DisabledTools []string
+
 	// Prompt section contributors (additive — multiple plugins
 	// contribute). Modules that own prompt content implement
 	// PromptSectioner; the prompt builder renders their sections.
