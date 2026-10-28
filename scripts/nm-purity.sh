@@ -105,7 +105,7 @@ def seed_shared(names, files):
                 if name in m.group(1).lower():
                     SharedTypes[name].add(m.group(1))
             for line in body.split("\n"):
-                m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_][\w\.]*)\s*$", line)
+                m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_][\w\.]*)\s*(\x60[^\x60]*\x60)?\s*$", line)
                 if m and name in m.group(2).lower() and m.group(2).lower().endswith("config"):
                     SharedFields[name].add(m.group(1))
 
@@ -260,44 +260,87 @@ def scrub(text, modules):
         if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
             return chunk
         # a host-config type named for the module dies whole: struct,
-        # doc comment and all (the leading comment belongs to it)
-        i0 = 0
-        while i0 < len(chunk) and (not chunk[i0].strip() or chunk[i0].lstrip().startswith("//")):
-            i0 += 1
-        m = re.match(r"type\s+([A-Za-z_]\w*)\b", chunk[i0].strip()) if i0 < len(chunk) else None
-        if m and m.group(1) in dead_ids:
-            return []
+        # doc comment and all. The decl may share its chunk with
+        # whatever comes before it - the first type in a file sits in
+        # the same top-level group as the package clause - so scan for
+        # the decl line and cut its brace-balanced span, keeping the
+        # rest of the chunk.
+        for idx, ln in enumerate(chunk):
+            m = re.match(r"type\s+([A-Za-z_]\w*)\b", ln.strip())
+            if m and m.group(1) in dead_ids:
+                s = idx
+                while s > 0 and chunk[s - 1].lstrip().startswith("//"):
+                    s -= 1
+                d4 = 0
+                e = idx
+                while e < len(chunk):
+                    d4 += chunk[e].count("{") - chunk[e].count("}")
+                    if d4 <= 0:
+                        break
+                    e += 1
+                chunk = chunk[:s] + chunk[e + 1:]
+                break
         for _ in range(15):
-            changed = False
-            out = []
+            n = len(chunk)
+            kill = set()
             i = 0
-            while i < len(chunk):
+            while i < n:
                 ln = chunk[i]
                 if is_wire_line(ln):
                     collect_anchors(ln)
+                    delta = ln.count("{") - ln.count("}")
                     if ln.rstrip().endswith("{"):
                         # a wire-headed conditional dies WITH its block:
                         # the condition is the module's, so every branch
                         # under it is unreachable wiring. Inner
                         # declarations die with the block (their
                         # orphaned references cascade after).
-                        depth3 = ln.count("{") - ln.count("}")
                         j2 = i + 1
-                        while depth3 > 0 and j2 < len(chunk):
-                            depth3 += chunk[j2].count("{") - chunk[j2].count("}")
+                        d3 = delta
+                        while d3 > 0 and j2 < n:
+                            d3 += chunk[j2].count("{") - chunk[j2].count("}")
                             j2 += 1
                         for b in chunk[i + 1:j2]:
                             collect_anchors(b)
+                        kill.update(range(i, j2))
                         i = j2
-                    else:
+                        continue
+                    if delta < 0:
+                        # a wire line that CLOSES a construct opened
+                        # above: the tail dies with its whole construct.
+                        # Deleting the `}` alone strands the opener, and
+                        # Go reads the stranded head line as the start of
+                        # the next element (the orphan `{Key: "x", ...`
+                        # head that broke the memory capsule). Walk back
+                        # with a naive LIFO: closers met on the way are
+                        # matched by openers further up and add to the
+                        # debt; the first opener that clears the debt is
+                        # the tail's match, and the region it spans is
+                        # brace-balanced, so it dies whole.
+                        d = -delta
+                        k = i
+                        while d > 0 and k > 0:
+                            k -= 1
+                            c = chunk[k].count("{") - chunk[k].count("}")
+                            if c > 0:
+                                d -= c
+                            else:
+                                d += -c
+                        if d > 0:
+                            k = i  # no opener in this chunk: die alone
+                        for b in chunk[k:i]:
+                            collect_anchors(b)
+                        kill.update(range(k, i + 1))
                         i += 1
-                    changed = True
+                        continue
+                    kill.add(i)
+                    i += 1
                     continue
                 # RHS = single dead value -> the line dies
                 m = re.match(r'^([^=]+)=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(//.*)?$', ln.strip())
                 if m and m.group(2) in dead_ids:
+                    kill.add(i)
                     i += 1
-                    changed = True
                     continue
                 m = re.match(r"^(\s*)(if|for|switch)\b", ln)
                 if m:
@@ -310,7 +353,7 @@ def scrub(text, modules):
                     depth2 = 0
                     opened = False
                     j = i
-                    while j < len(chunk):
+                    while j < n:
                         d2 = chunk[j].count("{") - chunk[j].count("}")
                         if d2 > 0:
                             opened = True
@@ -322,46 +365,80 @@ def scrub(text, modules):
                     if not opened:
                         j = i + 1  # head line only (the old one-liner read)
                     if depth2 == 0:
-                        block = chunk[i:j]
-                        code = [b for b in block[1:-1]
+                        code = [b for b in chunk[i + 1:j - 1]
                                 if b.strip() and not b.strip().startswith("//")]
                         # (a) the condition references a dead identifier
                         if dead_word(ln):
                             for b in code:
                                 collect_anchors(b)
+                            kill.update(range(i, j))
                             i = j
-                            changed = True
                             continue
                         # (b) every code word of the body is dead
                         if code and all(only_dead_words(b) for b in code):
                             for b in code:
                                 collect_anchors(b)
+                            kill.update(range(i, j))
                             i = j
-                            changed = True
                             continue
                         # (c) the body emptied out (comments may remain)
                         if not code or all(b.strip() == "" or b.strip().startswith("//") for b in code):
+                            kill.update(range(i, j))
                             i = j
-                            changed = True
                             continue
+                        # none of (a)(b)(c) fired, or the block never closed
+                        # inside this chunk: the head lives, and the scan
+                        # reaches its body lines one by one
+                        i += 1
+                        continue
                 # orphaned switch case: its body is gone
                 m = re.match(r"^(\s*)(case\b|default:)", ln)
                 nxt = chunk[i + 1].strip() if i + 1 < len(chunk) else "}"
                 if m and (nxt.startswith("case ") or nxt.startswith("default:") or nxt.startswith("}")):
+                    kill.add(i)
                     i += 1
-                    changed = True
                     continue
-                out.append(ln)
                 i += 1
-            chunk = out
-            if not changed:
+            if not kill:
                 break
+            chunk = [ln for idx, ln in enumerate(chunk) if idx not in kill]
         return chunk
 
     out = []
     for ch in chunks:
         out.extend(scrub_chunk(ch))
-    return "\n".join(out)
+    # import pruning: a cascade that ate a package's last client
+    # leaves the import behind, and Go compiles the leftovers loud
+    # ("imported and not used"). An import whose qualifier no longer
+    # appears outside the import lines dies with its clients. Blank
+    # imports stay (their side effect never showed as a qualifier).
+    result = "\n".join(out)
+    import_shapes = re.compile(r'^\s*([A-Za-z_]\w*\s+)?"((?:\\.|[^"\\])*)"\s*(//.*)?$')
+    body = "\n".join(ln for ln in out if not import_shapes.match(ln))
+    pruned = []
+    for ln in out:
+        m = import_shapes.match(ln)
+        # only real import paths are pruning candidates: a line shaped
+        # `word "string"` (return "zz") is not an import, and a quoted
+        # string without a slash is a Go literal, not a module path
+        if not m or "/" not in m.group(2):
+            pruned.append(ln)
+            continue
+        alias = (m.group(1) or "").strip()
+        if alias == "_":
+            pruned.append(ln)
+            continue
+        path = m.group(2)
+        last = path.rstrip("/").split("/")[-1]
+        cands = {last, last.split(".")[0]}
+        if re.match(r"^v\d+$", last) and "/" in path:
+            cands.add(path.rstrip("/").split("/")[-2])
+        alias_used = alias or None
+        hits = alias_used and re.search(r"\b" + re.escape(alias_used) + r"\.", body)
+        if not hits and not any(re.search(r"\b" + re.escape(c) + r"\.", body) for c in cands):
+            continue
+        pruned.append(ln)
+    return "\n".join(pruned)
 
 if __name__ == "__main__":
     modspecs = [s.split("=")[-1] for s in sys.argv[2:]]

@@ -88,18 +88,40 @@ its sibling: `docs/migrating-a-module.md`.
 6. **Run the removal through the nm machine.** The final proof is
    mechanical, not assertive: `scripts/nm-purity.sh --module kanban`
    scrubs every wire to the module out of a copy of the tree, builds
-   the binary, and asserts zero module-noun symbols in `go tool nm`
-   output. A capsule that cannot pass it has a wire the removal recipe
+   the binary, and asserts two things on `go tool nm` output: zero
+   `modules/<name>` paths, and zero module-noun words in OMEGA-OWNED
+   symbols - paths under `github.com/EndoTheDev/omega/`, main-package
+   symbols, and type descriptors naming a main-scope type. Third-party
+   symbols are out of scope: a library's own names (robfig/cron,
+   modernc.org/memory, the crypto stdlib) ride in the binary through
+   other capsules and are not the module's vocabulary. A capsule that
+   cannot pass it has a wire the removal recipe
    does not model. Capsules with a known dependency (recorded with the
    compile evidence) live in `scripts/nm-purity.modules`; removing a
    capsule from that manifest is a claim the rotation proves or
    refuses on the next run.
-7. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
+7. **Take the host config struct with it** (`cmd/omega/config.go`
+   plus its yaml key, env-var entries and settings rows). A module's
+   config struct is module-shaped vocabulary wherever it sits
+   (AGENTS.md: module-shaped names appear in modules/ only), and its
+   type-equality descriptor is exactly how the noun used to survive a
+   clean removal. The scrubber models the class: a `type <Noun>Config`
+   host struct and the aggregate Config field naming it (or the
+   module-alias type, `Continuous continuous.Config`) die
+   mechanically, and access sites via the field (`cfg.Memory.File`,
+   `case "memory":`) cascade with them. A planted fixture proved it:
+   `main.CronConfig` + a `Cron CronConfig` field scrubbed byte-clean
+   off config.go (card t_6209ed01). Two host rules keep the cascade
+   mechanical: helpers read module-config fields as arguments, never
+   whole Config (webBaseURL - a helper reading whole Config strands
+   its last return when the access sites die), and a host type named
+   after the module noun is always module vocabulary.
+8. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
    before removal (`91-canvas-tab` and the module journeys) and green
    after - the canvas host tab renders whatever is mounted, so it
    passes both ways.
-8. **Data is not code.** A removed module's databases
+9. **Data is not code.** A removed module's databases
    (`<home>/data/kanban.db`, `<home>/data/boards/`) stay on disk.
    Say so in the removal note; never ship a migration that deletes a
    user's boards.
