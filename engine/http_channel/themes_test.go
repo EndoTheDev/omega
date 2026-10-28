@@ -225,7 +225,7 @@ func TestHandleThemes(t *testing.T) {
 	dir := t.TempDir()
 	writeTheme(t, dir, "palm.yaml", validThemeYaml)
 	writeTheme(t, dir, "junk.yaml", "tokens:\n  nonsense: value\n")
-	srv := NewServer(nil, nil, nil, nil, nil)
+	srv := NewServer(nil, nil, nil, nil, nil, nil)
 	srv.themes = newThemeRegistry(dir)
 
 	// GET: list + content, including the flagged broken theme

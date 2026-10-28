@@ -28,7 +28,7 @@ func TestExpandAtMentionsLastUserMessage(t *testing.T) {
 	}
 	txtPath := writeFile("notes.txt", "inlined body")
 
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	incoming := []core.Message{
 		core.NewUser("earlier question"),
 		core.NewUser("see @" + imgPath + " and @" + txtPath),
@@ -56,7 +56,7 @@ func TestExpandAtMentionsLastUserMessage(t *testing.T) {
 // A non-user last message (or no @, or empty input) rides through
 // unchanged.
 func TestExpandAtMentionsNoOp(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	incoming := []core.Message{core.NewSystem("system preamble")}
 	out := s.expandAtMentions(incoming, "")
 	if len(out) != 1 || out[0] != incoming[0] {
@@ -76,7 +76,7 @@ func TestExpandAtMentionsNoOp(t *testing.T) {
 // Unresolvable tokens stay in the text - the persisted prompt carries
 // them, the way the TUI notice path left failing tokens.
 func TestExpandAtMentionsUnresolvableStay(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	incoming := []core.Message{core.NewUser("ghost @ghost.md stays, url user@x.io too")}
 	out := s.expandAtMentions(incoming, "")
 	got := out[0].(core.User).Content
@@ -99,7 +99,7 @@ func TestExpandAtMentionsDirWorkspace(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ws, "spec.md"), []byte("the spec body"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	out := s.expandAtMentions([]core.Message{core.NewUser("read @spec.md")}, ws)
 	got := out[0].(core.User).Content
 	if !strings.Contains(got, "the spec body") {

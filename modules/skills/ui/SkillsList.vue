@@ -13,22 +13,20 @@
       class="panel-status">
       loading
     </p>
-    <ul
-      v-else-if="skills.length"
-      class="skills-inventory">
-      <li
-        v-for="s in skills"
-        :key="s.name"
-        class="skills-row">
-        <span class="skills-name">{{ s.name }}</span>
-        <span class="skills-desc">{{ s.description }}</span>
-      </li>
-    </ul>
-    <p
+    <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern,
+         three consumers). The toggle drives PUT /disabled/skills; a
+         disabled skill stays in the inventory but leaves the session
+         prompt build (config.yaml disabled.skills). -->
+    <RegistryList
       v-else
-      class="panel-status">
-      no skills installed
-    </p>
+      kind="skills"
+      :rows="rows"
+      :busy="busy"
+      :error="toggleError"
+      :loaded="loaded"
+      :toggleable="toggleable"
+      empty-text="no skills installed"
+      @toggle="onToggle" />
   </section>
 </template>
 
@@ -37,17 +35,52 @@
   import { isNarrowWidth } from "./narrow";
 
   // Module-owned UI (card t_db430fea): the loaded skill inventory,
-  // from GET /skills. READ-ONLY v1 - name + description rows only; the
-  // reader tool (skills.read) remains the way into a skill's content.
-  // Self-contained fetch: a module's UI carries its own wiring so it
-  // can ride the desktop / VS Code builds alone (ToolsList precedent).
+  // from GET /skills, plus the per-skill enable/disable toggle
+  // (v0.14.1) against the /disabled fold. Self-contained fetch: a
+  // module's UI carries its own wiring so it can ride the desktop /
+  // VS Code builds alone (ToolsList precedent) - the flag merge and
+  // the toggle PUT are small deliberate copies (the narrow.ts copy
+  // law), the SHARED thing is the RegistryList component.
   interface SkillInfo {
     name: string;
     description: string;
   }
   const skills = ref<SkillInfo[]>([]);
+  const fold = ref<string[]>([]);
   const loaded = ref(false);
   const error = ref("");
+  const busy = ref<string | null>(null);
+  const toggleError = ref<string | null>(null);
+  // false when the host serves no toggle seam (501 on /disabled): the
+  // list stays, read-only.
+  const toggleable = ref(false);
+
+  function rows() {
+    const set = new Set(fold.value);
+    return skills.value.map((s) => ({ name: s.name, description: s.description, disabled: set.has(s.name) || false }));
+  }
+
+  async function load(): Promise<void> {
+    const res = await fetch("/skills");
+    if (!res.ok) throw new Error(`GET /skills: ${res.status}`);
+    skills.value = await res.json();
+    try {
+      const dRes = await fetch("/disabled");
+      if (dRes.status === 501) {
+        toggleable.value = false; // no seam: read-only
+      } else if (dRes.ok) {
+        const foldBody = (await dRes.json())?.skills;
+        fold.value = Array.isArray(foldBody)
+          ? foldBody.filter((n): n is string => typeof n === "string")
+          : [];
+        toggleable.value = true;
+      }
+    } catch {
+      // /disabled unreachable is not fatal to the LIST; stay read-only
+      // rather than guessing the fold state
+      toggleable.value = false;
+    }
+  }
 
   // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
   // root measures its OWN rendered container and flips the class; the
@@ -84,14 +117,39 @@
 
   onMounted(async () => {
     try {
-      const res = await fetch("/skills");
-      if (!res.ok) throw new Error(`GET /skills: ${res.status}`);
-      skills.value = await res.json();
+      await load();
+      error.value = "";
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
     loaded.value = true;
   });
+
+  // the toggle: PUT answers the fresh fold - rows rebuild so the
+  // persisted (server-owned) state is what the tab shows. A failed
+  // toggle refreshes anyway: the error line stands over the truth.
+  async function onToggle(name: string, enabled: boolean): Promise<void> {
+    if (busy.value !== null) return;
+    busy.value = name;
+    toggleError.value = null;
+    try {
+      const res = await fetch("/disabled/skills", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, enabled }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    } catch (e) {
+      toggleError.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      try {
+        await load();
+      } catch {
+        // the rows stay; the error line stands
+      }
+      busy.value = null;
+    }
+  }
 </script>
 
 <style scoped>
@@ -103,45 +161,7 @@
     font-size: 11px;
     opacity: 0.6;
   }
-  .skills-inventory {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .skills-row {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 5px 0;
-    border-bottom: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-  }
-  .skills-row:last-child {
-    border-bottom: none;
-  }
-  .skills-name {
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.9;
-  }
-  .skills-desc {
-    font-size: 11px;
-    opacity: 0.6;
-  }
-  /* narrow: the module-UI recipe (card t_a2fdc630). Name + description
-     already stack vertically; the adaptation is condensed chrome - at
-     ~300px the wide row padding reads as dead space. */
   .skills-list.narrow {
     padding: 6px 8px 10px;
-  }
-  .skills-list.narrow .skills-row {
-    padding: 4px 0;
-  }
-  .skills-list.narrow .skills-name {
-    font-size: 11.5px;
-    /* skill names are dotted paths (skills.read paths): long ones only
-       ellipsize when the row is measured-narrow */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>

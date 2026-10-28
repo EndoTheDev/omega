@@ -25,7 +25,7 @@ func TestWriteDisabledRoundTrip(t *testing.T) {
 	if err := os.WriteFile(path, []byte(toggleYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeDisabled(path, []string{"kanban", "delegate"}); err != nil {
+	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban", "delegate"}}); err != nil {
 		t.Fatal(err)
 	}
 	// LoadConfig decodes the same file boot reads: the write must be
@@ -34,13 +34,15 @@ func TestWriteDisabledRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Disabled) != 2 || cfg.Disabled[0] != "kanban" || cfg.Disabled[1] != "delegate" {
-		t.Fatalf("LoadConfig read %v, want [kanban delegate]", cfg.Disabled)
+	// writeDisabled normalizes namespaces (sorted, deterministic yaml):
+	// the file loses only kanban, the survivors come back sorted.
+	if len(cfg.Disabled.Modules) != 2 || cfg.Disabled.Modules[0] != "delegate" || cfg.Disabled.Modules[1] != "kanban" {
+		t.Fatalf("LoadConfig read %v, want [delegate kanban]", cfg.Disabled.Modules)
 	}
 	// Missing config.yaml with an empty list: nothing to say, nowhere
 	// to say it - and no litter file either.
 	fresh := filepath.Join(t.TempDir(), "config.yaml")
-	if err := writeDisabled(fresh, nil); err != nil {
+	if err := writeDisabled(fresh, DisabledNamespaces{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(fresh); !os.IsNotExist(err) {
@@ -54,15 +56,15 @@ func TestWriteDisabledMissingFileCreates(t *testing.T) {
 	// that precedes it carried the model by env (no file to read).
 	t.Setenv("OMEGA_MODEL", "test-model")
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := writeDisabled(path, []string{"kanban"}); err != nil {
+	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban"}}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Disabled) != 1 || cfg.Disabled[0] != "kanban" {
-		t.Fatalf("created config not legible: %+v", cfg.Disabled)
+	if len(cfg.Disabled.Modules) != 1 || cfg.Disabled.Modules[0] != "kanban" {
+		t.Fatalf("created config not legible: %+v", cfg.Disabled.Modules)
 	}
 }
 
@@ -71,18 +73,18 @@ func TestWriteDisabledEmptyRemovesKey(t *testing.T) {
 	if err := os.WriteFile(path, []byte(toggleYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeDisabled(path, []string{"kanban"}); err != nil {
+	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeDisabled(path, nil); err != nil {
+	if err := writeDisabled(path, DisabledNamespaces{}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Disabled) != 0 {
-		t.Fatalf("the empty list must clear the toggle state, got %v", cfg.Disabled)
+	if len(cfg.Disabled.Modules) != 0 {
+		t.Fatalf("the empty list must clear the toggle state, got %v", cfg.Disabled.Modules)
 	}
 	if d, _ := os.ReadFile(path); !strings.Contains(string(d), "model_name") || strings.Contains(string(d), "kanban") {
 		t.Fatalf("the key removal did not leave just the original document: %q", string(d))
@@ -132,7 +134,7 @@ func TestToggleRewiresChannels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := &omegaModules{pctx: pctx, reg: reg, configPath: filepath.Join(t.TempDir(), "config.yaml")}
+	m := &omegaModules{pctx: pctx, reg: reg, configPath: filepath.Join(t.TempDir(), "config.yaml"), fold: &DisabledNamespaces{}}
 	if err := m.Toggle(context.Background(), "mod", false); err != nil {
 		t.Fatal(err)
 	}
