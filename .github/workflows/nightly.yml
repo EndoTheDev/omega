@@ -93,7 +93,7 @@ jobs:
           # anonymous channel: suite stdout first (infra deaths print
           # nothing into journey logs), then one annotation per red log
           if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
-            tail_lines="$(grep -v ' green$' "$RUNNER_TEMP/journeys-stdout.log" | tail -12 | tr '\n' '|' | cut -c1-380)"
+            tail_lines="$(grep -vE ' (green|running)$' "$RUNNER_TEMP/journeys-stdout.log" | tail -12 | tr '\n' '|' | cut -c1-380)"
             echo "::error title=journeys suite output (noise stripped)::$tail_lines"
           fi
           if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
