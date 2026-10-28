@@ -41,17 +41,17 @@ open_journey_row "$LABEL"
 # --- the model picker writes the row --------------------------------
 # the chip waits for the models fetch to seed it (boot fires /models
 # without blocking; the chip fills within ~a second on a healthy lane)
-wait_js '!!(document.querySelector(".model-chip .chip-name")?.textContent ?? "")' 10 \
+wait_js '!!(document.querySelector(".model-select:not(.thinking-select) .model-chip .chip-name")?.textContent ?? "")' 10 \
   || die "model chip did not render"
-default=$(jsq 'document.querySelector(".model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1 | deq)
+default=$(jsq 'document.querySelector(".model-select:not(.thinking-select) .model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1 | deq)
 [ -n "$default" ] || die "model chip rendered empty"
 
-jsq 'document.querySelector(".model-chip")?.click()' >/dev/null 2>&1
+jsq 'document.querySelector(".model-select:not(.thinking-select) .model-chip")?.click()' >/dev/null 2>&1
 wait_js '!!document.querySelector(".model-list li")' 10
 # pick the first option that differs from the chip's current model
 # target is read INSIDE js (cur comes from the DOM) - it exits as a
 # plain model name once deq'd, safe to interpolate into the li matcher
-target=$(jsq '(()=>{const cur = document.querySelector(".model-chip .chip-name")?.textContent ?? ""; const opts = Array.from(document.querySelectorAll(".model-list li")); const other = opts.find(li => (li.textContent || "").trim() && (li.textContent || "").trim() !== cur.trim()); return other ? (other.textContent || "").trim() : "";})()' 2>&1 | tail -1 | deq)
+target=$(jsq '(()=>{const cur = document.querySelector(".model-select:not(.thinking-select) .model-chip .chip-name")?.textContent ?? ""; const opts = Array.from(document.querySelectorAll(".model-list li")); const other = opts.find(li => (li.textContent || "").trim() && (li.textContent || "").trim() !== cur.trim()); return other ? (other.textContent || "").trim() : "";})()' 2>&1 | tail -1 | deq)
 if [ -z "$target" ]; then
   # one-model lane: the picker cannot move anything - the pin halves
   # below still prove the restore path over a wire-written pin
@@ -72,7 +72,7 @@ fi
 # --- reload: the pin restores ---------------------------------------
 fresh_open
 open_journey_row "$LABEL"
-restored=$(jsq 'document.querySelector(".model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1 | deq)
+restored=$(jsq 'document.querySelector(".model-select:not(.thinking-select) .model-chip .chip-name")?.textContent ?? ""' 2>&1 | tail -1 | deq)
 assert_eq "$restored" "$target" "pinned model restored on reopen"
 
 # --- the workspace chip writes the row ------------------------------
