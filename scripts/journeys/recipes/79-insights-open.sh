@@ -98,7 +98,12 @@ while [ "$guard" -lt 20 ]; do
   sleep 0.5; guard=$((guard + 1))
 done
 [ "$draftgone" = "1" ] || die "the draft chat tab never closed"
-# 2) open the seeded jrn session in the (now empty) main pane
+# 2) open the seeded jrn session in the (now empty) main pane. The
+# open proof is the SESSION CONTENT in the pane, not the tab title:
+# an untitled session keeps the fallback title ("chat") and titling
+# needs a model call - the nightly's no-provider lane has none
+# (t_da6f294f). The session list lives in a PINNED shell, so seed text
+# inside a NON-pinned pane means the chat tab itself opened.
 seedrow=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
   seedrow=$(jsq '(()=>{const rows=Array.from(document.querySelectorAll(".session-list li"));const r=rows.find(x=>/insights/i.test(x.innerText||""));if(!r) return 0;if(r.classList.contains("bucket-row")) return 0;r.click();return 1})()' 2>&1)
@@ -108,7 +113,7 @@ done
 assert_eq "$seedrow" "1" "seeded jrn session row clicked (opens in the pane)"
 seedopen=0; guard=0
 while [ "$guard" -lt 20 ]; do
-  inpane=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/insights/i.test(t.textContent||"")));return hit?1:0})()')
+  inpane=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&(p.innerText||"").includes("insights overview seed"));return hit?1:0})()')
   [ "$inpane" = "1" ] && seedopen=1 && break
   sleep 0.5; guard=$((guard + 1))
 done
