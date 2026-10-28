@@ -88,7 +88,9 @@
         <li
           v-for="s in detailSessions"
           :key="s.id"
-          class="agents-session-row">
+          class="agents-session-row"
+          :title="`open ${agentSessionTitle(s)} in the main pane`"
+          @click="openAgentSession(s.id)">
           <span class="agents-session-title">{{ agentSessionTitle(s) }}</span>
           <span class="agents-session-meta">{{ s.id }}</span>
         </li>
@@ -110,6 +112,13 @@ import {
   agentSkillsText,
 } from "./agentsRows.ts";
 import type { OmegaAgent, OmegaAgentSession } from "./agentsRows.ts";
+
+// emit("open-session", id) is the Hermes-bots parity handoff (card
+// t_1ba868bb): app.vue routes the id through openChatTab, the same
+// opener a sidebar session row uses - the main-pane chat surface, no
+// degraded mode. Sends on the open session ride /chat; the row's
+// agent binding never switches (server-enforced at creation).
+const emit = defineEmits<{ (e: "open-session", id: string): void }>();
 
 /* agentSessionText: the list-row status voice. */
 function agentSessionText(a: OmegaAgent): string {
@@ -182,13 +191,31 @@ async function createAgent(): Promise<void> {
   }
 }
 
+// openAgentSession: a session row opens exactly the way a sessions-list
+// row does (card t_1ba868bb) - one emit, no panel-local transcript.
+function openAgentSession(id: string): void {
+  emit("open-session", id);
+}
+
 async function newSessionAs(name: string): Promise<void> {
   startingSession.value = true;
   sessionStartMsg.value = "";
   try {
-    const res = await fetchJSON(`/agents/${encodeURIComponent(name)}/sessions`, { method: "POST" });
+    const res = await fetchJSON(`/agents/${encodeURIComponent(name)}/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // the server DECODES a request body here (id is optional) - a body
+      // -less POST dies at "invalid request: EOF" (t_1ba868bb: found
+      // while wiring the open; the surface was write-only twice over).
+      body: JSON.stringify({}),
+    });
     if (!res.ok) throw new Error(await res.text());
+    // 201 carries the created session: open it IN the main pane
+    // immediately (the old flow only refreshed the list - the write
+    // was invisible). The refresh keeps the detail list honest.
+    const created = (await res.json()) as OmegaAgentSession;
     await select(detail.value as OmegaAgent);
+    if (created.id) emit("open-session", created.id);
   } catch (e) {
     sessionStartMsg.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -200,3 +227,14 @@ onMounted(load);
 
 defineExpose({ load, select, profiles, detail, detailSessions });
 </script>
+
+<style scoped>
+/* the open affordance (card t_1ba868bb): a session row is a click
+   target that rides the main-pane opener. */
+.agents-session-row {
+  cursor: pointer;
+}
+.agents-session-row:hover {
+  background: var(--z2, rgba(128, 128, 128, 0.12));
+}
+</style>
