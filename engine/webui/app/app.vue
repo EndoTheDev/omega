@@ -128,21 +128,27 @@
 
         <!-- card t_7e2b7002: the agents panel - profile inventory with
              scaffold + new-session-as-agent (own fetch, inspector
-             family). -->
+             family). t_1ba868bb: the session rows and the created
+             session open through openChatTab - the same main-pane
+             opener a sidebar row uses (Hermes bots parity). -->
         <template #pane-agents>
           <AgentsPanel
             v-if="!isMobile"
-            class="pane" />
+            class="pane"
+            @open-session="openChatTab" />
         </template>
 
         <!-- card t_72ecca67 (ruling 18): the continuous roster - the
              agent homes with last-report preview, next wake, unread;
              the detail strip rides wake/sleep + evidence; the
-             t_55a571ff picker entry opens it via openContinuousTab. -->
+             t_55a571ff picker entry opens it via openContinuousTab.
+             t_1ba868bb: the detail's session rows open through
+             openChatTab - same main-pane opener, no degraded mode. -->
         <template #pane-continuous>
           <ContinuousPanel
             v-if="!isMobile"
-            class="pane" />
+            class="pane"
+            @open-session="openChatTab" />
         </template>
 
         <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry
