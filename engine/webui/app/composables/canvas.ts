@@ -202,3 +202,16 @@ export function onToastPanel(fn: ToastPanelHandler): () => void {
     toastHandlers.delete(fn);
   };
 }
+
+// emitLocalToast publishes a CLIENT-SIDE toast through the same funnel
+// the canvas feed uses: one subscriber set, one fingerprint dedupe (the
+// same payload toasts once). Local-only by law (card t_d54c718a): no
+// transport, no panel kind - the boot repair receipt is the first
+// emitter, nothing listens to a private channel for it.
+export function emitLocalToast(payload: unknown): void {
+  if (payload === null || payload === undefined) return;
+  const fp = fingerprintOf(payload);
+  if (fp === lastToastFingerprint) return;
+  lastToastFingerprint = fp;
+  for (const fn of toastHandlers) fn(payload);
+}

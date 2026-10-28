@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // dock's toast decoder and the feed's dedupe are the moving parts;
 // these tests import the production shapes.
 
-import { onToastPanel } from "../app/composables/canvas.ts";
+import { onToastPanel, emitLocalToast } from "../app/composables/canvas.ts";
 import { toastLifetime, upsertRecord, type OmegaNotification } from "../app/composables/notifications.ts";
 import { createCanvasStore } from "../app/composables/canvas.ts";
 
@@ -92,4 +92,43 @@ test("upsert (the dock's live list fold) dedupes and caps", () => {
   assert.deepEqual(list.map((x) => x.id), [2, 1]);
   assert.equal(list[1]!.read, true);
   assert.equal(list.length, 2);
+});
+
+test("emitLocalToast: the boot repair receipt rides the same funnel (t_d54c718a)", () => {
+  const frames: unknown[] = [];
+  const off = onToastPanel((p) => frames.push(p));
+
+  // a clean boot (no repairs) never toasts - the null/undefined payload
+  // emitLocalToast guards are the empty-boot path
+  emitLocalToast(null);
+  emitLocalToast(undefined);
+  assert.equal(frames.length, 0);
+
+  // a repaired boot toasts ONCE for the whole receipt, not per repair
+  const receipt = {
+    id: 0,
+    kind: "chat",
+    source_id: "dock-layout",
+    title: "layout repaired: 2 constraints eased",
+    verdict: "ok",
+    created_at: "2026-10-28T12:00:00.000Z",
+    read: true,
+  };
+  emitLocalToast(receipt);
+  assert.equal(frames.length, 1);
+  assert.deepEqual(frames[0], receipt);
+  assert.equal(decodeToast(frames[0])?.title, "layout repaired: 2 constraints eased");
+  assert.equal(decodeToast(frames[0])?.read, true);
+
+  // the same payload emitted again (an HMR replant, a re-run of the
+  // boot block) dedupes against the fingerprint - silent
+  emitLocalToast(receipt);
+  emitLocalToast({ ...receipt, created_at: "2026-10-28T12:00:00.000Z" });
+  assert.equal(frames.length, 1);
+
+  // a different receipt (next boot's receipt, another repair count) fires
+  emitLocalToast({ ...receipt, title: "layout repaired: 3 constraints eased" });
+  assert.equal(frames.length, 2);
+
+  off();
 });
