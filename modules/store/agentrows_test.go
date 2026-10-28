@@ -116,6 +116,70 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 	}
 }
 
+// TestMigrateAgentRowsKeepsNativeDestRows pins the boot-brick fix: an
+// agent store that already holds its own native session (a wake that
+// wrote directly to its isolated store) must not fail the verify -
+// the moved subset is what counts, not the whole sessions table.
+func TestMigrateAgentRowsKeepsNativeDestRows(t *testing.T) {
+	ctx := context.Background()
+	mainDSN := filepath.Join(t.TempDir(), "omega.db")
+	main, err := Open(mainDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := main.CreateAgentSession(ctx, "scout-sess", "", "probe run", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := main.AppendMessage(ctx, "scout-sess", core.NewUser("wake prompt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := main.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// the agent store already exists with one native session.
+	agentDSN := filepath.Join(t.TempDir(), "scout", "data", "omega.db")
+	if err := os.MkdirAll(filepath.Dir(agentDSN), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OMEGA_AGENT", "scout")
+	native, err := Open(agentDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := native.CreateAgentSession(ctx, "native-sess", "", "own wake", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := native.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// the move must succeed despite the pre-existing row.
+	if err := MigrateAgentRows(mainDSN, map[string]string{"scout": agentDSN}); err != nil {
+		t.Fatalf("migrate with native dest rows: %v", err)
+	}
+	agentStore, err := Open(agentDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer agentStore.Close()
+	sessions, err := agentStore.ListSessions(ctx)
+	if err != nil || len(sessions) != 2 {
+		t.Fatalf("agent store sessions = %v %v, want native + moved", sessions, err)
+	}
+
+	// main no longer holds the scout row.
+	t.Setenv("OMEGA_AGENT", "")
+	reopened, err := Open(mainDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if sessions, _ := reopened.ListSessions(ctx); len(sessions) != 0 {
+		t.Errorf("main store still holds %d agent rows", len(sessions))
+	}
+}
+
 // TestMigrateAgentRowsSkipsChildlessAgents pins the no-phantom-store
 // law: an agent with no rows gets no store file.
 func TestMigrateAgentRowsSkipsChildlessAgents(t *testing.T) {

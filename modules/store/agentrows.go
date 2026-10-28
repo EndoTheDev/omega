@@ -110,8 +110,11 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 	// Verify before deleting: moved row counts must equal the source
 	// counts, message histories inclusive. On mismatch the whole move
 	// rolls back and both stores stand untouched.
+	// movedSessions counts only the moved subset - the agent store may
+	// hold its own native sessions (a wake that wrote directly to its
+	// isolated store), and counting the whole table bricked every boot.
 	var movedSessions, sourceSessions, movedMessages, sourceMessages int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&movedSessions); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name).Scan(&movedSessions); err != nil {
 		return fmt.Errorf("agent rows migration: %s: count moved: %w", name, err)
 	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM maindb.sessions WHERE agent = ?1`, name).Scan(&sourceSessions); err != nil {
