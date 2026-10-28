@@ -125,6 +125,14 @@ test("the Icon wrapper renders a named icon through the wrapper contract", () =>
   );
 });
 
+test("the chat blocks wear their vocabulary glyphs", () => {
+  const tool = read("app/components/chat/ToolCallLine.vue");
+  assert.match(tool, /class="tool-ic"/, "the tool call row's icon slot");
+  assert.match(tool, /name="tools"/, "tool calls share the tools-tab wrench");
+  const think = read("app/components/chat/ThinkingBlock.vue");
+  assert.match(think, /name="brain"/, "the thinking block's brain glyph");
+});
+
 test("sidebar tab strips are ICON-ONLY chips with accessible names", () => {
   const pane = read("app/components/DockPane.vue");
   // the pinned edges (left/right shells) render the icon instead of text
