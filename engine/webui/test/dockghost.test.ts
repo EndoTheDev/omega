@@ -1,9 +1,9 @@
-// omega webui: unit tests for the ghost preview (v0.14.4 milestone 5,
-// ruling 5). The load-bearing law already pins prediction == commit in
+// omega webui: unit tests for the ghost preview (v0.14.4 milestone 5).
+// The load-bearing law already pins prediction == commit in
 // dockdnd.test.ts; these pin the ghost's OWN read: ghostPreview delegates
-// to predictDockDrop (its refusal is the commit's refusal, verbatim), the
-// split halves are the insert law's exact 50/50 of the measured axis px,
-// and the divider readout's numerals/rung math. Render-free.
+// to predictDockDrop (its refusal is the commit's refusal, verbatim) and
+// the split halves are the insert law's exact 50/50 of the measured axis
+// px. Render-free.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -16,7 +16,6 @@ import {
 } from "../app/composables/dock.ts";
 import {
   ghostPreview,
-  resizeReadout,
   ghostRegistry,
 } from "../app/composables/dockghost.ts";
 
@@ -89,30 +88,6 @@ describe("ghostPreview (the exact before-drop read)", () => {
       }
       assert.equal(g.refused, null, `${zone}: the predictor accepts, the ghost accepts`);
     }
-  });
-});
-
-describe("resizeReadout (the divider's snap numerals)", () => {
-  it("formats px + % of the content box", () => {
-    const r = resizeReadout(320, 960, 320);
-    assert.equal(r.text, "320px (33%) \u2192 snap 320px", "320 IS a rung of its own ladder");
-    assert.equal(r.rung, 320);
-    assert.equal(resizeReadout(310, 960, 320).text, "310px (32%) \u2192 snap 320px");
-    assert.equal(resizeReadout(350, 960, 320).text, "350px (36%)", "350 is 30 off the rung: free");
-    assert.equal(r.pct > 0.33 && r.pct < 0.34, true);
-  });
-
-  it("names the rung inside the 15px attract zone, free drags outside", () => {
-    assert.equal(resizeReadout(305, 960, 320).rung, 320, "305 is inside the zone (15 from the rung)");
-    assert.equal(resizeReadout(335, 960, 320).rung, 320);
-    assert.equal(resizeReadout(289, 960, 320).rung, null, "289 is 31 from the rung - free");
-    assert.equal(resizeReadout(0, 960, 320).rung, null, "no rung below one step");
-  });
-
-  it("degenerates honestly (zero content)", () => {
-    const r = resizeReadout(0, 0, 320);
-    assert.equal(r.pct, 0);
-    assert.equal(r.text, "0px (0%)");
   });
 });
 

@@ -537,27 +537,6 @@ body {
   border-radius: 999px;
   padding: 2px 8px;
 }
-/* the divider drag's live snap readout: px + % numerals under the divider,
-   the rung highlighted when the drag sits inside an attract zone */
-.dock-resize-readout {
-  position: absolute;
-  z-index: 5;
-  transform: translate(-50%, 6px);
-  padding: 2px 8px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 18%, var(--z1));
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 999px;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 25%);
-  pointer-events: none;
-  white-space: nowrap;
-}
-.dock-resize-readout.snap {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 75%, transparent);
-}
 /* empty pane: the '+' component menu (VS Code empty editor-group style) */
 .dock-empty {
   flex: 1;
