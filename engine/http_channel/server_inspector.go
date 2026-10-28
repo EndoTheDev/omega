@@ -68,6 +68,16 @@ type extensionListing struct {
 // same order the TUI renders; keep it, don't alphabetize away the
 // seams-require-providers structure. A no-extension run lists as an
 // empty array, like the other inspector reads.
+//
+// THE LAW (card t_b2654d6b): this endpoint lists the MOUNTED capsules
+// exactly - ctx.Infos, the inventory the mount journal keeps exact
+// across boot-disables (never mounted, never a row) and live toggles
+// (dismount ctxUndo, remount ctxApply). The read goes through
+// agent.ExtensionInfos, whose serving copy core.LiveSeams refreshes
+// after every successful toggle (rewireSeams →
+// agent.RefreshExtensionInfos, the same law as /tools). A disabled
+// module therefore cannot appear here while GET /modules reports it
+// disabled, and a re-enabled one is back the moment it remounts.
 func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
