@@ -375,10 +375,9 @@ if __name__ == "__main__":
 PYEOF
 # go files that may carry wires: cmd/ (the binary). Engine layers and
 # core importing a module is illegal already - the purity law says SO,
-# so the scrubber only walks the host.
-mapfile -t GOPATHS < <(find cmd -name '*.go' | sort)
-FALLIST="$TMP/gofiles.txt"
-printf '%s\n' "${GOPATHS[@]}" > "$FALLIST"
+# so the scrubber only walks the host. The list derives from the WORK
+# COPY inside the loop: a fixture sitting uncommitted in the live
+# tree must never enter a proof built from HEAD.
 
 fails=0
 for MOD in "${MODULES[@]}"; do
@@ -390,6 +389,9 @@ for MOD in "${MODULES[@]}"; do
     fails=$((fails+1)); continue
   fi
   rm -rf "$WORK/modules/$MOD"
+
+  ( cd "$WORK" && find cmd -name '*.go' | sort > "$TMP/$MOD.gofiles.txt" )
+  FALLIST="$TMP/$MOD.gofiles.txt"
 
   spec="$MOD=$MOD"
   # the scrub walks the work COPY only - run inside $WORK with relative paths
