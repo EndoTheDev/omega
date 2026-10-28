@@ -225,12 +225,21 @@ unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UP
 park "${PARKED[@]:-}"
 trap 'unpark "${PARKED[@]:-}"' EXIT
 if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
-  SLOTS=$(( CAP - ${#RUNNING[@]} ))
-  [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
-  [ "$MAXARG" -gt 0 ] && { B=$(( MAXARG - ${#RUNNING[@]} )); [ "$B" -lt "$SLOTS" ] && [ "$B" -ge 0 ] && SLOTS=$B; }   # an explicit --max N bounds total concurrency (running + spawns <= N)
-  [ "$SLOTS" -le 0 ] && { echo "no dispatch (--max reached: ${#RUNNING[@]} running)"; exit 0; }
   DOUT=$(mktemp)
-  hermes kanban dispatch --max $(( ${#RUNNING[@]} + SLOTS )) >"$DOUT" 2>&1 || true
+  if [ "$MAXARG" -gt 0 ]; then
+    # an explicit --max N bounds TRUE concurrency: pass N through unchanged.
+    # The inner dispatcher counts running AFTER its reclaim phase (guard bug #8),
+    # so budgeting from this pre-pass snapshot over-counts zombies: still
+    # 'running' here, already claimable there. Proven 2026-10-28: --max 1 with
+    # 2 zombie-running made B below zero, SLOTS kept its cap-derived 2, the
+    # inner got --max 4 on a reclaim-emptied pool and spawned 4.
+    DISPATCH_MAX="$MAXARG"
+  else
+    SLOTS=$(( CAP - ${#RUNNING[@]} ))
+    [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
+    DISPATCH_MAX=$(( ${#RUNNING[@]} + SLOTS ))
+  fi
+  hermes kanban dispatch --max "$DISPATCH_MAX" >"$DOUT" 2>&1 || true
   grep -E "Spawned|assigned" "$DOUT" || true
   # guard bug #8 (2026-10-28, proven twice in one night): the inner dispatcher
   # spawned past the requested total (guard snapshot 1 running, slots 1, --max 2,
@@ -243,7 +252,7 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
   # pre-pass snapshot and it fills the freed slots. The guard's snapshot is the
   # stale one. What the guard CAN do: re-read running after the call and report
   # the delta, so over-runs surface in the tick log instead of hiding.
-  WANT=$(( ${#RUNNING[@]} + SLOTS ))
+  WANT="$DISPATCH_MAX"
   NOWRUN=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='running';")
   NEWRUN=$(comm -13 \
     <(printf '%s\n' "${RUNNING[@]:-}" | sort -u) \
