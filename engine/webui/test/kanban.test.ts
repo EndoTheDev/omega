@@ -11,7 +11,10 @@ import { dirname, join, resolve } from "node:path";
 import {
   BOARD_STATUSES,
   BOARD_PATH,
+  DEFAULT_BOARD_NAME,
   age,
+  boardDeletePath,
+  canRemoveBoard,
   columns,
   isBoardPath,
   isSettled,
@@ -174,4 +177,34 @@ test("board head keeps the fillet-tuck top spacing", () => {
     "head keeps the 10px top spacing that survives the 8px tuck");
   assert.doesNotMatch(boardVue, /padding:\s*8px 12px 0/,
     "the tuck-consumed 8px spacer stays out");
+});
+
+// --- board removal (card t_95c5527f): guarded delete beside the switcher
+
+test("canRemoveBoard + boardDeletePath: the default board never carries the control", () => {
+  assert.equal(DEFAULT_BOARD_NAME, "main");
+  assert.ok(canRemoveBoard("alpha"), "named boards are removable");
+  assert.ok(!canRemoveBoard("main"), "the default board is never removable");
+  assert.ok(!canRemoveBoard(""), "the empty registry selection is not removable");
+  assert.equal(boardDeletePath("alpha"), "/boards/alpha");
+  assert.equal(boardDeletePath("my_2nd"), "/boards/my_2nd");
+  // names are path-safe payloads: encoded, never raw
+  assert.equal(boardDeletePath("a b"), "/boards/a%20b");
+});
+
+test("board view carries the remove control: armed confirm, DELETE route, notice, default fallback", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /id="board-remove-btn"/, "the remove button exists beside the switcher");
+  assert.match(
+    boardVue,
+    /:disabled="!canRemoveBoard\(boardName\)"/,
+    "the control keys off the removable name (default board disabled)",
+  );
+  assert.match(boardVue, /confirm remove/, "the armed click relabels: inline confirm row");
+  assert.doesNotMatch(boardVue, /window\.confirm/, "no native confirm - the panel confirms inline");
+  assert.match(boardVue, /method: "DELETE"/, "the removal fires the DELETE route");
+  assert.match(boardVue, /boardDeletePath\(name\)/, "the delete goes to the encoded registry path");
+  assert.match(boardVue, /board-notice/, "a visible notice reports the removal or refusal");
+  assert.match(boardVue, /DEFAULT_BOARD_NAME/, "selection falls back to the default board");
+  assert.match(boardVue, /disarmRemove/, "board switches disarm an armed confirm");
 });

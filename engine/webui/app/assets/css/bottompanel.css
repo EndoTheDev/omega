@@ -22,9 +22,10 @@
 /* the root divider rides the same insets so the resize handle stays over
    the panel it drags (aligned mode only; full mode the vars are gone) -
    t_bc321318 reaches 2px past each inset (max keeps the full-mode
-   fallback at the natural margins): the handle's structural line then
-   ends exactly ON the root row's two vertical divider columns - the
-   connected frame's T-junctions meet pixel for pixel */
+   fallback at the natural margins): at rest nothing paints here
+   (t_e539ba29: the column divider rests invisible), but the hover/drag/snap
+   full band still spans the row and lands ON the root row's two vertical
+   divider columns - the connected frame's T-junctions meet pixel for pixel */
 .dock-root > .dock-divider {
   margin-left: max(calc(var(--bottom-inset-left, 0px) - 2px), 0px);
   margin-right: max(calc(var(--bottom-inset-right, 0px) - 2px), 0px);
@@ -63,13 +64,21 @@
    modern Chrome; an old-browser fallback would need JS class plumbing
    on app.vue, not worth it. */
 @media (min-width: 769px) {
-  /* the band's takeover */
+  /* the band's takeover. t_e539ba29 (finding 2, live-measured): inset
+     vars are ROOT-SPLIT coordinates (the applier measures against the
+     root at pane-area left + 4px), but this absolute band's containing
+     block is the PANE-AREA - the raw var landed the band 4px wide on
+     each side, over the two sidebar handles' columns: z-30 covered
+     them, so in fullscreen the sidebars went un-resizable (their
+     handles invisible AND ungrabbable). +4px = the pane-area's
+     horizontal padding (geometry contract) realigns the band flush
+     with the main panes' edges and hands the handle columns back. */
   .dock-pane.edge-bottom.bottom-fullscreen {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: var(--bottom-inset-left, 0px);
-    right: var(--bottom-inset-right, 0px);
+    left: calc(var(--bottom-inset-left, 0px) + 4px);
+    right: calc(var(--bottom-inset-right, 0px) + 4px);
     height: auto !important; /* beats the tree's inline fixed px */
     /* the render clamp (the stuck-divider fix) caps the IN-FLOW pane;
        the absolute band spans top-to-bottom and must not inherit it */

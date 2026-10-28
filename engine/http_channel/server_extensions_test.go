@@ -10,6 +10,7 @@ package http_channel
 // missing description omitted).
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -57,7 +58,7 @@ func mountRealRegistry(t *testing.T) *core.Agent {
 
 func TestHandleExtensionsRealRegistry(t *testing.T) {
 	a := mountRealRegistry(t)
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/extensions", nil)
@@ -145,7 +146,7 @@ func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 	// Zero extensions mounted: an honest empty array, like the other
 	// inspector reads. The webui tab renders its empty state from this.
 	a := core.NewAgent(newMockProvider("mock"), nil, 0)
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/extensions", nil)
@@ -165,7 +166,7 @@ func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 
 func TestHandleExtensionsMethodGuard(t *testing.T) {
 	a := core.NewAgent(newMockProvider("mock"), nil, 0)
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/extensions", nil)
@@ -173,5 +174,116 @@ func TestHandleExtensionsMethodGuard(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /extensions: %d, want 405", rec.Code)
+	}
+}
+
+// toggleRowCapsule is the E2 probe for the /extensions staleness law
+// (card t_b2654d6b): a toggleable capsule that mounts one tool and one
+// command, so its inventory row has counts to unwind with it.
+type toggleRowCapsule struct{ name string }
+
+func (c *toggleRowCapsule) Name() string                 { return c.name }
+func (c *toggleRowCapsule) Provides() []string           { return []string{c.name} }
+func (c *toggleRowCapsule) Requires() []string           { return nil }
+func (c *toggleRowCapsule) Toggleable() bool             { return true }
+func (c *toggleRowCapsule) Mount(*core.Context) error    { return nil }
+func (c *toggleRowCapsule) Dismount(*core.Context) error { return nil }
+func (c *toggleRowCapsule) Description() string          { return c.name + " capsule" }
+
+func (c *toggleRowCapsule) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	if err := api.RegisterTool(c.name+".probe", core.Tool{
+		Description: "probe",
+		Run:         func(context.Context, map[string]any) (string, error) { return "ok", nil },
+	}); err != nil {
+		return err
+	}
+	return api.RegisterCommand("/"+c.name, "probe", nil,
+		func(context.Context, string, string) (core.CommandResult, error) { return core.CommandResult{}, nil })
+}
+
+// TestHandleExtensionsFollowsLiveToggle pins the inventory law: after
+// a live module toggle plus the host's re-wire (core.LiveSeams, what
+// cmd/omega does on every successful toggle), GET /extensions lists
+// exactly what is mounted - the disabled capsule's row drops, the
+// re-enabled one's row returns with its counts. Before the fix the
+// endpoint read the mount-time snapshot and kept listing a disabled
+// module while GET /modules said "disabled".
+func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
+	ctx := &core.Context{}
+	plugins := []agent.Plugin{
+		&provider.Plugin{},
+		&toggleRowCapsule{name: "cron"},
+	}
+	reg, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := core.NewFromContext(ctx, core.AgentOptions{})
+	s := NewServer(a, nil, nil, nil, nil, nil)
+
+	extensionRows := func() []extensionListing {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/extensions", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /extensions: %d %s", rec.Code, rec.Body)
+		}
+		var rows []extensionListing
+		if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return rows
+	}
+	rowOf := func(rows []extensionListing, name string) *extensionListing {
+		for i := range rows {
+			if rows[i].Name == name {
+				return &rows[i]
+			}
+		}
+		return nil
+	}
+
+	// Boot state: cron mounted, row present with its mounted counts.
+	rows := extensionRows()
+	cronRow := rowOf(rows, "cron")
+	if cronRow == nil {
+		t.Fatalf("boot: cron missing from /extensions: %+v", rows)
+	}
+	if cronRow.Tools != 1 || cronRow.Commands != 1 {
+		t.Fatalf("boot: cron row counts tools=%d commands=%d, want 1/1", cronRow.Tools, cronRow.Commands)
+	}
+
+	// Toggle OFF + the host's re-wire: the row must drop.
+	if err := reg.Toggle(ctx, "cron", false, core.StartDeps{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rows = extensionRows(); rowOf(rows, "cron") != nil {
+		t.Fatalf("toggle-off: cron still listed on /extensions: %+v (stale inventory)", rows)
+	}
+	if len(rows) != 1 || rows[0].Name != "provider" {
+		t.Fatalf("toggle-off: want only provider, got %+v", rows)
+	}
+
+	// Toggle ON + re-wire: the row returns with the same counts.
+	if err := reg.Toggle(ctx, "cron", true, core.StartDeps{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.rewireSeams(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rows = extensionRows(); rowOf(rows, "cron") == nil {
+		t.Fatalf("toggle-on: cron not back on /extensions: %+v", rows)
+	}
+	if cronRow := rowOf(rows, "cron"); cronRow.Tools != 1 || cronRow.Commands != 1 {
+		t.Fatalf("toggle-on: cron row counts tools=%d commands=%d, want 1/1", cronRow.Tools, cronRow.Commands)
+	}
+
+	// The inventory matches the Context verbatim after every toggle:
+	// one authoritative listing, the journal replay.
+	if got := a.ExtensionInfos(); len(got) != len(ctx.Infos) {
+		t.Fatalf("agent inventory %d rows, ctx.Infos has %d", len(got), len(ctx.Infos))
 	}
 }

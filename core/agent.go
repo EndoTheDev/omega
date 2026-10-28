@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"maps"
+	"sort"
 	"sync"
 )
 
@@ -89,11 +90,19 @@ type Agent struct {
 	provider      Provider
 	tools         map[string]Tool
 	toolProviders []ToolProvider
-	// tpMu guards toolProviders: a live module toggle (v0.12 E2)
-	// swaps the set mid-process while concurrent runs and the /tools
-	// inventory read it under the loop.
+	// tpMu guards toolProviders and extensionInfos: a live module
+	// toggle (v0.12 E2) swaps both sets mid-process while concurrent
+	// runs and the /tools and /extensions inventories read them under
+	// the loop.
 	tpMu           sync.RWMutex
 	tpLive         bool // NewFromContext built this agent from a mounted Context
+	// disabledTools is the config.yaml disabled.tools opt-out (v0.14.1
+	// registry-browser). The merge law is untouched - a built-in still
+	// wins a name conflict - and the disable filter runs AFTER the
+	// merge, dropping only names no built-in occupies: the merge
+	// settles who answers a name, the disable list settles whether the
+	// tool exists at all.
+	disabledTools map[string]bool
 	maxTurns       int
 	compactor      CompactionProvider
 	maxToolOutput  int
@@ -212,6 +221,7 @@ func (a *Agent) RefreshToolProviders(ctx *Context) {
 func (a *Agent) Tools() map[string]Tool {
 	a.tpMu.RLock()
 	providers := a.toolProviders
+	disabled := a.disabledTools
 	a.tpMu.RUnlock()
 	size := len(a.tools)
 	for _, tp := range providers {
@@ -233,7 +243,66 @@ func (a *Agent) Tools() map[string]Tool {
 			}
 		}
 	}
+	// The disable filter is LAST in every union: the merge law above is
+	// untouched, a disabled name means absent (v0.14.1 registry-browser;
+	// the run loop applies the same final filter through LoopOptions).
+	for n := range disabled {
+		delete(tools, n)
+	}
 	return tools
+}
+
+// SetDisabledTools installs the config.yaml disabled.tools opt-out
+// (v0.14.1). Built-ins win name conflicts before this map is
+// consulted; see the field comment.
+func (a *Agent) SetDisabledTools(names []string) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	if len(names) == 0 {
+		a.disabledTools = nil
+		return
+	}
+	out := make(map[string]bool, len(names))
+	for _, n := range names {
+		out[n] = true
+	}
+	a.disabledTools = out
+}
+
+// RefreshDisabledTools re-reads the disable list from the mounted
+// Context the agent was built from (NewFromContext): the host updates
+// ctx.DisabledTools on every registry toggle, and a serving surface
+// that re-reads after every successful toggle (core.LiveSeams, the
+// same law as RefreshToolProviders) never serves a tool the fold says
+// is off. An agent built without a Context keeps its set.
+func (a *Agent) RefreshDisabledTools(ctx *Context) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	if !a.tpLive || ctx == nil {
+		return
+	}
+	a.disabledTools = nil
+	if len(ctx.DisabledTools) > 0 {
+		out := make(map[string]bool, len(ctx.DisabledTools))
+		for _, n := range ctx.DisabledTools {
+			out[n] = true
+		}
+		a.disabledTools = out
+	}
+}
+
+// disabledToolList flattens the disable set for LoopOptions (sorted,
+// nil when none - a zero-name option is indistinguishable from empty).
+func disabledToolList(set map[string]bool) []string {
+	if len(set) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(set))
+	for n := range set {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // SetPromptBuilder installs the prompt builder for system prompt assembly.
@@ -241,17 +310,42 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb
 }
 
-// ExtensionInfos returns the metadata about loaded extensions set at
-// mount time (name, description, seams, tool/command counts). The
-// http_channel inspector surfaces it on GET /extensions - the webui
-// parity of the TUI /extensions listing.
+// ExtensionInfos returns the metadata about loaded extensions (name,
+// description, seams, tool/command counts). The http_channel inspector
+// surfaces it on GET /extensions - the webui parity of the TUI
+// /extensions listing.
 func (a *Agent) ExtensionInfos() []ExtensionInfo {
+	a.tpMu.RLock()
+	defer a.tpMu.RUnlock()
 	return a.extensionInfos
 }
 
 // SetExtensionInfos sets the metadata about loaded extensions, used
 // for prompt building and the /extensions command.
 func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	a.extensionInfos = infos
+}
+
+// RefreshExtensionInfos re-reads the extension metadata from the
+// mounted Context the agent was built from (NewFromContext): the
+// toggle journal keeps ctx.Infos exact across live module toggles
+// (dismount ctxUndo, remount ctxApply), so a serving surface that
+// re-reads it after every successful toggle (core.LiveSeams, the same
+// law as RefreshToolProviders) always lists what is actually mounted.
+// An agent built without a Context keeps its set - the classic
+// constructor has nothing to re-read. The copy is defensive: the
+// inventory sees a frozen snapshot, the Context keeps mutating
+// underneath.
+func (a *Agent) RefreshExtensionInfos(ctx *Context) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	if !a.tpLive || ctx == nil {
+		return
+	}
+	infos := make([]ExtensionInfo, len(ctx.Infos))
+	copy(infos, ctx.Infos)
 	a.extensionInfos = infos
 }
 
@@ -312,6 +406,7 @@ type AgentOptions struct {
 func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag := NewAgent(ctx.Provider, nil, opts.MaxTurns)
 	ag.SetToolProviders(ctx.ToolProviders)
+	ag.SetDisabledTools(ctx.DisabledTools)
 	ag.tpLive = true // the Context stays the source of truth: live toggles re-read it
 	ag.SetLoopProvider(ctx.Loop)
 	ag.SetPromptBuilder(ctx.PromptBuilder)
@@ -434,12 +529,14 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		}
 		a.tpMu.RLock()
 		toolProviders := a.toolProviders
+		disabledTools := a.disabledTools
 		a.tpMu.RUnlock()
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
 			Messages:           messages,
 			Tools:              runTools,
 			ToolProviders:      toolProviders,
+			DisabledTools:      disabledToolList(disabledTools),
 			CompactionProvider: a.compactor,
 			PromptBuilder:      a.promptBuilder,
 			ExtensionInfos:     a.extensionInfos,

@@ -77,7 +77,7 @@ func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server,
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := NewServer(a, tools, st, nil, nil)
+	s := NewServer(a, tools, st, nil, nil, nil)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return a, st, ts, ts.Client()

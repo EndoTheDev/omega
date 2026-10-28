@@ -30,7 +30,8 @@
          chrome - the pinned shells (sidebars + bottom) carry no '+'. -->
     <div
       ref="tabsEl"
-      class="dock-tabbar">
+      class="dock-tabbar"
+      v-if="!node.grown">
       <template v-if="node.tabs.length">
         <div
           class="dock-tabs"
@@ -116,6 +117,25 @@
       </template>
     </div>
 
+    <!-- v0.14.4 ruling 1: a GROWN pinned root renders its local split tree
+         in place of the classic bar+body: the leaves are ordinary panes
+         (their own tab bars), sized by the split's fractions, connected by
+         the same DockSplit dividers. The lazy component keeps DockPane's
+         module cycle with DockSplit one-way (DockSplit imports DockPane
+         eagerly for its leaf cells). -->
+    <DockSplitNode
+      v-if="node.grown"
+      :node="node.grown"
+      :cell-style="{ width: '100%', height: '100%' }">
+      <template
+        v-for="(_, name) in $slots"
+        #[name]="slotProps">
+        <slot
+          :name="name"
+          v-bind="slotProps ?? {}" />
+      </template>
+    </DockSplitNode>
+
     <!-- the pane's active tab: rendered by app.vue via the forwarded slot
          named pane-<component>; the slot carries WHERE it renders (pane)
          and WHICH tab - so the chat outlet renders the tab's own session
@@ -193,20 +213,21 @@
       :data-zone="dropZone">
       <div
         class="dock-drop-zone"
+        :class="{ refused: predicted?.refused }"
         :style="zoneStyle">
-        <span
-          v-if="dragGhost"
-          class="dock-drop-ghost">
-          <DockItemIcon :icon="dragGhost.icon" />
-          {{ dragGhost.title }}
-        </span>
+        <!-- v0.14.4 ruling 5: the ghost - the exact result a release lands
+             (direction, target, resulting sizes) or the refusal hatch -->
+        <DockGhost
+          v-if="predicted"
+          :preview="predicted"
+          :drag="dragGhost" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, defineAsyncComponent, h, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
@@ -223,7 +244,13 @@
     type DockableComponent,
     type DockComponentName,
   } from "../composables/dockables";
-  import { tabDrag, dropAllowedFor, zoneForPoint, zoneRectFractions, splitAllowedFor, type DragZone, type ZoneRect } from "../composables/dockdnd";
+  import { tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
+  import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
+  import DockGhost from "./DockGhost.vue";
+  import { isLockedTab } from "../composables/dockables";
+  // the recursive split renderer, lazy: DockSplit imports DockPane for its
+  // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
+  const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));
   // the re-export path keeps one import surface for engine-side consumers;
   // dockables.ts is the registry's true source (card t_30ee04fb)
 
@@ -372,6 +399,9 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     // identity for the LIVE hit-test (data is protected until drop):
     tabDrag.start({ paneId: props.node.id, index, component: tab.component });
+    // v0.14.4 ruling 5: the ghost gesture begins - the registry snapshots
+    // geometry per gesture (the source stamps first touch here)
+    ghostRegistry.begin(props.node.id, index);
   }
 
   // one caret per pane: the index BEFORE which to insert (tabs.length = after
@@ -385,6 +415,10 @@
   // tab would drop into on THIS pane's body (null = no body hover, or the
   // same-pane/stale case where no docking preview shows)
   const dropZone = ref<DragZone | null>(null);
+  // v0.14.4 ruling 5: the GHOST preview - the exact result a release lands
+  // (refused -> hatched-red overlay), read through the commit's own
+  // predictDockDrop via ghostPreview. Cleared with every drop-zone reset.
+  const predicted = ref<GhostPreview | null>(null);
   // the ghost chip's registry entry: the dragged tab's component, so the
   // preview shows WHAT will land (title + icon) before release
   const dragGhost = computed(() => {
@@ -451,9 +485,14 @@
   });
 
   // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
-  // (the window dragend/drop cleanup clears the gesture record)
+  // (the window dragend/drop cleanup clears the gesture record) Free tabs
+  // land anywhere; the LOCKED tab reads the store's live law - the left
+  // root's area (its own pane + its grown leaves), v0.14.4 ruling 1/4.
   function dropAllowed(): boolean {
-    return dropAllowedFor(props.node.edge ?? null, tabDrag.current());
+    const d = tabDrag.current();
+    if (!d) return false;
+    if (!isLockedTab(d.component)) return true;
+    return api.lockedBarOk(props.node.id);
   }
 
   function caretIndexFor(e: DragEvent): number {
@@ -483,16 +522,19 @@
     dropHover.value = false;
     dropIdx.value = null;
     dropZone.value = null;
+    predicted.value = null;
   }
 
   function onTabbarDragOver(e: DragEvent) {
     if (!isTabDrag(e)) return;
+    e.stopPropagation(); // a grown root must not re-handle its leaf's bar
     if (!dropAllowed()) return refuse(e); // locked drag, wrong shell
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     dropHover.value = true;
     refusedIdx.value = null;
     dropZone.value = null; // the bar's band: the caret predicts, zones clear
+    predicted.value = null;
     dropIdx.value = caretIndexFor(e);
   }
 
@@ -511,6 +553,7 @@
 
   function onPaneDragOver(e: DragEvent) {
     if (!isTabDrag(e)) return;
+    e.stopPropagation(); // a grown root must not re-handle its leaf's body
     if (!dropAllowed()) return refuse(e); // locked drag, wrong shell
     e.preventDefault(); // a drop anywhere in the pane lands
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
@@ -521,6 +564,7 @@
       dropHover.value = true;
       refusedIdx.value = null;
       dropZone.value = null;
+      predicted.value = null;
       return;
     }
     const d = tabDrag.current();
@@ -530,14 +574,27 @@
       dropHover.value = true;
       refusedIdx.value = null;
       dropZone.value = null;
+      predicted.value = null;
       return;
     }
-    // VS Code zone read on the pane body: halves + center. Edge shells
-    // never split, so their zones fold to center (group into the bar).
+    // VS Code zone read on the pane body: halves + center. v0.14.4 ruling
+    // 1-3: the pinned roots GROW now - a shell's body offers split zones
+    // like any pane (sidebars stack rows only), and the pure predictor's
+    // refusal (hatched-red ghost) is the gate, not a center-fold here.
     const raw = zoneForPoint(e.clientX, e.clientY, bodyRect());
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
-    dropZone.value = splitAllowedFor(props.node.edge) ? raw : "center";
+    dropZone.value = raw;
+    // v0.14.4 ruling 5: the GHOST reads the commit's own formula over the
+    // registry's frozen geometry - refused here == refused at release
+    const drag = tabDrag.current();
+    const rect = bodyRect();
+    ghostRegistry.record(props.node.id, rect);
+    const axisPx =
+      raw === "left" || raw === "right" ? rect.w
+      : raw === "top" || raw === "bottom" ? rect.h
+      : null;
+    predicted.value = ghostPreview(api.tree.value, drag!.paneId, drag!.index, props.node.id, raw, axisPx);
   }
 
   function onPaneDragLeave(e: DragEvent) {
@@ -553,6 +610,7 @@
   // split, zones never self-dock), so release never tears the layout.
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
+    e.stopPropagation(); // the leaf owns the drop; a grown root re-handles nothing
     const d = payloadOf(e);
     const zone = dropZone.value;
     if (d && dropAllowed()) {
@@ -572,6 +630,8 @@
     dropIdx.value = null;
     refusedIdx.value = null;
     dropZone.value = null;
+    predicted.value = null;
+    ghostRegistry.end();
     tabDrag.end();
   }
   // any drag ending anywhere clears the local highlight (dropped elsewhere,

@@ -46,7 +46,11 @@ export interface OmegaImage {
 }
 
 export interface OmegaMessage {
-  role: "user" | "assistant";
+  // "system" rides the skill-command arm (t_07aed3f9): the dispatch
+  // surface returns a skill's content and the next send carries it as
+  // a system preamble - the TUI injected skill content the same way.
+  // The server's decodeMessages accepts all four roles.
+  role: "user" | "assistant" | "system";
   content: string;
   // image attachments (paste / picker / drag-drop / server-fetched URL),
   // the same shape ai.User.Images round-trips through the backend
@@ -2620,4 +2624,131 @@ export async function attachSession(
   if (!resp.ok || !resp.body) return false;
   await consumeSSE(resp, handlers);
   return true;
+}
+
+// --- registry-browser: the disabled fold surface (v0.14.1) ---
+//
+// One yaml fold, three namespaces (disabled.skills/tools/agents).
+// The wire: GET /disabled answers the three lists; PUT /disabled/<kind>
+// flips one entry and answers the fresh lists. This section is the
+// pure helpers both the shared RegistryList and the three tabs bind
+// at: the normalizer tolerates junk (a malformed response never kills
+// a tab, t_619832ee precedent), the flag merge is by name.
+
+export type RegistryKind = "skills" | "tools" | "agents";
+
+export interface DisabledLists {
+  skills: string[];
+  tools: string[];
+  agents: string[];
+}
+
+// RegistryRow is the shared list pattern's row: the registry name, the
+// human blurb, the expandable detail lines (extra payload lines the
+// row reveals on expand; empty = no expansion), and the fold state.
+export interface RegistryRow {
+  name: string;
+  description?: string;
+  detail?: string[];
+  disabled: boolean;
+}
+
+// normalizeDisabledPayload never trusts the wire: any non-list-of-
+// strings namespace collapses to [], a non-object payload to all-[].
+export function normalizeDisabledPayload(raw: unknown): DisabledLists {
+  const out: DisabledLists = { skills: [], tools: [], agents: [] };
+  if (raw === null || typeof raw !== "object") return out;
+  for (const kind of ["skills", "tools", "agents"] as const) {
+    const names = (raw as Record<string, unknown>)[kind];
+    if (Array.isArray(names)) {
+      out[kind] = names.filter((n): n is string => typeof n === "string" && n.length > 0);
+    }
+  }
+  return out;
+}
+
+// withDisabledFlags merges one namespace's fold into the registry
+// rows by name. A fold entry whose name matches no row is IGNORED here
+// (the registry listing is the tab's truth; the server refuses
+// unknown-name disables so the fold never widens past it). Pure.
+export function withDisabledFlags<T extends { name: string }>(
+  rows: readonly T[],
+  disabled: readonly string[],
+): (T & { disabled: boolean })[] {
+  const set = new Set(disabled);
+  return rows.map((r) => ({ ...r, disabled: set.has(r.name) }));
+}
+
+// fetchRegistryDisabled loads the fold. 501 = the host serves no
+// registry toggle seam: the caller renders the list read-only, same
+// fallback the settings pane uses for a missing knob seam.
+export async function fetchRegistryDisabled(): Promise<DisabledLists> {
+  const r = await fetch("/disabled");
+  if (!r.ok) {
+    let msg = `disabled: ${r.status}`;
+    try {
+      const text = await r.text();
+      if (text) msg = text;
+    } catch {
+      // keep the status-code message
+    }
+    throw new Error(msg);
+  }
+  return normalizeDisabledPayload(await r.json());
+}
+
+// toggleRegistryEntry PUTs one entry's new state and returns the fresh
+// fold (one response carries the state it landed; no second GET).
+// Rejections throw with the server's plain-text reason: 404 is the
+// unknown-name refusal, 409 the rest (built-in-wins, persistence).
+export async function toggleRegistryEntry(
+  kind: RegistryKind,
+  name: string,
+  enabled: boolean,
+): Promise<DisabledLists> {
+  const r = await fetch(`/disabled/${kind}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, enabled }),
+  });
+  if (!r.ok) {
+    let msg = `registry toggle: ${r.status}`;
+    try {
+      const text = await r.text();
+      if (text) msg = text;
+    } catch {
+      // keep the status-code message
+    }
+    throw new Error(msg);
+  }
+  return normalizeDisabledPayload(await r.json());
+}
+
+// registryNote builds the confirm line a disabled-direction toggle
+// shows in its row: each namespace names what its exclusion means
+// (the same voice as toggleNote for modules). Enable needs no note.
+export function registryNote(kind: RegistryKind, name: string, enable: boolean): string {
+  if (enable) return "";
+  const consequence: Record<RegistryKind, string> = {
+    skills: "excluded from the session prompt build",
+    tools: "absent from the agent tool list",
+    agents: "roster row and wake triggers off; home untouched",
+  };
+  return `disable ${name}? ${consequence[kind]}`;
+}
+
+// filterRegistryRows narrows the list live, the same contract as
+// filterModuleRows: name or description substring, case-insensitive.
+// Pure - never touches the caller's arrays.
+export function filterRegistryRows(
+  rows: readonly RegistryRow[],
+  query: string,
+): RegistryRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...rows];
+  return rows.filter(
+    (r) =>
+      r.name.toLowerCase().includes(q) ||
+      (r.description ?? "").toLowerCase().includes(q),
+  );
 }

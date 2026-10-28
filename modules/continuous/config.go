@@ -31,6 +31,12 @@ type Config struct {
 	// subprocess boundary; the timeout is the second fence). 0 keeps
 	// the default (30 minutes).
 	WakeTimeoutSeconds int `yaml:"wake_timeout_seconds"`
+	// Disabled carries the config.yaml disabled.agents names (v0.14.1
+	// registry-browser): not a continuous: section key - the host
+	// copies it in from the disabled: fold at config routing. A
+	// disabled agent stays registered (folder presence) and leaves
+	// the roster and every wake trigger; its home is never touched.
+	Disabled []string `yaml:"-"`
 }
 
 // Default returns the continuous configuration defaults.

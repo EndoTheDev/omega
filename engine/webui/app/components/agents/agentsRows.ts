@@ -65,3 +65,19 @@ export function agentsListIsEmpty(profiles: readonly OmegaAgent[]): boolean {
 export function agentSessionTitle(s: OmegaAgentSession): string {
   return s.label || s.id.slice(0, 12) + "...";
 }
+
+/** agentDetailLines builds the RegistryList row's expandable detail:
+    the config summary, one line per fact, the ordering the old detail
+    block used (model, provider, dir, skills, memory, sessions, last
+    activity). A missing fact renders "-" - honest empty. */
+export function agentDetailLines(a: OmegaAgent): string[] {
+  return [
+    `model: ${agentModelText(a) || "-"}`,
+    `provider: ${a.provider_type || "-"}`,
+    `dir: ${a.dir}`,
+    `skills: ${agentSkillsText(a) || "none"}`,
+    `memory: ${agentMemoryText(a)}`,
+    `sessions: ${a.session_count}`,
+    `last activity: ${a.last_activity || "-"}`,
+  ];
+}

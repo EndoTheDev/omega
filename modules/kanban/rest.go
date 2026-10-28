@@ -16,12 +16,19 @@ import (
 // ones the webui consumes, byte-stable from the engine-side move:
 // GET /tasks list/filter, POST /tasks create, GET /tasks/{id} detail
 // (task + comments + events), PATCH /tasks/{id}, POST
-// /tasks/{id}/comments, GET /boards. A disabled kanban answers 404 -
-// no route registered, nothing to degrade to (Q7: one mount path).
+// /tasks/{id}/comments, GET /boards, and DELETE /boards/{name} to
+// remove an empty non-default board (a registry op riding home paths,
+// so it mounts only when the registry exists). A disabled kanban
+// answers 404 - no route registered, nothing to degrade to (Q7: one
+// mount path).
 //
 // There is deliberately no cross-board mutation endpoint: a PATCH
 // moves a card inside its board only. Switching boards is the
 // registry pointer's job (omega kanban board use), never a card op.
+// Deleting is a registry op like switching, but destructive - the
+// handler keeps DeleteBoard's guards verbatim (default board, unknown
+// board, current pointer target, non-empty boards all refused) and
+// answers 400 with the refusal text.
 
 // writeJSON encodes v and answers status, the envelope the
 // engine-side handlers wrote.
@@ -204,6 +211,28 @@ func taskCommentsHandler(store restProvider) func(http.ResponseWriter, *http.Req
 	}
 }
 
+// boardDeleteHandler serves DELETE /boards/{name}: remove a board
+// through the registry's own DeleteBoard, keeping every guard (the
+// default board, the current pointer target, and any board that still
+// holds tasks are refused with a 400 carrying the refusal text - the
+// webui surfaces it verbatim). DeleteBoard is the irreversible step
+// (os.RemoveAll on the board's sqlite dir); the webui's confirm click
+// is only a courtesy double-take, this handler is the law.
+func boardDeleteHandler(home string) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" {
+			http.Error(w, "missing board name", http.StatusBadRequest)
+			return
+		}
+		if err := DeleteBoard(home, name); err != nil {
+			http.Error(w, "delete board: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": name})
+	}
+}
+
 // restProvider is the slice of KanbanProvider the handlers need.
 type restProvider interface {
 	CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error)
@@ -234,6 +263,12 @@ func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 			pattern string
 			handler func(http.ResponseWriter, *http.Request)
 		}{"GET /boards", boardsHandler(b)})
+		if p.home != "" {
+			rows = append(rows, struct {
+				pattern string
+				handler func(http.ResponseWriter, *http.Request)
+			}{"DELETE /boards/{name}", boardDeleteHandler(p.home)})
+		}
 	}
 	for _, row := range rows {
 		if err := api.RegisterRoute(row.pattern, row.handler); err != nil {

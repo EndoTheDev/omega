@@ -64,12 +64,15 @@ test("agents list is never empty by construction: default exists", () => {
 
 // --- AgentsPanel.vue: the wire contract the deferred mount serves ---
 
-test("AgentsPanel fetches the real endpoints, no omega.ts dependency", () => {
+test("AgentsPanel fetches the real endpoints (the wiring pass folded omega.ts in)", () => {
   const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
   assert.match(vue, /["'`]\/agents["'`]/, "GET inventory");
   assert.match(vue, /agents\/\$\{[^}]+\}\/sessions/, "agent-scoped sessions route");
   assert.match(vue, /method: ["'`]POST["'`]/, "scaffold + create-as-agent POSTs");
-  assert.ok(!/composables\/omega/.test(vue), "no omega.ts import (same-file ruling: owned by t_14f73742; the wiring pass folds it)");
+  // t_372b9e9a: the wiring pass landed - the panel binds the registry
+  // fold helpers through composables/omega (RegistryRow type at least)
+  assert.match(vue, /composables\/omega/, "the shared registry helpers are the wire");
+  assert.match(vue, /\/disabled\/agents/, "and the fold wire is the agents namespace");
 });
 
 test("AgentsPanel exposes the card's primary action and honest empty states", () => {
@@ -77,4 +80,38 @@ test("AgentsPanel exposes the card's primary action and honest empty states", ()
   assert.match(vue, /new session as this agent/, "the primary action button");
   assert.match(vue, /no sessions as this agent/, "honest session-list empty state");
   assert.match(vue, /agentsRows/, "renders from the pure model");
+});
+
+// --- t_1ba868bb: agent sessions open like normal sessions in the main
+// pane (Hermes bots parity) ---
+
+test("AgentsPanel session rows emit open-session; app.vue routes it through the sidebar opener", () => {
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  assert.match(vue, /@click="openAgentSession\(s\.id\)"/, "every session row is a click target");
+  assert.match(vue, /emit\("open-session", id\)/, "the panel emits the row's session id");
+  assert.match(vue, /defineEmits<\{ \(e: "open-session", id: string\): void \}>/, "the emit contract");
+  const appVue = read("webui", "app", "app.vue");
+  assert.match(appVue, /@open-session="openChatTab"/, "app.vue wires the emit to the main-pane opener");
+  assert.match(appVue, /<AgentsPanel[\s\S]*?@open-session="openChatTab"/, "the agents pane carries the wiring");
+  assert.match(appVue, /<ContinuousPanel[\s\S]*?@open-session="openChatTab"/, "the continuous pane carries the wiring");
+});
+
+test("new session as this agent opens the created session in the main pane", () => {
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  assert.match(vue, /const created = \(await res\.json\(\)\) as OmegaAgentSession/, "POST parses the created row");
+  assert.match(vue, /emit\("open-session", created\.id\)/, "the created id opens immediately");
+  // the detail list still refreshes (the rework moved it into the
+  // RegistryList row's expandable slot - loadSessions is the refetch)
+  assert.match(vue, /await loadSessions\(\{ name \} as RegistryRow\)/, "the detail list still refreshes");
+});
+
+// --- the list contract (card t_619832ee) ---
+
+test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  // Trust boundary: the backend used to answer a zero-session agent with
+  // the literal body `null`, detailSessions.length threw, and the whole
+  // sidebar went blank. Both fetch sites carry the ?? [] guard.
+  const guardCount = (src: string): number => (src.match(/\?\? \[\]/g) ?? []).length;
+  assert.equal(guardCount(vue), 2, "exactly one ?? [] guard per list fetch (GET /agents + GET .../sessions)");
 });

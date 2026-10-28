@@ -443,3 +443,106 @@ func TestCanvasResyncDetachesAndRestores(t *testing.T) {
 		t.Fatalf("kanban dispatch after enable routed nowhere: %v", err)
 	}
 }
+
+// TestResyncReinstallsSink: the sink rides the same registration that
+// declares the panels. A provider a live re-enable re-registered gets
+// its PanelUpdateSink closure installed again - a module enabled live
+// pushes to the canvas exactly like one mounted at boot (the Oct-27
+// incident's surviving half: handlers returned, pushes stayed dead).
+func TestResyncReinstallsSink(t *testing.T) {
+	kb := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "kanban", panels: []core.Panel{
+		panel("board", "kanban.board", act("refresh", "kanban")),
+	}}}
+	files := &panelProviderStub{name: "files", panels: []core.Panel{
+		panel("browser", "files.browser", act("reload", "files")),
+	}}
+	c, err := mountedCtx(t, []core.PanelProvider{kb, files}, nil)
+	if err != nil {
+		t.Fatalf("NewCanvas: %v", err)
+	}
+
+	// the disable cascade: kanban's provider leaves the Context.
+	if err := c.Resync(&core.Context{PanelProviders: []core.PanelProvider{files}}); err != nil {
+		t.Fatalf("Resync (disable): %v", err)
+	}
+
+	// the scoped remount appends a FRESH capsule instance (the mount
+	// builds a new one); it re-registers - and must get a sink again.
+	kb2 := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "kanban", panels: []core.Panel{
+		panel("board", "kanban.board", act("refresh", "kanban")),
+	}}}
+	if err := c.Resync(&core.Context{PanelProviders: []core.PanelProvider{kb2, files}}); err != nil {
+		t.Fatalf("Resync (enable): %v", err)
+	}
+	kb2.mu.Lock()
+	update := kb2.update
+	kb2.mu.Unlock()
+	if update == nil {
+		t.Fatalf("re-registered provider got no sink - a live-enabled module pushes dead")
+	}
+	if err := update(core.Panel{ID: "board", Kind: "kanban.board", Payload: "live"}); err != nil {
+		t.Fatalf("push through the reinstalled sink: %v", err)
+	}
+	for _, p := range c.Snapshot() {
+		if p.ID == "board" && p.Payload != "live" {
+			t.Fatalf("push did not land in the re-registered namespace: %+v", p)
+		}
+	}
+}
+
+// TestResyncKeepsLateRegistrantsThroughChurn pins the Oct-27 incident
+// shape: the chat capsule registers at channel Start - AFTER the boot
+// canvas was built - and other modules toggle through the journal
+// around it. A module's live disable and re-enable must never touch an
+// unrelated late registrant's handlers, sink or panel state (the old
+// journal truncation undo chopped exactly this: handlers["http_channel"]
+// died in a toggle storm and every push logged "unknown module").
+func TestResyncKeepsLateRegistrantsThroughChurn(t *testing.T) {
+	kb := &panelProviderStub{name: "kanban", panels: []core.Panel{
+		panel("board", "kanban.board", act("refresh", "kanban")),
+	}}
+	chat := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "http_channel", panels: []core.Panel{
+		panel("chat", "chat", act("stop", "http_channel"), act("retry", "http_channel")),
+	}}}
+	// the real boot order: the channel's Start registers the capsule
+	// and the canvas builds over the providers (wire: registerAt, then
+	// NewCanvas) - chat is present at build, mounted LAST.
+	c, err := mountedCtx(t, []core.PanelProvider{kb, chat}, nil)
+	if err != nil {
+		t.Fatalf("NewCanvas: %v", err)
+	}
+
+	// the storm: a toggleable module goes down and comes back.
+	if err := c.Resync(&core.Context{PanelProviders: []core.PanelProvider{chat}}); err != nil {
+		t.Fatalf("Resync (kanban disable): %v", err)
+	}
+	kb2 := &panelProviderStub{name: "kanban", panels: []core.Panel{
+		panel("board", "kanban.board", act("refresh", "kanban")),
+	}}
+	if err := c.Resync(&core.Context{PanelProviders: []core.PanelProvider{kb2, chat}}); err != nil {
+		t.Fatalf("Resync (kanban enable): %v", err)
+	}
+
+	// the late registrant survived the churn whole: handlers, sink,
+	// state - and a chat push still routes.
+	chat.mu.Lock()
+	update := chat.update
+	chat.mu.Unlock()
+	if update == nil {
+		t.Fatalf("late registrant lost its sink across other modules' toggles")
+	}
+	if err := update(core.Panel{ID: "chat", Kind: "chat", Payload: "still live"}); err != nil {
+		t.Fatalf("chat push after toggle storm: %v (the unknown-module rejection)", err)
+	}
+	snap := c.Snapshot()
+	seen := map[string]any{}
+	for _, p := range snap {
+		seen[p.ID] = p.Payload
+	}
+	if seen["chat"] != "still live" {
+		t.Fatalf("storm churn corrupted the namespaces: %+v", snap)
+	}
+	if _, ok := seen["board"]; !ok || len(snap) != 2 {
+		t.Fatalf("re-enabled module lost its panel or order: %+v", snap)
+	}
+}

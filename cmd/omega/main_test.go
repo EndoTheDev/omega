@@ -494,18 +494,18 @@ func TestBuildConfigs(t *testing.T) {
 // probing).
 func TestWebBaseURL(t *testing.T) {
 	host := "http://127.0.0.1:11435"
-	if got := webBaseURL(Config{Provider: ProviderConfig{Host: host}}); got != host {
+	if got := webBaseURL("", host); got != host {
 		t.Errorf("derived = %q, want %q", got, host)
 	}
-	if got := webBaseURL(Config{Provider: ProviderConfig{Host: host + "/v1"}}); got != host {
+	if got := webBaseURL("", host+"/v1"); got != host {
 		t.Errorf("derived with /v1 = %q, want %q", got, host)
 	}
 	want := "https://ollama.com/api-mirror"
-	got := webBaseURL(Config{Provider: ProviderConfig{Host: host}, Web: WebConfig{BaseURL: want}})
+	got := webBaseURL(want, host)
 	if got != want {
 		t.Errorf("override = %q, want %q", got, want)
 	}
-	if got := webBaseURL(Config{}); got != "" {
+	if got := webBaseURL("", ""); got != "" {
 		t.Errorf("unset host = %q, want empty", got)
 	}
 }

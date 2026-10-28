@@ -200,8 +200,31 @@ body {
      the strip back on top so the squeeze is always escapable. */
   position: relative;
   z-index: 40;
-  background: linear-gradient(to bottom,
-    transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px);
+}
+/* t_e539ba29 (Endo ruling 2026-10-28, dividers' LINES through chips): the
+   column divider rests INVISIBLE. Its old mid-gutter structural line
+   stacked with the chat card's bottom edge above and the tab strip's
+   border-top below - three hairlines in 6px that read as "lines going
+   through the divider", and the strip chip sits right on the topmost
+   seam. The seam below now belongs to the pane's header (the tab bar's
+   full-width border-top, unchanged); the handle is a hover affordance
+   like VS Code's sashes: the grab band finds it, hover/drag/snap light
+   the full 4px band, and the row's overhang margins still reach the
+   junction columns.
+   t_4e2ceca1 (Endo 2026-10-28, follow-up): the ruling is UNIFORM - the
+   row splits' vertical dividers rest invisible too (they kept their
+   stroke after e36e555 and read as a persistent seam in the pane row).
+   The kill rides :not() guards and is GENERIC: this rule's selector is
+   (0,4,0) - a class plus three counted pseudo-classes - and out-rains
+   both base rules (the vertical (0,1,0) and the column (0,3,0)), so all
+   orientations rest as nothing. That ALSO fixes e36e555's finding 3:
+   the narrower (0,3,0) scoped kill always out-rained the (0,2,0)
+   hover/active/snap bands, so the horizontal handle never highlighted
+   at all (the vertical base rule is (0,1,0), which is why only the
+   sidebars ever lit). Inside the guards the rule is inert on
+   hover/drag/snap and the generic full-band rules paint instead. */
+.dock-divider:not(:hover):not(.active):not(.snap) {
+  background: none;
 }
 /* the grab band: 8px above and below the 4px visual - the strip is
    easy to FIND without growing its visual weight */
@@ -469,6 +492,71 @@ body {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 999px;
   box-shadow: 0 2px 10px rgb(0 0 0 / 25%);
+}
+
+/* v0.14.4 ruling 5: the ghost overlay's honesty chrome. A REFUSED zone
+   hatches red (the predictor's refusal is the commit's refusal), the
+   landing shows its direction + the exact resulting halves. */
+.dock-drop-zone.refused {
+  border-color: color-mix(in srgb, var(--err, #d64545) 85%, transparent);
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--err, #d64545) 16%, transparent) 0 6px,
+    color-mix(in srgb, var(--err, #d64545) 32%, transparent) 6px 12px
+  );
+}
+.dock-ghost {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 12px);
+  text-align: center;
+}
+.dock-ghost-refused {
+  display: inline-block;
+  max-width: 90%;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--err, #d64545);
+  background: color-mix(in srgb, var(--err, #d64545) 14%, var(--z1));
+  border: 1px solid color-mix(in srgb, var(--err, #d64545) 50%, transparent);
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dock-ghost-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--z1));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+/* the divider drag's live snap readout: px + % numerals under the divider,
+   the rung highlighted when the drag sits inside an attract zone */
+.dock-resize-readout {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, 6px);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--z1));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 25%);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.dock-resize-readout.snap {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 75%, transparent);
 }
 /* empty pane: the '+' component menu (VS Code empty editor-group style) */
 .dock-empty {
@@ -1886,13 +1974,70 @@ labels stopped short of the right edge. */
 
 /* ---- composer: floating card inside the chat pane ---- */
 .composer {
-  position: relative; /* anchor for the expand button */
+  position: relative; /* anchor for the expand button and the palette */
   margin: 0 12px 12px;
   background: var(--z1-raised);
   border: 1px solid var(--stroke);
   border-radius: var(--r-card);
   display: flex;
   flex-direction: column;
+}
+
+/* ---- the / command palette + @ mention picker (t_07aed3f9) ----
+   The same dropdown grammar as .model-pop (the themed listbox), anchored
+   ABOVE the composer so it never covers the draft; z-index above the
+   attach strip and the expand button. */
+.composer-palette {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+  margin: 0;
+  padding: 4px;
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-2);
+  z-index: 30;
+  max-width: 480px;
+}
+.palette-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.palette-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: var(--r-chip);
+  cursor: pointer;
+  min-width: 0;
+}
+.palette-list li:hover,
+.palette-list li.active { background: var(--z1-raised); }
+.palette-list li.active { color: var(--text); }
+.palette-name {
+  font-family: var(--mono);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.palette-list li.active .palette-name { color: var(--accent); }
+.palette-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.palette-list li.palette-none {
+  color: var(--text-dim);
+  cursor: default;
+  display: block;
 }
 
 /* appears once content exceeds the 4-row cap - grows the composer further */

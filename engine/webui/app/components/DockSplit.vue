@@ -55,6 +55,15 @@
         @drag="(d, r) => onDrag(idx + 1, d, r)"
         @end="onEnd" />
     </template>
+    <!-- v0.14.4 ruling 5: the live snap readout under the dragged divider -->
+    <div
+      v-if="dragging !== null && readout"
+      class="dock-resize-readout"
+      :class="{ snap: readout.rung !== null }"
+      :style="readoutStyle()"
+      role="status">
+      {{ readout.text }}
+    </div>
   </div>
 </template>
 
@@ -67,7 +76,7 @@
   // rendered cells at gesture start and hands everything to the store,
   // whose pure math owns floors (128 drag / 320 chat) and the snap
   // ladder (+320, panes.ts).
-  import { inject, ref } from "vue";
+  import { inject, onBeforeUnmount, onMounted, ref } from "vue";
   import { snapCandidateAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
@@ -143,6 +152,15 @@
   let pending = false;
   const snappedIdx = ref<number | null>(null);
 
+  // the divider's live numerals (v0.14.4 ruling 5): the controlled pane's
+  // px + share of the content box, and the snap rung when the drag sits
+  // inside one - the badge rides the divider while the gesture runs.
+  import { resizeReadout, type ResizeReadout } from "../composables/dockghost";
+  const readout = ref<ResizeReadout | null>(null);
+  const readoutPos = ref<{ x: number; y: number } | null>(null);
+  const readoutStyle = () =>
+    readoutPos.value ? { left: readoutPos.value.x + "px", top: readoutPos.value.y + "px" } : {};
+
   function measure(): number[] {
     const node = props.node as DockSplit;
     const cells = [...(rootEl.value?.children ?? [])].filter((el) =>
@@ -158,6 +176,8 @@
     pointerState.base = null;
     pending = false;
     snappedIdx.value = null;
+    readout.value = null;
+    readoutPos.value = null;
   }
 
   function onDrag(dividerIndex: number, delta: number, raw: number) {
@@ -165,6 +185,9 @@
       if (dragging.value !== null) return; // another divider's gesture owns this pointer
       dragging.value = dividerIndex;
       startPx = measure();
+      // v0.14.4 ruling 10: a RESIZE is ONE layout op per gesture - the
+      // snapshot lands at gesture start; per-tick moves ring nothing
+      api.beginResize();
       pointerState.base = null; // fresh gesture: the reducer re-derives the base
     }
     if (!startPx) return;
@@ -207,9 +230,40 @@
           : startPx[li] + cumulative;
     const step = bottomCase ? BOTTOM_SNAP_STEP : SNAP_STEP;
     snappedIdx.value = snapCandidateAt(px, step) !== null ? dividerIndex : null;
+    // v0.14.4 ruling 5: the LIVE snap readout - the same px the drag math
+    // applied, as px + % of the content box, with the rung it snapped to
+    readout.value = resizeReadout(px, contentPx, step);
+    const dividers = [...(rootEl.value?.children ?? [])].filter((el) =>
+      (el as HTMLElement).classList.contains("dock-divider"),
+    ) as HTMLElement[];
+    const divEl = dividers[dividerIndex - 1];
+    if (divEl && rootEl.value) {
+      const dr = divEl.getBoundingClientRect();
+      const rr = rootEl.value.getBoundingClientRect();
+      readoutPos.value = { x: dr.left - rr.left, y: dr.top - rr.top };
+    }
   }
 
   function onEnd() {
     dropGesture();
   }
+
+  // v0.14.4 ruling 10: Modifier-Z at the dock root walks the layout back
+  // one op. Only the ROOT split instance binds (cellStyle null = root);
+  // text fields keep their native undo, shift-Z stays untouched (the ring
+  // walks BACK only). The store reports false on an empty ring.
+  function onUndoKey(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    api.undoLayout();
+  }
+  onMounted(() => {
+    if (!props.cellStyle) window.addEventListener("keydown", onUndoKey);
+  });
+  onBeforeUnmount(() => {
+    window.removeEventListener("keydown", onUndoKey);
+  });
 </script>

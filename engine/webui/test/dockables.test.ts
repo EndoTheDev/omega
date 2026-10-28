@@ -35,6 +35,8 @@ import {
   openSingleton,
   moveTab,
   serialize,
+  deserializeLayout,
+  treeShapesMatch,
   splitPane,
   allNodes,
   firstMainPaneId,
@@ -449,9 +451,11 @@ describe("dock store: the pane-model reset", () => {
       ["files", "cron", "skills", "tools", "agents", "continuous", "settings", "kanban", "extensions", "canvas", "insights"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
-    // persisted at once so the next boot never re-modernizes
-    const stored = JSON.parse(mem.getItem(DOCK_LAYOUT_KEY) ?? "{}");
-    assert.deepEqual(stored.tree, tree as unknown, "the modern tree persisted on boot");
+    // persisted at once so the next boot never re-modernizes; the record
+    // shape is v:3 (px shares): the same RENDER, but fixed children's
+    // fractions re-derive from their px, so compare through the shape law
+    const back = deserializeLayout(mem.getItem(DOCK_LAYOUT_KEY)!);
+    assert.ok(back && treeShapesMatch(back.tree, tree), "the modern tree persisted on boot (same render)");
   });
 
   it("a five-tab-era inspector gains settings + kanban in the canonical order (t_49d0b308)", async () => {

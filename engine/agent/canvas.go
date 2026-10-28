@@ -109,21 +109,27 @@ func NewCanvas(ctx *core.Context, emit func(core.Event)) (*Canvas, error) {
 		if err != nil {
 			return nil, err
 		}
-		// A provider that owns state changing outside the action pipe
-		// gets the update closure for its own module namespace - the
-		// installation is registration, not wiring (arc 4b law: the
-		// sink rides the same registration that declares the panels,
-		// so an unmounted provider ships no emitter either).
-		if module != "" {
-			if sink, ok := p.(core.PanelUpdateSink); ok {
-				m := module
-				sink.SetPanelUpdate(func(panel core.Panel) error {
-					return c.Update(m, panel)
-				})
-			}
-		}
+		c.installSink(module, p)
 	}
 	return c, nil
+}
+
+// installSink hands one registered provider its update closure - the
+// arc 4b law: the sink rides the same registration that declares the
+// panels, so an unmounted provider ships no emitter either. Both mount
+// paths share it: NewCanvas at boot, Resync at a live re-enable (a
+// module re-registered without its closure pushes dead - silent, the
+// exact wiring bug the unknown-module law exists to keep loud).
+func (c *Canvas) installSink(module string, p core.PanelProvider) {
+	if module == "" {
+		return
+	}
+	if sink, ok := p.(core.PanelUpdateSink); ok {
+		m := module
+		sink.SetPanelUpdate(func(panel core.Panel) error {
+			return c.Update(m, panel)
+		})
+	}
 }
 
 // register mounts one module's declarations. The module name is
@@ -273,9 +279,11 @@ func (c *Canvas) Resync(ctx *core.Context) error {
 		_, mounted := c.handlers[module]
 		c.mu.Unlock()
 		if !mounted {
-			if _, err := c.register(p); err != nil {
+			module, err := c.register(p)
+			if err != nil {
 				return err
 			}
+			c.installSink(module, p)
 		}
 	}
 	return nil

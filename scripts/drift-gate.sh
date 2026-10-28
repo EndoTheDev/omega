@@ -14,7 +14,7 @@ set -euo pipefail
 #
 # Environment:
 #     DRIFT_BASE           base ref (default: origin/master)
-#     DRIFT_MAX_COMMITS    commit budget (default: 10)
+#     DRIFT_MAX_COMMITS    commit budget (default: 30)
 #     DRIFT_MAX_DAYS       day budget since last sync (default: 7)
 #     GITHUB_STEP_SUMMARY  when set, a markdown report appends to it
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 # (base missing - also red: an absent master means drift is unknowable).
 
 BASE="${DRIFT_BASE:-origin/master}"
-MAX_COMMITS="${DRIFT_MAX_COMMITS:-10}"
+MAX_COMMITS="${DRIFT_MAX_COMMITS:-30}"
 MAX_DAYS="${DRIFT_MAX_DAYS:-7}"
 
 # Both budgets must be integers.

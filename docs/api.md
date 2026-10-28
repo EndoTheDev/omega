@@ -36,6 +36,8 @@ documented below that is not in that mux is not real.
 | `/tools`                             | GET        | tool inventory                                 |
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501) |
 | `/skills`                            | GET        | loaded skills (name + description only)        |
+| `/commands`                          | GET        | extension command registry (palette rows)      |
+| `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
 | `/logs?lines=N`                      | GET        | omega.log tail (default 200, clamped 1..2000)  |
 | `/settings`                          | GET, PUT   | config knobs schema / diff-only save           |
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)     |
@@ -93,6 +95,14 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
 - **Images**: any user message rides AI image content (base64), capped
   at 10 MB decoded per image (400 above it, checked before anything
   runs).
+- **@-mentions expand server-side** (card t_07aed3f9): the LAST user
+  message runs through the one `core.ExpandAtMentions` law (the same
+  seam the TUI submit path calls) before the run starts. Relative
+  paths root at the session's workspace; `@file.png` attaches, text
+  files and `@glob` patterns inline, `@session:<id>` injects that
+  session's history, `@skill:<name>` injects skill content;
+  unresolvable tokens stay literal in the persisted message. The
+  browser never reads or expands files.
 
 **One live run per session.** A second `/chat` for a session with a
 live run is 409. Runs are DETACHED from the request (runHub): a client
@@ -319,6 +329,28 @@ up edits without restart.
   directory for the webui inspector: read-only, GET-only, 64 KiB
   preview cap, dot-segment + absolute + symlink-containment guards.
   No write path exists on this surface.
+
+## Commands (the slash palette's server surface)
+
+The webui's `/` command palette rides two endpoints (card t_07aed3f9).
+Slash commands run LOCALLY and never hit the agent — the TUI's law,
+same registration seams:
+
+- `GET /commands` — the extension command registry
+  (`ctx.Commands`): name + description + args per row. Skills are NOT
+  here — they ride `/skills` and the palette renders them as
+  `/<skill-name>` rows itself.
+- `POST /commands/dispatch` — body `{"name": "/<command>"}` (plus
+  optional `"args"`). Resolution order matches the TUI dispatch: a
+  registered extension command executes through the chain-on-miss
+  `ctx.CommandHandler` (rewired at boot and on every live module
+  toggle) and answers `{"kind":"command","text":...,"actions":[...]}`;
+  if no command matches and the name resolves to a skill, it answers
+  `{"kind":"skill","name":...,"content":...}` — the content the client
+  arms as a System preamble on its next send (the TUI injected skill
+  content in-process the same way). Unknown names are 404, non-slash
+  names 400, a missing handler 501. Dispatch is a local execution
+  surface: it never enqueues an agent run.
 
 ## Canvas (view-model)
 

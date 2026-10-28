@@ -470,6 +470,14 @@
   function onSend() {
     const text = draft.value.trim();
     if (!text) return;
+    // slash commands run locally and never hit the agent (the TUI's
+    // law, card t_07aed3f9): the host routes shell verbs to the app's
+    // local handler and module/skill commands to the dispatch surface
+    if (text.startsWith("/")) {
+      draft.value = "";
+      void host.command(stateKey, text);
+      return;
+    }
     draft.value = "";
     // the fork anchor rides a validated target (resolved against the
     // rendered transcript); a stale anchor degrades to a plain send,

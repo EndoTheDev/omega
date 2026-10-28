@@ -29,7 +29,7 @@ func vo(labels ...string) []core.VerdictOption {
 // (the answer POST or the hub's expiry resolves it).
 func verdictServer(t *testing.T) (*httptest.Server, *verdict.Hub) {
 	t.Helper()
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	h := verdict.NewHub(nil, nil)
 	s.seams.verdicts = h
 	ts := httptest.NewServer(s.Handler())
@@ -79,7 +79,7 @@ func issueCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{}
 }
 
 func TestVerdictsEndpoints501WithoutSeam(t *testing.T) {
-	ts := httptest.NewServer(NewServer(nil, nil, nil, nil, nil).Handler())
+	ts := httptest.NewServer(NewServer(nil, nil, nil, nil, nil, nil).Handler())
 	t.Cleanup(ts.Close)
 
 	for _, path := range []string{"/verdicts", "/sessions/s1/verdicts"} {
