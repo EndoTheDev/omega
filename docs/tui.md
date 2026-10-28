@@ -41,7 +41,7 @@ normal message.
 | `/search <query>`                     | store    | Search session messages (full-text; FTS5 phrase + prefix — `"fib"` finds `"fibonacci"`)                 |
 | `/thinking [level]`                   | provider | Set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)   |
 | `/tools [on \| off \| auto \| list]`  | tools    | Tool results: expanded / collapsed / auto, or list all tools                                            |
-| `/extensions`                         | shell    | List loaded extensions (the plugin system has no owning module)                                         |
+| `/modules` /extensions                | shell    | List loaded modules; /extensions is the alias (the plugin system has no owning module)                  |
 | `/skills`                             | skills   | List loaded skills                                                                                      |
 | `/theme [name]`                       | shell    | Switch theme (dark, light, auto; no arg lists all)                                                      |
 | `/files [path]`                       | tools    | Browse the working directory (enter opens, esc/q closes)                                                |

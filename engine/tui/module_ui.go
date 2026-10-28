@@ -24,7 +24,7 @@ import (
 // Ordered semantically: utility first, conversation control last, the
 // app exit at the end. Module commands slot in after shell commands,
 // sorted alphabetically so the table order is a law, not a whim.
-var shellCommands = []string{"/copy", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
+var shellCommands = []string{"/copy", "/modules", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
 
 // moduleTickMsg drives a module follow loop: one tick per interval
 // while the loop is active.

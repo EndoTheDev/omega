@@ -148,8 +148,9 @@ design):
 - **`/` at input start opens the command palette.** Rows: the webui's
   shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` —
   the TUI's knownCommands minus `/exit`, plus `/new` and `/sessions`;
-  `/copy /extensions /fork /help /panels /retry /theme /variant` map
-  to webui-native local actions), then extension commands from
+  `/copy /modules /fork /help /panels /retry /theme /variant` map
+  to webui-native local actions; `/extensions` rides the palette as
+  the /modules alias), then extension commands from
   `GET /commands`, then skills as `/<skill-name>` rows — the TUI's
   `buildCommands` assembly order. Typing filters case-insensitively
   over name AND description; ArrowUp/ArrowDown navigate, Enter picks

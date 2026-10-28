@@ -2737,9 +2737,8 @@ export function registryNote(kind: RegistryKind, name: string, enable: boolean):
   return `disable ${name}? ${consequence[kind]}`;
 }
 
-// filterRegistryRows narrows the list live, the same contract as
-// filterModuleRows: name or description substring, case-insensitive.
-// Pure - never touches the caller's arrays.
+// filterRegistryRows narrows the list live: name or description
+// substring, case-insensitive. Pure - never touches the caller's arrays.
 export function filterRegistryRows(
   rows: readonly RegistryRow[],
   query: string,

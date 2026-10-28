@@ -127,28 +127,29 @@ func TestHandleToolsListEmptyToolList(t *testing.T) {
 	}
 }
 
-// --- handleExtensions ---
+// --- handleModules (the /modules command; /extensions is the alias,
+// card t_210a0d19 rename law) ---
 
-func TestHandleExtensionsNone(t *testing.T) {
+func TestHandleModulesNone(t *testing.T) {
 	m := newTestModel("dark")
-	// Non-nil context with empty Infos -> [no extensions loaded].
-	// (handleExtensions dereferences m.extensions.Infos directly, so a
+	// Non-nil context with empty Infos -> [no modules loaded].
+	// (handleModules dereferences m.extensions.Infos directly, so a
 	// truly nil context would panic; production always has a context.)
 	m.extensions = &core.Context{}
-	out, _ := m.handleExtensions()
+	out, _ := m.handleModules()
 	mm := out.(model)
-	if !strings.Contains(transcriptOf(mm), "[no extensions loaded]") {
-		t.Fatalf("expected [no extensions loaded], got: %q", transcriptOf(mm))
+	if !strings.Contains(transcriptOf(mm), "[no modules loaded]") {
+		t.Fatalf("expected [no modules loaded], got: %q", transcriptOf(mm))
 	}
 }
 
-func TestHandleExtensionsWithInfos(t *testing.T) {
+func TestHandleModulesWithInfos(t *testing.T) {
 	m := newTestModel("dark")
 	m.extensions = ctxWithInfos(
 		core.ExtensionInfo{Name: "shell", Tools: 3, Commands: 1, Seams: []string{"tools"}},
 		core.ExtensionInfo{Name: "provider", Tools: 0, Commands: 2, Seams: []string{"provider"}},
 	)
-	out, _ := m.handleExtensions()
+	out, _ := m.handleModules()
 	mm := out.(model)
 	plain := transcriptOf(mm)
 	for _, want := range []string{"NAME", "TOOLS", "COMMANDS", "SEAMS", "shell", "provider"} {
@@ -159,6 +160,23 @@ func TestHandleExtensionsWithInfos(t *testing.T) {
 	// Tool/command counts appear as formatted integers.
 	if !strings.Contains(plain, "3") || !strings.Contains(plain, "2") {
 		t.Fatalf("expected tool/command counts in transcript, got: %q", plain)
+	}
+}
+
+// The /extensions spelling rides the same body - the alias law
+// (card t_210a0d19).
+func TestExtensionsAliasDispatchesModules(t *testing.T) {
+	m := newTestModel("dark")
+	m.extensions = &core.Context{}
+	out, _ := m.handleCommand("/extensions")
+	mm := out.(model)
+	if !strings.Contains(transcriptOf(mm), "[no modules loaded]") {
+		t.Fatalf("expected [no modules loaded] via the /extensions alias, got: %q", transcriptOf(mm))
+	}
+	out, _ = m.handleCommand("/modules")
+	mm = out.(model)
+	if !strings.Contains(transcriptOf(mm), "[no modules loaded]") {
+		t.Fatalf("expected [no modules loaded] via /modules, got: %q", transcriptOf(mm))
 	}
 }
 

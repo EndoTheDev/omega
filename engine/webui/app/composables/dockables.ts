@@ -257,8 +257,11 @@ export const DOCKABLES: readonly DockableComponent[] = [
     // mount. Unclosable like every inspector view: the loader restores
     // the full strip, and the outlet template must always exist.
     id: "extensions",
-    // card t_556ee727: the tab label joins the Title Case siblings.
-    title: "Extensions",
+    // card t_210a0d19 rename law: the tab label is "Modules" (the
+    // lifecycle cockpit); the dock id stays "extensions" - stored dock
+    // layouts persist ids, and a rename there would orphan them. The
+    // /modules palette name dispatches here; /extensions keeps working.
+    title: "Modules",
     // four squares: the module inventory, one frame
     icon: {
       rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },

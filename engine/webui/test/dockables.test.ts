@@ -138,14 +138,16 @@ describe("the dockable registry", () => {
     assert.deepEqual([...ids].sort(), [...DOCK_COMPONENTS].sort());
   });
 
-  it("tab labels ride the Title Case siblings (card t_556ee727)", () => {
+  it("tab labels ride the Title Case siblings (card t_556ee727 + t_210a0d19 rename)", () => {
     // every shell tab renders Title Case today: Files, Settings,
-    // Insights, and (card t_556ee727's pair) Agents + Extensions. The
-    // module tabs override via dockable.json; `agents`/`extensions` are
-    // the only registry titles the tab bar prints raw. Display labels
+    // Insights, Agents, and (card t_210a0d19's rename law) Modules -
+    // the extensions inventory tab's label is "Modules" while its dock
+    // id stays "extensions" (stored layouts persist ids). The module
+    // tabs override via dockable.json; `agents`/`extensions` are the
+    // only registry titles the tab bar prints raw. Display labels
     // ONLY - ids, routes and module names stay lowercase.
     assert.equal(COMPONENT_TITLES.agents, "Agents");
-    assert.equal(COMPONENT_TITLES.extensions, "Extensions");
+    assert.equal(COMPONENT_TITLES.extensions, "Modules");
     for (const d of DOCKABLES) {
       if (d.id === "agents" || d.id === "extensions") continue;
       assert.ok(

@@ -36,7 +36,7 @@ const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
 describe("command palette assembly", () => {
   it("shells minus /exit, the full TUI law", () => {
     const names = WEBUI_SHELL_COMMANDS.map((c) => c.name);
-    for (const cmd of ["/copy", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/help"]) {
+    for (const cmd of ["/copy", "/modules", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/help"]) {
       assert.ok(names.includes(cmd), `missing the TUI shell command ${cmd}`);
     }
     assert.ok(!names.includes("/exit"), "the webui has nothing to quit - /exit is out");
