@@ -12,9 +12,12 @@
 #   scripts/journeys/run.sh --base <url>       # other lane (seed-broken.sh uses this)
 #   scripts/journeys/run.sh <journey-name>...  # subset (e.g. 20-chat-send-response)
 #   JOURNEY_JSON=1 run.sh                      # machine summary on the final line
+#   JOURNEY_LOCK_WAIT=600 run.sh               # queue behind a live suite
+#                                              # instead of refusing
 #
 # Exit codes: 0 all green, 1 at least one journey red, 2 lane/browser
-# infra dead (nothing about the product is asserted in that state).
+# infra dead (nothing about the product is asserted in that state),
+# 3 another suite holds the run lock (refused, nothing ran).
 #
 # Two lanes (amendment, Endo 2026-10-21):
 #   - Pi per-landing: run.sh launches the Hermes-bundled headless
@@ -48,6 +51,40 @@
 # never ours: CHROME_PID stays empty and every kill path no-ops.
 
 set -u
+
+# --- suite run lock ----------------------------------------------------------
+# A journey suite is not concurrency-safe: two suites running at once share
+# the agent-browser daemon's global connection, the CDP port and the lane,
+# and interleave into mutual false reds (proven 2026-10-28: a worker verify
+# during the v0.13.0 gate red-flaked BOTH sides - empty session lists,
+# board-switcher timeouts, hangs). flock the global run lock on fd 9 for the
+# whole suite body: the kernel holds/releases it, so every exit path (normal,
+# die(), INT/TERM, SIGKILL, OOM) frees it without an explicit unlock. A second
+# concurrent suite refuses with a distinct message instead of interleaving.
+# Waiting is opt-in via env: worker verifies and the release gate run
+# JOURNEY_LOCK_WAIT=600 so they queue behind a live suite instead of
+# colliding with it (default 0 = refuse immediately). fd 9 is inherited by
+# sweep-chromes.sh, which reads it as "called from the live suite"; a
+# standalone sweep that cannot take the lock stands down. Every OTHER
+# background child launches with 9>&-: the resident agent-browser daemon,
+# the chrome, the recipe subshells and the watchdogs all outlive the suite
+# sometimes, and a single leaked lock fd keeps the flock alive after
+# run.sh exits - every later suite would refuse forever (proven live
+# 2026-10-28, fixed the same day).
+JOURNEY_LOCK=/tmp/omega-journeys.lock
+JOURNEY_LOCK_WAIT="${JOURNEY_LOCK_WAIT:-0}"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$JOURNEY_LOCK" || { echo "journeys: cannot open $JOURNEY_LOCK" >&2; exit 2; }
+  if ! flock -w "$JOURNEY_LOCK_WAIT" 9; then
+    holder="$(cat "${JOURNEY_LOCK}.pid" 2>/dev/null || echo '?')"
+    printf 'journeys: another journey suite holds the run lock (pid %s) - refusing to interleave\n' "$holder" >&2
+    printf '  queue behind it instead: JOURNEY_LOCK_WAIT=<secs> run.sh ...\n' >&2
+    exit 3
+  fi
+  printf '%s\n' "$$" > "${JOURNEY_LOCK}.pid"
+else
+  echo "journeys: flock(1) not found - running without the suite run lock" >&2
+fi
 
 JROOT="$(cd "$(dirname "$0")" && pwd)"
 EVID="$(mktemp -d "${TMPDIR:-/tmp}/omega-journeys-evidence.XXXXXX")"
@@ -107,7 +144,8 @@ launch_chrome() {
   mkdir -p "$UD"
   # setsid puts chrome (and its render children) in a process group of
   # its own: the group kill in stop_chrome then takes the whole tree
-  # without touching this script's own group.
+  # without touching this script's own group. 9>&-: chrome may outlive
+  # a SIGKILLed run.sh - it must never keep the run-lock fd alive.
   setsid env \
     LD_LIBRARY_PATH="$LIBS:$(dirname "$BINPATH")" \
     "$BINPATH" \
@@ -115,7 +153,7 @@ launch_chrome() {
     --user-data-dir="$UD" --no-first-run --no-default-browser-check \
     --disable-gpu --window-size=1280,720 --noerrdialogs \
     --use-mock-keychain --password-store=basic \
-    >/dev/null 2>&1 &
+    9>&- >/dev/null 2>&1 &
   CHROME_PID=$!
   CHROME_UD="$UD"
   local i=0
@@ -216,7 +254,11 @@ if chrome_listening; then
   # pending trap at once. Recipes stay foreground: a TERM mid-recipe
   # defers the trap to the recipe end, the trap still fires, the chrome
   # dies with the run - never an orphan.
-  "$AB" --session "$JOURNEY_SESSION" connect "$JOURNEY_CHROME_PORT" >/dev/null 2>&1 &
+  # 9>&- : never leak the run-lock fd into the resident daemon - the
+  # connect process forks a daemon that outlives the suite, and an
+  # inherited lock fd would keep the flock alive after run.sh exits
+  # (every later suite then refused forever).
+  "$AB" --session "$JOURNEY_SESSION" connect "$JOURNEY_CHROME_PORT" 9>&- >/dev/null 2>&1 &
   if ! wait "$!"; then
     echo "journeys: agent-browser cannot attach to the CDP port" >&2
     exit 2
@@ -289,16 +331,22 @@ for recipe in $want; do
   fi
   log="$EVID/$name.log"
   printf 'journeys: %-30s running\n' "$name"
+  # 9>&- on both background jobs: the recipe subshell and the watchdog
+  # compound fork children (ab CLI, sleep) that may be orphaned after
+  # the suite exits - none of them may keep the run-lock description
+  # alive, or the next suite refuses forever (proven 2026-10-28: leaked
+  # fd 9 in watchdog sleeps + the resident agent-browser daemon held
+  # the lock after a finished run; later suites refused).
   (
     trap 'cleanup_journey_sessions' EXIT
     . "$JROOT/lib.sh"
     . "$recipe"
-  ) > "$log" 2>&1 &
+  ) > "$log" 2>&1 9>&- &
   rpid=$!
-  sleep "$JOURNEY_TIMEOUT" && {
+  (sleep "$JOURNEY_TIMEOUT" && {
     kill "$rpid" 2>/dev/null
     printf 'journeys: %s exceeded %ss wall cap\n' "$name" "$JOURNEY_TIMEOUT" >> "$log"
-  } &
+  }) 9>&- &
   watchdog=$!
   if wait "$rpid"; then
     printf 'journeys: %-30s green\n' "$name"

@@ -42,6 +42,27 @@ set -u
 quiet=0
 [ "${1:-}" = "-q" ] && quiet=1
 
+# --- run lock ----------------------------------------------------------------
+# run.sh flocks /tmp/omega-journeys.lock on fd 9 for its whole suite body.
+# Called from a live suite (fd 9 inherited, pointing at the lock file),
+# proceeding is the point: the suite-start sweep reaps orphans before the
+# recipes run. A standalone sweep (cron, pre-merge, worker) must never fight
+# a live suite: if the lock is held by someone else, stand down entirely.
+# A sweep that takes the lock holds it for the reaping, so a suite starting
+# mid-sweep queues instead of racing it.
+JOURNEY_LOCK=/tmp/omega-journeys.lock
+if [ "$(readlink "/proc/$$/fd/9" 2>/dev/null)" = "$JOURNEY_LOCK" ]; then
+  : # inherited the live suite's lock fd - sweep on
+else
+  exec 9>>"$JOURNEY_LOCK"
+  if ! flock -n 9; then
+    holder="$(cat "${JOURNEY_LOCK}.pid" 2>/dev/null || echo '?')"
+    [ "$quiet" = "1" ] || printf 'sweep-chromes: journey suite holds the run lock (pid %s) - skipping\n' "$holder"
+    exec 9>&-
+    exit 0
+  fi
+fi
+
 count=0
 mains=""
 
