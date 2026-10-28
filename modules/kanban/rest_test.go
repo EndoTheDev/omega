@@ -10,14 +10,18 @@ package kanban
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	httptest2 "net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/modules/datadir"
 )
 
 // serveRoutes builds an http surface over the routes a mounted
@@ -296,4 +300,90 @@ func TestBoardParamIsolation(t *testing.T) {
 		t.Fatalf("unknown board create = %d, want 400", res.StatusCode)
 	}
 	res.Body.Close()
+}
+
+func TestBoardsDeleteEndpoint(t *testing.T) {
+	ctx, home := multiBoardCtx(t)
+	ts := serveRoutes(t, ctx)
+	boardDir := func(name string) string {
+		return filepath.Join(BoardsDir(home), name, "kanban.db")
+	}
+
+	// DELETE an empty non-default board -> 200, sqlite dir gone for real
+	res, err := do("DELETE", ts.URL+"/boards/beta", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete beta = %d, want 200", res.StatusCode)
+	}
+	if _, serr := os.Stat(boardDir("beta")); !os.IsNotExist(serr) {
+		t.Fatalf("beta sqlite dir survives: %v", serr)
+	}
+
+	// the registry answer agrees: main + alpha only
+	res, _ = http.Get(ts.URL + "/boards")
+	var got struct {
+		Boards []BoardInfo `json:"boards"`
+	}
+	json.NewDecoder(res.Body).Decode(&got)
+	res.Body.Close()
+	if len(got.Boards) != 2 || got.Boards[0].Name != DefaultBoardName || got.Boards[1].Name != "alpha" {
+		t.Fatalf("boards after delete = %+v", got.Boards)
+	}
+
+	// the default board is refused -> 400 with the refusal text
+	res, err = do("DELETE", ts.URL+"/boards/main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("delete main = %d, want 400", res.StatusCode)
+	}
+	if !strings.Contains(string(body), "refusing to delete the default board") {
+		t.Fatalf("delete main body = %q", string(body))
+	}
+	if _, serr := os.Stat(datadir.DBPath(home, "kanban.db")); serr != nil {
+		t.Fatalf("main dsn vanished: %v", serr)
+	}
+
+	// unknown boards refused -> 400
+	res, _ = do("DELETE", ts.URL+"/boards/ghost", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("delete ghost = %d, want 400", res.StatusCode)
+	}
+
+	// the current pointer target is refused (switch first)
+	if werr := WritePointer(home, "alpha"); werr != nil {
+		t.Fatal(werr)
+	}
+	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "current board") {
+		t.Fatalf("delete pointer target = %d %q", res.StatusCode, string(body))
+	}
+	if werr := WritePointer(home, DefaultBoardName); werr != nil {
+		t.Fatal(werr)
+	}
+
+	// a board holding tasks is refused
+	res, _ = http.Post(ts.URL+"/tasks?board=alpha", "application/json", strings.NewReader(`{"title":"stays"}`))
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("seed task = %d", res.StatusCode)
+	}
+	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "still holds") {
+		t.Fatalf("delete non-empty = %d %q", res.StatusCode, string(body))
+	}
+	if _, serr := os.Stat(boardDir("alpha")); serr != nil {
+		t.Fatalf("alpha dsn vanished: %v", serr)
+	}
 }
