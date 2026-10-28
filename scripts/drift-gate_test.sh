@@ -4,8 +4,8 @@ set -uo pipefail
 # drift-gate_test.sh - scratch-repo tests for scripts/drift-gate.sh.
 # Run: bash scripts/drift-gate_test.sh
 # Real git fixtures: an upstream whose master tip is dated N days back and
-# a dev clone ahead K commits. The trip points ARE the ratified law:
-# trips at commit 11 and at day 8, stays green at 10 and 7.
+# dev clone ahead K commits. The trip points ARE the ratified law:
+# trips at commit 31 and at day 8, stays green at 30 and 7.
 
 GATE="$(cd "$(dirname "$0")" && pwd)/drift-gate.sh"
 
@@ -58,16 +58,16 @@ run_case() {
 	RC=$?
 }
 
-# S1: 10 commits ahead, base fresh -> green (limit is 10, trip is at 11)
-fx=$(fixture 10 0)
+# S1: 30 commits ahead, base fresh -> green (limit is 30, trip is at 31)
+fx=$(fixture 30 0)
 run_case "$fx"
-[ "$RC" -eq 0 ] && ok || bad "S1: 10 commits -> expected exit 0, got $RC"
+[ "$RC" -eq 0 ] && ok || bad "S1: 30 commits -> expected exit 0, got $RC"
 
-# S2: 11 commits ahead -> RED at the exact commit 11
-fx=$(fixture 11 0)
+# S2: 31 commits ahead -> RED at the exact commit 31
+fx=$(fixture 31 0)
 run_case "$fx"
-[ "$RC" -eq 1 ] && ok || bad "S2: 11 commits -> expected exit 1 (trip at commit 11), got $RC"
-printf '%s' "$OUT" | grep -q "11 commits ahead of master" && ok || bad "S2: reason text missing the commit count"
+[ "$RC" -eq 1 ] && ok || bad "S2: 31 commits -> expected exit 1 (trip at commit 31), got $RC"
+printf '%s' "$OUT" | grep -q "31 commits ahead of master" && ok || bad "S2: reason text missing the commit count"
 
 # S3: merge-base 8 days old, one dev commit dated now -> RED at day 8
 fx=$(fixture 1 8)
@@ -81,9 +81,9 @@ run_case "$fx"
 [ "$RC" -eq 0 ] && ok || bad "S4: 7 days -> expected exit 0, got $RC"
 
 # S5: both budgets blown -> ONE red with both reasons
-fx=$(fixture 12 9)
+fx=$(fixture 32 9)
 run_case "$fx"
-[ "$RC" -eq 1 ] && ok || bad "S5: 12 commits + 9 days -> expected exit 1, got $RC"
+[ "$RC" -eq 1 ] && ok || bad "S5: 32 commits + 9 days -> expected exit 1, got $RC"
 printf '%s' "$OUT" | grep -q "commits ahead of master" && \
 printf '%s' "$OUT" | grep -q "days past master's last sync" && \
 	ok || bad "S5: expected both reasons in one gate"
@@ -99,7 +99,7 @@ run_case "$fx" DRIFT_MAX_COMMITS=1
 [ "$RC" -eq 1 ] && ok || bad "S7: DRIFT_MAX_COMMITS=1 with 2 commits -> expected exit 1, got $RC"
 
 # S8: the CI summary block renders (GITHUB_STEP_SUMMARY)
-fx=$(fixture 11 0)
+fx=$(fixture 31 0)
 sum="$(mktemp "${TMPDIR:-/tmp}/drift-sum.XXXXXX")"
 run_case "$fx" GITHUB_STEP_SUMMARY="$sum"
 printf '%s' "$OUT" | grep -Eq 'DRIFT GATE' && \
