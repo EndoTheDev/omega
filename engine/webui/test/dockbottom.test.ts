@@ -396,19 +396,23 @@ describe("the horizontal divider drag (the bottom shell)", () => {
   });
 
   it("the chat (the absorbing neighbor above) keeps its 320 floor", () => {
-    const { split, startPx, contentPx } = column(200, 700);
-    // grow the bottom beyond what a 320 chat floor leaves: 700 - 320 = 380
+    // t_e539ba29: 600 content, not 700 - at the 0.5 max share the share cap
+    // (300) binds below the floor cap on a 700 box (350 < 380), so this
+    // premise needs a box the share cap leaves alone: share 300 > floor 280
+    const { split, startPx, contentPx } = column(200, 600);
+    // grow the bottom beyond what a 320 chat floor leaves: 600 - 320 = 280
     const d = dragSplitDivider(split, 1, startPx, -400, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
-    assert.equal(bottom.fixed, 380, "capped by the chat floor");
+    assert.equal(bottom.fixed, 280, "capped by the chat floor");
   });
 
-  // Endo's comment (2026-10-26): the max share. A drag past 65% of the
-  // content box caps even when the chat floor leaves room - the
-  // swallowed window strands the divider offscreen (bottom-anchored
-  // geometry), ungrabbable
-  it("the bottom shell's growth stops at the max share (65%)", () => {
-    // 1200 content: the chat floor would allow 880, the max share is 780 -
+  // Endo's comment (2026-10-26): the max share. A drag past it caps even
+  // when the chat floor leaves room - the swallowed window strands the
+  // divider offscreen (bottom-anchored geometry), ungrabbable. Lowered to
+  // 0.5 by t_e539ba29 (2026-10-28): 0.65 left the chat a cramped strip
+  // under the composer in the max-up state
+  it("the bottom shell's growth stops at the max share (50%)", () => {
+    // 1200 content: the chat floor would allow 880, the max share is 600 -
     // the share cap must bind first
     const { split, startPx, contentPx } = column(200, 1200);
     const d = dragSplitDivider(split, 1, startPx, -1000, contentPx);

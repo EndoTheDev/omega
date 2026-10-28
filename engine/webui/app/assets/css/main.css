@@ -200,8 +200,26 @@ body {
      the strip back on top so the squeeze is always escapable. */
   position: relative;
   z-index: 40;
-  background: linear-gradient(to bottom,
-    transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px);
+}
+/* t_e539ba29 (Endo ruling 2026-10-28, dividers' LINES through chips): the
+   column divider rests INVISIBLE. Its old mid-gutter structural line
+   stacked with the chat card's bottom edge above and the tab strip's
+   border-top below - three hairlines in 6px that read as "lines going
+   through the divider", and the strip chip sits right on the topmost
+   seam. The seam below now belongs to the pane's header (the tab bar's
+   full-width border-top, unchanged); the handle is a hover affordance
+   like VS Code's sashes: the grab band finds it, hover/drag/snap light
+   the full 4px band, and the row's overhang margins still reach the
+   junction columns. Row splits keep the through-line (their verticals
+   have no header edge to duplicate).
+   The kill rides :not() guards, and that ALSO fixes finding 3: this
+   rule's selector is (0,3,0) - three classes - and always out-rained
+   the (0,2,0) hover/active/snap bands, so the horizontal handle never
+   highlighted at all (the vertical base rule is (0,1,0), which is why
+   only the sidebars ever lit). Inside the guards the rule is inert on
+   hover/drag/snap and the generic full-band rules paint instead. */
+.dock-split.column > .dock-divider:not(:hover):not(.active):not(.snap) {
+  background: none;
 }
 /* the grab band: 8px above and below the 4px visual - the strip is
    easy to FIND without growing its visual weight */
