@@ -461,7 +461,7 @@
   // snapshot lands at boot; the deltas ride the run streams through the
   // host's canvasDelta dep. Panel presence lives in the store, never a
   // hardcoded list (Q5a).
-  import { createCanvasStore } from "./composables/canvas";
+  import { createCanvasStore, emitLocalToast } from "./composables/canvas";
   import CanvasPanel from "./components/canvas/CanvasPanel.vue";
   import ChatTab from "./components/ChatTab.vue";
   import SettingsTab from "./components/settings/SettingsTab.vue";
@@ -549,6 +549,27 @@
   // whole tree. The components resolve it via injection. ---
   const dock = createDock(window.localStorage);
   provide(DOCK_API_KEY, dock);
+  // card t_d54c718a (v0.14.4 ruling 6): a repaired layout surfaces ONCE
+  // at boot - one toast for the whole receipt, never one per repair,
+  // never a silent default-tree fallback. The record rides the local
+  // emit funnel (canvas.ts emitLocalToast, the same subscriber set +
+  // fingerprint dedupe as the canvas feed); read stays true, so the
+  // receipt never counts unread in the bell. onMounted puts the emit
+  // after the NotificationCenter subscription (children mount first) -
+  // the boot itself never waits on this.
+  onMounted(() => {
+    const repairs = dock.bootRepairs;
+    if (repairs.length === 0) return;
+    emitLocalToast({
+      id: 0,
+      kind: "chat",
+      source_id: "dock-layout",
+      title: `layout repaired: ${repairs.length} constraints eased`,
+      verdict: "ok",
+      created_at: new Date().toISOString(),
+      read: true,
+    });
+  });
   // the sidebars are FIXED panes (card t_4ae27e0d): no open/close state
   // exists on desktop. drawerOpen/inspectorOpen are the MOBILE overlay
   // flags only; the MenuBar toggles surface at every breakpoint (card
