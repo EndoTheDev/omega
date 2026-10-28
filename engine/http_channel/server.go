@@ -114,6 +114,11 @@ type seamSet struct {
 	notifications core.NotificationsProvider
 	verdicts      core.VerdictsProvider
 	trust         core.TrustProvider
+	// commands + commandHandler are the extension command registry
+	// (ctx.Commands, ctx.CommandHandler) - the palette's dispatch
+	// surface reads them per request (card t_07aed3f9).
+	commands       []core.ExtensionCommand
+	commandHandler func(ctx context.Context, name, args string) (core.CommandResult, error)
 }
 
 // Accessors, one per seam. All nil-safe: the nil seam is the contract
@@ -169,6 +174,8 @@ func (s *Server) rewireSeams(ctx *core.Context) error {
 	s.seams.notifications = ctx.Notifications
 	s.seams.verdicts = ctx.Verdicts
 	s.seams.trust = ctx.Trust
+	s.seams.commands = append([]core.ExtensionCommand(nil), ctx.Commands...)
+	s.seams.commandHandler = ctx.CommandHandler
 	s.seams.mu.Unlock()
 	if s.agent != nil {
 		s.agent.RefreshToolProviders(ctx)
@@ -213,6 +220,8 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/tools", s.handleTools)
+	mux.HandleFunc("/commands", s.handleCommands)
+	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
 	mux.HandleFunc("/extensions", s.handleExtensions)
 	// v0.12 E2: the module toggle surface - registry introspection and
 	// the live toggle (Q7), rejections visible through the refusal
@@ -569,22 +578,39 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		return nil, &runError{http.StatusConflict, "session already running"}
 	}
 
-	messages, err := s.sessionHistory(ctx, req, incoming)
-	if err != nil {
-		s.runs.finish(run)
-		return nil, err
-	}
-
 	// One session row up front (card t_9de5b009): the model pin, the
 	// workspace scope and the title kick all resolve from the same
 	// read. Ephemeral ids have no row; an unknown id leaves everything
-	// at the legacy defaults.
+	// at the legacy defaults. Read BEFORE sessionHistory so @-mention
+	// expansion below roots relative paths in the session's workspace.
 	var sess core.Session
 	sessionKnown := false
 	if s.store != nil && req.SessionID != "" && !req.Ephemeral {
 		if v, err := s.store.GetSession(ctx, req.SessionID); err == nil {
 			sess, sessionKnown = v, true
 		}
+	}
+
+	// Workspace scope: a session rooted in a folder roots THIS run's
+	// relative file operations there (the loop and the tools read the
+	// scope off ctx) and serves the folder's trust-gated AGENTS.md
+	// context instead of the process working directory's. Non-tty
+	// resolution skips an untrusted folder's context with a stderr
+	// note - the same gate the host applies at boot.
+	req.workspace = sess.Workspace
+	if sess.Workspace != "" && s.Trust() != nil {
+		req.workspacePromptContext = s.Trust().ResolveContext(sess.Workspace, false, false, false)
+	}
+
+	// @-mention expansion (card t_07aed3f9): the new input is expanded
+	// BEFORE history assembly, so the loop's sink persists the expanded
+	// prompt - the same truth the TUI's submit path held. The session's
+	// workspace roots relative paths.
+	incoming = s.expandAtMentions(incoming, req.workspace)
+	messages, err := s.sessionHistory(ctx, req, incoming)
+	if err != nil {
+		s.runs.finish(run)
+		return nil, err
 	}
 
 	// Model pin: a wire model WINS and sticks (the picker's choice is
@@ -618,17 +644,6 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// the session and enforces the state machine before writing.
 	if sessionKnown && sess.TitleState == 0 {
 		go s.maybeTitleSession(context.WithoutCancel(ctx), prov, *req, "", false)
-	}
-
-	// Workspace scope: a session rooted in a folder roots THIS run's
-	// relative file operations there (the loop and the tools read the
-	// scope off ctx) and serves the folder's trust-gated AGENTS.md
-	// context instead of the process working directory's. Non-tty
-	// resolution skips an untrusted folder's context with a stderr
-	// note - the same gate the host applies at boot.
-	req.workspace = sess.Workspace
-	if sess.Workspace != "" && s.Trust() != nil {
-		req.workspacePromptContext = s.Trust().ResolveContext(sess.Workspace, false, false, false)
 	}
 
 	tools := s.tools
@@ -807,7 +822,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
 			return
 		}
-		messageIn := messages
+		messageIn := s.expandAtMentions(messages, "")
 		prov, pinErr := s.pinProvider(&req)
 		if pinErr != nil {
 			http.Error(w, pinErr.Error(), pinErr.code)
