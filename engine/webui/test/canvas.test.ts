@@ -7,15 +7,19 @@
 //   production paths (no ref unwrapping - the test law);
 // - handlePayload's view_model_delta dispatch: the exact wire frame
 //   the arc 3b server serialization sends;
-// - source pins: CanvasPanel.vue (the generic renderer contract), the
-//   app.vue outlet + stream wiring, and the dockables registry entry
-//   (layout only - panel presence must never hardcode here).
+// - source pins: the app.vue stream wiring + the v0.14.3 fold ruling -
+//   the standalone canvas host tab is DELETED (its content reduced to
+//   duplicates; v0.14.2's module rows own every module panel), so the
+//   pins prove the ABSENCE as hard as the wiring's presence: no
+//   registry id, no outlet, no renderer file, the /panels palette
+//   route folded into the Modules tab.
 // Run: node --test engine/webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 
 import {
   fetchCanvas,
@@ -24,11 +28,7 @@ import {
   handlePayload,
   type CanvasPanel,
 } from "../app/composables/omega.ts";
-import {
-  createCanvasStore,
-  formatCanvasPayload,
-  toastRowOf,
-} from "../app/composables/canvas.ts";
+import { createCanvasStore } from "../app/composables/canvas.ts";
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
@@ -303,40 +303,57 @@ test("absent onViewModelDelta: the frame is a no-op (no canvas, snapshot is the 
   );
 });
 
-// --- the v1 plain render ---
+// (the dockables pins live in the fold block above: the entry's absence
+// is pinned there)
 
-test("formatCanvasPayload: pretty JSON, null payload marker", () => {
-  assert.equal(formatCanvasPayload(null), "(no payload)");
-  assert.equal(formatCanvasPayload({ a: 1 }), JSON.stringify({ a: 1 }, null, 2));
+// --- the v0.14.3 fold: the tab's absence is the pinned contract ---
+
+test("the canvas host tab is deleted (deletability, source + registry)", () => {
+  // no renderer file: removing the tab removes the feature from source
+  assert.ok(
+    !existsSync(join(modules, "webui", "app", "components", "canvas")),
+    "components/canvas/ is gone",
+  );
+  // the helpers the renderer was the sole reader of went with it
+  const canvas = read("webui", "app", "composables", "canvas.ts");
+  assert.doesNotMatch(canvas, /export function toastRowOf|export function formatCanvasPayload/);
+  // no registry id: the dock cannot seat, refill or restore it
+  assert.ok(!(DOCK_COMPONENTS as readonly string[]).includes("canvas"), "id out of DOCK_COMPONENTS");
+  assert.ok(!DOCKABLES.some((d) => d.id === "canvas"), "no DOCKABLES entry");
+  assert.ok(!MENU_DOCKABLES.includes("canvas" as never), "not in the '+' menu inventory");
+  assert.ok(!(INSPECTOR_TAB_COMPONENTS as readonly string[]).includes("canvas"), "not in the inspector strip");
+  assert.equal(COMPONENT_TITLES.canvas, undefined, "no stale title entry");
+  // no outlet, no drawer branch, no renderer import in the shell
+  const app = read("webui", "app", "app.vue");
+  assert.doesNotMatch(app, /#pane-canvas/, "the outlet is gone");
+  assert.doesNotMatch(app, /<\/CanvasPanel>|import CanvasPanel/, "the renderer import is gone");
+  assert.doesNotMatch(app, /inspectorDrawerActiveId === 'canvas'/, "the drawer branch is gone");
+  // and the CSS block went with it
+  const css = read("webui", "app", "assets", "css", "main.css");
+  assert.doesNotMatch(css, /\.canvas-pane|\.canvas-empty|\.canvas-panel/, "the canvas render CSS is gone");
 });
 
-// --- the toast panel body (card t_aca53fee) ---------------------------------
+test("/panels folds into the Modules tab (the palette keeps its name)", () => {
+  const app = read("webui", "app", "app.vue");
+  // the shell command still dispatches - to the Modules tab, where the
+  // panels live under their module rows (v0.14.2's cockpit)
+  assert.match(app, /case "\/panels":/, "/panels stays a dispatching command");
+  const at = app.indexOf('case "/panels":');
+  const block = app.slice(at, app.indexOf("}", at));
+  assert.match(block, /openModuleTab\("extensions"\)/, "it opens the Modules tab");
+  assert.match(block, /panels live under the module rows/, "the note says where they went");
+});
 
-const TOAST_RECORD = {
-  id: 42,
-  kind: "task",
-  source_id: "abc",
-  title: "Build finished",
-  verdict: "ok",
-  created_at: "2026-10-24T03:00:00Z",
-  read: false,
-};
-
-test("toastRowOf: the toast panel renders its record row read-only, not the JSON dump", () => {
-  // the arc 4b payload IS one record row: pass it through the row pipeline
-  assert.deepEqual(toastRowOf("toast", TOAST_RECORD), TOAST_RECORD);
-  assert.deepEqual(toastRowOf("toast", { id: 7, kind: "cron" }), { id: 7, kind: "cron" });
-  // every other kind keeps the v1 plain render
-  assert.equal(toastRowOf("list", TOAST_RECORD), null, "only kind toast");
-  assert.equal(toastRowOf("default", TOAST_RECORD), null);
-  // a toast with no record (the empty seeded panel) renders nothing row-shaped
-  assert.equal(toastRowOf("toast", null), null);
-  assert.equal(toastRowOf("toast", undefined), null);
-  // junk payloads fall back to the plain render, never crash
-  assert.equal(toastRowOf("toast", "junk"), null);
-  assert.equal(toastRowOf("toast", 7), null);
-  assert.equal(toastRowOf("toast", [TOAST_RECORD]), null, "not a rows array");
-  assert.equal(toastRowOf("toast", { unrelated: true }), null, "nothing row-shaped");
+// v0.14.3: the contract's stream + boot wiring stayed (the store feeds
+// the transcript and the toast funnel, not a host tab)
+test("app.vue: the boot snapshot and the delta wiring stay (the contract endures)", () => {
+  const app = read("webui", "app", "app.vue");
+  assert.match(app, /canvas\.refresh\(\)/, "the snapshot loads at boot (Q3b)");
+  assert.match(app, /canvasDelta:\s*\(panel\)/, "the host forwards run-stream deltas");
+  assert.match(app, /canvas\.applyDelta\(panel\)/, "deltas merge into the store");
+  // Q5a law: the shell has no hardcoded panel id, the store is the
+  // presence list
+  assert.ok(!/canvas\.panels\.some|panelsById/.test(app), "no hardcoded panel presence check");
 });
 
 test("normalizeCanvasPanel guards the descriptor", () => {

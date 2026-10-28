@@ -107,20 +107,22 @@
       {{ expanded ? "▾" : "▴" }}
     </button>
     <div class="toolbar">
-      <ModelSelect
-        :model="model"
-        :models="models"
-        @update:model="$emit('update:model', $event)" />
-      <!-- the session's working folder chip (card t_9de5b009): pick +
-           apply = the app writes the session row; the folder's trust
-           rules govern the session, its file operations root there -->
+      <!-- control row order (v0.14.3, user ruling): workspace FIRST,
+           then the model name, then the effort pill - the folder the
+           session runs in is the row's first citizen -->
       <WorkspaceSelect
         :workspace="workspace"
         :disabled="!workspaceBound"
         @update:workspace="$emit('update:workspace', $event)" />
+      <ModelSelect
+        :model="model"
+        :models="models"
+        @update:model="$emit('update:model', $event)" />
       <ThinkingSelect
         :level="thinking"
         @update:level="$emit('update:thinking', $event)" />
+      <!-- the workspace chip's note lives in WorkspaceSelect.vue (card
+           t_9de5b009); this row orders workspace, model, effort -->
       <!-- ONE morphing button (t_357cbe9c; retry left in t_95d2bc34):
            while a run streams this is the stop control; idle it is send
            always - dimmed (disabled) when a draft and the attachments

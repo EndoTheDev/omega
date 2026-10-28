@@ -2635,7 +2635,7 @@ export async function attachSession(
 // at: the normalizer tolerates junk (a malformed response never kills
 // a tab, t_619832ee precedent), the flag merge is by name.
 
-export type RegistryKind = "skills" | "tools" | "agents";
+export type RegistryKind = "skills" | "tools" | "agents" | "insights";
 
 export interface DisabledLists {
   skills: string[];
@@ -2646,11 +2646,14 @@ export interface DisabledLists {
 // RegistryRow is the shared list pattern's row: the registry name, the
 // human blurb, the expandable detail lines (extra payload lines the
 // row reveals on expand; empty = no expansion), and the fold state.
+// `value` is the read-only stat row's number (the insights consumer's
+// bars and counts read it; toggle-less rows never set it).
 export interface RegistryRow {
   name: string;
   description?: string;
   detail?: string[];
   disabled: boolean;
+  value?: number;
 }
 
 // normalizeDisabledPayload never trusts the wire: any non-list-of-
@@ -2727,9 +2730,12 @@ export async function toggleRegistryEntry(
 // registryNote builds the confirm line a disabled-direction toggle
 // shows in its row: each namespace names what its exclusion means
 // (the same voice as toggleNote for modules). Enable needs no note.
+// Insights (v0.14.3's read-only stat consumer) has no exclusion
+// surface - the note is the empty string, and the arm step never
+// reaches it (RegistryList only arms through the toggleable seam).
 export function registryNote(kind: RegistryKind, name: string, enable: boolean): string {
-  if (enable) return "";
-  const consequence: Record<RegistryKind, string> = {
+  if (enable || kind === "insights") return "";
+  const consequence: Record<Exclude<RegistryKind, "insights">, string> = {
     skills: "excluded from the session prompt build",
     tools: "absent from the agent tool list",
     agents: "roster row and wake triggers off; home untouched",
