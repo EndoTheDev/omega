@@ -327,9 +327,12 @@
   // "@..." token at the caret = the mention list. Esc sets dismissed
   // until the next draft change - a dropdown stays closed until a new
   // query re-opens it.
+  //
+  // NOTE: the mode is DERIVED (mention.value.active), never stored in
+  // an imperative ref flipped from onInput - that flip raced the draft
+  // prop update (the handler sees the PREVIOUS emit's draft) and the
+  // bare-@ list rendered empty one beat too late.
 
-  type PaletteMode = "slash" | "mention";
-  const paletteMode = ref<PaletteMode>("slash");
   const active = ref(-1);
   const dismissed = ref(false);
   // the caret the palette derives from (token surgery needs it)
@@ -377,44 +380,45 @@
     return mention.value.active;
   });
 
-  const slashItems = computed<PaletteItem[]>(() => {
+  // allItems branches on the DERIVED mode (see the note above): the
+  // mention computeds, else the slash list - slash mode when the draft
+  // starts with "/", and empty otherwise.
+  const allItems = computed<PaletteItem[]>(() => {
+    if (!paletteOpen.value) return [];
+    if (mention.value.active) {
+      const tok = mention.value.token;
+      const prefix = mentionPrefixOf(tok);
+      const inner = mentionInnerQuery(tok);
+      if (prefix === "session:") {
+        return sessionRows.value.map((s) => ({
+          name: "session:" + s.id,
+          description: s.label || s.id,
+          kind: "session" as const,
+        }));
+      }
+      if (prefix === "skill:") {
+        return skillRows.value.map((s) => ({
+          name: "skill:" + s.name,
+          description: s.description,
+          kind: "skill" as const,
+        }));
+      }
+      // bare @: workspace-root files plus the two prefix rows
+      const prefixRows: PaletteItem[] = [
+        { name: "session:", description: "inject a session's history", kind: "session" },
+        { name: "skill:", description: "inject a skill's content", kind: "skill" },
+      ];
+      const files: PaletteItem[] = fileRows.value.map((f) => ({
+        name: f.name,
+        description: "inline this file (images attach)",
+        kind: "file" as const,
+      }));
+      const rows = [...prefixRows, ...files];
+      return inner ? filterCommands(inner, rows) : rows;
+    }
     if (!props.draft.startsWith("/")) return [];
     const query = props.draft.slice(0, caretAt.value).replace(/\s.*/, "");
     return filterCommands(query, paletteCommands(extCmds.value, skillRows.value));
-  });
-
-  const allItems = computed<PaletteItem[]>(() => {
-    if (!paletteOpen.value) return [];
-    if (paletteMode.value === "slash") return slashItems.value;
-    const tok = mention.value.token;
-    const prefix = mentionPrefixOf(tok);
-    const inner = mentionInnerQuery(tok);
-    if (prefix === "session:") {
-      return sessionRows.value.map((s) => ({
-        name: "session:" + s.id,
-        description: s.label || s.id,
-        kind: "session" as const,
-      }));
-    }
-    if (prefix === "skill:") {
-      return skillRows.value.map((s) => ({
-        name: "skill:" + s.name,
-        description: s.description,
-        kind: "skill" as const,
-      }));
-    }
-    // bare @: workspace-root files plus the two prefix rows
-    const prefixRows: PaletteItem[] = [
-      { name: "session:", description: "inject a session's history", kind: "session" },
-      { name: "skill:", description: "inject a skill's content", kind: "skill" },
-    ];
-    const files: PaletteItem[] = fileRows.value.map((f) => ({
-      name: f.name,
-      description: "inline this file (images attach)",
-      kind: "file" as const,
-    }));
-    const rows = [...prefixRows, ...files];
-    return inner ? filterCommands(inner, rows) : rows;
   });
 
   // the dropdown never spills past PALETTE_MAX rows - it scrolls
@@ -432,25 +436,32 @@
     dismissed.value = false;
     emit("update:draft", el.value);
     resize();
-    syncMode();
   }
 
   function onCaret(e: Event) {
     const el = e.target as HTMLTextAreaElement;
     caretAt.value = el.selectionStart ?? 0;
-    syncMode();
   }
 
-  // syncMode: slash vs mention - a mention open loads its rows once
-  function syncMode() {
-    const mode: PaletteMode = mention.value.active ? "mention" : "slash";
-    if (mode !== paletteMode.value) {
-      paletteMode.value = mode;
-      active.value = 0;
-      if (mode === "mention") void loadMentionRows();
+  // the lazy loads ride mode transitions reactively (same race note as
+  // above): a mention opening loads its rows once; the slash surface
+  // loads the command registry + skills snapshot
+  const mentionActive = computed(() => mention.value.active);
+  const slashSurface = computed(() => !mentionActive.value && props.draft.startsWith("/"));
+  watch(mentionActive, (on) => {
+    if (on) {
+      void loadMentionRows();
+      // the skill: prefix rows ride the same snapshot the slash
+      // palette uses - a cold session that opens @ directly needs it
+      void loadPaletteData();
     }
-    if (mode === "slash") void loadPaletteData();
-  }
+  });
+  watch(slashSurface, (on) => {
+    if (on) void loadPaletteData();
+  });
+  onMounted(() => {
+    if (slashSurface.value) void loadPaletteData();
+  });
 
   function closePalette() {
     dismissed.value = true;
@@ -462,7 +473,7 @@
   // round-trip ever (the palette's law: commands act locally).
   function acceptItem(item: PaletteItem) {
     if (!paletteOpen.value) return;
-    if (paletteMode.value === "slash" && (item.kind === "shell" || item.kind === "extension" || item.kind === "skill")) {
+    if (!mention.value.active && (item.kind === "shell" || item.kind === "extension" || item.kind === "skill")) {
       // preserve any args typed after the command word
       const space = props.draft.indexOf(" ");
       const rest = space === -1 ? "" : props.draft.slice(space);
@@ -493,8 +504,14 @@
     const item = paletteItems.value[active.value];
     if (!item) return closePalette();
     if (submit) return acceptItem(item);
-    if (paletteMode.value === "slash") emit("update:draft", item.name);
-    closePalette();
+    if (!mention.value.active) {
+      emit("update:draft", item.name);
+      closePalette();
+      return;
+    }
+    // a mention Tab completes too (TUI acceptMatch parity): the token
+    // inserts at the caret, palette closes, no send
+    return acceptItem(item);
   }
 
   function onKeydown(e: KeyboardEvent) {
