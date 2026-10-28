@@ -82,19 +82,29 @@ clicked=$(jsq '(() => {
 wait_js '!!document.querySelector(".pane.continuous")' 10
 step "ok: picker Continuous entry opened the roster pane"
 
-# the roster renders the seeded row: name + wake state
-wait_js "document.querySelector('.pane.continuous .continuous-row-name')?.textContent?.trim() === '$CONT_NAME'" 10
-state=$(jsq 'document.querySelector(".pane.continuous .continuous-row-status")?.textContent?.trim() || ""' 2>&1 | tail -1 | tr -d '"')
+# the roster renders the seeded row: name + wake state. The roster may
+# carry operator agents sorted anywhere around the seeded row (sorted by
+# name - a lane home is never guaranteed jrn-first), so every assertion
+# targets THIS journey's row, never the first row.
+wait_js "[...document.querySelectorAll('.pane.continuous .continuous-row-name')].some(el => el.textContent.trim() === '$CONT_NAME')" 10
+step "ok: roster pane renders the seeded row"
+
+# row_cell <selector>: the seeded row's own cell text (the row that
+# carries $CONT_NAME, not the first row of the list).
+row_cell() {
+  jsq '(sel => [...document.querySelectorAll(".pane.continuous .continuous-row-name")].find(x => x.textContent.trim() === "'"$CONT_NAME"'")?.closest(".continuous-row")?.querySelector(sel)?.textContent?.trim() || "")("'"$1"'")' 2>&1 | tail -1 | tr -d '"'
+}
+state=$(row_cell ".continuous-row-status")
 case "$state" in
   "next wake"*) state_is_wake=1 ;;
   *) state_is_wake=0 ;;
 esac
 assert_eq "$state_is_wake" "1" "row shows the wake state (got: [$state])"
-preview=$(jsq 'document.querySelector(".pane.continuous .continuous-row-preview")?.textContent?.trim() || ""' 2>&1 | tail -1 | tr -d '"')
+preview=$(row_cell ".continuous-row-preview")
 assert_eq "$preview" "- no report yet -" "fresh agent row shows the honest empty preview"
 
 # --- the detail strip opens on click (never wakes) ---
-jsq 'document.querySelector(".pane.continuous .continuous-row")?.click()' >/dev/null 2>&1
+jsq '(name => [...document.querySelectorAll(".pane.continuous .continuous-row-name")].find(x => x.textContent.trim() === name)?.closest(".continuous-row")?.click())("'"$CONT_NAME"'")' >/dev/null 2>&1
 wait_js "document.querySelector('.continuous-detail-title')?.textContent?.trim() === '$CONT_NAME'" 10
 jsq '!!document.querySelector(".continuous-wake")' >/dev/null 2>&1
 wakes=$(jsq 'document.querySelectorAll(".continuous-wake, .continuous-sleep").length' 2>&1 | tail -1)
