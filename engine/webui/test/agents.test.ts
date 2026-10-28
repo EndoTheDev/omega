@@ -78,3 +78,14 @@ test("AgentsPanel exposes the card's primary action and honest empty states", ()
   assert.match(vue, /no sessions as this agent/, "honest session-list empty state");
   assert.match(vue, /agentsRows/, "renders from the pure model");
 });
+
+// --- the list contract (card t_619832ee) ---
+
+test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  // Trust boundary: the backend used to answer a zero-session agent with
+  // the literal body `null`, detailSessions.length threw, and the whole
+  // sidebar went blank. Both fetch sites carry the ?? [] guard.
+  const guardCount = (src: string): number => (src.match(/\?\? \[\]/g) ?? []).length;
+  assert.equal(guardCount(vue), 2, "exactly one ?? [] guard per list fetch (GET /agents + GET .../sessions)");
+});

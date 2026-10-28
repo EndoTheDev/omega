@@ -140,7 +140,7 @@ async function load(): Promise<void> {
   try {
     const res = await fetchJSON("/agents");
     if (!res.ok) throw new Error(`GET /agents: ${res.status}`);
-    profiles.value = (await res.json()) as OmegaAgent[];
+    profiles.value = ((await res.json()) ?? []) as OmegaAgent[];
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -155,7 +155,7 @@ async function select(a: OmegaAgent): Promise<void> {
   sessionStartMsg.value = "";
   try {
     const res = await fetchJSON(`/agents/${encodeURIComponent(a.name)}/sessions`);
-    if (res.ok) detailSessions.value = (await res.json()) as OmegaAgentSession[];
+    if (res.ok) detailSessions.value = ((await res.json()) ?? []) as OmegaAgentSession[];
   } catch {
     detailSessions.value = []; // the detail stays; the session list is a read
   }

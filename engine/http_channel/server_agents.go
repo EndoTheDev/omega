@@ -149,6 +149,12 @@ func (s *Server) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// List contract: list endpoints emit arrays, never null. A zero-
+		// session agent must render 200 [] or the webui's session read
+		// crashes on a null .length (card t_619832ee).
+		if sessions == nil {
+			sessions = []core.Session{}
+		}
 		writeJSON(w, http.StatusOK, sessions)
 	case http.MethodPost:
 		var req struct {
