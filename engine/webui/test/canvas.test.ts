@@ -338,10 +338,14 @@ test("/panels folds into the Modules tab (the palette keeps its name)", () => {
   // the shell command still dispatches - to the Modules tab, where the
   // panels live under their module rows (v0.14.2's cockpit)
   assert.match(app, /case "\/panels":/, "/panels stays a dispatching command");
-  const at = app.indexOf('case "/panels":');
-  const block = app.slice(at, app.indexOf("}", at));
-  assert.match(block, /openModuleTab\("extensions"\)/, "it opens the Modules tab");
-  assert.match(block, /panels live under the module rows/, "the note says where they went");
+  assert.match(
+    app,
+    /case "\/panels":[\s\S]*?openModuleTab\("extensions"\)/,
+    "it opens the Modules tab",
+  );
+  assert.match(app, /panels live under the module rows/, "the note says where they went");
+  // and the pre-fold target is gone - no canvas id in the dispatch
+  assert.ok(!/openModuleTab\("canvas"\)/.test(app), "no dispatch to the retired id");
 });
 
 // v0.14.3: the contract's stream + boot wiring stayed (the store feeds
@@ -367,49 +371,6 @@ test("normalizeCanvasPanel guards the descriptor", () => {
 
 // --- source pins: the production boundary the node runner cannot import ---
 
-test("CanvasPanel.vue: the generic renderer contract (title + payload view + action buttons)", () => {
-  const src = read("webui", "app", "components", "canvas", "CanvasPanel.vue");
-  // the descriptor render: title, the kind chip, the JSON payload view
-  assert.match(src, /panel\.title/, "renders the descriptor's title");
-  assert.match(src, /panel\.kind/, "renders the kind chip");
-  assert.match(src, /canvas-payload/, "renders the payload view region");
-  assert.match(src, /formatCanvasPayload/, "payload view is the shared plain formatter");
-  // the action buttons: pending disables the button, error renders
-  assert.match(src, /panel\.actions\b/, "renders the descriptor's actions");
-  assert.match(src, /disabled/, "pending state disables the button");
-  assert.match(src, /pending/, "pending state renders");
-  assert.match(src, /canvas-error/, "error state renders");
-  // kind handling: v1 was the plain render only (Q2b); card t_aca53fee
-  // settled the toast kind - the record row renders read-only through
-  // the row pipeline, NEVER the raw JSON dump, and there is still no
-  // speculative per-kind template switching (the gate is script-side)
-  assert.ok(!/v-if="panel\.kind/.test(src), "no speculative kind branches");
-  assert.match(src, /toastRowOf\(/, "the toast panel routes through the row pipeline");
-  // the row text width-truncates at the pane width (kind/key fields on
-  // one line) - the same contract the list panel's rows render under
-  const css = readFileSync(join(modules, "webui", "app", "assets", "css", "main.css"), "utf8");
-  assert.match(
-    css,
-    /\.canvas-row-text \{[\s\S]*?text-overflow: ellipsis/,
-    "canvas row lines truncate at the pane width",
-  );
-  // the click emits to the owner: the component holds no store
-  assert.match(src, /emit\('invoke'/s, "action clicks emit to the owner");
-  assert.ok(!/fetch\(/.test(src), "the renderer never fetches");
-});
-
-test("app.vue: the canvas outlet, the boot snapshot, and the delta wiring", () => {
-  const app = read("webui", "app", "app.vue");
-  assert.match(app, /#pane-canvas/, "the canvas dock outlet exists");
-  assert.match(app, /canvas\.refresh\(\)/, "the snapshot loads at boot (Q3b)");
-  assert.match(app, /canvasDelta:\s*\(panel\)/, "the host forwards run-stream deltas");
-  assert.match(app, /canvas\.applyDelta\(panel\)/, "deltas merge into the store");
-  assert.match(app, /canvas\.invoke/, "action clicks route through the store's invoke");
-  // Q5a law: the shell has no hardcoded panel id, the store is the
-  // presence list
-  assert.ok(!/canvas\.panels\.some|panelsById/.test(app), "no hardcoded panel presence check");
-});
-
 test("chat.ts: canvas deltas forward from every stream handler set", () => {
   const chat = read("webui", "app", "composables", "chat.ts");
   assert.match(
@@ -423,21 +384,7 @@ test("chat.ts: canvas deltas forward from every stream handler set", () => {
   assert.match(chat, /normalizeChatPayload\(panel\.payload\)/, "the payload guards at the paint site");
 });
 
-test("dockables: canvas is a layout-only registry entry (Q5a law)", () => {
-  const src = read("webui", "app", "composables", "dockables.ts");
-  const entry = DOCKABLES.find((d) => d.id === "canvas");
-  assert.ok((DOCK_COMPONENTS as readonly string[]).includes("canvas"), "the outlet id exists");
-  assert.ok(entry, "the registry entry exists");
-  assert.equal(entry!.area, "right");
-  assert.equal(entry!.policy, "singleton");
-  assert.equal(entry!.closable, false);
-  assert.ok(entry!.icon.paths.length > 0, "an icon is declared");
-  assert.equal(COMPONENT_TITLES.canvas, "Canvas");
-  assert.ok(MENU_DOCKABLES.includes("canvas"), "the '+' menu can refill the canvas tab");
-  assert.ok(
-    (INSPECTOR_TAB_COMPONENTS as readonly string[]).includes("canvas"),
-    "the canvas loads with the inspector strip",
-  );
+test("dockables: the registry carries no module-qualified panel id (Q5a law survives the fold)", () => {
   // no panel id may enter the registry: the component list is shell
   // domains only (the canvas contract's panels live in the snapshot)
   assert.ok(
