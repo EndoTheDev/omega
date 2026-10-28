@@ -24,7 +24,23 @@
         class="board-switch-count">{{ tasks.length }} card{{
           tasks.length === 1 ? "" : "s"
         }}</span>
+      <button
+        id="board-remove-btn"
+        class="board-remove-btn"
+        :class="{ armed: confirmingRemove }"
+        :disabled="!canRemoveBoard(boardName)"
+        :title="confirmingRemove ? 'click again to remove this board' : 'remove this board'"
+        @click="removeBoardClick">
+        {{ confirmingRemove ? "confirm remove" : "remove" }}
+      </button>
     </div>
+    <p
+      v-if="notice"
+      class="board-notice"
+      :class="{ err: noticeErr }"
+      role="status">
+      {{ notice }}
+    </p>
     <div
       class="board-scroll"
       :key="boardName">
@@ -136,7 +152,10 @@
   import DetailDrawer from "./board/DetailDrawer.vue";
   import {
     BOARD_STATUSES,
+    DEFAULT_BOARD_NAME,
     age,
+    boardDeletePath,
+    canRemoveBoard,
     columns,
     isNarrowWidth,
     isSettled,
@@ -179,9 +198,80 @@
 
   function switchBoard(name: string) {
     if (name === boardName.value) return;
+    disarmRemove(); // an armed confirm points at the old board: reset it
     boardName.value = name;
     selected.value = null; // the drawer's card belongs to the old board
     fetchBoard();
+  }
+
+  // --- board removal (card t_95c5527f): destructive, so the confirm is
+  // an armed second click on the same button (inline relabel, matching
+  // the module toggle arm/apply pattern - no native confirm dialog). The
+  // server is the law: DeleteBoard refuses the default board, the
+  // current pointer target and boards still holding tasks, and the
+  // refusal text surfaces verbatim in the notice line.
+  const confirmingRemove = ref(false);
+  const notice = ref("");
+  const noticeErr = ref(false);
+  let disarmTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function setNotice(text: string, isErr = false) {
+    notice.value = text;
+    noticeErr.value = isErr;
+  }
+
+  function disarmRemove() {
+    confirmingRemove.value = false;
+    if (disarmTimer) {
+      clearTimeout(disarmTimer);
+      disarmTimer = undefined;
+    }
+  }
+
+  function removeBoardClick() {
+    if (!canRemoveBoard(boardName.value)) return;
+    if (!confirmingRemove.value) {
+      confirmingRemove.value = true;
+      // disarm on timeout: the second click lands only while the
+      // warning still shows
+      if (disarmTimer) clearTimeout(disarmTimer);
+      disarmTimer = setTimeout(disarmRemove, 6000);
+      return;
+    }
+    disarmRemove();
+    void deleteBoard();
+  }
+
+  async function deleteBoard() {
+    const name = boardName.value;
+    if (!canRemoveBoard(name)) return;
+    try {
+      const res = await fetch(boardDeletePath(name), { method: "DELETE" });
+      if (!res.ok) {
+        // refusal text (default board, pointer target, tasks present)
+        // comes back as plain text - the handler wrote it for this line
+        const detail = await res.text().catch(() => `DELETE /boards: ${res.status}`);
+        setNotice(detail, true);
+        return;
+      }
+      setNotice(`board "${name}" removed`);
+      selected.value = null; // the drawer's card belonged to the gone board
+      // refresh the registry first; the removed row must leave the
+      // switcher even if the boot fetch reads stale
+      try {
+        const res = await fetch("/boards");
+        if (res.ok) {
+          const body = await res.json();
+          boards.value = (body.boards ?? []).filter((b: BoardInfo) => b.name !== name);
+        }
+      } catch {
+        boards.value = boards.value.filter((b) => b.name !== name);
+      }
+      boardName.value = DEFAULT_BOARD_NAME; // selection falls back to the default board
+      await fetchBoard();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e), true);
+    }
   }
 
   // --- notification board select (card t_556ee727) ---
@@ -426,6 +516,38 @@
   .board-switch-count {
     font-size: 10.5px;
     opacity: 0.5;
+  }
+  .board-remove-btn {
+    margin-left: auto;
+    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+  .board-remove-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  /* armed: the second click fires. The tinge is the only warning -
+     no native confirm dialog, the module panels confirm inline. */
+  .board-remove-btn.armed {
+    border-color: color-mix(in srgb, currentcolor 40%, transparent);
+    font-weight: 600;
+  }
+  .board-notice {
+    margin: 0;
+    padding: 4px 12px 0;
+    font-size: 10.5px;
+    opacity: 0.65;
+    flex: none;
+    overflow-wrap: anywhere;
+  }
+  .board-notice.err {
+    font-weight: 600;
   }
   .board-scroll {
     display: flex;

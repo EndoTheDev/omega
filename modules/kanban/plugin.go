@@ -25,6 +25,10 @@ type Plugin struct {
 	store   *Store
 	tools   *ToolProvider
 	capsule *capsule
+	// home is the agent home the board registry lives under, captured
+	// at mount ("" = no registry; the DELETE /boards/{name} route
+	// needs it - DeleteBoard is a home-path op, not a store call).
+	home string
 }
 
 // Compile-time assertions: *Plugin is a Plugin, *Store a KanbanProvider.
@@ -96,6 +100,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			name = pointer
 		}
 		boardsNamed = true
+		p.home = ahome
 	}
 	s, oerr := Open(dsn)
 	if oerr != nil {
