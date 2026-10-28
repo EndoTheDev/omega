@@ -72,8 +72,9 @@ jobs:
 
       - name: Validation journeys
         run: |
+          set -o pipefail
           npm i -g agent-browser && agent-browser install
-          scripts/journeys/run.sh
+          scripts/journeys/run.sh 2>&1 | tee "$RUNNER_TEMP/journeys-stdout.log"
         env:
           JOURNEY_BASE_URL: http://127.0.0.1:8098
 
@@ -89,6 +90,12 @@ jobs:
             EVID="$(ls -dt "$root"/omega-journeys-evidence.* 2>/dev/null | head -1 || true)"
             [ -n "$EVID" ] && break
           done
+          # anonymous channel: suite stdout first (infra deaths print
+          # nothing into journey logs), then one annotation per red log
+          if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
+            tail_lines="$(tail -12 "$RUNNER_TEMP/journeys-stdout.log" | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journeys suite output::$tail_lines"
+          fi
           if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
             echo "::error::journeys red - no evidence dir found (infra exit: chrome or lane dead)"
             echo "## :x: Journeys red - no evidence dir found (infra exit: chrome or lane dead)" >> "$GITHUB_STEP_SUMMARY"
@@ -96,6 +103,13 @@ jobs:
           fi
           {
             echo "## :x: Journeys red - evidence (per journey, last 40 lines)"
+            if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
+              echo ""
+              echo "### suite output (last 30 lines)"
+              echo '```'
+              tail -30 "$RUNNER_TEMP/journeys-stdout.log"
+              echo '```'
+            fi
             for f in "$EVID"/*.log; do
               echo ""
               echo "### $(basename "$f" .log)"
@@ -104,8 +118,8 @@ jobs:
               echo '```'
             done
           } >> "$GITHUB_STEP_SUMMARY"
-          # anonymous channel: one error annotation per red journey, tail capped
           for f in "$EVID"/*.log; do
+            [ -e "$f" ] || continue
             if ! grep -q ' RED$' "$f"; then continue; fi
             name="$(basename "$f" .log)"
             tail_lines="$(tail -8 "$f" | tr '\n' '|' | cut -c1-380)"
