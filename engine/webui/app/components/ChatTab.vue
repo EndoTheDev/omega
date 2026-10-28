@@ -109,7 +109,6 @@
       :busy="busy"
       :thinking="thinking"
       :workspace="workspaceValue"
-      :workspace-bound="sessionId !== null"
       :attachments="state.attachments"
       :fork-anchor="forkAnchor"
       @clear-fork="host.setFork(stateKey, null)"
@@ -220,11 +219,16 @@
   // The pinned model + workspace belong to the SESSION, not to the app:
   // reopening restores what it last used, a mid-session change updates
   // the row (the app PATCHes on our emit). A bound tab adopts the row's
-  // pins; a draft tab rides the app's default model and has no folder.
+  // pins. An UNBOUND tab holds the draft's workspace INTENT (card
+  // t_ea7e6a58) in the chat state - the first send POSTs /chat
+  // {workspace}, the auto-created row is born pinned, and the binding
+  // swaps this read over to the row with no further state.
   const modelValue = ref(props.session?.model || props.model);
-  const workspaceValue = ref(props.session?.workspace ?? "");
+  const workspaceValue = computed(() =>
+    sessionId.value ? (props.session?.workspace ?? "") : (state.value?.workspaceIntent ?? ""),
+  );
   // rebind (draft -> sent adopts an id; tab remount) restores from the
-  // row; a row refresh adopts the pins the PATCH persisted. The pinned
+  // row; a row refresh adopts the pin the PATCH persisted. The pinned
   // model only wins while non-empty - a draft with no row keeps the
   // app default that props.model carries.
   function restorePins() {
@@ -234,10 +238,9 @@
     } else {
       modelValue.value = props.model;
     }
-    workspaceValue.value = sessionId.value ? (props.session?.workspace ?? "") : "";
   }
   watch(
-    () => [sessionId.value, props.session?.model ?? "", props.session?.workspace ?? ""] as const,
+    () => [sessionId.value, props.session?.model ?? ""] as const,
     restorePins,
   );
   // the app's default model moved (models fetch or another draft tab's
@@ -253,8 +256,14 @@
     emit("update:model", v);
   }
   function onWorkspaceChange(v: string) {
-    workspaceValue.value = v;
-    emit("update:workspace", v);
+    if (sessionId.value) {
+      // bound: the folder pins on the session row (the app PATCHes)
+      emit("update:workspace", v);
+      return;
+    }
+    // unbound: the draft's intent - stored per state, consumed by the
+    // first send (card t_ea7e6a58)
+    if (state.value) state.value.workspaceIntent = v;
   }
 
   // --- the transcript's render source (chat-last 2a) ---

@@ -122,6 +122,12 @@ export interface ChatState {
   // system row (it rides later sends' context, the TUI's behavior), and
   // /transcript drops system rows - no visible bubble anywhere.
   pendingSkill: { name: string; content: string } | null;
+  // the draft workspace intent (card t_ea7e6a58): the pre-session
+  // folder the composer chip holds while the tab is unbound. The FIRST
+  // send rides POST /chat {workspace} and the auto-created row is born
+  // pinned - consumed there. A session-bound tab reads the row instead
+  // (this field is inert); an ephemeral draft never applies it.
+  workspaceIntent: string;
 }
 
 /** EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a
@@ -146,6 +152,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   variants: [],
   forkFrom: null,
   pendingSkill: null,
+  workspaceIntent: "",
 };
 
 /** the app-level callbacks the host needs - the session LIST, the dock
@@ -400,6 +407,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         variants: [],
         forkFrom: null,
         ephemeral: !!ephemeral,
+        workspaceIntent: "",
         pendingSkill: null,
       };
       states.set(key, fresh);
@@ -623,6 +631,13 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.statusLine = `[skill: ${st.pendingSkill.name}] carried with this send`;
       st.pendingSkill = null;
     }
+    // the draft workspace intent (t_ea7e6a58) rides ONLY the bare
+    // create: a first send pins its folder on the auto-created row
+    // (POST /chat {workspace}). Bound sends read the row instead, an
+    // ephemeral mint has no row to pin. Consumed here - the send is
+    // the composer clearing, the intent clears with it.
+    const ws = !st.sessionId && !st.ephemeral ? st.workspaceIntent : "";
+    st.workspaceIntent = "";
     // the anchor is consumed by the send that carries it (cleared only
     // when this submit actually fires the forked body)
     if (fork && st.forkFrom === fork) st.forkFrom = null;
@@ -645,6 +660,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         // (or continues) the `eph-` session in memory, denies the
         // memory tool, and never writes the store (card t_d96a5cd5)
         st.ephemeral,
+        ws,
       ),
     );
     return true;
