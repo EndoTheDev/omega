@@ -58,7 +58,7 @@ func mountRealRegistry(t *testing.T) *core.Agent {
 
 func TestHandleExtensionsRealRegistry(t *testing.T) {
 	a := mountRealRegistry(t)
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/extensions", nil)
@@ -118,7 +118,7 @@ func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 	// Zero extensions mounted: an honest empty array, like the other
 	// inspector reads. The webui tab renders its empty state from this.
 	a := core.NewAgent(newMockProvider("mock"), nil, 0)
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/extensions", nil)
@@ -138,7 +138,7 @@ func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 
 func TestHandleExtensionsMethodGuard(t *testing.T) {
 	a := core.NewAgent(newMockProvider("mock"), nil, 0)
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/extensions", nil)
@@ -191,7 +191,7 @@ func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := core.NewFromContext(ctx, core.AgentOptions{})
-	s := NewServer(a, nil, nil, nil, nil)
+	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	extensionRows := func() []extensionListing {
 		t.Helper()

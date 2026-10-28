@@ -33,7 +33,7 @@ func (listingSkills) ListSkills() ([]core.Skill, error) {
 }
 
 func TestHandleCommandsListsRegistrySnapshot(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	s.seams.mu.Lock()
 	s.seams.commands = []core.ExtensionCommand{
 		{Name: "/ping", Description: "answers pong"},
@@ -60,7 +60,7 @@ func TestHandleCommandsListsRegistrySnapshot(t *testing.T) {
 		t.Fatalf("args = %+v, want the declared completions", got[1].Args)
 	}
 	// empty registry still lists as an array
-	s2 := NewServer(nil, nil, nil, nil, nil)
+	s2 := NewServer(nil, nil, nil, nil, nil, nil)
 	rec2 := httptest.NewRecorder()
 	s2.Handler().ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/commands", nil))
 	if rec2.Code != http.StatusOK || strings.TrimSpace(rec2.Body.String()) != "[]" {
@@ -69,7 +69,7 @@ func TestHandleCommandsListsRegistrySnapshot(t *testing.T) {
 }
 
 func TestHandleCommandDispatchRegisteredCommand(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	s.seams.mu.Lock()
 	s.seams.commands = []core.ExtensionCommand{{Name: "/ping", Description: "answers pong"}}
 	s.seams.commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error) {
@@ -109,7 +109,7 @@ func TestHandleCommandDispatchErrors(t *testing.T) {
 		{"bare name rejected", nil, `{"name":"ping"}`, http.StatusBadRequest},
 		{"empty name", nil, `{"name":""}`, http.StatusBadRequest},
 	}
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -121,7 +121,7 @@ func TestHandleCommandDispatchErrors(t *testing.T) {
 		})
 	}
 	// handler failure surfaces as 500 with the error text
-	s2 := NewServer(nil, nil, nil, nil, nil)
+	s2 := NewServer(nil, nil, nil, nil, nil, nil)
 	s2.seams.mu.Lock()
 	s2.seams.commands = []core.ExtensionCommand{{Name: "/boom"}}
 	s2.seams.commandHandler = func(ctx context.Context, name, args string) (core.CommandResult, error) {
@@ -137,7 +137,7 @@ func TestHandleCommandDispatchErrors(t *testing.T) {
 }
 
 func TestHandleCommandDispatchSkillResolves(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil, nil)
+	s := NewServer(nil, nil, nil, nil, nil, nil)
 	s.seams.mu.Lock()
 	s.seams.skills = listingSkills{}
 	s.seams.mu.Unlock()

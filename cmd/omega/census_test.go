@@ -105,8 +105,8 @@ func TestFoldOmegaJSONMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Disabled) != 1 || cfg.Disabled[0] != "kanban" {
-		t.Fatalf("folded entries not honored by this boot: %+v", cfg.Disabled)
+	if len(cfg.Disabled.Modules) != 1 || cfg.Disabled.Modules[0] != "kanban" {
+		t.Fatalf("folded entries not honored by this boot: %+v", cfg.Disabled.Modules)
 	}
 	if _, statErr := os.Stat(filepath.Join(cfgDir, "omega.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("omega.json survived the fold: %v", statErr)
@@ -130,8 +130,8 @@ func TestFoldOmegaJSONMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(again.Disabled) != 1 || again.Disabled[0] != "kanban" {
-		t.Fatalf("folded state did not survive the reboot: %+v", again.Disabled)
+	if len(again.Disabled.Modules) != 1 || again.Disabled.Modules[0] != "kanban" {
+		t.Fatalf("folded state did not survive the reboot: %+v", again.Disabled.Modules)
 	}
 	if warning != "" {
 		t.Fatalf("a completed migration must not warn again: %q", warning)
@@ -168,9 +168,10 @@ func TestFoldOmegaJSONSiblingAndHomeSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// First-wins dedupe: [kanban cron kanban] folds as [kanban cron].
-	if len(cfg.Disabled) != 2 || cfg.Disabled[0] != "kanban" || cfg.Disabled[1] != "cron" {
-		t.Fatalf("wrong folded list, want [kanban cron]: %+v", cfg.Disabled)
+	// First-wins dedupe + normalize (sorted): [kanban cron kanban]
+	// folds as [cron kanban].
+	if len(cfg.Disabled.Modules) != 2 || cfg.Disabled.Modules[0] != "cron" || cfg.Disabled.Modules[1] != "kanban" {
+		t.Fatalf("wrong folded list, want [cron kanban]: %+v", cfg.Disabled.Modules)
 	}
 	if !strings.Contains(warning, filepath.Join(home, "config", "config.yaml")) {
 		t.Fatalf("warning must name the fold target, got: %q", warning)
@@ -215,26 +216,26 @@ func TestDisabledPlainYAMLKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Disabled) != 2 || cfg.Disabled[0] != "kanban" || cfg.Disabled[1] != "delegate" {
-		t.Fatalf("disabled: key not decoded: %+v", cfg.Disabled)
+	if len(cfg.Disabled.Modules) != 2 || cfg.Disabled.Modules[0] != "kanban" || cfg.Disabled.Modules[1] != "delegate" {
+		t.Fatalf("disabled: key not decoded: %+v", cfg.Disabled.Modules)
 	}
 	// And the toggle writer round-trips it: flip kanban on, the file
 	// loses only that entry.
-	if err := writeDisabled(cfgPath, []string{"delegate"}); err != nil {
+	if err := writeDisabled(cfgPath, DisabledNamespaces{Modules: []string{"delegate"}}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err = LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Disabled) != 1 || cfg.Disabled[0] != "delegate" {
-		t.Fatalf("toggle round-trip broke the list: %+v", cfg.Disabled)
+	if len(cfg.Disabled.Modules) != 1 || cfg.Disabled.Modules[0] != "delegate" {
+		t.Fatalf("toggle round-trip broke the list: %+v", cfg.Disabled.Modules)
 	}
 	if _, statErr := os.Stat(filepath.Join(cfgDir, "omega.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("a plain-key boot must not resurrect omega.json: %v", statErr)
 	}
 	// All-on: the key leaves the document entirely.
-	if err := writeDisabled(cfgPath, nil); err != nil {
+	if err := writeDisabled(cfgPath, DisabledNamespaces{}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(cfgPath)
@@ -261,7 +262,7 @@ func TestWriteDisabledPreservesDocument(t *testing.T) {
 	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeDisabled(path, []string{"kanban"}); err != nil {
+	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban"}}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -274,10 +275,10 @@ func TestWriteDisabledPreservesDocument(t *testing.T) {
 			t.Fatalf("the write lost %q:\n%s", want, body)
 		}
 	}
-	if !regexp.MustCompile(`(?m)^disabled:\n    - kanban\n?$`).MatchString(body) {
-		t.Fatalf("disabled: must append as the last key (yaml.v3 4-space list indent):\n%s", body)
+	if !regexp.MustCompile(`(?m)^disabled:\n    modules:\n        - kanban\n?$`).MatchString(body) {
+		t.Fatalf("disabled: must append as the last key, namespaced mapping (yaml.v3 4-space list indent):\n%s", body)
 	}
-	if !strings.HasSuffix(body, "disabled:\n    - kanban\n") {
+	if !strings.HasSuffix(body, "disabled:\n    modules:\n        - kanban\n") {
 		t.Fatalf("disabled list malformed:\n%s", body)
 	}
 }
@@ -289,7 +290,7 @@ func TestWriteDisabledLoudOnBrokenFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("provider:\n  [broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeDisabled(path, []string{"kanban"}); err == nil {
+	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban"}}); err == nil {
 		t.Fatal("broken config.yaml must fail the write loud")
 	}
 	// The broken byte is untouched - no half-written state.

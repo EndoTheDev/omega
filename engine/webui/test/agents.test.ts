@@ -64,12 +64,15 @@ test("agents list is never empty by construction: default exists", () => {
 
 // --- AgentsPanel.vue: the wire contract the deferred mount serves ---
 
-test("AgentsPanel fetches the real endpoints, no omega.ts dependency", () => {
+test("AgentsPanel fetches the real endpoints (the wiring pass folded omega.ts in)", () => {
   const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
   assert.match(vue, /["'`]\/agents["'`]/, "GET inventory");
   assert.match(vue, /agents\/\$\{[^}]+\}\/sessions/, "agent-scoped sessions route");
   assert.match(vue, /method: ["'`]POST["'`]/, "scaffold + create-as-agent POSTs");
-  assert.ok(!/composables\/omega/.test(vue), "no omega.ts import (same-file ruling: owned by t_14f73742; the wiring pass folds it)");
+  // t_372b9e9a: the wiring pass landed - the panel binds the registry
+  // fold helpers through composables/omega (RegistryRow type at least)
+  assert.match(vue, /composables\/omega/, "the shared registry helpers are the wire");
+  assert.match(vue, /\/disabled\/agents/, "and the fold wire is the agents namespace");
 });
 
 test("AgentsPanel exposes the card's primary action and honest empty states", () => {
@@ -97,7 +100,9 @@ test("new session as this agent opens the created session in the main pane", () 
   const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
   assert.match(vue, /const created = \(await res\.json\(\)\) as OmegaAgentSession/, "POST parses the created row");
   assert.match(vue, /emit\("open-session", created\.id\)/, "the created id opens immediately");
-  assert.match(vue, /await select\(detail\.value as OmegaAgent\)/, "the detail list still refreshes");
+  // the detail list still refreshes (the rework moved it into the
+  // RegistryList row's expandable slot - loadSessions is the refetch)
+  assert.match(vue, /await loadSessions\(\{ name \} as RegistryRow\)/, "the detail list still refreshes");
 });
 
 // --- the list contract (card t_619832ee) ---
