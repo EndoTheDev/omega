@@ -94,7 +94,7 @@ assert_eq "$ws" "/home" "workspace chip wrote the session row"
 # --- reload: the folder restores ------------------------------------
 fresh_open
 open_journey_row "$LABEL"
-ws_set=$(jsq 'document.querySelector(".ws-btn .ws-set")?.textContent ?? ""' 2>&1 | tail -1 | deq)
+ws_set=$(jsq 'document.querySelector(".ws-btn .chip-name:not(.ws-unset)")?.textContent ?? ""' 2>&1 | tail -1 | deq)
 assert_eq "$ws_set" "home" "pinned workspace restored on reopen"
 
 # --- clear: the chip drops the pin ----------------------------------
