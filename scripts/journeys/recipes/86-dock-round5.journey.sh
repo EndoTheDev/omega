@@ -42,14 +42,16 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 
 # ---- 1: tab labels --------------------------------------------------------
-for want in Agents Extensions; do
+# card t_210a0d19 rename law: the extensions inventory tab's label is
+# "Modules"; /extensions keeps working as the command alias.
+for want in Agents Modules; do
   if ! wait_js "(()=>{const t=[...document.querySelectorAll('.dock-tabbar .dock-tab')];return t.some((e)=>e.textContent.trim()==='$want')})()" 10; then
     die "tab label '$want' missing from the tab bars"
   fi
 done
 low=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")].map((e)=>e.textContent.trim());return t.includes("agents")||t.includes("extensions")?1:0})()' 2>/dev/null | tail -1)
 assert_eq "$low" "0" "no lowercase agents/extensions tab chips remain"
-step "ok: Agents + Extensions tab labels render Title Case"
+step "ok: Agents + Modules tab labels render Title Case"
 
 # ---- 2: the notification click focuses the kanban pane --------------------
 # chat pane state BEFORE the click: the main pane's identity + content
