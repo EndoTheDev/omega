@@ -219,7 +219,9 @@ func themeNames() []string {
 // Context.TUIProviders), the extension command chain, or skills, so
 // removing a plugin takes its commands out of this list with it - the
 // same law the webui enforces through directory registration.
-var knownCommands = []string{"/copy", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
+// card t_210a0d19 rename law: /modules is the new name, /extensions
+// stays as an alias - no muscle-memory break (docs/tui.md follows).
+var knownCommands = []string{"/copy", "/modules", "/extensions", "/panels", "/theme", "/variant", "/fork", "/retry", "/exit", "/help"}
 
 // buildCommands assembles the per-model command list: shell commands,
 // then module commands from the mounted TUI providers (module_ui.go),
@@ -1307,8 +1309,11 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.handleExtensionCommand("/thinking", strings.Join(fields[1:], " "))
 	case "/tools":
 		return m.handleExtensionCommand("/tools", strings.Join(fields[1:], " "))
+	case "/modules":
+		return m.handleModules()
 	case "/extensions":
-		return m.handleExtensions()
+		// card t_210a0d19: /extensions is the /modules alias (rename law).
+		return m.handleModules()
 	case "/panels":
 		return m.handlePanels()
 	case "/theme":
@@ -1705,12 +1710,14 @@ func (m *model) persistEntry(msg core.Message) {
 	_ = m.store.AppendMessage(context.Background(), m.sessionID, msg)
 }
 
-// handleExtensions lists loaded extensions with name, tool count,
-// command count, and status.
-func (m model) handleExtensions() (tea.Model, tea.Cmd) {
+// handleModules lists loaded extensions with name, tool count,
+// command count, and status. The /modules command body (the webui
+// "Modules" tab is its parity); the /extensions spelling remains the
+// alias (card t_210a0d19 rename law).
+func (m model) handleModules() (tea.Model, tea.Cmd) {
 	infos := m.extensions.Infos
 	if len(infos) == 0 {
-		m.addNotice("\n" + m.theme.Info.Render("[no extensions loaded]") + "\n")
+		m.addNotice("\n" + m.theme.Info.Render("[no modules loaded]") + "\n")
 		m.refresh()
 		return m, nil
 	}
@@ -2771,7 +2778,7 @@ func (m model) renderHelp() string {
 		{"/search <query>", "search session messages (full-text)"},
 		{"/insights [days]", "show cross-session usage analytics (default: 30 days)"},
 		{"/thinking [level]", "set thinking level (none, off, on, minimal, low, medium, high, extra high, max, ultra; no arg cycles)"},
-		{"/extensions", "list loaded extensions"},
+		{"/modules", "list loaded modules (alias: /extensions)"},
 		{"/panels", "canvas panels view: mounted panels render plain, 1-9 invoke an action"},
 		{"/theme [name]", "switch theme (dark, light, auto; no arg lists all)"},
 		{"/help", "show this help"},

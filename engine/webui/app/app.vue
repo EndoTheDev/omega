@@ -704,7 +704,7 @@
     switch (name) {
       case "/help": {
         note(
-          "commands: /copy /extensions /fork /help /new /panels /retry /sessions /theme /variant - plus module commands and /<skill-name>; @file @session:<id> @skill:<name> on any send",
+          "commands: /copy /modules /fork /help /new /panels /retry /sessions /theme /variant - plus module commands and /<skill-name>; @file @session:<id> @skill:<name> on any send",
         );
         return true;
       }
@@ -787,6 +787,7 @@
         return true;
       }
       case "/panels":
+      case "/modules":
       case "/extensions": {
         const target = name === "/panels" ? "canvas" : "extensions";
         if (!findEdgePane(dock.tree.value, "inspector")) {
@@ -794,7 +795,7 @@
         }
         openModuleTab(target);
         if (!st) return true;
-        note(name === "/panels" ? "canvas: the panels tab is up" : "extensions: the inventory tab is up");
+        note(name === "/panels" ? "canvas: the panels tab is up" : "modules: the cockpit tab is up");
         return true;
       }
       default:

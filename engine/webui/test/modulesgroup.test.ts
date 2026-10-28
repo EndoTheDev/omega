@@ -152,3 +152,40 @@ test("expansion reveals the module's tools, commands and panels", () => {
   assert.match(extTab, /none \(disabled\)/,
     "an unmounted module says so instead of a bare none");
 });
+
+// --- the rename law (Endo's ruling, unpark 2026-10-28): the tab and
+// the command are /modules; /extensions stays as an alias ---
+
+test("the inspector tab is labelled Modules, the dock id stays extensions", () => {
+  const dockables = read("app/composables/dockables.ts");
+  assert.match(
+    dockables,
+    /id: "extensions",[\s\S]{0,400}title: "Modules"/,
+    "the tab label is Modules; the id stays (stored layouts persist ids)",
+  );
+  assert.ok(
+    !dockables.includes('id: "modules"'),
+    "no new dock id - the rename is display-only",
+  );
+});
+
+test("the /modules command is the name, /extensions rides as the alias", () => {
+  const commands = read("app/composables/commands.ts");
+  const host = read("app/app.vue");
+  assert.match(
+    commands,
+    /name: "\/modules"/,
+    "the palette carries /modules as the primary spelling",
+  );
+  assert.match(
+    commands,
+    /name: "\/extensions"/,
+    "the alias keeps its palette row (no muscle-memory break)",
+  );
+  // the host dispatches both spellings onto the same cockpit tab
+  assert.match(
+    host,
+    /case "\/modules":\s*\n\s*case "\/extensions":/,
+    "the alias routes through the same case arm",
+  );
+});
