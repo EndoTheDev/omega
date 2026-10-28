@@ -49,13 +49,25 @@
             :data-index="i"
             role="tab"
             :aria-selected="i === node.active"
+            :aria-label="iconTabs ? tabTitle(t) : undefined"
             :title="tabTitle(t)"
             draggable="true"
             @click="api.focus(node.id, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
-            <span class="dock-tab-title">{{ tabTitle(t) }}</span>
+            <!-- card t_502b8e81: the SIDEBAR tab strips (left/right edge
+                 shells) are icon-only chips - the iconset vocabulary says
+                 the tab, the title/tooltip keeps the accessible name, the
+                 active styling (orange) is unchanged. Main/bottom tabs
+                 keep their text label. -->
+            <Icon
+              v-if="iconTabs && tabIcon(t)"
+              :name="tabIcon(t)"
+              class="dock-tab-ic" />
+            <span
+              v-if="!iconTabs"
+              class="dock-tab-title">{{ tabTitle(t) }}</span>
             <!-- the close X: closable components only (chat today); it
                  surfaces on hover (CSS) wherever the tab lives - pane
                  identity no longer decides tab chrome (t_d6b657a7) -->
@@ -168,7 +180,9 @@
           class="dock-menu-btn"
           role="menuitem"
           @click="openDockable(d)">
-          <DockItemIcon :icon="d.icon" />
+          <Icon
+            :name="d.icon"
+            class="dock-item-icon" />
           {{ menuLabel(d) }}
         </button>
       </div>
@@ -227,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, defineAsyncComponent, h, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
@@ -238,15 +252,17 @@
   import {
     COMPONENT_TITLES,
     MENU_DOCKABLES,
+    dockableIcon,
     dockableOf,
     isClosableTab,
-    type DockIcon,
     type DockableComponent,
     type DockComponentName,
   } from "../composables/dockables";
   import { tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
   import DockGhost from "./DockGhost.vue";
+  // the ONE icon wrapper (card t_502b8e81): every icon in the webui
+  import Icon from "./ui/Icon.vue";
   import { isLockedTab } from "../composables/dockables";
   // the recursive split renderer, lazy: DockSplit imports DockPane for its
   // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
@@ -326,38 +342,17 @@
     else api.setComponent(props.node.id, "chat"); // unreachable: app always provides the opener
   }
 
-  // the registry's icon renderer: 14px in the shell's 24-box stroke style
-  const DockItemIcon = (p: { icon: DockIcon }) =>
-    h(
-      "svg",
-      {
-        class: "dock-item-icon",
-        width: "14",
-        height: "14",
-        viewBox: "0 0 24 24",
-        "aria-hidden": "true",
-      },
-      [
-        h("g", {
-          fill: "none",
-          stroke: "currentColor",
-          "stroke-width": "2",
-          "stroke-linecap": "round",
-          "stroke-linejoin": "round",
-        }, [
-          ...(p.icon.rect
-            ? [h("rect", {
-                x: p.icon.rect.x,
-                y: p.icon.rect.y,
-                width: p.icon.rect.width,
-                height: p.icon.rect.height,
-                rx: p.icon.rect.rx ?? 2,
-              })]
-            : []),
-          ...p.icon.paths.map((d) => h("path", { d })),
-        ]),
-      ],
-    );
+  // card t_502b8e81: the sidebar shells (left/right edges) render their
+  // tab strips as ICON-ONLY chips (the dockable registry carries the
+  // iconset name). Bottom keeps its text label - it is a wide panel,
+  // not a sidebar. Main tabs are text (the '+' menu and the empty-pane
+  // watermark carry the icon+label pair instead).
+  const iconTabs = computed(
+    () => props.node.edge === "left" || props.node.edge === "right",
+  );
+  function tabIcon(tab: DockTab): string | null {
+    return dockableIcon(tab.component);
+  }
 
   // --- tab DnD (card 2, generalized t_d6b657a7): EVERY tab bar is a drop
   // target - reorder within a bar, cross-pane moves, sidebars <-> main

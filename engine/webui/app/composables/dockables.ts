@@ -64,13 +64,11 @@ export type DockInstancePolicy = "singleton" | "multi";
 // panel (logs home today, the terminal's future tab host).
 export type DockArea = "left" | "right" | "main" | "bottom";
 
-// icon glyphs render at 14px in a 24x24 viewBox, currentColor stroke,
-// 2px round-cap joins (the shell's MenuBar icon scale). rect is the
-// panel box most panel icons share; paths are the interior strokes.
-export interface DockIcon {
-  rect?: { x: number; y: number; width: number; height: number; rx?: number };
-  paths: string[];
-}
+// card t_502b8e81: `icon` is a semantic NAME in the webui iconset
+// (composables/icons.ts ICONS - lucide-vue-next behind the Icon.vue
+// wrapper). The names stay PURE strings here: the iconset test pins every
+// registry entry as a key of ICONS, and the Icon wrapper throws at render
+// time on a name this registry never declared.
 
 // one registry entry. `title` is the display voice for the tab/menu chip
 // (Title Case for shell tabs - Files, Agents, Extensions, Insights - the
@@ -84,7 +82,8 @@ export interface DockIcon {
 export interface DockableComponent {
   id: DockComponentName;
   title: string;
-  icon: DockIcon;
+  /** the iconset name - see the iconset comment above the registry */
+  icon: string;
   policy: DockInstancePolicy;
   area: DockArea;
   /** card t_67fc1905: the hosts that keep this component alive BEYOND its
@@ -114,10 +113,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "sidebar",
     title: "Sessions",
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M9 3v18", "M13 9l3 3-3 3"],
-    },
+    icon: "sidebar",
     policy: "singleton",
     area: "left",
     closable: false,
@@ -125,7 +121,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "chat",
     title: "chat",
-    icon: { paths: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"] },
+    icon: "chat",
     policy: "multi",
     area: "main",
     closable: true,
@@ -133,10 +129,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "files",
     title: "Files",
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M15 3v18", "M8 9l3 3-3 3"],
-    },
+    icon: "files",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -144,12 +137,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "cron",
     title: "cron",
-    icon: {
-      paths: [
-        "M10.5 10.5a2 2 0 1 0 3 0a2 2 0 1 0 -3 0",
-        "M12 3v3m0 12v3M3 12h3m12 0h3",
-      ],
-    },
+    icon: "cron",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -157,10 +145,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "http_channel",
     title: "http_channel",
-    icon: {
-      rect: { x: 3, y: 5, width: 18, height: 14, rx: 2 },
-      paths: ["M7 9h10", "M7 13h10", "M7 16h4"],
-    },
+    icon: "logs",
     policy: "singleton",
     // Endo's comment (2026-10-26): logs' home is the BOTTOM panel only -
     // the secondary-sidebar copy duplicated it. The dual-host shape was
@@ -172,10 +157,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "skills",
     title: "skills",
-    icon: {
-      rect: { x: 2, y: 2, width: 20, height: 20, rx: 2 },
-      paths: ["M12 6l6 6-6 6-6-6z"],
-    },
+    icon: "skills",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -183,10 +165,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "tools",
     title: "tools",
-    icon: {
-      rect: { x: 2, y: 3, width: 20, height: 18, rx: 2 },
-      paths: ["M6 9h12", "M9 13h6"],
-    },
+    icon: "tools",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -197,13 +176,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
     // the tab label joins the Title Case siblings.
     id: "agents",
     title: "Agents",
-    // person: head circle + shoulders arc
-    icon: {
-      paths: [
-        "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
-        "M5.5 19a6.5 6.5 0 0 1 13 0",
-      ],
-    },
+    icon: "agents",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -216,11 +189,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
     // The tab label joins the Title Case siblings.
     id: "continuous",
     title: "Continuous",
-    // the wake pulse: a filled dot inside one frame
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M12 9a3 3 0 1 0 .0001 0"],
-    },
+    icon: "continuous",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -228,14 +197,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "settings",
     title: "Settings",
-    icon: {
-      // cog: hub circle + eight teeth, same 2px round-join stroke style
-      paths: [
-        "M12 9a3 3 0 1 0 .0001 0",
-        "M12 2v3", "M12 19v3", "M2 12h3", "M19 12h3",
-        "M4.9 4.9L7 7", "M17 17l2.1 2.1", "M19.1 4.9L17 7", "M7 17l-2.1 2.1",
-      ],
-    },
+    icon: "settings",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -243,11 +205,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
   {
     id: "kanban",
     title: "kanban",
-    // the board: three columns in one frame
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M9 3v18", "M15 3v18"],
-    },
+    icon: "kanban",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -267,11 +225,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
     // layouts persist ids, and a rename there would orphan them. The
     // /modules palette name dispatches here; /extensions keeps working.
     title: "Modules",
-    // four squares: the module inventory, one frame
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M8 8h1", "M15 8h1", "M8 15h1", "M15 15h1"],
-    },
+    icon: "extensions",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -287,11 +241,7 @@ export const DOCKABLES: readonly DockableComponent[] = [
     // singleton opener FOCUSES the sidebar instance - clean coexistence).
     id: "insights",
     title: "Insights",
-    // usage bars: three columns, ascending, in one frame
-    icon: {
-      rect: { x: 3, y: 3, width: 18, height: 18, rx: 2 },
-      paths: ["M7 17v-4", "M12 17V9", "M17 17v-2"],
-    },
+    icon: "insights",
     policy: "singleton",
     area: "right",
     closable: false,
@@ -310,6 +260,12 @@ export function dockableOf(id: DockComponentName): DockableComponent {
 function safeEntry(id: string): DockableComponent | null {
   if (!(DOCK_COMPONENTS as readonly string[]).includes(id)) return null;
   return dockableOf(id as DockComponentName);
+}
+
+/** the tab chip's iconset name - lenient like safeEntry: a tab carrying
+    an id outside the openable registry renders no icon, never throws */
+export function dockableIcon(id: string): string | null {
+  return safeEntry(id)?.icon ?? null;
 }
 
 /** card t_d6b657a7: THE LOCKED TAB - sessions is the one component whose
@@ -387,21 +343,21 @@ export function hostsOf(id: DockComponentName): readonly DockArea[] {
 // build time; the generated panel list carries it to the runtime.
 export interface DockableSpec {
   title?: string;
-  icon?: DockIcon;
+  /** the iconset name (composables/icons.ts ICONS); omitted = "module" */
+  icon?: string;
   policy?: DockInstancePolicy;
 }
 
-// default glyph for modules that declare no icon of their own
-const MODULE_ICON: DockIcon = {
-  paths: ["M12 3v3m0 12v3M3 12h3m12 0h3", "M10.5 10.5a2 2 0 1 0 3 0a2 2 0 1 0 -3 0"],
-};
+// default icon name for modules that declare no icon of their own
+// (the iconset "module" entry - Box)
+const MODULE_ICON = "module";
 
 export interface DockableComponentLike {
   // module name - NOT a DockComponentName: module dockables gain the
   // openable union when their outlet slot ships
   id: string;
   title: string;
-  icon: DockIcon;
+  icon: string;
   policy: DockInstancePolicy;
 }
 

@@ -129,7 +129,13 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
       join(scratch, "a", "ui", "dockable.json"),
       JSON.stringify({ icon: { paths: [] } }),
     );
-    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "icon with no ink");
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "icon not a name (shape)");
+
+    writeFileSync(
+      join(scratch, "a", "ui", "dockable.json"),
+      JSON.stringify({ icon: "not-a-name" }),
+    );
+    assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "icon outside the iconset");
 
     writeFileSync(join(scratch, "a", "ui", "dockable.json"), JSON.stringify(null));
     assert.equal(scanModuleUIs(scratch)[0]!.dockable, null, "null body");

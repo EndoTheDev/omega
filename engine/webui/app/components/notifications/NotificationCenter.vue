@@ -11,21 +11,11 @@
       aria-label="Notifications"
       :title="badgeCount > 0 ? `${badgeCount} unread (${unread} notifications, ${pending} pending questions)` : 'Notifications'"
       @click="toggle">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24">
-        <g
-          fill="none"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2">
-          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-        </g>
-      </svg>
+      <!-- card t_502b8e81: the bell is a vocabulary entry, not a template
+           svg - lucide Bell through the one wrapper -->
+      <Icon
+        name="bell"
+        :size="16" />
       <span
         v-if="badgeCount > 0"
         class="notif-badge"
@@ -129,6 +119,8 @@
     type OmegaNotification,
   } from "../../composables/notifications";
   import { onToastPanel } from "../../composables/canvas";
+  // card t_502b8e81: the iconset wrapper - the bell
+  import Icon from "../ui/Icon.vue";
   import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
 
   const emit = defineEmits<{

@@ -13,7 +13,9 @@
       <span
         v-if="drag"
         class="dock-drop-ghost">
-        <DockItemIcon :icon="drag.icon" />
+        <Icon
+          :name="drag.icon"
+          class="dock-item-icon" />
         {{ drag.title }}
       </span>
       <span class="dock-ghost-meta">
@@ -34,14 +36,16 @@
   // the ONE preview formula (ruling 5): ghostPreview in dockghost.ts runs
   // predictDockDrop - the commit's own call - so what the overlay draws is
   // exactly what a release lands, refusals included.
-  import { computed, h, type FunctionalComponent } from "vue";
-  import type { DockIcon } from "../composables/dockables";
+  import { computed } from "vue";
+  // card t_502b8e81: the registry icon is a NAME in the webui iconset,
+  // rendered through the one wrapper (DockPane's DockItemIcon is gone)
+  import Icon from "./ui/Icon.vue";
   import type { GhostPreview } from "../composables/dockghost";
 
   const props = defineProps<{
     preview: GhostPreview;
-    /** the dragged tab's registry entry (title + icon), null = none */
-    drag: { icon: DockIcon; title: string } | null;
+    /** the dragged tab's registry entry (title + icon name), null = none */
+    drag: { icon: string; title: string } | null;
   }>();
 
   const directionLabel = computed(() => {
@@ -59,37 +63,4 @@
     if (!h) return "";
     return h.map((x) => `${x.px}px (${Math.round(x.pct * 100)}%)`).join(" | ");
   });
-
-  // the registry's 14px icon renderer (DockPane owns the same shape)
-  const DockItemIcon: FunctionalComponent<{ icon: DockIcon }> = (p) =>
-    h(
-      "svg",
-      {
-        class: "dock-item-icon",
-        width: "14",
-        height: "14",
-        viewBox: "0 0 24 24",
-        "aria-hidden": "true",
-      },
-      [
-        h("g", {
-          fill: "none",
-          stroke: "currentColor",
-          "stroke-width": "2",
-          "stroke-linecap": "round",
-          "stroke-linejoin": "round",
-        }, [
-          ...(p.icon.rect
-            ? [h("rect", {
-                x: p.icon.rect.x,
-                y: p.icon.rect.y,
-                width: p.icon.rect.width,
-                height: p.icon.rect.height,
-                rx: p.icon.rect.rx ?? 2,
-              })]
-            : []),
-          ...p.icon.paths.map((d) => h("path", { d })),
-        ]),
-      ],
-    );
 </script>

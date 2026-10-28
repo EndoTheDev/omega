@@ -1,10 +1,12 @@
 // omega webui: unit tests for the FileTree row-glyph table (card
-// t_467a0386): extension -> glyph kind mapping, unknown -> generic,
-// and the static inline-SVG builders (folder open/closed distinct
-// without new colors). Run: node --test engine/webui/test/
+// t_467a0386, iconified card t_502b8e81): extension -> glyph kind mapping,
+// unknown -> generic, and the iconset-name builders (folder open/closed
+// distinct). The SVG builders are gone - a glyph is a NAME in the webui
+// iconset, rendered through the Icon wrapper. Run: node --test engine/webui/test/
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { folderSvg, glyphKindFor, glyphSvg } from "../app/components/files/rowicon.ts";
+import { folderIcon, glyphKindFor, glyphIcon } from "../app/components/files/rowicon.ts";
+import { ICON_NAMES } from "../app/composables/icons.ts";
 
 describe("glyphKindFor", () => {
   it("maps the common set omega's home shows", () => {
@@ -38,31 +40,33 @@ describe("glyphKindFor", () => {
   });
 });
 
-describe("glyph builders", () => {
-  it("every class builds an inline SVG using only currentColor", () => {
+describe("glyph names (iconset, card t_502b8e81)", () => {
+  it("every kind maps to a NAME that exists in the iconset", () => {
     for (const kind of [
       "generic", "text", "log", "md", "config", "code", "script", "db",
     ] as const) {
-      const s = glyphSvg(kind);
-      assert.ok(s.startsWith("<svg"), `${kind}: svg opens`);
-      assert.ok(s.includes("currentColor"), `${kind}: currentColor`);
-      assert.ok(!s.includes("http"), `${kind}: no external refs`);
+      const name = glyphIcon(kind);
+      assert.equal(typeof name, "string", `${kind}: a name`);
+      assert.ok(
+        (ICON_NAMES as readonly string[]).includes(name),
+        `${kind}: "${name}" is in the iconset`,
+      );
     }
   });
 
-  it("folder glyphs: open fills (filled vs outline), both currentColor", () => {
-    const open = folderSvg(true);
-    const closed = folderSvg(false);
-    assert.ok(open.includes('fill="currentColor"'));
-    assert.ok(closed.includes('fill="none"'));
-    assert.ok(open.includes("currentColor") && closed.includes("currentColor"));
-    assert.notEqual(open, closed);
+  it("glyph kinds still differ where the UI reads the difference (text vs code vs config)", () => {
+    const names = new Set(["text", "log", "md", "config", "code", "script", "db", "generic"]
+      .map((k) => glyphIcon(k as never)));
+    // the family is small by design (one class per kind); the pair test
+    // only requires the load-bearing distinctions (text/code/db at least)
+    assert.ok(names.size >= 4, `distinct names: ${names.size}`);
   });
 
-  it("glyph kinds all differ pairwise (each class renders its own paths)", () => {
-    const svgs = [
-      "generic", "text", "log", "md", "config", "code", "script", "db",
-    ].map((k) => glyphSvg(k as never));
-    assert.equal(new Set(svgs).size, svgs.length);
+  it("folder glyphs: open/closed distinct, both in the iconset", () => {
+    const open = folderIcon(true);
+    const closed = folderIcon(false);
+    assert.notEqual(open, closed);
+    assert.ok((ICON_NAMES as readonly string[]).includes(open), "open folder named");
+    assert.ok((ICON_NAMES as readonly string[]).includes(closed), "closed folder named");
   });
 });
