@@ -2448,6 +2448,12 @@ export interface DockApi {
       the current locked drag drop into this pane (the left shell's pane +
       the left root's grown leaves)? The panes read it during dragover. */
   lockedBarOk: (paneId: string) => boolean;
+  /** v0.14.4 ruling 10: the undo ring - walk back one committed layout op
+      (split, merge, move, resize, hide) or return false when empty. */
+  undoLayout: () => boolean;
+  /** v0.14.4 ruling 10: a RESIZE is one layout op per gesture - the drag
+      start snapshots once (per-tick moves land under the same snapshot). */
+  beginResize: () => void;
   /** card 4 - the dockable contract opener: singletons FOCUS their one
       instance when it lives (created | focused), multi goes through the
       app's chat opener instead - this must only be called for singletons */
@@ -2636,6 +2642,49 @@ export function createDock(store: Storage): DockApi {
     // singleton parked as an inactive tab and let toggles duplicate it
     findComponentTab(tree.value, component) !== null;
 
+  // --- the undo ring (v0.14.4 ruling 10) -------------------------------------
+  // Every committed LAYOUT op (split, merge, move, resize, hide) snapshots
+  // the serialized tree into a 20-deep ring; Modifier-Z at the dock root
+  // walks back one op. A mis-drop is one keystroke reversible. Content ops
+  // (tab opens/closes, focus, session refs) never enter the ring - except
+  // a close that MERGES (the pane census dropped), which is ruling 8's
+  // structural op. The closed-edge set rides each snapshot: undo restores
+  // the visibility the snapshot came with.
+  const UNDO_RING_MAX = 20;
+  const undoRing: string[] = [];
+  /** the snapshot push: deduped (an op that lands on the snapshot's own
+      state contributes nothing) and capped at 20 */
+  const undoPush = (t: DockNode) => {
+    const s = serialize(t, closedEdges);
+    if (undoRing[undoRing.length - 1] === s) return;
+    undoRing.push(s);
+    if (undoRing.length > UNDO_RING_MAX) undoRing.shift();
+  };
+  /** swap in a NEW tree from a layout op: no-op trees contribute no
+      snapshot (a refused drop / vanished target never rings) */
+  const applyLayout = (before: DockNode, next: DockNode) => {
+    if (next === before) return;
+    undoPush(before);
+    tree.value = next;
+  };
+  /** walk back one op: pop the ring, re-parse through the total
+      deserializer (a snapshot is always well-formed - it was serialized
+      here - but the reader stays total), reseed ids/chat keys above the
+      restored tree, and restore the snapshot's closed-edge set. Returns
+      false when the ring is empty. */
+  const undoLayout = (): boolean => {
+    const s = undoRing.pop();
+    if (!s) return false;
+    const rec = parseAnyLayout(s, () => tree.value);
+    syncIdSeed(rec.tree);
+    const restored = assignChatKeys(rec.tree);
+    if (rec.closedEdges) {
+      closedEdges.splice(0, closedEdges.length, ...rec.closedEdges);
+    }
+    tree.value = restored;
+    return true;
+  };
+
   const openSingletonIn = (
     paneId: string,
     component: DockComponentName,
@@ -2657,10 +2706,18 @@ export function createDock(store: Storage): DockApi {
     tree.value = openTab(tree.value, paneId, tab);
   };
   const closeTabIn = (paneId: string, index: number) => {
-    tree.value = closeTab(tree.value, paneId, index);
+    // content op EXCEPT when the close merges (the census dropped - ruling
+    // 8's structural unwind): only structural closes enter the ring
+    const before = tree.value;
+    const next = closeTab(before, paneId, index);
+    if (paneCount(next) !== paneCount(before)) {
+      applyLayout(before, next);
+    } else {
+      tree.value = next;
+    }
   };
   const moveTabIn = (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => {
-    tree.value = moveTab(tree.value, fromPaneId, fromIndex, toPaneId, toIndex);
+    applyLayout(tree.value, moveTab(tree.value, fromPaneId, fromIndex, toPaneId, toIndex));
   };
   const dockDropToZoneIn = (
     fromPaneId: string,
@@ -2668,7 +2725,7 @@ export function createDock(store: Storage): DockApi {
     toPaneId: string,
     zone: DragZone,
   ) => {
-    tree.value = dockDropToZone(tree.value, fromPaneId, fromIndex, toPaneId, zone);
+    applyLayout(tree.value, dockDropToZone(tree.value, fromPaneId, fromIndex, toPaneId, zone));
   };
   const setSessionRef = (key: string, sessionRef: string | null) => {
     tree.value = setTabSessionRef(tree.value, key, sessionRef);
@@ -2681,16 +2738,16 @@ export function createDock(store: Storage): DockApi {
     // (sidebars refuse row splits, tight roots refuse past depth 2) - a
     // refused split is a no-op, exactly like the refused drop
     if (splitLawRefusal(tree.value, paneId, direction)) return;
-    tree.value = splitPane(tree.value, paneId, direction, side);
+    applyLayout(tree.value, splitPane(tree.value, paneId, direction, side));
   };
   const remove = (paneId: string) => {
-    tree.value = removePane(tree.value, paneId);
+    applyLayout(tree.value, removePane(tree.value, paneId));
   };
   const ensureMainPane = (): string => {
     const first = firstMainPaneId(tree.value);
     if (first) return first;
     const res = insertMainPane(tree.value);
-    tree.value = res.tree;
+    applyLayout(tree.value, res.tree);
     return res.paneId;
   };
   const canRemovePane = (paneId: string): boolean => {
@@ -2728,6 +2785,9 @@ export function createDock(store: Storage): DockApi {
     // record) - a reload restores the visibility the user left, exactly
     // like the menubar toggle. Edge panes remember their width first - the
     // menubar toggle reopens them at it (the reopen-at-its-width mechanic).
+    // v0.14.4 ruling 10: the RESIZE is one layout op per gesture - the
+    // snapshot rides api.beginResize (gesture start); a squeeze collapse
+    // inside the gesture lands under the same snapshot.
     if (d.split !== node) tree.value = graftSplit(tree.value, d.split);
     for (const id of [d.collapsedPaneId, d.pushedPaneId]) {
       if (!id) continue;
@@ -2746,14 +2806,17 @@ export function createDock(store: Storage): DockApi {
     const pane = findEdgePane(tree.value, component);
     if (pane) {
       // hide remembers the pane's width - the reopen restores it; the
-      // closed-edge set marks the closure so a reload restores it too
+      // closed-edge set marks the closure so a reload restores it too.
+      // v0.14.4 ruling 10: the snapshot lands FIRST (the pre-hide record
+      // carries the edge still open - undo restores its visibility too)
+      undoPush(tree.value);
       if (pane.fixed !== null) rememberEdgePx(store, component, pane.fixed);
       setClosed(component, true);
       tree.value = hideEdgePane(tree.value, component);
     } else {
       // reopen-clamp: a stale sub-floor remembered width reopens AT 320
       setClosed(component, false);
-      tree.value = revealEdgePane(tree.value, component, side, recalledEdgePx(store, component));
+      applyLayout(tree.value, revealEdgePane(tree.value, component, side, recalledEdgePx(store, component)));
     }
   };
 
@@ -2763,11 +2826,13 @@ export function createDock(store: Storage): DockApi {
   // the height; reopen restores it (absent/invalid falls to the default 200).
   const toggleBottom = () => {
     if (findEdgePane(tree.value, "bottom")) {
+      // v0.14.4 ruling 10: the pre-hide snapshot first (closed set intact)
+      undoPush(tree.value);
       tree.value = hideBottomPanel(tree.value, store);
       setClosed("bottom", true);
     } else {
       setClosed("bottom", false);
-      tree.value = revealBottomPanel(tree.value, store);
+      applyLayout(tree.value, revealBottomPanel(tree.value, store));
     }
   };
 
@@ -2797,11 +2862,15 @@ export function createDock(store: Storage): DockApi {
   // (a reload never re-reveals a pane the user's own state says is closed).
   const narrowSqueeze = (contentPx: number) => {
     const res = narrowGiveWay(tree.value, contentPx);
+    if (!res.hidden.length) return;
+    // v0.14.4 ruling 10: the pre-give-way snapshot first (the closed set
+    // mutates below it - undo restores the visible state too)
+    undoPush(tree.value);
     for (const h of res.hidden) {
       rememberEdgePx(store, h.component, h.px);
       setClosed(h.component, true);
     }
-    if (res.hidden.length) tree.value = res.tree;
+    tree.value = res.tree;
   };
 
   return {
@@ -2816,5 +2885,6 @@ export function createDock(store: Storage): DockApi {
     split, remove, toggleEdge, ensureMainPane, canRemovePane, isLastMainPane: lastMainPane, drag, toggleBottom,
     bottomFullscreen, toggleBottomFullscreen,
     narrowSqueeze,
+    undoLayout, beginResize: () => undoPush(tree.value),
   };
 }
