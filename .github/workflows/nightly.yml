@@ -78,9 +78,10 @@ jobs:
           JOURNEY_BASE_URL: http://127.0.0.1:8098
 
       - name: Journey evidence to the run summary (on red)
-        # The logs API needs a token the vault PATs do not carry
-        # (Actions:read); the run summary is anonymous-readable, so a
-        # red run self-documents instead of waiting on credentials.
+        # Two channels: the run summary (signed-in view) and error
+        # annotations (anonymous-readable on the run page - the logs API
+        # needs Actions:read, which no vault PAT carries, so a red run
+        # must self-document without credentials).
         if: failure()
         run: |
           EVID=""
@@ -89,9 +90,8 @@ jobs:
             [ -n "$EVID" ] && break
           done
           if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
-            {
-              echo "## :x: Journeys red - no evidence dir found (infra exit: chrome or lane dead)"
-            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::journeys red - no evidence dir found (infra exit: chrome or lane dead)"
+            echo "## :x: Journeys red - no evidence dir found (infra exit: chrome or lane dead)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           {
@@ -104,6 +104,13 @@ jobs:
               echo '```'
             done
           } >> "$GITHUB_STEP_SUMMARY"
+          # anonymous channel: one error annotation per red journey, tail capped
+          for f in "$EVID"/*.log; do
+            if ! grep -q ' RED$' "$f"; then continue; fi
+            name="$(basename "$f" .log)"
+            tail_lines="$(tail -8 "$f" | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journey red: $name::$tail_lines"
+          done
 
       - name: Compute the nightly version (patch+1 of the newest stable)
         id: ver
