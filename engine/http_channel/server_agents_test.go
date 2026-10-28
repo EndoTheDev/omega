@@ -180,6 +180,22 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 	}
 }
 
+// TestAgentSessionsEmptyListEmitsArray pins the list contract (card
+// t_619832ee): a freshly scaffolded agent has zero sessions, the store
+// returns a nil slice, and the endpoint must still answer literal []
+// with 200 - the webui session read crashes on a null .length body.
+// Scout is fresh here: TestAgentSessionsEndpoint runs its own server.
+func TestAgentSessionsEmptyListEmitsArray(t *testing.T) {
+	srv, _ := newAgentsTestServer(t)
+	code, body := getJSON(t, srv.URL+"/agents/scout/sessions")
+	if code != http.StatusOK {
+		t.Fatalf("scout sessions status %d", code)
+	}
+	if string(body) != "[]\n" {
+		t.Fatalf("empty agent sessions body = %q, want \"[]\" (null crashes the webui render)", body)
+	}
+}
+
 func TestAgentsListCarriesSessionCounts(t *testing.T) {
 	srv, _ := newAgentsTestServer(t)
 	if res, err := postAny(t, srv.URL+"/agents/scout/sessions", map[string]any{}); err != nil || res != 201 {
