@@ -213,13 +213,14 @@
       :data-zone="dropZone">
       <div
         class="dock-drop-zone"
+        :class="{ refused: predicted?.refused }"
         :style="zoneStyle">
-        <span
-          v-if="dragGhost"
-          class="dock-drop-ghost">
-          <DockItemIcon :icon="dragGhost.icon" />
-          {{ dragGhost.title }}
-        </span>
+        <!-- v0.14.4 ruling 5: the ghost - the exact result a release lands
+             (direction, target, resulting sizes) or the refusal hatch -->
+        <DockGhost
+          v-if="predicted"
+          :preview="predicted"
+          :drag="dragGhost" />
       </div>
     </div>
   </div>
@@ -244,6 +245,8 @@
     type DockComponentName,
   } from "../composables/dockables";
   import { tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
+  import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
+  import DockGhost from "./DockGhost.vue";
   import { isLockedTab } from "../composables/dockables";
   // the recursive split renderer, lazy: DockSplit imports DockPane for its
   // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
@@ -396,6 +399,9 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     // identity for the LIVE hit-test (data is protected until drop):
     tabDrag.start({ paneId: props.node.id, index, component: tab.component });
+    // v0.14.4 ruling 5: the ghost gesture begins - the registry snapshots
+    // geometry per gesture (the source stamps first touch here)
+    ghostRegistry.begin(props.node.id, index);
   }
 
   // one caret per pane: the index BEFORE which to insert (tabs.length = after
@@ -409,6 +415,10 @@
   // tab would drop into on THIS pane's body (null = no body hover, or the
   // same-pane/stale case where no docking preview shows)
   const dropZone = ref<DragZone | null>(null);
+  // v0.14.4 ruling 5: the GHOST preview - the exact result a release lands
+  // (refused -> hatched-red overlay), read through the commit's own
+  // predictDockDrop via ghostPreview. Cleared with every drop-zone reset.
+  const predicted = ref<GhostPreview | null>(null);
   // the ghost chip's registry entry: the dragged tab's component, so the
   // preview shows WHAT will land (title + icon) before release
   const dragGhost = computed(() => {
@@ -512,6 +522,7 @@
     dropHover.value = false;
     dropIdx.value = null;
     dropZone.value = null;
+    predicted.value = null;
   }
 
   function onTabbarDragOver(e: DragEvent) {
@@ -523,6 +534,7 @@
     dropHover.value = true;
     refusedIdx.value = null;
     dropZone.value = null; // the bar's band: the caret predicts, zones clear
+    predicted.value = null;
     dropIdx.value = caretIndexFor(e);
   }
 
@@ -552,6 +564,7 @@
       dropHover.value = true;
       refusedIdx.value = null;
       dropZone.value = null;
+      predicted.value = null;
       return;
     }
     const d = tabDrag.current();
@@ -561,6 +574,7 @@
       dropHover.value = true;
       refusedIdx.value = null;
       dropZone.value = null;
+      predicted.value = null;
       return;
     }
     // VS Code zone read on the pane body: halves + center. v0.14.4 ruling
@@ -571,6 +585,16 @@
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
     dropZone.value = raw;
+    // v0.14.4 ruling 5: the GHOST reads the commit's own formula over the
+    // registry's frozen geometry - refused here == refused at release
+    const drag = tabDrag.current();
+    const rect = bodyRect();
+    ghostRegistry.record(props.node.id, rect);
+    const axisPx =
+      raw === "left" || raw === "right" ? rect.w
+      : raw === "top" || raw === "bottom" ? rect.h
+      : null;
+    predicted.value = ghostPreview(api.tree.value, drag!.paneId, drag!.index, props.node.id, raw, axisPx);
   }
 
   function onPaneDragLeave(e: DragEvent) {
@@ -606,6 +630,8 @@
     dropIdx.value = null;
     refusedIdx.value = null;
     dropZone.value = null;
+    predicted.value = null;
+    ghostRegistry.end();
     tabDrag.end();
   }
   // any drag ending anywhere clears the local highlight (dropped elsewhere,
