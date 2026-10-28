@@ -29,6 +29,9 @@ names = {m.get("name") for m in json.loads(sys.argv[1])}
 missing = [n for n in ("cron", "tools", "logging") if n not in names]
 if missing:
     sys.stderr.write("journey RED: registered modules missing from /extensions: %r\n" % (missing,))
+    sys.stderr.write("  /extensions lists MOUNTED capsules in mount order; an absent row means the"
+                     " module was never mounted at boot in this build OR is toggled off"
+                     " (config.yaml disabled: key) - GET /modules names the live state\n")
     sys.exit(2)
 EOF
 [ $? -eq 0 ] || die "module inventory incomplete (a buildPlugins omission reaches the UI surfaces)"
