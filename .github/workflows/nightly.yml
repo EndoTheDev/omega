@@ -93,8 +93,8 @@ jobs:
           # anonymous channel: suite stdout first (infra deaths print
           # nothing into journey logs), then one annotation per red log
           if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
-            tail_lines="$(tail -12 "$RUNNER_TEMP/journeys-stdout.log" | tr '\n' '|' | cut -c1-380)"
-            echo "::error title=journeys suite output::$tail_lines"
+            tail_lines="$(grep -v ' green$' "$RUNNER_TEMP/journeys-stdout.log" | tail -12 | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journeys suite output (noise stripped)::$tail_lines"
           fi
           if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
             echo "::error::journeys red - no evidence dir found (infra exit: chrome or lane dead)"
