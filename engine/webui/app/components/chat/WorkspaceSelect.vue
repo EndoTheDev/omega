@@ -1,10 +1,10 @@
 <template>
-  <!-- Session workspace picker (card t_9de5b009). A chip in the composer
-       toolbar showing the session's remembered folder; the popover
-       browses real directories (/workspaces/browse, dirs only) or takes
-       a typed absolute path, and applies the choice to the session row.
-       No session binding -> the chip still renders but applies get an
-       error note (nothing to pin on).
+  <!-- Session workspace picker (card t_9de5b009, draft intent
+       t_ea7e6a58). A chip in the composer toolbar showing the current
+       folder: a BOUND session's pinned row folder, or - while the
+       composer is a draft - the draft's workspace intent, consumed by
+       the first send. The popover browses real directories
+       (/workspaces/browse, dirs only) or takes a typed absolute path.
        v0.14.3 (user screenshot findings): the chip rides the same
        interactive treatment as its row neighbors (.model-chip: full
        contrast, chevron, shared narrow squeeze) and shows the CURRENT
@@ -17,7 +17,6 @@
     <button
       class="model-chip ws-btn"
       type="button"
-      :disabled="disabled"
       :title="btnTitle"
       :aria-expanded="open"
       @click="toggle">
@@ -86,12 +85,10 @@
   import { browseWorkspaces, type WorkspaceListing } from "../../composables/omega";
 
   const props = defineProps<{
-    // the session's remembered workspace ("": none - the chip renders
-    // the unset label and the session has no folder root)
+    // the CURRENT workspace value ("": none - the chip renders the
+    // unset label). A bound session's pinned row folder, or the draft
+    // tab's workspace intent (t_ea7e6a58) until the first send pins it.
     workspace?: string;
-    // no session bound: a folder pins on a session row, a draft has
-    // nothing to pin on - the button is inert and says so
-    disabled?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -109,16 +106,14 @@
 
   // the chip's tooltip (script keeps the literal strings - apostrophes
   // in template expressions break the vue template parser)
-  const btnTitle = computed(() => {
-    if (props.disabled) return "send a first message to bind a session, then pin a folder";
-    return props.workspace ? `workspace: ${props.workspace}` : "pick this session's working folder";
-  });
+  const btnTitle = computed(() =>
+    props.workspace ? `workspace: ${props.workspace}` : "pick the working folder",
+  );
 
   function toggle() {
-    if (props.disabled) return;
     open.value = !open.value;
     if (open.value) {
-      // the picker opens where the session is rooted now - or at "/",
+      // the picker opens where the folder is rooted now - or at "/",
       // the only honest start for a document-unrooted chooser
       go(props.workspace || "/");
     }
@@ -169,11 +164,7 @@
   }
   /* the chip borrows the global .model-chip treatment (full contrast,
      chevron, hover, the narrow squeeze); the scoped layer adds only
-     this row's own deltas. Disabled (no session bound) stays dimmed. */
-  .ws-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
+     this row's own deltas. */
   .ws-unset {
     opacity: 0.55;
     font-style: italic;

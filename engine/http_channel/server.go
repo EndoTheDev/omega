@@ -229,6 +229,7 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
+	mux.HandleFunc("/workspaces/files", s.handleWorkspaceFiles)
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
@@ -437,6 +438,13 @@ type chatRequest struct {
 	// bubble chains onto the forked message) and runs the turn.
 	// Requires a session id. Mutually exclusive with retry.
 	Fork string `json:"fork,omitempty"`
+	// Workspace roots the session created by a BARE send (card
+	// t_ea7e6a58): the webui's draft workspace intent rides the first
+	// POST /chat and the auto-created row is born pinned. Honored ONLY
+	// on that path - an explicit session_id, a fork/replay turn, or an
+	// ephemeral mint plus a workspace is refused loudly (pin at
+	// creation or not at all).
+	Workspace string `json:"workspace,omitempty"`
 	// branchParent pins the run head's parent when the channel computed
 	// it (retry/fork-of-user) - empty = derive (first assistant after a
 	// user is the head; continuations / tool results chain off the
@@ -745,6 +753,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The draft workspace intent (t_ea7e6a58) pins ONLY the bare
+	// create. Everything else - an explicit session id, an ephemeral
+	// session (registry memory, no row to pin), a fork/replay turn, or
+	// the legacy no-store lane (nothing to pin on) - plus a workspace
+	// is a client bug, refused before anything runs.
+	if req.Workspace != "" &&
+		(req.SessionID != "" || req.Ephemeral || req.Fork != "" || req.Retry || s.store == nil) {
+		http.Error(w, "workspace rides session creation only", http.StatusBadRequest)
+		return
+	}
 	autoCreated := false
 	if req.Ephemeral && req.SessionID == "" {
 		// Ephemeral mint: an `eph-` id backed by the in-memory
@@ -770,9 +788,32 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			// server alive if it ever does
 			id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
 		}
+		// Born-pin (t_ea7e6a58): the draft intent resolves BEFORE the
+		// row write - a bad path answers 400, a store
+		// without the context seam answers 501, both create nothing.
+		var wsDir string
+		if req.Workspace != "" {
+			dir, err := resolveWorkspaceDir(req.Workspace)
+			if err != nil {
+				http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if _, ok := s.store.(core.SessionContextStore); !ok {
+				http.Error(w, "session store has no session-context surface", http.StatusNotImplemented)
+				return
+			}
+			wsDir = dir
+		}
 		if err := s.store.CreateSession(r.Context(), id, "", ""); err != nil {
 			http.Error(w, "create session: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if wsDir != "" {
+			scx := s.store.(core.SessionContextStore)
+			if err := scx.SetSessionWorkspace(r.Context(), id, wsDir); err != nil {
+				http.Error(w, "set session workspace: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		req.SessionID = id
 		autoCreated = true
@@ -1449,6 +1490,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req struct {
 			ID string `json:"id"`
+			// Workspace roots the session at creation (card
+			// t_ea7e6a58): the webui pins the draft's folder intent at
+			// the create call. Validated BEFORE the row write - a bad
+			// path answers 400 and creates nothing. Empty = no root.
+			Workspace string `json:"workspace,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
@@ -1470,9 +1516,33 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request: reserved session id prefix "+ephemeralPrefix, http.StatusBadRequest)
 			return
 		}
+		// The born-pin (t_ea7e6a58): resolve + store-capability check
+		// BEFORE CreateSession - never a half-pinned row. The seam check
+		// mirrors the PATCH surface's; a store without the context seam
+		// answers 501 and creates nothing.
+		var wsDir string
+		if req.Workspace != "" {
+			dir, err := resolveWorkspaceDir(req.Workspace)
+			if err != nil {
+				http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if _, ok := s.store.(core.SessionContextStore); !ok {
+				http.Error(w, "session store has no session-context surface", http.StatusNotImplemented)
+				return
+			}
+			wsDir = dir
+		}
 		if err := s.store.CreateSession(r.Context(), req.ID, "", ""); err != nil {
 			http.Error(w, "create session: "+err.Error(), http.StatusConflict)
 			return
+		}
+		if wsDir != "" {
+			scx := s.store.(core.SessionContextStore)
+			if err := scx.SetSessionWorkspace(r.Context(), req.ID, wsDir); err != nil {
+				http.Error(w, "set session workspace: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		sess, err := s.store.GetSession(r.Context(), req.ID)
 		if err != nil {

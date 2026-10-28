@@ -1268,6 +1268,37 @@ export function fetchFilesBrowse(path = ""): Promise<FilesBrowsePayload> {
   return filesQuery(`/files/browse${suffix}`);
 }
 
+// fetchWorkspaceFiles lists one ABSOLUTE directory's first-level
+// entries (/workspaces/files, t_ea7e6a58): the read the /files/browse
+// jail (process-CWD-rooted, relative paths) cannot make. Same payload
+// shape as fetchFilesBrowse's, so the consumers stay drop-in.
+export async function fetchWorkspaceFiles(path: string): Promise<FilesBrowsePayload> {
+  const r = await fetch(`/workspaces/files?path=${encodeURIComponent(path)}`);
+  if (!r.ok) {
+    const text = (await r.text()).trim();
+    throw new Error(text || `workspace files: ${r.status}`);
+  }
+  const body = (await r.json()) as { entries?: { name: string; is_dir: boolean }[] };
+  return {
+    entries: (body.entries ?? []).map((e) => ({
+      name: e.name,
+      size_bytes: 0,
+      is_dir: e.is_dir,
+      mod_time: "",
+    })),
+  };
+}
+
+// fetchMentionFiles resolves the @ mention picker's file rows (card
+// t_ea7e6a58): a workspace - the draft intent pre-session, the pinned
+// row's folder after - lists ITS files, because "@name" expands
+// SERVER-side against the session workspace at run time. Rootless
+// stays on the process-CWD read as before.
+export async function fetchMentionFiles(workspace?: string): Promise<FilesBrowsePayload> {
+  if (!workspace) return fetchFilesBrowse("");
+  return fetchWorkspaceFiles(workspace);
+}
+
 // fetchFilesRead previews one file: up to 64 KiB, truncated flag, and
 // binary=true (empty content) for non-UTF-8 bytes.
 export function fetchFilesRead(path: string): Promise<FilesReadPayload> {
@@ -2587,6 +2618,10 @@ export async function streamChat(
   thinkingLevel?: number,
   fork?: string,
   ephemeral?: boolean,
+  // the draft workspace intent (t_ea7e6a58): rides ONLY the bare
+  // create (no session id) - the server pins the auto-created row.
+  // The server refuses a workspace on any other path.
+  workspace?: string,
 ): Promise<void> {
   const body: Record<string, unknown> = { messages };
   if (sessionId) body.session_id = sessionId;
@@ -2594,6 +2629,7 @@ export async function streamChat(
   if (model) body.model = model;
   if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;
   if (fork) body.fork = fork;
+  if (workspace && !sessionId) body.workspace = workspace;
   const resp = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
