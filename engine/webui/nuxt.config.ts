@@ -96,6 +96,9 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+        "/commands", "/commands/dispatch", // t_07aed3f9: the palette's GET
+        // /commands (extension registry rows) and POST /commands/dispatch
+        // (module command + skill dispatch) fetch the API root in dev too
         "/modules", // t_8ac225f1: the settings tab's modules group fetches
         // the live introspection in dev too (same-origin embedded in
         // production) - without this route the group renders nothing
