@@ -179,6 +179,10 @@ func (s *Server) rewireSeams(ctx *core.Context) error {
 	s.seams.mu.Unlock()
 	if s.agent != nil {
 		s.agent.RefreshToolProviders(ctx)
+		// The extension inventory follows the same Context-stays-
+		// source-of-truth law: the toggle journal keeps ctx.Infos
+		// exact, so /extensions lists what is actually mounted.
+		s.agent.RefreshExtensionInfos(ctx)
 	}
 	if s.canvas != nil {
 		return s.canvas.Resync(ctx)
