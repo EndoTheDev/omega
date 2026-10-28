@@ -41,14 +41,54 @@
       <textarea
         ref="ta"
         :value="draft"
+        :aria-expanded="paletteOpen"
+        aria-haspopup="listbox"
+        :aria-activedescendant="
+          paletteOpen && active >= 0 ? 'composer-palette-opt-' + active : undefined
+        "
         placeholder="message omega"
         rows="1"
-        @input="
-          $emit('update:draft', ($event.target as HTMLTextAreaElement).value);
-          resize();
-        "
-        @keydown.enter.exact.prevent="$emit('send')"
+        @input="onInput"
+        @keydown="onKeydown"
+        @keyup.left="onCaret"
+        @keyup.right="onCaret"
+        @keyup.home="onCaret"
+        @keyup.end="onCaret"
+        @click="onCaret"
         @paste="onPaste" />
+    </div>
+    <!-- the / command palette and @ mention picker (t_07aed3f9): the
+         TUI's autocomplete surface on the webui's tokens. "/" at input
+         start lists the commands (shell + module registry + skills);
+         "@" lists workspace files plus the session:/skill: context
+         injections. Expansion itself is server-side - the picker only
+         types the tokens. -->
+    <div
+      v-if="paletteOpen"
+      class="composer-palette"
+      role="listbox"
+      id="composer-palette">
+      <ul class="palette-list">
+        <li
+          v-for="(item, i) in paletteItems"
+          :key="item.kind + ':' + item.name"
+          :id="'composer-palette-opt-' + i"
+          role="option"
+          :aria-selected="i === active"
+          :class="{ active: i === active }"
+          @pointerdown.prevent
+          @click="acceptItem(item)">
+          <span class="palette-name">{{ item.name }}</span>
+          <span class="palette-desc">{{ item.description }}</span>
+        </li>
+        <li
+          v-if="paletteItems.length === 0"
+          class="palette-none"
+          role="option"
+          aria-selected="false">
+          no matches
+        </li>
+      </ul>
     </div>
     <input
       ref="fileInput"
@@ -103,8 +143,26 @@
   import ModelSelect from "./ModelSelect.vue";
   import ThinkingSelect from "./ThinkingSelect.vue";
   import WorkspaceSelect from "./WorkspaceSelect.vue";
-  import { dataUrl, mediaTypeFromBase64, type OmegaImage } from "../../composables/omega";
+  import {
+    dataUrl,
+    mediaTypeFromBase64,
+    fetchFilesBrowse,
+    fetchSessions,
+    type OmegaImage,
+  } from "../../composables/omega";
   import { composerFace } from "../../composables/chat";
+  import {
+    paletteCommands,
+    filterCommands,
+    mentionQueryAt,
+    mentionPrefixOf,
+    mentionInnerQuery,
+    replaceMentionToken,
+    clampIndex,
+    fetchPaletteCommands,
+    fetchPaletteSkills,
+  } from "../../composables/commands";
+  import type { PaletteItem } from "../../composables/commands";
 
   const props = defineProps<{
     draft: string;
@@ -259,6 +317,221 @@
     const text = (e.clipboardData?.getData("text/plain") ?? "").trim();
     if (/^https?:\/\/\S+$/i.test(text)) {
       emit("attach-url", text);
+    }
+  }
+
+  // --- the / command palette and @ mention picker (t_07aed3f9) ---
+  //
+  // Derived from draft + caret. "/" as the input's first char with the
+  // caret still inside its first word = the slash list; a running
+  // "@..." token at the caret = the mention list. Esc sets dismissed
+  // until the next draft change - a dropdown stays closed until a new
+  // query re-opens it.
+
+  type PaletteMode = "slash" | "mention";
+  const paletteMode = ref<PaletteMode>("slash");
+  const active = ref(-1);
+  const dismissed = ref(false);
+  // the caret the palette derives from (token surgery needs it)
+  const caretAt = ref(0);
+
+  // lazy seam snapshots: the extension command registry and the skills
+  // list fetch once per mount; session and workspace-file rows
+  // refetch on every mention open (cheap local reads, never the agent)
+  const extCmds = ref<{ name: string; description?: string }[]>([]);
+  const skillRows = ref<{ name: string; description: string }[]>([]);
+  const sessionRows = ref<{ id: string; label: string }[]>([]);
+  const fileRows = ref<{ name: string }[]>([]);
+
+  let paletteLoaded = false;
+  async function loadPaletteData() {
+    if (paletteLoaded) return;
+    paletteLoaded = true;
+    const [ext, sk] = await Promise.all([fetchPaletteCommands(), fetchPaletteSkills()]);
+    extCmds.value = ext as { name: string; description?: string }[];
+    skillRows.value = sk;
+  }
+
+  async function loadMentionRows() {
+    const [sess, files] = await Promise.all([
+      fetchSessions().catch(() => []),
+      fetchFilesBrowse("").catch(() => ({ entries: [] })),
+    ]);
+    sessionRows.value = sess.map((s) => ({ id: s.id, label: s.label || "" }));
+    fileRows.value = files.entries
+      .filter((e) => !e.is_dir)
+      .map((e) => ({ name: e.name }))
+      .slice(0, 50);
+  }
+
+  const mention = computed(() => mentionQueryAt(props.draft, caretAt.value));
+
+  const paletteOpen = computed(() => {
+    if (dismissed.value) return false;
+    // slash lists while the caret is still inside the command word -
+    // past the first space it is arg territory, the palette stands down
+    if (props.draft.startsWith("/")) {
+      const space = props.draft.indexOf(" ");
+      if (caretAt.value <= (space === -1 ? props.draft.length : space)) return true;
+    }
+    return mention.value.active;
+  });
+
+  const slashItems = computed<PaletteItem[]>(() => {
+    if (!props.draft.startsWith("/")) return [];
+    const query = props.draft.slice(0, caretAt.value).replace(/\s.*/, "");
+    return filterCommands(query, paletteCommands(extCmds.value, skillRows.value));
+  });
+
+  const allItems = computed<PaletteItem[]>(() => {
+    if (!paletteOpen.value) return [];
+    if (paletteMode.value === "slash") return slashItems.value;
+    const tok = mention.value.token;
+    const prefix = mentionPrefixOf(tok);
+    const inner = mentionInnerQuery(tok);
+    if (prefix === "session:") {
+      return sessionRows.value.map((s) => ({
+        name: "session:" + s.id,
+        description: s.label || s.id,
+        kind: "session" as const,
+      }));
+    }
+    if (prefix === "skill:") {
+      return skillRows.value.map((s) => ({
+        name: "skill:" + s.name,
+        description: s.description,
+        kind: "skill" as const,
+      }));
+    }
+    // bare @: workspace-root files plus the two prefix rows
+    const prefixRows: PaletteItem[] = [
+      { name: "session:", description: "inject a session's history", kind: "session" },
+      { name: "skill:", description: "inject a skill's content", kind: "skill" },
+    ];
+    const files: PaletteItem[] = fileRows.value.map((f) => ({
+      name: f.name,
+      description: "inline this file (images attach)",
+      kind: "file" as const,
+    }));
+    const rows = [...prefixRows, ...files];
+    return inner ? filterCommands(inner, rows) : rows;
+  });
+
+  // the dropdown never spills past PALETTE_MAX rows - it scrolls
+  const PALETTE_MAX = 10;
+  const paletteItems = computed(() => allItems.value.slice(0, PALETTE_MAX));
+
+  watch(paletteItems, (items) => {
+    if (items.length === 0) active.value = -1;
+    else if (active.value < 0 || active.value >= items.length) active.value = 0;
+  });
+
+  function onInput(e: Event) {
+    const el = e.target as HTMLTextAreaElement;
+    caretAt.value = el.selectionStart ?? 0;
+    dismissed.value = false;
+    emit("update:draft", el.value);
+    resize();
+    syncMode();
+  }
+
+  function onCaret(e: Event) {
+    const el = e.target as HTMLTextAreaElement;
+    caretAt.value = el.selectionStart ?? 0;
+    syncMode();
+  }
+
+  // syncMode: slash vs mention - a mention open loads its rows once
+  function syncMode() {
+    const mode: PaletteMode = mention.value.active ? "mention" : "slash";
+    if (mode !== paletteMode.value) {
+      paletteMode.value = mode;
+      active.value = 0;
+      if (mode === "mention") void loadMentionRows();
+    }
+    if (mode === "slash") void loadPaletteData();
+  }
+
+  function closePalette() {
+    dismissed.value = true;
+  }
+
+  // acceptItem: mention rows insert their completed token at the caret;
+  // command rows complete the draft to the command (typed args ride
+  // along) and SUBMIT - selecting a command runs it, no agent
+  // round-trip ever (the palette's law: commands act locally).
+  function acceptItem(item: PaletteItem) {
+    if (!paletteOpen.value) return;
+    if (paletteMode.value === "slash" && (item.kind === "shell" || item.kind === "extension" || item.kind === "skill")) {
+      // preserve any args typed after the command word
+      const space = props.draft.indexOf(" ");
+      const rest = space === -1 ? "" : props.draft.slice(space);
+      closePalette();
+      emit("update:draft", item.name + rest);
+      emit("send");
+      active.value = -1;
+      return;
+    }
+    const insertion = "@" + item.name;
+    const next = replaceMentionToken(props.draft, caretAt.value, mention.value.token, insertion);
+    closePalette();
+    emit("update:draft", next.draft);
+    active.value = -1;
+    nextTick(() => {
+      const el = ta.value;
+      if (el && next.caret >= 0) {
+        el.focus();
+        el.setSelectionRange(next.caret, next.caret);
+        caretAt.value = next.caret;
+      }
+    });
+  }
+
+  // Tab completes without submitting (TUI acceptMatch parity): the
+  // draft becomes the completed token, the palette closes.
+  function acceptActive(submit: boolean) {
+    const item = paletteItems.value[active.value];
+    if (!item) return closePalette();
+    if (submit) return acceptItem(item);
+    if (paletteMode.value === "slash") emit("update:draft", item.name);
+    closePalette();
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (paletteOpen.value) {
+      const len = paletteItems.value.length;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        active.value = clampIndex(active.value, 1, len);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        active.value = clampIndex(active.value, -1, len);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closePalette();
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        acceptActive(false);
+        return;
+      }
+      if (e.key === "Enter") {
+        // the palette owns Enter while it is open: the highlighted
+        // command runs, the highlighted mention inserts
+        e.preventDefault();
+        acceptActive(true);
+        return;
+      }
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      emit("send");
     }
   }
 
