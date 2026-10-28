@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -54,11 +55,108 @@ type Config struct {
 	Web           WebConfig         `yaml:"web"`
 	Kanban        KanbanConfig      `yaml:"kanban"`
 	Continuous    continuous.Config `yaml:"continuous"`
-	// Disabled is the config.yaml `disabled:` toggle list (v0.12 E1,
+	// Disabled is the config.yaml `disabled:` toggle fold (v0.12 E1,
 	// grill Q1; home moved from the omega.json sidecar to this key in
-	// the v0.13 shell law 3 - the sidecar folds at boot). A plain yaml
-	// key: LoadConfig reads it with everything else.
-	Disabled []string `yaml:"disabled"`
+	// the v0.13 shell law 3 - the sidecar folds at boot). v0.14.1
+	// keyfolds it: one key, one namespace per registry (modules keeps
+	// the capsule toggle list the mount machinery owns; skills, tools,
+	// agents are the registry-browser lists). A pre-v0.14 flat list
+	// (the shape every earlier boot wrote) unmarshals into the modules
+	// namespace - older config.yaml keeps meaning the same thing.
+	Disabled DisabledNamespaces `yaml:"disabled"`
+}
+
+// DisabledNamespaces is the config.yaml `disabled:` fold shape: one
+// top-level key, one namespace per registry. The mount machinery owns
+// modules (the catalog list boot's filterDisabled reads); skills,
+// tools, and agents are file/folder registries the host filters at
+// their own seams. An all-off namespace is never written: an empty
+// list carries no state, and an all-empty key carries none at all.
+type DisabledNamespaces struct {
+	Modules []string `yaml:"modules"`
+	Skills  []string `yaml:"skills"`
+	Tools   []string `yaml:"tools"`
+	Agents  []string `yaml:"agents"`
+}
+
+// empty reports whether every namespace is nil. Slices make the struct
+// non-comparable, so the writer asks instead of comparing.
+func (d DisabledNamespaces) empty() bool {
+	return len(d.Modules) == 0 && len(d.Skills) == 0 && len(d.Tools) == 0 && len(d.Agents) == 0
+}
+
+// UnmarshalYAML accepts both shapes the config.yaml `disabled:` key
+// has ever carried: the v0.12-v0.13 flat sequence (a legacy module
+// list - the only namespace earlier boots wrote) and the v0.14.1
+// mapping fold. Anything else fails loud: a shape the toggle writer
+// did not produce must not decode to silence.
+func (d *DisabledNamespaces) UnmarshalYAML(node *yaml.Node) error {
+	switch {
+	case node.Kind == yaml.DocumentNode && len(node.Content) == 1:
+		return d.UnmarshalYAML(node.Content[0])
+	case node.Kind == yaml.SequenceNode:
+		var flat []string
+		if err := node.Decode(&flat); err != nil {
+			return err
+		}
+		*d = DisabledNamespaces{Modules: flat}
+		return nil
+	case node.Kind == yaml.MappingNode:
+		// zero-value first: a re-used decode target must not inherit
+		// namespaces an earlier parse left in.
+		type fold DisabledNamespaces
+		*d = DisabledNamespaces{}
+		var f fold
+		if err := node.Decode(&f); err != nil {
+			return err
+		}
+		*d = DisabledNamespaces(f)
+		return nil
+	case node.Tag == "!!null":
+		*d = DisabledNamespaces{}
+		return nil
+	}
+	return fmt.Errorf("config: disabled: must be a list (legacy module fold) or a key fold - got a %s", yamlDocKind(node))
+}
+
+// yamlDocKind names a node for the disabled: decode failure only - the
+// error string a malformed config deserves.
+func yamlDocKind(node *yaml.Node) string {
+	switch node.Kind {
+	case yaml.DocumentNode:
+		return "document"
+	case yaml.SequenceNode:
+		return "sequence"
+	case yaml.MappingNode:
+		return "mapping"
+	case yaml.ScalarNode:
+		return "scalar"
+	default:
+		return "unknown"
+	}
+}
+
+// sortedCopy returns a sorted copy of ns (stable yaml output); a nil
+// slice stays nil so the write fold can omit it.
+func sortedCopy(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	out := append([]string(nil), names...)
+	sort.Strings(out)
+	return out
+}
+
+// cleanNamespaces returns the fold state an empty namespace never
+// keeps: empty lists become nil (the writer omits empty namespaces,
+// the all-empty key omits itself).
+func cleanNamespaces(d DisabledNamespaces) DisabledNamespaces {
+	return DisabledNamespaces{
+		Modules: sortedCopy(d.Modules),
+		Skills:  sortedCopy(d.Skills),
+		Tools:   sortedCopy(d.Tools),
+		Agents:  sortedCopy(d.Agents),
+	}
 }
 
 // WebConfig carries optional overrides for the web tools. BaseURL, when
@@ -296,7 +394,7 @@ func foldOmegaJSON(configPath string) ([]string, string, error) {
 			target = home + "/config/config.yaml"
 		}
 	}
-	if err := writeDisabled(target, entries); err != nil {
+	if err := writeDisabled(target, DisabledNamespaces{Modules: entries}); err != nil {
 		return nil, "", err
 	}
 	// Boot warning, loud, naming the folded entries - the list moved
@@ -305,21 +403,27 @@ func foldOmegaJSON(configPath string) ([]string, string, error) {
 	return entries, target, nil
 }
 
-// writeDisabled writes the config.yaml `disabled:` toggle list: parse,
+// writeDisabled writes the config.yaml `disabled:` toggle fold: parse,
 // modify, marshal at the yaml node level, so comments, key order, and
 // unknown keys survive (the struct-marshal settings-save path
-// normalizes; this one must not). An empty list removes the key - an
-// all-on home carries no toggle state. Editing a missing config.yaml
-// creates a minimal one holding just the disabled: key; an empty list
-// against a missing file writes nothing. A malformed config.yaml fails
-// loud - a write that destroys the file boot must parse is worse than
-// a failed toggle.
-func writeDisabled(path string, off []string) error {
+// normalizes; this one must not). The v0.14.1 fold shape is one
+// `disabled:` mapping with a namespace key per registry; a namespace
+// with no entries is never written, and when every namespace is empty
+// the whole key goes away - an all-on home carries no toggle state. A
+// legacy flat sequence under `disabled:` is REPLACED on the first
+// write: the caller's fold always carries the authoritative full
+// state (a partial write would re-shape history it did not read).
+// Editing a missing config.yaml creates a minimal one holding just
+// the disabled: key; an all-empty fold against a missing file writes
+// nothing. A malformed config.yaml fails loud - a write that destroys
+// the file boot must parse is worse than a failed toggle.
+func writeDisabled(path string, fold DisabledNamespaces) error {
+	fold = cleanNamespaces(fold)
 	var mapping yaml.Node
 	data, err := os.ReadFile(path)
 	switch {
 	case os.IsNotExist(err):
-		if len(off) == 0 {
+		if fold.empty() {
 			return nil // nothing to say, nowhere to say it
 		}
 		mapping = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
@@ -344,27 +448,61 @@ func writeDisabled(path string, off []string) error {
 		return fmt.Errorf("config: top-level document is not a mapping - cannot write the disabled: key into %s", path)
 	}
 
+	// disabledSeq renders the `disabled:` value node from the fold: a
+	// mapping whose namespace keys are the NON-EMPTY lists (an empty
+	// list never persists). Every empty fold returns nil - the key
+	// goes away, an all-on home carries no toggle state.
+	disabledSeq := func() *yaml.Node {
+		if fold.empty() {
+			return nil
+		}
+		sub := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		for _, ns := range []struct {
+			key   string
+			names []string
+		}{
+			{"modules", fold.Modules},
+			{"skills", fold.Skills},
+			{"tools", fold.Tools},
+			{"agents", fold.Agents},
+		} {
+			if len(ns.names) == 0 {
+				continue
+			}
+			seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+			for _, name := range ns.names {
+				seq.Content = append(seq.Content,
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name})
+			}
+			sub.Content = append(sub.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: ns.key}, seq)
+		}
+		return sub
+	}
+
 	idx := -1
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Kind == yaml.ScalarNode && mapping.Content[i].Value == "disabled" {
+		if mapping.Content[i].Kind != yaml.ScalarNode {
+			continue
+		}
+		if mapping.Content[i].Value == "disabled" {
 			idx = i
 			break
 		}
 	}
-	offSeq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	for _, name := range off {
-		offSeq.Content = append(offSeq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name})
-	}
+	val := disabledSeq()
 	switch {
-	case len(off) == 0 && idx >= 0:
+	case val == nil && idx >= 0:
 		// All-on: the key goes away (an all-on home carries no state).
 		mapping.Content = append(mapping.Content[:idx], mapping.Content[idx+2:]...)
-	case len(off) > 0 && idx >= 0:
-		mapping.Content[idx+1] = offSeq
-	case len(off) > 0:
+	case val != nil && idx >= 0:
+		// The fold replaces whatever shape the key carried (a legacy
+		// flat sequence included): the caller's fold is the full state.
+		mapping.Content[idx+1] = val
+	case val != nil:
 		// New key appends last: existing key order is untouched.
 		mapping.Content = append(mapping.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "disabled"}, offSeq)
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "disabled"}, val)
 	}
 	out, err := yaml.Marshal(&mapping)
 	if err != nil {
@@ -536,7 +674,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "http_channel":
 		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
-		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir}, true
+		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.Skills)}, true
 	case "memory":
 		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
 	case "logging":
@@ -548,7 +686,9 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "kanban":
 		return kanbanModule.Config{DBPath: c.Kanban.DBPath}, true
 	case "continuous":
-		return c.Continuous, true
+		cont := c.Continuous
+		cont.Disabled = slices.Clone(c.Disabled.Agents) // v0.14.1: the disabled.agents fold rides the section
+		return cont, true
 	}
 	return nil, false
 }

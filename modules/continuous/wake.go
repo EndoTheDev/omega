@@ -82,6 +82,12 @@ func (m *Machine) logf(format string, args ...any) {
 // RUNNING, never when its loop finishes; the report lands in the
 // agent's own canonical session by the child's own persistence.
 func (m *Machine) Wake(name, message string) error {
+	// The soft-disable law (v0.14.1): every wake trigger - the cron
+	// tick, the human's canonical-chat POST, a scripted spawn - passes
+	// this one wall. A disabled agent's home is never touched.
+	if m.agentDisabled(name) {
+		return fmt.Errorf("continuous: agent %s is disabled (config.yaml disabled.agents) - wake refused", name)
+	}
 	p, err := agent.LoadProfile(m.home, name)
 	if err != nil {
 		return fmt.Errorf("continuous: wake: %w", err)

@@ -58,8 +58,19 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 	// Run-scoped deny (agent.WithDeniedTools): the merged registry - the
 	// caller's map PLUS every provider's contribution - drops the denied
 	// names before schemas and dispatch see them. A fresh map: the deny
-	// must never shrink a map the caller still owns.
-	if denied := agent.DeniedTools(ctx); len(denied) > 0 {
+	// must never shrink a map the caller still owns. v0.14.1 folds the
+	// persistent disabled.tools list into the same filter; the run's
+	// own deny (subagent scopes) rides with it.
+	denied := agent.DeniedTools(ctx)
+	if len(opts.DisabledTools) > 0 {
+		if len(denied) == 0 {
+			denied = make(map[string]bool)
+		}
+		for _, name := range opts.DisabledTools {
+			denied[name] = true
+		}
+	}
+	if len(denied) > 0 {
 		filtered := make(map[string]core.Tool, len(tools))
 		for name, t := range tools {
 			if !denied[name] {

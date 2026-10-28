@@ -48,6 +48,11 @@ type Server struct {
 	// /modules endpoints serve registry introspection + live toggles
 	// through it; a nil value answers 501.
 	modules core.ModuleToggles
+	// registries is the optional registry-browser toggle seam (v0.14.1):
+	// the /disabled endpoints serve and write the config.yaml
+	// `disabled:` fold's skills/tools/agents namespaces through it; a
+	// nil value answers 501.
+	registries core.RegistryToggles
 	// seams is the optional-module surface of the serving routes
 	// (v0.12 E2): read per request behind a lock, rewritten by
 	// RewireSeams after every live module toggle. A mount-time pointer
@@ -179,6 +184,7 @@ func (s *Server) rewireSeams(ctx *core.Context) error {
 	s.seams.mu.Unlock()
 	if s.agent != nil {
 		s.agent.RefreshToolProviders(ctx)
+		s.agent.RefreshDisabledTools(ctx)
 		// The extension inventory follows the same Context-stays-
 		// source-of-truth law: the toggle journal keeps ctx.Infos
 		// exact, so /extensions lists what is actually mounted.
@@ -195,11 +201,11 @@ func (s *Server) rewireSeams(ctx *core.Context) error {
 // optional session persistence; a nil store disables persistence and the
 // session CRUD endpoints. settings is the optional config-knobs seam
 // (/settings endpoints); a nil value answers 501 on those endpoints.
-func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings, modules core.ModuleToggles) *Server {
+func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings, modules core.ModuleToggles, registries core.RegistryToggles) *Server {
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, registries: registries, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir()), runs: &runHub{}}
 	// Chat panel capsule (chat-last 1/3): default-wired so a directly
 	// constructed Server (tests, embedding) has the push hooks and the
 	// panel even without the plugin's channel-start handoff.
@@ -232,6 +238,13 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	// ledger (Q12). Handler family lives in server_modules.go.
 	mux.HandleFunc("GET /modules", s.handleModules)
 	mux.HandleFunc("PUT /modules/{name}", s.handleModuleToggle)
+	// v0.14.1: the registry-browser toggle surface - the skills/tools/
+	// agents namespaces of the config.yaml disabled: fold. Handler
+	// family lives in server_registry.go.
+	mux.HandleFunc("GET /disabled", s.handleDisabled)
+	mux.HandleFunc("PUT /disabled/skills", s.handleDisabledSkills)
+	mux.HandleFunc("PUT /disabled/tools", s.handleDisabledTools)
+	mux.HandleFunc("PUT /disabled/agents", s.handleDisabledAgents)
 	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
 	mux.HandleFunc("/skills", s.handleSkills)
 	mux.HandleFunc("/logs", s.handleLogs)

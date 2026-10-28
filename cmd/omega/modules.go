@@ -25,6 +25,11 @@ type omegaModules struct {
 	// configPath is the config.yaml file the disabled: list persists
 	// to - the file boot reads (one code path, Q7).
 	configPath string
+	// fold is the live disabled: fold (v0.14.1) - the namespaces the
+	// module toggle doesn't own (skills/tools/agents) must survive the
+	// module namespace's rewrite, so the write fold is the shared
+	// pointer with omegaRegistries.
+	fold *DisabledNamespaces
 	// logger records every applied toggle; nil logs nothing.
 	logger core.LoggerProvider
 }
@@ -69,7 +74,8 @@ func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) er
 		}
 	}
 	off := disabledNow(m.reg)
-	if err := writeDisabled(m.configPath, off); err != nil {
+	m.fold.Modules = off // registry truth at write time; siblings keep their namespaces
+	if err := writeDisabled(m.configPath, *m.fold); err != nil {
 		// The toggle applied but the write failed: loud, not silent -
 		// the next boot would silently resurrect the module.
 		err = makeModuleToggleError(name, enabled, err)

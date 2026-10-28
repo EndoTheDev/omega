@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -26,6 +27,28 @@ import (
 type SkillsProvider struct {
 	Dir       string
 	SharedDir string
+	// Disabled is the config.yaml disabled.skills fold (v0.14.1): the
+	// names a prompt build never advertises. Unset by default. The
+	// disableMu guards it: prompt builds read while the toggle seam
+	// swaps the list live.
+	Disabled []string
+
+	disableMu sync.RWMutex
+}
+
+// SetDisabled swaps the disable list live (the host's toggle seam and
+// hot config reload take this one path).
+func (sp *SkillsProvider) SetDisabled(names []string) {
+	sp.disableMu.Lock()
+	defer sp.disableMu.Unlock()
+	sp.Disabled = names
+}
+
+// disabledNames returns the live disable list snapshot (nil when none).
+func (sp *SkillsProvider) disabledNames() []string {
+	sp.disableMu.RLock()
+	defer sp.disableMu.RUnlock()
+	return sp.Disabled
 }
 
 // scanDirs returns the ordered directory list to scan: SharedDir
@@ -97,6 +120,22 @@ const promptSectionOrder = 20
 // tool, not the prompt builder's.
 func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	skills, _ := sp.LoadSkills("")
+	// The disabled.skills fold (v0.14.1): a disabled skill stays in the
+	// registry (the tab lists it, the reader tool reads it) and leaves
+	// the prompt - exclusion is prompt-build business, nothing else.
+	if off := sp.disabledNames(); len(off) > 0 {
+		offSet := make(map[string]bool, len(off))
+		for _, n := range off {
+			offSet[n] = true
+		}
+		enabled := make([]core.Skill, 0, len(skills))
+		for _, s := range skills {
+			if !offSet[s.Name] {
+				enabled = append(enabled, s)
+			}
+		}
+		skills = enabled
+	}
 	if len(skills) == 0 {
 		return nil
 	}
