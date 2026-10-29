@@ -400,6 +400,8 @@
     persistedTelemetry,
     formatDurationMs,
     fetchThemes,
+    fetchSettings,
+    settingValueOf,
     applyThemeTokens,
     clearThemeTokens,
     parseThemeSelect,
@@ -808,7 +810,13 @@
   // --- the chat host (card t_4f0e88f2): every chat tab gets its own
   // stream state keyed by the tab's instance key; the gate stays per
   // session (the runHub run slot is per session). ---
+  // card t_30137f67: the loaded server.default_workspace rides the
+  // host through the live getter - new drafts are born with the chip
+  // (ensureState) and the boot read backfills the pre-resolve ones
+  // (seedDefaultWorkspace). No default configured -> "" everywhere.
+  const defaultWorkspace = ref("");
   const host = createChatHost({
+    defaultWorkspace: () => defaultWorkspace.value,
     setTabSessionRef: (key, sessionId) => dock.setSessionRef(key, sessionId),
     refreshSessions: () => refreshSessions(),
     sessionRow: (id) => sessions.value.find((s) => s.id === id),
@@ -1649,6 +1657,22 @@
       })
       .catch(() => {
         // models are decoration until a chat runs
+      });
+    // card t_30137f67: the boot read of server.default_workspace - the
+    // SAME /settings payload the Settings tab renders (shared
+    // fetchSettings read, no second config path). Non-blocking: the
+    // host's getter is live, and seedDefaultWorkspace backfills the
+    // unbound drafts born before this resolved. A host without the
+    // settings seam (501) or a failed read leaves "" - the unconfigured
+    // behavior, the chip starts blank.
+    void fetchSettings()
+      .then((p) => {
+        const v = settingValueOf(p, "server.default_workspace");
+        defaultWorkspace.value = typeof v === "string" ? v : "";
+        if (defaultWorkspace.value) host.seedDefaultWorkspace(defaultWorkspace.value);
+      })
+      .catch(() => {
+        // no settings seam or unreachable server: no default known
       });
     refreshSessions();
     // running-state poller: every tab reconciles against the rows
