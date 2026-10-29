@@ -158,7 +158,13 @@ RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 # jump a queued refactor chain. Higher priority number = more urgent
 # (10 = release-blocking class, 5 = standing queue, 0 = default).
 # Ties stay oldest-first (FIFO preserved for the default mass).
-mapfile -t CAND < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='ready' ORDER BY priority DESC, created_at;")
+mapfile -t CAND < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL ORDER BY priority DESC, created_at;")
+# guard bug #7 (2026-10-30): a ready card carrying a NAMED claim_lock
+# (deliberate holds like 'pibtw:v0.14.0-hold') is INVISIBLE to the
+# dispatcher (its claim filter is claim_lock IS NULL) - as a candidate
+# it was marked legal, held every younger card behind it pairwise, and
+# the real dispatch claimed nothing: board deadlock with legal cards
+# starving (proven: dry-run 'legal: t_55a3fc4b' beside 2 starved cards).
 PARKED=(); LEGAL=0
 
 # guard bug #4 (2026-10-25): hermes kanban dispatch once claimed a card
