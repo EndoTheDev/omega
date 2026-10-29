@@ -116,13 +116,20 @@
       <WorkspaceSelect
         :workspace="workspace"
         @update:workspace="$emit('update:workspace', $event)" />
-      <ModelSelect
-        :model="model"
-        :models="models"
-        @update:model="$emit('update:model', $event)" />
-      <ThinkingSelect
-        :level="thinking"
-        @update:level="$emit('update:thinking', $event)" />
+      <div class="model-group">
+        <!-- model + effort are ONE wrap unit (t_641c2870, Endo
+             2026-10-29): the toolbar wraps wherever it runs out of room,
+             but the model chip must never strand the effort chip on a
+             second row - as one flex item (.model-group, nowrap) the
+             pair crosses any wrap boundary together or not at all -->
+        <ModelSelect
+          :model="model"
+          :models="models"
+          @update:model="$emit('update:model', $event)" />
+        <ThinkingSelect
+          :level="thinking"
+          @update:level="$emit('update:thinking', $event)" />
+      </div>
       <!-- the workspace chip's note lives in WorkspaceSelect.vue (card
            t_9de5b009); this row orders workspace, model, effort -->
       <!-- ONE morphing button (t_357cbe9c; retry left in t_95d2bc34):

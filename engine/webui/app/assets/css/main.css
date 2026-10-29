@@ -2005,6 +2005,23 @@ labels stopped short of the right edge. */
   flex-wrap: wrap;
 }
 
+/* the model chip + effort chip are ONE wrap unit (t_641c2870, Endo
+   2026-10-29): the toolbar wraps wherever it runs out of room, and the
+   flat row used to split the pair across the boundary - the effort chip
+   orphaned on row two beside the still-open model chip. The pair lives
+   inside one flex item now (.model-group, nowrap), so a wrap moves BOTH
+   chips to the next line together or leaves both in place: they are
+   never separated. min-width:auto (the flex default) keeps the group
+   from shrinking below the chips' own widths mid-wrap. Workspace and
+   send stay their own toolbar items - they wrap independently. */
+.model-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: max-content;
+}
+
 .model-chip {
   background: var(--z1);
   border: 1px solid var(--stroke);

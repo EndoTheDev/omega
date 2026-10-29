@@ -178,11 +178,15 @@ describe("the retry affordance lives in the message action row", () => {
 
 describe("composer structure: one button, + in the input row", () => {
   it("the toolbar carries exactly ONE button - the morphing slot", () => {
-    // the toolbar section lives between '<div class="toolbar">' and
-    // '</div>' following it; count its <button elements (1 morphing one)
+    // the toolbar section lives between '<div class="toolbar">' and the
+    // template's closing tag; count its <button elements (1 morphing
+    // one). The toolbar is the template's last element, and since
+    // t_641c2870 it nests a .model-group div - slicing to the first
+    // '</div>' would stop at the group's closer, BEFORE the send
+    // button, so slice to the template end instead.
     const start = composer.indexOf('<div class="toolbar">');
     assert.ok(start > -1, "composer has a toolbar");
-    const toolbar = composer.slice(start, composer.indexOf("</div>", start + 400));
+    const toolbar = composer.slice(start, composer.indexOf("</template>", start));
     const buttons = toolbar.match(/<button/g) ?? [];
     assert.equal(buttons.length, 1, "toolbar has exactly one button");
     assert.match(toolbar, /:class="\{ cancel: face === 'stop'/, "the stop face rides the same element");
