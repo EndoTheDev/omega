@@ -254,7 +254,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canvas 2: %v", err)
 	}
-	taskRun, err := pluginTool(ctx, "kanban.task")
+	taskRun, err := pluginTool(ctx, "kanban")
 	if err != nil {
 		t.Fatalf("task tool: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestKanbanRemovalProof(t *testing.T) {
 			names[name] = true
 		}
 	}
-	if names["kanban.task"] {
+	if names["kanban"] {
 		t.Fatal("REMOVED MOUNT: the kanban task tool survived the removal")
 	}
 	for name := range names {
@@ -588,13 +588,13 @@ func TestMemoryRemovalProof(t *testing.T) {
 	foundTool := false
 	for _, tp := range ctx.ToolProviders {
 		for name, tool := range tp.Tools() {
-			if name == "memory.entry" {
+			if name == "memory" {
 				memTool, foundTool = tool, true
 			}
 		}
 	}
 	if !foundTool {
-		t.Fatal("FULL MOUNT: the memory.entry tool is missing from the registry")
+		t.Fatal("FULL MOUNT: the memory tool is missing from the registry")
 	}
 	res, runErr := memTool.Run(context.Background(), map[string]any{
 		"action": "add", "target": "memory", "content": "arc 6 proof entry",
@@ -1158,7 +1158,7 @@ for line in sys.stdin:
 // The two mounts are the proof:
 //
 //  1. WITH verdict: the seam is mounted, the registry carries the
-//     verdict tool with its request sub-action, a real verdict.request
+//     verdict tool with its request sub-action, a real verdict
 //     BLOCKS the turn and the first answer through the seam resolves
 //     it (the very path the /verdicts POST and the /verdict command
 //     share), and the Verdict Cards prompt section rides the
@@ -1208,7 +1208,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 	foundCardsBlock := false
 	for _, ps := range ctx.PromptSectioners {
 		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
-			if s.Title == "Verdict Cards" && strings.Contains(s.Body, "verdict.request") {
+			if s.Title == "Verdict Cards" && strings.Contains(s.Body, "verdict") {
 				foundCardsBlock = true
 			}
 		}
@@ -1218,15 +1218,15 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}
 
 	// the tool face: the registry carries the verdict tool with its
-	// one sub-action, and a real verdict.request hard-pauses the turn
+	// one sub-action, and a real verdict tool call hard-pauses the turn
 	// until an answer lands through the seam - the path the /verdicts
 	// POST and the /verdict command share
-	verdictTool, err := pluginTool(ctx, "verdict.request")
+	verdictTool, err := pluginTool(ctx, "verdict")
 	if err != nil {
 		t.Fatalf("FULL MOUNT: the verdict tool is missing from the registry: %v", err)
 	}
 	for _, tp := range ctx.ToolProviders {
-		if tool, ok := tp.Tools()["verdict.request"]; ok {
+		if tool, ok := tp.Tools()["verdict"]; ok {
 			foundRequest := false
 			for _, a := range tool.Actions {
 				if a.Name == "request" {
@@ -1270,12 +1270,12 @@ func TestVerdictRemovalProof(t *testing.T) {
 	select {
 	case got = <-resCh:
 		if got.err != nil || !strings.Contains(got.res, `"verdict":"answer"`) || !strings.Contains(got.res, `"option":"right"`) {
-			t.Fatalf("FULL MOUNT: verdict.request did not return the answered pick (res=%s err=%v)", got.res, got.err)
+			t.Fatalf("FULL MOUNT: verdict did not return the answered pick (res=%s err=%v)", got.res, got.err)
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("FULL MOUNT: verdict.request never unblocked after the first answer")
+		t.Fatal("FULL MOUNT: verdict never unblocked after the first answer")
 	}
-	t.Logf("PROOF tool wiring: verdict.request blocked the turn, the first answer through the seam won the race - %s", strings.TrimSpace(got.res))
+	t.Logf("PROOF tool wiring: verdict blocked the turn, the first answer through the seam won the race - %s", strings.TrimSpace(got.res))
 
 	// the TUI face: /verdict declared through the same Mount
 	foundCommand := false
@@ -1343,7 +1343,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}
 	for _, ps := range ctx2.PromptSectioners {
 		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
-			if strings.Contains(s.Body, "verdict.request") {
+			if s.Title == "Verdict Cards" {
 				t.Fatalf("REMOVED MOUNT: the Verdict Cards prompt block survived the removal: %.120q", s.Body)
 			}
 		}

@@ -421,10 +421,13 @@ func (api *ExtensionAPI) claim(name string) error {
 }
 
 // RegisterTool adds one tool (ToolProviders, additive). The name is
-// the model-facing identity. A module capsule (Toggleable) must carry
-// its own namespace prefix (Q10: "kanban.task"); a built-in capsule
-// (provider, store, skills, tools, the loop - machine-critical, in the
-// engine's vocabulary) registers its natural name ("shell.run",
+// the model-facing identity. The one-domain tool law (t_e06b38bc,
+// extending the t_73994e55 action protocol): a multi-action domain
+// names ITSELF - a module capsule (Toggleable) registers its bare
+// domain name ("kanban", "memory", the one tool whose Actions carry
+// the verbs) or module.verb pairs ("delegate.task"); a built-in
+// capsule (provider, store, tools, the loop - machine-critical, in
+// the engine's vocabulary) registers its natural name ("shell.run",
 // "sessions.search"). Both land on the same one-tenant ledger; a
 // second tenant on a held tool name is a fail-loud error (Q5), and a
 // same-tenant re-registration replaces (Q7, the clean-idempotent
@@ -435,6 +438,12 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 		// Built-in vocabulary: the one-tenant ledger holds the name
 		// itself, no namespace pairing. Journaled for release.
 		if err := api.claimRecorded("tool:" + name); err != nil {
+			return err
+		}
+	} else if name == api.module {
+		// The bare domain name: the module IS the identity (the
+		// one-domain law), no module.verb pair to parse.
+		if err := api.claimRecorded(name); err != nil {
 			return err
 		}
 	} else if err := api.claim(name); err != nil {

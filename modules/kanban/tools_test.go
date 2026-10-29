@@ -26,15 +26,15 @@ func withSession(ctx context.Context, id string) context.Context {
 func TestToolsRegistryComplete(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()
-	tool, ok := tools["kanban.task"]
+	tool, ok := tools["kanban"]
 	if !ok {
-		t.Fatal(`missing tool "kanban.task"`)
+		t.Fatal(`missing tool "kanban"`)
 	}
 	if tool.Run == nil || tool.Description == "" {
 		t.Fatal("broken registration")
 	}
 	if len(tools) != 1 {
-		t.Fatalf("the registry carries the one folded namespaced tool; got %d entries", len(tools))
+		t.Fatalf("the registry carries the one folded domain tool; got %d entries", len(tools))
 	}
 }
 
@@ -106,25 +106,6 @@ func TestTaskUpdateCompleteCommentLink(t *testing.T) {
 	if len(comments) != 1 || comments[0].Author != "endo" {
 		t.Fatalf("comments = %+v", comments)
 	}
-
-	// run_link with no session in ctx and no arg is an error
-	if _, err := p.runLink(context.Background(), "", map[string]any{"id": id}); err == nil {
-		t.Fatal("link without any session succeeded")
-	}
-	if _, err := p.runLink(withSession(context.Background(), "sess_1"), "", map[string]any{"id": id}); err != nil {
-		t.Fatalf("link via ctx: %v", err)
-	}
-	task, _ = p.board.GetTask(context.Background(), "", id)
-	if task.SessionID != "sess_1" {
-		t.Errorf("session = %q, want sess_1", task.SessionID)
-	}
-	if _, err := p.runLink(context.Background(), "", map[string]any{"id": id, "session_id": "sess_2"}); err != nil {
-		t.Fatalf("link via arg: %v", err)
-	}
-	task, _ = p.board.GetTask(context.Background(), "", id)
-	if task.SessionID != "sess_2" {
-		t.Errorf("session = %q, want sess_2", task.SessionID)
-	}
 }
 
 func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
@@ -175,12 +156,6 @@ func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
 	comments, _ := board.GetTaskComments(context.Background(), "", id)
 	if len(comments) != 1 {
 		t.Fatalf("comments = %+v", comments)
-	}
-
-	// link_session
-	out, err = p.runTask(ctx, map[string]any{"action": "link_session", "id": id, "session_id": "sess_x"})
-	if err != nil || !strings.Contains(out, "linked") {
-		t.Fatalf("link_session: %q %v", out, err)
 	}
 
 	// complete

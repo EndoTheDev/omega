@@ -10,7 +10,7 @@ import (
 
 // Verdict cards v1 (card t_2ecf9c51): the answer surface. The card
 // itself renders live from the existing tool_call / tool_result SSE
-// frames (verdict.request's args carry title/options/timeout; the result
+// frames (the verdict tool's args carry title/options/timeout; the result
 // carries the verdict JSON) - these endpoints are the ANSWER path and
 // the pending listing the bell polls. The verdicts seam is optional:
 // a nil Server.Verdicts degrades to 501, mirroring the board and

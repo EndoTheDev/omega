@@ -568,7 +568,7 @@ type VerdictsProvider interface {
 }
 
 // Run origins (verdict cards v1): which surface launched the agent
-// verdict.request only issues from interactive turns - cron fires
+// verdict only issues from interactive turns - cron fires
 // and delegate subagents must never hard-pause waiting for a click.
 const (
 	RunOriginInteractive = "interactive"
@@ -577,7 +577,7 @@ const (
 )
 
 // WithRunOrigin tags the run context with its launching surface. The
-// verdict.request tool reads it to refuse background origins.
+// verdict tool reads it to refuse background origins.
 func WithRunOrigin(ctx context.Context, origin string) context.Context {
 	if origin == "" {
 		return ctx

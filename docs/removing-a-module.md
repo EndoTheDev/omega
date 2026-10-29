@@ -50,7 +50,7 @@ its sibling: `docs/migrating-a-module.md`.
    ```bash
    grep -rn '"kanban"' cmd modules core docs --include='*.go'
    grep -rn 'Module: "kanban"' modules            # module-qualified action ids
-   grep -rn '"kanban.task"\|kanban\.' modules/kanban  # tool names (namespaced, Q10)
+   grep -rn '"kanban"' modules/kanban             # the tool registry (the bare domain tool, the one-domain law)
    grep -rn '"/board"' cmd modules                # the /board, /boards commands
    grep -rn 'kanban' docs                         # route tables, command docs, layer table
    ```
@@ -58,8 +58,9 @@ its sibling: `docs/migrating-a-module.md`.
    Expect hits in: the seam claim (`RegisterKanban` in the module's
    mount), the route table (`modules/kanban/rest.go` registering the
    patterns through `api.RegisterRoute`), the tool registry
-   (the namespaced `kanban.task` tool - the legacy `task`/`task.*`
-   names retired with the v0.12 mount migration), the command chain
+   (the bare domain `kanban` tool - the legacy `kanban.task`
+   namespaced name retired by the one-domain tool law, t_e06b38bc),
+   the command chain
    (`/board`, `/boards` registered through `api.RegisterCommand`), the
    canvas panels (`modules/kanban/panel.go`,
    namespaced action ids), and the docs. Then delete the module
