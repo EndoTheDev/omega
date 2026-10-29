@@ -87,7 +87,7 @@ the disable list. No web module exists.
 | `agent_loop/`   | loop           | Default conversation loop (LoopProvider impl)        |
 | `provider/`     | provider       | Ollama, OpenAI, Anthropic streaming                  |
 | `store/`        | store, tools   | SQLite session store + sessions.search tool          |
-| `skills/`       | skills, tools, prompt_sections | Skill loading + skills.read tool + /skills command + Available Skills section |
+| `skills/`       | skills, tools, prompt_sections | Skill loading + skills domain tool (read/write/update) + /skills command + Available Skills section |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
 | `logging/`      | logging, TUI   | Operational logging (file logger, LoggerProvider) + /logs tail+follow command |
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block. The born-capsule: seam + tool + prompt section all ship from the same Mount; no command, REST route or canvas panel exists. Removal proof `TestMemoryRemovalProof` - arc 6 capsule |

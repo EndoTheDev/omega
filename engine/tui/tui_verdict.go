@@ -1,7 +1,7 @@
 package tui
 
 // Verdict cards v1 (card t_2ecf9c51): the TUI's typed answer path.
-// While a run is blocked inside verdict.request, the typed input is an
+// While a run is blocked inside the verdict tool, the typed input is an
 // ANSWER, not a queued follow-up: "1"/"2"/... pick, "1,3" a
 // multi-select pick, "y"/"n" the first two options, "skip" records a
 // dismiss, anything else is typed text when the card allows it. The

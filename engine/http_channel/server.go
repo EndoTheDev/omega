@@ -1126,7 +1126,7 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	// no workspace - today's behavior, the ctx override is absent.
 	ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
 	// Verdict cards v1: the no-store legacy path is still an interactive
-	// turn - verdict.request may issue from here.
+	// turn - the verdict tool may issue from here.
 	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	// Turn copy persistence belongs to the loop (card t_471f6d4a): the
 	// sink carries the session and the head-parent pin, the run input
@@ -1377,11 +1377,11 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 	// to the registered set) and the incoming user content can invite
 	// tool use. A title turn must never hard-pause on the card (no
 	// session, nobody answering): deny the verdict tool by name - the
-	// registered identity is modules/verdict's namespace pair
-	// (verdict.request, Q10, v0.12 phase C2); the loop filters it
+	// registered identity is the bare domain name (the one-domain tool
+	// law, t_e06b38bc); the loop filters it
 	// after every provider merge, the same mechanism the ephemeral
-	// path denies memory.entry with.
-	ctx = agent.WithDeniedTools(ctx, "verdict.request")
+	// path denies memory with.
+	ctx = agent.WithDeniedTools(ctx, "verdict")
 
 	events := s.agent.RunWithProvider(ctx, prov, []core.Message{core.NewUser(prompt)}, nil)
 	title := ""

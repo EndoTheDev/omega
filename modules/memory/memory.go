@@ -453,15 +453,13 @@ func (p *memoryToolProvider) buildMemoryTool() core.Tool {
 	}
 }
 
-// Tools returns the memory tool definition. The machine-facing
-// identity is the namespaced pair memory.entry (Q10, the v0.12 mount
-// migration): the module noun would double the module name (memory.
-// alone cannot carry the module.verb pair the registration API
-// demands), so the tool names what it manipulates - the entries of the
-// two stores.
+// Tools returns the memory tool definition. The one-domain tool law
+// (t_e06b38bc): the domain tool names ITSELF - formerly the Q10
+// module.verb pair, the middle tier is gone and the Actions
+// carry the verbs.
 func (p *memoryToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"memory.entry": p.buildMemoryTool(),
+		"memory": p.buildMemoryTool(),
 	}
 }
 

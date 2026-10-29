@@ -234,18 +234,18 @@ func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 }
 
 // withoutMemory copies the tool registry minus the memory tool - the
-// ephemeral session's run sees every tool but memory.entry (the deny
-// rides the run context too; this copy is the registry the /chat loop
-// passes in, so the two layers agree even before the loop filter). The
-// name matches modules/memory's registered tool (the Q10 namespaced
-// identity, v0.12 phase C2).
+// ephemeral session's run sees every tool but memory (the bare domain
+// tool, the one-domain law t_e06b38bc; the deny line names the tool,
+// and it rides the run context too; this copy is the registry the
+// /chat loop passes in, so the two layers agree even before the loop
+// filter). The name matches modules/memory's registered tool.
 func withoutMemory(tools map[string]core.Tool) map[string]core.Tool {
-	if _, has := tools["memory.entry"]; !has {
+	if _, has := tools["memory"]; !has {
 		return tools
 	}
 	out := make(map[string]core.Tool, len(tools)-1)
 	for name, t := range tools {
-		if name != "memory.entry" {
+		if name != "memory" {
 			out[name] = t
 		}
 	}
