@@ -19,7 +19,7 @@
       </button>
     </div>
     <ul
-      v-if="pendingVerdictList.value.length"
+      v-if="pendingVerdictList.length"
       class="notif-verdicts"
       role="list">
       <li
