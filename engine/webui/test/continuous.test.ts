@@ -1,11 +1,13 @@
-// omega webui: the continuous roster pane (card t_72ecca67, ruling 18)
-// - the pure view-model helpers (continuousRows.ts) unit-tested, and
-// the panel/registry wiring source-checked: the dockable entry, the
-// app outlet, the wired picker entry, and the create flow's REST
-// surface. Render-free; node's built-in test runner.
+// omega webui: the continuous wake-state surface (card t_72ecca67,
+// ruling 18; card t_c7222095 merged the roster into the Agents tab) -
+// the pure view-model helpers (continuousRows.ts) unit-tested, and the
+// MERGE source-checked: the dock vocabulary carries no "continuous"
+// entry (deletability law), the AgentsPanel carries the roster/wake
+// REST surface, and the merged row renders config + status. Render-
+// free; node's built-in test runner.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import {
   evidenceSummary,
@@ -16,12 +18,18 @@ import {
   type OmegaContinuousRow,
   type OmegaEvidenceRow,
 } from "../app/components/agents/continuousRows.ts";
-import { DOCK_COMPONENTS, DOCKABLES, dockableOf } from "../app/composables/dockables.ts";
+import {
+  continuousIndex,
+  mergedRowDetail,
+} from "../app/components/agents/agentsRows.ts";
+import { DOCK_COMPONENTS, DOCKABLES } from "../app/composables/dockables.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
-const panel = src("app/components/agents/ContinuousPanel.vue");
+const agentsPanel = src("app/components/agents/AgentsPanel.vue");
+const registryList = src("app/components/RegistryList.vue");
 const app = src("app/app.vue");
+const panelGone = !existsSync(`${root}app/components/agents/ContinuousPanel.vue`);
 
 function row(overrides: Partial<OmegaContinuousRow> = {}): OmegaContinuousRow {
   return {
@@ -66,49 +74,75 @@ describe("continuous view-model helpers", () => {
   });
 });
 
-describe("the continuous registry + wiring", () => {
-  it("the dockable exists: singleton, pinned right, unclosable, Title Case", () => {
-    assert.ok((DOCK_COMPONENTS as readonly string[]).includes("continuous"), "the component id exists");
-    const d = dockableOf("continuous");
-    assert.equal(d.title, "Continuous");
-    assert.equal(d.policy, "singleton");
-    assert.equal(d.area, "right");
-    assert.equal(d.closable, false);
-    assert.ok(DOCKABLES.some((x) => x.id === "continuous"), "the registry carries it");
+describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => {
+  it("the dock registry carries NO continuous entry - no alias, no hidden tab", () => {
+    const ids: readonly string[] = DOCK_COMPONENTS;
+    assert.ok(!ids.includes("continuous"), "the component id left DOCK_COMPONENTS");
+    assert.ok(!DOCKABLES.some((x) => x.id === "continuous"), "the registry carries no dockable");
   });
 
-  it("the app outlet exists and mounts the panel", () => {
-    assert.match(app, /#pane-continuous/, "the outlet template exists");
-    assert.match(app, /<ContinuousPanel/, "the panel mounts in the outlet");
-    assert.match(app, /openContinuousTab/, "the opener exists");
-    assert.match(app, /openSingleton\(pane\.id, "continuous"\)/, "the opener opens the singleton");
+  it("ContinuousPanel.vue is deleted and app.vue has zero continuous vocabulary", () => {
+    assert.equal(panelGone, true, "the panel file is gone");
+    assert.doesNotMatch(app, /ContinuousPanel/, "no mount, no import");
+    assert.doesNotMatch(app, /#pane-continuous/, "the outlet dropped");
+    assert.doesNotMatch(app, /openContinuousTab/, "the opener dropped");
+    assert.doesNotMatch(app, /new-continuous/, "the sidebar emit wiring dropped");
+    assert.doesNotMatch(src("app/components/sessions/AppSidebar.vue"), /new-continuous|"Continuous"/, "the picker entry dropped");
+    assert.doesNotMatch(src("app/composables/icons.ts"), /continuous: CircleDot/, "the icon vocabulary entry dropped");
   });
 
-  it("the roster panel rides the REST surface exactly (ruling 5 + 11)", () => {
-    assert.match(panel, /fetch\("\.?"?\/continuous\/roster"|fetch\("\/continuous\/roster"\)/, "GET roster");
-    assert.match(panel, /method: "POST"/, "the POSTs exist");
-    assert.match(panel, /\/continuous\/\$\{encodeURIComponent\(/, "per-agent paths encode the name");
-    assert.match(panel, /\/evidence`/, "the evidence read rides the detail strip");
-    assert.match(panel, /\/sleep`/, "the sleep button rides POST sleep");
+  it("the merged row renders config + runtime status + preview in one row", () => {
+    assert.match(agentsPanel, /agents-badge/, "the inline status badge renders");
+    assert.match(agentsPanel, /rowStatus/, "the badge speaks the roster status voice");
+    assert.match(agentsPanel, /preview:\s*previewLine\(/, "the row carries the last-report preview");
+    assert.match(registryList, /registry-preview/, "RegistryList renders the under-row preview");
+    assert.match(registryList, /<span[\s\S]{0,40}v-if="r\.preview"/, "the preview renders only when set");
   });
 
-  it("the create flow is the three-field form (name, directive, schedule)", () => {
-    assert.match(panel, /createName/, "name field");
-    assert.match(panel, /createDirective/, "directive field");
-    assert.match(panel, /createSchedule/, "schedule field");
-    assert.match(panel, /fetch\("\/continuous",\s*\{[\s\S]*?method: "POST"/, "POST /continuous");
+  it("the merged AgentsPanel rides the continuous REST surface exactly (ruling 5 + 11)", () => {
+    assert.match(agentsPanel, /fetch\("\/continuous\/roster"\)/, "GET roster");
+    assert.match(agentsPanel, /method: "POST"/, "the POSTs exist");
+    assert.match(agentsPanel, /\/continuous\/\$\{encodeURIComponent\(/, "per-agent paths encode the name");
+    assert.match(agentsPanel, /\/evidence`/, "the evidence read rides the wake strip");
+    assert.match(agentsPanel, /\/sleep`/, "the sleep button rides POST sleep");
   });
 
-  // t_1ba868bb: the roster's agents' sessions open like normal sessions
-  // in the main pane (Hermes bots parity) - the detail strip lists the
-  // agent's main-store bound rows and every row is a click target that
-  // rides the shared opener; the canonical chat is NOT one (it lives in
-  // the agent's own store, ruling 6 - never a main-pane session id).
-  it("roster session rows emit open-session through the shared opener", () => {
-    assert.match(panel, /@click="openSession\(s\.id\)"/, "every session row is a click target");
-    assert.match(panel, /emit\("open-session", id\)/, "the panel emits the row's session id");
-    assert.match(panel, /agents\/\$\{encodeURIComponent\(a\.name\)\}\/sessions/, "sessions come from the agent's main-store list");
-    assert.match(panel, /no sessions to open/, "honest empty state (the canonical chat lives in the strip above)");
-    assert.match(app, /<ContinuousPanel[\s\S]*?@open-session="openChatTab"/, "app.vue routes the emit to the main-pane opener");
+  it("the create flow is the three-field form (name, directive, schedule) on the Agents tab", () => {
+    assert.match(agentsPanel, /contDirective/, "directive field");
+    assert.match(agentsPanel, /contSchedule/, "schedule field");
+    assert.match(agentsPanel, /fetch\("\/continuous",\s*\{[\s\S]*?method: "POST"/, "POST /continuous");
+  });
+
+  it("a rostered agent's wake strip keeps the wake/sleep + unread behavior", () => {
+    assert.match(agentsPanel, /wake sent - the report lands in the canonical chat/, "ruling 8 wake voice");
+    assert.match(agentsPanel, /sleep sent/, "sleep feedback");
+    assert.match(agentsPanel, /agents-badge\.unread|\.unread/, "the unread state is visible");
+    // the chat fetch in the merge marks the canonical session read (the
+    // roster's unread flag clears on the reload) - the expand fetches it
+    assert.match(agentsPanel, /\/chat`\)/, "the expand fetches the canonical chat (mark-read parity)");
+  });
+
+  it("a host without the module keeps the tab honest: no badge, no create form", () => {
+    assert.match(agentsPanel, /continuousAvailable/, "the availability gate exists");
+    assert.match(agentsPanel, /v-if="continuousAvailable"[\s\S]{0,120}class="agents-new"/, "the + hides without the module");
+    assert.match(agentsPanel, /return c \? rowStatus\(c\) : ""/, "a config-only agent renders no badge");
+  });
+});
+
+describe("the merge, pure: joined row model (agentsRows.ts)", () => {
+  it("continuousIndex joins the roster by name", () => {
+    const idx = continuousIndex([row(), row({ name: "coder", unread: true })]);
+    assert.equal(idx["scout"]?.name, "scout");
+    assert.equal(idx["coder"]?.unread, true);
+  });
+
+  it("mergedRowDetail appends the wake line only for rostered agents", () => {
+    const a = { name: "scout", skill_count: 0, memory_size: 0, dir: "/x" } as any;
+    const bare = mergedRowDetail(a, null);
+    assert.ok(bare.every((l) => !/wake: /.test(l)), "no phantom wake for a config-only agent");
+    assert.ok(bare.length >= 7, "the config summary stands alone");
+    const merged = mergedRowDetail(a, row({ next_wake: "2026-10-28T12:34:00Z" }));
+    assert.equal(merged[merged.length - 1], "wake: next wake 12:34");
+    assert.equal(merged.length, bare.length + 1);
   });
 });

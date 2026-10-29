@@ -2802,12 +2802,16 @@ export interface DisabledLists {
 // row reveals on expand; empty = no expansion), and the fold state.
 // `value` is the read-only stat row's number (the insights consumer's
 // bars and counts read it; toggle-less rows never set it).
+// `preview` (card t_c7222095) is an optional UNDER-row line - the
+// merged agent row shows the continuous last-report preview under the
+// config facts; consumers that set nothing render byte-identical.
 export interface RegistryRow {
   name: string;
   description?: string;
   detail?: string[];
   disabled: boolean;
   value?: number;
+  preview?: string;
 }
 
 // normalizeDisabledPayload never trusts the wire: any non-list-of-

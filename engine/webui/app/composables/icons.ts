@@ -15,7 +15,6 @@ import {
   Brain,
   ChartColumn,
   ChevronDown,
-  CircleDot,
   Clock,
   Database,
   Download,
@@ -67,8 +66,7 @@ export const ICONS = {
   logs: ScrollText, // the http_channel log strip
   skills: Book, // the skills library
   tools: Wrench, // the tools inventory - also the tool-call block glyph
-  agents: Users, // the agent roster
-  continuous: CircleDot, // the wake pulse in a frame (the roster tab)
+  agents: Users, // the agent roster (merged config + continuous surface)
   settings: SlidersHorizontal, // config knobs
   kanban: Kanban, // the board
   extensions: Puzzle, // the module cockpit tab

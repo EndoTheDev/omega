@@ -41,7 +41,6 @@
             @open="openChatTab"
             @new="openChatTab(null)"
             @new-ephemeral="openEphemeralTab"
-            @new-continuous="openContinuousTab"
             @pin="togglePin"
             @archive="toggleArchive"
             @branch="branchChatSession"
@@ -149,19 +148,6 @@
             @open-session="openChatTab" />
         </template>
 
-        <!-- card t_72ecca67 (ruling 18): the continuous roster - the
-             agent homes with last-report preview, next wake, unread;
-             the detail strip rides wake/sleep + evidence; the
-             t_55a571ff picker entry opens it via openContinuousTab.
-             t_1ba868bb: the detail's session rows open through
-             openChatTab - same main-pane opener, no degraded mode. -->
-        <template #pane-continuous>
-          <ContinuousPanel
-            v-if="!isMobile"
-            class="pane"
-            @open-session="openChatTab" />
-        </template>
-
         <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry
              point exists (the '+' menu no longer lists it); the tab lives
              pinned in the inspector pane. The mount loads on activation
@@ -248,7 +234,6 @@
         @open="openChatTab"
         @new="openChatTab(null)"
         @new-ephemeral="openEphemeralTab"
-        @new-continuous="openContinuousTab"
         @pin="togglePin"
         @archive="toggleArchive"
         @remove="askDelete"
@@ -463,7 +448,6 @@
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
   import AgentsPanel from "./components/agents/AgentsPanel.vue";
-  import ContinuousPanel from "./components/agents/ContinuousPanel.vue";
   // card t_14f73742: the extensions inventory joins the inspector (registry:
   // singleton, pinned right) - the outlet renders it when its tab is active
   import ExtensionsTab from "./components/shell/ExtensionsTab.vue";
@@ -1319,15 +1303,6 @@
     const pane = findEdgePane(dock.tree.value, "inspector");
     if (!pane) return;
     dock.openSingleton(pane.id, moduleId as DockComponentName);
-  }
-
-  // card t_72ecca67 (ruling 18): the continuous roster opens with the
-  // wired picker entry (the Continuous placeholder's run()). The
-  // inspector guard is honest: a dropped strip has no host pane.
-  function openContinuousTab() {
-    const pane = findEdgePane(dock.tree.value, "inspector");
-    if (!pane) return;
-    dock.openSingleton(pane.id, "continuous");
   }
 
   function toggleSidebar() {

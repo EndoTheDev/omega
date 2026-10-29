@@ -20,8 +20,12 @@ step "ok: panes render ($panes panes, $tabs dock tabs)"
 # aria-label, never .dock-tab-title text. Logs left the inspector
 # (bottom-hosted, 3dbb9c5); the modules registry joined Agents/Modules/
 # Insights - the strip IS the registry list the drawer derives from.
-missing=$(jsq '["Files","Cron","Skills","Tools","Agents","Continuous","Settings","Kanban","Modules","Insights"].filter(t => ![...document.querySelectorAll(".dock-pane.pinned .dock-tab")].some(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === t)).length' 2>&1)
+# card t_c7222095: "Continuous" left the strip - the roster folded into
+# Agents, and its ABSENCE is asserted here (deletability: no hidden tab).
+missing=$(jsq '["Files","Cron","Skills","Tools","Agents","Settings","Kanban","Modules","Insights"].filter(t => ![...document.querySelectorAll(".dock-pane.pinned .dock-tab")].some(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === t)).length' 2>&1)
 assert_eq "$missing" "0" "every registry inspector tab renders with its name"
+ghost=$(jsq '[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].filter(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === "Continuous").length' 2>&1)
+assert_eq "$ghost" "0" "the merged-away Continuous tab renders nowhere"
 # the chip law itself: no pinned-shell tab may render text-only chrome
 titled=$(jsq 'document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom):not(.edge-left) .dock-tab .dock-tab-title").length' 2>&1)
 [ "$titled" = "0" ] 2>/dev/null || die "an edge shell renders a text tab where the chip law says icon-only ($titled)"
