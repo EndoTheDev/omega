@@ -3,7 +3,28 @@
     ref="rootEl"
     class="mcp-list"
     :class="{ narrow: narrow }">
-    <h3 class="panel-title">mcp</h3>
+    <!-- card t_d6e94e79: the toolbar row, the FilesTab pattern - the
+         title flush LEFT, the refresh action flush RIGHT on ONE row
+         (the same -8px dock-pane tuck the Files header clears, so the
+         same 14px lead-in). The click makes mcp.yaml edits live
+         (POST /mcp/reload + the re-fetch), no restart, no file watcher
+         - the button is the whole trigger. -->
+    <div
+      class="mcp-header"
+      role="toolbar"
+      aria-label="mcp actions">
+      <h3 class="panel-title">mcp</h3>
+      <button
+        class="mcp-tool"
+        title="refresh"
+        aria-label="refresh mcp servers"
+        :disabled="reloading"
+        @click="reload">
+        <Icon
+          name="refresh"
+          :size="13" />
+      </button>
+    </div>
     <p
       v-if="error"
       class="panel-status">
@@ -70,6 +91,7 @@
 <script setup lang="ts">
   import { onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
+  import { reloadMcpServers } from "./reload";
   import {
     MCP_EMPTY_HINT,
     MCP_EMPTY_TEXT,
@@ -82,14 +104,16 @@
   // Module-owned UI (card t_c7136c50): the inspector's MCP tab content,
   // sourced from GET /mcp/servers and shipped by the mcp module itself
   // (modules/mcp/ui/) through the module-UI composition - the same
-  // shape the tools/skills/cron panels ride. Read-only: the listing
-  // shows the module's mount-time connection state; enable/disable is
-  // config.yaml domain, no write path exists. Self-contained fetch
-  // (module UI carries its own wiring, the narrow.ts copy law).
+  // shape the tools/skills/cron panels ride. Read-only listing; the
+  // one write path is the refresh button (card t_d6e94e79): POST
+  // /mcp/reload then the re-fetch, so mcp.yaml edits go live with no
+  // server restart. Self-contained wiring (module UI carries its own
+  // wiring, the narrow.ts copy law).
   const source = ref<string | undefined>(undefined);
   const rows = ref(serverRows({}));
   const loaded = ref(false);
   const error = ref("");
+  const reloading = ref(false);
 
   async function load(): Promise<void> {
     const res = await fetch("/mcp/servers");
@@ -97,6 +121,24 @@
     const rep: McpStatusWire = await res.json();
     source.value = rep.source;
     rows.value = serverRows(rep);
+  }
+
+  // the refresh (card t_d6e94e79): POST the reload route, then show
+  // the fresh listing. A failure lands on the panel's existing error
+  // line; the previous rows stand (server truth never fakes a swap).
+  async function reload(): Promise<void> {
+    if (reloading.value) return;
+    reloading.value = true;
+    try {
+      const rep = await reloadMcpServers();
+      source.value = rep.source;
+      rows.value = serverRows(rep);
+      error.value = "";
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      reloading.value = false;
+    }
   }
 
   // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
@@ -151,8 +193,19 @@
   .mcp-list {
     padding: 10px 12px 14px;
   }
+  /* the toolbar row (card t_d6e94e79): title left, refresh flush right,
+     one row - the FilesTab header pattern with the module's own copy
+     (module UI imports no shell code, the narrow.ts copy law). The
+     14px lead-in clears the same -8px dock-pane tuck the Files header
+     clears (card t_5c660a42). */
+  .mcp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 14px 0 4px;
+  }
   .panel-title {
-    margin: 0 0 4px;
+    margin: 0;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -163,6 +216,26 @@
     margin: 0;
     font-size: 11px;
     opacity: 0.6;
+  }
+  .mcp-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: var(--r-chip);
+    cursor: pointer;
+  }
+  .mcp-tool:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+  .mcp-tool:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .mcp-empty {
     margin-top: 6px;
