@@ -439,6 +439,14 @@
   // card t_e76ce7b6: the mobile drawer's pure tab derivation (decoupled
   // from the dock tree - REPRO 1's fix)
   import { drawerTabsForEdge, clampDrawerTab } from "./composables/mobileDrawer";
+  // card t_30137f67: the shared default-workspace value (module-scoped)
+  // - SettingsTab's reads keep it fresh, the chat host reads it when a
+  // draft state is born, the boot read backfills the early tabs
+  import {
+    DEFAULT_WORKSPACE_KNOB,
+    defaultWorkspaceNow,
+    setDefaultWorkspace,
+  } from "./composables/defaultWorkspace";
   import {
     CHAT_HOST_KEY,
     DEFAULT_CHAT_STATE,
@@ -811,12 +819,13 @@
   // stream state keyed by the tab's instance key; the gate stays per
   // session (the runHub run slot is per session). ---
   // card t_30137f67: the loaded server.default_workspace rides the
-  // host through the live getter - new drafts are born with the chip
-  // (ensureState) and the boot read backfills the pre-resolve ones
-  // (seedDefaultWorkspace). No default configured -> "" everywhere.
-  const defaultWorkspace = ref("");
+  // host through the shared-value getter (defaultWorkspace.ts, the
+  // same value SettingsTab's reads keep fresh) - new drafts are born
+  // with the chip (ensureState) and the boot read backfills the
+  // pre-resolve ones (seedDefaultWorkspace). No default configured ->
+  // "" everywhere.
   const host = createChatHost({
-    defaultWorkspace: () => defaultWorkspace.value,
+    defaultWorkspace: defaultWorkspaceNow,
     setTabSessionRef: (key, sessionId) => dock.setSessionRef(key, sessionId),
     refreshSessions: () => refreshSessions(),
     sessionRow: (id) => sessions.value.find((s) => s.id === id),
@@ -1660,16 +1669,15 @@
       });
     // card t_30137f67: the boot read of server.default_workspace - the
     // SAME /settings payload the Settings tab renders (shared
-    // fetchSettings read, no second config path). Non-blocking: the
-    // host's getter is live, and seedDefaultWorkspace backfills the
-    // unbound drafts born before this resolved. A host without the
-    // settings seam (501) or a failed read leaves "" - the unconfigured
-    // behavior, the chip starts blank.
+    // fetchSettings read, no second config path). It feeds the shared
+    // signal SettingsTab's reads keep fresh, and seedDefaultWorkspace
+    // backfills the unbound drafts born before this resolved. A host
+    // without the settings seam (501) or a failed read leaves "" - the
+    // unconfigured behavior, the chip starts blank.
     void fetchSettings()
       .then((p) => {
-        const v = settingValueOf(p, "server.default_workspace");
-        defaultWorkspace.value = typeof v === "string" ? v : "";
-        if (defaultWorkspace.value) host.seedDefaultWorkspace(defaultWorkspace.value);
+        setDefaultWorkspace(settingValueOf(p, DEFAULT_WORKSPACE_KNOB));
+        if (defaultWorkspaceNow()) host.seedDefaultWorkspace(defaultWorkspaceNow());
       })
       .catch(() => {
         // no settings seam or unreachable server: no default known
