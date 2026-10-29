@@ -259,6 +259,11 @@ export interface ChatHost {
   closeSession(sessionId: string): void;
   /** refreshSessions feeds the server-reported active rows in */
   noteServerActive(ids: string[]): void;
+  /** the refreshed session row for an id, re-exposed from the deps
+      (card t_cd2f25b0): consumers INJECTED with the host - the Files
+      tab's row-workspace re-root trigger - read rows through the host,
+      not the deps object. Undefined when the session is unknown. */
+  sessionRow(sessionId: string): Session | undefined;
 }
 
 export const CHAT_HOST_KEY: InjectionKey<ChatHost> = Symbol("omega-chat-host");
@@ -888,6 +893,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     closeState,
     closeSession,
     noteServerActive,
+    sessionRow: deps.sessionRow,
   };
 }
 

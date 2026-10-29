@@ -17,6 +17,7 @@ import {
   postFilesMkdir,
   postFilesWrite,
 } from "../app/composables/omega.ts";
+import { createChatHost, type ChatHostDeps } from "../app/composables/chat.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
@@ -162,6 +163,45 @@ describe("the re-root contract (structural pins)", () => {
     assert.match(tab, /headerSource\.value = data\.source/);
     assert.match(tab, /filesHeaderVisible\(headerSource\.value\)/);
     assert.match(tab, /filesRootName\(headerRoot\.value\)/);
+  });
+});
+
+describe("the ChatHost carries sessionRow (behavior pin, card t_cd2f25b0)", () => {
+  // The defect class the source-grep pins cannot catch: FilesTab.vue's
+  // row-workspace computed calls chatHost?.sessionRow(id) on the HOST
+  // the app injects - but sessionRow lived only on the createChatHost
+  // DEPS. A missing host method does not throw "inject null" and does
+  // not stay quiet: the computed throws TypeError mid-render and the
+  // whole Files tab render tree dies (the blank pane, the missing
+  // re-root). This pins the host surface itself, the way the component
+  // consumes it.
+  const ROW = {
+    id: "sess-1",
+    created_at: "2026-10-29T00:00:00Z",
+    updated_at: "2026-10-29T00:00:00Z",
+    workspace: "/home/proj",
+  };
+  const deps: ChatHostDeps = {
+    setTabSessionRef: () => {},
+    refreshSessions: () => {},
+    sessionRow: (id) => (id === "sess-1" ? ROW : undefined),
+    markRead: () => {},
+    isFocused: () => false,
+  };
+  const host = createChatHost(deps);
+
+  it("host.sessionRow is a function (dead seam = TypeError mid-render)", () => {
+    assert.equal(typeof host.sessionRow, "function");
+  });
+
+  it("host.sessionRow delegates to the deps' resolver (unknown -> undefined)", () => {
+    assert.deepEqual(host.sessionRow("sess-1"), ROW);
+    assert.equal(host.sessionRow("missing"), undefined);
+  });
+
+  it("the Files tab's row-workspace trigger reads through the host", () => {
+    // the exact consume shape FilesTab.vue's rowWorkspace computed uses
+    assert.equal(host.sessionRow("sess-1")?.workspace ?? null, "/home/proj");
   });
 });
 
