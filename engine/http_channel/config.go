@@ -23,6 +23,12 @@ type Config struct {
 	// channel). The host's ConfigSection derives both fields; an
 	// empty BaseURL falls back to the default upstream mirror.
 	WebTools WebToolsConfig
+	// DefaultWorkspace (config key default_workspace) is the Files
+	// surface's middle step in the root resolution law: no session
+	// workspace on the focused session -> root here. Empty = the cwd
+	// fallback stands. Carried into the Server at wire time and hot-
+	// settable through the settings seam's SetDefaultWorkspace.
+	DefaultWorkspace string `yaml:"default_workspace"`
 }
 
 // defaultRunTimeout is the detached-run wall-clock cap: 30 minutes is

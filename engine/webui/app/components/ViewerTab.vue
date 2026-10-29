@@ -59,15 +59,22 @@
   // line-numbered monospace text; truncated/binary rides the notice line.
   // Fetch-on-mount: a persisted viewer tab opened later re-fetches -
   // content views refresh, nothing caches stale bytes.
-  import { computed, onMounted, ref, watch } from "vue";
+  import { computed, inject, onMounted, ref, watch } from "vue";
   import type { ViewerRef } from "../composables/dockables";
-  import { fetchSkillContent } from "../composables/viewer";
+  import {
+    FOCUSED_SESSION_KEY,
+    fetchSkillContent,
+  } from "../composables/viewer";
   import { fetchFilesRead } from "../composables/omega";
   import Icon from "./ui/Icon.vue";
   import { useNarrow } from "~/composables/narrow";
   import { glyphKindFor, glyphIcon } from "./files/rowicon";
 
   const props = defineProps<{ viewer?: ViewerRef }>();
+
+  // the focused session rides the SAME seam FilesTab reads (t_a5f9d185):
+  // the app always provides; a null fallback keeps the mount harmless.
+  const focusedSession = inject(FOCUSED_SESSION_KEY, null);
 
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = useNarrow(rootEl);
@@ -100,7 +107,11 @@
         truncated.value = data.truncated;
         skillDesc.value = data.description;
       } else {
-        const data = await fetchFilesRead(props.viewer.name);
+        // t_a5f9d185: the read roots on the focused session's resolved
+        // root - the SAME resolution the Files tab browsed under, so a
+        // workspace-pinned tab's file parses instead of 404ing against
+        // the cwd fallback.
+        const data = await fetchFilesRead(props.viewer.name, focusedSession?.value ?? undefined);
         content.value = data.content;
         truncated.value = data.truncated;
         binary.value = data.binary;

@@ -209,6 +209,12 @@ type ServerConfig struct {
 	Port       int      `yaml:"port"`
 	Bind       []string `yaml:"bind"`
 	RunTimeout int      `yaml:"run_timeout"`
+	// DefaultWorkspace (config key default_workspace) is the Files
+	// tab's fallback root: when the focused session has no pinned
+	// workspace, the webui file surface roots here instead of the
+	// process working directory. Empty = unset - the cwd fallback
+	// stands (the resolution law lives in server_files.go).
+	DefaultWorkspace string `yaml:"default_workspace"`
 }
 
 // StoreConfig configures the SQLite session store.
@@ -544,6 +550,7 @@ func applyEnv(cfg *Config) {
 		{"OMEGA_THEME", &cfg.Theme},
 		{"OMEGA_NOTIFICATIONS", &cfg.Notifications},
 		{"OMEGA_LOGGING_FILE", &cfg.Logging.File},
+		{"OMEGA_DEFAULT_WORKSPACE", &cfg.Server.DefaultWorkspace},
 	} {
 		if v := os.Getenv(s.env); v != "" {
 			*s.target = v
@@ -672,7 +679,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":
-		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
+		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
 		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.Skills)}, true
 	case "memory":

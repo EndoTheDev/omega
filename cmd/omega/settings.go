@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
@@ -105,6 +106,9 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Min: ptrF(1), Step: ptrF(1),
 					Value: cfg.Server.RunTimeout,
 					Help:  "wall-clock cap per detached chat run, in seconds; applies on restart"},
+				{Key: "server.default_workspace", Label: "default workspace", Type: "text",
+					Value: cfg.Server.DefaultWorkspace,
+					Help:  "absolute path; the Files tab roots here when the focused session has no pinned workspace; empty = the process working directory; applies live"},
 			},
 		},
 		{
@@ -283,6 +287,39 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.Server.Port, key, raw, 1, math.MaxUint16)
 		case "server.run_timeout":
 			err = setInt(&cfg.Server.RunTimeout, key, raw, 1, math.MaxInt32)
+		case "server.default_workspace":
+			// empty clears (the law's cwd fallback stands); anything
+			// else must be an absolute, existing directory - the same
+			// shape a session workspace pin validates, validated HERE
+			// so a typo never silently roots nothing
+			v, verr := asTrimmedString(raw)
+			if verr != nil {
+				err = fmt.Errorf("%s: %w", key, verr)
+				break
+			}
+			if v == "" {
+				cfg.Server.DefaultWorkspace = ""
+				break
+			}
+			if !filepath.IsAbs(v) {
+				err = fmt.Errorf("%s: must be an absolute path, got %q", key, v)
+				break
+			}
+			abs, aerr := filepath.EvalSymlinks(filepath.Clean(v))
+			if aerr != nil {
+				err = fmt.Errorf("%s: %w", key, aerr)
+				break
+			}
+			info, serr2 := os.Stat(abs)
+			if serr2 != nil {
+				err = fmt.Errorf("%s: %w", key, serr2)
+				break
+			}
+			if !info.IsDir() {
+				err = fmt.Errorf("%s: not a directory: %s", key, abs)
+				break
+			}
+			cfg.Server.DefaultWorkspace = abs
 		case "store.db_path", "system_prompt", "theme",
 			"skills.dir", "memory.file", "memory.user_file", "logging.file":
 			err = setStringField(cfg, key, raw)
@@ -485,13 +522,27 @@ func writeConfigFile(path string, cfg *Config) error {
 }
 
 // hotApply runs the knobs the running process can use without a
-// restart: the shared HTTP client timeout and the compactor's config,
-// which Compact re-reads on every call. WatchConfig's on-disk reload
-// goes through the same path, so a hand edit and a settings-pane save
-// behave identically.
+// restart: the shared HTTP client timeout, the compactor's config
+// (Compact re-reads it on every call), and the files surface's default
+// workspace - hot because the resolution law reads it per request, so
+// a settings-pane save re-roots the Files tab live. WatchConfig's
+// on-disk reload goes through the same path, so a hand edit and a
+// settings-pane save behave identically.
 func hotApply(cfg Config, pctx *agent.Context) {
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	if pctx == nil || pctx.Compactor == nil {
+	if pctx == nil {
+		return
+	}
+	// default_workspace rides the mounted channels (SetDefaultWorkspace
+	// is an http_channel capability): every bind's server roots on it
+	// the next file request. The seam-style assertion mirrors the
+	// compactor's type check below - only channels that opt in move.
+	for _, ch := range pctx.Channels {
+		if setter, ok := ch.(interface{ SetDefaultWorkspace(string) }); ok {
+			setter.SetDefaultWorkspace(cfg.Server.DefaultWorkspace)
+		}
+	}
+	if pctx.Compactor == nil {
 		return
 	}
 	if c, ok := pctx.Compactor.(*compactor.Compactor); ok {

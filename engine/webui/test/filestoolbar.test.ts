@@ -150,27 +150,41 @@ describe("fileTreeBus seam", () => {
   });
 });
 
-describe("the toolbar contract (structural pins, no DOM)", () => {
+describe("the header contract (structural pins, no DOM)", () => {
+  // card t_a5f9d185: the toolbar strip became the VS Code-style header
+  // row - workspace name left, the four actions right, ONE row.
   const tab = read("app/components/files/FilesTab.vue");
   const tree = read("app/components/files/FileTree.vue");
   const icons = read("app/composables/icons.ts");
 
-  it("the Files tab renders a compact toolbar with the four actions", () => {
-    assert.match(tab, /class="files-toolbar"/);
+  it("the Files tab renders a VS Code-style header with the four actions", () => {
+    assert.match(tab, /class="files-header"/);
+    assert.doesNotMatch(tab, /files-toolbar/, "the floating toolbar strip is gone");
     for (const title of ["add file", "add folder", "refresh", "collapse folders"]) {
       assert.match(
         tab,
         new RegExp(`title="${title}"`),
-        `toolbar button "${title}" carries its title`,
+        `header button "${title}" carries its title`,
       );
     }
     for (const label of ["add file", "add folder", "refresh files", "collapse folders"]) {
       assert.match(
         tab,
         new RegExp(`aria-label="${label}"`),
-        `toolbar button "${label}" is labeled`,
+        `header button "${label}" is labeled`,
       );
     }
+  });
+
+  it("the header is ONE row: workspace name left, actions right, tree below", () => {
+    const nameAt = tab.indexOf('class="files-header-name"');
+    const actionsAt = tab.indexOf('class="files-header-actions"');
+    const listAt = tab.indexOf('class="files-list"');
+    assert.ok(nameAt >= 0 && actionsAt >= 0 && nameAt < actionsAt, "name then actions");
+    assert.ok(listAt >= 0 && actionsAt < listAt, "the row sits above the tree");
+    // no resolvable workspace -> no header at all (the Endo ruling)
+    assert.match(tab, /v-if="headerName"/);
+    assert.match(tab, /class="files-header"/, "the row renders only when rooted");
   });
 
   it("the four glyphs ride the icons.ts vocabulary", () => {
@@ -199,8 +213,12 @@ describe("the toolbar contract (structural pins, no DOM)", () => {
     assert.match(tab, /class="files-add"/);
     assert.match(tab, /aria-label="new node name"/);
     assert.ok(!tab.includes("window.prompt"), "no window.prompt");
-    assert.match(tab, /postFilesWrite\(path, ""\)/, "the toolbar creates EMPTY files");
-    assert.match(tab, /postFilesMkdir\(path\)/);
+    assert.match(
+      tab,
+      /postFilesWrite\(path, "", sessionId\.value\)/,
+      "the toolbar creates EMPTY files under the resolved root",
+    );
+    assert.match(tab, /postFilesMkdir\(path, sessionId\.value\)/);
   });
 
   it("a refusal lands in the inline error, a success refreshes + reveals", () => {
@@ -228,10 +246,10 @@ describe("the toolbar contract (structural pins, no DOM)", () => {
     assert.match(tab, /onSelect\(sel: SelectedNode\)/);
   });
 
-  it("the toolbar renders in the empty-root state (before the list)", () => {
-    const toolbarAt = tab.indexOf('class="files-toolbar"');
+  it("the header renders in the empty-root state (before the list)", () => {
+    const headerAt = tab.indexOf('class="files-header"');
     const listAt = tab.indexOf('class="files-list"');
-    assert.ok(toolbarAt >= 0 && listAt >= 0 && toolbarAt < listAt);
+    assert.ok(headerAt >= 0 && listAt >= 0 && headerAt < listAt);
     // the FileTree stays mounted only with entries; the form does not
     assert.match(tab, /<form\s+v-if="creating"/);
   });

@@ -30,6 +30,7 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"server.port":                 true,
 		"server.bind":                 true,
 		"server.run_timeout":          true,
+		"server.default_workspace":    true,
 		"store.db_path":               true,
 		"compaction.enabled":          true,
 		"compaction.threshold":        true,
