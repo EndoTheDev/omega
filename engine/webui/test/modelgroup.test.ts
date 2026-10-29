@@ -83,8 +83,8 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
     assert.match(groupRule[0], /display:\s*flex/, "the group is a flex row");
     assert.match(groupRule[0], /flex-wrap:\s*nowrap/,
       "the group must not wrap internally - chips stay adjacent");
-    assert.match(groupRule[0], /min-width:\s*max-content/,
-      "the group must hold its content width through a wrap");
+    assert.doesNotMatch(groupRule[0], /min-width:\s*max-content/,
+      "the group must not hard-pin to max-content - chips keep their shrink room");
     // the toolbar keeps its wrap: the GROUP crosses the boundary,
     // the row still wraps
     const toolbarRule = src.match(/\.toolbar\s*\{[^}]*\}/);

@@ -2011,15 +2011,17 @@ labels stopped short of the right edge. */
    orphaned on row two beside the still-open model chip. The pair lives
    inside one flex item now (.model-group, nowrap), so a wrap moves BOTH
    chips to the next line together or leaves both in place: they are
-   never separated. min-width:auto (the flex default) keeps the group
-   from shrinking below the chips' own widths mid-wrap. Workspace and
-   send stay their own toolbar items - they wrap independently. */
+   never separated. min-width stays `auto`: the group holds at the
+   chips' own min-content, so it cannot be squeezed apart mid-row; at
+   the 320px floor the pair crosses the wrap boundary TOGETHER (the flat
+   row used to strand the effort chip there - measured live in the
+   verify lane). Workspace and send stay their own toolbar items - they
+   wrap independently. */
 .model-group {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
-  min-width: max-content;
 }
 
 .model-chip {
