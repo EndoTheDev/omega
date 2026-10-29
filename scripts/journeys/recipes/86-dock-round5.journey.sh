@@ -44,12 +44,15 @@ sleep 1
 # ---- 1: tab labels --------------------------------------------------------
 # card t_210a0d19 rename law: the extensions inventory tab's label is
 # "Modules"; /extensions keeps working as the command alias.
+# card t_502b8e81: edge shells render ICON-ONLY chips - the name rides
+# aria-label (the tab has no .dock-tab-title); main/bottom tabs keep text.
+chipName='((e.getAttribute("aria-label")||"")||e.title||((e.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim()'
 for want in Agents Modules; do
-  if ! wait_js "(()=>{const t=[...document.querySelectorAll('.dock-tabbar .dock-tab')];return t.some((e)=>e.textContent.trim()==='$want')})()" 10; then
+  if ! wait_js "(()=>{const t=[...document.querySelectorAll('.dock-tabbar .dock-tab')];return t.some((e)=>($chipName)==='$want')})()" 10; then
     die "tab label '$want' missing from the tab bars"
   fi
 done
-low=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")].map((e)=>e.textContent.trim());return t.includes("agents")||t.includes("extensions")?1:0})()' 2>/dev/null | tail -1)
+low=$(jsq "(()=>{const t=[...document.querySelectorAll(\".dock-tabbar .dock-tab\")].map((e)=>$chipName);return t.some((n)=>n===\"agents\"||n===\"extensions\")?1:0})()" 2>/dev/null | tail -1)
 assert_eq "$low" "0" "no lowercase agents/extensions tab chips remain"
 step "ok: Agents + Modules tab labels render Title Case"
 
@@ -66,8 +69,8 @@ wait_js '(()=>{const r=[...document.querySelectorAll(".notif-list .notif-row")];
 # click exactly the task's row (not the board, not a verdict row)
 js "(()=>{const r=[...document.querySelectorAll('.notif-list .notif-row')].find((e)=>e.textContent.includes('$TID'));r&&r.click();return r?1:0})()" >/dev/null
 
-# the kanban tab is foregrounded in the inspector
-wait_js '(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom) .dock-tab.active")];return t.some((e)=>e.textContent.trim()==="Kanban")})()' 10 \
+# the kanban tab is foregrounded in the inspector (icon chip: aria-label)
+wait_js "(()=>{const t=[...document.querySelectorAll(\".dock-pane.pinned:not(.edge-bottom) .dock-tab.active\")];return t.some((e)=>($chipName)===\"Kanban\")})()" 10 \
   || die "the kanban tab never came to the foreground after the click"
 if ! wait_js '(()=>{return document.querySelector(".dock-pane .board")?true:false})()' 10; then
   die "the board panel never rendered (kanban tab active but no board body)"
@@ -98,7 +101,8 @@ assert_eq "$(jsq 'document.querySelector(".dock-pane.kind-files")?1:0' 2>/dev/nu
 js 'document.querySelector("#notif-bell").click()' >/dev/null
 sleep 0.5
 js "(()=>{const r=[...document.querySelectorAll('.notif-list .notif-row')].find((e)=>e.textContent.includes('$TID'));r&&r.click();return r?1:0})()" >/dev/null
-wait_js '(()=>{const t=[...document.querySelectorAll(".dock-pane .dock-tab.active")];return t.some((e)=>e.textContent.trim()==="Kanban")})()' 10 \
+# the hidden inspector reopen: chip name via aria-label (same law)
+wait_js "(()=>{const t=[...document.querySelectorAll(\".dock-pane .dock-tab.active\")];return t.some((e)=>($chipName)===\"Kanban\")})()" 10 \
   || die "the click never reopened the hidden inspector"
 step "ok: a hidden inspector reopens on the click"
 

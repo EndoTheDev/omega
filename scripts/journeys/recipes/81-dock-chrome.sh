@@ -23,10 +23,16 @@ panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 [ "$panes" -ge 3 ] 2>/dev/null || die "default dock tree did not render ($panes panes)"
 step "ok: dock tree renders ($panes panes)"
 
-# item 3: the primary sidebar header reads Sessions (capital S)
-sess=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].map(e=>(e.textContent||"").trim());
- return t.includes("Sessions")&&!t.includes("sessions")?1:0})()')
-assert_eq "$sess" "1" "primary sidebar header reads Sessions"
+# item 3: the primary sidebar header reads Sessions (capital S).
+# card t_502b8e81: edge shells render ICON-ONLY chips - the name rides
+# aria-label (no .dock-tab-title); the chip is the header.
+sess=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const left=[...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom)")].find((p)=>p.querySelector(".session-list"));
+ if(!left) return 0;
+ const chip=[...left.querySelectorAll(".dock-tab")].find((t)=>/sessions/i.test(name(t)));
+ return chip?name(chip):0})()')
+sess=${sess#\"}; sess=${sess%\"} # jsq returns JSON strings quoted
+assert_eq "$sess" "Sessions" "primary sidebar header reads Sessions"
 
 # items 2+5: the pinned shells carry no '+'; the main pane keeps one
 plus=$(jsq '(()=>{const pinned=[...document.querySelectorAll(".dock-pane.pinned")];
@@ -46,9 +52,12 @@ aligned=$(jsq '(()=>{const b=document.querySelector(".dock-pane.edge-bottom");
  return Math.abs(r.left-L)<=1&&Math.abs(r.right-R)<=1?1:0})()')
 assert_eq "$aligned" "1" "bottom panel aligned to the main panes (default mode)"
 
-# item 6: the dock setting flips full -> aligned. Settings is a pinned
-# inspector tab (no menu entry): click it, flip the select, re-measure.
-open=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].find(e=>(e.textContent||"").trim()==="Settings");
+# item 6 (default): the dock setting flips full -> aligned. Settings is a
+# pinned inspector tab (no menu entry): click it, flip the select,
+# re-measure. The right edge renders ICON-ONLY chips (t_502b8e81) - the
+# chip's name rides aria-label.
+open=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const t=[...document.querySelectorAll(".dock-tab")].find((t)=>name(t)==="Settings");
  if(!t) return 0; t.click(); return 1})()')
 assert_eq "$open" "1" "settings tab opens"
 wait_text "bottom panel width" 10
@@ -96,7 +105,11 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 closed_left=$(jsq 'document.querySelector(".sessions .session-list")?0:1')
 assert_eq "$closed_left" "1" "RELOAD: the closed sessions sidebar STAYS closed"
-closed_right=$(jsq 'document.querySelector(".dock-pane.edge-right")?0:1')
+# the right edge no longer carries an edge-right class (t_d6b657a7 pane
+# chrome) - the closed inspector asserts by its SURFACE: no pinned
+# non-bottom pane hosts the Settings chip anymore.
+closed_right=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ return [...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom)")].some((p)=>[...p.querySelectorAll(".dock-tab")].some((t)=>name(t)==="Settings"))?0:1})()')
 assert_eq "$closed_right" "1" "RELOAD: the closed inspector sidebar STAYS closed"
 alive=$(jsq 'document.querySelector(".composer")?1:0')
 assert_eq "$alive" "1" "the main pane still renders under both closed sidebars"

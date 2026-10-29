@@ -7,8 +7,11 @@
 
 open_app
 
-# settings opens as the pinned inspector dock-tab (not a menubar gear)
-ab find text "Settings" click >/dev/null 2>&1 || die "no Settings dock-tab rendered"
+# settings opens as the pinned inspector dock-tab (not a menubar gear).
+# card t_502b8e81: the right edge renders ICON-ONLY chips - click the
+# chip by its aria-label (there is no "Settings" text node to find).
+open=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return 0;t.click();return 1})()' 2>&1)
+assert_eq "$open" "1" "Settings dock-tab opens by its chip name"
 ab wait --text "Theme" >/dev/null 2>&1 || true
 panel=$(jsq 'document.querySelector(".theme-select") ? 1 : 0' 2>&1)
 assert_eq "$panel" "1" "settings panel renders the theme picker"

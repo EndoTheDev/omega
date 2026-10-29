@@ -36,11 +36,12 @@ step "ok: dock tree renders ($panes panes)"
 # the drawer's fallback (drawerTabsForEdge) from the same registry list).
 # A future registry tab joins both surfaces and this assert stays green;
 # a drawer-derivation regression reds on the mismatch.
-desktop_strip=$(jsq '(()=>{const panes=[...document.querySelectorAll(".dock-pane.pinned")]
+desktop_strip=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const panes=[...document.querySelectorAll(".dock-pane.pinned")]
  .filter(p=>!p.classList.contains("edge-bottom")&&!p.querySelector(".session-list"));
  const pane=panes[0]; if(!pane) return "";
- return [...pane.querySelectorAll(".dock-tab-title")]
-  .map(e=>(e.textContent||"").trim()).join(",")})()')
+ return [...pane.querySelectorAll(".dock-tab")]
+  .map((t)=>name(t)).join(",")})()')
 desktop_strip=${desktop_strip#\"}; desktop_strip=${desktop_strip%\"}
 [ -n "$desktop_strip" ] || die "could not capture the desktop inspector strip"
 step "ok: inspector strip captured: $desktop_strip"
