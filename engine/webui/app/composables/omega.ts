@@ -1,3 +1,4 @@
+import { reactive } from "vue";
 import MarkdownIt from "markdown-it";
 // Syntax highlighting: highlight.js core + a curated language set, not
 // the full bundle or Shiki - weight matters on the Pi. Only fenced blocks
@@ -1244,6 +1245,51 @@ export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   });
 }
 
+// --- files tab toolbar <-> file tree seam (card t_a4504a25) ---
+
+// createTargetDir picks where the toolbar creates: the selected folder
+// itself, the selected file's folder, or the root (""). Node tests pin
+// all three - the toolbar holds no second copy of this logic.
+export function createTargetDir(
+  selected?: { path: string; isDir: boolean } | null,
+): string {
+  if (!selected) return "";
+  if (selected.isDir) return selected.path;
+  const cut = selected.path.lastIndexOf("/");
+  return cut >= 0 ? selected.path.slice(0, cut) : "";
+}
+
+// revealAncestors lists the directories that must expand to make a
+// created node visible: every prefix above it - "a/b/c.txt" reveals
+// through ["a", "a/b"], a root-level name through [].
+export function revealAncestors(path: string): string[] {
+  const parts = path.split("/");
+  const out: string[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    out.push(parts.slice(0, i).join("/"));
+  }
+  return out;
+}
+
+export interface SelectedNode {
+  path: string;
+  isDir: boolean;
+}
+
+// fileTreeBus is the ONE seam between the FilesTab toolbar and the
+// FileTree's internal expansion store (the store lives inside the
+// component tree and the tab cannot reach it). FileTree's ROOT instance
+// watches the three fields; the tab mutates them:
+//   - refresh   bump to re-fetch every expanded branch's listing
+//   - collapse  bump to fold every branch
+//   - reveal    set to a just-created rel path; ancestors expand
+// Counters never reset (watch-on-change semantics, like a nonce).
+export const fileTreeBus = reactive({
+  refresh: 0,
+  collapse: 0,
+  reveal: "",
+});
+
 // filesQuery fetches a /files endpoint and unwraps the structured error
 // envelope: a failed request throws the server's error message, not a
 // bare status code.
@@ -1303,6 +1349,41 @@ export async function fetchMentionFiles(workspace?: string): Promise<FilesBrowse
 // binary=true (empty content) for non-UTF-8 bytes.
 export function fetchFilesRead(path: string): Promise<FilesReadPayload> {
   return filesQuery(`/files/read?path=${encodeURIComponent(path)}`);
+}
+
+// --- files tab toolbar (card t_a4504a25): the tab's write half ---
+
+// filesPost sends one of the file surface's POST routes and unwraps the
+// same structured error envelope filesQuery does - a refused create
+// throws the server's message, never a bare status code.
+async function filesPost(url: string, body: unknown): Promise<void> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let msg = `request: ${r.status}`;
+    try {
+      const j = (await r.json()) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      // non-JSON failure body: the status-code message stands
+    }
+    throw new Error(msg);
+  }
+}
+
+// postFilesWrite creates or overwrites one file inside the process
+// working directory ({path, content} - handleFilesWrite).
+export function postFilesWrite(path: string, content: string): Promise<void> {
+  return filesPost("/files/write", { path, content });
+}
+
+// postFilesMkdir creates one folder inside the process working
+// directory ({path} - handleFilesMkdir).
+export function postFilesMkdir(path: string): Promise<void> {
+  return filesPost("/files/mkdir", { path });
 }
 
 // --- insights (card t_e1e61680): the webui's /insights parity ---
