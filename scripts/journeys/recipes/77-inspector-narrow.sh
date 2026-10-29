@@ -39,9 +39,12 @@ step "ok: dock tree renders ($panes panes)"
 # the inspector pane: the right edge shell - the pinned pane whose tabbar
 # hosts the kanban/settings tabs. JS finds it by tab set, not position
 # arithmetic, so menu-bar tweaks upstream cannot mis-route this journey.
+# card t_502b8e81: edge shells render ICON-ONLY chips - the name rides
+# aria-label (no .dock-tab-title); main/bottom tabs keep text.
 inspJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
+ const name=(e)=>((e.getAttribute("aria-label")||"")||e.title||((e.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
  const pinned=ps.filter(p=>p.classList.contains("pinned")||p.querySelector(".dock-tabbar"));
- const hit=pinned.find(p=>[...p.querySelectorAll(".dock-tab-title")].some(t=>/kanban|settings/i.test(t.textContent||"")));
+ const hit=pinned.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban|settings/i.test(name(t))));
  return hit?1:0})()'
 found=$(jsq "$inspJS")
 assert_eq "$found" "1" "inspector pane found by its tab set"
@@ -54,10 +57,11 @@ tab_narrow() {
   # $1 title-regex  $2 root selector  $3 style-expr on a descendant
   local out code
   out=$(jsq "(() => {
+    const name=(t)=>((t.getAttribute('aria-label')||'')||t.title||((t.querySelector('.dock-tab-title')||{textContent:''}).textContent)).trim();
     const bar=[...document.querySelectorAll('.dock-pane')]
-      .find(p=>[...p.querySelectorAll('.dock-tab-title')].some(t=>/$1/i.test(t.textContent||'')));
+      .find(p=>[...p.querySelectorAll('.dock-tab')].some(t=>/$1/i.test(name(t))));
     if(!bar) return 0;
-    const tab=[...bar.querySelectorAll('.dock-tab')].find(t=>/$1/i.test(t.querySelector('.dock-tab-title')?.textContent||''));
+    const tab=[...bar.querySelectorAll('.dock-tab')].find(t=>/$1/i.test(name(t)));
     if(!tab) return 0;
     tab.click(); return 2;
   })()")
@@ -96,8 +100,9 @@ step "ok: every inspector tab renders its measured narrow adaptation"
 # dragging LEFT grows it. -160px: 240 -> 400 (>360, no 320-rung in the
 # land zone). Steps negative and clipped to stay inside the viewport.
 dragJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
+ const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
  const right=ps.filter(p=>p.classList.contains("pinned")||p.querySelector(".dock-tabbar"));
- const insp=right.find(p=>[...p.querySelectorAll(".dock-tab-title")].some(t=>/kanban|settings/i.test(t.textContent||"")));
+ const insp=right.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban|settings/i.test(name(t))));
  if(!insp) return -1;
  const r=insp.getBoundingClientRect();
  const divs=[...document.querySelectorAll(".dock-divider")];
@@ -113,7 +118,8 @@ sleep 0.6
 
 # the drag may re-key the pane tree; re-find the inspector by its tab set
 wide=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
- const insp=ps.find(p=>[...p.querySelectorAll(".dock-tab-title")].some(t=>/kanban|settings/i.test(t.textContent||"")));
+ const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const insp=ps.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban|settings/i.test(name(t))));
  return insp?Math.round(insp.getBoundingClientRect().width):-1})()')
 [ "$wide" -ge 380 ] 2>/dev/null || die "inspector did not widen (width $wide)"
 step "ok: inspector widens to ${wide}px"
@@ -122,10 +128,11 @@ sleep 1 # settle: the drag re-keys the pane; let the tabbar re-render
 # click through every tab: only the active tab keeps an outlet mounted.
 wide_drop() {
   out=$(jsq "(() => {
+    const name=(t)=>((t.getAttribute('aria-label')||'')||t.title||((t.querySelector('.dock-tab-title')||{textContent:''}).textContent)).trim();
     const panes=[...document.querySelectorAll('.dock-pane')];
-    const bar=panes.find(p=>[...p.querySelectorAll('.dock-tab-title')].some(t=>/$1/i.test(t.textContent||'')));
+    const bar=panes.find(p=>[...p.querySelectorAll('.dock-tab')].some(t=>/$1/i.test(name(t))));
     if(!bar) return 0;
-    const tab=[...bar.querySelectorAll('.dock-tab')].find(t=>/$1/i.test(t.querySelector('.dock-tab-title')?.textContent||''));
+    const tab=[...bar.querySelectorAll('.dock-tab')].find(t=>/$1/i.test(name(t)));
     if(!tab) return 0;
     try { tab.click(); } catch (e) { return 'ERR:'+e.message; }
     return 'clicked';

@@ -46,13 +46,15 @@ send_journey_message "$seed" "insights overview seed - one persisted user turn"
 step "ok: seeded jrn session for the overview numbers"
 
 # the default home: the inspector strip names insights before any click
-# (exact case - capital I, the registry voice)
-default=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].map(e=>(e.textContent||"").trim());
- return t.includes("Insights")?1:0})()')
+# (exact case - capital I, the registry voice). card t_502b8e81: the
+# right edge renders ICON-ONLY chips - the name rides aria-label.
+default=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ return [...document.querySelectorAll(".dock-tab")].some((t)=>name(t)==="Insights")?1:0})()')
 assert_eq "$default" "1" "insights tab default-visible (capital I) in the inspector strip"
 
 # click it: the dashboard body carries the OVERVIEW block
-clicked=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab-title")].find(e=>(e.textContent||"").trim()==="Insights");
+clicked=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const t=[...document.querySelectorAll(".dock-tab")].find((t)=>name(t)==="Insights");
  if(!t) return 0; t.click(); return 1})()')
 assert_eq "$clicked" "1" "insights tab clicked"
 wait_js '(()=>{return (document.body.innerText||"").includes("OVERVIEW")})()' 15

@@ -15,15 +15,25 @@ tabs=$(jsq 'document.querySelectorAll(".dock-tab").length' 2>&1)
 [ "$panes" -ge 1 ] 2>/dev/null || die "no dock panes render ($panes)"
 step "ok: panes render ($panes panes, $tabs dock tabs)"
 
-# the inspector exposes the seven fixed tabs (count the misses)
-missing=$(jsq '["Files","Cron","Logs","Skills","Tools","Settings","Kanban"].filter(t => !Array.from(document.querySelectorAll("button, [role=tab], .dock-tab")).some(b => (b.innerText || "").trim() === t)).length' 2>&1)
-assert_eq "$missing" "0" "all seven inspector tabs render"
+# the inspector exposes the registry's fixed tabs (count the misses).
+# card t_502b8e81: pinned shells render ICON-ONLY chips - the name rides
+# aria-label, never .dock-tab-title text. Logs left the inspector
+# (bottom-hosted, 3dbb9c5); the modules registry joined Agents/Modules/
+# Insights - the strip IS the registry list the drawer derives from.
+missing=$(jsq '["Files","Cron","Skills","Tools","Agents","Continuous","Settings","Kanban","Modules","Insights"].filter(t => ![...document.querySelectorAll(".dock-pane.pinned .dock-tab")].some(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === t)).length' 2>&1)
+assert_eq "$missing" "0" "every registry inspector tab renders with its name"
+# the chip law itself: no pinned-shell tab may render text-only chrome
+titled=$(jsq 'document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom):not(.edge-left) .dock-tab .dock-tab-title").length' 2>&1)
+[ "$titled" = "0" ] 2>/dev/null || die "an edge shell renders a text tab where the chip law says icon-only ($titled)"
 
-# the Files tab opens real pane content
-ab find text "Files" click >/dev/null 2>&1 || die "Files tab not clickable"
+# the Files tab opens real pane content (click the chip by its aria name;
+# the tree body asserts the pane, not the tab's text - icon chips carry
+# none)
+clicked=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Files");if(!t) return 0;t.click();return 1})()' 2>&1)
+assert_eq "$clicked" "1" "Files tab clickable by its name"
 sleep 1
-files=$(jsq 'document.querySelectorAll("[data-pane-id]").length >= 1 && document.body.innerText.includes("Files") ? 1 : 0' 2>&1)
-assert_eq "$files" "1" "Files tab renders content"
+files=$(jsq 'document.querySelector(".inspector-files")?1:0' 2>&1)
+assert_eq "$files" "1" "Files tab renders the file tree"
 
 # the sessions lock: a synthetic HTML5 drag attempt (dragstart/dragover/
 # drop between the sidebar pane's tab and the pane tabbar) must not tear
@@ -46,8 +56,9 @@ step "ok: sessions lock held under synthetic tab DnD"
 #      button's result, automatic) - no empty pane, no remove button left.
 before=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 split=$(jsq '(() => {
+  const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
   const tab=[...document.querySelectorAll(".dock-tab")]
-    .find(t=>(t.querySelector(".dock-tab-title")?.textContent||"").trim()==="Files");
+    .find(t=>name(t)==="Files");
   if (!tab) return "no-files-tab";
   const dt=new DataTransfer();
   tab.dispatchEvent(new DragEvent("dragstart",{dataTransfer:dt,bubbles:true}));
