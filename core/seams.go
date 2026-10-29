@@ -194,6 +194,15 @@ type SkillsProvider interface {
 	LoadSkills(dir string) ([]Skill, error)
 }
 
+// SkillsReader is the single-content read seam (card t_36ceb99b, the
+// webui's skill viewer tab): read one skill's SKILL.md by name, resolved
+// the same way the merge law resolves every read (shared dir first, own
+// dir second). The webui's GET /skills/content checks for it the way
+// /skills checks for SkillsLister - a host without it answers 501.
+type SkillsReader interface {
+	ReadSkill(name string) (Skill, error)
+}
+
 // LoggerProvider is the logging seam. Extensions call it to write
 // log entries. The default implementation writes to a file in
 // OMEGA_HOME; a no-op implementation is used when logging is disabled.
