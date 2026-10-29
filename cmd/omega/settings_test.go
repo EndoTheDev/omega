@@ -98,15 +98,16 @@ const testConfigYAML = "provider:\n  model_name: test-model\n"
 func TestApplySettingValuesTyped(t *testing.T) {
 	cfg := DefaultConfig()
 	err := applySettingValues(&cfg, map[string]any{
-		"provider.host":         "  http://host:1234  ",
-		"provider.type":         " OpenAI ",
-		"server.port":           float64(9000),
-		"compaction.enabled":    false,
-		"compaction.threshold":  0.75,
-		"compaction.keep_first": float64(3),
-		"http_timeout":          float64(120),
-		"notifications":         "OFF",
-		"logging.file":          "x.log",
+		"provider.host":            "  http://host:1234  ",
+		"provider.type":            " OpenAI ",
+		"server.port":              float64(9000),
+		"compaction.enabled":       false,
+		"compaction.threshold":     0.75,
+		"compaction.keep_first":    float64(3),
+		"http_timeout":             float64(120),
+		"notifications":            "OFF",
+		"logging.file":             "x.log",
+		"server.default_workspace": t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -138,6 +139,17 @@ func TestApplySettingValuesTyped(t *testing.T) {
 	if cfg.Logging.File != "x.log" {
 		t.Errorf("logging.file: %q", cfg.Logging.File)
 	}
+	if cfg.Server.DefaultWorkspace == "" {
+		t.Error("default_workspace not applied from an existing absolute dir")
+	}
+	// an empty value clears the knob (the cwd fallback stands)
+	err = applySettingValues(&cfg, map[string]any{"server.default_workspace": ""})
+	if err != nil {
+		t.Fatalf("apply clear: %v", err)
+	}
+	if cfg.Server.DefaultWorkspace != "" {
+		t.Errorf("default_workspace empty clear: got %q", cfg.Server.DefaultWorkspace)
+	}
 }
 
 func TestApplySettingValuesErrors(t *testing.T) {
@@ -155,6 +167,8 @@ func TestApplySettingValuesErrors(t *testing.T) {
 		{"bool as string", map[string]any{"compaction.enabled": "yes"}, "true or false"},
 		{"bad notifications", map[string]any{"notifications": "morse"}, "bell, desktop, off"},
 		{"string where number", map[string]any{"http_timeout": "120s"}, "whole number"},
+		{"default workspace relative", map[string]any{"server.default_workspace": "rel/path"}, "must be an absolute path"},
+		{"default workspace missing", map[string]any{"server.default_workspace": "/omega-definitely-not-here"}, "no such file or directory"},
 		// gated knobs: the hot-PUT path never writes these, and the
 		// error names config.yaml as the only door
 		{"api_key write", map[string]any{"provider.api_key": "sk-x"}, "config.yaml"},
@@ -300,15 +314,24 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 
 func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	comp := &compactor.Compactor{}
-	pctx := &agent.Context{Compactor: comp}
+	// the settings-echo channel stub: the files surface's default
+	// workspace rides the mounted channels (t_a5f9d185) - a channel
+	// implementing the SetDefaultWorkspace seam must receive the save.
+	pushed := ""
+	ch := echoChannel{got: &pushed}
+	pctx := &agent.Context{Compactor: comp, Channels: []core.Channel{ch}}
 	cfg := DefaultConfig()
 	cfg.HTTPTimeout = 42
 	cfg.Compaction.Enabled = false
 	cfg.Compaction.KeepLast = 7
+	cfg.Server.DefaultWorkspace = "/tmp/lane"
 	hotApply(cfg, pctx)
 
 	if got := ai.HTTPClient().Timeout; got != 42*time.Second {
 		t.Errorf("http client timeout %v, want 42s", got)
+	}
+	if pushed != "/tmp/lane" {
+		t.Errorf("SetDefaultWorkspace seam: channel received %q, want /tmp/lane (the hot-apply must push to mounted channels)", pushed)
 	}
 	// the compactor honors the saved config on every Compact call:
 	// disabled compaction returns the input untouched regardless of size
@@ -324,6 +347,19 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	// nil context must not panic
 	hotApply(cfg, nil)
 }
+
+// echoChannel records the default_workspace push (the seam shape
+// http_channel's *HTTPChannel implements).
+type echoChannel struct {
+	got *string
+}
+
+func (e echoChannel) Start(ctx context.Context, deps core.ChannelDeps) error { //nolint:revive // test stub
+	return nil
+}
+func (e echoChannel) Stop() error                   { return nil } //nolint:whitespace // test stub
+func (e echoChannel) Name() string                  { return "echo" }
+func (e echoChannel) SetDefaultWorkspace(ws string) { *e.got = ws }
 
 func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML)

@@ -107,8 +107,8 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value: cfg.Server.RunTimeout,
 					Help:  "wall-clock cap per detached chat run, in seconds; applies on restart"},
 				{Key: "server.default_workspace", Label: "default workspace", Type: "text",
-					Value: cfg.Server.DefaultWorkspace,
-					Help:  "absolute path; the Files tab roots here when the focused session has no pinned workspace; empty = the process working directory; applies live"},
+					Value: cfg.Server.DefaultWorkspace, Live: true,
+					Help: "absolute path; the Files tab roots here when the focused session has no pinned workspace; empty = the process working directory; applies live"},
 			},
 		},
 		{
