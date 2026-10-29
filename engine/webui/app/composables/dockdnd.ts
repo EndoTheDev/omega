@@ -18,13 +18,91 @@ export interface TabDragInfo {
 
 let current: TabDragInfo | null = null;
 
+// --- gesture ownership (card t_b2430179) ------------------------------------
+// The gesture record is GLOBALLY owned, not instance-owned. The failure this
+// replaces: DockPane used to arm window-level dragend/drop/keydown backstops
+// per pane INSTANCE and cleared the module globals from them - a pane that
+// unmounted (a rekey, a prune, any mid-gesture re-render) took the only
+// closer with it, and the armed tabDrag/ghost state survived into the next
+// gesture. The guard below is ONE window-level listener set, installed once
+// for the page lifetime by the composable itself: no instance death or
+// re-render can orphan the cleanup, because nothing instance-owned ever
+// armed it.
+type GestureEndHandler = () => void;
+const gestureEndHandlers = new Set<GestureEndHandler>();
+
+/** subscribe to every gesture end (window dragend / drop / Esc / blur, or a
+    layout mutation while armed). The unsubscribe fn makes it safe to
+    call from onMounted (the instance dies, its cleanup dies with it -
+    the GLOBAL record does not). */
+export function onGestureEnd(handler: GestureEndHandler): () => void {
+  gestureEndHandlers.add(handler);
+  return () => {
+    gestureEndHandlers.delete(handler);
+  };
+}
+
+/** the ONE global clear: the gesture record dies and every subscriber
+    (the ghost registry, each live pane's local highlights) hears it.
+    Idempotent - running with nothing armed still rings the subscribers so
+    a stale highlight never outlives its gesture. */
+export function endGesture(): void {
+  current = null;
+  for (const handler of [...gestureEndHandlers]) handler();
+}
+
+/** the guard's event target - the real `window` in the SPA, an injectable
+    EventTarget in node tests (node's globalThis is not an EventTarget). */
+interface GuardTarget {
+  addEventListener(type: string, listener: (e: Event) => void): void;
+  removeEventListener(type: string, listener: (e: Event) => void): void;
+}
+let guardTarget: GuardTarget | null =
+  typeof window !== "undefined" ? (window as unknown as GuardTarget) : null;
+let installedAt: GuardTarget | null = null;
+
+/** tests inject a stub target; a target swap re-installs exactly once */
+export function setGestureTarget(target: GuardTarget | null): void {
+  if (installedAt && installedAt !== (target as unknown as GuardTarget | null)) {
+    installedAt.removeEventListener("dragend", onGuardEnd);
+    installedAt.removeEventListener("drop", onGuardEnd);
+    installedAt.removeEventListener("keydown", onGuardKey);
+    installedAt.removeEventListener("blur", onGuardEnd);
+    installedAt = null;
+  }
+  guardTarget = target;
+  ensureGuard();
+}
+
+function ensureGuard(): void {
+  if (!guardTarget || installedAt === guardTarget) return;
+  guardTarget.addEventListener("dragend", onGuardEnd);
+  guardTarget.addEventListener("drop", onGuardEnd);
+  guardTarget.addEventListener("keydown", onGuardKey);
+  guardTarget.addEventListener("blur", onGuardEnd);
+  installedAt = guardTarget;
+}
+function onGuardEnd(): void {
+  endGesture();
+}
+function onGuardKey(e: Event): void {
+  if ((e as KeyboardEvent).key === "Escape" && current) endGesture();
+}
+
 export const tabDrag = {
-  current: (): TabDragInfo | null => current,
+  current(): TabDragInfo | null {
+    return current;
+  },
+  /** a gesture begins: ANY stale record dies first - a new gesture never
+      inherits a poisoned hit-test (the record must never outlive its
+      event, and the first act of the next event is this overwrite) */
   start(info: TabDragInfo): void {
+    endGesture();
     current = info;
+    ensureGuard();
   },
   end(): void {
-    current = null;
+    endGesture();
   },
 };
 
