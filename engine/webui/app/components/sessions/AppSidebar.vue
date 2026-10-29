@@ -307,7 +307,14 @@
     if (ephemeral) emit("new-ephemeral");
     else emit("new");
   }
-  function onDocClick() {
+  function onDocClick(e: MouseEvent) {
+    // card t_902f7ba5: the OPEN path is a race - the watch adds this
+    // listener while the opening click is still dispatching, so the
+    // very event that opened the menu reaches document here and
+    // self-closes it (real pointer input reproduces it 100%; element
+    // .click() mostly doesn't). A pointer inside the split button
+    // belongs to the toggle - it never counts as clickaway.
+    if ((e.target as Element | null)?.closest?.(".new-btn")) return;
     newMenuOpen.value = false;
   }
   watch(newMenuOpen, (open) => {
