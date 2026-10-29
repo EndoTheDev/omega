@@ -19,25 +19,25 @@ import (
 
 // ServerStatus is the wire view of one configured MCP server.
 type ServerStatus struct {
-	Name      string   `json:"name"`
+	Name string `json:"name"`
 	// Transport names the config's transport: "http" (a url entry),
 	// "stdio" (a command entry), "" (neither - the entry is invalid
 	// and was never connected).
-	Transport string   `json:"transport,omitempty"`
-	Command   string   `json:"command,omitempty"`
-	URL       string   `json:"url,omitempty"`
-// Connected is true when a live connection survived the LIVE bridge's
-// connect (the bridge never reconnects a server in place - a reload
-// swaps the whole bridge, card t_d6e94e79).
-	Connected bool     `json:"connected"`
+	Transport string `json:"transport,omitempty"`
+	Command   string `json:"command,omitempty"`
+	URL       string `json:"url,omitempty"`
+	// Connected is true when a live connection survived the LIVE bridge's
+	// connect (the bridge never reconnects a server in place - a reload
+	// swaps the whole bridge, card t_d6e94e79).
+	Connected bool `json:"connected"`
 	// Error carries the connect/tools-list failure, empty when the
 	// server is healthy. A configured-but-unconnectable server stays
 	// listed instead of vanishing into a stderr line.
-	Error     string   `json:"error,omitempty"`
+	Error string `json:"error,omitempty"`
 	// Tools lists the server-qualified names ("server.mcp-tool") the
 	// bridge discovered - the identities the tool registry and the
 	// namespace guard carry. Unsorted source, sorted view.
-	Tools     []string `json:"tools,omitempty"`
+	Tools []string `json:"tools,omitempty"`
 }
 
 // StatusReport is the GET /mcp/servers body. Source echoes where the
