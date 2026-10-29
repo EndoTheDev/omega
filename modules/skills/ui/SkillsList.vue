@@ -3,6 +3,28 @@
     ref="rootEl"
     class="skills-list"
     :class="{ narrow: narrow }">
+    <!-- card t_ec57d5b8: the toolbar row, the FilesTab pattern - the
+         title flush LEFT, the refresh action flush RIGHT on ONE row
+         (the same -8px dock-pane tuck the Files header clears, so the
+         same 14px lead-in). The click re-runs the fetch chain: GET
+         /skills is a live scan, so a skill added after mount appears -
+         no restart. -->
+    <div
+      class="skills-header"
+      role="toolbar"
+      aria-label="skills actions">
+      <h3 class="panel-title">skills</h3>
+      <button
+        class="skills-tool"
+        title="refresh"
+        aria-label="refresh skills"
+        :disabled="refreshing"
+        @click="refresh">
+        <Icon
+          name="refresh"
+          :size="13" />
+      </button>
+    </div>
     <p
       v-if="error"
       class="panel-status">
@@ -35,23 +57,23 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
+  import { refreshSkills, type SkillInfo } from "./refresh";
 
   // Module-owned UI (card t_db430fea): the loaded skill inventory,
   // from GET /skills, plus the per-skill enable/disable toggle
-  // (v0.14.1) against the /disabled fold. Self-contained fetch: a
+  // (v0.14.1) against the /disabled fold. Self-contained wiring: a
   // module's UI carries its own wiring so it can ride the desktop /
-  // VS Code builds alone (ToolsList precedent) - the flag merge and
-  // the toggle PUT are small deliberate copies (the narrow.ts copy
-  // law), the SHARED thing is the RegistryList component.
-  interface SkillInfo {
-    name: string;
-    description: string;
-  }
+  // VS Code builds alone (ToolsList precedent) - the fetch chain
+  // lives in ./refresh.ts (the reload.ts precedent, card t_d6e94e79)
+  // and the SHARED thing is the RegistryList component.
   const skills = ref<SkillInfo[]>([]);
   const fold = ref<string[]>([]);
   const loaded = ref(false);
   const error = ref("");
   const busy = ref<string | null>(null);
+  // the refresh button's lock: a second click while a chain is in
+  // flight is dropped (the in-flight chain answers)
+  const refreshing = ref(false);
   const toggleError = ref<string | null>(null);
   // false when the host serves no toggle seam (501 on /disabled): the
   // list stays, read-only.
@@ -93,24 +115,34 @@
   }
 
   async function load(): Promise<void> {
-    const res = await fetch("/skills");
-    if (!res.ok) throw new Error(`GET /skills: ${res.status}`);
-    skills.value = await res.json();
+    applyInventory(await refreshSkills());
+  }
+
+  // server truth lands on the tab: the skills list always (the caller
+  // only gets a resolved update when GET /skills succeeded), the fold
+  // and the toggle flag only when the /disabled read landed - a miss
+  // (501, unreachable, refusal) keeps the shown fold stable.
+  function applyInventory(u: Awaited<ReturnType<typeof refreshSkills>>): void {
+    skills.value = u.skills;
+    if (u.fold !== null) fold.value = u.fold;
+    if (u.toggleable !== null) toggleable.value = u.toggleable;
+  }
+
+  // the refresh (card t_ec57d5b8): re-run the fetch chain without a
+  // remount - GET /skills is a live scan, so a skill added after
+  // mount appears. A failure lands on the panel's existing error line
+  // and the current rows stand; the fold re-read (or the same miss
+  // rules as the mount) keeps the enabled/disabled state stable.
+  async function refresh(): Promise<void> {
+    if (refreshing.value) return;
+    refreshing.value = true;
     try {
-      const dRes = await fetch("/disabled");
-      if (dRes.status === 501) {
-        toggleable.value = false; // no seam: read-only
-      } else if (dRes.ok) {
-        const foldBody = (await dRes.json())?.skills;
-        fold.value = Array.isArray(foldBody)
-          ? foldBody.filter((n): n is string => typeof n === "string")
-          : [];
-        toggleable.value = true;
-      }
-    } catch {
-      // /disabled unreachable is not fatal to the LIST; stay read-only
-      // rather than guessing the fold state
-      toggleable.value = false;
+      applyInventory(await refreshSkills());
+      error.value = "";
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      refreshing.value = false;
     }
   }
 
@@ -187,6 +219,45 @@
 <style scoped>
   .skills-list {
     padding: 10px 12px 14px;
+  }
+  /* the toolbar row (card t_ec57d5b8): title left, refresh flush right,
+     one row - the FilesTab header pattern with the module's own copy
+     (module UI imports no shell code, the narrow.ts copy law). The
+     14px lead-in clears the same -8px dock-pane tuck the Files header
+     clears (card t_5c660a42). */
+  .skills-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 14px 0 4px;
+  }
+  .panel-title {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.5;
+  }
+  .skills-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: var(--r-chip);
+    cursor: pointer;
+  }
+  .skills-tool:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+  .skills-tool:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .panel-status {
     margin: 0;
