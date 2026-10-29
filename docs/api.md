@@ -34,6 +34,7 @@ documented below that is not in that mux is not real.
 | `/notifications/events`              | GET        | SSE record stream (the public API surface; the webui's toasts ride the canvas) |
 | `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector |
 | `/tools`                             | GET        | tool inventory                                 |
+| `/mcp/servers`                        | GET        | configured MCP servers (name, transport, mount-time connection state, recorded failure, server-qualified tools) |
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501) |
 | `/skills`                            | GET        | loaded skills (name + description only)        |
 | `/commands`                          | GET        | extension command registry (palette rows)      |

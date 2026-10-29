@@ -42,6 +42,7 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "extensions",
   "insights",
+  "mcp",
   // v0.14.3: "canvas" left the registry with its tab (the fold ruling:
   // v0.14.2's module rows carry every module panel; the chat transcript
   // and the toast funnel kept their own homes - the generic host tab
@@ -263,6 +264,22 @@ export const DOCKABLES: readonly DockableComponent[] = [
     id: "insights",
     title: "Insights",
     icon: "insights",
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    // card t_c7136c50: the MCP tab - the configured MCP servers as the
+    // bridge sees them (name, transport, mount-time connection state,
+    // per-server failure, discovered server-qualified tools), listed
+    // from GET /mcp/servers. The panel body is the module's own
+    // (modules/mcp/ui, the composition mount); the registry entry only
+    // opens the inspector tab - no mcp vocabulary beyond that. Read-
+    // only: enable/disable stays config.yaml domain. Unclosable like
+    // every inspector view.
+    id: "mcp",
+    title: "MCP",
+    icon: "mcp",
     policy: "singleton",
     area: "right",
     closable: false,

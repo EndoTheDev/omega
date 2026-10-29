@@ -38,6 +38,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pencil,
+  PlugZap,
   Puzzle,
   RefreshCw,
   ScrollText,
@@ -72,6 +73,7 @@ export const ICONS = {
   kanban: Kanban, // the board
   extensions: Puzzle, // the module cockpit tab
   insights: ChartColumn, // usage bars
+  mcp: PlugZap, // the MCP servers tab (bridge connections + tools)
   // default glyph for modules that declare no icon of their own
   module: Box,
   // shell chrome
