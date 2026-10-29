@@ -35,17 +35,33 @@
           class="cron-meta">next {{ shortTime(j.next) }}</span>
       </li>
     </ul>
-    <p
+    <!-- card t_6072e718: the empty state is the designed pattern, not a
+         bare corner status line - centered in the panel body, the cron
+         clock glyph above the headline, and the crons.yaml activation
+         hint below it. Activation is a file action, so there is no
+         call-to-action button. The constants live in emptyState.ts (the
+         composition-test convention: the node suite pins them without
+         compiling this SFC). -->
+    <div
       v-else
-      class="panel-status">
-      no cron jobs (crons.yaml not activated)
-    </p>
+      class="cron-empty">
+      <Icon
+        class="cron-empty-icon"
+        name="cron"
+        :size="20" />
+      <p class="cron-empty-text">{{ CRON_EMPTY_TEXT }}</p>
+      <p class="cron-empty-hint">{{ CRON_EMPTY_HINT }}</p>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
   import { onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
+  // the empty-state copy lives in its own PURE module (card t_6072e718,
+  // the serverRows.ts / boardLogic.ts convention): the node suite pins
+  // it without compiling this SFC.
+  import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "./emptyState";
 
   // Module-owned UI (card t_db430fea): the cron scheduler's job set,
   // from GET /cron/jobs. READ-ONLY v1 by settled decision - names,
@@ -123,11 +139,47 @@
 <style scoped>
   .cron-list {
     padding: 10px 12px 14px;
+    /* the empty state centers vertically in the panel body: the root
+       owns the full height of the .module-panels scroll region (card
+       t_6072e718). With jobs the list just does not stretch. */
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    box-sizing: border-box;
   }
   .panel-status {
     margin: 0;
     font-size: 11px;
     opacity: 0.6;
+  }
+  /* card t_6072e718: the designed empty state. Flexes to the body's full
+     height and centers its glyph + copy both axes; the colors ride the
+     shell variables so both themes read right (module UI carries its own
+     scoped CSS, no main.css edit). */
+  .cron-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 24px 12px;
+    text-align: center;
+  }
+  .cron-empty-icon {
+    color: var(--text-dim, #8a8a92);
+    opacity: 0.8;
+    margin-bottom: 6px;
+  }
+  .cron-empty-text {
+    margin: 0;
+    font-size: 12.5px;
+    opacity: 0.75;
+  }
+  .cron-empty-hint {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: var(--text-dim, #8a8a92);
   }
   .cron-jobs {
     list-style: none;
