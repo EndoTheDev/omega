@@ -1,7 +1,9 @@
 package http_channel
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -13,12 +15,14 @@ import (
 )
 
 // Read-only file surface for the webui inspector: browse and preview the
-// process working directory. Strictly GET - no write, delete, or exec
-// path exists on this surface. Path safety has three layers enforced on
-// every request: absolute paths and empty segments are rejected, ANY
-// segment starting with "." is rejected (hidden files and .. traversal
-// die under one rule), and the cleaned path is symlink-resolved and
-// verified to stay under the root before the disk is touched.
+// process working directory. GET routes only - then the write half (card
+// t_a4504a25, the Files tab toolbar's add-file/add-folder): POST
+// /files/write and POST /files/mkdir create nodes INSIDE the same root,
+// guarded by the SAME three layers the read half enforces: relative
+// paths and empty segments are rejected, ANY segment starting with "."
+// is rejected (hidden files and .. traversal die under one rule), and
+// the cleaned path is symlink-resolved and verified to stay under the
+// root before the disk is touched.
 
 // fileReadCap is the preview size cap: contents are cut at 64 KiB and
 // the truncated flag tells the UI the cut happened.
@@ -245,4 +249,150 @@ func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 		"truncated": truncated,
 		"binary":    binary,
 	})
+}
+
+// filesPostCap caps every POST body on the file surface: the path and
+// the file content ride one JSON envelope, and an unbounded Decode
+// before validation is a DoS seam on the same class as an unjiled path.
+const filesPostCap = 1 << 20 // 1 MiB
+
+// filesPostBody decodes the JSON request body of the file surface's
+// POST handlers into dst, capped at filesPostCap+1 bytes so an
+// oversized body fails loudly instead of silently truncating mid-JSON.
+// Writes the method-405 / decode-400 envelope and returns false when
+// the request never reaches the handler's real body of work.
+func filesPostBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, filesPostCap+1)).Decode(dst); err != nil {
+		fileError(w, http.StatusBadRequest, "decode body: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// errUncontained marks the write half's request-fault refusals: a path
+// the segment or containment rules reject is the CALLER's malformed
+// request (400), while anything else failing to resolve is the server's
+// (500) - the same split the browse handler draws on status codes.
+var errUncontained = errors.New("unjiled path")
+
+// resolveForWrite runs the shared root jail over a write request's
+// path: segment validation, symlink resolution, containment - the exact
+// pair resolveUnderRoot + ensureUnderRoot the browse/read handlers run,
+// never a copy. Returns the root-relative path and the resolved
+// absolute path.
+func resolveForWrite(root, req string) (rel, resolved string, err error) {
+	rel, err = validateRelPath(req)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: %v", errUncontained, err)
+	}
+	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
+	if rerr != nil {
+		// fail closed: no containment verdict, no disk write. A missing
+		// leaf or parent is the caller's made-up path (loud 400); the
+		// vanished-working-directory edge rides the same refusal - the
+		// write never happens either way.
+		if os.IsNotExist(rerr) {
+			return "", "", fmt.Errorf("%w: %v", errUncontained, rerr)
+		}
+		return "", "", rerr
+	}
+	if err := ensureUnderRoot(realRoot, resolved); err != nil {
+		return "", "", fmt.Errorf("%w: %v", errUncontained, err)
+	}
+	return rel, resolved, nil
+}
+
+// handleFilesWrite serves POST /files/write {path, content}: creates or
+// overwrites one file inside the working directory. An empty name is a
+// loud 400 - there is no "write the root". The parent directory must
+// already exist (the toolbar's add-folder button makes it), the leaf
+// must not be a directory, and empty content is a legal empty file.
+func (s *Server) handleFilesWrite(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if !filesPostBody(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		fileError(w, http.StatusBadRequest, "empty path")
+		return
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
+		return
+	}
+	rel, resolved, err := resolveForWrite(root, body.Path)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errUncontained) {
+			status = http.StatusBadRequest
+		}
+		fileError(w, status, err.Error())
+		return
+	}
+	if info, serr := os.Stat(resolved); serr == nil && info.IsDir() {
+		fileError(w, http.StatusBadRequest, "is a directory")
+		return
+	}
+	parent, perr := os.Stat(filepath.Dir(resolved))
+	if perr != nil || !parent.IsDir() {
+		if perr == nil {
+			perr = errors.New("parent is not a directory")
+		}
+		fileError(w, http.StatusBadRequest, "parent directory: "+perr.Error())
+		return
+	}
+	if werr := os.WriteFile(resolved, []byte(body.Content), 0o644); werr != nil {
+		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": rel})
+}
+
+// handleFilesMkdir serves POST /files/mkdir {path}: creates one folder
+// inside the working directory. Empty and existing names are loud 400s;
+// the leaf chain must already exist above the leaf - the same resolution
+// rule the write half runs under (no made-up parent chains, no symlinks
+// smuggled through a half-existing path).
+func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if !filesPostBody(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		fileError(w, http.StatusBadRequest, "empty path")
+		return
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
+		return
+	}
+	rel, resolved, err := resolveForWrite(root, body.Path)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errUncontained) {
+			status = http.StatusBadRequest
+		}
+		fileError(w, status, err.Error())
+		return
+	}
+	if _, serr := os.Stat(resolved); serr == nil {
+		fileError(w, http.StatusBadRequest, "already exists")
+		return
+	}
+	if err := os.MkdirAll(resolved, 0o755); err != nil {
+		fileError(w, http.StatusInternalServerError, "create directory: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": rel})
 }

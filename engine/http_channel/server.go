@@ -228,6 +228,10 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
 	mux.HandleFunc("/files/read", s.handleFilesRead)
+	// card t_a4504a25: the Files tab toolbar's write half - add file /
+	// add folder. Same root jail as the GET half, POST-only bodies.
+	mux.HandleFunc("POST /files/write", s.handleFilesWrite)
+	mux.HandleFunc("POST /files/mkdir", s.handleFilesMkdir)
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/workspaces/files", s.handleWorkspaceFiles)
 	mux.HandleFunc("/tools", s.handleTools)
