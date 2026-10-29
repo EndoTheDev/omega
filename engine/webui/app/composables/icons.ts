@@ -25,11 +25,11 @@ import {
   Folder,
   FolderOpen,
   GitFork,
+  History,
   Kanban,
   MessageSquare,
   PanelBottomClose,
   PanelBottomOpen,
-  PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -51,7 +51,11 @@ import type { LucideIcon } from "lucide-vue-next";
 // same icon. Adding an icon: one entry here, then `name` at the call site.
 export const ICONS = {
   // the dock registry (dockables.ts DOCKABLES[].icon)
-  sidebar: PanelLeft, // the sessions pane (locked left tab)
+  // card t_902f7ba5: the glyph says SESSIONS, not "panel edge" - the
+  // pane is the conversations list, so it carries the history clock.
+  // The KEY stays "sidebar": that is the dock registry's pinned-left
+  // component id (pure-string contract, icons.ts comment).
+  sidebar: History, // the sessions pane (locked left tab)
   chat: MessageSquare, // a chat tab / "new chat"
   files: Folder, // the file browser tab
   cron: Clock, // wake schedules

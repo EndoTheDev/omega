@@ -84,3 +84,32 @@ describe("AppSidebar: the caret affordance (card t_a0a466c6)", () => {
     );
   });
 });
+
+describe("AppSidebar: the caret opens on a real click (card t_902f7ba5)", () => {
+  // the suite has no DOM, so the real-pointer repro lives outside it
+  // (live driver proof, 10 consecutive real clicks on the caret). What
+  // the suite CAN pin is the mechanism that made real clicks die: the
+  // clickaway listener catching its own opening event. The guard is
+  // the contract - a pointer inside .new-btn is the toggle, never
+  // clickaway, and the guard must return BEFORE the close.
+  it("the clickaway listener guards against its own opening click", () => {
+    const body =
+      sidebar.match(/function onDocClick\([^)]*\)\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+    assert.ok(body.trim().length > 0, "onDocClick exists");
+    assert.match(
+      body,
+      /closest\?\.\(\s*["'`]\.new-btn["'`]\s*\)/,
+      "the guard: a click inside the split button never counts as clickaway",
+    );
+    assert.ok(
+      body.indexOf("closest") >= 0 &&
+        body.indexOf("closest") < body.indexOf("newMenuOpen.value = false"),
+      "the guard returns before the close runs",
+    );
+    assert.match(
+      body,
+      /newMenuOpen\.value = false/,
+      "clickaway still closes the menu on real outside clicks",
+    );
+  });
+});
