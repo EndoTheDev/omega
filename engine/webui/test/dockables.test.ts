@@ -156,6 +156,7 @@ describe("the dockable registry", () => {
           d.title === "Settings" && d.id === "settings" ||
           d.title === "Insights" && d.id === "insights" ||
           d.title === "MCP" && d.id === "mcp" ||
+          d.title === "Notifications" && d.id === "notifications" ||
           d.title === d.id,
         `${d.id}: unexpected label "${d.title}"`,
       );
@@ -195,7 +196,7 @@ describe("the dockable registry", () => {
     assert.deepEqual([...closable].sort(), ["chat", "viewer"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector ELEVEN pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp)", () => {
+  it("the fixed sidebars: sidebar pinned left, the inspector TWELVE pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications)", () => {
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
       ["sidebar"],
@@ -204,19 +205,19 @@ describe("the dockable registry", () => {
     // tools, settings, kanban, extensions, insights, mcp (logs = the
     // http_channel module id; extensions joined last at t_14f73742;
     // insights joined the right shell at t_d7fd3ad3; mcp joined last
-    // at t_c7136c50)
+    // at t_c7136c50; notifications joined last at t_180db2cb)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the eleven",
+      "no X on any of the twelve",
     );
   });
 
@@ -459,7 +460,7 @@ describe("dock store: the pane-model reset", () => {
       // insights AFTER the restored set - the modernized v1 strip ends
       // [extensions, mcp, insights]. The fresh-tree default stays
       // canonical (dock.test.ts).
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "notifications", "insights"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes; the record
@@ -496,7 +497,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -555,7 +556,7 @@ describe("dock store: the pane-model reset", () => {
       // same lift-and-reseat shape as the pre-reset modernize above: the
       // parked-settings era tree loses the main-pane insights copy and
       // restoreInspectorSet re-seats it after the restored mcp
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "notifications", "insights"],
     );
   });
 
@@ -706,8 +707,8 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,skills,tools,agents,settings,kanban,extensions,insights,mcp",
-      "none of the ten may close (logs left the strip - Endo's comment 2026-10-26)",
+      "files,cron,skills,tools,agents,settings,kanban,extensions,insights,mcp,notifications",
+      "none of them may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read
     // (t_b620f99d: the last-main-pane law protects the pane, not tabs)

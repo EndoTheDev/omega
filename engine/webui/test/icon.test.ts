@@ -34,10 +34,13 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
   const set = new Set(ICON_NAMES as readonly string[]);
   for (const expected of [
     "sidebar", "files", "cron", "logs", "skills", "tools", "agents",
-    "settings", "kanban", "extensions", "insights",
+    "settings", "kanban", "extensions", "insights", "inbox",
   ]) {
     assert.ok(set.has(expected), `the tab vocabulary carries "${expected}"`);
   }
+  // card t_180db2cb (deletability): the bell left the vocabulary with
+  // the chrome that carried it - the notifications tab is the inbox
+  assert.ok(!set.has("bell"), "the bell is not a vocabulary entry");
   // the chat blocks: thinking gets the brain, tool calls share the
   // tools-tab wrench (the card's one-meaning law)
   assert.ok(set.has("brain"), "thinking block glyph exists");
@@ -72,7 +75,8 @@ test("lucide-vue-next is imported ONLY by the iconset composable", () => {
     "app/components/files/FilesTab.vue",
     "app/components/files/InspectorPanel.vue",
     "app/components/files/rowicon.ts",
-    "app/components/notifications/NotificationCenter.vue",
+    "app/components/notifications/NotificationsPanel.vue",
+    "app/components/notifications/NotificationToasts.vue",
     "app/components/settings/SettingsTab.vue",
     "app/components/shell/ExtensionsTab.vue",
     "app/components/shell/MenuBar.vue",
@@ -96,7 +100,8 @@ test("zero hand-rolled inline SVG in application components", () => {
     "app/components/DockGhost.vue",
     "app/components/files/FileTree.vue",
     "app/components/files/rowicon.ts",
-    "app/components/notifications/NotificationCenter.vue",
+    "app/components/notifications/NotificationsPanel.vue",
+    "app/components/notifications/NotificationToasts.vue",
     "app/components/settings/SettingsTab.vue",
     "app/components/shell/ExtensionsTab.vue",
     "app/components/shell/MenuBar.vue",

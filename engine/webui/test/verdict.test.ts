@@ -317,11 +317,12 @@ test("VerdictCard renders the list layout and sends every answer shape", () => {
   assert.match(vue, /error\.value = e instanceof Error \? e\.message/, "the race reason renders (no silent retry)");
 });
 
-test("the notifications bell counts pending verdict cards", () => {
-  const bell = read("webui/app/components/notifications/NotificationCenter.vue");
-  assert.match(bell, /fetchVerdicts/, "the bell consumes the pending-cards listing");
-  assert.match(bell, /unread\.value \+ pending/, "the badge sums finished-things and pending questions");
-  assert.match(bell, /openVerdict/, "a pending card row routes to its chat session");
+test("the notifications badge counts pending verdict cards (card t_180db2cb)", () => {
+  const store = read("webui/app/components/notifications/store.ts");
+  assert.match(store, /fetchVerdicts/, "the feed store consumes the pending-cards listing");
+  assert.match(store, /unread\.value \+ pendingVerdicts\.value\.length/, "the badge sums finished-things and pending questions");
+  const panel = read("webui/app/components/notifications/NotificationsPanel.vue");
+  assert.match(panel, /openVerdict/, "a pending card row routes to its chat session");
 });
 
 test("chat.ts maps the card rows live and settles them from the result row", () => {

@@ -42,7 +42,12 @@ test("mcp is a registered inspector component: singleton, pinned right, unclosab
   assert.equal(d.closable, false, "unclosable like every inspector view");
   assert.ok(ICONS[d.icon], "the icon is an iconset name (the membership law)");
   assert.ok(MENU_DOCKABLES.includes("mcp"), "the '+' menu offers the tab");
-  assert.equal(INSPECTOR_TAB_COMPONENTS.at(-1), "mcp", "the inspector inventory carries it (joined last)");
+  // card t_180db2cb: notifications joined the inspector after mcp - mcp
+  // keeps its slot, the feed tab appended last (registry join order).
+  assert.ok(
+    INSPECTOR_TAB_COMPONENTS.includes("mcp"),
+    "the inspector inventory carries it (joined at t_c7136c50; notifications joined after, t_180db2cb)",
+  );
   // the icon key exists exactly once - one name one meaning
   const n = DOCKABLES.filter((x) => x.icon === "mcp").length;
   assert.equal(n, 1, "single registry entry owns the icon name");

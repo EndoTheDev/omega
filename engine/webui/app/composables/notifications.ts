@@ -74,7 +74,7 @@ export function notificationAge(created_at: string, nowMs = Date.now()): string 
   return `${Math.floor(h / 24)}d`;
 }
 
-// upsertRecord folds one live frame into the bell's list: the record
+// upsertRecord folds one live frame into the feed's list: the record
 // lands on top, a duplicate (the same id seen twice - a reconnect
 // replay) replaces its row instead of stacking, and the list stays
 // capped at cap so a chatty lane cannot grow it unbounded. Pure so the
@@ -94,6 +94,16 @@ export function upsertRecord(
 // 6s. Pure so the test pins the asymmetry.
 export function toastLifetime(verdict: "ok" | "failed"): number {
   return verdict === "failed" ? 12000 : 6000;
+}
+
+// notificationBadgeText renders the tab chip's unread badge (card
+// t_180db2cb): the count, "99+" beyond the cap, "" at zero (no badge
+// element renders at all - an empty chip is an empty chip). The same
+// voice the old bell button's chip spoke, rehomed onto the dockable's
+// icon. Pure so the node test pins the cap + the zero shape.
+export function notificationBadgeText(count: number): string {
+  if (count <= 0) return "";
+  return count > 99 ? "99+" : String(count);
 }
 
 // --- the board-select seam (card t_556ee727) -----------------------------

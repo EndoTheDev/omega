@@ -206,6 +206,17 @@
             v-if="!isMobile"
             class="pane" />
         </template>
+        <!-- card t_180db2cb: the notifications tab - the durable
+             finished-things feed rehomed from the top-right bell (which
+             died entirely), same data + rendering, mounted when its
+             inspector tab is active. The mount marks the feed read (the
+             tab chip's badge clears on open). -->
+        <template #pane-notifications>
+          <NotificationsPanel
+            v-if="!isMobile"
+            class="pane"
+            @open="openNotification" />
+        </template>
       </DockSplit>
     </div>
 
@@ -296,6 +307,14 @@
       <InsightsTab
         v-else-if="inspectorDrawerActiveId === 'insights'"
         class="pane" />
+      <!-- card t_180db2cb: the notifications feed panel seats through its
+           own branch like the other shell-owned tabs - the module
+           catch-all would render an empty InspectorPanel(module=
+           "notifications") body. -->
+      <NotificationsPanel
+        v-else-if="inspectorDrawerActiveId === 'notifications'"
+        class="pane"
+        @open="openNotification" />
       <!-- v0.14.3: the canvas drawer branch left with the tab (the fold
            ruling) - module panels seat through the module catch-all,
            chat + toasts keep their own surfaces -->
@@ -447,6 +466,9 @@
   // card t_e1e61680: insights joins the main area (registry: singleton,
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
+  // card t_180db2cb: the notifications dock tab (the durable feed; the
+  // bell entry point is gone) - desktop outlet + mobile drawer branch
+  import NotificationsPanel from "./components/notifications/NotificationsPanel.vue";
   import AgentsPanel from "./components/agents/AgentsPanel.vue";
   // card t_14f73742: the extensions inventory joins the inspector (registry:
   // singleton, pinned right) - the outlet renders it when its tab is active

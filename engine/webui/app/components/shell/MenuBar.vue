@@ -66,10 +66,13 @@
     <!-- the settings gear is GONE (card t_47b776ad): settings is a
          dock-tab singleton opened from the pane '+' menu, not the window
          chrome. -->
-    <!-- card t_5d9032d3: the notifications bell joins the right cluster
-         (rightmost at every breakpoint - card t_aca53fee). The open
-         intents re-emit to app.vue, which owns navigation. -->
-    <NotificationCenter @open="$emit('open-notification', $event)" />
+    <!-- card t_180db2cb (Endo ruling 2026-10-29): the bell is GONE -
+         the durable feed is the notifications dock tab; its unread
+         badge rides the dockable's icon chip. What the menubar keeps
+         hosting is the transient TOAST stack only (toasts STAY for live
+         events) - the open intents still re-emit to app.vue, which owns
+         navigation. -->
+    <NotificationToasts @open="$emit('open-notification', $event)" />
   </header>
 </template>
 
@@ -83,9 +86,10 @@
   import { DOCK_API_KEY, findEdgePane } from "../../composables/dock";
   // card t_502b8e81: the iconset wrapper - the toggles are panel-*-open/close
   import Icon from "../ui/Icon.vue";
-  // card t_5d9032d3: the finished-things bell (badge, dropdown panel,
-  // live toasts) - the shell hosts it, app.vue routes its open intents.
-  import NotificationCenter from "../notifications/NotificationCenter.vue";
+  // card t_180db2cb: the notifications surface is the notifications DOCK
+  // TAB (the panel lives in app.vue's outlet); the menubar hosts only
+  // the live toast stack (the bell button + popover died with it).
+  import NotificationToasts from "../notifications/NotificationToasts.vue";
 
   // card t_67fc1905: the bottom toggle is self-contained - reads + drives
   // the dock api directly (the sidebar toggles went through emits because

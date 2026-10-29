@@ -8,7 +8,7 @@
 import {
   Archive,
   ArchiveRestore,
-  Bell,
+  Inbox,
   Book,
   Box,
   Braces,
@@ -81,7 +81,7 @@ export const ICONS = {
   "panel-right-close": PanelRightClose,
   "panel-bottom-open": PanelBottomOpen,
   "panel-bottom-close": PanelBottomClose,
-  bell: Bell, // the notifications funnel
+  inbox: Inbox, // the notifications feed tab (the bell died with its chrome)
   brain: Brain, // the thinking block
   "chevron-down": ChevronDown, // collapsers (rotated per state)
   star: Star, // pinned sessions

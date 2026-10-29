@@ -597,6 +597,27 @@ body {
   padding: 0;
   justify-content: center;
 }
+/* card t_180db2cb: the notifications tab chip's unread badge - the bell
+   chip's voice (count, 99+ cap, mono digits) rehomed onto the dockable's
+   icon chip. Sits INSIDE the tab chip's own box (t_aca53fee's lesson: no
+   positioning overflow past the button edge to clip on); pointer-events
+   off - the click is the tab's. Theme vars only (t_11a9e160 lesson). */
+.dock-tab-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--accent);
+  color: #181818;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 12px;
+  min-width: 12px;
+  padding: 0 3px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 .dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
 .dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
 
