@@ -63,7 +63,11 @@ before_pane=$(jsq 'document.querySelector(".dock-pane:not(.pinned)")?.dataset.pa
 assert_eq "$(jsq 'document.querySelector(".composer")?1:0' 2>/dev/null | tail -1)" \
   "1" "chat composer renders before the click"
 
-js 'document.querySelector("#notif-bell").click()' >/dev/null
+# card t_180db2cb (bell dies): the notifications surface is the inspector's
+# notifications dock tab - open it by its chip (icon-only vocabulary,
+# t_502b8e81: match by aria-label/title, never .dock-tab-title).
+notifTab='(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")];const n=t.find((e)=>((e.getAttribute("aria-label")||"")||e.title||e.querySelector(".dock-tab-title")?.textContent||"").trim()==="Notifications");n&&n.click();return n?1:0})()'
+js "$notifTab" >/dev/null
 wait_js '(()=>{const r=[...document.querySelectorAll(".notif-list .notif-row")];return r.some((e)=>e.textContent.includes("'"$TID"'"))})()' 10 \
   || die "the task notification row never rendered"
 # click exactly the task's row (not the board, not a verdict row)
@@ -93,18 +97,21 @@ assert_eq "$(jsq 'document.querySelector(".composer")?1:0' 2>/dev/null | tail -1
 assert_eq "$(jsq 'document.querySelector(".board-pane")?1:0' 2>/dev/null | tail -1)" \
   "0" "no main-pane board overlay rendered"
 
-# the hidden-inspector path: hide the inspector, then the click reopens it
+# card t_180db2cb (bell dies): the bell is gone, so a hidden inspector has
+# NO notifications entry point - the tab lives inside the inspector. The
+# surviving contract: the toggle does not lose the inspector's state -
+# hide, re-show, the notifications tab still routes its rows.
 js 'document.querySelector("[aria-label=\"Toggle right sidebar\"]")?.click()' >/dev/null
 sleep 1
 assert_eq "$(jsq 'document.querySelector(".dock-pane.kind-files")?1:0' 2>/dev/null | tail -1)" \
   "0" "the inspector is hidden before the reopen"
-js 'document.querySelector("#notif-bell").click()' >/dev/null
-sleep 0.5
+js 'document.querySelector("[aria-label=\"Toggle right sidebar\"]")?.click()' >/dev/null
+wait_js "$notifTab" 10 || die "the notifications tab chip never re-rendered after the toggle"
 js "(()=>{const r=[...document.querySelectorAll('.notif-list .notif-row')].find((e)=>e.textContent.includes('$TID'));r&&r.click();return r?1:0})()" >/dev/null
-# the hidden inspector reopen: chip name via aria-label (same law)
+# the toggle round-trip: chip name via aria-label (same law)
 wait_js "(()=>{const t=[...document.querySelectorAll(\".dock-pane .dock-tab.active\")];return t.some((e)=>($chipName)===\"Kanban\")})()" 10 \
-  || die "the click never reopened the hidden inspector"
-step "ok: a hidden inspector reopens on the click"
+  || die "the round-tripped notifications click never foregrounded the kanban tab"
+step "ok: the notifications tab survives the inspector toggle round-trip"
 
 # ---- 3: aligned bottom - the sidebars keep full height --------------------
 band=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0' 2>/dev/null | tail -1)
