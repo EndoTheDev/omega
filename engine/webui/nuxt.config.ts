@@ -130,6 +130,12 @@ export default defineNuxtConfig({
         // card t_c7136c50: the MCP tab's panel fetches GET /mcp/servers
         // (same-origin embedded in production)
         "/mcp",
+        // card t_c7222095: the MERGED Agents tab fetches the agent
+        // inventory + the continuous roster/wake surface in dev (the
+        // same-origin reads in production) - without these routes the
+        // rows load SSR HTML and the tab never boots
+        "/agents",
+        "/continuous",
       ].map(
         (p) => [
           p,
