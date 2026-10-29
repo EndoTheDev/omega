@@ -6,7 +6,8 @@
 // row two while `glm-5.3 ▾` stayed on row one with empty space beside
 // it (Endo, 2026-10-29: "make sure modelname and reasoning effort
 // stays grouped together"). The fix pairs the two chips inside one
-// .model-group flex item (nowrap, min-width: max-content) - a wrap
+// .model-group flex item (nowrap, min-width: auto - the group holds at
+// its own min-content) - a wrap
 // moves the pair together or leaves both in place, it cannot split it.
 // These are structural source-contract tests (house pattern: read the
 // .vue/.css, assert the wiring).
