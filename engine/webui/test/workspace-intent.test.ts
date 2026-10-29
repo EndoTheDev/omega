@@ -140,6 +140,89 @@ describe("the chat host: draft intent state", () => {
   });
 });
 
+// the seed half (card t_30137f67): a fresh UNBOUND, non-ephemeral
+// state initializes its intent from the loaded server.default_workspace
+// (the deps.defaultWorkspace getter fed by the app's /settings read).
+// The chip renders the value identically to a user-picked one - the
+// intent IS the picked value, no new state anywhere.
+describe("the default workspace seed", () => {
+  it("a fresh unbound draft is born with the configured default", () => {
+    const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
+    const st = host.ensureState("w1");
+    assert.equal(st.workspaceIntent, "/home/endo", "the chip carries the default");
+  });
+
+  it("the send consumes the seeded intent: the row is born pinned", async () => {
+    const calls = recordFetch(run);
+    const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
+    const st = host.ensureState("w1");
+    await host.submit("w1", "hello");
+    const body = calls[0]?.[2] as Record<string, unknown>;
+    assert.equal(body.workspace, "/home/endo", "the seeded default rode the create");
+    assert.equal(st.workspaceIntent, "", "the send consumed the intent");
+  });
+
+  it("clearing the chip pre-send sends unpinned, even with a default", async () => {
+    const calls = recordFetch(run);
+    const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
+    const st = host.ensureState("w1");
+    // the composer's clear affordance: onWorkspaceChange("") on an
+    // unbound tab (ChatTab) - the intent is only the current draft value
+    st.workspaceIntent = "";
+    await host.submit("w1", "hello");
+    const body = calls[0]?.[2] as Record<string, unknown>;
+    assert.equal("workspace" in body, false, "the deliberate clear beat the default");
+  });
+
+  it("a different picked value replaces the seed, and the seed never lands twice", () => {
+    const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
+    const st = host.ensureState("w1");
+    st.workspaceIntent = "/tmp/proj";
+    host.seedDefaultWorkspace("/home/endo");
+    assert.equal(st.workspaceIntent, "/tmp/proj", "the pick stands");
+  });
+
+  it("bound and ephemeral states never seed", () => {
+    const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
+    assert.equal(
+      host.ensureState("b1", "sess-9").workspaceIntent,
+      "",
+      "a bound tab reads the row, not a seed",
+    );
+    assert.equal(
+      host.ensureState("e1", null, true).workspaceIntent,
+      "",
+      "an ephemeral mint has no row to pin",
+    );
+  });
+
+  it("no default configured: the draft stays blank", () => {
+    const host = createChatHost(deps({ defaultWorkspace: () => "" }));
+    assert.equal(host.ensureState("w1").workspaceIntent, "");
+  });
+
+  it("the boot backfill seeds the pre-resolve blanks only", () => {
+    // no dep at creation: the app's /settings read has not resolved -
+    // every fresh state is a blank draft, exactly the pre-card world
+    const host = createChatHost(deps());
+    const draft = host.ensureState("d1");
+    const bound = host.ensureState("b2", "sess-1");
+    const eph = host.ensureState("e2", null, true);
+    const picked = host.ensureState("p1");
+    picked.workspaceIntent = "/tmp/picked";
+    host.seedDefaultWorkspace("/home/endo");
+    assert.equal(draft.workspaceIntent, "/home/endo", "the blank draft took the seed");
+    assert.equal(bound.workspaceIntent, "", "");
+    assert.equal(eph.workspaceIntent, "", "");
+    assert.equal(picked.workspaceIntent, "/tmp/picked", "a picked value stands");
+    // idempotent: a second boot-shaped call cannot reseed a consumed
+    // value (a send cleared it) into anything
+    draft.workspaceIntent = "";
+    host.seedDefaultWorkspace("/home/endo");
+    assert.equal(draft.workspaceIntent, "/home/endo", "still seeds blanks");
+  });
+});
+
 function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
   return {
     setTabSessionRef: () => {},

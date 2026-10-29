@@ -127,6 +127,10 @@ export interface ChatState {
   // send rides POST /chat {workspace} and the auto-created row is born
   // pinned - consumed there. A session-bound tab reads the row instead
   // (this field is inert); an ephemeral draft never applies it.
+  // Card t_30137f67: a fresh unbound state INITIALIZES from the loaded
+  // server.default_workspace (the deps.defaultWorkspace read of the
+  // same /settings payload SettingsTab renders) - no default, no seed;
+  // an explicit clear in the chip wins over the seed.
   workspaceIntent: string;
 }
 
@@ -186,6 +190,14 @@ export interface ChatHostDeps {
       act locally in the app - never an agent round-trip. False when
       the command has nothing to act on here (no session, no rows). */
   runCommand?(stateKey: string, text: string): boolean | Promise<boolean>;
+  /** the loaded server.default_workspace (card t_30137f67): a fresh
+      UNBOUND, non-ephemeral state seeds its workspaceIntent from it.
+      The app feeds the value out of the SAME /settings read the
+      Settings tab renders (no second config path); "" or absent means
+      no default configured. A live getter, not a snapshot - the boot
+      read resolves after host creation, and Settings edits apply to
+      the next new session. */
+  defaultWorkspace?(): string;
 }
 
 export interface ChatHost {
@@ -259,6 +271,13 @@ export interface ChatHost {
   closeSession(sessionId: string): void;
   /** refreshSessions feeds the server-reported active rows in */
   noteServerActive(ids: string[]): void;
+  /** the card t_30137f67 boot backfill: seed the JUST-LOADED
+      server.default_workspace onto the unbound, non-ephemeral states
+      that were created before the settings read resolved. Only BLANK
+      intents take the seed - states created after the boot read (via
+      ensureState) already carry it, and an intent the composer picked
+      or cleared before it landed stands. Boot-time, idempotent. */
+  seedDefaultWorkspace(path: string): void;
   /** the refreshed session row for an id, re-exposed from the deps
       (card t_cd2f25b0): consumers INJECTED with the host - the Files
       tab's row-workspace re-root trigger - read rows through the host,
@@ -394,6 +413,22 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     () => busyAll.value.size > 0 || busyKeys.value.size > 0,
   );
 
+  // card t_30137f67: the loaded server.default_workspace (live getter -
+  // the boot read resolves after host creation, Settings edits apply to
+  // the next new session). Absent dep or "" -> no default.
+  const defaultWorkspace = () => deps.defaultWorkspace?.() ?? "";
+
+  function seedDefaultWorkspace(path: string) {
+    if (!path) return;
+    for (const st of states.values()) {
+      // unbound, non-ephemeral, still blank: only the states born
+      // before the settings read resolved get the boot seed. Anything
+      // the composer already picked (or that ensureState seeded) stands.
+      if (!st.sessionId && !st.ephemeral && st.workspaceIntent === "")
+        st.workspaceIntent = path;
+    }
+  }
+
   function ensureState(key: string, sessionId: string | null = null, ephemeral?: boolean): ChatState {
     let st = states.get(key);
     if (!st) {
@@ -412,7 +447,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         variants: [],
         forkFrom: null,
         ephemeral: !!ephemeral,
-        workspaceIntent: "",
+        // card t_30137f67: a new session is born with the configured
+        // default workspace - the chip + intent carry it exactly as if
+        // the user had picked it (plain sticky). Only an unbound,
+        // non-ephemeral draft pins; no default -> "" (today's blank).
+        workspaceIntent: !sessionId && !ephemeral ? defaultWorkspace() : "",
         pendingSkill: null,
       };
       states.set(key, fresh);
@@ -893,6 +932,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     closeState,
     closeSession,
     noteServerActive,
+    seedDefaultWorkspace,
     sessionRow: deps.sessionRow,
   };
 }

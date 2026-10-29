@@ -2022,6 +2022,19 @@ export async function saveSettings(values: Record<string, unknown>): Promise<Set
   return normalizeSettingsPayload(await r.json());
 }
 
+// settingValueOf reads one knob's server-computed value out of a
+// settings payload ("", undefined otherwise). Card t_30137f67 users:
+// the app-level server.default_workspace read rides the SAME
+// fetchSettings/normalizeSettingsPayload path the Settings tab renders
+// - never a second config endpoint.
+export function settingValueOf(payload: SettingsPayload, key: string): unknown {
+  for (const g of payload.groups) {
+    const k = g.knobs.find((kn) => kn.key === key);
+    if (k) return k.value;
+  }
+  return undefined;
+}
+
 // --- modules: the live module toggle surface (v0.12 E2) ---
 
 // ModuleRow is one registry-introspected module. state is the live
