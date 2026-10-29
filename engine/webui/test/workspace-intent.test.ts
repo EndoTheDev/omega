@@ -9,10 +9,20 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  normalizeSettingsPayload,
+  settingValueOf,
   streamChat,
   fetchMentionFiles,
   type StreamHandlers,
 } from "../app/composables/omega.ts";
+
+// card t_30137f67: the shared default-workspace signal
+import {
+  defaultWorkspaceNow,
+  normalizeDefaultWorkspace,
+  setDefaultWorkspace,
+  DEFAULT_WORKSPACE_KNOB,
+} from "../app/composables/defaultWorkspace.ts";
 
 import {
   createChatHost,
@@ -220,6 +230,51 @@ describe("the default workspace seed", () => {
     draft.workspaceIntent = "";
     host.seedDefaultWorkspace("/home/endo");
     assert.equal(draft.workspaceIntent, "/home/endo", "still seeds blanks");
+  });
+});
+
+// the shared-signal half (card t_30137f67): defaultWorkspace.ts is the
+// ONE module-scoped value the /settings reads keep fresh and the app
+// feeds the host (live getter). The knob extraction rides
+// settingValueOf (the SettingsTab payload path).
+describe("the default-workspace signal", () => {
+  it("normalize trims strings and refuses everything else", () => {
+    assert.equal(normalizeDefaultWorkspace("/home/endo"), "/home/endo");
+    assert.equal(normalizeDefaultWorkspace("  /home/endo  "), "/home/endo");
+    assert.equal(normalizeDefaultWorkspace(""), "");
+    assert.equal(normalizeDefaultWorkspace(undefined), "");
+    assert.equal(normalizeDefaultWorkspace(null), "");
+    assert.equal(normalizeDefaultWorkspace(5), "");
+  });
+
+  it("setDefaultWorkspace feeds the getter the host reads", () => {
+    setDefaultWorkspace("");
+    assert.equal(defaultWorkspaceNow(), "", "cleared is the pristine state");
+    setDefaultWorkspace("/home/endo");
+    assert.equal(defaultWorkspaceNow(), "/home/endo", "the live getter sees the load");
+    setDefaultWorkspace("");
+    assert.equal(defaultWorkspaceNow(), "", "the Settings clear blanks it");
+  });
+
+  it("settingValueOf reads the knob out of a normalized payload", () => {
+    const p = normalizeSettingsPayload({
+      groups: [
+        {
+          key: "server",
+          label: "Server",
+          knobs: [
+            { key: "server.port", label: "port", type: "number", value: 8098 },
+            {
+              key: DEFAULT_WORKSPACE_KNOB,
+              label: "default workspace",
+              type: "text",
+              value: "/home/endo",
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(normalizeDefaultWorkspace(settingValueOf(p, DEFAULT_WORKSPACE_KNOB)), "/home/endo");
   });
 });
 

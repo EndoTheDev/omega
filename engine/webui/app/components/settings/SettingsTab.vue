@@ -183,6 +183,10 @@
     setBottomWidthMode,
     useBottomWidthMode,
   } from "~/composables/bottomWidth";
+  // card t_30137f67: the server.default_workspace value rides the same
+  // shared-signal shape - this tab's reads keep it fresh, the chat host
+  // reads it when a new session's draft is born
+  import { DEFAULT_WORKSPACE_KNOB, setDefaultWorkspace } from "~/composables/defaultWorkspace";
 
   const props = defineProps<{
     showThinking: boolean;
@@ -251,6 +255,10 @@
       for (const k of g.knobs) values[k.key] = k.value;
     loaded.value = values;
     draft.value = { ...values };
+    // card t_30137f67: every read (mount reload + save round-trip)
+    // keeps the shared signal fresh - a Settings edit applies to the
+    // next new session's chip without a reload. "" clears it.
+    setDefaultWorkspace(values[DEFAULT_WORKSPACE_KNOB]);
   }
 
   // --- client (chat) group: props in, emits out ---
