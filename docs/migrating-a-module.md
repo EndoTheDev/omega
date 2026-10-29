@@ -16,9 +16,12 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 ## The law (what the API enforces)
 
-- Machine-facing names - tool names, panel action ids - are the
-  `module.verb` namespace pair (`kanban.task`), prefix enforced at
-  registration. User-facing names - slash commands, route patterns -
+- Machine-facing names - tool names, panel action ids - are
+  owner-claimed at registration. A multi-action domain tool names
+  ITSELF (the one-domain tool law, t_e06b38bc: "kanban", "memory");
+  a module that ships separate verbs keeps the `module.verb` namespace
+  pair (`delegate.task`); panel action ids stay namespace pairs.
+  User-facing names - slash commands, route patterns -
   keep their natural shape and are owner-recorded.
 - One name, one tenant. A cross-tenant claim fails the boot (loud).
   Same-tenant re-registration replaces (the clean-idempotent remount).
@@ -53,10 +56,13 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    exactly like the hand-built `prev := ctx.CommandHandler` capture.
    One registration per command keeps the table order stable.
 
-3. **Rename the machine-facing identities.** Existing tool names gain
-   the module prefix (`task` became `kanban.task`); panel action ids
-   become namespace pairs (`complete_task` became
-   `kanban.complete_task`). This is not a rename of convenience - the
+3. **Name the machine-facing identities for their domain.** A
+   multi-action domain tool registers its bare domain name (`kanban`,
+   the one-domain tool law t_e06b38bc); separate-verb modules keep the
+   `module.verb` pair (`delegate.task`); panel action ids
+   stay namespace pairs (`kanban.complete_task`).
+
+   This is not a rename of convenience - the
    registration API refuses anything else. Alias shims that cannot
    carry the namespace (the dotted `task.*` set) die instead: no
    backwards compatibility is the standing law, and the retirement is

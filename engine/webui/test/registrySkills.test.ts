@@ -45,7 +45,7 @@ test("disabled fold normalizer: lists pass through, junk collapses to []", () =>
 test("skill rows merge the fold: disabled states land, inputs untouched", () => {
   const rows = withDisabledFlags(
     [
-      { name: "skills.read", description: "read a skill" },
+      { name: "skills", description: "read a skill" },
       { name: "dj-music", description: "manage the library" },
     ],
     ["dj-music"],
@@ -94,7 +94,7 @@ test("SkillsList builds rows as a computed (arity trap: a plain function rows() 
 
 test("the row filter narrows by name or description", () => {
   const rows: RegistryRow[] = [
-    { name: "skills.read", description: "read a skill", disabled: false },
+    { name: "skills", description: "read a skill", disabled: false },
     { name: "dj-music", description: "Library management", disabled: true },
   ];
   assert.deepEqual(

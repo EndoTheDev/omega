@@ -1,6 +1,6 @@
 // Package verdict implements verdict cards v1 (card t_2ecf9c51): the
 // agent issues a question mid-turn, the turn HARD-PAUSES inside the
-// verdict.request tool, and the user answers by click (webui) or type
+// verdict tool, and the user answers by click (webui) or type
 // (TUI). Whichever surface answers first wins - the second answerer is
 // rejected with a reason, never double-applied. Advisory in v1: the
 // verdict is recorded as session messages; the agent then acts through
@@ -387,7 +387,7 @@ func cardOf(msg core.Message) string {
 	return ""
 }
 
-// resultMap is the wire shape the verdict.request TOOL RESULT carries
+// resultMap is the wire shape the verdict TOOL RESULT carries
 // back to the model (the loop persists it through the normal tool
 // result path). Flat and small: the agent reads it, acts through its
 // normal tools, nothing executes off it. A multi answer adds the

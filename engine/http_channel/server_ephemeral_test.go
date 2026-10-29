@@ -263,18 +263,18 @@ func TestWithoutMemory(t *testing.T) {
 	s := newTestServer()
 	// the registry carries a stub memory tool like the real mount does
 	s.tools = map[string]core.Tool{
-		"memory.entry": stubTool(),
-		"files":        stubTool(),
+		"memory": stubTool(),
+		"files":  stubTool(),
 	}
 	out := withoutMemory(s.tools)
-	if _, has := out["memory.entry"]; has {
+	if _, has := out["memory"]; has {
 		t.Fatalf("memory survived the withoutMemory copy")
 	}
 	if _, has := out["files"]; !has {
 		t.Fatalf("files vanished from the copy")
 	}
 	// the caller's map is untouched (the run gets a copy)
-	if _, has := s.tools["memory.entry"]; !has {
+	if _, has := s.tools["memory"]; !has {
 		t.Fatalf("withoutMemory mutated the caller's registry")
 	}
 	// no memory in the registry: same map back, no allocation churn

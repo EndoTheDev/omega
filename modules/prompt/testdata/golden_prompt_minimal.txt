@@ -21,19 +21,22 @@ USER PROFILE (who the user is) [2% — 30/1,375 chars]
 The user lives in Springfield.
 
 ## Available Skills
-Call the skills.read tool with a skill name to read its full content.
+Call the skills tool (action read) with a skill name to read its full content; actions write and update create and patch skills.
 - alpha: Alpha does the first thing
 - beta: Beta does the second thing
 
 ## Tools
 ### memory
-- memory.entry: Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.
+- memory: Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.
   .add: Append a new entry (content required).
   .replace: Find the entry matching old_text (unique substring) and replace it with content.
   .remove: Find the entry matching old_text (unique substring) and delete it.
 
 ### skills
-- skills.read: Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.
+- skills: Skills (one SKILL.md folder per skill) the agent loads on demand: read a skill's full content, create a new skill, or patch an existing one. The prompt's Available Skills list is the name + description inventory.
+  .read: Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.
+  .write: Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description) over the body. The frontmatter shape must parse exactly the way the loader parses it.
+  .update: Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md.
 
 ### tools
 - files: Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.

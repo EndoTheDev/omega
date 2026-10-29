@@ -8,36 +8,55 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  normalizeDisabledPayload,
-  withDisabledFlags,
   registryNote,
 } from "../app/composables/omega.ts";
+import { toolRows, toggleTargets } from "../../../modules/tools/ui/toolRows.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-// --- tools rows: actions[] collapse into the expandable detail ---
+// --- tools rows: the one-domain grouping (t_e06b38bc) ---
 
-test("tool rows carry their actions as dotted detail lines; the fold flags by name", () => {
-  // the row model is built inline in the tab; the contract it renders
-  // is RegistryRow + withDisabledFlags - pin that here at the wire shape
+test("tool rows group by domain: actions as dotted detail, siblings merged, lone dotted rows stay", () => {
   const tools = [
-    { name: "memory", description: "memory tools", actions: [{ name: "add", description: "write a fact" }] },
-    { name: "shell", description: "sh", actions: undefined },
+    { name: "files", description: "read write edit", actions: [{ name: "write", description: "write a file" }] },
+    { name: "kanban", description: "the board", actions: [{ name: "list", description: "list tasks" }] },
+    { name: "delegate.task", description: "run a subagent" },
+    { name: "delegate.status", description: "watch the subagents" },
+    { name: "web.search", description: "search the web" },
+    { name: "web.fetch", description: "fetch a page" },
+    { name: "shell.run", description: "run a command" },
   ];
-  const fold = normalizeDisabledPayload({ tools: ["shell"] }).tools;
-  const rows = withDisabledFlags(
-    tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      detail: (t.actions ?? []).map((a) => `${t.name}.${a.name} - ${a.description}`),
-    })),
-    fold,
-  );
-  assert.equal(rows[0].disabled, false);
-  assert.deepEqual(rows[0].detail, ["memory.add - write a fact"], "domain actions are the detail");
-  assert.equal(rows[1].disabled, true);
+  const rows = toolRows(tools, ["shell.run"]);
+  // dotless domain tools are parent rows with dotted action children
+  assert.deepEqual(rows[0].detail, ["files.write - write a file"]);
+  assert.equal(rows[0].name, "files");
+  // sibling-verb tools merge under their prefix: one parent, both
+  // full identities nested
+  const delegateRow = rows.find((r) => r.name === "delegate");
+  assert.ok(delegateRow, "delegate renders as one parent row");
+  assert.deepEqual(delegateRow.detail, [
+    "delegate.task - run a subagent",
+    "delegate.status - watch the subagents",
+  ]);
+  // a lone dotted tool is NOT grouped into a one-member parent
+  const shellRow = rows.find((r) => r.name === "shell.run");
+  assert.ok(shellRow, "shell.run stays its own row");
+  assert.deepEqual(shellRow.detail, []);
+  assert.equal(shellRow.disabled, true, "the fold flags by exact tool name");
+});
+
+test("toggleTargets: an exact tool toggles itself, a group parent fans out to its members", () => {
+  const tools = [
+    { name: "kanban", description: "the board" },
+    { name: "delegate.task", description: "t" },
+    { name: "delegate.status", description: "s" },
+    { name: "shell.run", description: "r" },
+  ];
+  assert.deepEqual(toggleTargets("kanban", tools), ["kanban"], "domain tools are real names");
+  assert.deepEqual(toggleTargets("delegate", tools), ["delegate.task", "delegate.status"], "group parents fan out");
+  assert.deepEqual(toggleTargets("shell.run", tools), ["shell.run"]);
 });
 
 test("arming a tool disable names the tool-list consequence; enable is silent", () => {
@@ -51,12 +70,12 @@ test("ToolsList consumes the shared component and the fold wire", () => {
   assert.ok(src.includes('kind="tools"'), "the tools namespace rides to the note law");
   assert.ok(src.includes('fetch("/tools")'), "self-contained inventory fetch");
   assert.ok(src.includes("/disabled/tools"), "the toggle PUTs the tools namespace");
-  assert.ok(src.includes("new Set(fold.value)"), "flags merge by name");
+  assert.ok(src.includes('from "./toolRows"'), "the row model lives in the pure helper (t_e06b38bc grouping)");
+  assert.ok(src.includes("toggleTargets"), "the group-parent toggle fans out to exact tool names");
   assert.ok(!src.includes("composables/omega"), "no shell client dependency - module UI carries its own wiring");
   assert.ok(src.includes("status === 501") && src.includes("toggleable.value = false"), "a missing seam renders read-only");
-  // the RegistryList contract: a tool's actions render as detail lines
-  // (expandable), not as always-visible sub-rows
-  assert.ok(src.includes("t.name}.${a.name}"), "dotted action detail naming");
+  // the grouping contract lives in toolRows.ts (node-tested above); the
+  // component only wires the computed rows + the fan-out toggle
 });
 
 // t_504a78ca regression: RegistryList gates with `v-if="rows.length"`.

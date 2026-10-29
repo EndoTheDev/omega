@@ -129,7 +129,7 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 		}
 		found := false
 		for _, n := range row.ToolNames {
-			if n == "skills.read" {
+			if n == "skills" {
 				found = true
 			}
 		}

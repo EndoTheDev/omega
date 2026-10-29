@@ -1,7 +1,8 @@
 // Package skills implements the skills seam: scanning a directory
 // for <name>/SKILL.md skill files (one folder per skill, the file
 // always named SKILL.md, the folder name is the skill name),
-// parsing YAML frontmatter, and providing the skills.read tool and
+// parsing YAML frontmatter, and providing the skills domain tool
+// (read/write/update) and
 // /skills slash command.
 package skills
 
@@ -114,7 +115,7 @@ func (sp *SkillsProvider) ListSkills() ([]core.Skill, error) {
 // memory snapshot (10) and ahead of the tools list (30).
 const promptSectionOrder = 20
 
-// PromptSections renders the Available Skills section: the skills.read
+// PromptSections renders the Available Skills section: the read
 // usage instruction plus one line per skill. Empty when no skills are
 // installed. Owned here - the usage instruction describes this module's
 // tool, not the prompt builder's.
@@ -140,7 +141,7 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 		return nil
 	}
 	var sb strings.Builder
-	sb.WriteString("Call the skills.read tool with a skill name to read its full content.\n")
+	sb.WriteString("Call the skills tool (action read) with a skill name to read its full content; actions write and update create and patch skills.\n")
 	for _, s := range skills {
 		fmt.Fprintf(&sb, "- %s: %s\n", s.Name, s.Description)
 	}
@@ -149,24 +150,217 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	}
 }
 
-// Tools returns the skills.read tool.
+// skillsActions is the structured sub-action metadata for the skills
+// domain tool (one source of truth for the schema enum, the prompt,
+// and the /tools inventory - the one-domain tool law, t_e06b38bc).
+var skillsActions = []core.ToolAction{
+	{Name: "read", Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live."},
+	{Name: "write", Description: "Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description) over the body. The frontmatter shape must parse exactly the way the loader parses it."},
+	{Name: "update", Description: "Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md."},
+}
+
+// skillsActionNames returns the action names from the metadata.
+func skillsActionNames() []string {
+	names := make([]string, len(skillsActions))
+	for i, a := range skillsActions {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// Tools returns the skills domain tool. The one-domain tool law
+// (t_e06b38bc): the domain tool names ITSELF (formerly the flat
+// read tool) and the actions list carries read/write/update.
 func (sp *SkillsProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"skills.read": {
-			Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.",
+		"skills": {
+			Description: "Skills (one SKILL.md folder per skill) the agent loads on demand: read a skill's full content, create a new skill, or patch an existing one. The prompt's Available Skills list is the name + description inventory.",
+			Actions:     skillsActions,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name": map[string]any{"type": "string", "description": "The skill name (from the Available Skills list)"},
+					"action":      map[string]any{"type": "string", "description": "read, write, or update."},
+					"name":        map[string]any{"type": "string", "description": "The skill name (read); the new skill's folder name (write); the skill to patch (update)."},
+					"description": map[string]any{"type": "string", "description": "One-line frontmatter description (write; becomes the Available Skills line)."},
+					"body":        map[string]any{"type": "string", "description": "Full markdown body under the frontmatter (write; do not repeat the --- fences)."},
+					"old_text":    map[string]any{"type": "string", "description": "Exact text to find in SKILL.md, occurring exactly once (update)."},
+					"new_text":    map[string]any{"type": "string", "description": "Replacement text (update)."},
 				},
-				"required": []string{"name"},
+				"required": []string{"action", "name"},
 			},
-			Run: sp.runRead,
+			Run: sp.runTool,
 		},
 	}
 }
 
-// runRead is the tool handler for skills.read.
+// runTool dispatches the skills domain tool's actions.
+func (sp *SkillsProvider) runTool(ctx context.Context, args map[string]any) (string, error) {
+	switch action, _ := args["action"].(string); action {
+	case "read":
+		return sp.runRead(ctx, args)
+	case "write":
+		return sp.runWrite(ctx, args)
+	case "update":
+		return sp.runUpdate(ctx, args)
+	default:
+		return "", fmt.Errorf("action is required: one of %v", skillsActionNames())
+	}
+}
+
+// validSkillName enforces the loader's folder-name law (card
+// t_5baad951): the folder name IS the skill name, so it must be a
+// single directory component - no separators, no hidden dot dirs, no
+// padding whitespace.
+func validSkillName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	if strings.HasPrefix(name, ".") || strings.TrimSpace(name) != name {
+		return false
+	}
+	return true
+}
+
+// runWrite is the write-action handler: create <dir>/<name>/SKILL.md
+// with the loader's frontmatter shape (--- / description: / ---). The
+// description must stay one line (the loader reads a single scalar
+// line) and the body must not open with a --- fence (the parser would
+// eat it as the frontmatter close). A re-parse through loadSkill
+// pins the composed shape before the confirmation returns.
+func (sp *SkillsProvider) runWrite(ctx context.Context, args map[string]any) (string, error) {
+	name := strings.TrimSpace(strArg(args["name"]))
+	if !validSkillName(name) {
+		return "", fmt.Errorf("write: name must be a single folder component (no separators, no leading dot), got %q", name)
+	}
+	description := strings.TrimSpace(strArg(args["description"]))
+	if description == "" || strings.ContainsAny(description, "\n\r") {
+		return "", fmt.Errorf("write: description is required and must be one line")
+	}
+	body := strArg(args["body"])
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("write: body is required")
+	}
+	if strings.HasPrefix(strings.TrimLeft(body, " \t"), "---") {
+		return "", fmt.Errorf(`write: body must not start with a "---" fence - the frontmatter is composed for you`)
+	}
+	dir := sp.Dir
+	if dir == "" {
+		return "", fmt.Errorf("skills directory not configured")
+	}
+	skillDir := filepath.Join(dir, name)
+	if _, err := os.Stat(skillDir); err == nil {
+		return "", fmt.Errorf("skill %q already exists in %s - use the update action", name, skillDir)
+	}
+	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err == nil {
+		return "", fmt.Errorf("skill %q already exists in %s - use the update action", name, skillDir)
+	}
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	content := fmt.Sprintf("---\ndescription: %s\n---\n%s", description, body)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		return "", fmt.Errorf("create skill dir: %w", err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("write SKILL.md: %w", err)
+	}
+	// the loader's parse of what we just wrote is the shape proof
+	s, err := loadSkill(skillFile)
+	if err != nil || s.Description != description {
+		return "", fmt.Errorf("write: composed SKILL.md failed the loader's frontmatter parse (description %q)", description)
+	}
+	return "created skill " + name + " at " + skillDir, nil
+}
+
+// runUpdate is the update-action handler: resolve the skill exactly
+// the way runRead does (shared dir first, own dir second - the winner
+// of the merge law), then an exact-once targeted replace in its
+// SKILL.md file. Frontmatter must survive: a file that opened with
+// --- must still open with ---.
+func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (string, error) {
+	name := strings.TrimSpace(strArg(args["name"]))
+	if !validSkillName(name) {
+		return "", fmt.Errorf("update: invalid skill name %q", name)
+	}
+	oldText := strArg(args["old_text"])
+	newText := strArg(args["new_text"])
+	if oldText == "" || newText == "" {
+		return "", fmt.Errorf(`update: "old_text" (exact text to replace, occurring once) and "new_text" are required`)
+	}
+	skillFile, err := sp.resolveSkillFile(name)
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(skillFile)
+	if err != nil {
+		return "", fmt.Errorf("read SKILL.md: %w", err)
+	}
+	content := string(raw)
+	switch n := strings.Count(content, oldText); n {
+	case 1:
+	case 0:
+		return "", fmt.Errorf("update: old_text not found in %s - the text must match exactly", skillFile)
+	default:
+		return "", fmt.Errorf("update: old_text occurs %d times in %s - it must be unique", n, skillFile)
+	}
+	hadFrontmatter := strings.HasPrefix(content, "---\n") || strings.HasPrefix(content, "---\r\n")
+	patched := strings.Replace(content, oldText, newText, 1)
+	if hadFrontmatter && !strings.HasPrefix(patched, "---\n") {
+		return "", fmt.Errorf("update: replacement would break the frontmatter (the file must keep its leading --- fence)")
+	}
+	skillFile, err = sp.writePatched(skillFile, patched)
+	if err != nil {
+		return "", err
+	}
+	return "updated skill " + name + " (" + skillFile + "): replaced one occurrence", nil
+}
+
+// writePatched writes the patched content back and re-parses it
+// through the loader - the same shape gate runWrite applies.
+func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("write SKILL.md: %w", err)
+	}
+	if _, err := loadSkill(path); err != nil {
+		return "", fmt.Errorf("update: patched SKILL.md failed the loader's parse: %w", err)
+	}
+	return path, nil
+}
+
+// resolveSkillFile finds a skill's SKILL.md by name in the scan order
+// LoadSkills merges by (shared first, then own): the winner of a name
+// collision is the file the update action patches.
+func (sp *SkillsProvider) resolveSkillFile(name string) (string, error) {
+	dirs := sp.scanDirs(sp.Dir)
+	if len(dirs) == 0 {
+		return "", fmt.Errorf("skills directory not configured")
+	}
+	for _, dir := range dirs {
+		candidate := filepath.Join(dir, name, "SKILL.md")
+		if fileExists(candidate) {
+			return candidate, nil
+		}
+	}
+	skills, _ := sp.LoadSkills("")
+	var names []string
+	for _, s := range skills {
+		names = append(names, s.Name)
+	}
+	return "", fmt.Errorf("skill %q not found. Available: %s", name, strings.Join(names, ", "))
+}
+
+// strArg is the plain string read every action does on an untyped
+// tool-args map.
+func strArg(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+// runRead is the read-action handler.
 func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (string, error) {
 	name, _ := args["name"].(string)
 	if name == "" {

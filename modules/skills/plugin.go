@@ -39,7 +39,8 @@ func (p *Plugin) Provides() []string { return []string{"skills", "tools", "promp
 func (p *Plugin) Requires() []string { return []string{"logging"} }
 
 // MountWithAPI implements agent.APIPlugin. Populates the skills seam,
-// the skills.read tool, the prompt section, and the /skills command.
+// the skills domain tool (read/write/update), the prompt section, and
+// the /skills command.
 // The skills directory is read from ctx.Configs.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()

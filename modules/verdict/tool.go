@@ -24,13 +24,13 @@ type verdictToolProvider struct {
 	hub core.VerdictsProvider
 }
 
-// Tools implements core.ToolProvider. The machine-facing identity is
-// the namespaced pair verdict.request (Q10, the v0.12 mount migration)
-// - the module's own prompt vocabulary ("verdict.request: ask the
-// user...") is the verb.
+// Tools implements core.ToolProvider. The one-domain tool law
+// (t_e06b38bc): the domain tool names ITSELF (formerly the Q10
+// module.verb pair - the middle tier is gone) and the request
+// action (the module's own prompt vocabulary) rides the Actions list.
 func (p *verdictToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"verdict.request": {
+		"verdict": {
 			Description: "Pause the conversation and present a choice card when a decision materially affects the user - ask when the decision needs human input and you cannot proceed without them. Never call this from a cron or delegated run; it only works in interactive turns.",
 			Actions:     verdictActions,
 			Parameters: map[string]any{
@@ -78,7 +78,7 @@ func (p *verdictToolProvider) run(ctx context.Context, args map[string]any) (str
 	return p.runRequest(ctx, args)
 }
 
-// runRequest executes verdict.request: origin gate, card shape, and
+// runRequest executes the request action: origin gate, card shape, and
 // the blocked Ask.
 func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]any) (string, error) {
 	// Issuer gate (design Q7a): cron fires and delegate subagents never
@@ -86,14 +86,14 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	// treated as interactive.
 	switch core.RunOriginFromContext(ctx) {
 	case core.RunOriginCron, core.RunOriginDelegate:
-		return "", fmt.Errorf("verdict.request is not available in background turns (origin %q) - decide without the user or surface the question in the transcript",
+		return "", fmt.Errorf("verdict is not available in background turns (origin %q) - decide without the user or surface the question in the transcript",
 			core.RunOriginFromContext(ctx))
 	}
 
 	title, _ := args["title"].(string)
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return "", fmt.Errorf("verdict.request: title is required")
+		return "", fmt.Errorf("verdict: title is required")
 	}
 	body, _ := args["body"].(string)
 	options := argOptions(args, "options")
@@ -113,7 +113,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	// row at a time. Approval is the 2-option case, nothing special
 	// on the wire.
 	if len(options) == 0 && !allowText {
-		return "", fmt.Errorf("verdict.request: a card needs at least one option or allow_text=true")
+		return "", fmt.Errorf("verdict: a card needs at least one option or allow_text=true")
 	}
 
 	card := core.VerdictPrompt{
@@ -127,7 +127,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	}
 	verdict, err := p.hub.Ask(ctx, card)
 	if err != nil {
-		return "", fmt.Errorf("verdict.request: %w", err)
+		return "", fmt.Errorf("verdict: %w", err)
 	}
 	return resultMap(verdict), nil
 }
