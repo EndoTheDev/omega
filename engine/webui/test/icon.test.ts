@@ -139,9 +139,23 @@ test("sidebar tab strips are ICON-ONLY chips with accessible names", () => {
   assert.match(pane, /iconTabs\s*=/, "the icon-tabs rule exists");
   assert.match(pane, /edge === "left" \|\| props\.node\.edge === "right"/,
     "both sidebars iconified");
-  assert.match(pane, /v-if="iconTabs && tabIcon\(t\)"/, "the chip is the icon");
+  // t_172f9009: the icon no longer rides the iconTabs gate - every pane
+  // renders it; the TITLE span is what sidebars drop
+  assert.match(pane, /v-if="tabIcon\(t\)"/, "the chip is the icon");
   // the accessible name survives the iconification (title + aria-label)
   assert.match(pane, /:aria-label="iconTabs \? tabTitle\(t\) : undefined"/,
     "aria-label carries the tab name");
   assert.match(pane, /:title="tabTitle\(t\)"/, "the tooltip stays");
+});
+
+test("main/bottom tabs show the glyph leading the session name", () => {
+  const pane = read("app/components/DockPane.vue");
+  // the title span stays gated to the non-sidebar panes
+  assert.match(pane, /v-if="!iconTabs"\s*class="dock-tab-title"/s,
+    "sidebars keep icon-only, main/bottom keep the label");
+  // icon precedes the title span in the template (glyph leads the name)
+  const ic = pane.indexOf('class="dock-tab-ic"');
+  const tx = pane.indexOf('class="dock-tab-title"');
+  assert.ok(ic !== -1 && tx !== -1 && ic < tx,
+    "the icon vnode leads the title span");
 });
