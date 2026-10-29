@@ -56,7 +56,8 @@ The gutter divider retains magnetic snap rebase mechanics
   bug, not a state.
 - **Pane model**: left sidebar = sessions pane (pinned singleton, no
   X); right sidebar = inspector pane with the fixed module tabs (Files,
-  Cron, Logs, Skills, Tools, Settings, Kanban — no X); middle = main
+  Cron, Logs, Skills, Tools, Agents, Continuous, Settings, Kanban,
+  Modules, Insights, MCP — no X); middle = main pane.
   pane. The LAST main pane never closes its PANE (Endo ruling,
   2026-10-25, corrected t_b620f99d): `removePane` (and the move-out
   auto-close) refuse it as a no-op — the main area never reaches zero

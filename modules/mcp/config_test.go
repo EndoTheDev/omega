@@ -9,7 +9,7 @@ import (
 // TestLoadConfigEnvVar verifies MCP_SERVERS env var takes priority over files.
 func TestLoadConfigEnvVar(t *testing.T) {
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"envserver","command":"envcmd"}]}`)
-	cfg, err := loadConfig()
+	cfg, _, err := loadConfig()
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestLoadConfigYAMLFile(t *testing.T) {
 		[]byte("servers:\n  - name: yamlserver\n    url: http://localhost:9999\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := loadConfig()
+	cfg, _, err := loadConfig()
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestLoadConfigJSONFile(t *testing.T) {
 		[]byte(`{"servers":[{"name":"jsonserver","command":"jsoncmd"}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := loadConfig()
+	cfg, _, err := loadConfig()
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestLoadConfigEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	t.Setenv("MCP_SERVERS", "")
-	cfg, err := loadConfig()
+	cfg, _, err := loadConfig()
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestLoadConfigYAMLInConfigSubdir(t *testing.T) {
 		[]byte("servers:\n  - name: subserver\n    url: http://localhost:9998\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := loadConfig()
+	cfg, _, err := loadConfig()
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestLoadConfigRootWinsOverSubdir(t *testing.T) {
 		[]byte("servers:\n  - name: rootwins\n    url: http://localhost:2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := loadConfig()
+	cfg, _, err := loadConfig()
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestLoadConfigRootWinsOverSubdir(t *testing.T) {
 // TestLoadConfigInvalidYAML verifies malformed config surfaces a parse error.
 func TestLoadConfigInvalidYAML(t *testing.T) {
 	t.Setenv("MCP_SERVERS", "{not yaml or json")
-	if _, err := loadConfig(); err == nil {
+	if _, _, err := loadConfig(); err == nil {
 		t.Fatal("expected error for invalid config, got nil")
 	}
 }

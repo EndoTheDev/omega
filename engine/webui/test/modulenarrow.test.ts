@@ -17,9 +17,8 @@ import { isNarrowWidth as skillsIsNarrowWidth } from "../../../modules/skills/ui
 import { isNarrowWidth as toolsIsNarrowWidth } from "../../../modules/tools/ui/narrow.ts";
 // the recipe's original: the Board's module-owned copy must stay in the
 // fold too (a drag between hosts must show one adaptation, not two)
-import {
-  isNarrowWidth as boardIsNarrowWidth,
-} from "../../../modules/kanban/ui/board/boardLogic.ts";
+import { isNarrowWidth as boardIsNarrowWidth } from "../../../modules/kanban/ui/board/boardLogic.ts";
+import { isNarrowWidth as mcpIsNarrowWidth } from "../../../modules/mcp/ui/narrow.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."); // the repo root (engine/webui/test up to root)
 const modules = root; // the RETROFIT rel paths are repo-root relative
@@ -37,6 +36,7 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
     ["skills", skillsIsNarrowWidth],
     ["tools", toolsIsNarrowWidth],
     ["kanban", boardIsNarrowWidth],
+    ["mcp", mcpIsNarrowWidth],
   ] as const) {
     for (const px of [0, 100, 240, 300, 360, 400, 640]) {
       assert.equal(fn(px), isNarrowWidth(px), `${name} at ${px}px`);
@@ -52,7 +52,7 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
 const RETROFIT: Array<{
   rel: string;
   label: string;
-  module: "cron" | "http_channel" | "skills" | "tools" | null;
+  module: "cron" | "http_channel" | "skills" | "tools" | "mcp" | null;
   rules: RegExp[];
 }> = [
   {
@@ -78,6 +78,12 @@ const RETROFIT: Array<{
     label: "tools",
     module: "tools",
     rules: [/\.tools-list\.narrow \{/],
+  },
+  {
+    rel: "modules/mcp/ui/McpServers.vue",
+    label: "mcp",
+    module: "mcp",
+    rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-server-head \{/],
   },
   {
     // the shell's own inspector Files tab rides the same recipe

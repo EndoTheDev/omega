@@ -127,6 +127,9 @@ export default defineNuxtConfig({
         // card t_e1e61680: the insights dashboard fetches GET /insights
         // (same-origin embedded in production)
         "/insights",
+        // card t_c7136c50: the MCP tab's panel fetches GET /mcp/servers
+        // (same-origin embedded in production)
+        "/mcp",
       ].map(
         (p) => [
           p,
