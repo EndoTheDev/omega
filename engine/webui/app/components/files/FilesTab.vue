@@ -94,36 +94,9 @@
         @select="onSelect" />
     </div>
 
-    <div
-      v-if="preview"
-      class="file-preview">
-      <div class="preview-head">
-        <span class="preview-path">{{ preview.path }}</span>
-        <button
-          class="preview-close"
-          title="Close preview"
-          @click="preview = null">
-          ×
-        </button>
-      </div>
-      <p
-        v-if="preview.error"
-        class="preview-notice">
-        {{ preview.error }}
-      </p>
-      <p
-        v-else-if="preview.binary"
-        class="preview-notice">
-        binary file - no preview
-      </p>
-      <template v-else>
-        <p
-          v-if="preview.truncated"
-          class="preview-notice">
-          truncated at 64 KiB
-        </p>
-        <pre class="preview-body">{{ preview.content }}</pre>
-      </template>
+      <!-- card t_36ceb99b: the inline preview is GONE - a file click
+           opens a main-pane viewer tab (the shell's opener seam); no
+           preview vocabulary survives in this pane. -->
     </div>
   </aside>
 </template>
@@ -137,11 +110,10 @@
   // Lazy: the tab unmounts when the dock switches views, so the root
   // listing refetches on every re-entry (fresher than the old
   // fetch-once guard, and never a poll - nothing here loops).
-  import { computed, ref } from "vue";
+  import { computed, inject, ref } from "vue";
   import {
     createTargetDir,
     fetchFilesBrowse,
-    fetchFilesRead,
     fileTreeBus,
     joinRelPath,
     postFilesMkdir,
@@ -150,6 +122,8 @@
   } from "../../composables/omega";
   import type { FileEntry, SelectedNode } from "../../composables/omega";
   import { useNarrow } from "~/composables/narrow";
+  import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
+  import type { ViewerRef } from "../../composables/dockables";
   import FileTree from "./FileTree.vue";
   // card t_a4504a25: the toolbar's glyph set (icons.ts vocabulary)
   import Icon from "../ui/Icon.vue";
@@ -164,8 +138,8 @@
   // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
   // the root measures its OWN rendered container (this tab rides both
   // the inspector column and main-pane-width mounts) and flips the
-  // class; the tree gets it passed down, the scoped stylesheet below
-  // rebalances the preview share.
+  // class; the tree gets it passed down (the size-column collapse is
+  // the flip's only consumer now).
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = useNarrow(rootEl);
 
@@ -173,14 +147,14 @@
   const loadingRoot = ref(false);
   const rootError = ref("");
 
-  interface Preview {
-    path: string;
-    content: string;
-    truncated: boolean;
-    binary: boolean;
-    error?: string;
+  // card t_36ceb99b: the opener seam - a file click MINTS/FOCUSES a
+  // main-pane viewer tab; the app provides always (mobile drawer mounts
+  // included). No inline preview survives here.
+  const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
+
+  function openFile(path: string) {
+    openViewerRef?.({ kind: "file", name: path } satisfies ViewerRef);
   }
-  const preview = ref<Preview | null>(null);
 
   async function loadRoot() {
     loadingRoot.value = true;
@@ -192,27 +166,6 @@
       rootError.value = e instanceof Error ? e.message : String(e);
     } finally {
       loadingRoot.value = false;
-    }
-  }
-
-  async function openFile(path: string) {
-    preview.value = { path, content: "", truncated: false, binary: false };
-    try {
-      const data = await fetchFilesRead(path);
-      preview.value = {
-        path,
-        content: data.content,
-        truncated: data.truncated,
-        binary: data.binary,
-      };
-    } catch (e) {
-      preview.value = {
-        path,
-        content: "",
-        truncated: false,
-        binary: false,
-        error: e instanceof Error ? e.message : String(e),
-      };
     }
   }
 
@@ -242,7 +195,7 @@
   // confirmCreate POSTs the validated name at the selected folder (or
   // the tree root): server refusals land in the inline error, successes
   // refresh the root + every expanded branch, reveal the new node, and
-  // select it (files open their preview, folders become the target).
+  // select it (files open their viewer tab, folders become the target).
   async function confirmCreate() {
     const kind = creating.value;
     if (!kind || creatingBusy.value) return;
@@ -355,21 +308,8 @@
     color: var(--text-dim);
   }
 
-  /* narrow: the module-UI recipe (card t_a2fdc630). The tab is already
-     one column (tree above, preview below); narrow rebalances the
-     vertical split - at ~300px a 45%-capped preview shows a header and
-     two lines, so it takes the larger share instead (the tree scrolls,
-     code wants lines). Scoped here, not in main.css: these rules are
-     this tab's narrow view, not shell geometry. */
-  .inspector-panel.narrow .file-preview {
-    max-height: 64%;
-    padding: 6px 8px 8px;
-  }
-  .inspector-panel.narrow .preview-body {
-    font-size: 10.5px;
-    padding: 6px 8px;
-  }
-  .inspector-panel.narrow .preview-head {
-    margin-bottom: 4px;
-  }
+  /* narrow (card t_a2fdc630): the tree gets the flag passed down - once
+       the preview left (t_36ceb99b), the tab is just the tree; the
+       recipe's measuring root stays (the flip is the tree's size-column
+       collapse trigger). */
 </style>

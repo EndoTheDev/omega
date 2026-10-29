@@ -30,6 +30,7 @@
 export const DOCK_COMPONENTS = [
   "sidebar",
   "chat",
+  "viewer",
   "files",
   "cron",
   "http_channel",
@@ -122,6 +123,26 @@ export const DOCKABLES: readonly DockableComponent[] = [
     id: "chat",
     title: "chat",
     icon: "chat",
+    policy: "multi",
+    area: "main",
+    closable: true,
+  },
+  {
+    // card t_36ceb99b (Endo's in-app comments batch 2): the content
+    // viewer - clicking a SKILL row or a FILE tree row opens a main-pane
+    // tab hosting the content. multi policy (one tab per opened
+    // file/skill, like chat), closable like chat; it never appears in
+    // the '+' menus (an EMPTY viewer tab is meaningless - content is the
+    // tab, there is no empty viewer), so its only entry point is a row
+    // click. The per-tab payload (ViewerRef: file path or skill name)
+    // rides the tab; the tab chip's icon follows the CONTENT type
+    // (DockPane's tabIcon reads it) - file rows keep the extension
+    // glyphs, skill rows the skills book. Deletability: remove the
+    // viewer registry entry + ViewerTab.vue + the small openers and the
+    // feature is gone (no vocabulary left elsewhere).
+    id: "viewer",
+    title: "viewer",
+    icon: "file-text",
     policy: "multi",
     area: "main",
     closable: true,
@@ -248,6 +269,40 @@ export const DOCKABLES: readonly DockableComponent[] = [
   },
 ];
 
+/** card t_36ceb99b: WHAT a viewer tab shows. `kind` "file" reads the
+    name as a working-directory relative path (GET /files/read), "skill"
+    as a skill folder name (GET /skills/content). The tab's identity for
+    focus-reuse: the same ref focuses the existing tab, never mints a
+    duplicate. PURE plain data - the dock engine serializes it with the
+    tree. */
+export interface ViewerRef {
+  kind: "file" | "skill";
+  /** file: a relative path from the workspace root; skill: the folder name */
+  name: string;
+}
+
+/** validate a persisted viewer payload (the strict reader's law): kind
+    one of the two, name a non-empty string; anything else is invalid */
+export function validViewerRef(
+  raw: unknown,
+): raw is ViewerRef {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const v = raw as { kind?: unknown; name?: unknown };
+  return (
+    (v.kind === "file" || v.kind === "skill") &&
+    typeof v.name === "string" &&
+    v.name !== ""
+  );
+}
+
+/** a viewer tab's chip title: the base name (a file's last path
+    segment, VS Code's read; a skill's name has no segments). Pure. */
+export function viewerTabTitle(v: ViewerRef): string {
+  if (v.kind === "skill") return v.name;
+  const base = v.name.split("/").pop() ?? "";
+  return base !== "" ? base : v.name;
+}
+
 /** registry entry for an openable component (panes only host these) */
 export function dockableOf(id: DockComponentName): DockableComponent {
   const d = DOCKABLES.find((x) => x.id === id);
@@ -306,7 +361,12 @@ export const MAIN_DOCKABLES: readonly DockComponentName[] =
     Settings is excluded by ruling - it has NO entry point; persistence
     and the default arrangement fallback are its only paths. */
 export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
-  .filter((d) => d.id !== "sidebar" && d.id !== "settings")
+  .filter(
+    // viewer joins the exclusions (t_36ceb99b): an empty viewer tab is
+    // meaningless - content IS the tab; its only entry point is a row
+    // click handing the content over
+    (d) => d.id !== "sidebar" && d.id !== "settings" && d.id !== "viewer",
+  )
   .map((d) => d.id);
 
 /** the pinned-area singleton set (the inspector pane's view tabs): the
