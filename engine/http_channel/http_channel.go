@@ -73,6 +73,17 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 	return c.srv.Serve(ctx, c.addr)
 }
 
+// SetDefaultWorkspace hot-sets the files surface's default_workspace
+// knob (t_a5f9d185): the settings seam's hotApply pushes a save to
+// every mounted channel through this method - the resolution chain
+// reads it per request, so a settings-pane save re-roots the Files tab
+// live, no restart. No-op before wire: no server exists to root.
+func (c *HTTPChannel) SetDefaultWorkspace(ws string) {
+	if c.srv != nil {
+		c.srv.SetDefaultWorkspace(ws)
+	}
+}
+
 // wire builds the channel's server and binds it to the process-wide
 // state (hub, chat capsule, canvas). Split from Start so a host or
 // test can wire a mirror without serving it.
