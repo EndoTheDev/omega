@@ -66,7 +66,7 @@ assert_eq "$(jsq 'document.querySelector(".composer")?1:0' 2>/dev/null | tail -1
 # card t_180db2cb (bell dies): the notifications surface is the inspector's
 # notifications dock tab - open it by its chip (icon-only vocabulary,
 # t_502b8e81: match by aria-label/title, never .dock-tab-title).
-notifTab='(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")];const n=t.find((e)=>((e.getAttribute("aria-label")||"")||e.title||e.querySelector(".dock-tab-title")?.textContent||"").trim()==="Notifications");n&&n.click();return n?1:0})()'
+notifTab='(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")];const n=t.find((e)=>((e.getAttribute("aria-label")||"")||e.title||e.querySelector(".dock-tab-title")?.textContent||"").trim()==="Notifications");if(n){n.click();return true}return false})()'
 js "$notifTab" >/dev/null
 wait_js '(()=>{const r=[...document.querySelectorAll(".notif-list .notif-row")];return r.some((e)=>e.textContent.includes("'"$TID"'"))})()' 10 \
   || die "the task notification row never rendered"
