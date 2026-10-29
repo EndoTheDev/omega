@@ -586,6 +586,17 @@ body {
    active tab's icon lights with the orange state like the old label */
 .dock-tab-ic { flex: none; opacity: 0.75; }
 .dock-tab.active .dock-tab-ic, .dock-tab:hover .dock-tab-ic { opacity: 1; }
+/* card t_a3b28c37: the icon-only sidebar chip gets its own shape - a fixed
+   28px chip with the glyph optically centered (zero padding, centered
+   packing). Scoped to .ic-only so the pinned text-tab rules above (the
+   shrink + ellipsis shape main/bottom tabs wear) stay untouched. The
+   tabbar's 2px gap + four chips still fit a 320px column with room. */
+.dock-pane.pinned .dock-tab.ic-only {
+  flex: none;
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
 .dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
 .dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
 

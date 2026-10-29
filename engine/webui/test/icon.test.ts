@@ -159,3 +159,31 @@ test("main/bottom tabs show the glyph leading the session name", () => {
   assert.ok(ic !== -1 && tx !== -1 && ic < tx,
     "the icon vnode leads the title span");
 });
+
+test("sidebar icon chips are 28px centered (t_a3b28c37)", () => {
+  const pane = read("app/components/DockPane.vue");
+  const css = read("app/assets/css/main.css");
+  // the chip shape rides the ICON-TABS gate only: main/bottom text tabs
+  // never take the fixed 28px shape
+  assert.match(pane, /'ic-only':\s*iconTabs/,
+    "the ic-only class is gated on the iconTabs computed");
+  // the css companion: fixed width, symmetric (zero) padding, centered
+  // packing - the glyph sits optically centered in the chip
+  const rule = css.match(/\.dock-pane\.pinned \.dock-tab\.ic-only\s*\{[^}]*\}/);
+  assert.ok(rule, "the ic-only css companion exists");
+  for (const needle of ["flex: none", "width: 28px", "padding: 0",
+    "justify-content: center"]) {
+    assert.match(rule[0], new RegExp(needle.replace(/[:()]/g, "\\$&")),
+      `the chip rule carries "${needle}"`);
+  }
+  // ordering: the ic-only block sits AFTER the pinned text-tab shape, so
+  // its 4-class specificity + cascade order wins in one place
+  const pinned = css.indexOf(".dock-pane.pinned .dock-tab {");
+  assert.ok(pinned !== -1 && css.indexOf(".dock-tab.ic-only") > pinned,
+    "the ic-only rule follows the pinned text-tab rule");
+  // the text-tab shapes keep their contracts
+  assert.match(css, /\.dock-tab\s*\{[^}]*min-width: 72px/,
+    "the base tab keeps its 72px text-tab min-width");
+  assert.match(css, /\.dock-pane\.pinned \.dock-tab\s*\{[^}]*padding: 0 4px 0 8px/,
+    "the pinned text-tab shape keeps its asymmetric padding");
+});
