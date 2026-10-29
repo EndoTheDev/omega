@@ -269,15 +269,16 @@ func (p *ToolProvider) sessionBoard() string {
 }
 
 // taskActions is the structured sub-action metadata for the
-// consolidated task tool: one source of truth for the schema enum, the
-// prompt, and the /tools inventory.
+// consolidated kanban domain tool: one source of truth for the schema
+// enum, the prompt, and the /tools inventory (the one-domain tool law,
+// t_e06b38bc - the domain tool names ITSELF; the session-link verb is
+// retired: a task is born with its session in create).
 var taskActions = []core.ToolAction{
 	{Name: "create", Description: "Create a board task (title is the short name, body carries the full spec)."},
 	{Name: "list", Description: "List board tasks, optionally filtered by status."},
 	{Name: "update", Description: "Update a task: move status (any legal transition), set assignee, retitle, or rewrite the body."},
 	{Name: "complete", Description: "Mark a task done (moves it to the done column and stamps completion)."},
 	{Name: "comment", Description: "Add a comment to a task's thread."},
-	{Name: "link_session", Description: "Link a task to the conversation it belongs to (defaults to the current session)."},
 }
 
 // taskActionNames returns the action names from the metadata.
@@ -289,17 +290,18 @@ func taskActionNames() []string {
 	return names
 }
 
-// Tools returns the board tools. The six dotted verbs were
-// consolidated into one "kanban.task" domain tool with an action enum
+// Tools returns the board tool. The six dotted verbs were
+// consolidated into one domain tool named for the domain (the
+// one-domain tool law, t_e06b38bc - formerly the module.verb pair, the
+// middle tier is gone) with an action enum
 // (derived from taskActions) plus a batch operations array; the
-// registry carries the one namespaced name (no backwards
-// compatibility - the alias shim era closed with the mount migration,
-// whose machine-facing identity is the module.verb namespace pair).
+// registry carries the one domain name (no backwards
+// compatibility - the alias shim era closed with the mount migration).
 func (p *ToolProvider) Tools() map[string]core.Tool {
 	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
 	tools := map[string]core.Tool{
-		"kanban.task": {
-			Description: "One tool for the kanban board: create, list, update, complete, comment on, and link tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
+		"kanban": {
+			Description: "One tool for the kanban board: create, list, update, complete, comment on tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
 			Actions:     taskActions,
 			Parameters: map[string]any{
 				"type": "object",
@@ -308,15 +310,14 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 						"type":        "string",
 						"description": "Which board operation to run.",
 					},
-					"board":      map[string]any{"type": "string", "description": "Board name to operate on (omit = the active board; 'main' is the default board)."},
-					"id":         map[string]any{"type": "string", "description": "Task id (update, complete, comment, link_session; batch ops carry their own)."},
-					"title":      map[string]any{"type": "string", "description": "Short title (create); new title (update)."},
-					"body":       map[string]any{"type": "string", "description": "Full spec / body (create); new body (update); comment body (comment, required)."},
-					"assignee":   map[string]any{"type": "string", "description": "Who the task is for (create); new assignee, empty string unassigns (update)."},
-					"status":     map[string]any{"type": "string", "description": statusDesc},
-					"source":     map[string]any{"type": "string", "description": "Provenance tag, e.g. an automator's name (create)."},
-					"author":     map[string]any{"type": "string", "description": "Comment author (comment, default agent)."},
-					"session_id": map[string]any{"type": "string", "description": "Session id (link_session, default current session)."},
+					"board":    map[string]any{"type": "string", "description": "Board name to operate on (omit = the active board; 'main' is the default board)."},
+					"id":       map[string]any{"type": "string", "description": "Task id (update, complete, comment; batch ops carry their own)."},
+					"title":    map[string]any{"type": "string", "description": "Short title (create); new title (update)."},
+					"body":     map[string]any{"type": "string", "description": "Full spec / body (create); new body (update); comment body (comment, required)."},
+					"assignee": map[string]any{"type": "string", "description": "Who the task is for (create); new assignee, empty string unassigns (update)."},
+					"status":   map[string]any{"type": "string", "description": statusDesc},
+					"source":   map[string]any{"type": "string", "description": "Provenance tag, e.g. an automator's name (create)."},
+					"author":   map[string]any{"type": "string", "description": "Comment author (comment, default agent)."},
 					"operations": map[string]any{
 						"type":        "array",
 						"description": "Batch: array of {action, ...args} operations, applied in order. If one fails, later operations are not attempted.",
@@ -427,8 +428,6 @@ func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (stri
 		return p.runComplete(ctx, board, args)
 	case "comment":
 		return p.runComment(ctx, board, args)
-	case "link_session":
-		return p.runLink(ctx, board, args)
 	default:
 		return "", fmt.Errorf("action is required: one of %v, or pass operations for a batch", taskActionNames())
 	}
@@ -505,23 +504,6 @@ func (p *ToolProvider) runComplete(ctx context.Context, board string, args map[s
 		return "", err
 	}
 	return "done " + out.ID + ": " + out.Title, nil
-}
-
-func (p *ToolProvider) runLink(ctx context.Context, board string, args map[string]any) (string, error) {
-	id := str(args["id"])
-	sess := str(args["session_id"])
-	if sess == "" {
-		sess = agent.SessionIDFromContext(ctx)
-	}
-	if sess == "" {
-		return "", fmt.Errorf("no session id: pass session_id")
-	}
-	sptr := sess
-	out, err := p.board.UpdateTask(ctx, board, id, KanbanPatch{SessionID: &sptr})
-	if err != nil {
-		return "", err
-	}
-	return "linked " + out.ID + " to session " + sess, nil
 }
 
 // str reads a tool arg that is always present.

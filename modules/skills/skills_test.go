@@ -195,10 +195,10 @@ func TestToolsRead(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	if _, ok := tools["skills.read"]; !ok {
-		t.Fatal("expected skills.read tool")
+	if _, ok := tools["skills"]; !ok {
+		t.Fatal("expected skills tool")
 	}
-	out, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "test-skill"})
+	out, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "test-skill"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestToolsRead(t *testing.T) {
 func TestToolsReadMissingName(t *testing.T) {
 	sp := NewSkillsProvider(t.TempDir())
 	tools := sp.Tools()
-	_, err := tools["skills.read"].Run(context.Background(), map[string]any{})
+	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": ""})
 	if err == nil {
 		t.Fatal("expected error for missing name")
 	}
@@ -275,7 +275,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 func TestRunReadDirNotConfigured(t *testing.T) {
 	sp := &SkillsProvider{Dir: ""}
 	tools := sp.Tools()
-	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "whatever"})
+	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "whatever"})
 	if err == nil {
 		t.Fatal("expected error when skills directory not configured")
 	}
@@ -290,7 +290,7 @@ func TestRunReadSkillNotFound(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "nonexistent"})
+	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent skill")
 	}
@@ -309,7 +309,7 @@ func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "nonexistent"})
+	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent skill")
 	}
@@ -351,7 +351,7 @@ func TestRunReadNonNotExistError(t *testing.T) {
 
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": skillName})
+	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": skillName})
 	if err == nil {
 		t.Fatal("expected error for non-NotExist loadSkill failure")
 	}
@@ -512,7 +512,7 @@ func TestPromptSections(t *testing.T) {
 	if s.Order != promptSectionOrder {
 		t.Errorf("Order = %d, want %d", s.Order, promptSectionOrder)
 	}
-	want := "Call the skills.read tool with a skill name to read its full content.\n- test-skill: A test skill\n"
+	want := "Call the skills tool (action read) with a skill name to read its full content; actions write and update create and patch skills.\n- test-skill: A test skill\n"
 	if s.Body != want {
 		t.Errorf("Body = %q, want %q", s.Body, want)
 	}
@@ -564,6 +564,198 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 // inspector seam the http_channel asserts.
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
 	var _ core.SkillsLister = (*SkillsProvider)(nil)
+}
+
+// --- the write + update actions (t_e06b38bc part 3) ---
+
+func TestToolsWriteCreatesSkill(t *testing.T) {
+	dir := t.TempDir()
+	sp := NewSkillsProvider(dir)
+	tools := sp.Tools()
+	out, err := tools["skills"].Run(context.Background(), map[string]any{
+		"action":      "write",
+		"name":        "fresh-skill",
+		"description": "A fresh skill",
+		"body":        "# fresh\n\nDo the thing.\n",
+	})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if !strings.Contains(out, "created skill fresh-skill") {
+		t.Fatalf("write out = %q", out)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "fresh-skill", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if !strings.HasPrefix(content, "---\ndescription: A fresh skill\n---\n") {
+		t.Fatalf("SKILL.md frontmatter = %q", content)
+	}
+	// the loader sees it: available in the listing with the description
+	skills, err := sp.LoadSkills("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skills) != 1 || skills[0].Name != "fresh-skill" || skills[0].Description != "A fresh skill" {
+		t.Fatalf("LoadSkills = %+v", skills)
+	}
+}
+
+func TestToolsWriteRefusals(t *testing.T) {
+	dir := t.TempDir()
+	sp := NewSkillsProvider(dir)
+	tools := sp.Tools()
+	write := func(args map[string]any) error {
+		full := map[string]any{"action": "write", "name": "s", "description": "d", "body": "b"}
+		for k, v := range args {
+			full[k] = v
+		}
+		_, err := tools["skills"].Run(context.Background(), full)
+		return err
+	}
+	if err := write(map[string]any{"name": "a/b"}); err == nil || !strings.Contains(err.Error(), "single folder component") {
+		t.Fatalf("path separator: %v", err)
+	}
+	if err := write(map[string]any{"name": ".hidden"}); err == nil || !strings.Contains(err.Error(), "single folder component") {
+		t.Fatalf("dot dir: %v", err)
+	}
+	if err := write(map[string]any{"name": ""}); err == nil || !strings.Contains(err.Error(), "single folder component") {
+		t.Fatalf("empty name: %v", err)
+	}
+	if err := write(map[string]any{"description": ""}); err == nil || !strings.Contains(err.Error(), "description is required") {
+		t.Fatalf("empty description: %v", err)
+	}
+	if err := write(map[string]any{"description": "two\nlines"}); err == nil || !strings.Contains(err.Error(), "must be one line") {
+		t.Fatalf("multiline description: %v", err)
+	}
+	if err := write(map[string]any{"body": ""}); err == nil || !strings.Contains(err.Error(), "body is required") {
+		t.Fatalf("empty body: %v", err)
+	}
+	if err := write(map[string]any{"body": "---\nevil\n---\n"}); err == nil || !strings.Contains(err.Error(), `must not start with a "---" fence`) {
+		t.Fatalf("fenced body: %v", err)
+	}
+	// existing skill dirs refuse; update is the patch path
+	if err := write(map[string]any{"name": "s"}); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if err := write(map[string]any{"name": "s"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("duplicate write: %v", err)
+	}
+}
+
+func TestToolsUpdateReplacesOnce(t *testing.T) {
+	dir := makeSkillDir(t)
+	sp := NewSkillsProvider(dir)
+	tools := sp.Tools()
+	out, err := tools["skills"].Run(context.Background(), map[string]any{
+		"action": "update", "name": "test-skill",
+		"old_text": "This is the body.", "new_text": "This is the NEW body.",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if !strings.Contains(out, "replaced one occurrence") {
+		t.Fatalf("update out = %q", out)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "test-skill", "SKILL.md"))
+	if !strings.Contains(string(raw), "This is the NEW body.") {
+		t.Fatalf("SKILL.md after update = %q", string(raw))
+	}
+	// the description survives (the replace never touched frontmatter)
+	skills, _ := sp.LoadSkills("")
+	if len(skills) != 1 || skills[0].Description != "A test skill" {
+		t.Fatalf("LoadSkills after update = %+v", skills)
+	}
+}
+
+func TestToolsUpdateFailurePaths(t *testing.T) {
+	dir := makeSkillDir(t)
+	sp := NewSkillsProvider(dir)
+	tools := sp.Tools()
+	update := func(args map[string]any) error {
+		full := map[string]any{"action": "update", "name": "test-skill", "old_text": "x", "new_text": "y"}
+		for k, v := range args {
+			full[k] = v
+		}
+		_, err := tools["skills"].Run(context.Background(), full)
+		return err
+	}
+	if err := update(map[string]any{"old_text": ""}); err == nil || !strings.Contains(err.Error(), `are required`) {
+		t.Fatalf("missing old_text: %v", err)
+	}
+	if err := update(map[string]any{"old_text": "absent text"}); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("absent old_text: %v", err)
+	}
+	if err := update(map[string]any{"name": "nope"}); err == nil || !strings.Contains(err.Error(), `skill "nope" not found`) {
+		t.Fatalf("unknown skill: %v", err)
+	}
+	// two occurrences of the same text is ambiguous, refuse
+	if err := update(map[string]any{"old_text": "is", "new_text": "IS"}); err == nil || !strings.Contains(err.Error(), "must be unique") {
+		t.Fatalf("ambiguous old_text: %v", err)
+	}
+	// the frontmatter guard: a replace that eats the opening fence
+	// dies ("-" + newline + "name:" is unique; its removal would
+	// break the "---" opening)
+	raw0, _ := os.ReadFile(filepath.Join(dir, "test-skill", "SKILL.md"))
+	if err := update(map[string]any{"old_text": "-\nname", "new_text": "-gone"}); err == nil || !strings.Contains(err.Error(), "break the frontmatter") {
+		t.Fatalf("frontmatter guard: %v", err)
+	}
+	raw1, _ := os.ReadFile(filepath.Join(dir, "test-skill", "SKILL.md"))
+	if string(raw0) != string(raw1) {
+		t.Fatal("the refused update must not have written the file")
+	}
+}
+
+func TestToolsUpdatePatchesSharedWinner(t *testing.T) {
+	shared := t.TempDir()
+	own := t.TempDir()
+	// same skill name in both: shared wins the merge law, so the
+	// update action must land on the shared file
+	writeSKILL := func(base string) {
+		if err := os.MkdirAll(filepath.Join(base, "dup-skill"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\ndescription: shared winner\n---\nshared body\n"
+		if err := os.WriteFile(filepath.Join(base, "dup-skill", "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSKILL(shared)
+	if err := os.MkdirAll(filepath.Join(own, "dup-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(own, "dup-skill", "SKILL.md"), []byte("---\ndescription: own\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sp := &SkillsProvider{Dir: own, SharedDir: shared}
+	tools := sp.Tools()
+	out, err := tools["skills"].Run(context.Background(), map[string]any{
+		"action": "update", "name": "dup-skill", "old_text": "shared body", "new_text": "patched",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if !strings.Contains(out, "replaced one occurrence") {
+		t.Fatalf("out = %q", out)
+	}
+	raw, _ := os.ReadFile(filepath.Join(shared, "dup-skill", "SKILL.md"))
+	if !strings.Contains(string(raw), "patched") {
+		t.Fatalf("shared SKILL.md after update = %q", string(raw))
+	}
+	ownRaw, _ := os.ReadFile(filepath.Join(own, "dup-skill", "SKILL.md"))
+	if strings.Contains(string(ownRaw), "patched") {
+		t.Fatal("the own copy must not be patched (shared wins the merge)")
+	}
+}
+
+func TestToolsUnknownAction(t *testing.T) {
+	sp := NewSkillsProvider(t.TempDir())
+	tools := sp.Tools()
+	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "delete", "name": "x"})
+	if err == nil || !strings.Contains(err.Error(), "action is required") {
+		t.Fatalf("unknown action: %v", err)
+	}
 }
 
 // stubProvides satisfies the logging Requires edge in the mount set

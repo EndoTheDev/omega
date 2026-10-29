@@ -6,7 +6,7 @@ import (
 )
 
 // Plugin mounts the verdicts seam and its surfaces: the
-// verdict.request tool, the /verdict TUI command, and a short prompt
+// verdict tool, the /verdict TUI command, and a short prompt
 // section so the model knows when to ask. The hub is built once and
 // shared by the tool (the blocking Ask), the HTTP channel (the answer
 // POSTs), and the TUI (the answer command) - that one object is the
@@ -24,7 +24,7 @@ func (p *Plugin) Name() string { return "verdict" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "verdict cards: the verdict.request sub-action hard-pauses a turn until the user answers by click or type"
+	return "verdict cards: the request action hard-pauses a turn until the user answers by click or type"
 }
 
 // Provides: verdicts (exclusive - one hub on the Context), tools and
@@ -42,7 +42,7 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 
 // MountWithAPI builds the hub from the seams the mount reads in place
 // (store, logging - the Requires edges stay, recipe law 4) and
-// registers every face: the verdicts seam, the verdict.request tool,
+// registers every face: the verdicts seam, the verdict tool,
 // the TUI renderer, and the Verdict Cards prompt section.
 //
 // Capsule posture (arc 6, card t_78935c07): this registration is the
@@ -79,12 +79,12 @@ func NewPlugin() *Plugin { return &Plugin{} }
 
 const promptSectionOrder = 35 // after memory (10), skills (20), tools (30)
 
-// PromptSections renders the model guidance for verdict.request: when
+// PromptSections renders the model guidance for the verdict tool: when
 // to ask (the agent decides, no gate or config) and the block/answer
 // contract. The JSON tool schema already reaches the model; this is
 // the "use it well" nudge.
 func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
-	body := "- verdict.request: ask the user when a decision materially affects them and you cannot proceed without their input - approval (two options, \"yes\" / \"no\"), a pick between options, a multi-select, or free text (allow_text). It BLOCKS the turn until they answer, the card expires (20 minutes default), or the run is cancelled - so ask only when you cannot proceed without them, and decide autonomously for everything else.\n- Prefer concrete options over open questions; give each option a one-line description when the choice needs explaining. Options render as a list, one per row.\n- The verdict returns as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} (multi) | {verdict:\"skip\"} | {verdict:\"expired\"}. Act on it through your normal tools; the card itself executes nothing.\n"
+	body := "- verdict: ask the user when a decision materially affects them and you cannot proceed without their input - approval (two options, \"yes\" / \"no\"), a pick between options, a multi-select, or free text (allow_text). It BLOCKS the turn until they answer, the card expires (20 minutes default), or the run is cancelled - so ask only when you cannot proceed without them, and decide autonomously for everything else.\n- Prefer concrete options over open questions; give each option a one-line description when the choice needs explaining. Options render as a list, one per row.\n- The verdict returns as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} (multi) | {verdict:\"skip\"} | {verdict:\"expired\"}. Act on it through your normal tools; the card itself executes nothing.\n"
 	return []core.PromptSection{
 		{Title: "Verdict Cards", Body: body, Order: promptSectionOrder},
 	}

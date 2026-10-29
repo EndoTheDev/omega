@@ -658,17 +658,14 @@ func TestPluginMount(t *testing.T) {
 		t.Fatal("ctx.Memory is nil after Mount")
 	}
 
-	// Verify the namespaced memory tool is registered.
+	// Verify the bare-domain memory tool is registered.
 	tps := ctx.ToolProviders
 	if len(tps) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(tps))
 	}
 	tools := tps[0].Tools()
-	if _, ok := tools["memory.entry"]; !ok {
-		t.Fatal("memory.entry tool not registered")
-	}
-	if _, ok := tools["memory"]; ok {
-		t.Fatal("the unprefixed memory tool must be retired")
+	if _, ok := tools["memory"]; !ok {
+		t.Fatal("memory tool not registered")
 	}
 }
 

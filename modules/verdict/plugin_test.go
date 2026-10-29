@@ -1,7 +1,7 @@
 package verdict
 
 // The plugin-level pins (v0.12 phase C2): the api mount registers the
-// seam, the verdict.request tool, the TUI renderer and the prompt
+// seam, the verdict tool, the TUI renderer and the prompt
 // section, and the classic Mount is a fail-loud stub
 // (docs/migrating-a-module.md is the recipe).
 
@@ -65,8 +65,8 @@ func TestMountWithAPIShape(t *testing.T) {
 			names[name]++
 		}
 	}
-	if len(names) != 1 || names["verdict.request"] != 1 {
-		t.Fatalf("tool registry = %v, want {verdict.request: 1}", names)
+	if len(names) != 1 || names["verdict"] != 1 {
+		t.Fatalf("tool registry = %v, want {verdict: 1}", names)
 	}
 	if len(ctx.TUIProviders) != 1 {
 		t.Fatalf("TUI providers = %d, want the answer-command renderer", len(ctx.TUIProviders))

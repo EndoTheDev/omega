@@ -29,8 +29,9 @@ func (p *Plugin) Requires() []string { return nil }
 
 // MountWithAPI implements agent.APIPlugin. This registration is the
 // module's whole surface (arc 6 capsule, card t_da1fcc76): the seam,
-// the memory.entry tool (the namespaced identity, formerly "memory")
-// and the prompt section all register here, and the module ships
+// the memory domain tool (the bare domain name, the one-domain tool
+// law t_e06b38bc) and the prompt section all register here, and the
+// module ships
 // nothing else - no command, no REST route, no canvas panel (nothing
 // rendered memory before the arc). Removal proof: TestMemoryRemovalProof
 // (cmd/omega/removal_test.go).

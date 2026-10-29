@@ -58,13 +58,13 @@ describe("extensionsRows", () => {
       [ext("skills", {
         tools: 1,
         commands: 1,
-        tool_names: ["skills.read"],
+        tool_names: ["skills"],
         command_names: ["/skills"],
       })],
       [],
       [],
     );
-    assert.deepEqual(rows[0].toolNames, ["skills.read"]);
+    assert.deepEqual(rows[0].toolNames, ["skills"]);
     assert.deepEqual(rows[0].commandNames, ["/skills"]);
   });
 

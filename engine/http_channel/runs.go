@@ -344,7 +344,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
-		// interactive turn - verdict.request may issue from here.
+		// interactive turn - the verdict tool may issue from here.
 		ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 		// Turn copy persistence belongs to the loop (card t_471f6d4a),
 		// same wiring as the inline path.
@@ -354,9 +354,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// AFTER every provider merge, so a tool an extension re-adds
 		// under the same name never runs in a no-persist session.
 		// The denied name is modules/memory's registered identity
-		// (memory.entry, Q10 namespace pair, v0.12 phase C2).
+		// (the bare domain "memory", the one-domain tool law t_e06b38bc).
 		if req.Ephemeral {
-			ctx = agent.WithDeniedTools(ctx, "memory.entry")
+			ctx = agent.WithDeniedTools(ctx, "memory")
 		}
 		var recs []assistantRecord
 		var rec assistantRecord

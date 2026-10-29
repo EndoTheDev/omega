@@ -70,8 +70,8 @@ func TestMountWithAPIShape(t *testing.T) {
 			names[name]++
 		}
 	}
-	if len(names) != 1 || names["kanban.task"] != 1 {
-		t.Fatalf("tool registry = %v, want {kanban.task: 1}", names)
+	if len(names) != 1 || names["kanban"] != 1 {
+		t.Fatalf("tool registry = %v, want {kanban: 1}", names)
 	}
 	// the command table and the chain
 	var cmds []string

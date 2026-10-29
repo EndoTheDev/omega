@@ -1105,13 +1105,13 @@ func (m *model) startRun() {
 	// extension's registered tool (modules/memory targetMemory).
 	ctx = agent.WithSessionID(ctx, m.sessionID)
 	// Verdict cards v1 (card t_2ecf9c51): the TUI is an interactive
-	// origin - verdict.request may issue here, and the busy-Enter
+	// origin - the verdict tool may issue here, and the busy-Enter
 	// intercept answers it.
 	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
 	if m.ephemeral {
 		// the denied name is modules/memory's registered identity
-		// (memory.entry, Q10 namespace pair, v0.12 phase C2)
-		ctx = agent.WithDeniedTools(ctx, "memory.entry")
+		// (the bare domain "memory", the one-domain tool law t_e06b38bc)
+		ctx = agent.WithDeniedTools(ctx, "memory")
 	}
 	// Turn-copy persistence belongs to the loop (card t_471f6d4a): the
 	// sink carries the session and the head-pin parent, the run's new
