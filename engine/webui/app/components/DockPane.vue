@@ -267,6 +267,9 @@
   // the ONE icon wrapper (card t_502b8e81): every icon in the webui
   import Icon from "./ui/Icon.vue";
   import { isLockedTab } from "../composables/dockables";
+  // card t_36ceb99b: the viewer chip's extension-glyph vocabulary (the
+  // same pure table the file tree's row glyphs read)
+  import { glyphKindFor, glyphIcon } from "./files/rowicon";
   // the recursive split renderer, lazy: DockSplit imports DockPane for its
   // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
   const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));
@@ -354,6 +357,15 @@
     () => props.node.edge === "left" || props.node.edge === "right",
   );
   function tabIcon(tab: DockTab): string | null {
+    // card t_36ceb99b: the viewer's chip icon follows the CONTENT type -
+    // file rows keep the extension-glyph vocabulary (rowicon), skill rows
+    // the skills book; the registry entry's "file-text" is only the bare
+    // viewer fallback
+    if (tab.component === "viewer" && tab.viewer) {
+      return tab.viewer.kind === "skill"
+        ? "skills"
+        : glyphIcon(glyphKindFor(tab.viewer.name));
+    }
     return dockableIcon(tab.component);
   }
 

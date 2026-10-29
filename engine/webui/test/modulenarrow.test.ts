@@ -84,7 +84,9 @@ const RETROFIT: Array<{
     rel: "engine/webui/app/components/files/FilesTab.vue",
     label: "files",
     module: null,
-    rules: [/\.inspector-panel\.narrow \.file-preview \{/],
+    // t_36ceb99b: the preview left (viewer tab now); the measuring root
+    // stays - the flip drives the tree's size-column collapse
+    rules: [/narrow \(card t_a2fdc630\): the tree gets the flag passed down/],
   },
 ];
 

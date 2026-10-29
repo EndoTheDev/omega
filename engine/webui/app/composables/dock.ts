@@ -39,8 +39,10 @@ import {
   defaultHostTabs,
   isClosableTab,
   isLockedTab,
+  validViewerRef,
   type DockableComponentLike,
   type DockComponentName,
+  type ViewerRef,
 } from "./dockables.ts";
 // the openable component universe, the menus' refill inventory and the
 // tab-title fallback live in THE dockable registry (dockables.ts, card
@@ -57,7 +59,7 @@ export {
   isClosableTab,
   isLockedTab,
 };
-export type { DockComponentName, DockableComponentLike };
+export type { DockComponentName, DockableComponentLike, ViewerRef };
 // re-export for consumers that think in dock terms (tests, toggle helpers)
 export { PANE_OPEN_MIN };
 
@@ -159,6 +161,12 @@ export interface DockTab {
       stable across pane moves and reloads - the per-tab chat host keys
       its stream state on it. Always present on chat tabs after boot. */
   key?: string;
+  /** card t_36ceb99b: WHAT a viewer tab shows - the file path or skill
+      name. THE viewer tab's identity: focus-reuse keys on it (same ref =
+      focus the existing tab). Viewer tabs mint with it; nothing else
+      carries it; a viewer tab without a viewer payload is unreachable
+      (the menus can't mint one) and the reader drops it. */
+  viewer?: ViewerRef;
 }
 export interface DockPane {
   kind: "pane";
@@ -1575,6 +1583,59 @@ export function dockDropToZone(
   return "refused" in p ? tree : p.tree;
 }
 
+// --- the content viewer (card t_36ceb99b) -----------------------------------
+// A viewer tab is a MULTI component like chat, but its identity is its
+// CONTENT: the file path or skill name it was minted for. Focus-reuse is
+// the law (the chat-precedent singleton feel without limiting tabs):
+// opening the same file/skill twice FOCUSES the existing tab wherever it
+// lives and never mints a duplicate. A different ref mints a fresh tab.
+
+/** a viewer ref's equality: kind + name, undefined matches undefined */
+export function viewerRefEq(a?: ViewerRef, b?: ViewerRef): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.kind === b.kind && a.name === b.name;
+}
+
+/** the FIRST tab in the tree showing `v` (active or not - like the
+    singleton finders, the identity read must see parked tabs). */
+export function findViewerTab(
+  tree: DockNode,
+  v: ViewerRef,
+): ComponentTabLocation | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    const index = n.tabs.findIndex(
+      (t) => t.component === "viewer" && viewerRefEq(t.viewer, v),
+    );
+    if (index >= 0) return { paneId: n.id, index, tab: n.tabs[index]! };
+  }
+  return null;
+}
+
+/** the viewer opener's pure half: a tab already showing `v` focuses
+    wherever it lives; otherwise one mints into `paneId` (the caller's
+    ensureMainPane target - the same main pane a session would open in).
+    Returns the focused/minted location. */
+export function openViewerTab(
+  tree: DockNode,
+  v: ViewerRef,
+  paneId: string,
+): { tree: DockNode; paneId: string; index: number; action: "created" | "focused" } {
+  const found = findViewerTab(tree, v);
+  if (found) {
+    return {
+      tree: focusTab(tree, found.paneId, found.index),
+      paneId: found.paneId,
+      index: found.index,
+      action: "focused",
+    };
+  }
+  const next = openTab(tree, paneId, { component: "viewer", viewer: v });
+  const pane = findPane(next, paneId);
+  const index = pane ? pane.tabs.length - 1 : 0;
+  return { tree: next, paneId, index, action: "created" };
+}
+
 // --- chat tab session binding (card t_4f0e88f2) -------------------------------
 
 export interface ChatTabLocation {
@@ -2014,7 +2075,7 @@ function validateNode(raw: unknown): DockNode | null {
   const tabs: DockTab[] = [];
   for (const t of n.tabs) {
     if (!t || typeof t !== "object") return null;
-    const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown };
+    const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown; viewer?: unknown };
     // legacy "inspector" tabs deserialize (pre-reset trees carry them);
     // createDock's modernizer expands them to the inspector group on load
     if (
@@ -2025,12 +2086,17 @@ function validateNode(raw: unknown): DockNode | null {
       )
     )
       return null;
+    // card t_36ceb99b: a viewer payload present but unreadable rejects
+    // the whole record (the strict reader; it can only be writer bug or
+    // hand corruption - the tolerant path repairs instead)
+    if (tab.viewer !== undefined && !validViewerRef(tab.viewer)) return null;
     tabs.push(
       typeof tab.sessionRef === "string" && tab.sessionRef
         ? { component: tab.component as DockComponentName, sessionRef: tab.sessionRef }
         : { component: tab.component as DockComponentName },
     );
     if (typeof tab.key === "string" && tab.key) tabs[tabs.length - 1]!.key = tab.key;
+    if (validViewerRef(tab.viewer)) tabs[tabs.length - 1]!.viewer = tab.viewer;
   }
   const fixed = typeof n.fixed === "number" && Number.isFinite(n.fixed) && n.fixed >= 0
     ? n.fixed
@@ -2178,7 +2244,7 @@ function tolerantNode(
         repairs.push("an unreadable tab record was dropped");
         continue;
       }
-      const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown };
+      const tab = t as { component?: unknown; sessionRef?: unknown; key?: unknown; viewer?: unknown };
       if (
         typeof tab.component !== "string" ||
         !(
@@ -2194,6 +2260,16 @@ function tolerantNode(
           ? { component: tab.component as DockComponentName, sessionRef: tab.sessionRef }
           : { component: tab.component as DockComponentName };
       if (typeof tab.key === "string" && tab.key) nt.key = tab.key;
+      // card t_36ceb99b: the viewer payload rides the record when it
+      // validates; an unreadable one drops with a receipt (the tab is
+      // then an empty viewer tab - unreachable, so it is dropped too
+      // when the component is viewer: a payloadless viewer tab renders
+      // nothing)
+      if (validViewerRef(tab.viewer)) nt.viewer = tab.viewer;
+      else if (tab.viewer !== undefined) {
+        repairs.push("a viewer tab's unreadable payload dropped the tab");
+        if ((nt.component as string) === "viewer") continue;
+      }
       tabs.push(nt);
     }
   } else {
@@ -2398,7 +2474,10 @@ export function treeShapesMatch(a: DockNode, b: DockNode): boolean {
         (t, i) =>
           t.component === b.tabs[i]!.component &&
           (t.sessionRef ?? undefined) === (b.tabs[i]!.sessionRef ?? undefined) &&
-          (t.key ?? undefined) === (b.tabs[i]!.key ?? undefined),
+          (t.key ?? undefined) === (b.tabs[i]!.key ?? undefined) &&
+          // card t_36ceb99b: the viewer payload is tab identity - it
+          // rides the shape comparison (a dropped payload IS drift)
+          viewerRefEq(t.viewer, b.tabs[i]!.viewer),
       );
     return (
       a.id === b.id &&
@@ -2472,6 +2551,11 @@ export interface DockApi {
   setSessionRef: (key: string, sessionRef: string | null) => void;
   /** card 3: close every chat tab bound to a session (delete flow). */
   closeSession: (sessionRef: string) => void;
+  /** card t_36ceb99b: open (or FOCUS) the viewer tab for `v` - a file
+      path or skill name already shown anywhere focuses that tab
+      (focus-reuse, never a duplicate); otherwise one mints into the
+      ensured main pane, exactly the routing a session open takes. */
+  openViewer: (v: ViewerRef) => void;
   /** card 3: chat tab lookups (focus helpers; read-only over the live tree) */
   findChatTab: (key: string) => ChatTabLocation | null;
   firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
@@ -2743,6 +2827,14 @@ export function createDock(store: Storage): DockApi {
   const closeSession = (sessionRef: string) => {
     tree.value = closeSessionTabs(tree.value, sessionRef);
   };
+  // card t_36ceb99b: the viewer opener - the pure op carries focus-reuse;
+  // ensureMainPane re-inserts a flexible main pane when the user removed
+  // every last one. A tab open is a CONTENT op: no undo-ring entry.
+  const openViewer = (v: ViewerRef) => {
+    const pane = ensureMainPane();
+    const res = openViewerTab(tree.value, v, pane);
+    tree.value = res.tree;
+  };
   const split = (paneId: string, direction: "row" | "column", side: "before" | "after") => {
     // v0.14.4 ruling 2/3: the direction/depth law gates the menu path too
     // (sidebars refuse row splits, tight roots refuse past depth 2) - a
@@ -2888,7 +2980,7 @@ export function createDock(store: Storage): DockApi {
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
     dockDropToZone: dockDropToZoneIn, lockedBarOk,
     openSingleton: openSingletonIn,
-    setSessionRef, closeSession,
+    setSessionRef, closeSession, openViewer,
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
     firstDraftChatTab: () => firstDraftChatTab(tree.value),

@@ -25,7 +25,15 @@
         class="registry-row"
         :class="{ 'registry-off': r.disabled }">
         <span class="registry-main">
-          <span class="registry-name">{{ r.name }}</span>
+          <button
+            v-if="openable"
+            type="button"
+            class="registry-name registry-open"
+            :title="`open ${r.name}`"
+            @click.stop="emit('open', r)">{{ r.name }}</button>
+          <span
+            v-else
+            class="registry-name">{{ r.name }}</span>
           <span
             v-if="r.description"
             class="registry-desc">{{ r.description }}</span>
@@ -107,16 +115,24 @@
       toggleable?: boolean;
       showState?: boolean;
       emptyText?: string;
+      /** card t_36ceb99b: the name click opens the row's content in a
+          main-pane viewer tab (the skills consumer only; everything else
+          keeps the plain name span and byte-identical renders) */
+      openable?: boolean;
     }>(),
-    { busy: null, error: null, loaded: false, toggleable: false, showState: true, emptyText: "nothing registered" },
+    { busy: null, error: null, loaded: false, toggleable: false, showState: true, emptyText: "nothing registered", openable: false },
   );
 
   // toggle carries the CONFIRMED direction: the parent PUTs and
   // re-renders the rows from the response fold. expand tells the
-  // parent a row opened (the agents tab lazily loads sessions).
+  // parent a row opened (the agents tab lazily loads sessions). open
+  // (card t_36ceb99b): the NAME click opens the row's content in a
+  // main-pane viewer tab - opt-in via `openable` (the skills tab only);
+  // the expander stays the detail toggle and keeps @click.stop.
   const emit = defineEmits<{
     (e: "toggle", name: string, enabled: boolean): void;
     (e: "expand", row: RegistryRow): void;
+    (e: "open", row: RegistryRow): void;
   }>();
 
   const hasDetail = (r: RegistryRow) => !!(r.detail && r.detail.length);
@@ -178,6 +194,20 @@
     font-size: 12px;
     font-weight: 600;
     opacity: 0.9;
+  }
+  /* the openable name (t_36ceb99b): a button styled back into the row -
+     same voice, the hover raises it like the other row affordances */
+  .registry-open {
+    border: none;
+    background: none;
+    color: inherit;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+  }
+  .registry-open:hover {
+    text-decoration: underline;
   }
   .registry-off .registry-name {
     opacity: 0.55;

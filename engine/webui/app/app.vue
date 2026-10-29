@@ -97,6 +97,17 @@
             class="pane"
             :open="inspectorOpen" />
         </template>
+        <!-- card t_36ceb99b: the content viewer tab - the file/skill a
+             row click opened. Keyed by the payload so a switch to a
+             different viewer tab mounts a fresh fetch; the watch inside
+             covers a hand-off on the same instance. -->
+        <template #pane-viewer="{ tab }">
+          <ViewerTab
+            v-if="tab.viewer"
+            :key="tab.viewer.kind + ':' + tab.viewer.name"
+            class="pane"
+            :viewer="tab.viewer" />
+        </template>
         <template #pane-cron>
           <InspectorPanel
             v-if="!isMobile"
@@ -449,6 +460,19 @@
   // card t_14f73742: the extensions inventory joins the inspector (registry:
   // singleton, pinned right) - the outlet renders it when its tab is active
   import ExtensionsTab from "./components/shell/ExtensionsTab.vue";
+  // card t_36ceb99b: the content viewer tab (a file or a skill opened
+  // from a row click) - outlet below, opener + titles wired at the
+  // provides
+  import ViewerTab from "./components/ViewerTab.vue";
+  import {
+    DOCK_VIEWER_OPEN_KEY,
+    VIEWER_OPEN_EVENT,
+  } from "./composables/viewer";
+  import {
+    validViewerRef,
+    viewerTabTitle,
+    type ViewerRef,
+  } from "./composables/dockables";
   const healthy = ref(false);
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
@@ -886,6 +910,11 @@
       const s = sessions.value.find((x) => x.id === tab.sessionRef);
       return s?.label || "chat";
     }
+    // card t_36ceb99b: the viewer tab is named by its CONTENT (the file
+    // base name / the skill name) - the payload rides the tab
+    if (tab.component === "viewer" && tab.viewer) {
+      return viewerTabTitle(tab.viewer);
+    }
     const panel = modulePanels.find((p) => p.module === tab.component);
     return panel?.dockable?.title ?? null;
   });
@@ -895,6 +924,27 @@
   // setComponent - a keyless chat tab would share one state across
   // every keyless tab in the page
   provide(DOCK_CHAT_OPEN_KEY, (paneId, sessionId) => openChatTab(sessionId, paneId));
+
+  // card t_36ceb99b: the viewer opener - the same provide shape the chat
+  // opener rides (FilesTab injects; the store's openViewer carries the
+  // focus-reuse + ensured-main-pane routing)
+  provide(DOCK_VIEWER_OPEN_KEY, (v) => dock.openViewer(v));
+
+  // module-owned openers (the skills tab's RegistryList row click) hand
+  // the open over a WINDOW EVENT - module UI imports no shell code (the
+  // Board precedent), so the literal is copied in SkillsList and the
+  // viewer test pins both spellings. Listener: page-lifetime (app mounts
+  // once); the removal is hygiene for hot-reloading harnesses.
+  function onViewerOpenEvent(e: Event) {
+    const v = (e as CustomEvent).detail;
+    if (validViewerRef(v)) {
+      dock.openViewer(v as ViewerRef);
+    }
+  }
+  window.addEventListener(VIEWER_OPEN_EVENT, onViewerOpenEvent);
+  onUnmounted(() =>
+    window.removeEventListener(VIEWER_OPEN_EVENT, onViewerOpenEvent),
+  );
 
   // --- focus + URL (card t_4f0e88f2 rulings) ---
   // The URL owns ONLY the focused chat session: focusing a chat tab

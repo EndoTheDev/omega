@@ -25,8 +25,10 @@
       :error="toggleError"
       :loaded="loaded"
       :toggleable="toggleable"
+      openable
       empty-text="no skills installed"
-      @toggle="onToggle" />
+      @toggle="onToggle"
+      @open="openSkill" />
   </section>
 </template>
 
@@ -69,6 +71,26 @@
       disabled: set.has(s.name),
     }));
   });
+
+  // --- the viewer open (card t_36ceb99b): a name click opens the skill
+  // in a main-pane viewer tab. Module UI imports no shell code (the
+  // nuxt.config comment; the Board precedent), so the open rides a window
+  // CustomEvent the shell app listens on. THE LITERAL IS COPIED from
+  // composables/viewer.ts (VIEWER_OPEN_EVENT) - deliberately, like
+  // narrow.ts; the viewer test pins both spellings identical.
+  const VIEWER_OPEN_EVENT = "omega:open-viewer";
+
+  interface SkillRow {
+    name: string;
+  }
+
+  function openSkill(r: SkillRow): void {
+    window.dispatchEvent(
+      new CustomEvent(VIEWER_OPEN_EVENT, {
+        detail: { kind: "skill", name: r.name },
+      }),
+    );
+  }
 
   async function load(): Promise<void> {
     const res = await fetch("/skills");

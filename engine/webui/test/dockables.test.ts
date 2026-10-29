@@ -183,15 +183,16 @@ describe("the dockable registry", () => {
       // component left (card t_d7fd3ad3: insights' home moved to the
       // right shell; unclosable like every inspector view)
       assert.equal(isLockedTab(d.id), d.id === 'sidebar', `${d.id}: lock == sessions`);
-      assert.equal(isClosableTab(d.id), d.id === "chat", `${d.id}: closable == chat`);
+      // card t_36ceb99b: chat AND viewer are the closable multi class
+      assert.equal(isClosableTab(d.id), d.id === "chat" || d.id === "viewer", `${d.id}: closable == chat|viewer`);
     }
   });
 
-  it("policy split (card t_4ae27e0d + t_49d0b308 + t_d7fd3ad3): chat the only multi; chat the only closable", () => {
+  it("policy split: chat + viewer multi (t_36ceb99b: the viewer mints per opened content), both closable", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
-    assert.deepEqual(multi, ["chat"]);
+    assert.deepEqual(multi, ["chat", "viewer"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
-    assert.deepEqual([...closable].sort(), ["chat"]);
+    assert.deepEqual([...closable].sort(), ["chat", "viewer"]);
   });
 
   it("the fixed sidebars: sidebar pinned left, the inspector TEN pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas)", () => {
@@ -223,9 +224,12 @@ describe("the dockable registry", () => {
     // default-arrangement fallback are its only entry. MAIN_DOCKABLES (the
     // main-area list) and MENU_DOCKABLES (the refill inventory) both
     // exclude it. card t_d7fd3ad3: insights LEFT the main area (its home
-    // is the right shell) - chat is the main class's only member again.
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
+    // is the right shell). card t_36ceb99b: viewer joins the MAIN class
+    // (multi, row-click opened) but not the MENUS - an empty viewer tab
+    // is meaningless, content IS the tab.
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer"]);
     assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
+    assert.ok(!MENU_DOCKABLES.includes("viewer"), "no empty viewer menu entry");
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
     assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
     // card t_14f73742: extensions IS refillable - the '+' menu is a real
@@ -282,11 +286,11 @@ describe("the dockable registry", () => {
     );
     // the pinned sidebars have no menu-open path (card t_4ae27e0d);
     // settings left the main class (card t_49d0b308) and insights left
-    // with it (card t_d7fd3ad3: its home is the right shell) - chat is
-    // the main class's only member.
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat"]);
+    // with it (card t_d7fd3ad3: its home is the right shell).
+    // card t_36ceb99b: the viewer joins the main class.
     const ids = DOCKABLES.map((d) => d.id);
     assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer"]);
     // card t_d7fd3ad3 items 1+3: the two header voices go capital -
     // "Sessions" (primary) and "Insights" (secondary); the module-tab
     // and inspector-voice titles stay lowercase by Endo's call

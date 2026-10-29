@@ -87,7 +87,8 @@
   // expand in place, and expanding a directory lazy-loads exactly one
   // level via /files/browse. The tree IS the location - there is no
   // navigate-in and no separate listing pane. Clicking a file emits
-  // `open` and RightSidebar keeps the read-only preview responsibility.
+  // `open` (card t_36ceb99b: the host opens it as a main-pane viewer
+  // tab - the inline preview is gone).
   const props = defineProps<{
     entries: FileEntry[];
     // path of the directory these entries belong to ("" = the root)
