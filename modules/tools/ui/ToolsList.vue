@@ -34,6 +34,7 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
+  import { toggleTargets, toolRows, type ToolWire } from "./toolRows";
 
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
   // content (card t_db430fea): the tool inventory, sourced from
@@ -46,15 +47,8 @@
   // own wiring, desktop / VS Code precedent) - the flag merge and the
   // toggle PUT are small deliberate copies (the narrow.ts copy law);
   // the SHARED thing is the RegistryList component.
-  interface ToolAction {
-    name: string;
-    description: string;
-  }
-  interface ToolInfo {
-    name: string;
-    description: string;
-    actions?: ToolAction[];
-  }
+  // the wire shape GET /tools serves (types live in ./toolRows)
+  interface ToolInfo extends ToolWire {}
   const tools = ref<ToolInfo[]>([]);
   const fold = ref<string[]>([]);
   const loaded = ref(false);
@@ -65,24 +59,16 @@
   // list stays, read-only.
   const toggleable = ref(false);
 
-  // the row model: the domain context stays the description, the
-  // actions collapse into dotted detail lines (the row expands, the
-  // same mechanism every registry-browser row rides).
-  // rows are a computed (the AgentsPanel shape): RegistryList binds
-  // `rows` straight into the template, where an unwrap gives the array
-  // - a plain function would make the `v-if="rows.length"` gate read
-  // the ARITY (0), and the list would never render (the t_504a78ca
-  // bug: data fetched, tabs empty). Structural RegistryRow: module UI
-  // imports no shell code, so the type rides inference.
-  const rows = computed(() => {
-    const set = new Set(fold.value);
-    return tools.value.map((t) => ({
-      name: t.name,
-      description: t.description,
-      detail: (t.actions ?? []).map((a) => `${t.name}.${a.name} - ${a.description}`),
-      disabled: set.has(t.name),
-    }));
-  });
+  // the row model (t_e06b38bc Part 1) lives in ./toolRows - the pure
+  // grouping the node suite pins: domain tools as parent rows with
+  // dotted action children, sibling-verb tools merged under their
+  // prefix, lone dotted tools as their own rows. rows are a computed
+  // (the AgentsPanel shape): RegistryList binds `rows` straight into
+  // the template, where an unwrap gives the array - a plain function
+  // would make the `v-if="rows.length"` gate read the ARITY (0), and
+  // the list would never render (the t_504a78ca bug: data fetched,
+  // tabs empty).
+  const rows = computed(() => toolRows(tools.value, fold.value));
 
   async function load(): Promise<void> {
     const res = await fetch("/tools");
@@ -149,21 +135,26 @@
     loaded.value = true;
   });
 
-  // the toggle: PUT answers the fresh fold - rows rebuild from the
-  // reload so the persisted state is what the tab shows. A failed
-  // toggle still refreshes: the error line stands over the truth
-  // (404 = unknown name, 409 = built-in-wins, both loud).
+  // the toggle: the fold stores EXACT tool names, so a group parent's
+  // toggle fans out to its members (toggleTargets: an exact tool name
+  // PUTs itself, a merged prefix PUTs each member). PUT answers the
+  // fresh fold - rows rebuild from the reload so the persisted state
+  // is what the tab shows. A failed toggle still refreshes: the error
+  // line stands over the truth (404 = unknown name, 409 =
+  // built-in-wins, both loud).
   async function onToggle(name: string, enabled: boolean): Promise<void> {
     if (busy.value !== null) return;
     busy.value = name;
     toggleError.value = null;
     try {
-      const res = await fetch("/disabled/tools", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, enabled }),
-      });
-      if (!res.ok) throw new Error(await res.text());
+      for (const target of toggleTargets(name, tools.value)) {
+        const res = await fetch("/disabled/tools", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: target, enabled }),
+        });
+        if (!res.ok) throw new Error(`${target}: ${await res.text()}`);
+      }
     } catch (e) {
       toggleError.value = e instanceof Error ? e.message : String(e);
     } finally {

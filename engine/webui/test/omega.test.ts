@@ -235,7 +235,7 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     const open = t.apply(rows({
       role: "assistant",
       status: "streaming",
-      blocks: [{ type: "tool_call", running: true, tool_call: { id: "v1", name: "verdict.request", arguments: args } }],
+      blocks: [{ type: "tool_call", running: true, tool_call: { id: "v1", name: "verdict", arguments: args } }],
     }));
     const card = open[0] as { kind: string; status: string; issuedAt?: number; title: string };
     assert.equal(card.kind, "verdict");
@@ -245,7 +245,7 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     const again = t.apply(rows({
       role: "assistant",
       status: "streaming",
-      blocks: [{ type: "tool_call", running: true, tool_call: { id: "v1", name: "verdict.request", arguments: args } }],
+      blocks: [{ type: "tool_call", running: true, tool_call: { id: "v1", name: "verdict", arguments: args } }],
     }));
     assert.equal(again[0], open[0]);
     assert.equal((again[0] as { issuedAt?: number }).issuedAt, card.issuedAt);
@@ -254,7 +254,7 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
       {
         role: "assistant",
         status: "complete",
-        blocks: [{ type: "tool_call", tool_call: { id: "v1", name: "verdict.request", arguments: args } }],
+        blocks: [{ type: "tool_call", tool_call: { id: "v1", name: "verdict", arguments: args } }],
       },
       { role: "tool", status: "complete", blocks: [{ type: "tool_result", tool_call_id: "v1", content: '{"verdict":"answer","option":"yes"}' }] },
     ));

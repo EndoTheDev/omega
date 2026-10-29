@@ -154,7 +154,7 @@ test("the canary component lives in the tools module, not the shell", () => {
   // the row's EXPANDABLE detail lines (memory.add - description), the
   // RegistryList contract; the list itself is the shared component
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
-  assert.ok(src.includes("t.name}.${a.name}"), "dotted action detail naming");
+  assert.ok(src.includes('from "./toolRows"'), "the dotted action detail naming lives in the pure row model (t_e06b38bc grouping)");
   assert.ok(
     !src.includes("composables/omega"),
     "no shell client dependency - module UI carries its own wiring",

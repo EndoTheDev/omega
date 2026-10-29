@@ -995,9 +995,10 @@ export function createCanvasTranscript(): CanvasTranscript {
     // role assistant:
     if (block.type === "tool_call") {
       const callId = block.tool_call?.id;
-      // verdict calls render as cards (the card IS the surface, no
+      // verdict calls (the bare domain tool, the one-domain law
+      // t_e06b38bc) render as cards (the card IS the surface, no
       // plain tool line - the matching result row settles it)
-      if (block.tool_call?.name === "verdict.request") {
+      if (block.tool_call?.name === "verdict") {
         const vsig = callId ? `verdict:${callId}` : sig;
         const cached = cache.get(vsig) as VerdictItem | undefined;
         if (cached) {
