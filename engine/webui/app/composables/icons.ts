@@ -21,9 +21,12 @@ import {
   Download,
   File,
   FileCode,
+  FilePlus,
   FileText,
   Folder,
   FolderOpen,
+  FolderPlus,
+  FoldVertical,
   GitFork,
   History,
   Kanban,
@@ -36,6 +39,7 @@ import {
   PanelRightOpen,
   Pencil,
   Puzzle,
+  RefreshCw,
   ScrollText,
   SlidersHorizontal,
   SquareTerminal,
@@ -96,6 +100,11 @@ export const ICONS = {
   "file-script": SquareTerminal,
   "file-db": Database,
   "folder-open": FolderOpen,
+  // the Files tab toolbar (card t_a4504a25): create, reload, fold
+  "file-plus": FilePlus,
+  "folder-plus": FolderPlus,
+  refresh: RefreshCw,
+  unfoldless: FoldVertical, // "collapse folders" - the fold glyph
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
