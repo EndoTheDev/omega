@@ -54,7 +54,8 @@
         :base="entryPath(entry)"
         :depth="depth + 1"
         :narrow="narrow"
-        @open="(p) => emit('open', p)" />
+        @open="(p) => emit('open', p)"
+        @select="(s) => emit('select', s)" />
       <p
         v-else-if="entry.is_dir && isLoading(entryPath(entry))"
         class="tree-error"
@@ -70,8 +71,10 @@
   import {
     FILETREE_STATE_KEY,
     fetchFilesBrowse,
+    fileTreeBus,
     joinRelPath,
     parseExpandedPaths,
+    revealAncestors,
     sortFileEntries,
     serializeExpandedPaths,
   } from "../../composables/omega";
@@ -97,7 +100,12 @@
     narrow?: boolean;
   }>();
 
-  const emit = defineEmits<{ open: [path: string] }>();
+  const emit = defineEmits<{
+    open: [path: string];
+    // every row click, files and folders alike - the toolbar creates at
+    // the selected folder (or a selected file's folder)
+    select: [sel: { path: string; isDir: boolean }];
+  }>();
 
   interface TreeStore {
     isOpen(path: string): boolean;
@@ -181,6 +189,38 @@
     // Restored branches have no toggle to fire their lazy load - fetch
     // every persisted level up front so a reloaded tree renders whole.
     for (const p of [...expanded]) ensureLoaded(p);
+
+    // The FilesTab toolbar's seam (card t_a4504a25): the tab cannot reach
+    // this store, it talks through fileTreeBus. Only the ROOT instance
+    // (the one that created the store) watches - nested instances inherit
+    // the provided store and must not double-apply. Watchers read the
+    // fields, they never write: the bus stays a one-way seam.
+    watch(
+      () => fileTreeBus.collapse,
+      () => expanded.clear(),
+    );
+    watch(
+      () => fileTreeBus.refresh,
+      () => {
+        // drop every loaded branch's cache, then reload the open set -
+        // a create inside an expanded folder must turn up here
+        for (const p of [...expanded]) {
+          delete kids[p];
+          delete errs[p];
+        }
+        for (const p of [...expanded]) ensureLoaded(p);
+      },
+    );
+    watch(
+      () => fileTreeBus.reveal,
+      (path) => {
+        for (const p of revealAncestors(path)) {
+          expanded.add(p);
+          ensureLoaded(p);
+        }
+      },
+    );
+
     provide("omega-filetree", store);
   }
 
@@ -214,6 +254,7 @@
 
   function activate(entry: FileEntry, ev: MouseEvent) {
     const path = entryPath(entry);
+    emit("select", { path, isDir: entry.is_dir });
     if (entry.is_dir) {
       ev.stopPropagation();
       store!.toggle(path);
