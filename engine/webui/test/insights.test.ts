@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { fetchInsights } from "../app/composables/omega.ts";
+import { INSIGHTS_DEFAULT_DAYS } from "../app/components/insights/defaultWindow.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modules = join(here, "..", "..");
@@ -117,11 +118,21 @@ test("an empty window is honest: text, zeroed payload, no fake rows", () => {
   assert.match(vue, /\.filter\(\(n\) => n\.row\.value > 0\)/, "zero notables are omitted");
 });
 
+test("the tab's initial window is 7 days, not the server default 30 (Endo 2026-10-29)", async () => {
+  // the exported default constant is the tab's initial `days` value
+  assert.equal(INSIGHTS_DEFAULT_DAYS, 7);
+  // the initial ref is wired to the constant (behavior via the import,
+  // not a literal in the SFC)
+  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
+  assert.match(vue, /ref<number \| null>\(INSIGHTS_DEFAULT_DAYS\)/);
+  // the bare-endpoint fold survives: load() still maps null -> no param
+  assert.match(vue, /days\.value === null \? null : days\.value/);
+});
+
 test("the window selector mirrors the TUI arg semantics", () => {
   const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
   assert.match(vue, /:value="0">all time/, "0 = all time option");
-  assert.match(vue, /:value="30">30 days/, "30 default in the selector");
-  assert.match(vue, /days\.value === null \? null : days\.value/, "first load keeps the server default");
+  assert.match(vue, /:value="30">30 days/, "30 days option in the selector");
   assert.match(vue, /watch\(days, \(\) => load\(\)\)/, "a window change refetches");
 });
 

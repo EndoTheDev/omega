@@ -133,13 +133,15 @@
     InsightsDayRow,
     type RegistryRow,
   } from "../../composables/omega";
+  import { INSIGHTS_DEFAULT_DAYS } from "./defaultWindow";
 
   const data = ref<InsightsPayload | null>(null);
   const loading = ref(false);
   const loadError = ref<string | null>(null);
-  // null until first load: the request goes out with no param, exactly
-  // like a bare `/insights` (server default window = the TUI default 30)
-  const days = ref<number | null>(null);
+  // initial window = 7 days (see ./defaultWindow.ts) - NOT the server
+  // default 30 a bare `/insights` gets. null only survives for the
+  // load() fold; a user pick (30/90/all) wins for the tab's lifetime.
+  const days = ref<number | null>(INSIGHTS_DEFAULT_DAYS);
 
   const emptyText = computed(() =>
     days.value === 0 ? "no sessions yet" : `no sessions in the last ${days.value ?? 30} days`,
