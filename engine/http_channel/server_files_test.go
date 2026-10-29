@@ -350,3 +350,175 @@ func TestFilesRootBehindSymlink(t *testing.T) {
 		t.Errorf("content = %q; want %q", body["content"], marker)
 	}
 }
+
+// filesPost exercises the write half the way filesGet exercises the
+// read half: a real Server.Handler() round-trip against the chdir'd root.
+func filesPost(t *testing.T, path string, jsonBody string) (*http.Response, map[string]any) {
+	t.Helper()
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	res := rec.Result()
+	var body map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	return res, body
+}
+
+func TestFilesWriteCreateReadBack(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	res, body := filesPost(t, "/files/write", `{"path":"new.txt","content":"omega\n"}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("write status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	if body["ok"] != true || body["path"] != "new.txt" {
+		t.Errorf("response = %v; want ok+path", body)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "new.txt"))
+	if err != nil || string(got) != "omega\n" {
+		t.Errorf("disk read back %q, %v; want the written content", got, err)
+	}
+	// overwrite goes through the same route
+	if _, body := filesPost(t, "/files/write", `{"path":"new.txt","content":"v2"}`); body == nil {
+		t.Fatal("rewrite failed")
+	}
+	got, err = os.ReadFile(filepath.Join(dir, "new.txt"))
+	if err != nil || string(got) != "v2" {
+		t.Errorf("overwrite read back %q, %v; want v2", got, err)
+	}
+}
+
+func TestFilesWriteNestedUnderExistingDir(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	os.Mkdir(filepath.Join(dir, "docs"), 0o755) //nolint:errcheck // setup
+	res, body := filesPost(t, "/files/write", `{"path":"docs/notes.md","content":""}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("write status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "docs", "notes.md")); err != nil {
+		t.Errorf("empty-content file not created: %v", err)
+	}
+}
+
+func TestFilesWriteRefusals(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	os.Mkdir(filepath.Join(dir, "adir"), 0o755) //nolint:errcheck // setup
+	cases := []struct {
+		json string
+		want int
+		why  string
+	}{
+		{`{"path":"","content":"x"}`, http.StatusBadRequest, "empty name"},
+		{`{"path":"  ","content":"x"}`, http.StatusBadRequest, "blank name"},
+		{`{"path":"../outsidespawn","content":"x"}`, http.StatusBadRequest, "traversal"},
+		{`{"path":"a/../b.txt","content":"x"}`, http.StatusBadRequest, "traversal segment"},
+		{`{"path":"/etc/passwd","content":"x"}`, http.StatusBadRequest, "absolute"},
+		{`{"path":".hidden","content":"x"}`, http.StatusBadRequest, "dot segment"},
+		{`{"path":"adir","content":"x"}`, http.StatusBadRequest, "target is a directory"},
+		{`{"path":"no-parent/f.txt","content":"x"}`, http.StatusBadRequest, "missing parent"},
+		{`{"path":"adir/","content":"x"}`, http.StatusBadRequest, "empty segment"},
+		{`not json`, http.StatusBadRequest, "malformed body"},
+	}
+	for _, c := range cases {
+		res, body := filesPost(t, "/files/write", c.json)
+		if res.StatusCode != c.want {
+			t.Errorf("%s (%s) status = %d; want %d", c.json, c.why, res.StatusCode, c.want)
+		}
+		if msg, ok := body["error"].(string); !ok || msg == "" {
+			t.Errorf("%s (%s) error envelope missing or empty: %v", c.json, c.why, body)
+		}
+	}
+	// loud refusal means loud: nothing landed outside the root
+	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "outsidespawn")); !os.IsNotExist(err) {
+		t.Errorf("traversal wrote outside the root")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "no-parent")); !os.IsNotExist(err) {
+		t.Errorf("missing-parent write created the parent as a side effect")
+	}
+}
+
+func TestFilesWriteSymlinkEscape(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	outside := filepath.Join(t.TempDir(), "victim.txt")
+	os.WriteFile(outside, []byte("original"), 0o644) //nolint:errcheck // setup
+	os.Symlink(outside, filepath.Join(dir, "esc.lnk")) //nolint:errcheck // setup
+	res, _ := filesPost(t, "/files/write", `{"path":"esc.lnk","content":"hijack"}`)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("symlink escape status = %d; want 400", res.StatusCode)
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil || string(got) != "original" {
+		t.Errorf("outside target read %q, %v; want untouched", got, err)
+	}
+}
+
+func TestFilesWriteMethodGate(t *testing.T) {
+	chdirToWorkdir(t)
+	s := newTestServer()
+	// invoked DIRECTLY: the mux registers only the POST pattern, so a
+	// wrong verb in production falls to the SPA catch-all - the handler's
+	// own gate is the pinned defense here
+	req := httptest.NewRequest(http.MethodGet, "/files/write", nil)
+	rec := httptest.NewRecorder()
+	s.handleFilesWrite(rec, req)
+	if rec.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET (direct) /files/write status = %d; want 405", rec.Result().StatusCode)
+	}
+}
+
+func TestFilesMkdirCreates(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	res, body := filesPost(t, "/files/mkdir", `{"path":"a-dir"}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("mkdir status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	info, err := os.Stat(filepath.Join(dir, "a-dir"))
+	if err != nil || !info.IsDir() {
+		t.Errorf("a-dir not created as a directory: %v", err)
+	}
+}
+
+func TestFilesMkdirRefusals(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	os.Mkdir(filepath.Join(dir, "here"), 0o755) //nolint:errcheck // setup
+	cases := []struct {
+		json string
+		want int
+		why  string
+	}{
+		{`{"path":""}`, http.StatusBadRequest, "empty name"},
+		{`{"path":".."}`, http.StatusBadRequest, "traversal"},
+		{`{"path":"/etc"}`, http.StatusBadRequest, "absolute"},
+		{`{"path":"here"}`, http.StatusBadRequest, "already exists"},
+	}
+	for _, c := range cases {
+		res, body := filesPost(t, "/files/mkdir", c.json)
+		if res.StatusCode != c.want {
+			t.Errorf("%s (%s) status = %d; want %d", c.json, c.why, res.StatusCode, c.want)
+		}
+		if msg, ok := body["error"].(string); !ok || msg == "" {
+			t.Errorf("%s (%s) error envelope missing or empty: %v", c.json, c.why, body)
+		}
+	}
+	// mkdir of a path whose file exists: loud, not idempotent-noise
+	os.WriteFile(filepath.Join(dir, "afile.txt"), []byte("x"), 0o644) //nolint:errcheck // setup
+	res, _ := filesPost(t, "/files/mkdir", `{"path":"afile.txt"}`)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("mkdir over a file status = %d; want 400", res.StatusCode)
+	}
+}
+
+func TestFilesMkdirMethodGate(t *testing.T) {
+	chdirToWorkdir(t)
+	s := newTestServer()
+	// direct invocation - see TestFilesWriteMethodGate
+	req := httptest.NewRequest(http.MethodPut, "/files/mkdir", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	s.handleFilesMkdir(rec, req)
+	if rec.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("PUT (direct) /files/mkdir status = %d; want 405", rec.Result().StatusCode)
+	}
+}
