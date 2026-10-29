@@ -178,12 +178,12 @@
     max-height: 280px;
     display: flex;
     flex-direction: column;
-    background: var(--pane-bg, #1c1d21);
-    border: 1px solid var(--dock-border, #333438);
+    background: var(--z2, #26262a);
+    border: 1px solid var(--stroke, #2e2e31);
     border-radius: 8px;
     padding: 8px;
     gap: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-2, 0 8px 30px rgba(0, 0, 0, 0.5));
     overflow: hidden;
   }
   .ws-pop-head {
@@ -191,7 +191,7 @@
     align-items: center;
     gap: 4px;
     padding-bottom: 4px;
-    border-bottom: 1px solid var(--dock-border, #333438);
+    border-bottom: 1px solid var(--stroke, #2e2e31);
   }
   .ws-crumb {
     flex: 1;
@@ -248,14 +248,14 @@
     gap: 6px;
     align-items: center;
     padding-top: 6px;
-    border-top: 1px solid var(--dock-border, #333438);
+    border-top: 1px solid var(--stroke, #2e2e31);
   }
   .ws-apply,
   .ws-clear,
   .ws-close,
   .ws-up {
     background: none;
-    border: 1px solid var(--dock-border, #333438);
+    border: 1px solid var(--stroke, #2e2e31);
     border-radius: 5px;
     cursor: pointer;
     font-size: 11px;
