@@ -253,7 +253,7 @@ func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 
 // filesPostCap caps every POST body on the file surface: the path and
 // the file content ride one JSON envelope, and an unbounded Decode
-// before validation is a DoS seam on the same class as an unjiled path.
+// before validation is a DoS seam on the same class as an unjailed path.
 const filesPostCap = 1 << 20 // 1 MiB
 
 // filesPostBody decodes the JSON request body of the file surface's
