@@ -93,11 +93,6 @@
         @open="openFile"
         @select="onSelect" />
     </div>
-
-      <!-- card t_36ceb99b: the inline preview is GONE - a file click
-           opens a main-pane viewer tab (the shell's opener seam); no
-           preview vocabulary survives in this pane. -->
-    </div>
   </aside>
 </template>
 
