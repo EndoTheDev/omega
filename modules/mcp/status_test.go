@@ -57,10 +57,14 @@ func TestStatusRouteNilBridge(t *testing.T) {
 	if len(rep.Servers) != 0 {
 		t.Fatalf("servers: got %d, want 0", len(rep.Servers))
 	}
-	// the tool seam claimed nothing (the no-op shape): an empty
-	// registry plus the route
-	if len(ctx.ToolProviders) != 0 {
-		t.Fatalf("tool providers: got %d, want 0", len(ctx.ToolProviders))
+	// the tool seam stays claimed even on a nil bridge (the reload
+	// cycle, card t_d6e94e79): one provider that follows the live
+	// bridge per call - it serves the empty map now
+	if len(ctx.ToolProviders) != 1 {
+		t.Fatalf("tool providers: got %d, want 1", len(ctx.ToolProviders))
+	}
+	if got := ctx.ToolProviders[0].Tools(); len(got) != 0 {
+		t.Fatalf("nil bridge tools: got %d, want 0", len(got))
 	}
 }
 

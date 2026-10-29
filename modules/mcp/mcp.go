@@ -117,6 +117,11 @@ type stdioServer struct {
 	pending   map[int64]chan mcpResponse
 	pendingMu sync.Mutex
 	nextID    int64
+	// done closes on close() so an in-flight request fails fast
+	// instead of riding out its timeout against a killed process
+	// (the reload removal path, card t_d6e94e79).
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func newStdioServer(name, command string, args []string, env map[string]string) (*stdioServer, error) {
@@ -143,6 +148,7 @@ func newStdioServer(name, command string, args []string, env map[string]string) 
 		stdin:   json.NewEncoder(stdinPipe),
 		stdout:  bufio.NewReader(stdoutPipe),
 		pending: make(map[int64]chan mcpResponse),
+		done:    make(chan struct{}),
 	}
 	go s.readLoop()
 	if err := s.initialize(); err != nil {
@@ -198,6 +204,11 @@ func (s *stdioServer) request(method string, params any) (json.RawMessage, error
 			return nil, fmt.Errorf("mcp error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
 		return resp.Result, nil
+	case <-s.done:
+		s.pendingMu.Lock()
+		delete(s.pending, id)
+		s.pendingMu.Unlock()
+		return nil, fmt.Errorf("server stopped: %s", method)
 	case <-time.After(30 * time.Second):
 		s.pendingMu.Lock()
 		delete(s.pending, id)
@@ -233,6 +244,11 @@ func (s *stdioServer) callTool(name string, args map[string]any) (string, bool, 
 func (s *stdioServer) close() {
 	// ponytail: no graceful shutdown notification; kill directly.
 	// MCP servers handle SIGTERM. Upgrade path: send proper shutdown.
+	if s.done != nil {
+		s.closeOnce.Do(func() {
+			close(s.done)
+		})
+	}
 	s.cmd.Process.Kill()
 	s.cmd.Wait()
 }
@@ -495,6 +511,13 @@ type Bridge struct {
 	cfg    *mcpConfig
 	source string
 	errs   map[string]string
+	// stopped closes on shutdown (the reload removal path, card
+	// t_d6e94e79): a tool run that reaches a removed bridge answers
+	// an IsError tool result instead of routing into torn-down
+	// connections. The maps are written once in connect (bridge-build
+	// time), so a live bridge's reads need no lock.
+	stopped   chan struct{}
+	closeOnce sync.Once
 }
 
 // NewBridge creates a Bridge from an explicit config, connecting to
@@ -505,6 +528,7 @@ func NewBridge(cfg *mcpConfig) (*Bridge, error) {
 		toolMap:  make(map[string]toolMapping),
 		toolDefs: make(map[string]mcpTool),
 		errs:     make(map[string]string),
+		stopped:  make(chan struct{}),
 	}
 	if cfg != nil {
 		b.cfg = cfg
@@ -513,6 +537,40 @@ func NewBridge(cfg *mcpConfig) (*Bridge, error) {
 		}
 	}
 	return b, nil
+}
+
+// isStopped reports whether shutdown has run (nil-safe: a zero Bridge
+// from tests never counts as stopped).
+func (b *Bridge) isStopped() bool {
+	if b == nil || b.stopped == nil {
+		return false
+	}
+	select {
+	case <-b.stopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// shutdown disconnects every server this bridge holds - the reload's
+// removal step (card t_d6e94e79): a server that left the config
+// disconnects on reload, stdio processes are killed. In-flight calls
+// to removed servers surface their failure as an IsError tool result
+// (the run checks isStopped; stdio requests also see the closed
+// connection), never a panic and never a lost response. Idempotent.
+func (b *Bridge) shutdown() {
+	if b == nil {
+		return
+	}
+	if b.stopped != nil {
+		b.closeOnce.Do(func() {
+			close(b.stopped)
+		})
+	}
+	for _, c := range b.servers {
+		c.close()
+	}
 }
 
 // NewBridgeFromEnv loads config from MCP_SERVERS env var or mcp.yaml/mcp.json
@@ -578,15 +636,21 @@ func (b *Bridge) Tools() map[string]agentTool {
 			run: func(ctx context.Context, args map[string]any) (string, error) {
 				mapping, ok := b.toolMap[tName]
 				if !ok {
-					return fmt.Sprintf("unknown tool: %s", tName), nil
+					return "", fmt.Errorf("unknown tool: %s", tName)
+				}
+				if b.isStopped() {
+					// the reload removed this bridge's server - the
+					// failure is a structured IsError tool result
+					// (the tool-error law), never a panic
+					return "", fmt.Errorf("mcp server %s was removed on reload", mapping.server)
 				}
 				srv := b.servers[mapping.server]
 				if srv == nil {
-					return fmt.Sprintf("MCP server %s is not running", mapping.server), nil
+					return "", fmt.Errorf("MCP server %s is not running", mapping.server)
 				}
 				content, isErr, err := srv.callTool(mapping.mcp, args)
 				if err != nil {
-					return fmt.Sprintf("MCP call failed: %v", err), nil
+					return "", fmt.Errorf("MCP call failed: %v", err)
 				}
 				if isErr {
 					return content, fmt.Errorf("%s", content)

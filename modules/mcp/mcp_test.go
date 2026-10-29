@@ -67,15 +67,21 @@ func TestPluginMetadata(t *testing.T) {
 	}
 }
 
-// TestNilBridgePlugin verifies a nil-bridge plugin is a no-op (mounts zero providers).
+// TestNilBridgePlugin verifies a nil-bridge plugin still registers the
+// runtime tool provider (the reload cycle, card t_d6e94e79): Tools()
+// follows the live bridge per call, so the no-op shape serves an empty
+// map now and wakes up on the first POST /mcp/reload.
 func TestNilBridgePlugin(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount with nil bridge: %v", err)
 	}
-	if len(ctx.ToolProviders) != 0 {
-		t.Fatalf("nil bridge should mount 0 providers, got %d", len(ctx.ToolProviders))
+	if len(ctx.ToolProviders) != 1 {
+		t.Fatalf("nil bridge should mount 1 provider (the swap point), got %d", len(ctx.ToolProviders))
+	}
+	if got := ctx.ToolProviders[0].Tools(); len(got) != 0 {
+		t.Fatalf("nil bridge should serve 0 tools, got %d", len(got))
 	}
 }
 

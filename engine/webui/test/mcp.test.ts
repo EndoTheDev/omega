@@ -25,6 +25,7 @@ import {
   statusLabel,
   type McpServerWire,
 } from "../../../modules/mcp/ui/serverRows.ts";
+import { reloadMcpServers } from "../../../modules/mcp/ui/reload.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
@@ -102,8 +103,93 @@ test("McpServers consumes the module route and the shared row model", () => {
   assert.ok(src.includes("MCP_EMPTY_TEXT"), "the empty state text rides the constant");
   assert.ok(src.includes("MCP_EMPTY_HINT"), "the empty state hint rides the constant");
   assert.ok(!src.includes("composables/omega"), "no shell client dependency - module UI carries its own wiring");
-  assert.ok(!src.includes("method: \"PUT\"") && !src.includes("method: \"POST\""), "read-only: no write path");
+  // the one write path is the refresh button's reload (card t_d6e94e79),
+  // and it rides the helper - the SFC itself stays GET-only against the
+  // read route; PUT exists nowhere in the module UI
+  assert.ok(src.includes("reloadMcpServers"), "the refresh rides the reload helper");
+  const reloadTs = read(root, "modules", "mcp", "ui", "reload.ts");
+  assert.ok(reloadTs.includes('method: "POST"') && reloadTs.includes('"/mcp/reload"'), "the helper POSTs the module's reload route");
+  assert.ok(!src.includes("method:") && !reloadTs.includes("PUT"), "no PUT anywhere in the module UI");
   assert.ok(src.includes(".mcp-list.narrow {"), "its narrow rules ship in its own stylesheet");
+});
+
+// --- the reload behavior (card t_d6e94e79) -------------------------------
+// The behavior half runs at the helper level (the filesroot.test.ts
+// recipe): a fetch-log probe drives reloadMcpServers, no SFC compile.
+
+let savedFetch: typeof globalThis.fetch;
+
+interface ReloadCall {
+  url: string;
+  method: string;
+}
+
+function recordReloadFetch(
+  respond: (call: ReloadCall) => Response | Promise<Response>,
+): ReloadCall[] {
+  const calls: ReloadCall[] = [];
+  savedFetch = globalThis.fetch;
+  globalThis.fetch = (async (
+    url: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    const call: ReloadCall = { url: String(url), method: init?.method ?? "GET" };
+    calls.push(call);
+    return respond(call);
+  }) as typeof globalThis.fetch;
+  return calls;
+}
+
+test("reloadMcpServers: POST the reload, then re-fetch the listing", async () => {
+  savedFetch = globalThis.fetch;
+  try {
+    const calls = recordReloadFetch((call) => {
+      if (call.url === "/mcp/reload") {
+        return new Response(
+          JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", connected: true }] }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", connected: true, tools: ["echo.echo"] }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const rep = await reloadMcpServers();
+    assert.equal(calls.length, 2, "the ruled two-step: POST the reload, then the re-fetch");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].url, "/mcp/reload");
+    assert.equal(calls[1].method, "GET");
+    assert.equal(calls[1].url, "/mcp/servers");
+    // the returned listing is the re-fetch (the fresh bridge's view)
+    assert.equal(rep.source, "mcp.yaml");
+    assert.ok(Array.isArray(rep.servers) && rep.servers[0].tools?.includes("echo.echo"), "the fresh server's tools ride the listing");
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
+test("reloadMcpServers: a failed reload throws and never re-fetches", async () => {
+  savedFetch = globalThis.fetch;
+  try {
+    const calls = recordReloadFetch(() =>
+      new Response("mcp reload: read config: parse config", { status: 500 }),
+    );
+    await assert.rejects(reloadMcpServers(), /POST \/mcp\/reload: 500/,
+      "the failure message is what the panel's error line shows");
+    assert.equal(calls.length, 1, "no re-fetch after a failed reload - the prior rows stand");
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
+test("the refresh button renders the FilesTab toolbar pattern", () => {
+  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  assert.ok(src.includes('role="toolbar"') && src.includes('aria-label="mcp actions"'), "the single header row is the toolbar");
+  assert.ok(src.includes('aria-label="refresh mcp servers"'), "the refresh action's accessible name");
+  assert.ok(src.includes('title="refresh"'), "the hover title");
+  assert.ok(src.includes(':disabled="reloading"') && src.includes('@click="reload"'), "the click fires the reload chain");
+  assert.ok(src.includes('<Icon') && src.includes('name="refresh"'), "the iconset's refresh glyph (the membership law)");
 });
 
 test("the dockable declaration matches the registry voice", () => {
