@@ -110,6 +110,13 @@ const fold = ref<string[]>([]);
 // loadError covers the LIST fetch; toggleError covers a refused toggle
 const loading = ref(false);
 const loadError = ref("");
+// card t_87303e8f follow-through: `loaded` was referenced (the
+// :loaded prop into RegistryList and set in load()'s finally) but never
+// declared - every agents-tab load threw a console
+// "ReferenceError: loaded is not defined" and the empty-text beat in
+// RegistryList never fired ("loaded is not defined" reds journey 92's
+// console-error sweep even when every toggle beat is green).
+const loaded = ref(false);
 const toggleError = ref<string | null>(null);
 const busy = ref<string | null>(null);
 const showCreate = ref(false);
