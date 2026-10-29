@@ -67,6 +67,12 @@
         <span
           v-if="armed === r.name"
           class="registry-confirm">{{ noteFor(r) }}</span>
+        <!-- card t_c7222095: the optional under-row preview (the merged
+             agent row shows the continuous last report under the facts;
+             consumers that do not set it render nothing). -->
+        <span
+          v-if="r.preview"
+          class="registry-preview">{{ r.preview }}</span>
         <template v-if="isExpanded(r.name)">
           <ul
             v-if="hasDetail(r)"
@@ -256,6 +262,15 @@
   .registry-confirm {
     font-size: 11px;
     opacity: 0.75;
+  }
+  /* card t_c7222095: the under-row preview - one dim line, ellipsed */
+  .registry-preview {
+    font-size: 11px;
+    opacity: 0.6;
+    overflow: hidden;
+    padding-left: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .registry-detail {
     list-style: none;

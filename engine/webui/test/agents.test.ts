@@ -93,7 +93,10 @@ test("AgentsPanel session rows emit open-session; app.vue routes it through the 
   const appVue = read("webui", "app", "app.vue");
   assert.match(appVue, /@open-session="openChatTab"/, "app.vue wires the emit to the main-pane opener");
   assert.match(appVue, /<AgentsPanel[\s\S]*?@open-session="openChatTab"/, "the agents pane carries the wiring");
-  assert.match(appVue, /<ContinuousPanel[\s\S]*?@open-session="openChatTab"/, "the continuous pane carries the wiring");
+  // t_c7222095: the Continuous tab folded into Agents - the SAME emit
+  // contract is the only session opener path, so the merged panel is
+  // the ONLY pane carrying it for agents.
+  assert.doesNotMatch(appVue, /ContinuousPanel/, "the continuous pane is gone");
 });
 
 test("new session as this agent opens the created session in the main pane", () => {
@@ -111,7 +114,22 @@ test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
   const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
   // Trust boundary: the backend used to answer a zero-session agent with
   // the literal body `null`, detailSessions.length threw, and the whole
-  // sidebar went blank. Both fetch sites carry the ?? [] guard.
+  // sidebar went blank. Every list fetch carries the ?? [] guard; the
+  // merge (t_c7222095) added the roster, canonical-chat and evidence
+  // reads to the panel - six guards now: agents, sessions, roster,
+  // chat, evidence fetch, evidence summary read.
   const guardCount = (src: string): number => (src.match(/\?\? \[\]/g) ?? []).length;
-  assert.equal(guardCount(vue), 2, "exactly one ?? [] guard per list fetch (GET /agents + GET .../sessions)");
+  assert.equal(guardCount(vue), 6, "one ?? [] guard per list fetch (agents, sessions, roster, chat, evidence fetch + summary read)");
+});
+
+// --- t_c7222095: the Agents/Continuous merge (one tab, Hermes bots) ---
+
+test("AgentsPanel merges the continuous roster into the rows (badge + preview)", () => {
+  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  assert.match(vue, /fetch\("\/continuous\/roster"\)/, "the roster loads with the agents");
+  assert.match(vue, /continuousIndex\(roster\.value\)/, "the roster joins by name");
+  assert.match(vue, /preview:\s*previewLine\(/, "the row preview is the roster preview");
+  assert.match(vue, /mergedRowDetail\(a, c\)/, "the detail carries the wake line");
+  assert.match(vue, /class="agents-badge"/, "the status badge renders inline");
+  assert.doesNotMatch(vue, /import ContinuousPanel|<ContinuousPanel/, "no panel import or mount survives");
 });

@@ -1,19 +1,21 @@
 #!/bin/bash
-# 87-continuous-roster - the continuous roster browser journey
-# (t_ba3fc50e, ruling 18). One pass across the customer surface:
+# 87-continuous-roster - the continuous wake surface, MERGED into the
+# Agents tab (t_ba3fc50e, ruling 18; card t_c7222095's one-tab merge).
+# One pass across the customer surface:
 #
 #   seed     - POST /continuous creates a throwaway agent (name,
 #              directive, wake schedule) through the product's own
 #              create flow; the roster REST row answers with the name
 #              and the NEXT WAKE state.
-#   picker   - the sidebar new-session type picker opens and its
-#             Continuous entry opens the roster pane (t_55a571ff
-#             placeholder wired by t_72ecca67).
-#   roster   - the seeded row renders in the served webui: its name,
-#              and its wake state ("next wake ..." from the schedule).
-#   detail   - clicking the row opens the detail strip (canonical chat
-#              + the wake/sleep buttons). The agent is NEVER woken - a
-#              browser journey does not spend provider turns.
+#   dock     - the served webui carries ONE Agents tab and NO
+#              Continuous chip (deletability law: the fold, not an
+#              alias, and no hidden tab).
+#   row      - the seeded agent renders in the Agents tab as ONE merged
+#              row: its name, the inline wake state ("next wake ..."
+#              from the schedule), and the honest empty preview.
+#   detail   - expanding the row opens the wake strip (wake/sleep
+#              buttons + the wake message input). The agent is NEVER
+#              woken - a browser journey does not spend provider turns.
 #
 # Residue-free: the seeded name carries the jrn- prefix and the EXIT
 # trap removes its home folder - ruling 2 makes folder presence the
@@ -42,7 +44,7 @@ trap 'clean_seeded_agent; cleanup_journey_sessions' EXIT
 resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/continuous" \
        -H 'Content-Type: application/json' \
        -d "{\"name\": \"${CONT_NAME}\", \"directive\": \"(journey) roster seed agent\", \"schedule\": \"17 8 * * *\"}")
-printf '%s' "$resp" | grep -q "\"created\": ?\"${CONT_NAME}\"\|\"created\":\"${CONT_NAME}\"" || \
+printf '%s' "$resp" | grep -q "\"created\": ?\"${CONT_NAME}\"\|\"created\":\"${CONT_NAME}\"\|\"created\": \"${CONT_NAME}\"" || \
   die "POST /continuous failed: $resp"
 step "ok: created $CONT_NAME"
 
@@ -69,47 +71,56 @@ step "ok: roster row answers (dir $SEED_DIR)"
 # --- the served webui ---
 open_app
 
-# the picker: the caret opens the type menu, the Continuous entry is wired
-jsq 'document.querySelector(".new-caret")?.click()' >/dev/null 2>&1
+# the merged dock: ONE Agents chip, and the Continuous chip renders
+# NOWHERE (card t_c7222095's deletability law - the fold, not an alias).
+# card t_502b8e81: edge shells render ICON-ONLY chips - match by
+# aria-label/title, never .dock-tab-title text.
 clicked=$(jsq '(() => {
-  const b=[...document.querySelectorAll(".new-menu-item")].find(x => x.textContent.trim()==="Continuous");
-  if (!b) return 0;
-  if (b.disabled) return -1;
-  b.click();
+  const tabs=[...document.querySelectorAll(".dock-tab")];
+  const chip=(t) => ((t.getAttribute("aria-label")||"")||t.title||t.querySelector(".dock-tab-title")?.textContent||"").trim();
+  if (tabs.some(t => chip(t)==="Continuous")) return -2;
+  if (tabs.filter(t => chip(t)==="Agents").length !== 1) return -1;
+  const t=tabs.find(x => chip(x)==="Agents");
+  t.click();
   return 1;
 })()' 2>&1 | tail -1)
-[ "$clicked" = "1" ] || die "the picker's Continuous entry never clicked ($clicked)"
-wait_js '!!document.querySelector(".pane.continuous")' 10
-step "ok: picker Continuous entry opened the roster pane"
+[ "$clicked" = "1" ] || die "the dock does not present ONE Agents tab and no Continuous chip ($clicked)"
+wait_js '!!document.querySelector(".pane.agents")' 10
+step "ok: the Agents tab is the one merged surface (no Continuous chip)"
 
-# the roster renders the seeded row: name + wake state. The roster may
-# carry operator agents sorted anywhere around the seeded row (sorted by
-# name - a lane home is never guaranteed jrn-first), so every assertion
-# targets THIS journey's row, never the first row.
-wait_js "[...document.querySelectorAll('.pane.continuous .continuous-row-name')].some(el => el.textContent.trim() === '$CONT_NAME')" 10
-step "ok: roster pane renders the seeded row"
+# the merged row renders the seeded agent: name + wake state + preview.
+# The rows may carry operator agents anywhere around the seeded row
+# (sorted by name - a lane home is never guaranteed jrn-first), so every
+# assertion targets THIS journey's row, never the first row.
+wait_js "[...document.querySelectorAll('.pane.agents .registry-name')].some(el => el.textContent.trim() === '$CONT_NAME')" 10
+step "ok: the Agents list renders the seeded row"
 
-# row_cell <selector>: the seeded row's own cell text (the row that
-# carries $CONT_NAME, not the first row of the list).
+# row_cell <selector>: the seeded row's cell text (the row that carries
+# $CONT_NAME, not the first row of the list).
 row_cell() {
-  jsq '(sel => [...document.querySelectorAll(".pane.continuous .continuous-row-name")].find(x => x.textContent.trim() === "'"$CONT_NAME"'")?.closest(".continuous-row")?.querySelector(sel)?.textContent?.trim() || "")("'"$1"'")' 2>&1 | tail -1 | tr -d '"'
+  jsq '(name => (sel => [...document.querySelectorAll(".pane.agents .registry-row")]
+    .find(r => [...r.querySelectorAll(".registry-name")].some(n => n.textContent.trim() === name))
+    ?.querySelector(sel)?.textContent?.trim() || "")("'"$1"'"))("'"$CONT_NAME"'")' 2>&1 | tail -1 | tr -d '"'
 }
-state=$(row_cell ".continuous-row-status")
+state=$(row_cell ".agents-badge")
 case "$state" in
   "next wake"*) state_is_wake=1 ;;
   *) state_is_wake=0 ;;
 esac
-assert_eq "$state_is_wake" "1" "row shows the wake state (got: [$state])"
-preview=$(row_cell ".continuous-row-preview")
-assert_eq "$preview" "- no report yet -" "fresh agent row shows the honest empty preview"
+assert_eq "$state_is_wake" "1" "the merged row shows the wake state (got: [$state])"
+preview=$(row_cell ".registry-preview")
+assert_eq "$preview" "- no report yet -" "the fresh row shows the honest empty preview"
 
-# --- the detail strip opens on click (never wakes) ---
-jsq '(name => [...document.querySelectorAll(".pane.continuous .continuous-row-name")].find(x => x.textContent.trim() === name)?.closest(".continuous-row")?.click())("'"$CONT_NAME"'")' >/dev/null 2>&1
-wait_js "document.querySelector('.continuous-detail-title')?.textContent?.trim() === '$CONT_NAME'" 10
-jsq '!!document.querySelector(".continuous-wake")' >/dev/null 2>&1
-wakes=$(jsq 'document.querySelectorAll(".continuous-wake, .continuous-sleep").length' 2>&1 | tail -1)
-assert_eq "$wakes" "2" "detail strip carries the wake/sleep buttons"
-step "ok: detail strip opened for $CONT_NAME"
+# --- the wake strip opens on expand (never wakes) ---
+jsq '(name => [...document.querySelectorAll(".pane.agents .registry-row")]
+  .find(r => [...r.querySelectorAll(".registry-name")].some(n => n.textContent.trim() === name))
+  ?.querySelector(".registry-expander")?.click())("'"$CONT_NAME"'")' >/dev/null 2>&1
+wait_js 'document.querySelectorAll(".pane.agents .agents-cont-wake, .pane.agents .agents-cont-sleep").length >= 2' 10 >/dev/null 2>&1
+wakes=$(jsq 'document.querySelectorAll(".pane.agents .agents-cont-wake, .pane.agents .agents-cont-sleep").length' 2>&1 | tail -1)
+assert_eq "$wakes" "2" "the expanded row carries the wake/sleep buttons"
+msg=$(jsq '!!document.querySelector(".pane.agents .agents-cont-message")' 2>&1 | tail -1)
+assert_eq "$msg" "true" "the wake message input rides the strip"
+step "ok: wake strip opened for $CONT_NAME"
 
 assert_no_console_errors
-step "GREEN: continuous roster journey"
+step "GREEN: continuous roster (merged Agents tab) journey"

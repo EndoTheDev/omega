@@ -7,6 +7,10 @@
 // own payloads until the wiring lands; the deferred mount lines are
 // recorded in the card comment.
 
+// RECORD: card t_c7222095 - continuousRows.ts types fold in here (the
+// merged agent row carries the wake state).
+import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
+
 export interface OmegaAgent {
   name: string;
   dir: string;
@@ -80,4 +84,27 @@ export function agentDetailLines(a: OmegaAgent): string[] {
     `sessions: ${a.session_count}`,
     `last activity: ${a.last_activity || "-"}`,
   ];
+}
+
+/** mergedRowDetail (card t_c7222095): the merged agent row's detail -
+    the config summary as today, plus the wake-state line of the
+    continuous roster row when the agent carries one. A null roster row
+    (no continuous home) renders the config summary alone - never a
+    phantom "sleeping" for an agent with no wake schedule. */
+export function mergedRowDetail(
+  a: OmegaAgent,
+  c: OmegaContinuousRow | null,
+): string[] {
+  if (!c) return agentDetailLines(a);
+  return [...agentDetailLines(a), `wake: ${rowStatus(c)}`];
+}
+
+/** the join key: the roster and the config listing share the agent
+    name (folder presence is registration on both sides). */
+export function continuousIndex(
+  roster: readonly OmegaContinuousRow[],
+): Record<string, OmegaContinuousRow> {
+  const out: Record<string, OmegaContinuousRow> = {};
+  for (const r of roster) out[r.name] = r;
+  return out;
 }

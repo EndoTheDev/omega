@@ -153,7 +153,6 @@ describe("the dockable registry", () => {
       assert.ok(
         d.title === "Sessions" && d.id === "sidebar" ||
           d.title === "Files" && d.id === "files" ||
-          d.title === "Continuous" && d.id === "continuous" ||
           d.title === "Settings" && d.id === "settings" ||
           d.title === "Insights" && d.id === "insights" ||
           d.title === "MCP" && d.id === "mcp" ||
@@ -208,12 +207,12 @@ describe("the dockable registry", () => {
     // at t_c7136c50)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "skills", "tools", "agents", "continuous", "settings", "kanban", "extensions", "insights", "mcp"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "skills", "tools", "agents", "continuous", "settings", "kanban", "extensions", "insights", "mcp"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
@@ -460,7 +459,7 @@ describe("dock store: the pane-model reset", () => {
       // insights AFTER the restored set - the modernized v1 strip ends
       // [extensions, mcp, insights]. The fresh-tree default stays
       // canonical (dock.test.ts).
-      ["files", "cron", "skills", "tools", "agents", "continuous", "settings", "kanban", "extensions", "mcp", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "insights"],
       "the chip strip's tabs are real now, and the two new views are in",
     );
     // persisted at once so the next boot never re-modernizes; the record
@@ -497,7 +496,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "continuous", "settings", "kanban", "extensions", "insights", "mcp"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -556,16 +555,16 @@ describe("dock store: the pane-model reset", () => {
       // same lift-and-reseat shape as the pre-reset modernize above: the
       // parked-settings era tree loses the main-pane insights copy and
       // restoreInspectorSet re-seats it after the restored mcp
-      ["files", "cron", "skills", "tools", "agents", "continuous", "settings", "kanban", "extensions", "mcp", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "insights"],
     );
   });
 
   it("a v2 tree with settings dragged into a main pane KEEPS it (free content)", async () => {
     let t: DockNode = defaultTree();
-    // settings is tab 6 of the inspector bar (continuous joined after
-    // agents, t_72ecca67; logs left the strip - Endo's 2026-10-26):
-    // drag it into the main pane
-    t = moveTab(t, asSplit(t).children[2].id, 6, asSplit(t).children[1].id, 0);
+    // settings is tab 5 of the inspector bar (continuous folded away,
+    // t_c7222095; logs left the strip - Endo's 2026-10-26): drag it
+    // into the main pane
+    t = moveTab(t, asSplit(t).children[2].id, 5, asSplit(t).children[1].id, 0);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
@@ -707,8 +706,8 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,skills,tools,agents,continuous,settings,kanban,extensions,insights,mcp",
-      "none of the eleven may close (logs left the strip - Endo's comment 2026-10-26)",
+      "files,cron,skills,tools,agents,settings,kanban,extensions,insights,mcp",
+      "none of the ten may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read
     // (t_b620f99d: the last-main-pane law protects the pane, not tabs)

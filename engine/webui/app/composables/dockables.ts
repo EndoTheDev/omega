@@ -37,18 +37,16 @@ export const DOCK_COMPONENTS = [
   "skills",
   "tools",
   "agents",
-  "continuous",
   "settings",
   "kanban",
   "extensions",
   "insights",
   "mcp",
-  // v0.14.3: "canvas" left the registry with its tab (the fold ruling:
-  // v0.14.2's module rows carry every module panel; the chat transcript
-  // and the toast funnel kept their own homes - the generic host tab
-  // had no unique surface left). A persisted pre-fold layout that still
-  // carries a canvas chip drops it with the usual repair note, like any
-  // retired id.
+  // card t_c7222095 (deletability law): "continuous" left the dock
+  // registry with its tab - the roster folded into the Agents tab
+  // (one agent = one row: config + wake state + report preview). A
+  // persisted pre-merge layout that still carries a continuous chip
+  // drops it with the usual repair note, like "canvas" above.
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
@@ -193,25 +191,14 @@ export const DOCKABLES: readonly DockableComponent[] = [
     closable: false,
   },
   {
-    // card t_7e2b7002: the agents panel - the multi-agent inventory
-    // (list, detail, scaffold, new-session-as-agent). card t_556ee727:
-    // the tab label joins the Title Case siblings.
+    // card t_c7222095: the agents panel - now the MERGED agent surface
+    // (config roster + the continuous wake state). Card t_72ecca67's
+    // "continuous" dockable FOLDED in here per the deletability law: one
+    // agent is one row - the config facts, the runtime badge, the report
+    // preview and the wake/sleep strip live in the same tab.
     id: "agents",
     title: "Agents",
     icon: "agents",
-    policy: "singleton",
-    area: "right",
-    closable: false,
-  },
-  {
-    // card t_72ecca67 (ruling 18): the continuous roster - the agent
-    // homes with last-report preview, next wake, unread state; the
-    // detail strip rides the wake/sleep buttons and the evidence
-    // view; the create flow wires the t_55a571ff sidebar placeholder.
-    // The tab label joins the Title Case siblings.
-    id: "continuous",
-    title: "Continuous",
-    icon: "continuous",
     policy: "singleton",
     area: "right",
     closable: false,

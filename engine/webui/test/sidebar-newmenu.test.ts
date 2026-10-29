@@ -1,10 +1,10 @@
 // omega webui: source-check for the sidebar's new-session control (card
 // t_55a571ff): the split button reads "+ New Session" and the type
-// picker is DATA - three entries (New Session, Ephemeral, Continuous),
-// the Continuous placeholder rendering disabled with the design-pending
-// note (Endo ruling: ship the label now, wire behavior in the
-// continuous-agents arc). The template renders the list, so the
-// contract is pinned against AppSidebar.vue's source.
+// picker is DATA - two entries (New Session, Ephemeral). Card
+// t_c7222095 REMOVED the Continuous entry: the roster folded into the
+// Agents tab, so no picker slot remains (deletability law: no alias).
+// The template renders the list, so the contract is pinned against
+// AppSidebar.vue's source.
 // Run: node --test "test/*.test.ts" (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -26,17 +26,15 @@ describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
     assert.match(sidebar, /\+\s*New Session/, "the split button's body label");
   });
 
-  it("the picker holds the three entries, in order, as data", () => {
+  it("the picker holds the two entries, in order, as data", () => {
     const labels = [...picker.matchAll(/label:\s*"([^"]+)",/g)].map((m) => m[1]);
-    assert.deepEqual(labels, ["New Session", "Ephemeral", "Continuous"]);
-    assert.equal(labels.length, 3, "exactly three entries ship now");
+    assert.deepEqual(labels, ["New Session", "Ephemeral"]);
+    assert.equal(labels.length, 2, "exactly two entries ship now");
   });
 
-  it("the Continuous entry is wired - it opens the continuous tab (card t_72ecca67)", () => {
-    const entry = picker.match(/\{[\s\S]{0,300}?label:\s*"Continuous",[\s\S]*?\},/);
-    assert.ok(entry, "the Continuous entry exists as its own object");
-    assert.doesNotMatch(entry[0], /disabled:\s*true/, "the placeholder is no longer disabled");
-    assert.match(entry[0], /run:\s*\(\)\s*=>\s*emit\("new-continuous"\)/, "the entry emits new-continuous");
+  it("the Continuous entry is GONE - the roster folded into the Agents tab (card t_c7222095)", () => {
+    assert.doesNotMatch(picker, /"Continuous"/, "no picker slot survives the merge");
+    assert.doesNotMatch(sidebar, /new-continuous/, "no emit wiring survives the merge");
     // card t_55a571ff's disabled-dim rule still holds for any future
     // disabled entry - the styling stays even now nothing uses it.
     assert.match(sidebar, /\.new-menu-item:disabled\b/, "the disabled styling survives");

@@ -34,7 +34,7 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
   const set = new Set(ICON_NAMES as readonly string[]);
   for (const expected of [
     "sidebar", "files", "cron", "logs", "skills", "tools", "agents",
-    "continuous", "settings", "kanban", "extensions", "insights",
+    "settings", "kanban", "extensions", "insights",
   ]) {
     assert.ok(set.has(expected), `the tab vocabulary carries "${expected}"`);
   }

@@ -6,7 +6,7 @@
       <!-- card t_aee5199f: the new-chat control is a FULL-WIDTH split
            button - the body mints the default (persisted) chat, the
            arrow-down opens the type picker (card t_55a571ff: New
-           Session / Ephemeral / Continuous). All styling stays scoped so
+           Session / Ephemeral). All styling stays scoped so
            this surface never grows main.css (SAME-FILE discipline:
            t_33f8756c owns the shared sheet) - only .new-btn's shared
            chip look from main.css is consumed. -->
@@ -40,9 +40,9 @@
           class="new-menu"
           @click.stop>
           <!-- the picker is DATA (card t_55a571ff): each entry is a label
-               + intent; a disabled entry renders inert until its design
-               round lands - no behavior is built here. The future
-               continuous-agents card wires its `run`, no template change. -->
+               + intent. Card t_c7222095 removed the Continuous entry -
+               the roster folded into the Agents tab, so the picker
+               carries only the conversation kinds. -->
           <button
             v-for="entry in newMenuEntries"
             :key="entry.label"
@@ -250,10 +250,6 @@
     // new-ephemeral (card t_d96a5cd5): the dropdown's no-persist entry
     // - app.vue mints a composer-first ephemeral tab
     (e: "new-ephemeral"): void;
-    // new-continuous (card t_72ecca67, ruling 18): the picker's wired
-    // entry opens the continuous roster tab (the create flow lives in
-    // the panel's header form)
-    (e: "new-continuous"): void;
     (e: "pin", id: string, pinned: boolean): void;
     // archive/unarchive: the row moves to (or out of) the archived group
     // at the list bottom instantly - the optimistic patch flips the flag
@@ -276,10 +272,10 @@
   // the new-chat dropdown's open bit + click-outside close (document
   // listener bound on open, torn down on close/unmount)
   const newMenuOpen = ref(false);
-  // card t_55a571ff: the type picker is data. The placeholder entry is
-  // DATA, not dead template - a future continuous-agents card flips
-  // `disabled` off and supplies `run` (Endo ruling: ship the label now
-  // so the shape is visible, no behavior until the design round lands).
+  // card t_55a571ff: the type picker is data.
+  // Card t_c7222095: the Continuous entry is GONE - the roster folded
+  // into the Agents tab, so a picker entry whose only run() opened that
+  // dockable has nothing to open (the deletability law: no alias).
   interface NewMenuEntry {
     label: string;
     title: string;
@@ -292,14 +288,6 @@
       label: "Ephemeral",
       title: "No-persist chat (nothing stored, gone when closed)",
       run: () => pickNew(true),
-    },
-    {
-      // card t_72ecca67: the placeholder is wired - the emit opens the
-      // continuous roster tab (ruling 18), the create flow lives in
-      // ContinuousPanel's header form (name, directive, schedule).
-      label: "Continuous",
-      title: "continuous agents - wake schedules, canonical chats",
-      run: () => emit("new-continuous"),
     },
   ];
   function pickNew(ephemeral: boolean) {
@@ -562,9 +550,9 @@
 .new-menu-item:hover {
   background: var(--z2);
 }
-/* card t_55a571ff: the disabled placeholder (Continuous) renders dim and
-   inert - no hover lift, no pointer affordance until its future card
-   wires the entry. */
+/* card t_55a571ff: a disabled picker entry renders dim and inert - no
+   hover lift, no pointer affordance (generic rule; no entry ships
+   disabled since t_c7222095 removed the placeholder). */
 .new-menu-item:disabled {
   color: var(--text-dim);
   cursor: default;
