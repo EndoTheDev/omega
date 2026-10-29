@@ -52,12 +52,14 @@ func (p *Plugin) Requires() []string { return nil }
 
 // MountWithAPI implements agent.APIPlugin. This Mount is the module's
 // whole surface (arc 6 capsule, card t_cf6b7795): the bridge tool
-// provider - every discovered MCP server tool, server-qualified -
-// ships from here, and the module ships nothing else - no command, no
-// REST route, no skills, no canvas panel. The env/mcp.yaml config load
-// lives in the module too; the host's construction falls back to a
-// no-op bridge on config failure. Removal proof:
-// TestMCPRemovalProof (cmd/omega/removal_test.go).
+// provider - every discovered MCP server tool, server-qualified - ships
+// from here, plus the read-only inventory route the webui MCP tab
+// lists (GET /mcp/servers, card t_c7136c50; a behavior change to the
+// arc's "ships nothing else" ruling, not a migration). No command, no
+// skills, no canvas panel. The env/mcp.yaml config load lives in the
+// module too; the host's construction falls back to a no-op bridge on
+// config failure. Removal proof: TestMCPRemovalProof
+// (cmd/omega/removal_test.go).
 //
 // The names are runtime data (the mcp ruling, card t_6c0375b5):
 // server-qualified external names ("proof.echo") live beneath the
@@ -67,9 +69,16 @@ func (p *Plugin) Requires() []string { return nil }
 // Binary purity: removing the module removes the guard and all of
 // them.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	// The listing route mounts even on a nil bridge: an empty config
+	// answers an empty list (the empty state is the webui contract),
+	// not a 404. The route is the module's own namespace ("/mcp"),
+	// tenant-checked by the registry.
+	if err := api.RegisterRoute("GET /mcp/servers", p.handleStatus); err != nil {
+		return err
+	}
 	if p.bridge == nil {
-		// No servers configured: claim nothing, register nothing -
-		// the no-op shape the classic nil bridge had.
+		// No servers configured: claim no tools, serve the empty
+		// list - the no-op shape the classic nil bridge had.
 		return nil
 	}
 	return api.RegisterRuntimeTools(bridgeToolProvider{p.bridge})

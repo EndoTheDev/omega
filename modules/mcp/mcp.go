@@ -433,10 +433,11 @@ type mcpConfig struct {
 	Servers []serverConfig `json:"servers" yaml:"servers"`
 }
 
-func loadConfig() (*mcpConfig, error) {
+func loadConfig() (*mcpConfig, string, error) {
 	// Try env var first (JSON only — env vars with YAML are awkward).
 	if raw := os.Getenv("MCP_SERVERS"); raw != "" {
-		return parseConfig([]byte(raw))
+		cfg, err := parseConfig([]byte(raw))
+		return cfg, "env", err
 	}
 	// Try config file: mcp.yaml first, then mcp.json. Each name is
 	// looked up at the home root first (legacy installs keep working
@@ -455,12 +456,13 @@ func loadConfig() (*mcpConfig, error) {
 				if os.IsNotExist(err) {
 					continue
 				}
-				return nil, fmt.Errorf("read %s: %w", name, err)
+				return nil, name, fmt.Errorf("read %s: %w", name, err)
 			}
-			return parseConfig(data)
+			cfg, err := parseConfig(data)
+			return cfg, name, err
 		}
 	}
-	return &mcpConfig{}, nil
+	return &mcpConfig{}, "none", nil
 }
 
 func parseConfig(data []byte) (*mcpConfig, error) {
@@ -485,6 +487,14 @@ type Bridge struct {
 	servers  map[string]MCPConn
 	toolMap  map[string]toolMapping
 	toolDefs map[string]mcpTool
+	// cfg + source back the read-only inventory (Status, card
+	// t_c7136c50): the configured servers as the bridge sees them.
+	// errs carries the per-server connect/listTools failures - a
+	// skipped server stays visible to the listing instead of
+	// vanishing into a stderr line.
+	cfg    *mcpConfig
+	source string
+	errs   map[string]string
 }
 
 // NewBridge creates a Bridge from an explicit config, connecting to
@@ -494,8 +504,10 @@ func NewBridge(cfg *mcpConfig) (*Bridge, error) {
 		servers:  make(map[string]MCPConn),
 		toolMap:  make(map[string]toolMapping),
 		toolDefs: make(map[string]mcpTool),
+		errs:     make(map[string]string),
 	}
 	if cfg != nil {
+		b.cfg = cfg
 		if err := b.connect(cfg); err != nil {
 			return nil, err
 		}
@@ -507,11 +519,16 @@ func NewBridge(cfg *mcpConfig) (*Bridge, error) {
 // in OMEGA_HOME and creates a Bridge. Returns an empty Bridge (no servers)
 // if no config is found — the extension is a no-op in that case.
 func NewBridgeFromEnv() (*Bridge, error) {
-	cfg, err := loadConfig()
+	cfg, source, err := loadConfig()
 	if err != nil {
 		return nil, err
 	}
-	return NewBridge(cfg)
+	b, err := NewBridge(cfg)
+	if err != nil {
+		return nil, err
+	}
+	b.source = source
+	return b, nil
 }
 
 func (b *Bridge) connect(cfg *mcpConfig) error {
@@ -524,16 +541,19 @@ func (b *Bridge) connect(cfg *mcpConfig) error {
 			conn, err = newStdioServer(sc.Name, sc.Command, sc.Args, sc.Env)
 		} else {
 			fmt.Fprintf(os.Stderr, "mcp: skipping %s: no command or url\n", sc.Name)
+			b.errs[sc.Name] = "no command or url configured"
 			continue
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mcp: failed to connect %s: %v\n", sc.Name, err)
+			b.errs[sc.Name] = err.Error()
 			continue
 		}
 		b.servers[sc.Name] = conn
 		tools, err := conn.listTools()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mcp: failed to list tools from %s: %v\n", sc.Name, err)
+			b.errs[sc.Name] = "tools/list failed: " + err.Error()
 			continue
 		}
 		for _, t := range tools {
