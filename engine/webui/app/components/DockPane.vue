@@ -68,6 +68,16 @@
               v-if="tabIcon(t)"
               :name="tabIcon(t)"
               class="dock-tab-ic" />
+            <!-- card t_180db2cb: the notifications tab's unread chip - the
+                 bell's badge voice (count cap 99+) rehomed onto the
+                 dockable's icon chip. Renders on the INSIDE of the chip
+                 (t_aca53fee's lesson: no positioning overflow past the
+                 button box); nothing renders at zero. -->
+            <span
+              v-if="tabBadge(t)"
+              class="dock-tab-badge"
+              role="status"
+              :aria-label="tabBadge(t) + ' unread'">{{ tabBadge(t) }}</span>
             <span
               v-if="!iconTabs"
               class="dock-tab-title">{{ tabTitle(t) }}</span>
@@ -270,6 +280,9 @@
   // card t_36ceb99b: the viewer chip's extension-glyph vocabulary (the
   // same pure table the file tree's row glyphs read)
   import { glyphKindFor, glyphIcon } from "./files/rowicon";
+  // card t_180db2cb: the notifications tab chip's unread badge - the
+  // page-lifetime feed store's computed ("" at zero = no chip)
+  import { notificationsBadgeText } from "./notifications/store";
   // the recursive split renderer, lazy: DockSplit imports DockPane for its
   // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
   const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));
@@ -367,6 +380,13 @@
         : glyphIcon(glyphKindFor(tab.viewer.name));
     }
     return dockableIcon(tab.component);
+  }
+
+  // card t_180db2cb: the tab chip's unread badge TEXT - only the
+  // notifications tab carries one (the bell's badge rehomed), "" at zero
+  // so no chip element renders anywhere else.
+  function tabBadge(tab: DockTab): string {
+    return tab.component === "notifications" ? notificationsBadgeText.value : "";
   }
 
   // --- tab DnD (card 2, generalized t_d6b657a7): EVERY tab bar is a drop

@@ -42,6 +42,13 @@ export const DOCK_COMPONENTS = [
   "extensions",
   "insights",
   "mcp",
+  // card t_180db2cb (Endo ruling 2026-10-29): "notifications should move
+  // from top right to its own tab (secondary pane)". The top-right bell
+  // entry point is GONE entirely (deletability law - no bell chrome, no
+  // popover); the durable feed/history lives in this inspector tab, the
+  // transient toasts stay shell-level (components/notifications/), and
+  // the unread badge rides THIS tab's icon chip in the dock.
+  "notifications",
   // card t_c7222095 (deletability law): "continuous" left the dock
   // registry with its tab - the roster folded into the Agents tab
   // (one agent = one row: config + wake state + report preview). A
@@ -267,6 +274,26 @@ export const DOCKABLES: readonly DockableComponent[] = [
     id: "mcp",
     title: "MCP",
     icon: "mcp",
+    policy: "singleton",
+    area: "right",
+    closable: false,
+  },
+  {
+    // card t_180db2cb: the notifications tab - the DURABLE feed/history
+    // of finished things (kanban tasks, cron fires, chat runs), rehomed
+    // from the top-right bell popover into the secondary pane (Endo's
+    // two rulings, 2026-10-29: (1) the bell icon dies entirely - the
+    // notifications dockable's icon chip carries the unread badge;
+    // (2) transient toasts STAY for live events). The shell-owned panel
+    // body is components/notifications/NotificationsPanel.vue over GET
+    // /notifications + POST /notifications/read (data source unchanged).
+    // Opening/focusing the tab marks the feed read (the badge clears on
+    // open). Unclosable like every inspector view.
+    // The glyph is the inbox (lucide Inbox) - the bell vocabulary left
+    // the iconset with the chrome that carried it.
+    id: "notifications",
+    title: "Notifications",
+    icon: "inbox",
     policy: "singleton",
     area: "right",
     closable: false,

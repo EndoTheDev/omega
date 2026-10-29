@@ -4,7 +4,7 @@
 //   under fetch interception;
 // - the pure helpers: age rendering (honest "" on garbage), the live
 //   upsert (dedupe + cap), and the toast lifetime asymmetry;
-// - NotificationCenter.vue source pins: the mount + the route wiring
+// - NotificationToasts.vue source pins: the mount + the route wiring
 //   the dock shell depends on (source checks, the panel source is not
 //   importable in node).
 // Run: node --test engine/webui/test/ (node >= 23 runs TS natively)
@@ -19,6 +19,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   notificationAge,
+  notificationBadgeText,
   upsertRecord,
   toastLifetime,
   boardOfTask,
@@ -152,18 +153,33 @@ test("failed verdicts hold the toast longer than ok ones", () => {
   assert.ok(toastLifetime("failed") > toastLifetime("ok"));
 });
 
+// --- notificationBadgeText: the tab chip's unread voice (t_180db2cb) ---
+
+test("notificationBadgeText: the count, 99+ beyond the cap, nothing at zero", () => {
+  assert.equal(notificationBadgeText(0), "", "no badge at zero - the chip renders nothing");
+  assert.equal(notificationBadgeText(1), "1");
+  assert.equal(notificationBadgeText(5), "5");
+  assert.equal(notificationBadgeText(99), "99");
+  assert.equal(notificationBadgeText(100), "99+", "the old bell chip's cap");
+  assert.equal(notificationBadgeText(-3), "", "a nonsensical count renders no badge");
+});
+
 // --- component source pins (the shell wiring) ---
 
-test("MenuBar hosts the NotificationCenter and re-emits its open intent", () => {
+test("the bell is GONE: the menubar hosts only the toast stack (card t_180db2cb)", () => {
   const menubar = read("webui", "app", "components", "shell", "MenuBar.vue");
-  assert.ok(menubar.includes("<NotificationCenter"), "bell joins the menubar");
+  // the durable feed is the notifications dock tab, the bell button +
+  // its popover died with it (deletability law): no NotificationCenter
+  // mount, no bell vocabulary anywhere in the menubar
+  assert.ok(!menubar.includes("NotificationCenter"), "the bell popover mount is deleted, not just unused");
+  assert.ok(!menubar.includes("notif-bell"), "no bell button chrome");
+  assert.ok(!menubar.includes('"bell"'), "no bell icon name in the menubar");
+  // the transient toasts STAY (Endo ruling 2): the toast stack mounts
+  // where the bell lived, and its open intents still re-emit to
+  // app.vue, which owns navigation
   assert.ok(
-    menubar.includes('@open-notification="openNotification"') === false,
-    "the re-emit is MenuBar's own job, app.vue binds the handler",
-  );
-  assert.ok(
-    /<NotificationCenter\s+@open="\$emit\('open-notification', \$event\)"\s*\/>/.test(menubar),
-    "open intents re-emit verbatim",
+    /<NotificationToasts\s+@open="\$emit\('open-notification', \$event\)"\s*\/>/.test(menubar),
+    "the toast stack joins the menubar, open intents re-emit verbatim",
   );
 });
 
@@ -266,16 +282,21 @@ test("selectBoardFor publishes the stash + the event, skips the empty pick", () 
 });
 // --- arc 4b (t_9339ad05): the toast is a canvas event ---
 
-test("NotificationCenter renders toasts from the canvas - no per-frontend SSE stream", () => {
-  const dock = read("webui", "app", "components", "notifications", "NotificationCenter.vue");
-  const compo = read("webui", "app", "composables", "notifications.ts");
-  // the dock subscribes to the canvas feed, not its own EventSource
-  assert.ok(dock.includes("onToastPanel("), "the dock consumes the canvas toast feed");
-  assert.ok(dock.includes("decodeToast("), "the dock owns the record-shape read");
-  // the per-frontend toast code is gone from composable + dock
-  assert.ok(!compo.includes("subscribeNotifications") && !dock.includes("subscribeNotifications"),
+test("the toast stack renders from the canvas - no per-frontend SSE stream (t_180db2cb rehome)", () => {
+  const store = read("webui", "app", "components", "notifications", "store.ts");
+  // the store subscribes to the canvas feed, not its own EventSource
+  assert.ok(store.includes("onToastPanel("), "the feed store consumes the canvas toast feed");
+  assert.ok(store.includes("decodeToast("), "the store owns the record-shape read");
+  // the per-frontend toast code is gone from composable + store
+  assert.ok(!store.includes("subscribeNotifications"),
     "the private SSE toast client is deleted, not just unused");
-  assert.ok(!compo.includes("/notifications/events"), "no SSE toast stream stays reachable from the shell");
+  assert.ok(!store.includes("/notifications/events"), "no SSE toast stream stays reachable from the shell");
+  // the toast stack component renders FROM THE STORE and stays fixed
+  // positioned (shell chrome, not pane content)
+  const toasts = read("webui", "app", "components", "notifications", "NotificationToasts.vue");
+  assert.ok(toasts.includes("notificationToasts"), "the stack renders the store's toast rows");
+  assert.ok(toasts.includes("transition-group"), "the merge behavior (12833fd) keeps its enter/leave group");
+  assert.match(toasts, /position: fixed/, "the stack is chrome, not pane content");
 });
 
 test("canvas.ts: the toast feed rides both transports, deduped by the fingerprint", () => {
