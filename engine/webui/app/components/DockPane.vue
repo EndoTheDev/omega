@@ -60,9 +60,9 @@
                  shells) are icon-only chips - the iconset vocabulary says
                  the tab, the title/tooltip keeps the accessible name, the
                  active styling (orange) is unchanged. Main/bottom tabs
-                 keep their text label. -->
+                 carry icon + label (t_172f9009): the glyph leads the name. -->
             <Icon
-              v-if="iconTabs && tabIcon(t)"
+              v-if="tabIcon(t)"
               :name="tabIcon(t)"
               class="dock-tab-ic" />
             <span
@@ -344,9 +344,9 @@
 
   // card t_502b8e81: the sidebar shells (left/right edges) render their
   // tab strips as ICON-ONLY chips (the dockable registry carries the
-  // iconset name). Bottom keeps its text label - it is a wide panel,
-  // not a sidebar. Main tabs are text (the '+' menu and the empty-pane
-  // watermark carry the icon+label pair instead).
+  // iconset name). Main/bottom tabs carry icon + label since t_172f9009 -
+  // the glyph leads the session name, size stays capped by the 160px
+  // max-width with the title ellipsizing.
   const iconTabs = computed(
     () => props.node.edge === "left" || props.node.edge === "right",
   );
