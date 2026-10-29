@@ -79,9 +79,16 @@
     serializeExpandedPaths,
   } from "../../composables/omega";
   import type { FileEntry } from "../../composables/omega";
+  import { FOCUSED_SESSION_KEY } from "../../composables/viewer";
   import { folderIcon, glyphKindFor, glyphIcon } from "./rowicon";
   // card t_502b8e81: the iconset wrapper - the tree's row glyphs
   import Icon from "../ui/Icon.vue";
+
+  // card t_a5f9d185: every branch expansion roots on the focused
+  // session's RESOLVED root - the id is read live at fetch time, so a
+  // re-rooted tab fetches branch listings under the new root. The app
+  // always provides; a null fallback keeps the tree harmless.
+  const focusedSession = inject(FOCUSED_SESSION_KEY, null);
 
   // Inspector file tree (VS Code-style): one row per entry, chevron rows
   // expand in place, and expanding a directory lazy-loads exactly one
@@ -137,7 +144,7 @@
       if (kids[path] || loading.has(path)) return;
       kids[path] ??= [];
       loading.add(path);
-      fetchFilesBrowse(path)
+      fetchFilesBrowse(path, focusedSession?.value ?? undefined)
         .then((data) => {
           kids[path] = sortFileEntries(data.entries ?? []);
           delete errs[path];

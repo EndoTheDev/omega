@@ -20,8 +20,14 @@
       :title="btnTitle"
       :aria-expanded="open"
       @click="toggle">
+      <!-- t_a5f9d185: browseLabel mode - the settings pane rides the SAME
+           picker with a plain "browse" chip instead of the value chip
+           (the value lives in the field beside it). -->
       <span
-        v-if="workspace"
+        v-if="browseLabel"
+        class="chip-name">{{ browseLabel }}</span>
+      <span
+        v-else-if="workspace"
         class="chip-name">{{ baseName }}</span>
       <span
         v-else
@@ -89,6 +95,9 @@
     // unset label). A bound session's pinned row folder, or the draft
     // tab's workspace intent (t_ea7e6a58) until the first send pins it.
     workspace?: string;
+    // t_a5f9d185: browse mode - a fixed chip label ("browse"); the chip
+    // stops echoing the value (other surfaces show it beside the chip).
+    browseLabel?: string;
   }>();
 
   const emit = defineEmits<{
@@ -107,7 +116,11 @@
   // the chip's tooltip (script keeps the literal strings - apostrophes
   // in template expressions break the vue template parser)
   const btnTitle = computed(() =>
-    props.workspace ? `workspace: ${props.workspace}` : "pick the working folder",
+    props.browseLabel
+      ? "browse for the default workspace folder"
+      : props.workspace
+        ? `workspace: ${props.workspace}`
+        : "pick the working folder",
   );
 
   function toggle() {

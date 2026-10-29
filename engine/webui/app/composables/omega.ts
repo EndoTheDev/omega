@@ -1170,6 +1170,12 @@ export interface FileEntry {
 
 export interface FilesBrowsePayload {
   entries: FileEntry[];
+  // the resolved root + which law step produced it (t_a5f9d185): the
+  // session's pinned workspace, the configured default_workspace, or
+  // the cwd fallback. Absent on a pre-law server - the header logic
+  // treats a missing source as cwd (no dead header either way).
+  root?: string;
+  source?: "session" | "default" | "cwd";
 }
 
 export interface FilesReadPayload {
@@ -1308,10 +1314,31 @@ async function filesQuery<T>(url: string): Promise<T> {
   return r.json();
 }
 
-// fetchFilesBrowse lists one directory of the working dir ("" = root).
-export function fetchFilesBrowse(path = ""): Promise<FilesBrowsePayload> {
-  const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
+// fetchFilesBrowse lists one directory of the RESOLVED root ("", root).
+// session rides the focused chat tab's session id (t_a5f9d185): the
+// server resolves the root from the session row / default_workspace /
+// cwd chain - the client never sends an absolute root.
+export function fetchFilesBrowse(path = "", session?: string): Promise<FilesBrowsePayload> {
+  const q = new URLSearchParams();
+  if (path) q.set("path", path);
+  if (session) q.set("session", session);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
   return filesQuery(`/files/browse${suffix}`);
+}
+
+// filesRootName is the header's left label: the basename of the
+// resolved root ("/" and "\" stay literal - a rooted-everywhere tree).
+export function filesRootName(root: string): string {
+  const base = root.split(/[\\/]/).filter(Boolean).pop();
+  return base ?? root;
+}
+
+// filesHeaderVisible: the Endo ruling - the VS Code-style header row
+// only exists when a real workspace backs the tree. The cwd fallback
+// (and a pre-law server's unknown source) hides the row entirely; no
+// dead header over a rooted-nowhere tree.
+export function filesHeaderVisible(source: string | undefined): boolean {
+  return source === "session" || source === "default";
 }
 
 // fetchWorkspaceFiles lists one ABSOLUTE directory's first-level
@@ -1346,9 +1373,15 @@ export async function fetchMentionFiles(workspace?: string): Promise<FilesBrowse
 }
 
 // fetchFilesRead previews one file: up to 64 KiB, truncated flag, and
-// binary=true (empty content) for non-UTF-8 bytes.
-export function fetchFilesRead(path: string): Promise<FilesReadPayload> {
-  return filesQuery(`/files/read?path=${encodeURIComponent(path)}`);
+// binary=true (empty content) for non-UTF-8 bytes. session roots the
+// read on the resolved root (t_a5f9d185) - the viewer passes the
+// focused session so a file opened from a workspace-rooted Files tab
+// parses under the SAME root it was browsed under.
+export function fetchFilesRead(path: string, session?: string): Promise<FilesReadPayload> {
+  const q = new URLSearchParams();
+  q.set("path", path);
+  if (session) q.set("session", session);
+  return filesQuery(`/files/read?${q.toString()}`);
 }
 
 // --- files tab toolbar (card t_a4504a25): the tab's write half ---
@@ -1374,16 +1407,20 @@ async function filesPost(url: string, body: unknown): Promise<void> {
   }
 }
 
-// postFilesWrite creates or overwrites one file inside the process
-// working directory ({path, content} - handleFilesWrite).
-export function postFilesWrite(path: string, content: string): Promise<void> {
-  return filesPost("/files/write", { path, content });
+// postFilesWrite creates or overwrites one file inside the resolved
+// root ({path, content, session} - handleFilesWrite; session roots the
+// request server-side, t_a5f9d185).
+export function postFilesWrite(
+  path: string,
+  content: string,
+  session?: string,
+): Promise<void> {
+  return filesPost("/files/write", session ? { path, content, session } : { path, content });
 }
 
-// postFilesMkdir creates one folder inside the process working
-// directory ({path} - handleFilesMkdir).
-export function postFilesMkdir(path: string): Promise<void> {
-  return filesPost("/files/mkdir", { path });
+// postFilesMkdir creates one folder inside the resolved root.
+export function postFilesMkdir(path: string, session?: string): Promise<void> {
+  return filesPost("/files/mkdir", session ? { path, session } : { path });
 }
 
 // --- insights (card t_e1e61680): the webui's /insights parity ---

@@ -89,7 +89,7 @@
             @input="setServer(knob, ($event.target as HTMLTextAreaElement).value)" />
           <!-- text / secret / bindlist / number -->
           <input
-            v-else
+            v-else-if="knob.type === 'number' || knob.type === 'secret' || !isPathKnob(knob)"
             class="setting-input"
             :type="knob.type === 'secret' ? 'password' : knob.type === 'number' ? 'number' : 'text'"
             :min="knob.min"
@@ -105,6 +105,23 @@
                 knob.type === 'number',
               )
             " />
+          <!-- path + browse (t_a5f9d185): ONE row, the value rides the
+               normal draft/save diff; the picker reuses the workspace
+               chip's pop (WorkspaceSelect in browse-label mode). -->
+          <div
+            v-else
+            class="setting-path">
+            <input
+              class="setting-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              :value="serverValue(knob)"
+              @input="setServer(knob, ($event.target as HTMLInputElement).value)" />
+            <WorkspaceSelect
+              browse-label="browse"
+              @update:workspace="(v: string) => setServer(knob, v)" />
+          </div>
           <p v-if="knob.help" class="setting-help">{{ knob.help }}</p>
         </div>
         </template>
@@ -159,6 +176,7 @@
   import type { ToolDisplay } from "~/composables/toolDisplay";
   // card t_502b8e81: the iconset wrapper - the group collapser chevron
   import Icon from "../ui/Icon.vue";
+  import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
   // card t_d7fd3ad3 item 6: the dock group's client knob rides the shared
   // bottom-width mode ref (the applier in app.vue reads the same signal)
   import {
@@ -323,6 +341,11 @@
 
   const isClient = (group: SettingGroup) =>
     group.key === "chat" || group.key === "dock";
+
+  // t_a5f9d185: the path knob (default workspace) renders input + the
+  // workspace browse chip; every other text knob keeps the plain input.
+  const isPathKnob = (knob: SettingKnob) =>
+    knob.key === "server.default_workspace";
 
   const allGroups = computed<SettingGroup[]>(() => [
     chatGroup.value,

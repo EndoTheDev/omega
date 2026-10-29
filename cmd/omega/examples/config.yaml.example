@@ -20,6 +20,12 @@ server:
   # HTTP listen port. Default: 8099
   port: 8099
 
+  # Default workspace for the webui Files tab (the resolution law:
+  # the focused session's pinned workspace wins, this backs it, the
+  # server working directory is the last resort). Absolute path.
+  # Default: unset (cwd fallback).
+  # default_workspace: /home/endo/projects
+
 store:
   # SQLite database path for the session store.
   # Default: <home>/data/omega.db (legacy home-root dbs migrate there on boot)

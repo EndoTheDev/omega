@@ -7,7 +7,7 @@
 // a deliberate literal copied on both sides, paired by the viewer.test
 // pin) - app.vue listens and opens.
 
-import type { InjectionKey } from "vue";
+import type { InjectionKey, Ref } from "vue";
 import { validViewerRef, type ViewerRef } from "./dockables.ts";
 
 /** the module->shell open event. THE LITERAL IS COPIED in
@@ -25,6 +25,14 @@ export function emitViewerOpen(v: ViewerRef): void {
     app always provides, the fallback stays null like the chat opener) */
 export const DOCK_VIEWER_OPEN_KEY: InjectionKey<(v: ViewerRef) => void> =
   Symbol("omega-dock-viewer-open");
+
+/** the focused-session seam (card t_a5f9d185): the app provides the
+    focused chat tab's session id (a computed ref, null while no chat is
+    focused). The Files tab and the viewer tab inject it and send the ID
+    (never a root!) with every /files request - the server resolves the
+    root from the session row, the default_workspace knob, or cwd. */
+export const FOCUSED_SESSION_KEY: InjectionKey<Readonly<Ref<string | null>>> =
+  Symbol("omega-focused-session");
 
 /** the skill content payload (GET /skills/content) */
 export interface SkillContentPayload {

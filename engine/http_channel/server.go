@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
@@ -84,6 +85,11 @@ type Server struct {
 	// through this model when set, instead of the call's pinned
 	// provider (the main model). Empty = no override.
 	titleModel string
+	// defaultWorkspace is the `default_workspace` knob (the files
+	// surface's middle resolution step). Written by SetDefaultWorkspace
+	// (wire time + the settings seam's hot-apply) while requests read
+	// it concurrently, so it rides an atomic value - never a bare field.
+	defaultWorkspace atomic.Value
 	// startedAt anchors the /health uptime (time since server construction).
 	startedAt time.Time
 

@@ -87,12 +87,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	p.canvas = &sharedCanvas{}
 	for _, b := range binds {
 		ch := &HTTPChannel{
-			addr:       fmt.Sprintf("%s:%d", b, port),
-			runTimeout: time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
-			titleModel: cfg.TitleModel,
-			chat:       p.chat,
-			hub:        p.hub,
-			canvas:     p.canvas,
+			addr:             fmt.Sprintf("%s:%d", b, port),
+			runTimeout:       time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
+			titleModel:       cfg.TitleModel,
+			defaultWorkspace: cfg.DefaultWorkspace,
+			chat:             p.chat,
+			hub:              p.hub,
+			canvas:           p.canvas,
 		}
 		p.mounted = append(p.mounted, ch)
 		if err := api.RegisterChannel(ch); err != nil {

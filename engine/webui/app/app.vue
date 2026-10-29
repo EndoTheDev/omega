@@ -466,6 +466,7 @@
   import ViewerTab from "./components/ViewerTab.vue";
   import {
     DOCK_VIEWER_OPEN_KEY,
+    FOCUSED_SESSION_KEY,
     VIEWER_OPEN_EVENT,
   } from "./composables/viewer";
   import {
@@ -964,6 +965,11 @@
   );
   // the sidebar's active-session highlight follows the focused chat tab
   const focusedSessionId = computed(() => focusedChatState.value.sessionId);
+
+  // card t_a5f9d185: the focused-session seam - the Files tab (and the
+  // viewer it mints) send this ID with every /files request; the server
+  // resolves the root from the session row / default_workspace / cwd.
+  provide(FOCUSED_SESSION_KEY, focusedSessionId);
 
   // status bar telemetry reads the focused chat's state (zeros until a
   // session carries numbers - DEFAULT_CHAT_STATE fallback). The message
