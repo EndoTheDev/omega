@@ -45,6 +45,9 @@
               active: i === node.active,
               'caret-before': dropIdx === i,
               'drop-refused': refusedIdx === i,
+              /* card t_a3b28c37: sidebar strips (icon-only) get their own
+                 28px centered chip shape - the text-tab rules never move */
+              'ic-only': iconTabs,
             }"
             :data-index="i"
             role="tab"
