@@ -1311,10 +1311,17 @@ labels stopped short of the right edge. */
 /* the body reuses .messages (flex:1, overflow-y:auto, full-width
    column) - its own scroll container with the tail-follow. Its items
    are ONE turn: the within-block 12px rhythm, not the 28px between-turn
-   gap; the pin's border stands in for the turn separation. min-height:0
-   lets the flex item shrink so the body scrolls instead of pushing the
-   composer out. */
-.messages.stacked.live-body { gap: 12px; padding-top: 12px; min-height: 0; }
+   gap; the pin's border stands in for the turn separation. */
+.messages.stacked.live-body { gap: 12px; padding-top: 12px; }
+
+/* the live body's shrink chain (t_64878551): under the ALWAYS-vertical
+   wrap every flex item on the wrap-to-live-body path must shrink below
+   its content, or the body grows past the pane and the wheel finds
+   nothing to scroll. The rule lives class-based on the BRANCH class -
+   not stacked (the appearance chip must not own scroll geometry) and
+   not :has() (9208ac8 retired the :has column override). The wrap
+   carries its own min-height: 0 upstream; this closes the chain. */
+.messages.live-body { min-height: 0; }
 
 .jump-live {
   position: absolute;
