@@ -284,12 +284,21 @@
      name flush left, the 4 action icons flush right on the same line -
      at the tree rows' rhythm (~22px), no container box, nothing docked
      above the tree. Dimmed icons at rest, the dock-tab hover raises. */
+  /* card t_5c660a42 (Endo 2026-10-29 "moved down a little"): the header
+     hugged the dock-tabbar seam while the first tree row keeps its own 5px
+     breathing below. The pane card tucks -8px (-r-pane) under the opaque
+     strip, so the scroll container's flow top sits ~7px ABOVE the visible
+     seam - a margin less than r-pane paints under the strip and reads as 0.
+     14px clears the tuck and leaves ~6px of daylight below the seam, the
+     tree rows' own 22px rhythm untouched below; horizontal padding
+     unchanged (t_a5f9d185). */
   .files-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 4px;
     height: 22px;
+    margin-top: 14px;
     padding: 0 8px;
   }
   .files-header-name {
