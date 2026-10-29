@@ -1,8 +1,12 @@
 <template>
   <main class="chat pane">
-    <!-- wrap owns the pill's absolute placement: the scroll container
-         itself scrolls its content (an absolutely positioned child of
-         it would scroll away with it) -->
+    <!-- wrap owns the pill's absolute placement AND the vertical stack:
+         the column wrap keeps the scrollport full-pane-width (the
+         scrollbar hugs the pane's right edge - the row layout stranded
+         a phantom strip beside it) and parks the activity/status line
+         BELOW the scroller, above the composer, where it cannot clip.
+         An absolutely positioned child of the scroll container itself
+         would scroll away with the content, so the pill lives here. -->
     <div class="messages-wrap">
       <!-- live-run branch (card t_c40164cf): while a stacked run streams
            the pane stops being one scrolling list and becomes TWO regions

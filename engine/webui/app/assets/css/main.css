@@ -1216,11 +1216,17 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 }
 
 /* the wrap owns the pill instead of the scroll container: an absolutely
-   positioned child of the scroll container scrolls away with the content */
+   positioned child of the scroll container scrolls away with the content.
+   The wrap stacks VERTICALLY (scrollport on top, activity/status line
+   under it, composer follows below in the pane) - the scrollport spans
+   the full pane body, so its scrollbar hugs the pane's right edge; the
+   row layout used to strand the activity line in a narrow right strip
+   clipped at the pane edge (t_c252b9c6). */
 .messages-wrap {
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   position: relative;
 }
 
@@ -1299,9 +1305,8 @@ labels stopped short of the right edge. */
 .live-pin .msg.user { justify-content: flex-start; }
 .live-pin .msg.user .bubble { width: 100%; max-width: 100%; }
 
-/* the wrap goes vertical for the run: pinned question ABOVE, agent body
-   BELOW (the row direction was tuned for the single settled column) */
-.messages-wrap:has(.live-body) { flex-direction: column; }
+/* the wrap is ALWAYS vertical now (t_c252b9c6): pinned question ABOVE,
+   agent body BELOW - the old :has(.live-body) column override is moot. */
 
 /* the body reuses .messages (flex:1, overflow-y:auto, full-width
    column) - its own scroll container with the tail-follow. Its items
