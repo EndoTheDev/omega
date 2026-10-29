@@ -252,6 +252,9 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	mux.HandleFunc("PUT /disabled/agents", s.handleDisabledAgents)
 	mux.HandleFunc("/cron/jobs", s.handleCronJobs)
 	mux.HandleFunc("/skills", s.handleSkills)
+	// card t_36ceb99b: the content-view read - one skill's full SKILL.md
+	// body for the webui viewer tab (the SkillsReader seam, 64 KiB cap).
+	mux.HandleFunc("/skills/content", s.handleSkillsContent)
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/themes", s.handleThemes)

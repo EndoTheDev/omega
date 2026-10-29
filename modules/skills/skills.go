@@ -331,6 +331,26 @@ func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 	return path, nil
 }
 
+// ReadSkill is the single-content read seam (core.SkillsReader, card
+// t_36ceb99b): one skill's parsed SKILL.md by name - Name (the folder
+// name, the same law every listing shows), Description (frontmatter) and
+// Content (the body under the fence). Resolution follows the LoadSkills
+// merge order (shared first, own second), so a name collision reads the
+// same winner the prompt listing and runRead use.
+func (sp *SkillsProvider) ReadSkill(name string) (core.Skill, error) {
+	skillFile, err := sp.resolveSkillFile(name)
+	if err != nil {
+		return core.Skill{}, err
+	}
+	s, err := loadSkill(skillFile)
+	if err != nil {
+		return core.Skill{}, fmt.Errorf("read SKILL.md: %w", err)
+	}
+	s.Name = name
+	s.Dir = filepath.Dir(skillFile)
+	return s, nil
+}
+
 // resolveSkillFile finds a skill's SKILL.md by name in the scan order
 // LoadSkills merges by (shared first, then own): the winner of a name
 // collision is the file the update action patches.
