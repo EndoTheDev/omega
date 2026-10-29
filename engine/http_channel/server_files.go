@@ -277,7 +277,7 @@ func filesPostBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 // the segment or containment rules reject is the CALLER's malformed
 // request (400), while anything else failing to resolve is the server's
 // (500) - the same split the browse handler draws on status codes.
-var errUncontained = errors.New("unjiled path")
+var errUncontained = errors.New("path refused")
 
 // resolveForWrite runs the shared root jail over a write request's
 // path: segment validation, symlink resolution, containment - the exact
