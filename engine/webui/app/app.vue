@@ -179,6 +179,13 @@
             :open="inspectorOpen"
             @set-theme="setTheme" />
         </template>
+        <template #pane-mcp>
+          <InspectorPanel
+            v-if="!isMobile"
+            class="pane"
+            module="mcp"
+            :open="isMobile ? inspectorOpen : false" />
+        </template>
         <!-- card t_49d0b308: the kanban board joins the inspector - the
              composition panel renders the compact/narrow-adaptive board
              in the ~300px sidebar column -->
