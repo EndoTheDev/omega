@@ -21,7 +21,7 @@
       class="registry-rows">
       <li
         v-for="r in rows"
-        :key="r.name"
+        :key="rowKey(r)"
         class="registry-row"
         :class="{ 'registry-off': r.disabled }">
         <span class="registry-main">
@@ -138,17 +138,33 @@
   const hasDetail = (r: RegistryRow) => !!(r.detail && r.detail.length);
 
   // --- two-step toggle: arm, then apply (ModuleToggleList mechanic) ---
+  // Card t_87303e8f: the old arm branch trusted "the checkbox re-renders
+  // from server state" - it does not. The `:checked` binding value is
+  // unchanged by the arm click, so Vue's prop diff skips the DOM prop and
+  // the checkbox stays physically toggled; the confirm click then
+  // re-toggled it back and emitted the REVERSE direction (every toggle
+  // through the UI was a no-op). ExtensionsTab (t_210a0d19) solved this
+  // with a per-row revision bump: changing the row's `:key` remounts the
+  // li, so the checkbox re-renders from server state and the confirm
+  // click emits the intended direction.
   const armed = ref<string | null>(null);
+  const revisions = ref<Record<string, number>>({});
+  const rowKey = (r: RegistryRow) => `${r.name}-${revisions.value[r.name] ?? 0}`;
+  const bump = (name: string) => {
+    revisions.value = { ...revisions.value, [name]: (revisions.value[name] ?? 0) + 1 };
+  };
 
   function onToggle(r: RegistryRow, checked: boolean) {
     if (props.busy !== null) return;
     if (armed.value !== r.name) {
-      // arm: the checkbox re-renders from server state; the note shows
-      // what the exclusion means for this namespace
+      // arm: the note shows what the exclusion means for this namespace;
+      // bump the row key so the checkbox re-renders from server state
       armed.value = r.name;
+      bump(r.name);
       return;
     }
     armed.value = null;
+    bump(r.name);
     emit("toggle", r.name, checked);
   }
 
