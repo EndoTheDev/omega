@@ -7,7 +7,7 @@
 // The pointer->zone math and the drag gesture record stay in dockdnd.ts;
 // the divider's snap-readout helper lives here with the ghost numerals.
 import { predictDockDrop, type DockDropPrediction } from "./dock.ts";
-import { zoneSplitOf, type DragZone } from "./dockdnd.ts";
+import { onGestureEnd, zoneSplitOf, type DragZone } from "./dockdnd.ts";
 import type { DockNode } from "./dock.ts";
 
 export interface GhostHalf {
@@ -76,6 +76,14 @@ interface GhostRectEntry {
 }
 
 let registry: GhostRectEntry | null = null;
+
+// card t_b2430179: the registry joins the COMPOSABLE-owned gesture end - one
+// subscription, page-lifetime; a pane unmounting can no longer leave the
+// registry armed. (It also clears on the next begin, so a poisoned record
+// never reaches the next gesture either way.)
+onGestureEnd(() => {
+  registry = null;
+});
 
 export const ghostRegistry = {
   /** the gesture began: the SOURCE stamps first (its dragstart) */

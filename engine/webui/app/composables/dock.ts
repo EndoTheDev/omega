@@ -25,6 +25,7 @@ import {
   snapCandidateAt,
 } from "./panes.ts";
 import {
+  endGesture,
   zoneSplitOf,
   type DragZone,
 } from "./dockdnd.ts";
@@ -2760,6 +2761,11 @@ export function createDock(store: Storage): DockApi {
     if (next === before) return;
     undoPush(before);
     tree.value = next;
+    // card t_b2430179 belt+suspenders: any layout mutation ends an armed
+    // gesture - the record's geometry and indices are pre-mutation; the
+    // record must never outlive its event (drops commit here; undo and
+    // reveal ops run through the same funnel).
+    endGesture();
   };
   /** walk back one op: pop the ring, re-parse through the total
       deserializer (a snapshot is always well-formed - it was serialized
@@ -2776,6 +2782,7 @@ export function createDock(store: Storage): DockApi {
       closedEdges.splice(0, closedEdges.length, ...rec.closedEdges);
     }
     tree.value = restored;
+    endGesture(); // undo mid-gesture: the record's indices are pre-restore
     return true;
   };
 

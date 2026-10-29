@@ -261,7 +261,7 @@
     type DockableComponent,
     type DockComponentName,
   } from "../composables/dockables";
-  import { tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
+  import { endGesture, onGestureEnd, tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
   import DockGhost from "./DockGhost.vue";
   // the ONE icon wrapper (card t_502b8e81): every icon in the webui
@@ -610,7 +610,15 @@
   function onPaneDragLeave(e: DragEvent) {
     if (e.target !== e.currentTarget) return; // bubbling leaves ignore
     if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) return;
-    clearDrop();
+    // card t_b2430179: a leave clears ONLY this pane's hover state - the
+    // GLOBAL gesture record (tabDrag/ghost) is the composable's now, and a
+    // mid-gesture pane exit (crossing a divider, leaving the window) must
+    // not kill the record the next pane's dragover still reads.
+    dropHover.value = false;
+    dropIdx.value = null;
+    refusedIdx.value = null;
+    dropZone.value = null;
+    predicted.value = null;
   }
 
   // body drop (VS Code): same pane = focus only; another pane: the lit
@@ -636,38 +644,32 @@
   }
 
   function clearDrop() {
+    // card t_b2430179: the global gesture record + every pane's local
+    // highlights clear through the COMPOSABLE's endGesture (the registry's
+    // end rides its subscription) - never through instance-owned state.
+    endGesture();
+  }
+  // card t_b2430179: dragend/drop/Esc/blur cleanup is COMPOSABLE-owned (the
+  // guard in dockdnd.ts, one window-level listener set for the page
+  // lifetime). This pane only holds its LOCAL highlight state and clears it
+  // through the gesture-end subscription, so an instance dying mid-gesture
+  // cannot orphan the record.
+  const clearLocal = () => {
     dropHover.value = false;
     dropIdx.value = null;
     refusedIdx.value = null;
     dropZone.value = null;
     predicted.value = null;
-    ghostRegistry.end();
-    tabDrag.end();
-  }
-  // any drag ending anywhere clears the local highlight (dropped elsewhere,
-  // Esc, or a lost pointer); drop on THIS pane already cleared explicitly
-  function onDragEnd() {
-    clearDrop();
-  }
-  // keyboard escape cancels the drag cleanly: the browser fires dragend on
-  // Esc for native DnD, and the keydown here backs it (headless/OS variance)
-  // so prediction state never outlives the gesture - layout untouched.
-  function onEscKey(e: KeyboardEvent) {
-    if (e.key === "Escape" && tabDrag.current()) clearDrop();
-  }
+  };
+  const unbindGesture = onGestureEnd(clearLocal);
   onMounted(() => {
     document.addEventListener("click", onDocClick);
-    window.addEventListener("dragend", onDragEnd);
-    window.addEventListener("drop", onDragEnd);
-    window.addEventListener("keydown", onEscKey);
   });
   function onDocClick() {
     menuOpen.value = false;
   }
   onBeforeUnmount(() => {
     document.removeEventListener("click", onDocClick);
-    window.removeEventListener("dragend", onDragEnd);
-    window.removeEventListener("drop", onDragEnd);
-    window.removeEventListener("keydown", onEscKey);
+    unbindGesture();
   });
 </script>
