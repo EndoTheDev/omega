@@ -104,7 +104,12 @@ func TestFireGuardLogsSkip(t *testing.T) {
 		return "ok", nil
 	}
 	ctx := context.Background()
-	go r.fire(ctx, r.jobsSnapshot()[0], time.Now())
+	var fired sync.WaitGroup
+	fired.Add(1)
+	go func() {
+		defer fired.Done()
+		r.fire(ctx, r.jobsSnapshot()[0], time.Now())
+	}()
 
 	// Wait until the job is actually running (guard held), then a
 	// synchronous fire must skip without ever entering runTurn.
@@ -121,6 +126,10 @@ func TestFireGuardLogsSkip(t *testing.T) {
 		t.Fatalf("skip not logged: %v", rec.snapshot())
 	}
 	close(release)
+	// Fires write cronstate.json into the TempDir home; wait the
+	// background fire out so cleanup never races a straggler write
+	// (same law as TestFireGuard above).
+	fired.Wait()
 }
 
 // logRecorder is a race-safe LoggerProvider.
