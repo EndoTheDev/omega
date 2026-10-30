@@ -9,34 +9,37 @@
        #side slot. The same numbers the TUI prints, the browser
        pattern's look. No chart dependency. -->
   <section class="pane insights">
-    <header class="insights-head">
-      <div>
-        <h2 class="insights-title">usage insights</h2>
-        <p class="insights-period">
-          {{ data ? data.period : "loading" }}<template v-if="data && data.period_start">: {{ data.period_start }} — {{ data.period_end }}</template>
-        </p>
-      </div>
-      <div class="insights-controls">
-        <label
-          class="insights-days"
-          title="window size - mirrors the TUI's /insights [days] arg">
-          <select
-            v-model.number="days"
-            aria-label="window in days, 0 = all time">
-            <option :value="7">7 days</option>
-            <option :value="30">30 days</option>
-            <option :value="90">90 days</option>
-            <option :value="0">all time</option>
-          </select>
-        </label>
-        <button
-          class="insights-refresh"
-          title="recompute"
-          :disabled="loading"
-          @click="load()">&#8635;</button>
-      </div>
-    </header>
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
+         window selector + recompute ride the band now; the period text
+         rides the band's small print. The band renders before the
+         .insights-scroll body: scrolling the dashboard never moves it. -->
+    <TabBand
+      title="Insights"
+      :title-attr="data ? `${data.period}${data.period_start ? ': ' + data.period_start + ' — ' + data.period_end : ''}` : undefined">
+      <span
+        class="insights-period"
+        :title="data ? data.period : 'loading'">{{ data ? data.period : "loading" }}</span>
+      <label
+        class="insights-days"
+        title="window size - mirrors the TUI's /insights [days] arg">
+        <select
+          v-model.number="days"
+          aria-label="window in days, 0 = all time">
+          <option :value="7">7 days</option>
+          <option :value="30">30 days</option>
+          <option :value="90">90 days</option>
+          <option :value="0">all time</option>
+        </select>
+      </label>
+      <button
+        class="insights-refresh band-tool"
+        title="recompute"
+        aria-label="recompute insights"
+        :disabled="loading"
+        @click="load()">&#8635;</button>
+    </TabBand>
 
+    <div class="insights-scroll">
     <p
       v-if="loadError"
       class="settings-error insights-error">
@@ -120,6 +123,7 @@
           :show-state="false"
           empty-text="no notable sessions" />
       </template>
+    </div>
     </div>
   </section>
 </template>
@@ -228,35 +232,36 @@
 </script>
 
 <style scoped>
+  /* card t_308e6d9b: the root stops being the scrollport - the band
+     anchors its top, the .insights-scroll wrapper under it owns the
+     scroll; the old root padding rides the wrapper. */
   .insights {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    padding: 0 14px 10px;
+  }
+  .insights-scroll {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 10px 14px;
-    gap: 10px;
-  }
-  .insights-head {
+    overflow-x: hidden;
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
+    flex-direction: column;
     gap: 10px;
-  }
-  .insights-title {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text);
+    padding-top: 4px;
   }
   .insights-period {
-    margin: 2px 0 0;
+    margin: 0;
     font-size: 11px;
     color: var(--text-dim);
+    white-space: nowrap;
   }
-  .insights-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+  /* the band's select keeps its form-control look; the recompute button
+     rides the band-tool look (the shared band vocabulary) */
   .insights-days select {
     background: var(--z1-raised);
     color: var(--text);
@@ -266,14 +271,9 @@
     padding: 3px 6px;
   }
   .insights-refresh {
-    background: none;
-    border: none;
-    color: var(--text-dim);
     font-size: 14px;
-    cursor: pointer;
-    padding: 2px 4px;
+    padding: 0 5px;
   }
-  .insights-refresh:hover { color: var(--text); }
 
   .insights-status,
   .insights-error {
