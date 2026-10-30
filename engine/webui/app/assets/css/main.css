@@ -1036,9 +1036,17 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   flex-direction: column;
 }
 
-/* the scrolling body: entry tree (same voice as the session list rows -
-   raised chip hover, mono meta on the edge) */
+/* the files tab column (card t_308e6d9b): stops being the scrollport -
+   the band anchors this column's top, .files-scroll under it owns the
+   scroll (the SAME structure every tab now owns: band never scrolls) */
 .inspector-files {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.files-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
