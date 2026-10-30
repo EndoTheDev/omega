@@ -185,7 +185,12 @@ test("reloadMcpServers: a failed reload throws and never re-fetches", async () =
 
 test("the refresh button renders the FilesTab toolbar pattern", () => {
   const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
-  assert.ok(src.includes('role="toolbar"') && src.includes('aria-label="mcp actions"'), "the single header row is the toolbar");
+  // card t_308e6d9b: the single header row IS the shared TabBand now -
+  // the toolbar role/aria-label are the band component's contract, the
+  // panel composes the band with its title.
+  const band = read(root, "engine", "webui", "app", "components", "ui", "TabBand.vue");
+  assert.ok(band.includes('role="toolbar"') && band.includes("actions"), "the single header row is the toolbar (the shared band)");
+  assert.match(src, /<TabBand[\s\S]{0,80}title="MCP">/, "the composes band carries the tab's title");
   assert.ok(src.includes('aria-label="refresh mcp servers"'), "the refresh action's accessible name");
   assert.ok(src.includes('title="refresh"'), "the hover title");
   assert.ok(src.includes(':disabled="reloading"') && src.includes('@click="reload"'), "the click fires the reload chain");
