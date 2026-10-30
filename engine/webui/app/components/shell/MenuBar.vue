@@ -27,19 +27,19 @@
         name="panel-left-open"
         :size="16" />
     </button>
-    <!-- card t_33f8756c: the three edge toggles read left | bottom | right,
-         matching the screen edge each one controls (the old order was
-         left, right, bottom). t_67fc1905 history: the bottom panel's
-         toggle joined this cluster; it stays SELF-CONTAINED - the
-         drawer-repairs card owns app.vue's wiring, so the button drives
-         the dock api directly. card t_aca53fee: no more second icon set -
-         the drawer-only handles are gone, these three ARE the handles at
-         every breakpoint. -->
+    <!-- card t_67fc1905 history: the bottom panel's toggle joined this
+         cluster; card t_4bf1d5b7: it routes through app.vue like its
+         siblings - app.vue dispatches on isMobile (desktop: the dock api
+         hides/reopens the tree pane; mobile: the BOTTOM DRAWER flag,
+         since the zero-collapse CSS takes the tree pane's cell out of
+         flow below the breakpoint regardless of its state). card
+         t_aca53fee: no more second icon set - these three ARE the
+         handles at every breakpoint. -->
     <button
       class="icon-btn edge-toggle"
       aria-label="Toggle bottom panel"
       :title="bottomOpen ? 'Close bottom panel' : 'Open bottom panel'"
-      @click="toggleBottom">
+      @click="$emit('toggle-bottom')">
       <Icon
         v-if="bottomOpen"
         name="panel-bottom-close"
@@ -77,40 +77,27 @@
 </template>
 
 <script setup lang="ts">
-  // the toggles drive dock.toggleEdge (hide/reopen the pinned edge
-  // panes - desktop) and the MOBILE drawer flips below 768px (the same
-  // emits, dispatched on isMobile in app.vue). open-state icons read the
-  // DOCK tree, not the drawer state; app.vue passes the drawer-aware
-  // open flags so the chevrons stay honest on mobile too.
-  import { computed, inject } from "vue";
-  import { DOCK_API_KEY, findEdgePane } from "../../composables/dock";
-  // card t_502b8e81: the iconset wrapper - the toggles are panel-*-open/close
+  // the toggles drive app.vue's emits; app.vue routes each one on
+  // isMobile (desktop: dock.toggleEdge / dock.toggleBottom - hide/reopen
+  // the pinned edge pane; mobile: the overlay drawer flags - card
+  // t_4bf1d5b7). open-state icons read the app-passed flags so the
+  // chevrons stay honest on both routes: desktop flags read the dock
+  // tree, mobile flags the drawer state.
   import Icon from "../ui/Icon.vue";
   // card t_180db2cb: the notifications surface is the notifications DOCK
   // TAB (the panel lives in app.vue's outlet); the menubar hosts only
   // the live toast stack (the bell button + popover died with it).
   import NotificationToasts from "../notifications/NotificationToasts.vue";
 
-  // card t_67fc1905: the bottom toggle is self-contained - reads + drives
-  // the dock api directly (the sidebar toggles went through emits because
-  // the SAME button doubles as the mobile drawer handle below 768px -
-  // app.vue dispatches the emit on isMobile; no class-based hiding since
-  // card t_aca53fee: the toggles surface at every breakpoint).
-  const dock = inject(DOCK_API_KEY);
-  const bottomOpen = computed(
-    () => dock !== undefined && findEdgePane(dock.tree.value, "bottom") !== null,
-  );
-  function toggleBottom() {
-    dock?.toggleBottom();
-  }
-
   defineProps<{
     sidebarOpen: boolean;
+    bottomOpen: boolean;
     inspectorOpen: boolean;
   }>();
 
   defineEmits<{
     (e: "toggle-sidebar"): void;
+    (e: "toggle-bottom"): void;
     (e: "toggle-inspector"): void;
     (e: "open-notification", n: unknown): void;
   }>();
