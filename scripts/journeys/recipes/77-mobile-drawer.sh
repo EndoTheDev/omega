@@ -99,36 +99,70 @@ js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=
 sleep 0.7
 open=$(jsq 'document.querySelector(".mobile-drawer.right.open")?1:0')
 assert_eq "$open" "1" "REPRO 2: inspector drawer opens (right.open)"
-tabs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).map(t=>t.textContent.trim()).join(",")')
+# card t_4bf1d5b7 (report 2, Endo ruling: ICONS): the drawer chips are
+# ICON-ONLY, the same dockableIcon vocabulary the desktop edge chips
+# render. The name rides aria-label + the tooltip; no text label renders.
+tabs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).map(t=>(t.getAttribute("aria-label")||"").trim()).join(",")')
 tabs=${tabs#\"}; tabs=${tabs%\"}  # jsq returns JSON-encoded strings; strip the quotes
 # the strip is pinned to the DESKTOP inspector strip captured above (the
 # registry's right-area panels - agents (t_7e2b7002) and extensions
 # (t_14f73742) joined it via the registry, and so will the next one):
 # the drawer must EQUAL that strip, never a recipe-copied list
-assert_eq "$tabs" "$desktop_strip" "REPRO 2: inspector drawer shows the registry tab strip (== desktop strip)"
+assert_eq "$tabs" "$desktop_strip" "REPRO 2: inspector drawer shows the registry tab strip (== desktop strip, via aria names)"
+icons=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab svg")).length')
+assert_eq "$icons" "$(echo "$desktop_strip" | tr ',' '\n' | wc -l)" "REPRO 2: every drawer chip renders its registry glyph"
+bare=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).filter(t=>t.textContent.trim()!=="").length')
+assert_eq "$bare" "0" "REPRO 2: no text label renders inside a drawer chip (icon-only, 4bf1d5b7)"
 
 # the active tab is Files (the file tree renders, not a module panel)
-active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.textContent.trim()')
+active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
 active=${active#\"}; active=${active%\"}
 assert_eq "$active" "Files" "REPRO 2: Files is the default active inspector tab"
 files=$(jsq 'document.querySelector(".mobile-drawer.right .inspector-files")?1:0')
 assert_eq "$files" "1" "REPRO 2: Files tab renders the file tree"
 
 # switch to Skills -> the content swaps to the skills module panel
-js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>t.textContent.trim()==="Skills").click()' >/dev/null 2>&1
+js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Skills").click()' >/dev/null 2>&1
 sleep 0.6
-active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.textContent.trim()')
+active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
 active=${active#\"}; active=${active%\"}
 assert_eq "$active" "Skills" "REPRO 2: clicking Skills activates it"
 skills=$(jsq 'document.querySelector(".mobile-drawer.right .module-panels")?1:0')
 assert_eq "$skills" "1" "REPRO 2: Skills tab renders the module panel (content switched)"
 
 # switch to Settings -> the settings panel renders (not a module panel)
-js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>t.textContent.trim()==="Settings").click()' >/dev/null 2>&1
+js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Settings").click()' >/dev/null 2>&1
 sleep 0.5
 settings=$(jsq 'document.querySelector(".mobile-drawer.right .pane.settings")?1:0')
 assert_eq "$settings" "1" "REPRO 2: Settings tab renders the settings panel"
 step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Settings)"
+
+# --- REPRO 3 (card t_4bf1d5b7, report 1): the menubar BOTTOM toggle ---
+# below the breakpoint the zero-collapse CSS takes the .edge-bottom cell
+# out of flow regardless of tree state - the toggle must drive the BOTTOM
+# DRAWER (side="bottom"), and the desktop tree must survive the round-trip.
+js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
+sleep 0.4
+bottom_pane=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
+[ "$bottom_pane" = "1" ] || die "no edge-bottom pane in the tree before the bottom-drawer repro"
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
+sleep 0.7
+bscrim=$(jsq 'document.querySelector(".scrim")?1:0')
+bdrawer=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
+brect=$(jsq 'JSON.stringify((r=>({w:Math.round(r.width),h:Math.round(r.height),bottom:Math.round(r.bottom)}))(document.querySelector(".mobile-drawer.bottom.open")?.getBoundingClientRect()||{width:0,height:0,bottom:0}))')
+brect=${brect#\"}; brect=${brect%\"}
+assert_eq "$bscrim" "1" "REPRO 3: the bottom drawer opens over the scrim"
+assert_eq "$bdrawer" "1" "REPRO 3: the bottom drawer opens (bottom.open)"
+assert_eq "$bottom_pane" "$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')" "REPRO 3: the toggle left the tree alone (the edge-bottom cell never pruned)"
+echo "$brect" | grep -q '"h":0' && die "REPRO 3: the bottom drawer has zero height (geometry broken)"
+blog=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .logs-view, .mobile-drawer.bottom.open .module-panels, .mobile-drawer.bottom.open .logs-line")?1:0')
+assert_eq "$blog" "1" "REPRO 3: the bottom drawer seats content (logs)"
+# close: the same toggle closes the drawer again
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
+sleep 0.5
+bclosed=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
+assert_eq "$bclosed" "0" "REPRO 3: the toggle closes the bottom drawer again"
+step "ok: REPRO 3 - mobile bottom toggle opens the bottom drawer over a scrim, closes, tree untouched"
 
 # --- desktop regression: the toggles still hide/show sidebars at desktop ---
 js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1

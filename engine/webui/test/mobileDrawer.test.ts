@@ -12,6 +12,7 @@ import {
   INSPECTOR_TAB_COMPONENTS,
   defaultHostTabs,
   COMPONENT_TITLES,
+  dockableIcon,
   type DockComponentName,
 } from "../app/composables/dockables.ts";
 import type { DockPane } from "../app/composables/dock.ts";
@@ -47,7 +48,9 @@ test("drawerTabsForEdge: a pruned edge pane (null) falls back to the registry de
 
 test("drawerTabsForEdge: the sidebar default is sessions alone", () => {
   const tabs = drawerTabsForEdge(null, ["sidebar"], title);
-  assert.deepEqual(tabs, [{ id: "sidebar", title: COMPONENT_TITLES.sidebar }]);
+  assert.deepEqual(tabs, [
+    { id: "sidebar", title: COMPONENT_TITLES.sidebar, icon: dockableIcon("sidebar") },
+  ]);
 });
 
 test("drawerTabsForEdge: a live edge pane drives the tab set (its actual tabs, in order)", () => {
