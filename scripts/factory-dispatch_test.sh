@@ -265,6 +265,54 @@ out=$(HOME="$CFHOME" PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run --max 1 2>
 printf "%s" "$out" | grep -q "cap=1" && ok || bad "T12: --max must override the config cap (out: $out)"
 rm -rf "$CFHOME"
 
+# T13 (local + CI): guard bug #13 (proven live 2026-10-31) - the pre-pass
+# snapshot recorded a drifted hold VERBATIM. A card that reached pass
+# start ALREADY drifted (status='ready' + named hold, promoted by a
+# recompute_ready OUTSIDE the guard: crashed tick, bare kanban CLI call)
+# was snapshotted as ready; the restore saw ready->ready = no drift, and
+# the park stayed laundered across every later pass (proven live:
+# promote events kept firing on t_55a3fc4b/t_95c91f9c after bug #11's
+# fix). Pinned here: BOTH drifting shapes (v0.14.0-style hold and
+# design-hold) at pass start in READY -> the snapshot parks them and
+# names the normalization; the stub recompute_ready flips them again;
+# the restore re-parks; final shape blocked + locks intact.
+FDHOME=$(mktemp -d)
+mkdir -p "$FDHOME/.hermes/kanban/boards/project-omega" "$FDHOME/bin"
+DRB="$FDHOME/.hermes/kanban/boards/project-omega/kanban.db"
+sqlite3 "$DRB" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
+INSERT INTO tasks VALUES('t_drun','running','go bits','pure go bits','pibtw:1',NULL,0,'2026-10-31T01:00');
+INSERT INTO tasks VALUES('t_dready','ready','legal filler','filler','' ,NULL,0,'2026-10-30T00:30');
+INSERT INTO tasks VALUES('t_drift14','ready','terminal module hold','design gate','pibtw:v0.14.0-hold',NULL,0,'2026-10-30T01:00');
+INSERT INTO tasks VALUES('t_driftde','ready','browser module hold','design gate','pibtw:design-hold',NULL,0,'2026-10-30T01:01');" 2>/dev/null
+cat >"$FDHOME/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+# stub: mimic recompute_ready - parentless non-sticky todo/blocked cards
+# go ready regardless of claim_lock (proven live behavior).
+sqlite3 "$HERMES_STUB_DB" "UPDATE tasks SET status='ready' WHERE status IN ('todo','blocked');"
+echo "Spawned: 0"
+EOF
+chmod +x "$FDHOME/bin/hermes"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$DRB" bash "$GUARD" --dry-run 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T13: dry-run exited $rc (out: $out)"
+s=$(sqlite3 "$DRB" "SELECT count(*) FROM tasks WHERE status='ready' AND coalesce(claim_lock,'') != '';")
+[ "$s" = "2" ] && ok || bad "T13: dry-run flipped the drifted holds (ready-with-hold count: $s)"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$DRB" bash "$GUARD" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T13: dispatch pass exited $rc (out: $out)"
+printf "%s" "$out" | grep -q "hold-drift normalized: t_drift14 (ready -> blocked" \
+	&& ok || bad "T13: v0.14.0 drift not normalized at snapshot (out: $out)"
+printf "%s" "$out" | grep -q "hold-drift normalized: t_driftde (ready -> blocked" \
+	&& ok || bad "T13: design-hold drift not normalized at snapshot (out: $out)"
+printf "%s" "$out" | grep -q "re-parked: t_drift14 (ready -> blocked" \
+	&& ok || bad "T13: re-promoted hold not re-parked by the restore (out: $out)"
+sh13=$(sqlite3 "$DRB" "SELECT id||'|'||status||'|'||claim_lock FROM tasks WHERE id LIKE 't_drift%' ORDER BY id;")
+[ "$sh13" = "t_drift14|blocked|pibtw:v0.14.0-hold
+t_driftde|blocked|pibtw:design-hold" ] \
+	&& ok || bad "T13: parked shape wrong after pass (got: $sh13)"
+rm -rf "$FDHOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
