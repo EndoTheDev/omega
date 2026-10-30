@@ -80,7 +80,9 @@ func (r *omegaRegistries) applyLive() {
 		return
 	}
 	r.mu.Lock()
-	tools, skillList, agentList := r.fold.Tools, r.fold.Skills, r.fold.Agents
+	tools := r.fold.Tools
+	skillList := r.fold.Skills
+	agentList := r.fold.Agents
 	r.mu.Unlock()
 	r.pctx.DisabledTools = tools
 	if sp, ok := r.pctx.Skills.(*skills.SkillsProvider); ok && sp != nil {
