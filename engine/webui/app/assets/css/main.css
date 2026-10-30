@@ -2504,6 +2504,20 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .mobile-drawer.left { left: 0; }
   .mobile-drawer.open { transform: translateX(0); }
 
+  /* card t_4bf1d5b7: the bottom drawer slides UP from above the
+     statusbar at full width - the horizontal variants' geometry (70%
+     column, translateX) must not leak. Same fixed-drawer + scrim rule,
+     same frost layer. */
+  .mobile-drawer.bottom {
+    top: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 55%;
+    transform: translateY(100%);
+  }
+  .mobile-drawer.bottom.open { transform: translateY(0); }
+
   /* the drawer's own tab bar (the dock's .dock-tabbar is hidden under
      the breakpoint - REPRO 2: the strip renders inside the drawer) */
   .mobile-drawer-tabbar {
@@ -2516,15 +2530,21 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   }
   .mobile-drawer-tab {
     flex: 0 0 auto;
-    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 9px;
     border: none;
     background: transparent;
     color: var(--text-dim);
     font-family: inherit;
     font-size: 12px;
-    border-radius: var(--r-chip) var(--r-chip) 0 0;
+    border-radius: var(--r-chip);
     cursor: pointer;
     white-space: nowrap;
+    /* card t_4bf1d5b7 (report 2): the chips are ICON-ONLY, the same
+       dockableIcon vocabulary the desktop edge strips render - the tab
+       name rides aria-label + the tooltip, no text label */
   }
   .mobile-drawer-tab:hover { color: var(--text); }
   .mobile-drawer-tab.active {

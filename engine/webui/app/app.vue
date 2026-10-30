@@ -2,8 +2,10 @@
   <div class="shell">
     <MenuBar
       :sidebar-open="isMobile ? drawerOpen : sidebarDocked"
+      :bottom-open="isMobile ? bottomDrawerOpen : bottomDocked"
       :inspector-open="isMobile ? inspectorOpen : inspectorDocked"
       @toggle-sidebar="toggleSidebar"
+      @toggle-bottom="toggleBottomPanel"
       @toggle-inspector="toggleInspector"
       @open-notification="openNotification" />
 
@@ -11,7 +13,7 @@
          backdrop-filter frost renders against the shell's root, so the
          mobile drawers slide under identical frost -->
     <div
-      v-if="isMobile && (drawerOpen || inspectorOpen)"
+      v-if="isMobile && (drawerOpen || inspectorOpen || bottomDrawerOpen)"
       class="scrim"
       @click="closeOverlays" />
 
@@ -325,6 +327,43 @@
         :open="inspectorOpen" />
     </MobileDrawer>
 
+    <!-- card t_4bf1d5b7: the BOTTOM drawer. Below 768px the zero-collapse
+         CSS (bottompanel.css) takes the .edge-bottom cell out of flow
+         regardless of tree state - desktop chrome a mobile toggle can't
+         reach. So the menubar's bottom toggle drives THIS overlay (the
+         same fixed-drawer + scrim rule the other two ride), not the
+         desktop tree reveal: toggleBottomPanel flips bottomDrawerOpen on
+         mobile and the tree keeps its shape for the return to desktop.
+         Tabs derive from the live bottom pane or the registry's
+         bottom-home default (logs), same contract as the other drawers. -->
+    <MobileDrawer
+      v-if="isMobile"
+      side="bottom"
+      :open="bottomDrawerOpen"
+      :tabs="bottomDrawerTabs"
+      aria-label="bottom panel"
+      v-model="mobileBottomTab">
+      <FilesTab
+        v-if="bottomDrawerActiveId === 'files'"
+        class="pane"
+        :open="bottomDrawerOpen" />
+      <SettingsTab
+        v-else-if="bottomDrawerActiveId === 'settings'"
+        class="pane"
+        v-model:show-thinking="showThinking"
+        v-model:appearance="appearance"
+        v-model:tool-display="toolDisplay"
+        :theme-mode="themeMode"
+        :user-themes="userThemes"
+        :open="bottomDrawerOpen"
+        @set-theme="setTheme" />
+      <InspectorPanel
+        v-else-if="bottomDrawerActiveId"
+        class="pane"
+        :module="bottomDrawerActiveId"
+        :open="bottomDrawerOpen" />
+    </MobileDrawer>
+
     <!-- destructive confirm: delete walks the store cascade server-side,
          so there is no undo - the dialog names the session -->
     <div
@@ -434,11 +473,19 @@
   import {
     INSPECTOR_TAB_COMPONENTS,
     COMPONENT_TITLES,
+    defaultHostTabs,
     type DockComponentName,
   } from "./composables/dockables";
   // card t_e76ce7b6: the mobile drawer's pure tab derivation (decoupled
-  // from the dock tree - REPRO 1's fix)
-  import { drawerTabsForEdge, clampDrawerTab } from "./composables/mobileDrawer";
+  // from the dock tree - REPRO 1's fix). Card t_4bf1d5b7 adds the
+  // menubar toggle route: the shell flags flip BELOW the breakpoint
+  // (one drawer at a time), the dock tree only above it.
+  import {
+    drawerTabsForEdge,
+    clampDrawerTab,
+    routeShellToggle,
+    type MobileShell,
+  } from "./composables/mobileDrawer";
   // card t_30137f67: the shared default-workspace value (module-scoped)
   // - SettingsTab's reads keep it fresh, the chat host reads it when a
   // draft state is born, the boot read backfills the early tabs
@@ -539,6 +586,11 @@
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
+  // card t_4bf1d5b7: the BOTTOM drawer's mobile open flag - view state
+  // only (the overlay drawer rule the other two ride). It never couples
+  // to the dock tree: the t_aa9dbada closed-flag semantics and the
+  // desktop tree state stay untouched below the breakpoint.
+  const bottomDrawerOpen = ref(false);
   const showThinking = ref(true);
   // chat appearance (card t_84e4653c): 'chat' chronolog | 'stacked'
   // blocks. Persisted like the theme - last choice wins across reloads,
@@ -1267,15 +1319,21 @@
   }
 
   // card t_47b776ad: the menubar toggles are BACK - on desktop they
-  // drive dock.toggleEdge (hide/reopen the pinned edge panes at their
-  // edge, reopen at the clamp width; a reload re-asserts the fixed
-  // shape via ensurePinnedEdges). On mobile the same emits keep flipping
-  // the overlay drawers (one at a time) - the toggles render only above
-  // the 768px breakpoint, the drawer handles only below it.
+  // drive the dock tree (toggleEdge / toggleBottom: hide/reopen the
+  // pinned edge pane at its edge, reopen at the clamp width; a reload
+  // re-asserts the fixed shape via ensurePinnedEdges). Card t_4bf1d5b7:
+  // below 768px the SAME emits drive the overlay drawer flags (one at a
+  // time) and NEVER the tree - the zero-collapse CSS takes the edge
+  // cells out of flow regardless of tree state, so a tree flip would be
+  // invisible (the bottom toggle's dead click). Returning to desktop
+  // finds the layout exactly as the user left it.
   const sidebarDocked = computed(() => findEdgePane(dock.tree.value, "sidebar") !== null);
   // the right shell lives while its marker exists - even empty (free
   // content: tabs come and go, the shell stays)
   const inspectorDocked = computed(() => findEdgePane(dock.tree.value, "inspector") !== null);
+  // the bottom shell's desktop open-state icon reads the tree (the pane
+  // may be fully closed there - t_aa9dbada); mobile reads the drawer flag
+  const bottomDocked = computed(() => findEdgePane(dock.tree.value, "bottom") !== null);
 
   // card t_e76ce7b6: the mobile drawer's tab bar. The drawer renders the
   // pinned-edge content independently of the dock tree (REPRO 1: a
@@ -1332,6 +1390,21 @@
     clampDrawerTab(inspectorDrawerTabs.value, mobileInspectorTab.value)?.id,
   );
 
+  // card t_4bf1d5b7: the bottom drawer's tab set - the live bottom pane
+  // when the tree holds one, else the registry's bottom-home default
+  // (logs). Its active state is the drawer's own, like the other two.
+  const mobileBottomTab = ref(0);
+  const bottomDrawerTabs = computed(() =>
+    drawerTabsForEdge(
+      findEdgePane(dock.tree.value, "bottom"),
+      defaultHostTabs("bottom"),
+      drawerTabTitle,
+    ),
+  );
+  const bottomDrawerActiveId = computed(() =>
+    clampDrawerTab(bottomDrawerTabs.value, mobileBottomTab.value)?.id,
+  );
+
   // card t_14f73742: a has-ui extension row routes to the module's
   // inspector tab - focus its live instance, open it if the strip
   // dropped one (the loader restores the full set anyway). The guard is
@@ -1344,28 +1417,41 @@
     dock.openSingleton(pane.id, moduleId as DockComponentName);
   }
 
+  // the menubar toggle route: one decision point for all three edges -
+  // routeShellToggle (mobileDrawer.ts) flips the dock tree on desktop
+  // and the drawer flags on mobile (never both, never the tree below
+  // the breakpoint). The node suite pins that contract behaviorally.
   function toggleSidebar() {
-    if (!isMobile.value) {
-      dock.toggleEdge("sidebar", "before");
-      return;
-    }
-    inspectorOpen.value = false;
-    drawerOpen.value = !drawerOpen.value;
+    applyShellToggle("sidebar");
+  }
+  function toggleBottomPanel() {
+    applyShellToggle("bottom");
+  }
+  function applyShellToggle(shell: MobileShell) {
+    const next = routeShellToggle(
+      shell,
+      isMobile.value,
+      dock,
+      {
+        sidebar: drawerOpen.value,
+        inspector: inspectorOpen.value,
+        bottom: bottomDrawerOpen.value,
+      },
+    );
+    drawerOpen.value = next.sidebar;
+    inspectorOpen.value = next.inspector;
+    bottomDrawerOpen.value = next.bottom;
   }
 
   function closeOverlays() {
     drawerOpen.value = false;
     inspectorOpen.value = false;
+    bottomDrawerOpen.value = false;
   }
 
-  // mobile: one drawer at a time
+  // mobile: one drawer at a time (the flip lives in applyShellToggle)
   function toggleInspector() {
-    if (!isMobile.value) {
-      dock.toggleEdge("inspector", "after");
-      return;
-    }
-    drawerOpen.value = false;
-    inspectorOpen.value = !inspectorOpen.value;
+    applyShellToggle("inspector");
   }
 
   // togglePin flips the pinned flag on a session row: optimistically, so

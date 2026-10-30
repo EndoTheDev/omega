@@ -9,7 +9,13 @@
        pruned from the tree, page-lifetime by design) must not gate the
        mobile drawer - the drawer reads no dock-tree presence. REPRO 2:
        the dock's .dock-tabbar is hidden under the breakpoint (main.css),
-       so the drawer carries its own strip that switches the content. -->
+       so the drawer carries its own strip that switches the content.
+       card t_4bf1d5b7: side extends to "bottom" (the logs/terminal
+       shell's drawer - the zero-collapsed .edge-bottom cell escapes into
+       this overlay), and the tab strip renders the ICON-ONLY chip
+       vocabulary the desktop edge strips use - the title rides
+       aria-label + tooltip, no text label. The drawer layer owns ALL
+       mobile tab rendering: one place, icons once. -->
   <section
     class="mobile-drawer"
     :class="[side, { open }]"
@@ -27,9 +33,13 @@
         :class="{ active: i === modelValue }"
         role="tab"
         :aria-selected="i === modelValue"
+        :aria-label="t.title"
         :title="t.title"
         @click="$emit('update:modelValue', i)">
-        {{ t.title }}
+        <Icon
+          v-if="t.icon"
+          :name="t.icon"
+          size="13" />
       </button>
     </div>
     <div class="mobile-drawer-content">
@@ -39,13 +49,16 @@
 </template>
 
 <script setup lang="ts">
-  // side: which edge the drawer slides from. The scrim is owned by
-  // app.vue (a sibling of the dock pane-area) so the frost renders
-  // against the shell root, same as the desktop drawer era.
+  // side: which edge the drawer slides from. bottom slides UP from above
+  // the statusbar at full width. The scrim is owned by app.vue (a sibling
+  // of the dock pane-area) so the frost renders against the shell root,
+  // same as the desktop drawer era.
+  import Icon from "../ui/Icon.vue";
+
   defineProps<{
     open: boolean;
-    side: "left" | "right";
-    tabs: { id: string; title: string }[];
+    side: "left" | "right" | "bottom";
+    tabs: { id: string; title: string; icon: string | null }[];
     modelValue: number;
     ariaLabel: string;
   }>();

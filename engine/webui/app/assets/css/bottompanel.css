@@ -111,7 +111,10 @@
      takes no flex space and the desktop chrome inside (tab bar) clips;
      the logs body itself is a position:fixed .aside (the same mobile
      drawer rule the inspector already rides), so it escapes the clip
-     and sits off-screen until its drawer opens. !important beats the
+     and sits off-screen until its drawer opens. card t_4bf1d5b7: that
+     drawer EXISTS now - app.vue mounts a MobileDrawer side="bottom" and
+     the menubar's bottom toggle drives it below the breakpoint (the
+     tree state above stays the desktop truth). !important beats the
      tree's inline px heights. */
   .dock-pane.edge-bottom {
     height: 0 !important;
