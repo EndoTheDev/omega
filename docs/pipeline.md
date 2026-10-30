@@ -155,7 +155,9 @@ commit), older than 48h, fast-forwards master to itself iff ALL of:
 
 - the point is ahead of master (the pick step filters on this: a
   nightly behind master can never ff, it can only red its soak job),
-- nightly CI is green on the soak point (red or missing runs = hold),
+- the soak point is its own green receipt: a nightly tag exists only
+  because the nightly suite ran green on it (red or partial = no tag),
+  so the soak gate never re-queries CI runs for the point,
 - its release exists with assets and the prerelease flag on
   (channel separation is load-bearing - a stable-channel leak blocks),
 - zero open regression reports are triaged against it (any hold = ff

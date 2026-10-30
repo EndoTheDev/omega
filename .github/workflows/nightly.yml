@@ -7,8 +7,10 @@ name: Nightly
 #     so the updater's stable channel never offers it; the `+` form was
 #     rejected - build metadata is ignored by semver precedence)
 #   - red or partial run -> NO tag, alert in the run summary (the tick)
-#   - soak: the newest nightly AHEAD of master (older than 48h, CI green,
-#     shipped assets, zero open regression reports) ff's master to itself
+#   - soak: the newest nightly AHEAD of master (older than 48h, the
+#     tag itself is the green receipt - a red or partial run makes no
+#     tag, shipped assets, zero open regression reports) ff's master
+#     to itself
 #   - version allocation: after stable vX.Y.Z, nightlies run at
 #     vX.Y.(Z+1)-nightly.*; the next stable tag = the newest soaked
 #     nightly's commit, named by Endo's word only
@@ -273,25 +275,6 @@ jobs:
           fi
           echo "READY=true" >>"$GITHUB_ENV"
           echo "TAG=$TAG" >>"$GITHUB_ENV"
-
-      - name: Nightly CI green on the soak point
-        if: env.READY == 'true'
-        run: |
-          sha="$(git rev-parse "${TAG}^{commit}")"
-          concls="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$sha&per_page=100" \
-            --paginate --jq '.workflow_runs[] | select(.path == ".github/workflows/nightly.yml") | .conclusion')"
-          green="$(printf '%s\n' "$concls" | grep -c '^success$' || true)"
-          red="$(printf '%s\n' "$concls" | grep -cE 'failure|cancelled|startup_failure|timed_out' || true)"
-          {
-            echo "## Soak - \`$TAG\` CI on \`${sha:0:12}\` - $green green, $red red runs"
-          } >>"$GITHUB_STEP_SUMMARY"
-          if [ "$green" -eq 0 ] || [ "$red" -gt 0 ]; then
-            echo "::error::soak blocked - nightly CI is not green on the soak point ($green green / $red red)"
-            {
-              echo "**Blocked:** nightly CI is not green on the soak point - the fix must re-soak."
-            } >>"$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
 
       - name: The soak point shipped (release with assets, prerelease flag on)
         if: env.READY == 'true'
