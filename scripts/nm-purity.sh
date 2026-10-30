@@ -428,6 +428,60 @@ def scrub(text, modules):
             if not kill:
                 break
             chunk = [ln for idx, ln in enumerate(chunk) if idx not in kill]
+        # declared-and-not-used cleanup: a short declaration whose name
+        # outlived its last reader (the reader died as a wire block)
+        # strands an unused name Go refuses to compile. Blank the name
+        # in place; if every name of a plain statement is unread, the
+        # whole line dies. When no non-blank reader is new, the short
+        # form degrades to a plain assignment (same block semantics).
+        for _pass in range(16):
+            changed = False
+
+            def predeclared(i2, n):
+                for pl in chunk[:i2]:
+                    pm = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*?)\s*:=\s*[^;{}]*$", pl)
+                    if pm and re.search(r"\b" + re.escape(n) + r"\b", pm.group(1)):
+                        return True
+                    pm = re.match(r"^\s*var\s+([\w\s,]+?)\s*(?:[\[\*A-Za-z_].*)?$", pl)
+                    if pm and re.search(r"\b" + re.escape(n) + r"\b", pm.group(1)):
+                        return True
+                return False
+
+            for idx, ln in enumerate(chunk):
+                if ":=" not in ln:
+                    continue
+                m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*?)\s*:=\s*([^;{}]*)$", ln)
+                if not m:
+                    continue
+                names = [n.strip() for n in m.group(1).split(",") if n.strip()]
+                if not all(re.match(r"^[A-Za-z_]\w*$", n) for n in names):
+                    continue
+                others = "\n".join(chunk[:idx] + chunk[idx + 1:])
+                unused = [n for n in names
+                          if n != "_" and not re.search(r"\b" + re.escape(n) + r"\b", others)]
+                if not unused:
+                    continue
+                head = bool(re.match(r"^\s*(if|for|switch)\b", ln))
+                if not head and len(unused) == len(names):
+                    # every name unread: the whole declaration dies
+                    chunk = chunk[:idx] + chunk[idx + 1:]
+                    changed = True
+                    break
+                lhs = ", ".join("_" if n in unused else n for n in names)
+                newline = ln[:m.start(1)] + lhs + ln[m.end(1):]
+                keep = [n for n in names if n not in unused]
+                if (not head and keep
+                        and all(predeclared(idx, n) for n in keep)):
+                    newline = newline.replace(":=", "=", 1)
+                if head and not keep and ln.strip().startswith("for"):
+                    # `for _, _ := range` refuses the short form; the
+                    # assignment form accepts every blank
+                    newline = newline.replace(":=", "=", 1)
+                chunk[idx] = newline
+                changed = True
+                break
+            if not changed:
+                break
         return chunk
 
     out = []
