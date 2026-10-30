@@ -7,8 +7,8 @@ name: Nightly
 #     so the updater's stable channel never offers it; the `+` form was
 #     rejected - build metadata is ignored by semver precedence)
 #   - red or partial run -> NO tag, alert in the run summary (the tick)
-#   - soak: the newest nightly older than 48h whose CI is green, shipped
-#     assets, and has zero open regression reports ff's master to itself
+#   - soak: the newest nightly AHEAD of master (older than 48h, CI green,
+#     shipped assets, zero open regression reports) ff's master to itself
 #   - version allocation: after stable vX.Y.Z, nightlies run at
 #     vX.Y.(Z+1)-nightly.*; the next stable tag = the newest soaked
 #     nightly's commit, named by Endo's word only
@@ -207,15 +207,53 @@ jobs:
       - name: Pick the newest nightly tag
         id: pick
         run: |
-          TAG="$(git tag -l 'v*-nightly.*' | sort -V | tail -1)"
-          echo "TAG=$TAG" >>"$GITHUB_OUTPUT"
-          if [ -z "$TAG" ]; then
-            {
-              echo "## Soak - no nightly tag exists yet, nothing to soak"
-            } >>"$GITHUB_STEP_SUMMARY"
-            echo "NONE=true" >>"$GITHUB_OUTPUT"
-          else
+          # Eligibility beats version order. The soak job starts in
+          # parallel with the nightly job, so the newest tag here may
+          # be days behind dev - and a nightly BEHIND master can never
+          # ff, it can only red its soak job (the 2026-10-30 nightly
+          # red on v0.10.1-nightly.20261024). Pick the newest eligible
+          # point by COMMIT DATE: origin/master an ancestor of it, and
+          # its commit at least 48h old. No eligible point = green
+          # no-advance, never a red.
+          git fetch -q origin master --tags
+          now="$(date +%s)"
+          picked=""
+          picked_ct=""
+          eligible=""
+          for tag in $(git tag -l 'v*-nightly.*'); do
+            sha="$(git rev-parse "${tag}^{commit}")"
+            ct="$(git log -1 --format=%ct "$sha")"
+            if git merge-base --is-ancestor origin/master "$sha" 2>/dev/null \
+              && [ $((now - ct)) -ge 172800 ]; then
+              eligible="$eligible $tag@$(( (now - ct) / 3600 ))h"
+              if [ -z "$picked" ] || [ "$ct" -gt "$picked_ct" ]; then
+                picked="$tag"
+                picked_ct="$ct"
+              fi
+            fi
+          done
+          if [ -n "$picked" ]; then
+            echo "TAG=$picked" >>"$GITHUB_OUTPUT"
             echo "NONE=false" >>"$GITHUB_OUTPUT"
+            {
+              echo "## Soak - eligible points (ahead of master, 48h+):${eligible:- none}"
+              echo ""
+              echo "Picked \\`$picked\\` - newest eligible by commit date."
+            } >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "NONE=true" >>"$GITHUB_OUTPUT"
+            if [ -z "$(git tag -l 'v*-nightly.*')" ]; then
+              {
+                echo "## Soak - no nightly tag exists yet, nothing to soak"
+              } >>"$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "## Soak - no eligible soak point, nothing to advance"
+                echo ""
+                echo "Every nightly tag is either behind master or younger than 48h."
+              } >>"$GITHUB_STEP_SUMMARY"
+            fi
+            exit 0
           fi
 
       - name: Soak age - newest nightly must be older than 48h

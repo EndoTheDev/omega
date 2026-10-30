@@ -150,9 +150,11 @@ origin/master) is exit 2 = red: unknowable drift is never green.
 
 ## The soak law (the scheduled `soak` job in nightly.yml)
 
-The newest nightly tag older than 48h fast-forwards master to itself iff
-ALL of:
+The newest nightly tag AHEAD of master (master is an ancestor of its
+commit), older than 48h, fast-forwards master to itself iff ALL of:
 
+- the point is ahead of master (the pick step filters on this: a
+  nightly behind master can never ff, it can only red its soak job),
 - nightly CI is green on the soak point (red or missing runs = hold),
 - its release exists with assets and the prerelease flag on
   (channel separation is load-bearing - a stable-channel leak blocks),
