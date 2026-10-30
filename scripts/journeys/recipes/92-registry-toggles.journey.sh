@@ -23,9 +23,10 @@
 #                          wire, and the render all agree it is on again
 #
 # Lane-home scoped by law (the journey suite law): the seed skill is
-# written into $OMEGA_HOME/skills/<name>/SKILL.md - OMEGA_HOME defaults
-# to the lane bin/ home (/home/endo/dev/omega/bin, the MAIN checkout's
-# serve home, never a worktree). ListSkills re-scans per listing, so the
+# written into $OMEGA_HOME/skills/<name>/SKILL.md - OMEGA_HOME is
+# REQUIRED from the caller (the lane-local suite and the nightly
+# runner both export it); the recipe has no default. ListSkills
+# re-scans per listing, so the
 # seed shows up in GET /skills without a restart. Residue-free: the
 # cleanup trap deletes the seed dir and, if a red left the fold dirty,
 # PUTs the re-enable (an honest no-op when absent).
@@ -37,7 +38,7 @@
 
 SKILL="jrn-tgl$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
 GHOST="jrn-ghost-${SKILL#jrn-tgl}"
-OMEGA_HOME="${OMEGA_HOME:-/home/endo/dev/omega/bin}"
+OMEGA_HOME="${OMEGA_HOME:?set OMEGA_HOME to the serving lane home}"
 CONFIG="$OMEGA_HOME/config/config.yaml"
 SKILL_DIR="$OMEGA_HOME/skills/$SKILL"
 AGENTS_PANE='document.querySelector(".pane.agents")'
@@ -56,13 +57,38 @@ print(" ".join((json.load(sys.stdin) or {}).get(sys.argv[1], [])))' "$1" 2>/dev/
 # the name, so the scan stays inside the block (its end = the next
 # top-level key).
 fold_has() {
-  awk -v want="$1" '
+  # a missing CONFIG is "fold has no entries" (nothing written yet),
+  # not an awk error - fresh runner lanes have no config.yaml until
+  # the first toggle write
+  [ -f "$CONFIG" ] || return 1
+  if awk -v want="$1" '
     fold && found { next }
     /^disabled:/ { fold = 1; next }
     fold && /^[A-Za-z_]/ { fold = 0 }
     fold && $0 ~ "^[[:space:]]*- " want "[[:space:]]*$" { found = 1 }
     END { exit (found ? 0 : 1) }
-  ' "$CONFIG"
+  ' "$CONFIG"; then
+    return 0
+  fi
+  # Go-yaml node round-trips keep the document's original style: a
+  # config.yaml that sits as a bare {} (the all-on rewrite after a
+  # re-enable) re-serializes the fold INLINE - {disabled: {skills:
+  # [name]}} - and the block scan above cannot read it. Read the flow
+  # shape too, scoped to the disabled: stretch of its line.
+  python3 - "$CONFIG" "$1" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+want = re.escape(sys.argv[2])
+for line in text.splitlines():
+    i = line.find("disabled:")
+    if i < 0:
+        continue
+    rest = line[i + len("disabled:"):]
+    if re.search(r'[\[{,]\s*"?' + want + r'"?\s*[,}\]]', rest):
+        sys.exit(0)
+    sys.exit(1)
+sys.exit(1)
+PY
 }
 
 # registry_click <kind-selector> <aria-exact> <aria-starts>: click the
@@ -85,7 +111,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[ -f "$CONFIG" ] || die "lane config not found at $CONFIG (set OMEGA_HOME to the serving lane's home)"
+# A missing config/config.yaml is a LEGAL state before the first
+# registry fold write (bootstrapHome seeds only config.yaml.example;
+# the server materializes config/config.yaml on the first toggle).
+[ -d "$OMEGA_HOME" ] || die "OMEGA_HOME does not exist: $OMEGA_HOME (set OMEGA_HOME to the serving lane's home)"
 
 # --- seed: one known skill on the lane home --------------------------------
 mkdir -p "$SKILL_DIR" || die "cannot mkdir $SKILL_DIR (OMEGA_HOME not writable?)"

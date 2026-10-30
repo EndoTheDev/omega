@@ -59,6 +59,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/omega-lane"
           go build -o "$RUNNER_TEMP/omega-lane/omega" ./cmd/omega
           echo "OMEGA_BIN=$RUNNER_TEMP/omega-lane/omega" >> "$GITHUB_ENV"
+          # the serving lane's home is the exe's directory (cmd/omega
+          # home resolution: OMEGA_HOME wins, else the exe dir) - the
+          # journeys step must inherit it, no recipe has a default
+          echo "OMEGA_HOME=$RUNNER_TEMP/omega-lane" >> "$GITHUB_ENV"
           OMEGA_MODEL=dummy OMEGA_HOST=http://127.0.0.1:9 OMEGA_PORT=8098 \
             OMEGA_DB_PATH="$RUNNER_TEMP/nightly-lane.db" \
             "$RUNNER_TEMP/omega-lane/omega" serve >"$RUNNER_TEMP/lane.log" 2>&1 &
