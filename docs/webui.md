@@ -60,6 +60,16 @@ the sidebars yield first. Below the mobile breakpoint the sidebars
 collapse into slide-in drawers over a scrim; chrome (menu/status bar)
 rides above all overlays: drawers z12, scrim z10.
 
+The universal panel band (`components/ui/TabBand.vue`) is a geometry
+contract too: every tab panel (module tabs: files, cron, logs, skills,
+tools, agents, notifications, insights, settings, kanban, mcp,
+extensions; plus the sessions sidebar) renders ONE band (tab title
+left, tab actions right, 22px min-height, 14px lead-in clearing the
+-8px pane tuck, `lead=false` where the host supplies its own padding).
+The band renders OUTSIDE the panel's scrollport, structurally pinned:
+scrolling the body never moves the band. Band action buttons use the
+shared `.band-tool` look (dimmed at rest, hover raises, disabled 0.4).
+
 ## Motion
 
 main.css's header states the law: "Motion: streaming cursor + message
@@ -218,7 +228,8 @@ design):
   escaping is the sanitizer), `createRenderScheduler`.
 - Shell: `MenuBar` (brand, toggles), `StatusBar` (health dot,
   token/ctx/rate telemetry, build version + uptime), `SearchInput`,
-  `PaneDivider`.
+  `PaneDivider`, `TabBand` (the universal panel top bar: title left,
+  actions right, outside every scrollport).
 - Chat: `AppComposer` (auto-grow textarea, ONE morphing action button -
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
   attach-strip with image thumbnails, paste + paperclip attach; the
