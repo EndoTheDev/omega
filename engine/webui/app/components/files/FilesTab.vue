@@ -10,97 +10,96 @@
            rows' rhythm (~22px), no container box, tree starts directly
            below. Ruled with Endo: NO resolvable workspace = NO header
            (the cwd fallback renders a bare tree; removing the header
-           removes the feature row - true deletability). -->
-      <div
+           removes the feature row - true deletability).
+           card t_308e6d9b: the band is the SHARED TabBand now (the
+           universal top-bar contract this tab defined) - and it is
+           structurally pinned: the band renders BEFORE the scroll body,
+           so a long tree never scrolls it away. -->
+      <TabBand
         v-if="headerName"
-        class="files-header">
-        <span
-          class="files-header-name"
-          :title="headerRoot">{{ headerName }}</span>
-        <div
-          class="files-header-actions"
-          role="toolbar"
-          aria-label="files actions">
-          <button
-            class="files-tool"
-            title="add file"
-            aria-label="add file"
-            :disabled="toolsLocked"
-            @click="startCreate('file')">
-            <Icon name="file-plus" :size="13" />
-          </button>
-          <button
-            class="files-tool"
-            title="add folder"
-            aria-label="add folder"
-            :disabled="toolsLocked"
-            @click="startCreate('folder')">
-            <Icon name="folder-plus" :size="13" />
-          </button>
-          <button
-            class="files-tool"
-            title="refresh"
-            aria-label="refresh files"
-            :disabled="loadingRoot"
-            @click="refreshFiles">
-            <Icon name="refresh" :size="13" />
-          </button>
-          <button
-            class="files-tool"
-            title="collapse folders"
-            aria-label="collapse folders"
-            @click="collapseFiles">
-            <Icon name="unfoldless" :size="13" />
-          </button>
-        </div>
-      </div>
-      <form
-        v-if="creating"
-        class="files-add"
-        @submit.prevent="confirmCreate">
-        <input
-          v-model="createName"
-          class="files-add-name"
-          :placeholder="creating === 'file' ? 'new file name' : 'new folder name'"
-          aria-label="new node name" />
+        :title="headerName"
+        :title-attr="headerRoot">
         <button
-          type="submit"
-          class="files-add-go"
-          :disabled="!createName.trim() || creatingBusy">
-          {{ creating === "file" ? "create file" : "create folder" }}
+          class="band-tool"
+          title="add file"
+          aria-label="add file"
+          :disabled="toolsLocked"
+          @click="startCreate('file')">
+          <Icon name="file-plus" :size="13" />
         </button>
-      </form>
-      <p
-        v-if="toolError"
-        class="files-status files-tool-error"
-        role="alert">
-        {{ toolError }}
-      </p>
-      <ul class="files-list">
-        <li
-          v-if="rootError"
-          class="files-status">
-          {{ rootError }}
-        </li>
-        <li
-          v-else-if="loadingRoot"
-          class="files-status">
-          loading
-        </li>
-        <li
-          v-else-if="!rootEntries.length"
-          class="files-status">
-          empty directory
-        </li>
-      </ul>
-      <FileTree
-        v-if="rootEntries.length"
-        :entries="rootEntries"
-        base=""
-        :depth="0"
-        :narrow="narrow"
-        @open="openFile"
-        @select="onSelect" />
+        <button
+          class="band-tool"
+          title="add folder"
+          aria-label="add folder"
+          :disabled="toolsLocked"
+          @click="startCreate('folder')">
+          <Icon name="folder-plus" :size="13" />
+        </button>
+        <button
+          class="band-tool"
+          title="refresh"
+          aria-label="refresh files"
+          :disabled="loadingRoot"
+          @click="refreshFiles">
+          <Icon name="refresh" :size="13" />
+        </button>
+        <button
+          class="band-tool"
+          title="collapse folders"
+          aria-label="collapse folders"
+          @click="collapseFiles">
+          <Icon name="unfoldless" :size="13" />
+        </button>
+      </TabBand>
+      <div class="files-scroll">
+        <form
+          v-if="creating"
+          class="files-add"
+          @submit.prevent="confirmCreate">
+          <input
+            v-model="createName"
+            class="files-add-name"
+            :placeholder="creating === 'file' ? 'new file name' : 'new folder name'"
+            aria-label="new node name" />
+          <button
+            type="submit"
+            class="files-add-go"
+            :disabled="!createName.trim() || creatingBusy">
+            {{ creating === "file" ? "create file" : "create folder" }}
+          </button>
+        </form>
+        <p
+          v-if="toolError"
+          class="files-status files-tool-error"
+          role="alert">
+          {{ toolError }}
+        </p>
+        <ul class="files-list">
+          <li
+            v-if="rootError"
+            class="files-status">
+            {{ rootError }}
+          </li>
+          <li
+            v-else-if="loadingRoot"
+            class="files-status">
+            loading
+          </li>
+          <li
+            v-else-if="!rootEntries.length"
+            class="files-status">
+            empty directory
+          </li>
+        </ul>
+        <FileTree
+          v-if="rootEntries.length"
+          :entries="rootEntries"
+          base=""
+          :depth="0"
+          :narrow="narrow"
+          @open="openFile"
+          @select="onSelect" />
+      </div>
     </div>
   </aside>
 </template>
@@ -280,63 +279,26 @@
 </script>
 
 <style scoped>
-  /* the header (card t_a5f9d185): ONE VS Code-style row - workspace
-     name flush left, the 4 action icons flush right on the same line -
-     at the tree rows' rhythm (~22px), no container box, nothing docked
-     above the tree. Dimmed icons at rest, the dock-tab hover raises. */
-  /* card t_5c660a42 (Endo 2026-10-29 "moved down a little"): the header
-     hugged the dock-tabbar seam while the first tree row keeps its own 5px
-     breathing below. The pane card tucks -8px (-r-pane) under the opaque
-     strip, so the scroll container's flow top sits ~7px ABOVE the visible
-     seam - a margin less than r-pane paints under the strip and reads as 0.
-     14px clears the tuck and leaves ~6px of daylight below the seam, the
-     tree rows' own 22px rhythm untouched below; horizontal padding
-     unchanged (t_a5f9d185). */
-  .files-header {
+  /* card t_308e6d9b: the band + scroll shape. `.inspector-files` stops
+     being the scrollport - it is the column that anchors the band; the
+     scroll rules moved to `.files-scroll` (overflow is the BODY's, the
+     band can never scroll away). The old scrollport block in main.css
+     carries the same law. */
+  .inspector-files {
+    flex: 1;
+    min-height: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    height: 22px;
-    margin-top: 14px;
-    padding: 0 8px;
+    flex-direction: column;
   }
-  .files-header-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text);
+  .files-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 8px;
   }
-  .files-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-  }
-  .files-tool {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 20px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-dim);
-    border-radius: var(--r-chip);
-    cursor: pointer;
-  }
-  .files-tool:hover:not(:disabled) {
-    background: var(--z2);
-    color: var(--text);
-  }
-  .files-tool:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
+  /* card t_5c660a42 note: the band's 14px lead-in now rides the shared
+     TabBand (the tuck clear-out is the component's contract). */
 
   /* the inline create form - the agents panel's create shape, one row */
   .files-add {

@@ -150,41 +150,50 @@ describe("fileTreeBus seam", () => {
   });
 });
 
-describe("the header contract (structural pins, no DOM)", () => {
+describe("the band contract (structural pins, no DOM)", () => {
   // card t_a5f9d185: the toolbar strip became the VS Code-style header
-  // row - workspace name left, the four actions right, ONE row.
+  // row. Card t_308e6d9b: that row is the SHARED TabBand now (the
+  // universal band) and it is STRUCTURALLY pinned - it renders BEFORE
+  // the scroll body (.files-scroll), so a long tree never scrolls it.
   const tab = read("app/components/files/FilesTab.vue");
+  const band = read("app/components/ui/TabBand.vue");
   const tree = read("app/components/files/FileTree.vue");
   const icons = read("app/composables/icons.ts");
 
-  it("the Files tab renders a VS Code-style header with the four actions", () => {
-    assert.match(tab, /class="files-header"/);
-    assert.doesNotMatch(tab, /files-toolbar/, "the floating toolbar strip is gone");
+  it("the Files tab renders the shared TabBand with the four actions", () => {
+    assert.match(tab, /<TabBand/, "the band is the shared component");
+    assert.doesNotMatch(tab, /class="files-tool"/, "the private band look is gone (band-tool is the contract)");
     for (const title of ["add file", "add folder", "refresh", "collapse folders"]) {
       assert.match(
         tab,
         new RegExp(`title="${title}"`),
-        `header button "${title}" carries its title`,
+        `band button "${title}" carries its title`,
       );
     }
     for (const label of ["add file", "add folder", "refresh files", "collapse folders"]) {
       assert.match(
         tab,
         new RegExp(`aria-label="${label}"`),
-        `header button "${label}" is labeled`,
+        `band button "${label}" is labeled`,
       );
     }
   });
 
-  it("the header is ONE row: workspace name left, actions right, tree below", () => {
-    const nameAt = tab.indexOf('class="files-header-name"');
-    const actionsAt = tab.indexOf('class="files-header-actions"');
+  it("the band is ONE row: workspace name left, actions right, tree below", () => {
+    const bandAt = tab.indexOf("<TabBand");
     const listAt = tab.indexOf('class="files-list"');
-    assert.ok(nameAt >= 0 && actionsAt >= 0 && nameAt < actionsAt, "name then actions");
-    assert.ok(listAt >= 0 && actionsAt < listAt, "the row sits above the tree");
+    assert.ok(bandAt >= 0 && listAt >= 0 && bandAt < listAt, "band above the tree");
     // no resolvable workspace -> no header at all (the Endo ruling)
-    assert.match(tab, /v-if="headerName"/);
-    assert.match(tab, /class="files-header"/, "the row renders only when rooted");
+    assert.match(tab, /v-if="headerName"/, "the band renders only when rooted");
+    const scrollAt = tab.indexOf('class="files-scroll"');
+    assert.ok(scrollAt >= 0 && bandAt < scrollAt, "the band is OUTSIDE the scroll body");
+  });
+
+  it("the band component encodes the non-scrolling structure + tool look", () => {
+    assert.match(band, /class="tab-band"/);
+    assert.match(band, /flex: none/, "the band never flexes into the scrollport");
+    assert.match(band, /role="toolbar"/);
+    assert.match(band, /\.band-tool/, "one action-button look for every tab");
   });
 
   it("the four glyphs ride the icons.ts vocabulary", () => {
@@ -247,7 +256,7 @@ describe("the header contract (structural pins, no DOM)", () => {
   });
 
   it("the header renders in the empty-root state (before the list)", () => {
-    const headerAt = tab.indexOf('class="files-header"');
+    const headerAt = tab.indexOf("<TabBand");
     const listAt = tab.indexOf('class="files-list"');
     assert.ok(headerAt >= 0 && listAt >= 0 && headerAt < listAt);
     // the FileTree stays mounted only with entries; the form does not
