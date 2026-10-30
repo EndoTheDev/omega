@@ -1026,12 +1026,14 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
    the dock tabbar; the in-pane chip strip is gone. */
 
 /* the module panel body (cron / skills / tools / logs tabs, card
-   t_db430fea): one scroll region, same voice as the files tree */
+   t_db430fea): card t_308e6d9b - the module component owns the layout:
+   this wrapper is a plain column (the tab's band anchors its top), the
+   tab's own body div is the scrollport - the band can never scroll away */
 .module-panels {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* the scrolling body: entry tree (same voice as the session list rows -
