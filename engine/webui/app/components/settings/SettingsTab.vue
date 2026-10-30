@@ -74,16 +74,16 @@
             <span>{{ knob.label }}</span>
             <span v-if="serverKnobDirty(knob)" class="setting-dirty">*</span>
           </div>
-          <!-- select -->
-          <select
+          <!-- select (card t_acad02ec, audit M1: the themed listbox - a
+               native select popup is OS chrome over the pane) -->
+          <BandSelect
             v-if="knob.type === 'select'"
-            class="model-chip theme-select"
-            :value="selectValue(group, knob)"
-            @change="setSelect(group, knob, ($event.target as HTMLSelectElement).value)">
-            <option v-for="opt in knob.options ?? []" :key="optValue(opt)" :value="optValue(opt)">
-              {{ optLabel(opt) }}
-            </option>
-          </select>
+            class="setting-select"
+            :model-value="selectValue(group, knob)"
+            :options="knobOptions(knob)"
+            :label="knob.label"
+            drop="down"
+            @update:model-value="setSelect(group, knob, $event)" />
           <!-- textarea -->
           <textarea
             v-else-if="knob.type === 'textarea'"
@@ -285,6 +285,16 @@
     typeof opt === "string" ? opt : opt.label;
   const optValue = (opt: string | { value: string; label: string }) =>
     typeof opt === "string" ? opt : opt.value;
+
+  // card t_acad02ec: the BandSelect listbox's options for a knob - the
+  // same values the native select offered, rendered through the themed
+  // component
+  function knobOptions(knob: SettingKnob) {
+    return (knob.options ?? []).map((opt) => ({
+      value: optValue(opt),
+      label: optLabel(opt),
+    }));
+  }
 
   const chatGroup = computed<SettingGroup>(() => ({
     key: "chat",
@@ -520,5 +530,10 @@
   .settings :deep(.tab-band-actions) {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  /* card t_acad02ec: the knob select is the shared BandSelect chip -
+     inline (the composer's listbox pattern), never wider than its row */
+  .setting-select {
+    max-width: 100%;
   }
 </style>

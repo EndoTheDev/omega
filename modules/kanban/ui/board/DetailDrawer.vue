@@ -11,18 +11,16 @@
         @click="$emit('move', prevStatus)">
         ◀
       </button>
-      <select
+      <!-- card t_acad02ec (audit M1): the status selector rides the themed
+           listbox (BandSelect) - a native select popup is OS chrome over
+           the drawer -->
+      <BandSelect
         class="drawer-status"
-        :value="task.status"
-        aria-label="task status"
-        @change="$emit('move', ($event.target as HTMLSelectElement).value)">
-        <option
-          v-for="s in STATUSES"
-          :key="s"
-          :value="s">
-          {{ s }}
-        </option>
-      </select>
+        :model-value="task.status"
+        :options="statusOptions"
+        label="task status"
+        drop="down"
+        @update:model-value="$emit('move', $event)" />
       <button
         v-if="nextStatus"
         class="icon-btn"
@@ -133,6 +131,12 @@
   // edges the buttons do not render (step returns null)
   const prevStatus = computed(() => step(props.task.status, -1));
   const nextStatus = computed(() => step(props.task.status, +1));
+
+  // the status selector's listbox options (BandSelect): the same 9-status
+  // sequence the columns carry
+  const statusOptions = computed(() =>
+    STATUSES.map((s) => ({ value: s, label: s })),
+  );
 </script>
 
 <style scoped>
@@ -145,7 +149,10 @@
     gap: 8px;
     padding: 10px 12px;
     overflow-y: auto;
-    background: var(--omega-bg, canvas);
+    /* card t_acad02ec (audit M4): --omega-bg was a phantom token - the
+       fallback said `canvas` and the drawer rendered BROWSER white in
+       both themes. The real surface token (a layer-1 pane) */
+    background: var(--z1);
     border-left: 1px solid color-mix(in srgb, currentcolor 12%, transparent);
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
     z-index: 5;
@@ -189,7 +196,7 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     border: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-card);
     max-height: 40%;
     overflow-y: auto;
   }
@@ -241,7 +248,7 @@
     color: inherit;
     background: color-mix(in srgb, currentcolor 6%, transparent);
     border: 1px solid color-mix(in srgb, currentcolor 15%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-card);
     padding: 5px 8px;
   }
   .comment-send {
@@ -250,7 +257,7 @@
     color: inherit;
     cursor: pointer;
     border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-chip);
     background: none;
   }
   .comment-send:disabled {
@@ -265,13 +272,15 @@
     font-size: 12px;
     padding: 2px 4px;
   }
+  /* card t_acad02ec: the status selector is the shared BandSelect chip -
+     seat only (the chip keeps the shared .model-chip look; the pop-down
+     escapes this root, so the root carries no box of its own) */
   .drawer-status {
     margin: 0 auto;
-    font: inherit;
+  }
+  .drawer-status :deep(.model-chip) {
+    background: transparent;
     font-size: 12px;
-    color: inherit;
-    background: color-mix(in srgb, currentcolor 6%, transparent);
-    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
-    border-radius: 6px;
+    padding: 2px 6px;
   }
 </style>

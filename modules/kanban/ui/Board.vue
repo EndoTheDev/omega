@@ -11,25 +11,23 @@
     <TabBand title="Kanban">
       <template
         v-if="boards.length > 1 || boardName">
-        <label
-          class="board-switch-label"
-          for="board-switcher">board</label>
-        <select
-          id="board-switcher"
+        <span class="board-switch-label">board</span>
+        <!-- card t_acad02ec (audit M1): the switcher rides the themed
+             listbox (BandSelect) - a native select popup is OS chrome
+             over the pane -->
+        <BandSelect
           class="board-switch-select"
-          :value="boardName"
-          @change="switchBoard(($event.target as HTMLInputElement).value)">
-          <option
-            v-for="b in boards"
-            :key="b.name"
-            :value="b.name">{{ b.name }}</option>
-        </select>
+          :model-value="boardName"
+          :options="boardOptions"
+          label="board"
+          drop="down"
+          @update:model-value="switchBoard($event)" />
         <span
           v-if="boardName"
           class="board-switch-count">{{ tasks.length }} card<template v-if="tasks.length !== 1">s</template></span>
         <button
           id="board-remove-btn"
-          class="board-remove-btn"
+          class="band-tool board-remove-btn"
           :class="{ armed: confirmingRemove }"
           :disabled="!canRemoveBoard(boardName)"
           :title="confirmingRemove ? 'click again to remove this board' : 'remove this board'"
@@ -187,6 +185,12 @@
   // board - every call below goes through withBoard.
   const boards = ref<BoardInfo[]>([]);
   const boardName = ref("");
+
+  // the switcher's listbox options (BandSelect): one per board registry
+  // row, the name as both value and face
+  const boardOptions = computed(() =>
+    boards.value.map((b) => ({ value: b.name, label: b.name })),
+  );
 
   async function fetchBoards() {
     try {
@@ -501,38 +505,22 @@
     letter-spacing: 0.04em;
     opacity: 0.5;
   }
-  .board-switch-select {
-    font: inherit;
-    font-size: 12px;
-    color: inherit;
-    background: color-mix(in srgb, currentcolor 6%, transparent);
-    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
-    border-radius: 6px;
-    padding: 3px 6px;
-    max-width: 160px;
+  /* card t_acad02ec: the switcher is the shared BandSelect chip - the
+     band's dim look (no box at rest, like .band-tool) */
+  .board-switch-select :deep(.model-chip) {
+    padding: 2px 6px;
+    font-size: 11.5px;
+    background: transparent;
   }
   .board-switch-count {
     font-size: 10.5px;
     opacity: 0.5;
   }
-  .board-remove-btn {
-    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
-    border-radius: 6px;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    font-size: 11px;
-    padding: 3px 8px;
-  }
-  .board-remove-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-  /* armed: the second click fires. The tinge is the only warning -
-     no native confirm dialog, the module panels confirm inline. */
+  /* card t_acad02ec: the remove action rides .band-tool (the shared
+     action-button look); only the armed confirm state rides here - the
+     tinge is the second-click warning */
   .board-remove-btn.armed {
-    border-color: color-mix(in srgb, currentcolor 40%, transparent);
+    border: 1px solid color-mix(in srgb, currentcolor 40%, transparent);
     font-weight: 600;
   }
   .board-notice {
@@ -562,7 +550,7 @@
     flex-direction: column;
     min-height: 0;
     border: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-    border-radius: 8px;
+    border-radius: var(--r-pane);
     padding: 8px;
     gap: 8px;
   }
@@ -616,12 +604,12 @@
     color: inherit;
     background: color-mix(in srgb, currentcolor 6%, transparent);
     border: 1px dashed color-mix(in srgb, currentcolor 18%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-card);
     padding: 5px 8px;
   }
   .col-add-btn {
     border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-chip);
     background: none;
     color: inherit;
     cursor: pointer;
@@ -648,7 +636,7 @@
   }
   .card {
     border: 1px solid color-mix(in srgb, currentcolor 12%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-card);
     padding: 7px 9px;
     cursor: pointer;
     display: flex;

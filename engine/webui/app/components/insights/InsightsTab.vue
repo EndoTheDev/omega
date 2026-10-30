@@ -19,24 +19,29 @@
       <span
         class="insights-period"
         :title="data ? data.period : 'loading'">{{ data ? data.period : "loading" }}</span>
-      <label
+      <!-- card t_acad02ec (audit M1): the window selector rides the themed
+           listbox (BandSelect) - a native select popup is OS chrome over
+           the pane. The fixed literals below are the devProxy contract
+           (nuxt.config devProxy keys /insights?days=7|30|90|0). -->
+      <BandSelect
         class="insights-days"
-        title="window size - mirrors the TUI's /insights [days] arg">
-        <select
-          v-model.number="days"
-          aria-label="window in days, 0 = all time">
-          <option :value="7">7 days</option>
-          <option :value="30">30 days</option>
-          <option :value="90">90 days</option>
-          <option :value="0">all time</option>
-        </select>
-      </label>
+        :model-value="days ?? INSIGHTS_DEFAULT_DAYS"
+        :options="WINDOW_OPTIONS"
+        label="window in days, 0 = all time"
+        drop="down"
+        @update:model-value="days = $event" />
       <button
         class="insights-refresh band-tool"
         title="recompute"
         aria-label="recompute insights"
         :disabled="loading"
-        @click="load()">&#8635;</button>
+        @click="load()">
+        <!-- card t_acad02ec (audit M7): the recompute glyph rides the Icon
+             vocabulary - no raw HTML entities -->
+        <Icon
+          name="refresh"
+          :size="13" />
+      </button>
     </TabBand>
 
     <div class="insights-scroll">
@@ -131,6 +136,7 @@
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from "vue";
   import RegistryList from "../RegistryList.vue";
+  import Icon from "../ui/Icon.vue";
   import {
     fetchInsights,
     InsightsPayload,
@@ -146,6 +152,16 @@
   // default 30 a bare `/insights` gets. null only survives for the
   // load() fold; a user pick (30/90/all) wins for the tab's lifetime.
   const days = ref<number | null>(INSIGHTS_DEFAULT_DAYS);
+
+  // the fixed window literals (the TUI's /insights [days] arg): the band
+  // select's options. days=0 is "all time" - the server's bare /insights
+  // default (30) is deliberately NOT an option (card t_d7fd3ad3).
+  const WINDOW_OPTIONS = [
+    { value: 7, label: "7 days" },
+    { value: 30, label: "30 days" },
+    { value: 90, label: "90 days" },
+    { value: 0, label: "all time" },
+  ];
 
   const emptyText = computed(() =>
     days.value === 0 ? "no sessions yet" : `no sessions in the last ${days.value ?? 30} days`,
@@ -260,18 +276,20 @@
     color: var(--text-dim);
     white-space: nowrap;
   }
-  /* the band's select keeps its form-control look; the recompute button
-     rides the band-tool look (the shared band vocabulary) */
-  .insights-days select {
-    background: var(--z1-raised);
-    color: var(--text);
-    border: 1px solid var(--stroke);
-    border-radius: 6px;
+  /* card t_acad02ec (audit M1): the window select rides the shared
+     BandSelect chip now - no native select chrome; only seating rides
+     here (the chip keeps the shared .model-chip look). */
+  .insights-days {
+    flex-shrink: 0;
+  }
+  .insights-days :deep(.model-chip) {
+    padding: 2px 6px;
     font-size: 11px;
-    padding: 3px 6px;
+    /* the band's dim look: transparent at rest, the chip's hover raise
+       stays (mirrors .band-tool) */
+    background: transparent;
   }
   .insights-refresh {
-    font-size: 14px;
     padding: 0 5px;
   }
 
@@ -297,7 +315,9 @@
     padding-top: 2px;
   }
   .insights-box {
-    border: 1px solid var(--z1-raised);
+    /* card t_acad02ec (audit M7): the stroke token - --z1-raised is a
+       surface fill, not a border color */
+    border: 1px solid var(--stroke);
     border-radius: var(--r-pane);
     background: var(--z0);
     padding: 8px 10px;
@@ -334,7 +354,9 @@
     height: 8px;
     min-width: 1px;
     max-width: 96px;
-    border-radius: 3px;
+    /* card t_acad02ec (audit M7): the 8/6/4 radius ladder - 3px is off
+       it */
+    border-radius: var(--r-chip);
     background: color-mix(in srgb, var(--accent) 60%, transparent);
     align-self: center;
   }

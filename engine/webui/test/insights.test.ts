@@ -129,10 +129,11 @@ test("the tab's initial window is 7 days, not the server default 30 (Endo 2026-1
   assert.match(vue, /days\.value === null \? null : days\.value/);
 });
 
-test("the window selector mirrors the TUI arg semantics", () => {
+test("the window selector rides the themed listbox and mirrors the TUI arg semantics", () => {
   const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
-  assert.match(vue, /:value="0">all time/, "0 = all time option");
-  assert.match(vue, /:value="30">30 days/, "30 days option in the selector");
+  assert.match(vue, /<BandSelect/, "BandSelect, not a native select (card t_acad02ec)");
+  assert.match(vue, /value: 0, label: "all time"/, "0 = all time option");
+  assert.match(vue, /value: 30, label: "30 days"/, "30 days option in the selector");
   assert.match(vue, /watch\(days, \(\) => load\(\)\)/, "a window change refetches");
 });
 
