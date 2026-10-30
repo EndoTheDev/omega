@@ -989,9 +989,11 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     // 800 seats sidebar + chat floor + one divider, but not the inspector
     const res = narrowGiveWay(t, 800);
     assert.deepEqual(
-      res.hidden,
-      [{ component: "inspector", px: 300 }] satisfies NarrowHiddenEntry[],
+      res.hidden.map((h) => ({ component: h.component, px: h.px })),
+      [{ component: "inspector", px: 300 }] satisfies Pick<NarrowHiddenEntry, "component" | "px">[],
     );
+    // card t_9ed6cad7: the entry carries the captured pane for the stow
+    assert.equal(res.hidden[0]!.pane.edge, "right");
     assert.equal(findEdgePane(res.tree, "inspector"), null);
     assert.notEqual(findEdgePane(res.tree, "sidebar"), null);
     // the main pane is untouched

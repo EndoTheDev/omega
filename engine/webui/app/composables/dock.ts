@@ -612,6 +612,11 @@ export function rehomeLogsTab(tree: DockNode): DockNode {
 export function ensurePinnedEdges(
   tree: DockNode,
   closed: readonly DockEdgeComponent[] = [],
+  /** card t_9ed6cad7: components recorded inside CLOSED shells' stowed
+      panes - the stow IS the tree's composition while the shell sits
+      hidden, so the missing-set restoration must never re-seat them (the
+      shell's own reopen restores exactly its stow, never a duplicate). */
+  stowed: readonly DockComponentName[] = [],
 ): DockNode {
   let result = deriveEdgeMarkers(tree, closed);
   if (!closed.includes("sidebar") && !findEdgePane(result, "sidebar")) {
@@ -621,7 +626,7 @@ export function ensurePinnedEdges(
     result = insertRootEdge(result, "after", defaultInspectorPane(result, 240));
   }
   result = forceSessionsLeft(result);
-  return restoreInspectorSet(result);
+  return restoreInspectorSet(result, stowed);
 }
 
 /** pre-marker trees were identified by content fingerprint; mint `edge`
@@ -710,10 +715,17 @@ export function forceSessionsLeft(tree: DockNode): DockNode {
     singleton absent from the WHOLE tree (settings has no menu entry;
     unclosable tabs only die with their pane) is restored INTO the right
     shell, appended in the registry's canonical order. Pure. */
-export function restoreInspectorSet(tree: DockNode): DockNode {
+export function restoreInspectorSet(
+  tree: DockNode,
+  /** card t_9ed6cad7: components a CLOSED shell's stow records - never
+      re-seated (the reveal restores the stow itself) */
+  stowed: readonly DockComponentName[] = [],
+): DockNode {
   const right = findEdgePane(tree, "inspector");
   if (!right) return tree;
-  const missing = INSPECTOR_TAB_COMPONENTS.filter((c) => !findComponentTab(tree, c));
+  const missing = INSPECTOR_TAB_COMPONENTS.filter(
+    (c) => !findComponentTab(tree, c) && !stowed.includes(c),
+  );
   if (missing.length === 0) return tree;
   // v0.14.4 ruling 1: a grown right root seats the restored set in the
   // leaf that already hosts right-area tabs (else its first leaf) - the
@@ -1087,6 +1099,9 @@ export interface NarrowHiddenEntry {
   /** the collapsed pane's fixed px - the store remembers it via
       rememberEdgePx so the menubar toggle reopens the pane at it */
   px: number;
+  /** card t_9ed6cad7: the pane's full state captured BEFORE the prune -
+      the stow the reopen restores (the give-way is a hide, not a delete) */
+  pane: DockPane;
 }
 
 /** pure window-narrow give-way: while `contentPx` cannot seat every fixed
@@ -1106,7 +1121,7 @@ export function narrowGiveWay(
     if (minDockPx(t) <= contentPx) break;
     const pane = findEdgePane(t, comp);
     if (!pane) continue;
-    hidden.push({ component: comp, px: pane.fixed ?? 0 });
+    hidden.push({ component: comp, px: pane.fixed ?? 0, pane: clone(pane) });
     t = hideEdgePane(t, comp);
   }
   return { tree: t, hidden };
@@ -1124,13 +1139,51 @@ export function revealEdgePane(
   /** card t_f6d5a771: reopen at the remembered width (the drag-close's
       reopen-at-its-width); absent/invalid falls back to the default */
   fixedPx?: number | null,
+  /** card t_9ed6cad7: the closed shell's stowed pane - reopen restores
+      THE pane (its tabs, active, fixed, grown come back exactly as the
+      hide captured them) instead of minting a fresh default. The stow's
+      own fixed px wins over `fixedPx` (the caller recalls the same width
+      anyway); nothing stowed (or an edge-marker mismatch) falls back to
+      the default minting below. */
+  hidden?: DockPane | null,
 ): DockNode {
+  const edge = component === "sidebar" ? "left" : "right";
   const fixed = Math.max(PANE_OPEN_MIN, fixedPx ?? EDGE_DEFAULT_PX[component]);
-  const pane =
-    component === "sidebar"
-      ? makePane("sidebar", fixed, "left")
-      : defaultInspectorPane(tree, fixed);
+  const fresh = () =>
+    component === "sidebar" ? makePane("sidebar", fixed, "left") : defaultInspectorPane(tree, fixed);
+  let pane: DockPane = fresh();
+  if (hidden && hidden.edge === edge) {
+    const revived = revivePane(hidden, fixed, PANE_OPEN_MIN);
+    // the no-duplication law (t_d6d5b771) re-checked on the way back in:
+    // a boot repair may have seated a copy elsewhere while the shell sat
+    // hidden - the restored list drops it (and the active clamps along)
+    revived.tabs = revived.tabs.filter((t) => !findComponentTab(tree, t.component));
+    if (revived.tabs.length > 0) {
+      revived.active = clamp(revived.active, 0, revived.tabs.length - 1);
+      pane = revived;
+    } // every restored tab already lives elsewhere: mint the default
+  }
   return insertRootEdge(tree, side, pane);
+}
+
+/** the restore twin of the minters: the stowed pane comes back id-for-id
+    fresh (its ids may have been re-minted in the live tree while it sat
+    hidden - duplicate ids would make every later id-keyed op act on BOTH),
+    reopened at `floor` (the caller's reopen clamp) or its own recorded px
+    when it carries one. */
+function revivePane(hidden: DockPane, fallbackFixed: number, floor: number): DockPane {
+  const pane = clone(hidden);
+  pane.id = nextNodeId();
+  const reId = (n: DockNode): void => {
+    n.id = nextNodeId();
+    if (isSplit(n)) for (const c of n.children) reId(c);
+  };
+  if (pane.grown) reId(pane.grown);
+  pane.fixed =
+    pane.fixed !== null && Number.isFinite(pane.fixed)
+      ? Math.max(floor, pane.fixed)
+      : Math.max(floor, fallbackFixed);
+  return pane;
 }
 
 /** the fresh right shell: every inspector tab NOT already living somewhere
@@ -1212,11 +1265,32 @@ export function hideBottomPanel(tree: DockNode, store: Storage): DockNode {
 }
 
 /** the toggle's reopen half: graft the shell back at the remembered
-    height (absent/invalid falls to the default 200). */
-export function revealBottomPanel(tree: DockNode, store: Storage): DockNode {
-  const shell = bottomShellPane();
+    height (absent/invalid falls to the default 200). card t_9ed6cad7:
+    a stowed pane restores instead (its tab strip survived the closed
+    window - a tab the user moved in comes back, one moved out does not). */
+export function revealBottomPanel(
+  tree: DockNode,
+  store: Storage,
+  /** the stowed pane from the hide (null/absent: mint the fresh shell) */
+  hidden?: DockPane | null,
+): DockNode {
   const restored = recalledEdgePx(store, "bottom");
-  shell.fixed = Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX);
+  let shell: DockPane;
+  if (hidden && hidden.edge === "bottom") {
+    const revived = revivePane(hidden, Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX), MIN_PANE_PX);
+    // the no-duplication law, same as the sidebars' reveal
+    revived.tabs = revived.tabs.filter((t) => !findComponentTab(tree, t.component));
+    if (revived.tabs.length > 0) {
+      revived.active = clamp(revived.active, 0, revived.tabs.length - 1);
+      shell = revived;
+    } else {
+      shell = bottomShellPane();
+      shell.fixed = Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX);
+    }
+  } else {
+    shell = bottomShellPane();
+    shell.fixed = Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX);
+  }
   return makeSplit("column", [tree, shell]);
 }
 
@@ -1902,6 +1976,16 @@ export function clamp(v: number, lo: number, hi: number): number {
 // open shape over it. The field is optional (older records lack it) and v2
 // readers that predate it ignore it - no version bump, no compat shim.
 const LAYOUT_VERSION = 3;
+
+// card t_9ed6cad7: closing an edge pane HIDES state, it does not delete it.
+// The hide stows the pane's full record (tabs, active, fixed, grown) and the
+// reopen restores THE pane, not a fresh default - a tab dragged into a
+// sidebar survives the closed window, and a tab dragged out never duplicates
+// back in. In-flight the stow is the pre-prune pane object; on the record it
+// rides the `hiddenEdges` field (edge component -> pane record), optional
+// like `closedEdges` was: records that predate the field load unchanged and
+// the reveal falls back to minting the default exactly as before.
+export type HiddenEdgeState = Partial<Record<DockEdgeComponent, DockPane>>;
 /** v:2 -> v:3 migration container: persisted fractions convert to integer
     px against this NOMINAL container (a constant, not the live viewport,
     so the migration is deterministic offline; the render derives
@@ -1917,6 +2001,41 @@ function validateClosedEdges(raw: unknown): DockEdgeComponent[] | undefined {
   return raw.filter((c): c is DockEdgeComponent =>
     typeof c === "string" && (EDGE_COMPONENTS as readonly string[]).includes(c),
   );
+}
+
+/** the stowed pane records' reader (card t_9ed6cad7): every entry must
+    validate as a pane node AND carry the edge MARKER its key names - the
+    keys are the shell's component-domain names (sidebar/inspector/bottom),
+    the pane's marker is its edge ("left"/"right"/"bottom"; findEdgePane's
+    mapping). A corrupted entry DROPS, never the record (the stow is
+    auxiliary state; failing the whole layout over it would destroy the
+    LIVE tree's record to save the hidden one). Absent field -> undefined
+    (pre-t_9ed6cad7 records: the reveal falls back to minting defaults). */
+function validateHiddenEdges(
+  raw: unknown,
+  repairs?: string[],
+): HiddenEdgeState | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const markerOf = (comp: string): string =>
+    comp === "sidebar" ? "left" : comp === "inspector" ? "right" : "bottom";
+  const out: HiddenEdgeState = {};
+  let dropped = 0;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(EDGE_COMPONENTS as readonly string[]).includes(key)) continue;
+    const node = validateNode(value);
+    if (!node || !isPane(node) || node.edge !== markerOf(key)) {
+      dropped++;
+      continue;
+    }
+    out[key as DockEdgeComponent] = node;
+  }
+  if (dropped > 0 && repairs) {
+    repairs.push(
+      "a closed shell's saved pane record was unreadable and was dropped (its next reopen mints the default)",
+    );
+  }
+  return out;
 }
 
 /** the px shares one split's children hold against `containerPx` - the
@@ -1993,8 +2112,23 @@ export function serialize(
   tree: DockNode,
   closedEdges: readonly DockEdgeComponent[] = [],
   containerPx: number = V2_NOMINAL_CONTAINER_PX,
+  /** card t_9ed6cad7: the closed shells' stowed panes - every entry
+      converts with the same pane-record walk (its grown split carries its
+      own px shares). Omitted when empty: records that never stowed a pane
+      keep today's exact shape. */
+  hiddenEdges?: HiddenEdgeState,
 ): string {
-  return JSON.stringify({ v: LAYOUT_VERSION, tree: recordTree(tree, containerPx), closedEdges });
+  const stowed = hiddenEdges && Object.keys(hiddenEdges).length
+    ? Object.fromEntries(
+        Object.entries(hiddenEdges).map(([comp, pane]) => [comp, recordTree(pane, containerPx)]),
+      )
+    : undefined;
+  return JSON.stringify({
+    v: LAYOUT_VERSION,
+    tree: recordTree(tree, containerPx),
+    closedEdges,
+    ...(stowed ? { hiddenEdges: stowed } : {}),
+  });
 }
 
 export interface LoadedLayout {
@@ -2005,6 +2139,10 @@ export interface LoadedLayout {
   /** which pinned shells the record says the user left closed; missing on
       records that predate the field (the legacy bottom flag migrates them) */
   closedEdges?: DockEdgeComponent[];
+  /** card t_9ed6cad7: the closed shells' stowed pane records (reopening
+      restores the saved pane, not a fresh default); absent on records
+      that predate the field */
+  hiddenEdges?: HiddenEdgeState;
 }
 
 /** validates + parses a persisted layout. Returns null for anything the
@@ -2020,12 +2158,18 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
     return null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown };
+  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown; hiddenEdges?: unknown };
   if (rec.v !== 1 && rec.v !== 2 && rec.v !== 3) return null;
   const tree = validateNode(rec.tree);
   if (!tree) return null;
   const closedEdges = validateClosedEdges(rec.closedEdges);
-  return { tree, version: rec.v as 1 | 2 | 3, ...(closedEdges ? { closedEdges } : {}) };
+  const hiddenEdges = validateHiddenEdges(rec.hiddenEdges);
+  return {
+    tree,
+    version: rec.v as 1 | 2 | 3,
+    ...(closedEdges ? { closedEdges } : {}),
+    ...(hiddenEdges ? { hiddenEdges } : {}),
+  };
 }
 
 /** the plain tree-only read (every caller that does not care about the
@@ -2145,6 +2289,9 @@ export interface ParsedLayout {
   tree: DockNode;
   version: 1 | 2 | 3;
   closedEdges?: DockEdgeComponent[];
+  /** card t_9ed6cad7: the closed shells' stowed pane records (absent on
+      records that predate the field) */
+  hiddenEdges?: HiddenEdgeState;
   /** the repair receipt: one plain phrase per constraint eased. Empty on
       a clean load; surfaces once as a toast (createDock keeps it). */
   repairs: string[];
@@ -2171,7 +2318,7 @@ export function parseAnyLayout(raw: string | null, fallback: () => DockNode): Pa
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { tree: fallback(), version: 2, repairs: ["the record was not a layout object: booted the layout default"] };
   }
-  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown };
+  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown; hiddenEdges?: unknown };
   const v = rec.v === 1 || rec.v === 2 || rec.v === 3 ? rec.v : 2;
   const repairs: string[] =
     typeof rec.v === "number" && rec.v !== v
@@ -2184,7 +2331,14 @@ export function parseAnyLayout(raw: string | null, fallback: () => DockNode): Pa
     return { tree: fallback(), version: v, repairs };
   }
   const closedEdges = validateClosedEdges(rec.closedEdges);
-  return { tree, version: v, ...(closedEdges ? { closedEdges } : {}), repairs };
+  const hiddenEdges = validateHiddenEdges(rec.hiddenEdges, repairs);
+  return {
+    tree,
+    version: v,
+    ...(closedEdges ? { closedEdges } : {}),
+    ...(hiddenEdges ? { hiddenEdges } : {}),
+    repairs,
+  };
 }
 
 interface TolerantEnv {
@@ -2655,6 +2809,20 @@ export function createDock(store: Storage): DockApi {
     loaded?.closedEdges ??
     (store.getItem(BOTTOM_CLOSED_KEY) === "1" ? ["bottom"] : []);
   store.removeItem(BOTTOM_CLOSED_KEY);
+  // card t_9ed6cad7: the closed shells' stowed panes ride the record - a
+  // reload carries the hidden composition just as the live closed window
+  // carried it. Chat-tab keys in the stows must seed the tab-key counter
+  // too (nextTabKey never mints a key a hidden pane already holds).
+  const hiddenState: HiddenEdgeState = {};
+  if (loaded?.hiddenEdges) {
+    for (const comp of Object.keys(loaded.hiddenEdges) as DockEdgeComponent[]) {
+      const pane = loaded.hiddenEdges[comp];
+      if (pane) {
+        hiddenState[comp] = pane;
+        syncTabKeySeed(pane);
+      }
+    }
+  }
   let initial = loaded.tree;
   if (loaded.version === 1) {
     // v1-era semantics only: the inspector group's tab list was fixed
@@ -2674,7 +2842,14 @@ export function createDock(store: Storage): DockApi {
   // main-pane strand lifts before the shell repair so restoreInspectorSet
   // seats it in the right pane on the same boot.
   initial = rehomeInsightsTab(initial);
-  initial = ensurePinnedEdges(initial, closedEdges);
+  // the CLOSED shells' stows count as the tree's composition while they sit
+  // hidden (t_9ed6cad7): the missing-set repair never re-seats them
+  const stowedComponents = Object.keys(hiddenState) as DockEdgeComponent[];
+  initial = ensurePinnedEdges(
+    initial,
+    closedEdges,
+    stowedComponents.flatMap((c) => (hiddenState[c]?.tabs ?? []).map((t) => t.component)),
+  );
   // card t_67fc1905: the bottom panel is grafted (or left closed) AFTER the
   // sidebars repair and BEFORE chat keys - the panel hosts no chat tabs,
   // and its id must seed above the loaded tree's max (syncIdSeed ran once)
@@ -2696,7 +2871,7 @@ export function createDock(store: Storage): DockApi {
   // from; a mismatch (writer bug, encoder drift) warns and refuses the
   // write - the previous record on disk stays, which IS the last-good.
   const gatedPersist = (t: DockNode) => {
-    const candidate = serialize(t, closedEdges);
+    const candidate = serialize(t, closedEdges, V2_NOMINAL_CONTAINER_PX, hiddenState);
     const back = parseAnyLayout(candidate, () => t);
     if (!treeShapesMatch(back.tree, t)) {
       console.warn("dock: layout round-trip mismatch - the write was refused, last-good kept");
@@ -2750,7 +2925,7 @@ export function createDock(store: Storage): DockApi {
   /** the snapshot push: deduped (an op that lands on the snapshot's own
       state contributes nothing) and capped at 20 */
   const undoPush = (t: DockNode) => {
-    const s = serialize(t, closedEdges);
+    const s = serialize(t, closedEdges, V2_NOMINAL_CONTAINER_PX, hiddenState);
     if (undoRing[undoRing.length - 1] === s) return;
     undoRing.push(s);
     if (undoRing.length > UNDO_RING_MAX) undoRing.shift();
@@ -2780,6 +2955,14 @@ export function createDock(store: Storage): DockApi {
     const restored = assignChatKeys(rec.tree);
     if (rec.closedEdges) {
       closedEdges.splice(0, closedEdges.length, ...rec.closedEdges);
+    }
+    // the stows ride the snapshot too (a pre-hide snapshot carries the
+    // pane it was about to hide; undo restores the closed window's state)
+    for (const k of Object.keys(hiddenState) as DockEdgeComponent[]) {
+      delete hiddenState[k];
+    }
+    if (rec.hiddenEdges) {
+      Object.assign(hiddenState, rec.hiddenEdges);
     }
     tree.value = restored;
     endGesture(); // undo mid-gesture: the record's indices are pre-restore
@@ -2903,8 +3086,13 @@ export function createDock(store: Storage): DockApi {
       const gone = findPane(tree.value, id);
       if (gone) {
         const comp = edgeComponentOf(gone);
-        if (comp && gone.fixed !== null) rememberEdgePx(store, comp, gone.fixed);
-        if (comp) setClosed(comp, true);
+        if (comp) {
+          if (gone.fixed !== null) rememberEdgePx(store, comp, gone.fixed);
+          // card t_9ed6cad7: a divider close is a hide, not a delete -
+          // the pane's record stows like the menubar toggle's
+          hiddenState[comp] = clone(gone);
+          setClosed(comp, true);
+        }
       }
       tree.value = prunePane(tree.value, id);
     }
@@ -2916,16 +3104,25 @@ export function createDock(store: Storage): DockApi {
     if (pane) {
       // hide remembers the pane's width - the reopen restores it; the
       // closed-edge set marks the closure so a reload restores it too.
+      // card t_9ed6cad7: the pane's full record stows alongside (the
+      // closed window keeps its composition; the reopen restores THE
+      // pane, not a fresh default).
       // v0.14.4 ruling 10: the snapshot lands FIRST (the pre-hide record
       // carries the edge still open - undo restores its visibility too)
       undoPush(tree.value);
       if (pane.fixed !== null) rememberEdgePx(store, component, pane.fixed);
+      hiddenState[component] = clone(pane);
       setClosed(component, true);
       tree.value = hideEdgePane(tree.value, component);
     } else {
       // reopen-clamp: a stale sub-floor remembered width reopens AT 320
       setClosed(component, false);
-      applyLayout(tree.value, revealEdgePane(tree.value, component, side, recalledEdgePx(store, component)));
+      const stowed = hiddenState[component] ?? null;
+      delete hiddenState[component];
+      applyLayout(
+        tree.value,
+        revealEdgePane(tree.value, component, side, recalledEdgePx(store, component), stowed),
+      );
     }
   };
 
@@ -2937,11 +3134,15 @@ export function createDock(store: Storage): DockApi {
     if (findEdgePane(tree.value, "bottom")) {
       // v0.14.4 ruling 10: the pre-hide snapshot first (closed set intact)
       undoPush(tree.value);
+      const pane = findEdgePane(tree.value, "bottom");
+      if (pane) hiddenState.bottom = clone(pane);
       tree.value = hideBottomPanel(tree.value, store);
       setClosed("bottom", true);
     } else {
       setClosed("bottom", false);
-      applyLayout(tree.value, revealBottomPanel(tree.value, store));
+      const stowed = hiddenState.bottom ?? null;
+      delete hiddenState.bottom;
+      applyLayout(tree.value, revealBottomPanel(tree.value, store, stowed));
     }
   };
 
@@ -2977,6 +3178,9 @@ export function createDock(store: Storage): DockApi {
     undoPush(tree.value);
     for (const h of res.hidden) {
       rememberEdgePx(store, h.component, h.px);
+      // card t_9ed6cad7: the give-way is a hide - the pane's record stows
+      // like the menubar toggle's, the toggle's reopen restores exactly it
+      hiddenState[h.component] = h.pane;
       setClosed(h.component, true);
     }
     tree.value = res.tree;
