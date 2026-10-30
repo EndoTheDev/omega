@@ -710,12 +710,15 @@
   watch([() => dock.tree.value, bottomWidthMode], () => nextTick(applyBottomWidth));
 
   // card t_33f8756c: the window-narrow give-way. The main pane never dips
-  // below its 320px contract floor and is never overlapped: the SECONDARY
-  // sidebar (inspector) collapses first, then the PRIMARY - dock.narrowSqueeze
-  // owns the priority and remembers each hidden pane's width for its toggle.
-  // The content box is the root split's rendered width (the pane-area's
-  // padding already excluded). Below the breakpoint the mobile drawers own
-  // the layout - the squeeze stands down there.
+  // below its 320px contract floor and is never overlapped: edge panes
+  // collapse until it fits - inspector first, then the sidebar (dock
+  // .narrowSqueeze owns the priority and remembers each hidden pane's
+  // width for its toggle). card t_66fa358e exception: the pane a user JUST
+  // revealed wins the space (last-requested) - the squeeze that re-checks
+  // the reveal protects it instead, and pure resizes keep the default
+  // order. The content box is the root split's rendered width (the
+  // pane-area's padding already excluded). Below the breakpoint the mobile
+  // drawers own the layout - the squeeze stands down there.
   function applyNarrowSqueeze() {
     if (isMobile.value) return;
     const root = document.querySelector<HTMLElement>(".pane-area > .dock-root");
@@ -734,8 +737,10 @@
   // the give-way also runs after any STRUCTURAL tree change: a menubar
   // toggle reopen into a still-narrow window changes no container width
   // (no resize event, no pane-area resize) - the squeeze re-checks after
-  // the DOM settles and gives the just-reopened pane away again (the chat
-  // floor is a hard wall; the toggle is a no-op below the seat width).
+  // the DOM settles. card t_66fa358e: that re-check is the reveal's own
+  // squeeze - the just-revealed pane wins the space (the OTHER edge pane
+  // gives way to it, last-requested) and only the chat floor is a hard
+  // wall when even that is not enough.
   // Idempotent: once the tree fits, no-op - the watch settles immediately.
   watch(
     () => dock.tree.value,
