@@ -1104,20 +1104,34 @@ export interface NarrowHiddenEntry {
   pane: DockPane;
 }
 
-/** pure window-narrow give-way: while `contentPx` cannot seat every fixed
-    pane plus the flexible 320 floor, the SECONDARY sidebar (inspector)
-    collapses first, then the PRIMARY (sessions). Each hidden entry carries
-    the pane's remembered width. When the tree already fits (or only the
-    two edge panes are gone and it still doesn't), it stops - user-made
-    splits are never pruned by a resize. */
+/** pure window-narrow give-away: while `contentPx` cannot seat every fixed
+    pane plus the flexible 320 floor, edge panes collapse until it fits.
+    Each hidden entry carries the pane's remembered width. When the tree
+    already fits (or only the two edge panes are gone and it still doesn't),
+    it stops - user-made splits are never pruned by a resize.
+
+    card t_66fa358e (Endo's ruling: LAST-REQUESTED WINS): `justRevealed` -
+    the component a user JUST revealed - is exempt from the give-away. The
+    OTHER edge pane collapse order puts the protected one only as absolute
+    last resort (it hides too when even the other pane's space is not
+    enough - the bail semantics are unchanged, the tree returned is what it
+    is). null (boot/resize-driven squeezes, no user request in flight)
+    keeps the inspector-first order - ONLY a just-revealed pane is
+    protected. */
 export function narrowGiveWay(
   tree: DockNode,
   contentPx: number,
+  /** the component the toggle just revealed, if any */
+  justRevealed: "sidebar" | "inspector" | null = null,
 ): { tree: DockNode; hidden: NarrowHiddenEntry[] } {
   const hidden: NarrowHiddenEntry[] = [];
   let t = tree;
-  // secondary first (the inspector gives way before the sessions pane)
-  for (const comp of ["inspector", "sidebar"] as const) {
+  // default: secondary first (the inspector gives way before the sessions
+  // pane). A request in flight: the OTHER pane goes first - the
+  // just-revealed one survives the squeeze (last-requested wins).
+  const order: readonly ("sidebar" | "inspector")[] =
+    justRevealed === "inspector" ? ["sidebar", "inspector"] : ["inspector", "sidebar"];
+  for (const comp of order) {
     if (minDockPx(t) <= contentPx) break;
     const pane = findEdgePane(t, comp);
     if (!pane) continue;
@@ -2814,6 +2828,9 @@ export function createDock(store: Storage): DockApi {
   // carried it. Chat-tab keys in the stows must seed the tab-key counter
   // too (nextTabKey never mints a key a hidden pane already holds).
   const hiddenState: HiddenEdgeState = {};
+  // card t_66fa358e: the component of the toggle's last reveal - the next
+  // narrowSqueeze protects it (last-requested wins), then clears it
+  let revealPending: "sidebar" | "inspector" | null = null;
   if (loaded?.hiddenEdges) {
     for (const comp of Object.keys(loaded.hiddenEdges) as DockEdgeComponent[]) {
       const pane = loaded.hiddenEdges[comp];
@@ -3119,6 +3136,10 @@ export function createDock(store: Storage): DockApi {
       setClosed(component, false);
       const stowed = hiddenState[component] ?? null;
       delete hiddenState[component];
+      // card t_66fa358e: the reveal owns the NEXT squeeze (app.vue's tree
+      // watcher re-checks after the DOM settles) - the just-revealed pane
+      // is exempt from the give-away there (last-requested wins).
+      revealPending = component;
       applyLayout(
         tree.value,
         revealEdgePane(tree.value, component, side, recalledEdgePx(store, component), stowed),
@@ -3171,7 +3192,15 @@ export function createDock(store: Storage): DockApi {
   // card t_aa9dbada: the give-way's closure persists like every other hide
   // (a reload never re-reveals a pane the user's own state says is closed).
   const narrowSqueeze = (contentPx: number) => {
-    const res = narrowGiveWay(tree.value, contentPx);
+    // card t_66fa358e: a squeeze right after a user reveal is
+    // last-requested-aware - the just-revealed pane is exempt (the other
+    // edge pane gives way). The pending reveal is CONSUMED here: the
+    // first squeeze after the toggle is the reveal's own re-check
+    // (app.vue's tree watcher), every later squeeze is a plain resize
+    // and runs reveal-blind (the default inspector-first order stands).
+    const justRevealed = revealPending;
+    revealPending = null;
+    const res = narrowGiveWay(tree.value, contentPx, justRevealed);
     if (!res.hidden.length) return;
     // v0.14.4 ruling 10: the pre-give-way snapshot first (the closed set
     // mutates below it - undo restores the visible state too)

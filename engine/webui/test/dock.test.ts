@@ -1023,6 +1023,59 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     assert.equal(again.tree, squeezed); // nothing hidden: identity preserved
   });
 
+  // card t_66fa358e (Endo ruling: LAST-REQUESTED WINS) - the pane a user
+  // just revealed is exempt from the give-away; the OTHER edge pane gives
+  // way instead. Pure narrowGiveWay behavior:
+  it("narrowGiveWay: justRevealed=inspector survives the squeeze; the sidebar gives way", () => {
+    const res = narrowGiveWay(defaultTree(), 800, "inspector");
+    assert.deepEqual(
+      res.hidden.map((h) => h.component),
+      ["sidebar"],
+    );
+    // the inspector survives WITH its full record intact (the stow is the
+    // OTHER pane's business)
+    assert.equal(res.hidden[0]!.pane.edge, "left");
+    assert.notEqual(findEdgePane(res.tree, "inspector"), null);
+    assert.equal(findEdgePane(res.tree, "sidebar"), null);
+  });
+
+  it("narrowGiveWay: justRevealed=sidebar mirror - the inspector gives way", () => {
+    const res = narrowGiveWay(defaultTree(), 800, "sidebar");
+    assert.deepEqual(
+      res.hidden.map((h) => ({ component: h.component, px: h.px })),
+      [{ component: "inspector", px: 300 }] satisfies Pick<NarrowHiddenEntry, "component" | "px">[],
+    );
+    assert.notEqual(findEdgePane(res.tree, "sidebar"), null);
+    assert.equal(findEdgePane(res.tree, "inspector"), null);
+  });
+
+  it("narrowGiveWay: justRevealed is only absolute-last-resort - starved further, it hides too", () => {
+    // 500 seats the chat floor alone: BOTH panes go, protected one last
+    const res = narrowGiveWay(defaultTree(), 500, "inspector");
+    assert.deepEqual(
+      res.hidden.map((h) => h.component),
+      ["sidebar", "inspector"],
+    );
+    assert.equal(minDockPx(res.tree), CHAT_FLOOR_PX);
+  });
+
+  it("narrowGiveWay: a revealing squeeze that fits hides nothing (even with justRevealed)", () => {
+    const t = defaultTree();
+    assert.deepEqual(narrowGiveWay(t, 1000, "inspector").hidden, []);
+    assert.deepEqual(narrowGiveWay(t, 868, "sidebar").hidden, []); // exactly seated
+  });
+
+  it("narrowGiveWay: null justRevealed keeps the default inspector-first order", () => {
+    // explicit despite the earlier tests: only a REQUEST exempts a pane
+    const res = narrowGiveWay(defaultTree(), 800, null);
+    assert.deepEqual(
+      res.hidden.map((h) => h.component),
+      ["inspector"],
+    );
+    assert.notEqual(findEdgePane(res.tree, "sidebar"), null);
+    assert.equal(findEdgePane(res.tree, "inspector"), null);
+  });
+
   it("dock.narrowSqueeze prunes through the store and remembers the widths", () => {
     const mem: Record<string, string> = {};
     const store = {
@@ -1053,6 +1106,49 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     const before = serialize(dock.tree.value);
     dock.narrowSqueeze(4000);
     assert.equal(serialize(dock.tree.value), before);
+  });
+
+  // card t_66fa358e: the reveal funnel owns the NEXT squeeze - a toggle's
+  // reopen into no space swaps (the OTHER pane gives way), and the pending
+  // is consumed: later squeezes are reveal-blind again.
+  it("dock squeeze: a just-revealed pane wins the space; the pending is one-shot", () => {
+    const mem: Record<string, string> = {};
+    const store = {
+      getItem: (k: string) => (k in mem ? mem[k] : null),
+      setItem: (k: string, v: string) => {
+        mem[k] = v;
+      },
+      removeItem: (k: string) => {
+        delete mem[k];
+      },
+      clear: () => {
+        for (const k of Object.keys(mem)) delete mem[k];
+      },
+      key: () => null,
+      length: 0,
+    } as Storage;
+    const dock = createDock(store);
+    // Endo's dead case, live: closed inspector comes back while the
+    // sidebar (already seated) left no room - the SIDEBAR gives way now
+    dock.toggleEdge("inspector", "after"); // close
+    dock.toggleEdge("inspector", "after"); // reopen -> the reveal is pending
+    dock.narrowSqueeze(800);
+    assert.notEqual(findEdgePane(dock.tree.value, "inspector"), null);
+    assert.equal(findEdgePane(dock.tree.value, "sidebar"), null);
+    // the law holds for EVERY reveal: reopening the closed sidebar swaps
+    dock.toggleEdge("sidebar", "before");
+    dock.narrowSqueeze(800);
+    assert.notEqual(findEdgePane(dock.tree.value, "sidebar"), null);
+    assert.equal(findEdgePane(dock.tree.value, "inspector"), null);
+    // the pending is consumed: this squeeze has NO request in flight - the
+    // default inspector-first order stands (the inspector goes first)
+    dock.narrowSqueeze(400);
+    assert.equal(findEdgePane(dock.tree.value, "sidebar"), null);
+    // and the giving-way panes still stow: the reopen restores the record
+    dock.toggleEdge("inspector", "after");
+    assert.notEqual(findEdgePane(dock.tree.value, "inspector"), null);
+    const inspectorPane = findEdgePane(dock.tree.value, "inspector")!;
+    assert.ok(inspectorPane.tabs.length > 0, "the reopened shell carries its stowed tabs");
   });
 });
 
