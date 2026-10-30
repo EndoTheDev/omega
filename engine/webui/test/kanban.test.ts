@@ -172,7 +172,7 @@ test("board head keeps the fillet-tuck top spacing", () => {
   // carries the 14px lead-in that survives the 8px tab-strip tuck (the
   // Files-band contract); the switcher rides the band's actions.
   const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
-  const band = readFileSync(join(uiRoot, "..", "app", "components", "ui", "TabBand.vue"), "utf8");
+  const band = readFileSync(join(uiRoot, "app", "components", "ui", "TabBand.vue"), "utf8");
   assert.match(boardVue, /<TabBand title="Kanban">/, "the kanban head is the universal band");
   assert.ok(boardVue.indexOf("<TabBand") < boardVue.indexOf("board-scroll"), "the band renders ABOVE the scroll columns");
   assert.doesNotMatch(band, /position: sticky/, "non-scrolling is STRUCTURE, not CSS sticky");

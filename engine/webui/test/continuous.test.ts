@@ -124,7 +124,7 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
 
   it("a host without the module keeps the tab honest: no badge, no create form", () => {
     assert.match(agentsPanel, /continuousAvailable/, "the availability gate exists");
-    assert.match(agentsPanel, /v-if="continuousAvailable"[\s\S]{0,120}class="agents-new"/, "the + hides without the module");
+    assert.match(agentsPanel, /v-if="continuousAvailable"[\s\S]{0,160}class="agents-new band-tool"/, "the + hides without the module");
     assert.match(agentsPanel, /return c \? rowStatus\(c\) : ""/, "a config-only agent renders no badge");
   });
 });
