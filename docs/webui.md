@@ -19,7 +19,17 @@ Tokens live in `assets/css/main.css` — no component invents colors.
 - `--unread` is an **unread-ONLY semantic color** — never reuse it for a
   generic highlight.
 - Radii: 8px (panes) / 6px (cards) / 4px (chips).
-- Type: Public Sans (UI) + JetBrains Mono (code).
+- Type: Public Sans (`--sans`) + JetBrains Mono (`--mono`) — tokens in
+  main.css `:root`. Body/UI base is 15px and every size is px: there is
+  no rem scale or hero heading style (UI text sits mostly at 12–13px,
+  mono at 10.5–12px; sizes are per-component, not tokens).
+- Dark-first, light-parity: dark is the default identity; light is full
+  parity via the `html[data-theme='light']` block in main.css — the same
+  ladder inverted (`#ececec` z0 / `#f7f7f8` z1 / `#ededf0` z1-raised /
+  `#ffffff` z2, stroke `#d5d5da`, text `#1a1a1d`, text-dim `#6a6a72`,
+  plus the light shadow overrides). Theme selection rides `auto |
+  light | dark` (`ThemeMode`, composables/omega.ts) plus `theme:<name>`
+  custom themes from the picker.
 - Theme overrides: YAML files in `<home>/themes/` (one per theme,
   token overrides, `base:` + `name:`). Served by the HTTP channel
   (`GET /themes`, hot-reloaded from the folder poll), applied live from
@@ -44,7 +54,20 @@ the others:
 | Mobile breakpoint | 768px   |
 
 The gutter divider retains magnetic snap rebase mechanics
-(`PaneDivider`).
+(`PaneDivider`). Sidebar panes obey a 128px floor (`MIN_PANE_PX`,
+composables/dock.ts) while the main pane's floor is the 320px wall —
+the sidebars yield first. Below the mobile breakpoint the sidebars
+collapse into slide-in drawers over a scrim; chrome (menu/status bar)
+rides above all overlays: drawers z12, scrim z10.
+
+## Motion
+
+main.css's header states the law: "Motion: streaming cursor + message
+fade only." Three keyframes exist and nothing else moves via
+`animation` — `blink` (1s steps(2): streaming cursor + thinking-live
+ink), `fade-in` (0.18s message arrival), and `status-pulse` (1.6s:
+session-row streaming status glyph — dot or star, not just color).
+Everything else animates through `transition`, not keyframes.
 
 ## The dock model
 

@@ -15,7 +15,8 @@ Large or architectural changes especially: direction is agreed before
 code, never during review.
 
 For repo layout, architecture, and the coding contracts our own work
-follows, read `AGENTS.md`, `DESIGN.md`, and the docs under `docs/`.
+follows, read `AGENTS.md` and the docs under `docs/` (webui design
+lives in `docs/webui.md`).
 
 ## The gate
 
