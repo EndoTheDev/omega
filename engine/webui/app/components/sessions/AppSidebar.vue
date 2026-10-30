@@ -2,14 +2,13 @@
   <aside
     class="sessions"
     :class="{ open: open }">
-    <div class="sessions-head">
-      <!-- card t_aee5199f: the new-chat control is a FULL-WIDTH split
-           button - the body mints the default (persisted) chat, the
-           arrow-down opens the type picker (card t_55a571ff: New
-           Session / Ephemeral). All styling stays scoped so
-           this surface never grows main.css (SAME-FILE discipline:
-           t_33f8756c owns the shared sheet) - only .new-btn's shared
-           chip look from main.css is consumed. -->
+    <!-- card t_308e6d9b: the head row is the UNIVERSAL band now (the
+         shared TabBand) - the split new-chat control rides the band
+         (its own law stands: scoped styling here, the shared .new-btn
+         chip look from main.css). The band sits ABOVE the search row
+         and the .session-list scrollport - scrolling the list never
+         moves it. -->
+    <TabBand title="Sessions">
       <div class="head-actions">
         <div
           class="new-btn"
@@ -56,7 +55,7 @@
           </button>
         </div>
       </div>
-    </div>
+    </TabBand>
     <div class="session-search">
       <!-- shared look (SearchInput); the BEHAVIOR stays here: debounced
            FTS5 content union (runContentSearch below) on top of the
@@ -463,9 +462,17 @@
      blocks). Only .new-btn's shared chip look (border, radius, dim
      text + accent hover) is consumed from main.css. -->
 <style scoped>
+/* card t_308e6d9b: the head row is the shared TabBand - the band's own
+   geometry replaces .sessions-head; the split button grows to fill the
+   band after the title (the fuller-width feel the old full-width row
+   had). main.css's dead .sessions-head rules are gone with it. */
 .head-actions {
   position: relative;
   width: 100%;
+}
+.sessions :deep(.tab-band-actions) {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 /* the split wrapper keeps the shared .new-btn chip (border, radius,
    dim text, accent hover). The halves inside are borderless - the

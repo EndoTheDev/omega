@@ -20,22 +20,26 @@
        the config scaffold. A host serving no continuous module keeps
        the tab honest: no badge, no preview, no "+". -->
   <section class="pane agents">
-    <header class="agents-head">
-      <h2 class="agents-title">agents</h2>
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
+         scaffold "+" / "@" controls ride the band now (the agent
+         head/styles below own nothing else). The band renders before
+         the .agents-body scrollport: scrolling the list never moves
+         it. -->
+    <TabBand title="Agents">
       <div class="agents-actions">
         <button
           v-if="continuousAvailable"
-          class="agents-new"
+          class="agents-new band-tool"
           title="create a continuous agent (home + canonical chat + schedule)"
           @click="showContCreate = !showContCreate">+</button>
         <button
-          class="agents-new"
+          class="agents-new band-tool"
           title="scaffold a new agent directory"
           @click="showCreate = !showCreate">@</button>
       </div>
-    </header>
-
-    <form
+    </TabBand>
+    <div class="agents-body">
+      <form
       v-if="showCreate"
       class="agents-create"
       @submit.prevent="createAgent">
@@ -202,6 +206,7 @@
         </template>
       </template>
     </RegistryList>
+    </div>
   </section>
 </template>
 
@@ -567,6 +572,27 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf });
 </script>
 
 <style scoped>
+/* card t_308e6d9b: the root stops being a flat content blob - the
+   TabBand stays fixed, the body owns the scroll (structurally, never
+   sticky). The audit's calibration finding (the Agents tab was the
+   barest tab: no layout at all) starts to converge on the Files
+   column shape here. */
+.pane.agents {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 0 6px;
+}
+.agents-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 12px 8px;
+}
 /* the open affordance (card t_1ba868bb): a session row is a click
    target that rides the main-pane opener. */
 .agents-session-row {

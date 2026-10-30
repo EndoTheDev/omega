@@ -1,19 +1,23 @@
 <template>
-  <!-- no title row: the dock tab bar carries the "Settings" title; the
-       tab lives pinned in the inspector (card t_49d0b308) - this is just
-       content. The aside classes carry the mobile drawer shape (mirrors
+  <!-- card t_308e6d9b: the tab carries the universal band ("Settings"
+       title + its filter box); the dock tab bar still carries the chip
+       and the tab lives pinned in the inspector (card t_49d0b308). The
+       aside classes carry the mobile drawer shape (mirrors
        FilesTab); `narrow` is the width-driven adaptation class (a
        measured on the root: the inspector's ~300px column). -->
   <aside
     ref="rootEl"
     class="settings aside pane inspector-panel"
     :class="{ open: open, narrow: narrow }">
-    <!-- search: narrows every group live; Escape clears (shared look -
-         SearchInput, same component as the sidebar's session search) -->
-    <SearchInput
-      v-model="query"
-      class="settings-search"
-      placeholder="filter settings" />
+    <TabBand
+      title="Settings"
+      :lead="false"
+      class="settings-band">
+      <SearchInput
+        v-model="query"
+        class="settings-search"
+        placeholder="filter settings" />
+    </TabBand>
 
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
@@ -502,3 +506,19 @@
     }
   }
 </script>
+
+<style scoped>
+  /* card t_308e6d9b: the filter box rides the band. The band look is
+     the shared TabBand's; this only seats the filter: it grows to fill
+     the band's middle so the pane's 16px padding geometry stays the
+     host's (lead=false). */
+  .settings :deep(.settings-search) {
+    flex: 1 1 auto;
+    min-width: 96px;
+    width: auto;
+  }
+  .settings :deep(.tab-band-actions) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+</style>

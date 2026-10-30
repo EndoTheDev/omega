@@ -160,7 +160,7 @@ test("the feed panel is the bell popover's body rehomed, not a rebuild", () => {
   const panel = read("app/components/notifications/NotificationsPanel.vue");
   // the same row vocabulary the popover rendered: verdict cards on top,
   // feed rows with kind glyph + title + verdict + age, empty voice
-  for (const cls of ["notif-head", "notif-verdicts", "notif-list", "notif-row", "notif-empty"]) {
+  for (const cls of ["tab-band", "notif-verdicts", "notif-list", "notif-row", "notif-empty"]) {
     assert.ok(panel.includes(cls), `the rehomed markup keeps "${cls}"`);
   }
   assert.match(panel, /nothing finished yet/, "the empty voice survives the rehome");

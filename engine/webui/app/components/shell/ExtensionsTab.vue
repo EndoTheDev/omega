@@ -3,6 +3,10 @@
     ref="rootEl"
     class="aside pane inspector-panel"
     :class="{ open: open, narrow: narrow }">
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) -
+         title-only (the Modules tab's actions ride the rows), pinned
+         above the scrolling inventory - scrolling never moves it. -->
+    <TabBand title="Modules" />
     <div class="inspector-extensions">
       <p class="extensions-summary">{{ summary }}</p>
       <p

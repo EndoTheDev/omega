@@ -646,12 +646,10 @@ body {
   min-height: 0;
 }
 
-.sessions-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 12px 10px;
-}
+/* card t_308e6d9b: the sessions tab's head row is the shared TabBand
+   (components/ui/TabBand.vue) - the old .sessions-head paddings died
+   with it; the band geometry (the Files-band lead-in + row rhythm) is
+   the band component's. */
 
 /* sidebar search: filters the in-memory list client-side; the input look
    lives in the shared .search-input rules below (SettingsTab's filter

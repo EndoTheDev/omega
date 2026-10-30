@@ -9,15 +9,18 @@
        clears on open. Transient toasts are NOT this component's job:
        they stay shell-level in NotificationToasts.vue. -->
   <div class="notif-pane">
-    <div class="notif-head">
-      <span class="notif-title">notifications</span>
+    <!-- card t_308e6d9b: the head row is the UNIVERSAL band now (the
+         shared TabBand) - the mark-all-read action rides the band and
+         the band renders before the .notif-list scrollport: scrolling
+         the feed never moves it. -->
+    <TabBand title="Notifications">
       <button
-        class="notif-clear-btn"
+        class="notif-clear-btn band-tool"
         :disabled="notificationsUnread === 0"
         @click="markAll">
         mark all read
       </button>
-    </div>
+    </TabBand>
     <ul
       v-if="pendingVerdictList.length"
       class="notif-verdicts"
@@ -146,21 +149,10 @@
     min-height: 0;
     height: 100%;
   }
-  .notif-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--stroke);
-    flex: none;
-  }
-  .notif-title {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 10.5px;
-    font-weight: 600;
-    opacity: 0.6;
-  }
+  /* card t_308e6d9b: the head is the shared TabBand - the band's own
+     geometry replaced .notif-head/.notif-title; the mark-all-read
+     button keeps its text-button look (the band-tool font rules ride
+     it, its accent hover stays). */
   .notif-clear-btn {
     font: inherit;
     font-size: 11px;
