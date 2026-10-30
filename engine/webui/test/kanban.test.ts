@@ -168,13 +168,14 @@ test("board view wires the switcher through every board call", () => {
 });
 
 test("board head keeps the fillet-tuck top spacing", () => {
-  // the dock tab strip tucks -var(--r-pane) (8px) over the pane content,
-  // so an 8px spacer above the switcher is fully consumed - the select
-  // touches the strip. 10px matches the sibling inspector panels
-  // (settings.narrow / insights both carry 10px top padding).
+  // card t_308e6d9b: the head row is the shared TabBand now - the band
+  // carries the 14px lead-in that survives the 8px tab-strip tuck (the
+  // Files-band contract); the switcher rides the band's actions.
   const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
-  assert.match(boardVue, /\.board-head\s*\{[^}]*padding:\s*10px 12px 0/s,
-    "head keeps the 10px top spacing that survives the 8px tuck");
+  const band = readFileSync(join(uiRoot, "..", "app", "components", "ui", "TabBand.vue"), "utf8");
+  assert.match(boardVue, /<TabBand title="Kanban">/, "the kanban head is the universal band");
+  assert.ok(boardVue.indexOf("<TabBand") < boardVue.indexOf("board-scroll"), "the band renders ABOVE the scroll columns");
+  assert.doesNotMatch(band, /position: sticky/, "non-scrolling is STRUCTURE, not CSS sticky");
   assert.doesNotMatch(boardVue, /padding:\s*8px 12px 0/,
     "the tuck-consumed 8px spacer stays out");
 });
