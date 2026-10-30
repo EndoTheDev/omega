@@ -86,9 +86,9 @@ tab_narrow() {
 # style checks pick data-independent elements where the private lane has
 # no rows (empty cron list, log tail): the condensed root padding is the
 # narrow rule; a missing descendant (no data) cannot fail the tab.
-tab_narrow 'cron'    '.cron-list'   'getComputedStyle(document.querySelector(".cron-list")).paddingLeft==="8px"'
-tab_narrow 'skills'  '.skills-list' 'getComputedStyle(document.querySelector(".skills-list")).paddingLeft==="8px"'
-tab_narrow 'tools'   '.tools-list'  'getComputedStyle(document.querySelector(".tools-list")).paddingLeft==="8px"'
+tab_narrow 'cron'    '.cron-list'   'getComputedStyle(document.querySelector(".cron-list .cron-body")).paddingLeft==="8px"'
+tab_narrow 'skills'  '.skills-list' 'getComputedStyle(document.querySelector(".skills-list .skills-body")).paddingLeft==="8px"'
+tab_narrow 'tools'   '.tools-list'  'getComputedStyle(document.querySelector(".tools-list .tools-body")).paddingLeft==="8px"'
 tab_narrow 'files'   '.inspector-panel' 'getComputedStyle(document.querySelector(".files-tree .size")).display==="none"'
 tab_narrow 'settings' 'aside.settings'  'getComputedStyle(document.querySelector(".settings-note")).fontSize==="10.5px"'
 tab_narrow 'kanban'  '.board'       'getComputedStyle(document.querySelector(".board-scroll")).flexDirection==="column"'
@@ -161,5 +161,5 @@ ab mouse down >/dev/null 2>&1
 x=-150; while [ "$x" -le 0 ]; do ab mouse move "$((divx+x))" 400 >/dev/null 2>&1; sleep 0.03; x=$((x+10)); done
 ab mouse up >/dev/null 2>&1
 sleep 0.6
-tab_narrow 'cron' '.cron-list' 'getComputedStyle(document.querySelector(".cron-list")).paddingLeft==="8px"'
+tab_narrow 'cron' '.cron-list' 'getComputedStyle(document.querySelector(".cron-list .cron-body")).paddingLeft==="8px"'
 step "ok: dragging back narrow re-applies the adaptation (live observer)"
