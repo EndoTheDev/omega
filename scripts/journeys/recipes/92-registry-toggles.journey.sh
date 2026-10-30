@@ -23,9 +23,11 @@
 #                          wire, and the render all agree it is on again
 #
 # Lane-home scoped by law (the journey suite law): the seed skill is
-# written into $OMEGA_HOME/skills/<name>/SKILL.md - OMEGA_HOME is
-# REQUIRED from the caller (the lane-local suite and the nightly
-# runner both export it); the recipe has no default. ListSkills
+# written into $OMEGA_HOME/skills/<name>/SKILL.md. Home resolution
+# mirrors cmd/omega/home.go: OMEGA_HOME wins, else the exe's directory.
+# The nightly runner's master-copy workflow exports OMEGA_BIN only, so
+# the recipe derives OMEGA_HOME from it - no machine-specific path.
+# Both unset dies loudly. ListSkills
 # re-scans per listing, so the
 # seed shows up in GET /skills without a restart. Residue-free: the
 # cleanup trap deletes the seed dir and, if a red left the fold dirty,
@@ -38,7 +40,10 @@
 
 SKILL="jrn-tgl$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
 GHOST="jrn-ghost-${SKILL#jrn-tgl}"
-OMEGA_HOME="${OMEGA_HOME:?set OMEGA_HOME to the serving lane home}"
+if [ -z "${OMEGA_HOME:-}" ]; then
+  [ -n "${OMEGA_BIN:-}" ] || die "set OMEGA_HOME or OMEGA_BIN to the serving lane home"
+  OMEGA_HOME="$(dirname "$OMEGA_BIN")"
+fi
 CONFIG="$OMEGA_HOME/config/config.yaml"
 SKILL_DIR="$OMEGA_HOME/skills/$SKILL"
 AGENTS_PANE='document.querySelector(".pane.agents")'
