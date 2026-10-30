@@ -144,6 +144,119 @@ for f in "$TESTDIR/config.go" "$TESTDIR/knobs.go"; do
     ok
   fi
 done
+# 8. a return line whose values died with their definitions dies: the
+# sectionConfig case copies the module's section into a local and hands
+# it back - `return cont, true` names an anchor the deletion removed.
+# A literal-only return (`return nil, false` trailing the switch) is
+# not a wire and survives.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ContinuousConfig struct {
+	Home string
+}
+
+type Config struct {
+	Continuous ContinuousConfig
+}
+
+type Disabled struct {
+	Agents []string
+}
+EOF
+cat > "$TESTDIR/sections.go" <<'EOF'
+package main
+
+func section(c Config) (any, bool) {
+	switch "continuous" {
+	case "continuous":
+		cont := c.Continuous
+		cont.Home = "replaced by the module"
+		return cont, true
+	}
+	return nil, false
+}
+
+var _ = Config{}.Disabled
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,sections.go" continuous) >/dev/null 2>&1
+if [ -s "$TESTDIR/sections.go" ] \
+  && ! grep -q 'Cont' "$TESTDIR/sections.go" \
+  && grep -q 'return nil, false' "$TESTDIR/sections.go" \
+  && ! grep -q 'ContinuousConfig' "$TESTDIR/config.go"; then
+  ok
+else
+  bad "scrubber kept a return of dead definitions or ate the literal-only return"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/sections.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+
+# 9. a short declaration whose last reader died as a wire block strands
+# an unused name - Go refuses it. The unread name blanks in place and
+# the error path keeps its declaration.
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ContinuousConfig struct {
+	Home string
+}
+
+type Config struct {
+	Continuous ContinuousConfig
+}
+
+type Disabled struct {
+	Agents []string
+}
+EOF
+cat > "$TESTDIR/known.go" <<'EOF'
+package main
+
+import "errors"
+
+type Profile struct {
+	Continuous bool
+}
+
+func LoadProfile(home, name string) (*Profile, error) {
+	_ = home
+	_ = name
+	return &Profile{Continuous: true}, nil
+}
+
+var errRefused = errors.New("refused")
+
+func agentKnown(name string) error {
+	p, err := LoadProfile("home", name)
+	if err != nil {
+		return err
+	}
+	if !p.Continuous {
+		return errRefused
+	}
+	return nil
+}
+EOF
+(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,known.go" continuous) >/dev/null 2>&1
+if grep -q '_, err := LoadProfile' "$TESTDIR/known.go" \
+  && ! grep -q 'p.Continuous' "$TESTDIR/known.go"; then
+  ok
+else
+  bad "scrubber did not blank the declaration nobody reads anymore"
+fi
+if ! gofmt -e "$TESTDIR/known.go" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+  bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+else
+  ok
+fi
 rm -rf "$TESTDIR" "$SCRUBPY"
 
 if [ "$fail" -gt 0 ]; then
