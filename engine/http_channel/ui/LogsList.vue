@@ -3,6 +3,10 @@
     ref="rootEl"
     class="logs-list"
     :class="{ narrow: narrow }">
+    <!-- card t_308e6d9b: the UNIVERSAL band - title-only (the Logs tab
+         owns no buttons), pinned before the .logs-body scrollport so
+         scrolling never moves it. -->
+    <TabBand title="Logs" />
     <p
       v-if="error"
       class="panel-status">

@@ -4,18 +4,14 @@
     class="mcp-list"
     :class="{ narrow: narrow }">
     <!-- card t_d6e94e79: the toolbar row, the FilesTab pattern - the
-         title flush LEFT, the refresh action flush RIGHT on ONE row
-         (the same -8px dock-pane tuck the Files header clears, so the
-         same 14px lead-in). The click makes mcp.yaml edits live
-         (POST /mcp/reload + the re-fetch), no restart, no file watcher
-         - the button is the whole trigger. -->
-    <div
-      class="mcp-header"
-      role="toolbar"
-      aria-label="mcp actions">
-      <h3 class="panel-title">mcp</h3>
+         title flush LEFT, the refresh action flush RIGHT on ONE row.
+         card t_308e6d9b: the row is the UNIVERSAL band now (the shared
+         TabBand). The click makes mcp.yaml edits live (POST
+         /mcp/reload + the re-fetch), no restart, no file watcher - the
+         button is the whole trigger, and it lives in the band. -->
+    <TabBand title="MCP">
       <button
-        class="mcp-tool"
+        class="band-tool"
         title="refresh"
         aria-label="refresh mcp servers"
         :disabled="reloading"
@@ -24,7 +20,8 @@
           name="refresh"
           :size="13" />
       </button>
-    </div>
+    </TabBand>
+    <div class="mcp-body">
     <p
       v-if="error"
       class="panel-status">
@@ -85,6 +82,7 @@
         </li>
       </ul>
     </template>
+    </div>
   </section>
 </template>
 
@@ -190,30 +188,25 @@
      is self-titled; the inspector mounts it as any other panel. No
      invented vars (the t_11a9e160 lesson): opacity + the type scale
      the sibling panels (ToolsList, SkillsList) already speak. */
+  /* card t_308e6d9b: the root stops being a flat scroll child - the
+     TabBand stays fixed, the body owns the scroll (structurally, never
+     sticky). The old root padding rides the body now. */
   .mcp-list {
-    padding: 10px 12px 14px;
-  }
-  /* the toolbar row (card t_d6e94e79): title left, refresh flush right,
-     one row - the FilesTab header pattern with the module's own copy
-     (module UI imports no shell code, the narrow.ts copy law). The
-     14px lead-in clears the same -8px dock-pane tuck the Files header
-     clears (card t_5c660a42). */
-  .mcp-header {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 14px 0 4px;
+    flex-direction: column;
+    overflow: hidden;
   }
-  .panel-title {
-    margin: 0;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    opacity: 0.5;
+  .mcp-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 12px 14px;
   }
   .panel-status {
-    margin: 0;
     font-size: 11px;
     opacity: 0.6;
   }
@@ -312,7 +305,10 @@
   /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome:
      the status line drops under the name instead of floating right. */
   .mcp-list.narrow {
-    padding: 6px 8px 10px;
+    padding: 0;
+  }
+  .mcp-list.narrow .mcp-body {
+    padding: 4px 8px 10px;
   }
   .mcp-list.narrow .mcp-server-head {
     flex-direction: column;
