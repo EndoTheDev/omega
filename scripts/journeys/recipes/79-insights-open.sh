@@ -67,11 +67,16 @@ nums=$(jsq '(()=>{const el=[...document.querySelectorAll(".dock-content,.pane")]
  return s&&k&&Number(s[1])>0&&Number(k[1].replace(/,/g,""))>0?1:0})()')
 assert_eq "$nums" "1" "overview carries real data"
 
-# the period switches: a select with the four windows; the header
-# follows a 7-days switch (v-model rides the change event)
-hdr=$(jsq '(()=>{const s=[...document.querySelectorAll("select")].find(e=>(e.textContent||"").includes("all time"));
- if(!s) return 0; s.value="7"; s.dispatchEvent(new Event("change",{bubbles:true})); return 1})()')
-assert_eq "$hdr" "1" "period select switches present"
+# the period switches: the BandSelect chip with the four windows (card
+# t_acad02ec: the native select is gone - open the pop, pick 7 days);
+# the header follows the pick
+hdr=$(jsq '(()=>{const c=document.querySelector(".insights-days .model-chip"); if(!c) return 0; c.click(); return 1})()')
+assert_eq "$hdr" "1" "window chip clicked"
+if ! wait_js '(()=>{return [...document.querySelectorAll(".insights-days .model-list li")].some(l=>(l.textContent||"").includes("7 days"))})()' 10; then
+  die "window options never rendered"
+fi
+pick=$(jsq '(()=>{const o=[...document.querySelectorAll(".insights-days .model-list li")].find(l=>(l.textContent||"").includes("7 days")); if(!o) return 0; o.click(); return 1})()')
+assert_eq "$pick" "1" "period pick to 7 days"
 # the header follows the switch - poll 1/0 (wait_js wants a literal
 # `true` from ab eval; the 1/0 shape matches every assert above)
 i=0; ok=0; got=""

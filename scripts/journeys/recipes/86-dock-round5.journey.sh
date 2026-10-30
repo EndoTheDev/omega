@@ -81,8 +81,9 @@ if ! wait_js '(()=>{return document.querySelector(".dock-pane .board")?true:fals
 fi
 step "ok: the click foregrounds the kanban pane"
 
-# the board switcher picked the task's board
-if ! wait_js "(()=>{const s=document.querySelector('#board-switcher');return !!s && s.value==='$BOARD'})()" 10; then
+# the board switcher picked the task's board (card t_acad02ec: the
+# native select is gone - the BandSelect chip's face carries the name)
+if ! wait_js '(()=>{const c=document.querySelector(".board-switch-select .chip-name");return !!c && (c.textContent||"").trim()==="'"$BOARD"'"} )()' 10; then
   die "the board switcher never selected the notification's board ($BOARD)"
 fi
 step "ok: the notification's board is selected in the switcher"

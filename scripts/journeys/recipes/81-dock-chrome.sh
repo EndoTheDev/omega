@@ -61,9 +61,15 @@ open=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||
  if(!t) return 0; t.click(); return 1})()')
 assert_eq "$open" "1" "settings tab opens"
 wait_text "bottom panel width" 10
-full=$(jsq '(()=>{const s=[...document.querySelectorAll("select")].find(e=>(e.textContent||"").includes("full"));
- if(!s) return 0; s.value="full"; s.dispatchEvent(new Event("change",{bubbles:true})); return 1})()')
-assert_eq "$full" "1" "width-mode select flipped to full"
+# card t_acad02ec: the knob select rides the BandSelect listbox - open
+# the pop (chip aria-label = the knob label), pick the option
+full=$(jsq '(()=>{const c=[...document.querySelectorAll(".setting-select .model-chip")].find(b=>b.getAttribute("aria-label")==="bottom panel width"); if(!c) return 0; c.click(); return 1})()')
+assert_eq "$full" "1" "width chip clicked"
+if ! wait_js '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].some(l=>(l.textContent||"").trim()==="full")})()' 10; then
+  die "width-mode options never rendered"
+fi
+full=$(jsq '(()=>{const o=[...document.querySelectorAll(".setting-select .model-list li")].find(l=>(l.textContent||"").trim()==="full"); if(!o) return 0; o.click(); return 1})()')
+assert_eq "$full" "1" "width-mode flipped to full"
 i=0; ok=0
 while [ "$i" -lt 20 ]; do
   got=$(jsq '(()=>{const b=document.querySelector(".dock-pane.edge-bottom");
@@ -75,9 +81,13 @@ done
 [ "$ok" = "1" ] || die "full mode never spanned the dock area (last: [$got])"
 step "ok: full mode spans the dock area"
 
-back=$(jsq '(()=>{const s=[...document.querySelectorAll("select")].find(e=>(e.textContent||"").includes("full"));
- if(!s) return 0; s.value="aligned"; s.dispatchEvent(new Event("change",{bubbles:true})); return 1})()')
-assert_eq "$back" "1" "width-mode select flipped back to aligned"
+back=$(jsq '(()=>{const c=[...document.querySelectorAll(".setting-select .model-chip")].find(b=>b.getAttribute("aria-label")==="bottom panel width"); if(!c) return 0; c.click(); return 1})()')
+assert_eq "$back" "1" "width chip clicked (back)"
+if ! wait_js '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].some(l=>(l.textContent||"").trim()==="aligned")})()' 10; then
+  die "width-mode options never rendered (back)"
+fi
+back=$(jsq '(()=>{const o=[...document.querySelectorAll(".setting-select .model-list li")].find(l=>(l.textContent||"").trim()==="aligned"); if(!o) return 0; o.click(); return 1})()')
+assert_eq "$back" "1" "width-mode flipped back to aligned"
 i=0; ok=0
 while [ "$i" -lt 20 ]; do
   got=$(jsq '(()=>{const b=document.querySelector(".dock-pane.edge-bottom");
