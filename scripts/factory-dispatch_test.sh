@@ -199,6 +199,53 @@ rc=$?
 printf "%s" "$out" | grep -q "wanted <=2 running (snapshot 1 + slots 1)" && ok || bad "T10: handoff line wrong (out: $out)"
 rm -rf "$FDHOME"
 
+# T11 (local + CI): guard bug #11 - the dispatch sweep must not lift NAMED
+# hold locks. recompute_ready (kanban_db.py:2035) runs on every inner
+# dispatch and promotes todo/blocked cards whose parents are all done -
+# a parentless card satisfies that vacuously, deliberate SQL parks carry
+# no sticky kanban_block event, so every pass flipped parked holds
+# (blocked + claim_lock='pibtw:v0.14.0-hold') to ready and the tick
+# re-parked them (proven live 2026-10-29/30, t_55a3fc4b/t_95c91f9c).
+# The stub mimics recompute_ready exactly. Pinned here: a dry-run never
+# flips the parked card; a real pass flips AND the guard re-parks both
+# named holds (lock intact); a pid-shaped lock is NOT re-parked (the
+# restore fires on named holds only - pid claims stay sweep-reapable).
+FDHOME=$(mktemp -d)
+mkdir -p "$FDHOME/.hermes/kanban/boards/project-omega" "$FDHOME/bin"
+FDB="$FDHOME/.hermes/kanban/boards/project-omega/kanban.db"
+sqlite3 "$FDB" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
+INSERT INTO tasks VALUES('t_run','running','go bits','pure go bits','pibtw:1',NULL,0,'2026-10-30T01:00');
+INSERT INTO tasks VALUES('t_cand','ready','webui candidate','FILES: engine/webui/app/',NULL,NULL,0,'2026-10-30T02:00');
+INSERT INTO tasks VALUES('t_hold','blocked','terminal module hold','design gate','pibtw:v0.14.0-hold',NULL,0,'2026-10-29T01:00');
+INSERT INTO tasks VALUES('t_hold2','blocked','browser module hold','design gate','pibtw:design-hold',NULL,0,'2026-10-29T01:01');
+INSERT INTO tasks VALUES('t_pid','blocked','stale-shape card','x','pibtw:4242',NULL,0,'2026-10-29T01:02');" 2>/dev/null
+cat >"$FDHOME/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+# stub: mimic recompute_ready - parentless non-sticky todo/blocked cards
+# go ready regardless of claim_lock (proven live behavior).
+sqlite3 "$HERMES_STUB_DB" "UPDATE tasks SET status='ready' WHERE status IN ('todo','blocked');"
+echo "Spawned: 0"
+EOF
+chmod +x "$FDHOME/bin/hermes"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB" bash "$GUARD" --dry-run 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T11: dry-run exited $rc (out: $out)"
+s=$(sqlite3 "$FDB" "SELECT status FROM tasks WHERE id='t_hold';")
+[ "$s" = "blocked" ] && ok || bad "T11: dry-run flipped the parked hold (t_hold status=$s)"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB" bash "$GUARD" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T11: dispatch pass exited $rc (out: $out)"
+printf "%s" "$out" | grep -q "re-parked: t_hold (ready -> blocked, named hold lifted by the dispatch sweep)" \
+	&& ok || bad "T11: t_hold not re-parked (out: $out)"
+sh2=$(sqlite3 "$FDB" "SELECT id||' '||status||' '||claim_lock FROM tasks WHERE id IN ('t_hold','t_hold2') ORDER BY id;")
+[ "$sh2" = "t_hold blocked pibtw:v0.14.0-hold
+t_hold2 blocked pibtw:design-hold" ] \
+	&& ok || bad "T11: parked shape wrong after pass (got: $sh2)"
+s=$(sqlite3 "$FDB" "SELECT status FROM tasks WHERE id='t_pid';")
+[ "$s" = "ready" ] && ok || bad "T11: pid-shaped lock was re-parked ($s) - restore overreached"
+rm -rf "$FDHOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
