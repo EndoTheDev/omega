@@ -48,15 +48,27 @@ open_app
 ab open "${JOURNEY_BASE_URL}/board" >/dev/null 2>&1 || die "cannot open /board"
 ab wait --load networkidle >/dev/null 2>&1 || true
 
-# the switcher must list the registry boards
-if ! wait_js "(()=>{const s=document.querySelector('#board-switcher');return !!s && s.options.length>1 && Array.from(s.options).some(o=>o.value==='$BOARD_A')})()" 15; then
-  die "board switcher missing or registry not listed ($BOARD_A absent)"
+# the switcher must list the registry boards (card t_acad02ec: the
+# native select is gone - the switcher rides the BandSelect listbox;
+# click the chip, read the pop's options)
+if ! wait_js "(()=>{return !!document.querySelector('.board-switch-select .model-chip')})()" 15; then
+  die "board switcher missing (no BandSelect chip)"
+fi
+js "(()=>{document.querySelector('.board-switch-select .model-chip').click();return 1})()" >/dev/null
+if ! wait_js "(()=>{return [...document.querySelectorAll('.board-switch-select .model-list li')].some(l=>(l.textContent||'').trim()==='$BOARD_A')})()" 15; then
+  die "board switcher registry not listed ($BOARD_A absent)"
 fi
 step "ok: switcher lists the registry"
 
 # ---- switch ---------------------------------------------------------------
 # default boot = pointer board; switch to a and count its two cards
-js "(()=>{const s=document.querySelector('#board-switcher');s.value='$BOARD_A';s.dispatchEvent(new Event('change'));return 1})()" >/dev/null
+# (the pop may be open from the registry check - clicking the chip
+# toggles; open only when closed, then pick the option)
+js "(()=>{const c=document.querySelector('.board-switch-select .model-chip'); if(c.getAttribute('aria-expanded')!=='true') c.click(); return 1})()" >/dev/null
+if ! wait_js "(()=>{return [...document.querySelectorAll('.board-switch-select .model-list li')].some(l=>(l.textContent||'').trim()==='$BOARD_A')})()" 15; then
+  die "switch options never rendered ($BOARD_A)"
+fi
+js "(()=>{const o=[...document.querySelectorAll('.board-switch-select .model-list li')].find(l=>(l.textContent||'').trim()==='$BOARD_A'); if(!o) return 0; o.click(); return 1})()" >/dev/null
 
 if ! wait_js "(()=>{const n=Array.from(document.querySelectorAll('.board .card-title')).filter(c=>c.textContent.includes('card on $BOARD_A')).length;return n===2})()" 15; then
   die "board a did not render its two cards after the switch"
