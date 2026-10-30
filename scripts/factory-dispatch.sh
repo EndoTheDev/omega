@@ -258,7 +258,27 @@ rm -f "$SURF" "$PASS_SURF"
 # snapshot of every named hold and re-parks precisely what the inner
 # sweep flipped, below. A named hold clears by its holder alone - only
 # pid-shaped claim_locks are sweep-reapable (bug #8's path, untouched).
-mapfile -t HOLDS < <(sqlite3 "$DB" "SELECT id||'|'||status FROM tasks WHERE claim_lock LIKE 'pibtw:%-hold';")
+# guard bug #13 (2026-10-31): the pre-pass snapshot recorded status
+# VERBATIM, so a hold that had ALREADY drifted before the pass (ready +
+# named hold, promoted by a recompute_ready OUTSIDE this guard: crashed
+# tick, bare kanban CLI call) was snapshotted as the legal baseline and
+# the restore saw ready->ready = no drift = never re-parked. Every later
+# pass then laundered the same drift (proven live: promote events keep
+# firing on t_55a3fc4b/t_95c91f9c after bug #11's fix). Normalize AT
+# SNAPSHOT: a named hold whose status is not blocked is already drifted -
+# park it immediately and record blocked as the baseline, so the restore
+# below guards against the inner sweep re-promoting it (the bug #11 path)
+# exactly as before.
+HOLDS=()
+while IFS='|' read -r hid hstat; do
+  [ -n "$hid" ] || continue
+  if [ "$hstat" != "blocked" ]; then
+    sqlite3 "$DB" "UPDATE tasks SET status='blocked' WHERE id='$hid' AND status='$hstat' AND claim_lock LIKE 'pibtw:%-hold';"
+    echo "hold-drift normalized: $hid ($hstat -> blocked, drifted before the pass)"
+    hstat=blocked
+  fi
+  HOLDS+=("$hid|$hstat")
+done < <(sqlite3 "$DB" "SELECT id||'|'||status FROM tasks WHERE claim_lock LIKE 'pibtw:%-hold';")
 
 # -- park colliders (sentinel claim-lock: the dispatcher skips locked cards;
 #    a status flip does NOT protect - unclaimed cards are daemon food), dispatch, restore --
