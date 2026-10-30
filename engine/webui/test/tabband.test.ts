@@ -35,7 +35,7 @@ const TABS: Array<{
   { file: "../../modules/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },
   { file: "app/components/agents/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
-  { file: "app/components/insights/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days"] },
+  { file: "app/components/insights/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: ["filter settings"] },
   { file: "app/components/notifications/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: [] },
   { file: "app/components/sessions/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: ["New conversation"] },
@@ -60,8 +60,7 @@ describe("the universal band (card t_308e6d9b)", () => {
         assert.match(src, new RegExp(`title="${t.title}"`), "the band is titled for what the tab is");
       }
       const bandAt = src.indexOf("<TabBand");
-      const scrollAt = src.indexOf(t.scrollClass);
-      assert.ok(scrollAt >= 0, `the scroll container "${t.scrollClass}" exists`);
+      const scrollAt = src.indexOf(`class="${t.scrollClass}"`);
       // the established cwd-fallback ruling is the ONLY conditional band
       if (!src.includes('v-if="headerName"')) {
         const pre = src.slice(Math.max(0, bandAt - 60), bandAt);
@@ -81,7 +80,7 @@ describe("the universal band (card t_308e6d9b)", () => {
     for (const t of TABS) {
       const src = read(t.file);
       for (const action of t.actions) {
-        const actionAt = src.indexOf(action);
+        const actionAt = src.indexOf(`"${action}"`);
         assert.ok(actionAt >= 0, `${t.file} still owns its "${action}" action`);
         const bandAt = src.indexOf("<TabBand");
         const bandEndAt = src.indexOf("</TabBand>");
