@@ -66,6 +66,29 @@ fails=0
 pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 
+# --- structural assertion: the soak job must carry no CI-green step -------
+# The "Nightly CI green on the soak point" step queried
+# actions/runs?head_sha=<soak point>, but nightly runs only ever carry a
+# MASTER head_sha (scheduled fires run on the default branch, dispatched
+# fires use ref=master; in-job checkouts do not change the run's
+# head_sha). Soak points are dev commits, so the query was structurally
+# empty and the step could only exit 1. The nightly tag is the receipt.
+awk '
+  /^  soak:/ {on=1; next}
+  on && /^  [a-zA-Z]/ {exit}
+  on {print}
+' "$yml" > "$scratch/soak-steps.txt"
+if grep -q "Nightly CI green on the soak point" "$scratch/soak-steps.txt"; then
+  fail "soak job still carries the structurally-dead 'Nightly CI green on the soak point' step"
+else
+  pass "soak job has no CI-green-on-soak-point step"
+fi
+if grep -q 'head_sha=' "$scratch/soak-steps.txt"; then
+  fail "soak job still queries runs by head_sha - that query is structurally empty on soak points"
+else
+  pass "soak job has no head_sha= run query"
+fi
+
 # run the picker in the scratch clone, print its observation
 # usage: run_pick <label>
 run_pick() {
