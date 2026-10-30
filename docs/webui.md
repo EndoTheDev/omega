@@ -79,10 +79,12 @@ Everything else animates through `transition`, not keyframes.
   bug, not a state.
 - **Pane model**: left sidebar = sessions pane (pinned singleton, no
   X); right sidebar = inspector pane with the fixed module tabs (Files,
-  Cron, Logs, Skills, Tools, Agents, Continuous, Settings, Kanban,
-  Modules, Insights, MCP — no X); middle = main pane.
-  pane. The LAST main pane never closes its PANE (Endo ruling,
-  2026-10-25, corrected t_b620f99d): `removePane` (and the move-out
+  Cron, Skills, Tools, Agents, Settings, Kanban, Modules, Insights,
+  MCP, Notifications — no X); the bottom panel under the main pane
+  hosts Logs (bottom-only — its sidebar copy was ruled a duplicate and
+  removed); middle = main pane. The LAST main pane never closes its
+  PANE (Endo ruling, 2026-10-25, corrected t_b620f99d): `removePane`
+  (and the move-out
   auto-close) refuse it as a no-op — the main area never reaches zero
   panes. The pane X shows on hover and only while another MAIN pane
   exists (pinned shells don't count toward that census). Every TAB's
@@ -93,11 +95,17 @@ Everything else animates through `transition`, not keyframes.
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
 - **Dockables** (`composables/dockables.ts`): the registry of openable
-  domains (sidebar, inspector, chat, settings). Settings is a dock-tab
-  singleton; the menubar gear and the `+`-menu entry are gone. The
-  `canvas` entry (arc 3c) is LAYOUT only: the generic host tab in the
-  inspector; panel presence inside it comes from the canvas, never a
-  hardcoded list (Q5a law).
+  domains — the pinned shells (sidebar, the inspector tabs above) plus
+  chat and viewer in the main pane (the only closable, multi instances;
+  viewer's only entry point is a row click). `inspector` is legacy
+  only: deserialization still accepts the persisted id and modernizes
+  it, nothing opens one. `continuous` and the `canvas` host tab left
+  the registry — the continuous roster folded into the Agents tab, the
+  canvas renderer into the Modules tab (`composables/canvas.ts` stays
+  as the shared view-model store — snapshot GET /ui/canvas, delta
+  merge, the action pipe, the toast funnel). Settings has no entry
+  point: the menubar gear and the `+`-menu entry are gone; persistence
+  and the default arrangement are its only paths.
 - **Tab drag-and-drop** moves tabs between panes; sessions stay in the
   sidebar.
 - **Module-owned UI (build-time composition)**: modules ship UI in
@@ -227,12 +235,13 @@ design):
   export row actions, archived group).
 - Files: `FileTree`, `FilesTab`, `InspectorPanel` (module panels slot
   in). Settings: `SettingsTab` (the config knobs as a dock-tab
-  singleton). Canvas (arc 3c): `components/canvas/CanvasPanel.vue` is
-  the GENERIC panel renderer (one descriptor: title + payload view +
-  action buttons, v1 plain render only); `composables/canvas.ts` is
-  the store - snapshot load (GET /ui/canvas) + view_model_delta merge
-  (forwarded by the chat host's `canvasDelta` dep) + the action pipe
-  POST (optimistic pending, error state on 4xx/5xx).
+  singleton). Canvas (arc 3c): `composables/canvas.ts` is the store —
+  snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
+  by the chat host's `canvasDelta` dep) + the action pipe POST
+  (optimistic pending, error state on 4xx/5xx); the standalone
+  generic host tab (`components/canvas/CanvasPanel.vue`) is gone —
+  folded into the Modules tab, the chat transcript renders FROM the
+  canvas view-model.
 
 ## Testing
 
