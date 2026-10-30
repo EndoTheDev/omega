@@ -476,7 +476,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels. The
 // mount registry rides along for the E2 module-toggle surface.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, *agent.Registry, *continuous.Plugin, error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, *agent.Registry, func([]string), error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
@@ -499,10 +499,13 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 	// The registry-toggle adapter needs the one continuous plugin
 	// instance the mount created (agent soft-toggles live-swap its
 	// machine); a second buildPlugins would hand back a different one.
-	var cont *continuous.Plugin
+	// The hook threads as a func, never as the capsule's type - the
+	// nm-purity scrub deletes the whole strand when the capsule leaves,
+	// and the host keeps a nil hook (nm-purity scrub shape).
+	var setAgents func([]string)
 	for _, p := range plugins {
 		if cp, ok := p.(*continuous.Plugin); ok {
-			cont = cp
+			setAgents = cp.SetDisabledAgents
 		}
 	}
 
@@ -532,7 +535,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		CWD:           cwd(),
 	})
 
-	return ag, ctx.Store, ctx.Logger, ctx, reg, cont, nil
+	return ag, ctx.Store, ctx.Logger, ctx, reg, setAgents, nil
 }
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
@@ -572,7 +575,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return err
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, pctx, reg, cont, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, reg, setAgents, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -627,7 +630,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		fold:       fold,
 		configPath: configFile,
 		home:       omegaHome(),
-		cont:       cont,
+		setAgents:  setAgents,
 		logger:     logger,
 	}
 	WatchConfig(configFile, func(newCfg Config) {
