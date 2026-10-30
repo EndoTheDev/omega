@@ -3,37 +3,41 @@
     ref="boardEl"
     class="board"
     :class="{ narrow: narrow }">
-    <div
-      v-if="boards.length > 1 || boardName"
-      class="board-head">
-      <label
-        class="board-switch-label"
-        for="board-switcher">board</label>
-      <select
-        id="board-switcher"
-        class="board-switch-select"
-        :value="boardName"
-        @change="switchBoard(($event.target as HTMLInputElement).value)">
-        <option
-          v-for="b in boards"
-          :key="b.name"
-          :value="b.name">{{ b.name }}</option>
-      </select>
-      <span
-        v-if="boardName"
-        class="board-switch-count">{{ tasks.length }} card{{
-          tasks.length === 1 ? "" : "s"
-        }}</span>
-      <button
-        id="board-remove-btn"
-        class="board-remove-btn"
-        :class="{ armed: confirmingRemove }"
-        :disabled="!canRemoveBoard(boardName)"
-        :title="confirmingRemove ? 'click again to remove this board' : 'remove this board'"
-        @click="removeBoardClick">
-        {{ confirmingRemove ? "confirm remove" : "remove" }}
-      </button>
-    </div>
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
+         board switcher + count + remove ride the band now (the law: the
+         tab's actions live in the band, not floating over the body).
+         The board scroll columns start BELOW the band - scrolling never
+         moves it. -->
+    <TabBand title="Kanban">
+      <template
+        v-if="boards.length > 1 || boardName">
+        <label
+          class="board-switch-label"
+          for="board-switcher">board</label>
+        <select
+          id="board-switcher"
+          class="board-switch-select"
+          :value="boardName"
+          @change="switchBoard(($event.target as HTMLInputElement).value)">
+          <option
+            v-for="b in boards"
+            :key="b.name"
+            :value="b.name">{{ b.name }}</option>
+        </select>
+        <span
+          v-if="boardName"
+          class="board-switch-count">{{ tasks.length }} card<template v-if="tasks.length !== 1">s</template></span>
+        <button
+          id="board-remove-btn"
+          class="board-remove-btn"
+          :class="{ armed: confirmingRemove }"
+          :disabled="!canRemoveBoard(boardName)"
+          :title="confirmingRemove ? 'click again to remove this board' : 'remove this board'"
+          @click="removeBoardClick">
+          {{ confirmingRemove ? "confirm remove" : "remove" }}
+        </button>
+      </template>
+    </TabBand>
     <p
       v-if="notice"
       class="board-notice"
@@ -485,17 +489,11 @@
     position: relative;
     overflow: hidden;
   }
-  .board-head {
-    display: flex;
-    align-items: center;
+  /* card t_308e6d9b: the head row is the shared TabBand now - the
+     band's own padding/lead replace the old .board-head geometry; only
+     the action-group spacing rides here (the band look is shared). */
+  .board :deep(.tab-band-actions) {
     gap: 8px;
-    /* 10px top, not 8px: the dock tab strip tucks -var(--r-pane) (8px)
-       over the pane content, so an 8px spacer is fully consumed and the
-       select touches the strip. 10px matches the inspector's other
-       panels (settings.narrow / insights both carry 10px) and leaves
-       the same 2px of real space above the switcher. */
-    padding: 10px 12px 0;
-    flex: none;
   }
   .board-switch-label {
     font-size: 10.5px;
@@ -518,7 +516,6 @@
     opacity: 0.5;
   }
   .board-remove-btn {
-    margin-left: auto;
     border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
     border-radius: 6px;
     background: none;

@@ -3,7 +3,13 @@
     ref="rootEl"
     class="tools-list"
     :class="{ narrow: narrow }">
-    <h3 class="panel-title">tools</h3>
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
+         Tools tab has no actions, so the band is title-only (the law:
+         every tab carries the band, never conditionally hidden). The
+         band renders BEFORE the scroll body: scrolling the list never
+         moves it. -->
+    <TabBand title="Tools" />
+    <div class="tools-body">
     <p
       v-if="error"
       class="panel-status">
@@ -28,6 +34,7 @@
       :toggleable="toggleable"
       empty-text="no tools registered"
       @toggle="onToggle" />
+    </div>
   </section>
 </template>
 
@@ -171,16 +178,29 @@
 <style scoped>
   /* Module-owned look built on the shell's design tokens - the section
      is self-titled; the inspector mounts it as any other panel. */
+  /* card t_308e6d9b: the root stops being a flat scroll child - the
+     TabBand stays fixed, the body owns the scroll (structurally, never
+     sticky). The old root padding rides the body now. */
   .tools-list {
-    padding: 10px 12px 14px;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
-  .panel-title {
-    margin: 0 0 4px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    opacity: 0.5;
+  .tools-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 12px 14px;
+  }
+  .tools-list.narrow {
+    padding: 0;
+  }
+  .tools-list.narrow .tools-body {
+    padding: 4px 8px 10px;
   }
   .panel-status {
     margin: 0;
