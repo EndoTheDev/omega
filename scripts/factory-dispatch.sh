@@ -227,6 +227,22 @@ rm -f "$SURF" "$PASS_SURF"
 
 [ "$DRY" = 1 ] && { echo "(dry-run: no dispatch)"; exit 0; }
 
+# guard bug #11 (2026-10-30): recompute_ready (kanban_db.py:2035) runs on
+# every `hermes kanban dispatch` and promotes todo/blocked cards whose
+# parents are all done/archived - and a card with NO parents satisfies
+# "all parents done" VACUOUSLY. Deliberate operator parks
+# (status='blocked' + claim_lock='pibtw:v0.14.0-hold') are direct-SQL
+# parks, so they carry no sticky kanban_block event and recompute_ready
+# flips them to ready on EVERY pass: the lock survives (the lane filter
+# still excludes them - wrong shape, right effect), then the tick
+# re-parks. Three re-parks in one tick, 2026-10-29/30, proven live on
+# t_55a3fc4b/t_95c91f9c (8 'promoted' events each). hermes kanban
+# dispatch is NOT touched (comment scope): the guard takes a pre-pass
+# snapshot of every named hold and re-parks precisely what the inner
+# sweep flipped, below. A named hold clears by its holder alone - only
+# pid-shaped claim_locks are sweep-reapable (bug #8's path, untouched).
+mapfile -t HOLDS < <(sqlite3 "$DB" "SELECT id||'|'||status FROM tasks WHERE claim_lock LIKE 'pibtw:%-hold';")
+
 # -- park colliders (sentinel claim-lock: the dispatcher skips locked cards;
 #    a status flip does NOT protect - unclaimed cards are daemon food), dispatch, restore --
 # park only takes NULL/'' locks: a card already holding another sentinel (queue-hold
@@ -281,5 +297,22 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
 else
   echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP)"
 fi
+
+# sweep repair (guard bug #11): named holds go back to their pre-pass
+# status. The restore fires ONLY when the card still carries a named
+# hold and its status drifted; a lock the holder cleared mid-pass makes
+# the read empty and the card is left alone.
+if [ "${#HOLDS[@]}" -gt 0 ]; then
+  for hs in "${HOLDS[@]:-}"; do
+    [ -n "$hs" ] || continue
+    hid="${hs%%|*}"; hwas="${hs#*|}"
+    hnow=$(sqlite3 "$DB" "SELECT status FROM tasks WHERE id='$hid' AND claim_lock LIKE 'pibtw:%-hold';" || true)
+    if [ -n "$hnow" ] && [ "$hnow" != "$hwas" ]; then
+      sqlite3 "$DB" "UPDATE tasks SET status='$hwas' WHERE id='$hid' AND status='$hnow';"
+      echo "re-parked: $hid ($hnow -> $hwas, named hold lifted by the dispatch sweep)"
+    fi
+  done
+fi
+
 sleep 2
 exit 0
