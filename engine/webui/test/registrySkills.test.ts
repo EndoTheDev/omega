@@ -243,15 +243,24 @@ test("refreshSkills: a missed /disabled read never guesses the fold", async () =
 });
 
 // the render half (no DOM, the source greps pin it): the button rides
-// the FilesTab toolbar pattern (card t_d6e94e79's mcp tab copy).
-test("the skills tab refresh button renders the FilesTab toolbar pattern", () => {
+// the shared band now (card t_308e6d9b - the universal TabBand owns the
+// toolbar shape; the button contract unchanged).
+test("the skills tab refresh button renders in the tab band", () => {
   const src = readFileSync(
     join(root, "modules", "skills", "ui", "SkillsList.vue"),
     "utf8",
   );
+  const band = readFileSync(
+    join(root, "engine", "webui", "app", "components", "ui", "TabBand.vue"),
+    "utf8",
+  );
   assert.ok(
-    src.includes('role="toolbar"') && src.includes('aria-label="skills actions"'),
-    "the single header row is the toolbar",
+    src.includes("<TabBand") && src.includes('title="Skills"'),
+    "the tab composes the shared band",
+  );
+  assert.ok(
+    band.includes('class="tab-band-actions"') && band.includes('role="toolbar"'),
+    "the band's actions strip is the toolbar (the TabBand contract)",
   );
   assert.ok(src.includes('aria-label="refresh skills"'), "the refresh action's accessible name");
   assert.ok(src.includes('title="refresh"'), "the hover title");

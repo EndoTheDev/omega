@@ -3,19 +3,25 @@
     ref="rootEl"
     class="cron-list"
     :class="{ narrow: narrow }">
-    <p
-      v-if="error"
-      class="panel-status">
-      {{ error }}
-    </p>
-    <p
-      v-else-if="!loaded"
-      class="panel-status">
-      loading
-    </p>
-    <ul
-      v-else-if="jobs.length"
-      class="cron-jobs">
+    <!-- card t_308e6d9b: the UNIVERSAL band - the Files pattern lands on
+         every tab. Cron's band is title-only (the tab holds no buttons;
+         read-only v1 stands). Rendered BEFORE the scroll body: scrolling
+         never moves it. -->
+    <TabBand title="Cron" />
+    <div class="cron-body">
+      <p
+        v-if="error"
+        class="panel-status">
+        {{ error }}
+      </p>
+      <p
+        v-else-if="!loaded"
+        class="panel-status">
+        loading
+      </p>
+      <ul
+        v-else-if="jobs.length"
+        class="cron-jobs">
       <li
         v-for="j in jobs"
         :key="j.name"
@@ -33,24 +39,25 @@
         <span
           v-if="j.next"
           class="cron-meta">next {{ shortTime(j.next) }}</span>
-      </li>
-    </ul>
-    <!-- card t_6072e718: the empty state is the designed pattern, not a
-         bare corner status line - centered in the panel body, the cron
-         clock glyph above the headline, and the crons.yaml activation
-         hint below it. Activation is a file action, so there is no
-         call-to-action button. The constants live in emptyState.ts (the
-         composition-test convention: the node suite pins them without
-         compiling this SFC). -->
-    <div
-      v-else
-      class="cron-empty">
-      <Icon
-        class="cron-empty-icon"
-        name="cron"
-        :size="20" />
-      <p class="cron-empty-text">{{ CRON_EMPTY_TEXT }}</p>
-      <p class="cron-empty-hint">{{ CRON_EMPTY_HINT }}</p>
+        </li>
+      </ul>
+      <!-- card t_6072e718: the empty state is the designed pattern, not a
+           bare corner status line - centered in the panel body, the cron
+           clock glyph above the headline, and the crons.yaml activation
+           hint below it. Activation is a file action, so there is no
+           call-to-action button. The constants live in emptyState.ts (the
+           composition-test convention: the node suite pins them without
+           compiling this SFC). -->
+      <div
+        v-else
+        class="cron-empty">
+        <Icon
+          class="cron-empty-icon"
+          name="cron"
+          :size="20" />
+        <p class="cron-empty-text">{{ CRON_EMPTY_TEXT }}</p>
+        <p class="cron-empty-hint">{{ CRON_EMPTY_HINT }}</p>
+      </div>
     </div>
   </section>
 </template>
@@ -137,14 +144,26 @@
 </script>
 
 <style scoped>
+  /* card t_308e6d9b: the band anchors the top, the body owns the scroll.
+     The old root padding (10px 12px 14px) rides the body now; the
+     empty state still centers in the body's full height (card
+     t_6072e718). */
   .cron-list {
-    padding: 10px 12px 14px;
-    /* the empty state centers vertically in the panel body: the root
-       owns the full height of the .module-panels scroll region (card
-       t_6072e718). With jobs the list just does not stretch. */
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    min-height: 100%;
+    overflow: hidden;
+  }
+  .cron-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 12px 14px;
+    display: flex;
+    flex-direction: column;
     box-sizing: border-box;
   }
   .panel-status {
@@ -227,8 +246,8 @@
      already single-column; what dies first at ~300px is horizontal
      breathing room - the head's name/badge pair wraps and the chrome
      condenses so a long schedule line never elides. */
-  .cron-list.narrow {
-    padding: 6px 8px 10px;
+  .cron-list.narrow .cron-body {
+    padding: 4px 8px 10px;
   }
   .cron-list.narrow .cron-head {
     flex-wrap: wrap;

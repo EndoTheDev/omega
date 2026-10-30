@@ -3,19 +3,15 @@
     ref="rootEl"
     class="skills-list"
     :class="{ narrow: narrow }">
-    <!-- card t_ec57d5b8: the toolbar row, the FilesTab pattern - the
-         title flush LEFT, the refresh action flush RIGHT on ONE row
-         (the same -8px dock-pane tuck the Files header clears, so the
-         same 14px lead-in). The click re-runs the fetch chain: GET
-         /skills is a live scan, so a skill added after mount appears -
-         no restart. -->
-    <div
-      class="skills-header"
-      role="toolbar"
-      aria-label="skills actions">
-      <h3 class="panel-title">skills</h3>
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - title
+         left, the refresh action right, ONE row. The click re-runs the
+         fetch chain: GET /skills is a live scan, so a skill added after
+         mount appears - no restart. The band renders BEFORE the scroll
+         body (structurally pinned, never sticky): scrolling the list
+         never moves it. -->
+    <TabBand title="Skills">
       <button
-        class="skills-tool"
+        class="band-tool"
         title="refresh"
         aria-label="refresh skills"
         :disabled="refreshing"
@@ -24,33 +20,35 @@
           name="refresh"
           :size="13" />
       </button>
+    </TabBand>
+    <div class="skills-body">
+      <p
+        v-if="error"
+        class="panel-status">
+        {{ error }}
+      </p>
+      <p
+        v-else-if="!loaded"
+        class="panel-status">
+        loading
+      </p>
+      <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern,
+           three consumers). The toggle drives PUT /disabled/skills; a
+           disabled skill stays in the inventory but leaves the session
+           prompt build (config.yaml disabled.skills). -->
+      <RegistryList
+        v-else
+        kind="skills"
+        :rows="rows"
+        :busy="busy"
+        :error="toggleError"
+        :loaded="loaded"
+        :toggleable="toggleable"
+        openable
+        empty-text="no skills installed"
+        @toggle="onToggle"
+        @open="openSkill" />
     </div>
-    <p
-      v-if="error"
-      class="panel-status">
-      {{ error }}
-    </p>
-    <p
-      v-else-if="!loaded"
-      class="panel-status">
-      loading
-    </p>
-    <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern,
-         three consumers). The toggle drives PUT /disabled/skills; a
-         disabled skill stays in the inventory but leaves the session
-         prompt build (config.yaml disabled.skills). -->
-    <RegistryList
-      v-else
-      kind="skills"
-      :rows="rows"
-      :busy="busy"
-      :error="toggleError"
-      :loaded="loaded"
-      :toggleable="toggleable"
-      openable
-      empty-text="no skills installed"
-      @toggle="onToggle"
-      @open="openSkill" />
   </section>
 </template>
 
@@ -217,54 +215,30 @@
 </script>
 
 <style scoped>
+  /* card t_308e6d9b: the root stops being a flat scroll child - the
+     TabBand stays fixed, the body owns the scroll (structurally, never
+     sticky). The old root padding rides the body now. */
   .skills-list {
-    padding: 10px 12px 14px;
-  }
-  /* the toolbar row (card t_ec57d5b8): title left, refresh flush right,
-     one row - the FilesTab header pattern with the module's own copy
-     (module UI imports no shell code, the narrow.ts copy law). The
-     14px lead-in clears the same -8px dock-pane tuck the Files header
-     clears (card t_5c660a42). */
-  .skills-header {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 14px 0 4px;
+    flex-direction: column;
+    overflow: hidden;
   }
-  .panel-title {
-    margin: 0;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    opacity: 0.5;
-  }
-  .skills-tool {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 20px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-dim);
-    border-radius: var(--r-chip);
-    cursor: pointer;
-  }
-  .skills-tool:hover:not(:disabled) {
-    opacity: 0.85;
-  }
-  .skills-tool:disabled {
-    opacity: 0.4;
-    cursor: default;
+  .skills-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 12px 14px;
   }
   .panel-status {
     margin: 0;
     font-size: 11px;
     opacity: 0.6;
   }
-  .skills-list.narrow {
-    padding: 6px 8px 10px;
+  .skills-list.narrow .skills-body {
+    padding: 4px 8px 10px;
   }
 </style>

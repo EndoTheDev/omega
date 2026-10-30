@@ -59,7 +59,8 @@ const RETROFIT: Array<{
     rel: "modules/cron/ui/CronJobs.vue",
     label: "cron",
     module: "cron",
-    rules: [/\.cron-list\.narrow \{/, /\.cron-list\.narrow \.cron-head \{/],
+    // card t_308e6d9b: the narrow padding rides the scroll body now
+    rules: [/\.cron-list\.narrow \.cron-body \{/, /\.cron-list\.narrow \.cron-head \{/],
   },
   {
     rel: "engine/http_channel/ui/LogsList.vue",
@@ -71,7 +72,8 @@ const RETROFIT: Array<{
     rel: "modules/skills/ui/SkillsList.vue",
     label: "skills",
     module: "skills",
-    rules: [/\.skills-list\.narrow \{/],
+    // card t_308e6d9b: the narrow padding rides the scroll body now
+    rules: [/\.skills-list\.narrow \.skills-body \{/],
   },
   {
     rel: "modules/tools/ui/ToolsList.vue",

@@ -44,7 +44,10 @@ test("CronJobs renders the empty-state pattern only when the jobs list is empty"
 
 test("the empty state is centered in the panel body via the component's own styles", () => {
   const src = read(root, "modules", "cron", "ui", "CronJobs.vue");
-  assert.ok(src.includes("min-height: 100%"), "the root owns the body height so centering has room");
+  // card t_308e6d9b: the band anchors above; the scroll body (.cron-body)
+  // owns the panel height, so centering still has its room
+  assert.ok(src.includes(".cron-body"), "the tab's scroll body is the centering context");
+  assert.ok(src.includes("overflow-y: auto"), "the body is the scrollport (the band never scrolls with it)");
   assert.ok(src.includes("justify-content: center"), "vertical centering is on the empty branch");
   assert.ok(src.includes("align-items: center"), "horizontal centering is on the empty branch");
   assert.ok(src.includes("var(--text-dim"), "the dim colors ride the shell variables (both themes)");
