@@ -79,12 +79,15 @@ func (r *omegaRegistries) applyLive() {
 	if r.pctx == nil {
 		return
 	}
-	r.pctx.DisabledTools = r.fold.Tools
+	r.mu.Lock()
+	tools, skillList, agentList := r.fold.Tools, r.fold.Skills, r.fold.Agents
+	r.mu.Unlock()
+	r.pctx.DisabledTools = tools
 	if sp, ok := r.pctx.Skills.(*skills.SkillsProvider); ok && sp != nil {
-		sp.SetDisabled(r.fold.Skills)
+		sp.SetDisabled(skillList)
 	}
 	if r.setAgents != nil {
-		r.setAgents(r.fold.Agents)
+		r.setAgents(agentList)
 	}
 }
 
