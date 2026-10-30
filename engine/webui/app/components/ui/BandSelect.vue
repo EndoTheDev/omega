@@ -52,7 +52,7 @@
   // its pane - downward is where the room is); drop="up" flips it for
   // controls seated above their pane's floor. The shared .model-pop CSS
   // encodes the up case (the composer's grammar); this overrides down.
-  withDefaults(
+  const props = withDefaults(
     defineProps<{
       options: { value: V; label: string }[];
       modelValue: V;
