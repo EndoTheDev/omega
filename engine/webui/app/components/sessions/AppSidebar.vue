@@ -2,60 +2,66 @@
   <aside
     class="sessions"
     :class="{ open: open }">
-    <!-- card t_308e6d9b: the head row is the UNIVERSAL band now (the
-         shared TabBand) - the split new-chat control rides the band
-         (its own law stands: scoped styling here, the shared .new-btn
-         chip look from main.css). The band sits ABOVE the search row
-         and the .session-list scrollport - scrolling the list never
-         moves it. -->
-    <TabBand title="Sessions">
-      <div class="head-actions">
-        <div
-          class="new-btn"
-          @keydown.esc="newMenuOpen = false">
-          <button
-            class="new-main"
-            title="New conversation"
-            @click="pickNew(false)">
-            + New Session
-          </button>
-          <button
-            class="new-caret"
-            aria-haspopup="true"
-            aria-label="Choose new chat type"
-            :aria-expanded="newMenuOpen"
-            title="New chat type"
-            @click="newMenuOpen = !newMenuOpen">
-            <!-- card t_502b8e81: the chevron is a vocabulary entry -->
-            <Icon
-              class="new-caret-chevron"
-              :class="{ open: newMenuOpen }"
-              name="chevron-down"
-              :size="12" />
-          </button>
-        </div>
-        <div
-          v-if="newMenuOpen"
-          class="new-menu"
-          @click.stop>
-          <!-- the picker is DATA (card t_55a571ff): each entry is a label
-               + intent. Card t_c7222095 removed the Continuous entry -
-               the roster folded into the Agents tab, so the picker
-               carries only the conversation kinds. -->
-          <button
-            v-for="entry in newMenuEntries"
-            :key="entry.label"
-            class="new-menu-item"
-            :class="{ 'new-menu-disabled': entry.disabled }"
-            :disabled="entry.disabled"
-            :title="entry.title"
-            :aria-disabled="entry.disabled || undefined"
-            @click="entry.run?.()">
-            {{ entry.label }}
-          </button>
-        </div>
+    <!-- card t_308e6d9b: the head row is the UNIVERSAL band (the shared
+         TabBand) - but card t_311fc40b (Endo's layout ruling 2026-10-30)
+         takes the split new-session control OUT of it: the band row
+         carries the tab's title ALONE, the new-session button gets its
+         own full-width row below the band, and the search row follows.
+         The band, the button row and the search sit ABOVE the
+         .session-list scrollport - scrolling the list never moves them. -->
+    <TabBand title="Sessions" />
+    <!-- card t_311fc40b: the new-session control's OWN row - below the
+         band, before the search (Endo's ruling: band, button, search;
+         the caret type-picker travels with the button). The 12px side
+         padding matches the search row's, so the full-width chip and
+         the full-width filter seat on the same edges; position anchors
+         the picker dropdown. -->
+    <div class="new-row">
+      <div
+        class="new-btn"
+        @keydown.esc="newMenuOpen = false">
+        <button
+          class="new-main"
+          title="New conversation"
+          @click="pickNew(false)">
+          + New Session
+        </button>
+        <button
+          class="new-caret"
+          aria-haspopup="true"
+          aria-label="Choose new chat type"
+          :aria-expanded="newMenuOpen"
+          title="New chat type"
+          @click="newMenuOpen = !newMenuOpen">
+          <!-- card t_502b8e81: the chevron is a vocabulary entry -->
+          <Icon
+            class="new-caret-chevron"
+            :class="{ open: newMenuOpen }"
+            name="chevron-down"
+            :size="12" />
+        </button>
       </div>
-    </TabBand>
+      <div
+        v-if="newMenuOpen"
+        class="new-menu"
+        @click.stop>
+        <!-- the picker is DATA (card t_55a571ff): each entry is a label
+             + intent. Card t_c7222095 removed the Continuous entry -
+             the roster folded into the Agents tab, so the picker
+             carries only the conversation kinds. -->
+        <button
+          v-for="entry in newMenuEntries"
+          :key="entry.label"
+          class="new-menu-item"
+          :class="{ 'new-menu-disabled': entry.disabled }"
+          :disabled="entry.disabled"
+          :title="entry.title"
+          :aria-disabled="entry.disabled || undefined"
+          @click="entry.run?.()">
+          {{ entry.label }}
+        </button>
+      </div>
+    </div>
     <div class="session-search">
       <!-- shared look (SearchInput); the BEHAVIOR stays here: debounced
            FTS5 content union (runContentSearch below) on top of the
@@ -463,16 +469,18 @@
      text + accent hover) is consumed from main.css. -->
 <style scoped>
 /* card t_308e6d9b: the head row is the shared TabBand - the band's own
-   geometry replaces .sessions-head; the split button grows to fill the
-   band after the title (the fuller-width feel the old full-width row
-   had). main.css's dead .sessions-head rules are gone with it. */
-.head-actions {
+   geometry replaces .sessions-head. Card t_311fc40b: the band holds
+   the title alone (the ruled order is band, button, search, rows). */
+/* card t_311fc40b: the band row carries the title ALONE; the split
+   new-session control sits on its OWN row below the band (this block)
+   - the ruled order is band, button, search, rows. 8px top spacing
+   follows the band rhythm, 12px sides seat the chip on the same edges
+   as the search row below, and position anchors the type picker's
+   dropdown. main.css's dead .sessions-head rules are gone with the
+   band; the .tab-band-actions flex helper died with the empty slot. */
+.new-row {
   position: relative;
-  width: 100%;
-}
-.sessions :deep(.tab-band-actions) {
-  flex: 1 1 auto;
-  min-width: 0;
+  padding: 8px 12px;
 }
 /* the split wrapper keeps the shared .new-btn chip (border, radius,
    dim text, accent hover). The halves inside are borderless - the

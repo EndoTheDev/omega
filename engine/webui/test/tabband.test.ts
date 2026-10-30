@@ -38,7 +38,11 @@ const TABS: Array<{
   { file: "app/components/insights/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: ["filter settings"] },
   { file: "app/components/notifications/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: [] },
-  { file: "app/components/sessions/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: ["New conversation"] },
+  // card t_311fc40b (Endo's ruling 2026-10-30): the sessions band
+  // carries the TITLE ALONE - the new-session button lives on its own
+  // row below the band (pinned in test/sidebar-order.test.ts), so no
+  // action label may claim band residency.
+  { file: "app/components/sessions/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: [] },
 ];
 
 describe("the universal band (card t_308e6d9b)", () => {
