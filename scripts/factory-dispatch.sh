@@ -20,7 +20,21 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DB="$HOME/.hermes/kanban/boards/project-omega/kanban.db"
-CAP=4
+
+# The cap is the LIVE config knob kanban.max_in_progress_per_profile
+# (Endo, 2026-10-28: "back to 2"), never a hardcode: a hardcode drifted
+# from the law (CAP=4 while the config said 2) and the guard could spawn
+# past the sanctioned concurrency when the queue held several legal
+# candidates. grep/sed only - no yq dependence. Falls back to 2 when the
+# key or the file is absent (sandbox homes, CI runners).
+config_cap() {
+  local f="$HOME/.hermes/config.yaml"
+  [ -f "$f" ] || return 0
+  sed -n '/^kanban:/,/^[^[:space:]#]/p' "$f" \
+    | grep -E '^[[:space:]]*max_in_progress_per_profile:' \
+    | head -1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'[:space:]"
+}
+
 DRY=0; MAXARG=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,6 +43,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+CAP=$(config_cap)
+case "$CAP" in ''|*[!0-9]*|0) CAP=2 ;; esac
+[ "$MAXARG" -gt 0 ] && CAP="$MAXARG"   # --max overrides: N stays a live concurrency cap
 
 move_paths() {  # stdin -> both sides of every move-shaped line, path tokens only
   # A MOVE card writes BOTH sides of every move it declares: the target and
@@ -225,7 +242,7 @@ for c in "${CAND[@]:-}"; do
 done
 rm -f "$SURF" "$PASS_SURF"
 
-[ "$DRY" = 1 ] && { echo "(dry-run: no dispatch)"; exit 0; }
+[ "$DRY" = 1 ] && { echo "cap=$CAP"; echo "(dry-run: no dispatch)"; exit 0; }
 
 # guard bug #11 (2026-10-30): recompute_ready (kanban_db.py:2035) runs on
 # every `hermes kanban dispatch` and promotes todo/blocked cards whose

@@ -169,7 +169,7 @@ printf "%s" "$out" | grep -q "dry-run: no dispatch" && ok || bad "T9: dry-run di
 out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dispatch pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "wanted <=3 running (snapshot 1 + slots 2)" && ok || bad "T9: handoff line wrong (out: $out)"
+printf "%s" "$out" | grep -q "wanted <=2 running (snapshot 1 + slots 1)" && ok || bad "T9: handoff line wrong (out: $out)"
 printf "%s" "$out" | grep -q "after: 4 (delta 3 since snapshot)" && ok || bad "T9: post-call re-read wrong (out: $out)"
 printf "%s" "$out" | grep -q "over-run" && ok || bad "T9: over-run not reported (out: $out)"
 l=$(sqlite3 "$FDB" "SELECT claim_lock IS NULL FROM tasks WHERE id='t_cand';")
@@ -245,6 +245,25 @@ t_hold2 blocked pibtw:design-hold" ] \
 s=$(sqlite3 "$FDB" "SELECT status FROM tasks WHERE id='t_pid';")
 [ "$s" = "ready" ] && ok || bad "T11: pid-shaped lock was re-parked ($s) - restore overreached"
 rm -rf "$FDHOME"
+
+# T12 (local + CI): guard bug #12 - the cap is the LIVE config knob
+# kanban.max_in_progress_per_profile, not a hardcode (CAP=4 drifted from
+# the law: the config said 2, the guard could spawn past the sanctioned
+# concurrency). Pinned here: sandbox home with the key -> CAP reads it;
+# key absent or file absent -> fallback 2; --max overrides the config.
+CFHOME=$(mktemp -d)
+mkdir -p "$CFHOME/.hermes/kanban/boards/project-omega" "$CFHOME/bin"
+CFB="$CFHOME/.hermes/kanban/boards/project-omega/kanban.db"
+sqlite3 "$CFB" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);" 2>/dev/null
+out=$(HOME="$CFHOME" PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
+printf "%s" "$out" | grep -q "cap=2" && ok || bad "T12: no config file -> cap must fall back to 2 (out: $out)"
+printf 'kanban:\n  max_in_progress_per_profile: 4\n' >"$CFHOME/.hermes/config.yaml"
+out=$(HOME="$CFHOME" PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
+printf "%s" "$out" | grep -q "cap=4" && ok || bad "T12: config knob not read (out: $out)"
+out=$(HOME="$CFHOME" PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run --max 1 2>&1)
+printf "%s" "$out" | grep -q "cap=1" && ok || bad "T12: --max must override the config cap (out: $out)"
+rm -rf "$CFHOME"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
