@@ -18,7 +18,6 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/modules/continuous"
 	"github.com/EndoTheDev/omega/modules/skills"
 )
 
@@ -33,7 +32,7 @@ type omegaRegistries struct {
 	fold       *DisabledNamespaces // the live fold pointer (shared with omegaModules)
 	configPath string
 	home       string
-	cont       *continuous.Plugin // nil when the continuous capsule is not mounted
+	setAgents  func([]string) // the continuous capsule's disabled-agents fold, nil when it is not mounted
 	logger     core.LoggerProvider
 
 	mu sync.Mutex // one fold mutation + write at a time
@@ -55,9 +54,8 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	r.fold.Skills = sortedCopy(d.Skills)
 	r.fold.Tools = sortedCopy(d.Tools)
 	r.fold.Agents = sortedCopy(d.Agents)
-	skillNames, toolNames, agentNames := r.fold.Skills, r.fold.Tools, r.fold.Agents
 	r.mu.Unlock()
-	r.applyLive(skillNames, toolNames, agentNames)
+	r.applyLive()
 	// The serving channels re-read: same law the module toggle carries
 	// (the fold changed; every LiveSeams surface follows).
 	if r.pctx == nil {
@@ -74,17 +72,19 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	}
 }
 
-// applyLive pushes one fold state into the live registries (the
-// skills provider, the tool opt-out, the continuous machine).
-func (r *omegaRegistries) applyLive(skillNames, toolNames, agentNames []string) {
-	if r.pctx != nil {
-		r.pctx.DisabledTools = toolNames
-		if sp, ok := r.pctx.Skills.(*skills.SkillsProvider); ok && sp != nil {
-			sp.SetDisabled(skillNames)
-		}
+// applyLive pushes the live fold state into the live registries
+// (the skills provider, the tool opt-out, the continuous machine's
+// disabled-agents hook).
+func (r *omegaRegistries) applyLive() {
+	if r.pctx == nil {
+		return
 	}
-	if r.cont != nil {
-		r.cont.SetDisabledAgents(agentNames)
+	r.pctx.DisabledTools = r.fold.Tools
+	if sp, ok := r.pctx.Skills.(*skills.SkillsProvider); ok && sp != nil {
+		sp.SetDisabled(r.fold.Skills)
+	}
+	if r.setAgents != nil {
+		r.setAgents(r.fold.Agents)
 	}
 }
 
@@ -126,8 +126,8 @@ func (r *omegaRegistries) ToggleTool(name string, enabled bool) error {
 // presence, and the fold only removes the roster row and the wake.
 func (r *omegaRegistries) ToggleAgent(name string, enabled bool) error {
 	return r.toggle("agents", name, enabled, r.agentKnown, func(next []string) {
-		if r.cont != nil {
-			r.cont.SetDisabledAgents(next)
+		if r.setAgents != nil {
+			r.setAgents(next)
 		}
 	})
 }
@@ -204,13 +204,13 @@ func (r *omegaRegistries) skillKnown(name string) error {
 	if r.pctx == nil || r.pctx.Skills == nil {
 		return nil // no skills module: nothing to validate
 	}
-	lister, ok := r.pctx.Skills.(core.SkillsLister)
-	if !ok {
+	lister, hasSkills := r.pctx.Skills.(core.SkillsLister)
+	if !hasSkills {
 		return nil
 	}
-	inventory, err := lister.ListSkills()
-	if err != nil {
-		return fmt.Errorf("skills registry: %w", err)
+	inventory, listErr := lister.ListSkills()
+	if listErr != nil {
+		return fmt.Errorf("skills registry: %w", listErr)
 	}
 	for _, s := range inventory {
 		if s.Name == name {

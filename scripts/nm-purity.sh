@@ -391,6 +391,32 @@ def scrub(text, modules):
                         # reaches its body lines one by one
                         i += 1
                         continue
+                # a return line whose values are all dead identifiers
+                # or go literals (nil/true/false/numbers/quoted strings)
+                # dies: it hands back definitions the deletion removed
+                # (the sectionConfig case that copies the module's config
+                # section and returns it). At least one value must be a
+                # dead identifier - a literal-only return (`return nil,
+                # false` trailing a switch) is not a wire.
+                rbody = re.sub(r"//[^\n]*$", "", ln.strip())
+                m = re.match(r"^\s*return\s+(.+)$", rbody)
+                if m:
+                    dead_vals = 0
+                    live_vals = 0
+                    for val in m.group(1).split(","):
+                        val = val.strip().rstrip(",").strip()
+                        if not val:
+                            live_vals += 1
+                        elif val in dead_ids:
+                            dead_vals += 1
+                        elif val in ("nil", "true", "false", "_") or val.isdigit() or val.startswith('"'):
+                            pass
+                        else:
+                            live_vals += 1
+                    if dead_vals > 0 and live_vals == 0:
+                        kill.add(i)
+                        i += 1
+                        continue
                 # orphaned switch case: its body is gone
                 m = re.match(r"^(\s*)(case\b|default:)", ln)
                 nxt = chunk[i + 1].strip() if i + 1 < len(chunk) else "}"

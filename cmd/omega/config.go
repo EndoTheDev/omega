@@ -80,9 +80,15 @@ type DisabledNamespaces struct {
 }
 
 // empty reports whether every namespace is nil. Slices make the struct
-// non-comparable, so the writer asks instead of comparing.
+// non-comparable, so the writer asks instead of comparing. The skills
+// namespace guards early-return so its scrub deletes a whole statement
+// block, never a boolean operand inside the return expression
+// (nm-purity scrub shape).
 func (d DisabledNamespaces) empty() bool {
-	return len(d.Modules) == 0 && len(d.Skills) == 0 && len(d.Tools) == 0 && len(d.Agents) == 0
+	if len(d.Skills) > 0 {
+		return false
+	}
+	return len(d.Modules) == 0 && len(d.Tools) == 0 && len(d.Agents) == 0
 }
 
 // UnmarshalYAML accepts both shapes the config.yaml `disabled:` key
