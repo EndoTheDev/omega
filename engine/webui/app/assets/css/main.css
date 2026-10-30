@@ -2371,13 +2371,6 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   border-color: var(--accent);
 }
 
-.theme-select {
-  width: 100%;
-  max-width: none;
-  color: var(--text);
-  cursor: pointer;
-}
-
 .settings-note {
   font-size: 12px;
   color: var(--text-dim);
@@ -2394,8 +2387,7 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   gap: 12px;
 }
 .settings.narrow .setting-item { font-size: 13px; }
-.settings.narrow .setting-input,
-.settings.narrow .theme-select { font-size: 12px; padding: 5px 8px; }
+.settings.narrow .setting-input { font-size: 12px; padding: 5px 8px; }
 .settings.narrow .setting-textarea { min-height: 48px; }
 .settings.narrow .settings-note,
 .settings.narrow .setting-help { font-size: 10.5px; }

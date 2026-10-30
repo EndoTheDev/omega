@@ -155,7 +155,7 @@ test("pickBootBoard: current flagged row wins, first row is the fallback", () =>
 
 test("board view wires the switcher through every board call", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
-  assert.match(boardVue, /id="board-switcher"/, "the dropdown exists");
+  assert.match(boardVue, /<BandSelect/, "the switcher rides the shared themed listbox (card t_acad02ec)");
   assert.match(boardVue, /fetch\(withBoard\("\/tasks", boardName\.value\)\)/, "list calls carry ?board=");
   assert.match(boardVue, /fetchBoards\(\)/, "boot reads the registry");
   assert.match(boardVue, /selected\.value = null/, "the drawer resets on board switch");
