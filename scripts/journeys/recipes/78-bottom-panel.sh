@@ -120,8 +120,9 @@ sleep 1.2
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "0" "mobile: the bottom cell zero-collapses (state survives in the tree)"
 # 16ac10a parity contract: the bottom toggle stays visible at every
-# breakpoint - below 768px it drives dock.toggleEdge directly (the
-# drawer-btn second icon set is gone; no class-based hiding either)
+# breakpoint - card t_4bf1d5b7: below 768px it drives the mobile BOTTOM
+# DRAWER (the zero-collapse cell can never render the tree pane, so the
+# desktop reveal would be a dead click: Endo's report 2026-10-29)
 toggle=$(jsq '(() => {
   const b = Array.from(document.querySelectorAll("button.icon-btn.edge-toggle"))
     .find((b) => b.getAttribute("aria-label") === "Toggle bottom panel");
@@ -133,15 +134,27 @@ sleep 1.2
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "364" "desktop again: the panel is back at the capped height (state survived mobile)"
 
-# and logs stays reachable on mobile the bottom-only way (Endo's
-# ruling, 3dbb9c5: logs is bottom-hosted only - the inspector drawer
-# no longer seats it); the drawer opens via the menubar inspector
-# toggle (16ac10a)
+# logs stays reachable on mobile the bottom-only way (Endo's ruling,
+# 3dbb9c5: logs is bottom-hosted only) - card t_4bf1d5b7: the path is
+# the menubar BOTTOM toggle -> the bottom drawer (side="bottom"), the
+# same fixed-drawer + scrim rule the inspector drawer rides. The drawer
+# seats the logs view and streams the tail; the tree is never touched.
 ab set viewport 420 840 >/dev/null 2>&1
 sleep 1
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle bottom panel")?.click()' >/dev/null 2>&1
+sleep 0.7
+bopen=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
+bscrim=$(jsq 'document.querySelector(".scrim")?1:0')
+assert_eq "$bopen" "1" "mobile: the bottom toggle opens the bottom drawer (4bf1d5b7)"
+assert_eq "$bscrim" "1" "mobile: the bottom drawer renders over the scrim"
+poll_js 'document.querySelectorAll(".mobile-drawer.bottom.open .logs-line").length >= 1' 12 \
+  || die "mobile: the bottom drawer seats no logs tail (logs unreachable on mobile)"
+step "ok: mobile bottom drawer seats the live logs tail"
+# the right drawer never seats logs (3dbb9c5 stands) - chip names now
+# ride aria-label (icon-only chips, card t_4bf1d5b7)
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle right sidebar")?.click()' >/dev/null 2>&1
 sleep 0.7
-drawerlogs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right.open .mobile-drawer-tab")).filter(t => t.textContent.trim() === "Logs").length')
+drawerlogs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right.open .mobile-drawer-tab")).filter(t => (t.getAttribute("aria-label")||"").trim() === "Logs").length')
 assert_eq "$drawerlogs" "0" "mobile: the right drawer holds no Logs tab (logs is bottom-only, 3dbb9c5)"
 
 # clean exit: back at desktop, drawer closed, bottom panel still there
