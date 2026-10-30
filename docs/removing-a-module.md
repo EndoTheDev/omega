@@ -112,11 +112,37 @@ its sibling: `docs/migrating-a-module.md`.
    mechanically, and access sites via the field (`cfg.Memory.File`,
    `case "memory":`) cascade with them. A planted fixture proved it:
    `main.CronConfig` + a `Cron CronConfig` field scrubbed byte-clean
-   off config.go (card t_6209ed01). Two host rules keep the cascade
+   off config.go (card t_6209ed01). Host rules keep the cascade
    mechanical: helpers read module-config fields as arguments, never
    whole Config (webBaseURL - a helper reading whole Config strands
    its last return when the access sites die), and a host type named
    after the module noun is always module vocabulary.
+
+   More shapes the v0.13/v0.14 wiring taught (the nightly paid four
+   runs for them):
+
+   - The capsule's own type never crosses a host function boundary.
+     A module-typed return (`newAgent` handing back the plugin
+     instance) makes the scrub kill the whole function and strands
+     every caller of a positional multi-value return. Capability
+     threads as a host shape: a `func([]string)` hook, never
+     `*continuous.Plugin`. The registry stores the hook, callers
+     check a nil, and the removal leaves a dead nil-hook field no
+     noun survives in.
+   - A module-namespace operand in a boolean expression early-returns
+     instead (`DisabledNamespaces.empty`). A line-granular scrub never
+     rewrites an expression; it deletes whole statements.
+   - Locals the module's removal strands get non-reserved names
+     (`hasSkills`, `listErr` in the skills validator). The scrub's
+     anchors never deaden `err`/`ok` - that sentinel is what keeps
+     unrelated guards alive - so a name that must die with its
+     declaration cannot be one of them.
+   - The scrubber itself now models two strands: a return whose values
+     are all dead identifiers or go literals (at least one dead) dies,
+     and a short declaration nobody reads anymore blanks its dead
+     names in place (unread plain declarations die; a short form with
+     no new name degrades to a plain assignment). Fixtures pin both in
+     `scripts/nm-purity_test.sh`.
 8. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
    before removal (`91-canvas-tab` and the module journeys) and green
