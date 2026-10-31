@@ -88,8 +88,10 @@ test("the extensions tab rows merge the registry introspection", () => {
 });
 
 test("module rows keep the E2 toggle contract (two-step arm, annotations)", () => {
-  // the same law the settings group obeyed: the busy gate, the
-  // mounted-checked checkbox, the arm-then-apply confirm, the Q12 tail
+  // the same law the settings group obeyed: the busy gate, the pill
+  // rendered from live server state (the shared TogglePill, gate
+  // must-fix: the checkbox + its remount machinery are dead), the
+  // arm-then-apply confirm, the Q12 tail
   assert.match(
     extTab,
     /:disabled="busy !== null"/,
@@ -97,8 +99,13 @@ test("module rows keep the E2 toggle contract (two-step arm, annotations)", () =
   );
   assert.match(
     extTab,
-    /:checked="row\.state === 'mounted'"/,
-    "the checkbox re-renders from live server state",
+    /<TogglePill[\s\S]*?:state="row\.state === 'mounted'"/,
+    "the shared TogglePill renders from live server state",
+  );
+  assert.doesNotMatch(
+    extTab,
+    /type="checkbox"/,
+    "no checkbox remains (the t_87303e8f :checked-prop trap is structurally dead)",
   );
   assert.match(extTab, /toggleNote\(/, "the confirm note carries the law");
   assert.match(

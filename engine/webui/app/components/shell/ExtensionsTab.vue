@@ -19,7 +19,7 @@
         class="extensions-list">
         <li
           v-for="row in rows"
-          :key="rowKey(row)"
+          :key="row.name"
           class="extension-row"
           :class="{ 'module-off': row.state === 'disabled' }">
           <div class="extension-head">
@@ -43,15 +43,20 @@
                  keep the always-on annotation - the same law the old
                  settings group spoke. -->
             <span class="extension-side">
-              <label
+              <!-- the shared TogglePill (card t_d93864e7): one switch
+                   everywhere - a BUTTON, so the t_87303e8f :checked-prop
+                   remount trap the checkbox carried (armedId/revisions/
+                   bump/rowKey machinery) is structurally dead; the row
+                   re-renders from the server's answer. -->
+              <TogglePill
                 v-if="seamAvailable && row.toggleable"
-                class="module-toggle">
-                <input
-                  type="checkbox"
-                  :disabled="busy !== null"
-                  :checked="row.state === 'mounted'"
-                  @change="onToggle(row, ($event.target as HTMLInputElement).checked)" />
-              </label>
+                class="module-toggle"
+                :state="row.state === 'mounted'"
+                :disabled="busy !== null"
+                :armed="armed === armedId(row.name, row.state !== 'mounted')"
+                :label="`${row.state === 'mounted' ? 'disable' : 'enable'} ${row.name}`"
+                :confirm-label="`confirm: apply ${row.state === 'mounted' ? 'disable' : 'enable'}?`"
+                @click="onToggle(row, row.state !== 'mounted')" />
               <span
                 v-else-if="row.state === 'engine'"
                 class="extension-state extension-engine">engine</span>
@@ -248,12 +253,9 @@
   // --- the two-step toggle (ported from the settings group, card
   // t_210a0d19): the first click arms the row - the note names what
   // goes down with it (the dependents law, spoken by toggleNote) or
-  // asks plain; the second click applies. A cancel bumps the row key
-  // so the checkbox re-renders from server state. ---
+  // asks plain; the second click applies. The shared TogglePill renders
+  // from server state, so no remount machinery exists (gate must-fix). ---
   const armed = ref<string | null>(null);
-  const revisions = ref<Record<string, number>>({});
-  const rowKey = (row: { name: string }) =>
-    `${row.name}-${revisions.value[row.name] ?? 0}`;
   const armedId = (name: string, enabled: boolean) =>
     `${name}:${String(enabled)}`;
 
@@ -295,13 +297,6 @@
     refusals.value = payload.refusals;
   }
 
-  function bump(name: string) {
-    revisions.value = {
-      ...revisions.value,
-      [name]: (revisions.value[name] ?? 0) + 1,
-    };
-  }
-
   type ToggleRow = {
     name: string;
     state: string;
@@ -314,9 +309,8 @@
     const id = armedId(row.name, checked);
     if (armed.value !== id) {
       // arm: the first click never applies - the confirm note shows in
-      // the row; the checkbox re-renders back to server state.
+      // the row; the pill renders from server state, nothing to reset.
       armed.value = id;
-      bump(row.name);
       return;
     }
     armed.value = null;
@@ -324,7 +318,6 @@
     toggleError.value = null;
     try {
       apply(await toggleModule(row.name, checked));
-      bump(row.name);
     } catch (err) {
       toggleError.value = err instanceof Error ? err.message : String(err);
       // Refresh anyway: the refusal ledger is the visible event (Q12)
@@ -334,7 +327,6 @@
       } catch {
         // the list stays; the error line stands
       }
-      bump(row.name);
     } finally {
       busy.value = null;
     }
