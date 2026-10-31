@@ -443,7 +443,22 @@ type serverConfig struct {
 	Env     map[string]string `json:"env" yaml:"env"`
 	URL     string            `json:"url" yaml:"url"`
 	Headers map[string]string `json:"headers" yaml:"headers"`
+	// Enabled is the per-server toggle (card t_83f37525). The ruling:
+	// mcp.yaml owns the servers, so the flag lives on the per-server
+	// entry there (`enabled: false`) - config.yaml's `disabled:` list
+	// is whole-module scope (the mcp module as a capsule), not
+	// per-server. A pointer so an absent key reads as on: configs
+	// written before the flag keep working unchanged.
+	//
+	// The JSON mirror exists for the MCP_SERVERS env shape only; the
+	// toggle POST never writes there (the env var is not a file, the
+	// wire route refuses it).
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
+
+// isEnabled reports the toggle state (nil-safe: an absent or nil flag
+// is an enabled server - the pre-flag default).
+func (sc *serverConfig) isEnabled() bool { return sc.Enabled == nil || *sc.Enabled }
 
 type mcpConfig struct {
 	Servers []serverConfig `json:"servers" yaml:"servers"`
@@ -458,7 +473,28 @@ func loadConfig() (*mcpConfig, string, error) {
 	// Try config file: mcp.yaml first, then mcp.json. Each name is
 	// looked up at the home root first (legacy installs keep working
 	// unchanged), then in the config/ subdirectory (Endo 2026-10-18
-	// layout where the three infrastructure yamls live).
+	// layout where the three infrastructure yamls live). The lookup
+	// order lives in configFile, so the toggle write (status.go) can
+	// resolve the exact same file the loader would read.
+	path, name, ok := configFile()
+	if !ok {
+		return &mcpConfig{}, "none", nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, name, fmt.Errorf("read %s: %w", name, err)
+	}
+	cfg, err := parseConfig(data)
+	return cfg, name, err
+}
+
+// configFile resolves the config file the loader reads, walking the
+// IDENTICAL lookup order (mcp.yaml/mcp.json per dir, home root first,
+// then config/). Returns ok=false when no config file exists - the
+// env/none sources, which the toggle route refuses. Only mcp.yaml is
+// ever written: the flag lives on the per-server entry (card
+// t_83f37525) and mcp.json entries stay hand-edited.
+func configFile() (path string, name string, ok bool) {
 	home := os.Getenv("OMEGA_HOME")
 	if home == "" {
 		home = filepath.Join(os.Getenv("HOME"), ".omega")
@@ -467,18 +503,13 @@ func loadConfig() (*mcpConfig, string, error) {
 	for _, name := range []string{"mcp.yaml", "mcp.json"} {
 		for _, dir := range []string{home, cfgDir} {
 			path := filepath.Join(dir, name)
-			data, err := os.ReadFile(path)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return nil, name, fmt.Errorf("read %s: %w", name, err)
+			if _, err := os.Stat(path); err != nil {
+				continue
 			}
-			cfg, err := parseConfig(data)
-			return cfg, name, err
+			return path, name, true
 		}
 	}
-	return &mcpConfig{}, "none", nil
+	return "", "", false
 }
 
 func parseConfig(data []byte) (*mcpConfig, error) {
@@ -591,6 +622,15 @@ func NewBridgeFromEnv() (*Bridge, error) {
 
 func (b *Bridge) connect(cfg *mcpConfig) error {
 	for _, sc := range cfg.Servers {
+		// Per-server toggle (card t_83f37525): a disabled server is
+		// intentionally not connected and discovers no tools - its
+		// tools never enter toolDefs, so Tools() never serves them
+		// and the namespace guard has nothing to front. The entry
+		// stays listed in Status (enabled:false, not connected) like
+		// the skills list keeps its disabled rows visible.
+		if !sc.isEnabled() {
+			continue
+		}
 		var conn MCPConn
 		var err error
 		if sc.URL != "" {
