@@ -130,7 +130,7 @@ export interface DockableComponent {
 // pinned right with every view tab unclosable. card t_49d0b308: chat is
 // the only closable component left - settings moved into the inspector
 // group and the kanban board is born there.
-export const DOCKABLE_INVENTORY: readonly DockableComponent[] = [
+export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] = [
   {
     id: "sidebar",
     title: "Sessions",
@@ -336,8 +336,10 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   notifications: MIN_PANE_PX,
 };
 
-/** THE registry, floors attached: every entry carries its honest `minPx`
-    (docks.ts paneFloorOf reads it through dockableMinPx). */
+// THE registry, floors attached (card t_ae9ac5cf): every entry carries its
+// honest `minPx` (paneFloorOf reads it through dockableMinPx) - the
+// inventory literal above stays floor-free and the map below attaches it,
+// so one map edit joins a floor to a component.
 export const DOCKABLES: readonly DockableComponent[] = DOCKABLE_INVENTORY.map(
   (d) => ({ ...d, minPx: DOCKABLE_MIN_PX[d.id] }),
 );
