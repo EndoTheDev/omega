@@ -252,6 +252,10 @@
   /* card t_308e6d9b: the root stops being the scrollport - the band
      anchors its top, the .insights-scroll wrapper under it owns the
      scroll; the old root padding rides the wrapper. */
+  /* card t_ffab9823: the root stays padding-free - the 14px side inset
+     sat the band +14px inside (the only tab whose band left edge didn't
+     match Files); the scroll body carries the seat now (the 0px-top
+     stays flush). */
   .insights {
     flex: 1;
     min-height: 0;
@@ -259,7 +263,6 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 0 14px 10px;
   }
   .insights-scroll {
     flex: 1;
@@ -269,7 +272,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding-top: 4px;
+    padding: 4px 14px 10px;
   }
   /* card t_acad02ec (audit M1): the window select rides the shared
      BandSelect chip now - no native select chrome; only seating rides
