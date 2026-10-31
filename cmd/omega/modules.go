@@ -55,6 +55,15 @@ func (m *omegaModules) Refusals() []core.Refusal { return m.reg.Refusals() }
 // (one code path, Q7): the disabled list is exactly the catalog
 // modules that are not live.
 func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) error {
+	// the WHOLE toggle is the critical section (gate must-fix 1, widened
+	// after the narrow re-run caught the snapshot race): reg.Toggle mutates
+	// the registry and disabledNow snapshots ALL of it, so a concurrent
+	// toggle running beside the snapshot reads a half-mutated registry and
+	// the last full-fold write overwrites the earlier toggles. One module
+	// toggle at a time, mount-to-disk; the registry surface shares this
+	// mutex, so cross-surface fold writes serialize here too.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.reg.Toggle(m.pctx, name, enabled, m.deps); err != nil {
 		return err
 	}
@@ -80,11 +89,6 @@ func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) er
 		}
 	}
 	off := disabledNow(m.reg)
-	// one fold mutation + write at a time, shared with the registry
-	// toggle surface (gate must-fix 1): the fold pointer and the
-	// config.yaml write are BOTH surfaces' critical sections.
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.fold.Modules = off // registry truth at write time; siblings keep their namespaces
 	if err := writeDisabled(m.configPath, *m.fold); err != nil {
 		// The toggle applied but the write failed: loud, not silent -
