@@ -1144,7 +1144,11 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     // default inspector-first order stands (the inspector goes first)
     dock.narrowSqueeze(400);
     assert.equal(findEdgePane(dock.tree.value, "sidebar"), null);
-    // and the giving-way panes still stow: the reopen restores the record
+    // and the giving-way panes still stow: the reopen restores the record.
+    // card t_8bcbe72e: the toggle's reveal runs a fit-check first, so the
+    // roomy resize precedes it - at 400px the reveal would refuse cleanly
+    // (nothing to give way, the pane would be reaped on sight again).
+    dock.narrowSqueeze(4000);
     dock.toggleEdge("inspector", "after");
     assert.notEqual(findEdgePane(dock.tree.value, "inspector"), null);
     const inspectorPane = findEdgePane(dock.tree.value, "inspector")!;

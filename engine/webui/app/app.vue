@@ -639,6 +639,26 @@
       read: true,
     });
   });
+  // card t_8bcbe72e: a reveal refused for lack of room is a no-op in the
+  // dock store (the toggle stays closed, zero churn) - the one-line hint
+  // keeps the toggle from reading as dead. Same local emit funnel as the
+  // boot repair receipt above (read stays true; nothing counts unread).
+  watch(
+    () => dock.revealRefused.value,
+    (comp) => {
+      if (!comp) return;
+      emitLocalToast({
+        id: 0,
+        kind: "chat",
+        source_id: "dock-layout",
+        title: "no room - close a pane first",
+        verdict: "ok",
+        created_at: new Date().toISOString(),
+        read: true,
+      });
+      dock.revealRefused.value = null;
+    },
+  );
   // the sidebars are FIXED panes (card t_4ae27e0d): no open/close state
   // exists on desktop. drawerOpen/inspectorOpen are the MOBILE overlay
   // flags only; the MenuBar toggles surface at every breakpoint (card
