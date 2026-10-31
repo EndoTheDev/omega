@@ -10,11 +10,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
+	"gopkg.in/yaml.v3"
 )
 
 const toggleYAML = "provider:\n  model_name: test-model\n"
@@ -134,7 +138,7 @@ func TestToggleRewiresChannels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := &omegaModules{pctx: pctx, reg: reg, configPath: filepath.Join(t.TempDir(), "config.yaml"), fold: &DisabledNamespaces{}}
+	m := &omegaModules{pctx: pctx, reg: reg, configPath: filepath.Join(t.TempDir(), "config.yaml"), fold: &DisabledNamespaces{}, mu: &sync.Mutex{}}
 	if err := m.Toggle(context.Background(), "mod", false); err != nil {
 		t.Fatal(err)
 	}
@@ -153,5 +157,67 @@ func TestToggleRewiresChannels(t *testing.T) {
 	probe.fail = 1
 	if err := m.Toggle(context.Background(), "mod", false); err == nil {
 		t.Fatal("failed re-wire answered nil - stale routes would render a dead module")
+	}
+}
+
+// TestToggleConcurrentSharedFoldLock pins the v0.14.0 release-gate
+// must-fix 1: toggles racing through the SHARED mutex (the same pointer
+// omegaRegistries takes) must never lose a write or tear the fold -
+// every disabled module survives in the fold AND in config.yaml.
+func TestToggleConcurrentSharedFoldLock(t *testing.T) {
+	pctx := &agent.Context{}
+	names := make([]string, 8)
+	caps := make([]agent.Plugin, 8)
+	for i := range caps {
+		names[i] = "mod" + strconv.Itoa(i)
+		caps[i] = &hostToggleCapsule{name: names[i]}
+	}
+	reg, err := agent.MountAllAPI(caps, pctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fold := &DisabledNamespaces{}
+	m := &omegaModules{
+		pctx:       pctx,
+		reg:        reg,
+		configPath: filepath.Join(t.TempDir(), "config.yaml"),
+		fold:       fold,
+		mu:         &sync.Mutex{},
+	}
+	var wg sync.WaitGroup
+	for _, n := range names {
+		wg.Add(1)
+		go func(n string) {
+			defer wg.Done()
+			if err := m.Toggle(context.Background(), n, false); err != nil {
+				t.Errorf("toggle %s: %v", n, err)
+			}
+		}(n)
+	}
+	wg.Wait()
+	seen := map[string]int{}
+	for _, n := range fold.Modules {
+		seen[n]++
+	}
+	for _, n := range names {
+		if seen[n] != 1 {
+			t.Fatalf("lost/duplicated update: %q appears %d times in fold %v", n, seen[n], fold.Modules)
+		}
+	}
+	// the file agrees with the fold - no torn write, no resurrect-on-boot.
+	var file struct {
+		Disabled DisabledNamespaces `yaml:"disabled"`
+	}
+	data, err := os.ReadFile(m.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(data, &file); err != nil {
+		t.Fatalf("torn config.yaml: %v\n%s", err, data)
+	}
+	for _, n := range names {
+		if !slices.Contains(file.Disabled.Modules, n) {
+			t.Fatalf("lost update: %q missing from config.yaml disabled: %v", n, file.Disabled.Modules)
+		}
 	}
 }

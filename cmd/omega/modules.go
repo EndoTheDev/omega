@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
@@ -30,6 +31,11 @@ type omegaModules struct {
 	// module namespace's rewrite, so the write fold is the shared
 	// pointer with omegaRegistries.
 	fold *DisabledNamespaces
+	// mu serializes every fold mutation + writeDisabled across BOTH
+	// toggle surfaces (module + registry) - one shared pointer, one
+	// shared lock; without it two live PUTs race the fold slice and
+	// the atomic config.yaml rename (release gate v0.14.0, must-fix 1).
+	mu *sync.Mutex
 	// logger records every applied toggle; nil logs nothing.
 	logger core.LoggerProvider
 }
@@ -74,6 +80,11 @@ func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) er
 		}
 	}
 	off := disabledNow(m.reg)
+	// one fold mutation + write at a time, shared with the registry
+	// toggle surface (gate must-fix 1): the fold pointer and the
+	// config.yaml write are BOTH surfaces' critical sections.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.fold.Modules = off // registry truth at write time; siblings keep their namespaces
 	if err := writeDisabled(m.configPath, *m.fold); err != nil {
 		// The toggle applied but the write failed: loud, not silent -
