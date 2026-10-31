@@ -13,8 +13,9 @@
 #              (exact case) - no menu open needed to see the tab.
 #   render   - clicking the tab mounts the usage dashboard (OVERVIEW).
 #   numbers  - the overview carries real data (a session count > 0, a
-#              token figure, the period header).
-#   ranges  - the period switches exist and the header follows a click.
+#              token figure); card t_f1a034dc: the plain-text period
+#              header is gone (the window chip is the one control).
+#   ranges  - the period switches exist and the chip follows a click.
 #   plus    - the MAIN pane's '+' MINTS a fresh chat session directly
 #             (Endo amendment 2026-10-26, t_a582486d: the inventory
 #             dropdown is OUT of the '+'; the empty-pane watermark
@@ -79,9 +80,13 @@ pick=$(jsq '(()=>{const o=[...document.querySelectorAll(".insights-days .model-l
 assert_eq "$pick" "1" "period pick to 7 days"
 # the header follows the switch - poll 1/0 (wait_js wants a literal
 # `true` from ab eval; the 1/0 shape matches every assert above)
+# card t_f1a034dc: the duplicate plain-text period label is GONE (the
+# BandSelect chip is the ONE window control) - the old "Last 7 days"
+# innerText assert pinned the dead twin. The chip itself now carries
+# the picked window: poll the chip's label.
 i=0; ok=0; got=""
 while [ "$i" -lt 30 ]; do
-  got=$(jsq '(()=>{return ((document.body.innerText)||"").includes("Last 7 days")?1:0})()')
+  got=$(jsq '(()=>{const c=document.querySelector(".insights-days .model-chip");return c&&(c.textContent||"").includes("7 days")?1:0})()')
   if [ "$got" = "1" ]; then ok=1; break; fi
   sleep 0.5; i=$((i + 1))
 done
