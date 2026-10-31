@@ -23,6 +23,7 @@ import {
   openClamp,
   snapCandidate,
   snapCandidateAt,
+  travelSnapAt,
 } from "./panes.ts";
 import {
   endGesture,
@@ -1958,16 +1959,33 @@ export function dragSplitDivider(
     return { split: next, collapsedPaneId: null, pushedPaneId: s.pushed };
   }
 
-  // both flexible: shift BOTH fractions against the content box (renormalizing
-  // would rescale the untouched siblings); snap sticks the left pane to an
-  // exact px attractor like the fixed path so any divider feels identical
+  // both flexible: re-derive BOTH adjacent fractions from the frozen
+  // baseline's intended px each event (t_f7201e02) - the flexible twin of
+  // the fixed branches' absolute `fixed` write. The old body shifted the
+  // CURRENT sizes by (finalLeft - pxOf)/content, but `next` arrives already
+  // carrying every earlier event's shift, so each move re-applied the FULL
+  // cumulative: the divider compounded, overshot the cursor and raced to a
+  // wall on the first moves (Endo's report). Writing the pair's shares
+  // absolutely - (finalLeft, room - finalLeft) as fractions of the pair's
+  // own px box, scaled by the pair's size sum which this branch alone
+  // preserves - makes event n compute the same fractions from the same
+  // frozen baseline: idempotent, exactly the fixed lanes' law. The snap
+  // guard (travelSnapAt) keeps a passive zone hold from teleporting on
+  // grab; the magnet engages only when the drag brings the px into a zone.
   const content = Math.max(1, room);
   const pxLo = MIN_PANE_PX;
   const pxHi = Math.max(MIN_PANE_PX, room - contractFloorOf(rp));
-  const finalLeft = applySnap(clamp(pxOf(li) + deltaPx, pxLo, pxHi), pxLo, pxHi);
-  const shift = (finalLeft - pxOf(li)) / content;
+  const raw = clamp(pxOf(li) + deltaPx, pxLo, pxHi);
+  const rung = travelSnapAt(pxOf(li), raw, SNAP_STEP);
+  const finalLeft = clamp(rung ?? raw, pxLo, pxHi);
+  // rendered flexible px = contentBox * size / totalFlex; at gesture start
+  // pxOf(li)+pxOf(i) == room, so the pair's size sum is its share of the
+  // content box - scaling the px split by that sum keeps every other
+  // flexible sibling's rendered px untouched and the whole split normalized
+  const pairSum = (next.sizes[li] ?? 0) + (next.sizes[i] ?? 0);
+  const share = pairSum > 0 ? finalLeft / content : 0;
   next.sizes = next.sizes.map((s, k) =>
-    k === li ? s + shift : k === i ? s - shift : s,
+    k === li ? pairSum * share : k === i ? pairSum * (1 - share) : s,
   );
   return { split: next, collapsedPaneId: null, pushedPaneId: null };
 }
