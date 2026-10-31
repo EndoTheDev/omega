@@ -88,7 +88,10 @@ const RETROFIT: Array<{
     rel: "modules/mcp/ui/McpServers.vue",
     label: "mcp",
     module: "mcp",
-    rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-server-head \{/],
+    // card t_83f37525 rebuilt the rows (mcp-server-head -> mcp-row/
+    // mcp-row-main): the state cluster drops to its own line at narrow,
+    // so the refilled pin is the state rule
+    rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-state \{/],
   },
   {
     // the shell's own inspector Files tab rides the same recipe
