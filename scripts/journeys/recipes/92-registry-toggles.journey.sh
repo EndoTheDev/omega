@@ -99,8 +99,11 @@ PY
 # registry_click <kind-selector> <aria-exact> <aria-starts>: click the
 # pane's registry toggle matching the aria state machine once. Prints
 # 1 when clicked, 0 when not found.
+# Card t_d93864e7: the toggle is the shared TogglePill BUTTON (the MCP
+# tab's pill), so the selector is button.registry-toggle - no input, no
+# .checked prop to read (the state rides the row's class + the aria).
 registry_click() {
-  jsq "(()=>{const root=document.querySelectorAll('$1 input.registry-toggle');
+  jsq "(()=>{const root=document.querySelectorAll('$1 button.registry-toggle');
     const el=[...root].find(b=>{const l=b.getAttribute('aria-label')||'';
     return l==='$2' || l.startsWith('$3')});
     if(!el){return 0}el.click();return 1})()" 2>&1 | tail -1
@@ -178,11 +181,11 @@ step "ok: seeded row renders"
 # the armed first click: "disable X" -> "confirm apply to X?"
 clicked=$(registry_click ".skills-list" "disable $SKILL" "__arm__")
 assert_eq "$clicked" "1" "arm click found the toggle"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list input.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to $SKILL?')})()" 5 \
+wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to $SKILL?')})()" 5 \
   || die "the toggle never armed (no confirm state)"
 clicked=$(registry_click ".skills-list" "__apply__" "confirm apply to $SKILL?")
 assert_eq "$clicked" "1" "confirm click applied the toggle"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list input.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
+wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
   || die "the toggle never landed (row never showed the off state)"
 
 # (a) the fold persists: the wire answers it AND config.yaml owns it
@@ -205,7 +208,7 @@ ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 open_tab skills
-wait_js "(()=>{const r=[...document.querySelectorAll('.skills-list .registry-row')].find(x=>x.querySelector('.registry-name').textContent.trim()==='$SKILL'); const b=r&&r.querySelector('input.registry-toggle'); return !!r&&r.classList.contains('registry-off')&&!!b&&b.getAttribute('aria-label')==='enable $SKILL'&&!b.checked})()" 10 \
+wait_js "(()=>{const r=[...document.querySelectorAll('.skills-list .registry-row')].find(x=>x.querySelector('.registry-name').textContent.trim()==='$SKILL'); const b=r&&r.querySelector('button.registry-toggle'); return !!r&&r.classList.contains('registry-off')&&!!b&&b.getAttribute('aria-label')==='enable $SKILL'})()" 10 \
   || die "after reload the seeded row does not render the persisted off state"
 step "ok: (b) reload renders the persisted off state"
 
@@ -238,7 +241,7 @@ wait_js '(()=>{return document.querySelector(".pane.agents .registry-rows")?true
   || die "the Agents tab never rendered rows"
 clicked=$(registry_click ".pane.agents" "disable default" "__arm__")
 assert_eq "$clicked" "1" "agents default row found"
-wait_js "(()=>{return [...document.querySelectorAll('.pane.agents input.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to default?')})()" 5 \
+wait_js "(()=>{return [...document.querySelectorAll('.pane.agents button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to default?')})()" 5 \
   || die "the agents toggle never armed"
 clicked=$(registry_click ".pane.agents" "__apply__" "confirm apply to default?")
 assert_eq "$clicked" "1" "agents confirm click applied"
@@ -249,15 +252,15 @@ step "ok: (c) browser-visible refusal on the main-home disable"
 
 # --- (d) re-enable clears the fold -----------------------------------------
 open_tab Skills
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list input.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
+wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
   || die "the skills tab lost the seeded row before the re-enable"
 clicked=$(registry_click ".skills-list" "enable $SKILL" "__arm__")
 assert_eq "$clicked" "1" "re-enable arm click"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list input.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to $SKILL?')})()" 5 \
+wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to $SKILL?')})()" 5 \
   || die "the re-enable never armed"
 clicked=$(registry_click ".skills-list" "__apply__" "confirm apply to $SKILL?")
 assert_eq "$clicked" "1" "re-enable confirm click"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list input.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='disable $SKILL')})()" 10 \
+wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='disable $SKILL')})()" 10 \
   || die "the re-enable never landed (row never back on)"
 case "$(disabled_names skills)" in
   *"$SKILL"*) die "the fold kept the disabled skill after the re-enable" ;;

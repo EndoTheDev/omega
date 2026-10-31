@@ -42,9 +42,9 @@
       <p class="mcp-empty-hint">{{ MCP_EMPTY_HINT }}</p>
     </div>
     <template v-else>
-      <!-- card t_83f37525: the source echo is a proper muted caption -
-           its own line, its own margin, never overlapped by the rows -->
-      <p class="mcp-source">from {{ sourceLabel(source) }}</p>
+      <!-- card t_d93864e7: no "from mcp.yaml" caption - the tab IS the
+           mcp tab, a config-file provenance label is noise (Endo). No
+           replacement; the empty state below keeps its setup hint. -->
       <!-- the server rows, the RegistryList rhythm (border-separated,
            breathing padding - not boxed debug cards in dead space).
            The write path is the per-row toggle (card t_83f37525): the
@@ -56,21 +56,19 @@
           class="mcp-row"
           :class="{ 'mcp-off': !serverEnabled(s) }">
           <div class="mcp-row-main">
-            <!-- the toggle is a BUTTON, not a checkbox: the RegistryList
-                 arm-branch lesson (t_87303e8f) is the :checked prop trap -
-                 a button whose armed state comes from the reactive model
-                 carries no DOM prop Vue could skip, so the two-step is
-                 honest without the per-row revision remount. -->
-            <button
-              type="button"
-              class="mcp-toggle"
-              :class="{ on: serverEnabled(s) }"
+            <!-- the toggle is the shared TogglePill (card t_d93864e7):
+                 the pill this module originated in t_83f37525, extracted
+                 to ui/ - a BUTTON whose armed state comes from the
+                 reactive model, the t_87303e8f law structural. The write
+                 path stays local: the arm/confirm two-step, POST
+                 /mcp/toggle riding toggle.ts. -->
+            <TogglePill
+              :state="serverEnabled(s)"
               :disabled="busy !== null"
-              :aria-label="toggleAria(s)"
-              :title="toggleAria(s)"
-              @click="onToggle(s)">
-              <span class="mcp-toggle-thumb"></span>
-            </button>
+              :armed="armed === s.name"
+              :label="`${serverEnabled(s) ? 'disable' : 'enable'} ${s.name}`"
+              :confirm-label="`confirm apply to ${s.name}?`"
+              @click="onToggle(s)" />
             <span
               class="mcp-name"
               :title="s.name">{{ s.name }}</span>
@@ -134,7 +132,6 @@
     MCP_EMPTY_TEXT,
     serverEnabled,
     serverRows,
-    sourceLabel,
     statusDot,
     statusLabel,
     type McpServerWire,
@@ -147,11 +144,12 @@
   // shape the tools/skills/cron panels ride. The write paths (card
   // t_d6e94e79 + t_83f37525): the band refresh POSTs /mcp/reload; the
   // per-row toggle POSTs /mcp/toggle - each re-fetches the listing
-  // through its helper, and a failure lands on the panel's error line
-  // with the prior rows standing (server truth never fakes a swap).
+  //   through its helper, and a failure lands on the panel's error line
+  //   with the prior rows standing (server truth never fakes a swap).
   // Self-contained wiring (module UI carries its own wiring, the
-  // narrow.ts copy law).
-  const source = ref<string | undefined>(undefined);
+  // narrow.ts copy law). The wire's `source` field is read nowhere in
+  // the panel since card t_d93864e7 (the from-mcp.yaml echo died with
+  // its caption) - the wire keeps the field for the helpers' contracts.
   const rows = ref<McpServerWire[]>(serverRows({}));
   const loaded = ref(false);
   const error = ref("");
@@ -161,7 +159,6 @@
     const res = await fetch("/mcp/servers");
     if (!res.ok) throw new Error(`GET /mcp/servers: ${res.status}`);
     const rep: McpStatusWire = await res.json();
-    source.value = rep.source;
     rows.value = serverRows(rep);
   }
 
@@ -190,7 +187,6 @@
     busy.value = s.name;
     try {
       const rep = await setMcpServerEnabled(s.name, target);
-      source.value = rep.source;
       rows.value = serverRows(rep);
       error.value = "";
     } catch (e) {
@@ -206,12 +202,6 @@
       : `enable ${s.name}? click again to confirm`;
   }
 
-  function toggleAria(s: McpServerWire): string {
-    return armed.value === s.name
-      ? `confirm apply to ${s.name}?`
-      : (serverEnabled(s) ? "disable " : "enable ") + s.name;
-  }
-
   // one key per row identity (the config file owns the names)
   function rowKey(s: McpServerWire): string {
     return s.name;
@@ -225,7 +215,6 @@
     reloading.value = true;
     try {
       const rep = await reloadMcpServers();
-      source.value = rep.source;
       rows.value = serverRows(rep);
       error.value = "";
     } catch (e) {
@@ -305,13 +294,6 @@
     padding: 4px 12px 14px;
   }
   .panel-status {
-    font-size: 11px;
-    opacity: 0.6;
-  }
-  /* the source echo (card t_83f37525): a muted caption with its own
-     rhythm - never the half-covered line the row cards used to ride. */
-  .mcp-source {
-    margin: 2px 0 4px;
     font-size: 11px;
     opacity: 0.6;
   }
@@ -411,39 +393,9 @@
   .mcp-dot-off {
     background: var(--text-dim);
   }
-  /* the toggle: a track/thumb switch on a BUTTON element so the arm/
-     confirm two-step carries no :checked prop to miss (t_87303e8f). */
-  .mcp-toggle {
-    width: 26px;
-    height: 15px;
-    padding: 0;
-    border: 1px solid color-mix(in srgb, currentcolor 30%, transparent);
-    border-radius: 8px;
-    background: transparent;
-    position: relative;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .mcp-toggle:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .mcp-toggle-thumb {
-    position: absolute;
-    top: 1px;
-    left: 1px;
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: var(--text-dim);
-  }
-  .mcp-toggle.on {
-    border-color: var(--ok);
-  }
-  .mcp-toggle.on .mcp-toggle-thumb {
-    left: 12px;
-    background: var(--ok);
-  }
+  /* the toggle: no local CSS (card t_d93864e7) - the rows ride the
+     shared ui/TogglePill (the extracted t_83f37525 pill), one component,
+     zero copies. Only the row-side indent below stays. */
   /* the meta lines keep the toggle's indent so the row reads as one
      column under the name */
   .mcp-target {
