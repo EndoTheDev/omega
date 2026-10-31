@@ -135,15 +135,13 @@
   // reduction (cumulative-from-baseline) lives in dividerGesture.ts so its
   // contract is unit-tested - card t_38c0e960 found it silently sending
   // per-event increments (dead-looking dividers) after the snap-ladder
-  // rework. `pending` is the squeeze push-back's re-measure flag: set when
-  // api.drag reports a pushed pane, consumed (re-measure + base reset) on
-  // the NEXT event with the layout already re-rendered (card t_f6d5a771).
+  // rework. The squeeze push-back re-measure flag it also carried died with
+  // the chain (t_6a74d5a1 wall law: a cap is a stop, not a push) - the
+  // reducer has no rebase arm anymore.
   const dragging = ref<number | null>(null);
   let startPx: number[] | null = null;
   const pointerState: DividerPointerState = { base: null };
-  let pending = false;
   const snappedIdx = ref<number | null>(null);
-
 
   function measure(): number[] {
     const node = props.node as DockSplit;
@@ -158,7 +156,6 @@
     dragging.value = null;
     startPx = null;
     pointerState.base = null;
-    pending = false;
     snappedIdx.value = null;
   }
 
@@ -173,19 +170,12 @@
       pointerState.base = null; // fresh gesture: the reducer re-derives the base
     }
     if (!startPx) return;
-    // the re-measure flag: the pushed pane freed px and the layout
-    // re-rendered - the new baseline is the current geometry, deltas
-    // resume from the just-seen raw (the reducer resets the base with it)
-    const wasPending = pending;
-    if (wasPending) startPx = measure();
-    const cumulative = dividerDelta(pointerState, delta, raw, wasPending);
-    pending = false;
+    const cumulative = dividerDelta(pointerState, delta, raw);
     if (cumulative === null) return;
     // content box for the pure math: the split's client px minus the
     // gutters its dividers occupy = the sum of the measured cells
     const contentPx = startPx.reduce((a, p) => a + p, 0);
     const res = api.drag((props.node as DockSplit).id, dividerIndex, startPx, cumulative, contentPx);
-    if (res.pushedPaneId) pending = true; // freed px becomes layout: re-measure next event
     if (res.collapsedPaneId) {
       // the controlled pane (and this divider with it) is gone - the
       // gesture ends; the menubar toggle reopens the hidden sidebar

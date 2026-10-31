@@ -1164,7 +1164,6 @@ describe("dragSplitDivider", () => {
     assert.equal(asPane(out.split.children[0]).fixed, 340);
     assert.equal(asPane(out.split.children[1]).fixed, null, "chat stays flexible");
     assert.equal(out.collapsedPaneId, null);
-    assert.equal(out.pushedPaneId, null);
   });
   it("left fixed: caps against the flexible chat floor (320)", () => {
     const t = defaultTree();
@@ -1214,7 +1213,12 @@ describe("dragSplitDivider", () => {
     assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], -25, CONTENT).split.children[2]).fixed, 320);
   });
 
-  // --- card t_f6d5a771: divider close (drag-past-min) + squeeze push-back ---
+  // --- card t_f6d5a771: the divider close (drag-past-min) - and t_6a74d5a1:
+  // the squeeze push-back chain is DELETED. The wall law (Endo ruling
+  // 2026-10-31): a divider drag moves ONLY that divider; past the absorbing
+  // neighbor's floor the drag STOPS at the wall and every other child's
+  // fixed px is bit-identical. If the far pane must donate space, the user
+  // moves its divider - two gestures, zero surprises.
   const sidebarIdOf = (t: DockSplit) => asPane(t.children[0]).id;
   const inspectorIdOf = (t: DockSplit) => asPane(t.children[2]).id;
 
@@ -1223,48 +1227,42 @@ describe("dragSplitDivider", () => {
     // req 240 - 113 = 127 < 128: the pane goes
     const out = dragSplitDivider(t, 1, [240, 460, 300], -113, CONTENT);
     assert.equal(out.collapsedPaneId, sidebarIdOf(t));
-    assert.equal(out.pushedPaneId, null);
   });
   it("drag-past-min CLOSES the inspector: the right divider mirrors it", () => {
     const t = defaultTree();
     // req 300 - 173 = 127 < 128 (delta +173): the pane goes
     const out = dragSplitDivider(t, 2, [240, 460, 300], 173, CONTENT);
     assert.equal(out.collapsedPaneId, inspectorIdOf(t));
-    assert.equal(out.pushedPaneId, null);
   });
-  it("push-back: over-cap drag SHRINKS the nearest fixed pane beyond first", () => {
+  it("WALL: over-cap drag stops AT the cap - the inspector beyond never moves", () => {
     const t = defaultTree();
-    // widening the sidebar: req 480, cap = 700 - 320 = 380, over 100 <=
-    // inspector's slack (300 - 128): the inspector shrinks 300 -> 200
+    // widening the sidebar: req 480, cap = 1000 - 300(inspector) - 320(chat floor) = 380
     const out = dragSplitDivider(t, 1, [240, 460, 300], 240, CONTENT);
-    assert.equal(asPane(out.split.children[0]).fixed, 480);
-    assert.equal(asPane(out.split.children[2]).fixed, 200);
-    assert.equal(out.pushedPaneId, null);
+    assert.equal(asPane(out.split.children[0]).fixed, 380, "stops dead at the wall");
+    assert.equal(asPane(out.split.children[2]).fixed, 300, "the inspector is bit-identical");
+    assert.equal(out.collapsedPaneId, null, "no close intent: the wall is a stop, not a hide");
   });
-  it("push-back: starved past its floor, the beyond pane CLOSES instead", () => {
+  it("WALL: a cap-busting drag still closes nothing and moves nothing else", () => {
     const t = defaultTree();
-    // req 1140; cap 380; over 760 > inspector slack 172 -> the inspector
-    // reports as closed (the store prunes; the split here comes back as-is)
+    // req 1140; cap 380 - the old chain reported the inspector as closed
     const out = dragSplitDivider(t, 1, [240, 460, 300], 900, CONTENT);
-    assert.equal(out.pushedPaneId, inspectorIdOf(t));
-    assert.equal(out.collapsedPaneId, null);
-    assert.equal(out.split.children.length, 3, "the pure math reports; the store prunes");
-    assert.equal(asPane(out.split.children[0]).fixed, 380);
+    assert.equal(out.collapsedPaneId, null, "the pushed pane close intent is gone");
+    assert.equal(asPane(out.split.children[0]).fixed, 380, "clamped at room - 320");
+    assert.equal(asPane(out.split.children[2]).fixed, 300, "inspector untouched");
   });
-  it("push-back (inspector divider): the starved LEFT sidebar closes", () => {
+  it("WALL (inspector divider, row): the sidebar beyond never moves", () => {
     const t = defaultTree();
-    // widening the inspector: req 1200, cap = 760 - 320 = 440, over 760 >
-    // sidebar slack 112 -> the sidebar reports closed
+    // widening the inspector: req 1200, cap = 1000 - 240(sidebar) - 320 = 440
     const out = dragSplitDivider(t, 2, [240, 460, 300], -900, CONTENT);
-    assert.equal(out.pushedPaneId, sidebarIdOf(t));
     assert.equal(asPane(out.split.children[2]).fixed, 440);
+    assert.equal(asPane(out.split.children[0]).fixed, 240, "the sidebar is bit-identical");
+    assert.equal(out.collapsedPaneId, null);
   });
-  it("push-back with no fixed pane beyond: plain cap (no close intent)", () => {
+  it("WALL with no fixed pane beyond: plain cap (the last fixed pane owns no wall)", () => {
     const t = hideEdgePane(defaultTree(), "inspector");
     // [sidebar(fixed 240), chat(flex)]: nothing beyond the chat to give
     const out = dragSplitDivider(t, 1, [240, 460], 900, 700);
     assert.equal(asPane(out.split.children[0]).fixed, 380);
-    assert.equal(out.pushedPaneId, null);
     assert.equal(out.collapsedPaneId, null);
   });
   it("both flexible: fractions shift in tandem against the content box", () => {
@@ -1291,7 +1289,6 @@ describe("dragSplitDivider", () => {
     const out = dragSplitDivider(t, 0, [240, 460, 300], 10, CONTENT);
     assert.deepEqual(out.split, t);
     assert.equal(out.collapsedPaneId, null);
-    assert.equal(out.pushedPaneId, null);
   });
 });
 describe("graftSplit", () => {

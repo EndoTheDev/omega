@@ -6,7 +6,9 @@
 // one increment and the divider looked dead. This reducer owns that
 // reduction so unit tests receive the shape production actually sends
 // (the divider's emit: a delta cumulative from its pointerdown origin,
-// plus the raw pointer position).
+// plus the raw pointer position). The old rebase arm (the squeeze
+// push-back's re-measure) died with the chain - t_6a74d5a1 wall law: a cap
+// is a stop, not a push, so the baseline never re-measures mid-gesture.
 
 export interface DividerPointerState {
   /** the raw position the measured baseline belongs to; null = no gesture */
@@ -15,8 +17,6 @@ export interface DividerPointerState {
 
 /** Reduces one divider emit to the cumulative delta the store math wants
     (null = nothing to move). Mutates `state.base`:
-    - `rebase` (a squeeze push-back re-measured the layout): the baseline is
-      this raw's geometry, deltas resume from here - no move this event.
     - gesture start (base null): the baseline is at-rest geometry and the
       emitted delta is cumulative from the divider's pointerdown origin -
       apply it now and adopt the origin as the base. */
@@ -24,12 +24,7 @@ export function dividerDelta(
   state: DividerPointerState,
   delta: number,
   raw: number,
-  rebase: boolean,
 ): number | null {
-  if (rebase) {
-    state.base = raw;
-    return null;
-  }
   if (state.base === null) {
     state.base = raw - delta;
     return delta;

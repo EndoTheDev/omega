@@ -5,7 +5,9 @@
 // The v0.9.0 rework joined them with per-event increments - every move
 // reset the pane to baseline + one increment and the divider never moved
 // more than ~10px in a full drag (live-proven regression). These tests
-// pin the reduction shape production actually sends.
+// pin the reduction shape production actually sends. The old rebase arm
+// died with the squeeze push-back chain (t_6a74d5a1 wall law: a cap is a
+// stop, not a push) - the reducer takes no rebase flag anymore.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -27,7 +29,7 @@ const shell = (): DockSplit =>
 test("dividerDelta: gesture start adopts the divider's pointerdown origin", () => {
   const s = fresh();
   // pointerdown at raw 100, first move arrives at raw 110
-  const d = dividerDelta(s, 10, 110, false);
+  const d = dividerDelta(s, 10, 110);
   assert.equal(d, 10);
   assert.equal(s.base, 100, "base becomes the pointerdown origin");
 });
@@ -38,7 +40,7 @@ test("dividerDelta: a full drag accumulates - 15 moves send a growing cumulative
   let last = 0;
   for (let i = 1; i <= 15; i++) {
     const raw = 100 + i * 10;
-    const d = dividerDelta(s, i * 10, raw, false);
+    const d = dividerDelta(s, i * 10, raw);
     assert.ok(d !== null && d > last, `moves accumulate (event ${i}: ${d} > ${last})`);
     last = d!;
   }
@@ -47,16 +49,18 @@ test("dividerDelta: a full drag accumulates - 15 moves send a growing cumulative
 
 test("dividerDelta + dragSplitDivider: the reduced stream tracks the pointer (the regression shape)", () => {
   // the store math sees the SAME startPx every event plus the reducer's
-  // cumulative delta - the sidebar must end AT the pointer
+  // cumulative delta. Baseline 240 + 150 travel = 390 wanted, but the wall
+  // law (t_6a74d5a1) caps the sidebar at room - chat floor = 700 - 320:
+  // the divider STOPS at 380, nothing beyond the chat moves.
   const CONTENT = 1000;
   const s = fresh();
   let t = shell();
   for (let i = 1; i <= 15; i++) {
     const raw = 100 + i * 10;
-    const d = dividerDelta(s, i * 10, raw, false)!;
+    const d = dividerDelta(s, i * 10, raw)!;
     t = dragSplitDivider(t, 1, [240, 460, 300], d, CONTENT).split;
   }
-  assert.equal((t.children[0] as DockPane).fixed, 390, "sidebar = baseline + full travel");
+  assert.equal((t.children[0] as DockPane).fixed, 380, "sidebar rides the pointer to the wall (240 + 150, capped)");
 });
 
 // t_be305778: the column orientation joins the pointer contract. The
@@ -74,7 +78,7 @@ test("dividerDelta + dragSplitDivider (column): drag UP tracks the pointer up (t
   let t = columnShell();
   for (let i = 1; i <= 15; i++) {
     const raw = 800 - i * 10;
-    const d = dividerDelta(s, -i * 10, raw, false)!;
+    const d = dividerDelta(s, -i * 10, raw)!;
     t = dragSplitDivider(t, 1, [800, 200], d, CONTENT).split;
   }
   const b = (t.children[1] as DockPane).fixed;
@@ -91,7 +95,7 @@ test("dividerDelta + dragSplitDivider (column): drag DOWN tracks the pointer dow
   // the shell's own divider push - which is covered in dockbottom.test.ts
   for (let i = 1; i <= 5; i++) {
     const raw = 800 + i * 10;
-    const d = dividerDelta(s, i * 10, raw, false)!;
+    const d = dividerDelta(s, i * 10, raw)!;
     t = dragSplitDivider(t, 1, [800, 200], d, CONTENT).split;
   }
   const b = (t.children[1] as DockPane).fixed;
@@ -105,21 +109,16 @@ test("dividerDelta: the reworked shape (per-event increments) fails loudly", () 
   // NOT produce that stream
   const s = fresh();
   const got: number[] = [];
-  for (let i = 1; i <= 15; i++) got.push(dividerDelta(s, 10, 100 + i * 10, false)!);
+  for (let i = 1; i <= 15; i++) got.push(dividerDelta(s, 10, 100 + i * 10)!);
   assert.equal(got.filter((d) => d > 10).length, 14, "every event after the first moves past one increment");
 });
 
-test("dividerDelta: rebase hands the base to the just-seen raw and moves nothing", () => {
+test("dividerDelta: no rebase arm - the baseline is frozen for the whole gesture", () => {
+  // t_6a74d5a1 wall law: a cap is a stop, not a push, so nothing ever
+  // re-measures mid-gesture; the reducer ignores extra call shapes and
+  // deltas keep growing from the one pointerdown origin
   const s = fresh();
-  dividerDelta(s, 40, 140, false); // base = 100
-  const d = dividerDelta(s, 60, 200, true); // a push closed a pane: re-measured at raw 200
-  assert.equal(d, null);
-  assert.equal(s.base, 200);
-  assert.equal(dividerDelta(s, 60, 210, false), 10, "deltas resume from the re-measured baseline");
-});
-
-test("dividerDelta: a stale rebase flag on a fresh gesture is harmless", () => {
-  const s = fresh();
-  assert.equal(dividerDelta(s, 20, 120, true), null);
-  assert.equal(dividerDelta(s, 20, 130, false), 10);
+  dividerDelta(s, 40, 140); // base = 100
+  assert.equal(dividerDelta(s, 60, 200), 100);
+  assert.equal(s.base, 100, "the base never re-adopts a mid-gesture raw");
 });

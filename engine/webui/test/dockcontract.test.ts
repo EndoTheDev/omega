@@ -2,7 +2,7 @@
 // Pins TODAY'S divider-drag outcomes that the contract port touches - the
 // FIXED absorbing neighbor (128 floor, not the chat's 320), the
 // BOTH-FLEXIBLE fraction shift, and the contract factories/resolver.
-// dock.test.ts (floors, snap ladder, squeeze chain) and dockbottom.test.ts
+// dock.test.ts (floors, snap ladder, the divider wall law) and dockbottom.test.ts
 // (the bottom's share cap + 200 ladder) already characterize the rest.
 // The port's law (ruling 7): defaults reproduce today exactly - a pane
 // ships no contract until v:3 serializes one, so these must stay green
@@ -40,7 +40,6 @@ describe("dragSplitDivider characterization: the fixed absorbing neighbor", () =
     // 425+15 = 440 edge of the 640 zone? 640's zone is 625..655 - free)
     const out = dragSplitDivider(twoFixed(), 1, [240, 300], 200, 540);
     assert.equal(asPane(out.split.children[0]).fixed, 412, "clamped at room - 128");
-    assert.equal(out.pushedPaneId, null, "no fixed pane beyond to squeeze");
   });
 
   it("left fixed over a fixed neighbor: the drag floor and close intent stand", () => {
@@ -66,7 +65,6 @@ describe("dragSplitDivider characterization: both panes flexible", () => {
     assert.deepEqual(asSplit(out.split).sizes.map((s) => Math.round(s * 100)), [60, 40]);
     assert.equal(asPane(asSplit(out.split).children[0]).fixed, null);
     assert.equal(out.collapsedPaneId, null);
-    assert.equal(out.pushedPaneId, null);
   });
 
   it("the flexible drag floors at 128 and walls at room - 320", () => {

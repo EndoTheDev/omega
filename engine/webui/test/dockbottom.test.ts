@@ -404,6 +404,15 @@ describe("the horizontal divider drag (the bottom shell)", () => {
     const d = dragSplitDivider(split, 1, startPx, -400, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 280, "capped by the chat floor");
+    // t_6a74d5a1 wall law: the divider stops at the chat's floor - the chat
+    // (and everything the drag did not touch) is bit-identical before/after
+    const out = d.split as DockSplit;
+    assert.deepEqual(out.sizes, (split as DockSplit).sizes, "the chat's fraction untouched");
+    assert.deepEqual(
+      (out.children[0] as DockPane).fixed,
+      (split.children[0] as DockPane).fixed,
+      "the chat's fixed state untouched",
+    );
   });
 
   // Endo's comment (2026-10-26): the max share. A drag past it caps even
