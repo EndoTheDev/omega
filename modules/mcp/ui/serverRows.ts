@@ -27,21 +27,10 @@ export const MCP_EMPTY_TEXT = "no MCP servers configured";
 export const MCP_EMPTY_HINT =
   "add a servers: array to mcp.yaml (or set MCP_SERVERS)";
 
-// where the config came from, in the panel's voice: the source echo
-// beats guessing at a file path.
-const SOURCE_LABELS: Record<string, string> = {
-  env: "MCP_SERVERS",
-  "mcp.yaml": "mcp.yaml",
-  "mcp.json": "mcp.json",
-  none: "no MCP config found",
-};
-
-export function sourceLabel(source: string | undefined): string {
-  return source !== undefined && SOURCE_LABELS[source] !== undefined
-    ? SOURCE_LABELS[source]
-    : "no MCP config found";
-}
-
+// where the config came from: the WIRE carries `source` verbatim
+// (env / mcp.yaml / mcp.json / none) for the helpers and the tests;
+// the panel no longer renders it - the tab IS the mcp tab (card
+// t_d93864e7 killed the from-mcp.yaml echo), no provenance label.
 // card t_83f37525: the per-server toggle. The wire always carries
 // enabled on a live module; an undefined flag is an OLD wire - and
 // neither disables a server implicitly, so the absent key reads as on

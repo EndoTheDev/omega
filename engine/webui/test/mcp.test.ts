@@ -22,7 +22,6 @@ import {
   MCP_EMPTY_TEXT,
   serverEnabled,
   serverRows,
-  sourceLabel,
   statusDot,
   statusLabel,
   type McpServerWire,
@@ -79,15 +78,6 @@ test("statusLabel: the recorded failure wins, then the connection truth", () => 
   assert.equal(s({ connected: false }), "not connected");
   assert.equal(s({ connected: true, error: "tools/list failed" }), "tools/list failed");
   assert.equal(s({ error: "" }), "not connected", "an empty error is no error");
-});
-
-test("sourceLabel echoes where the config came from; unknown falls to the safe line", () => {
-  assert.equal(sourceLabel("env"), "MCP_SERVERS");
-  assert.equal(sourceLabel("mcp.yaml"), "mcp.yaml");
-  assert.equal(sourceLabel("mcp.json"), "mcp.json");
-  assert.equal(sourceLabel("none"), "no MCP config found");
-  assert.equal(sourceLabel(undefined), "no MCP config found");
-  assert.equal(sourceLabel("weird"), "no MCP config found");
 });
 
 test("the empty state is named in the helpers' voice (never composed ad hoc in the SFC)", () => {
@@ -314,11 +304,16 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
   assert.match(src, /\.mcp-row-main\s*\{[^}]*flex-wrap:\s*wrap/, "the row main line wraps its cluster too");
 });
 
-test("the source caption is its own line, never overlapped", () => {
+test("the from-mcp.yaml caption is dead, the toggle is the shared pill (card t_d93864e7)", () => {
   const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
-  assert.match(src, /class="mcp-source">from \{\{ sourceLabel\(source\) \}\}/, "the source echo renders in its own caption element");
-  // no negative margins riding the caption (the half-covered bug)
-  assert.ok(!/\.mcp-source\s*\{[^}]*margin-?(top|bottom)?:\s*-/.test(src), "the caption never pulls itself under the rows");
+  // the tab IS the mcp tab: a config-file provenance label is noise
+  assert.ok(!src.includes("mcp-source"), "no source caption element left");
+  assert.ok(!src.includes("sourceLabel"), "no dead source helper rides the component");
+  // the row toggle is the shared pill - the look lives in ui/ once
+  assert.match(src, /<TogglePill/, "the row toggle is the shared TogglePill");
+  assert.ok(!src.includes(".mcp-toggle"), "no local toggle CSS block - one component, zero copies");
+  // the two-step mechanic stays local (behavior, not pixels)
+  assert.ok(src.includes("armed.value !== s.name") && src.includes("/mcp/toggle"), "the arm/confirm two-step + POST /mcp/toggle stay in the module");
 });
 
 test("the row speaks the design tokens: status dot, transport pill, no bare mono dump", () => {

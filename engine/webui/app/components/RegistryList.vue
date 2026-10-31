@@ -5,7 +5,8 @@
        the data (fetches + fold state through composables/omega.ts);
        this renders the rows and drives the two-step toggle (the same
        arm/confirm mechanic the module list rides, no accidental
-       first-click flips). A host without the toggle seam (501) renders
+       first-click flips), rendered with the shared TogglePill
+       (card t_d93864e7). A host without the toggle seam (501) renders
        the list read-only: no checkboxes, the state text only.
        v0.14.3: the insights tab joins as the read-only stat consumer -
        `showState=false` drops the on/disabled state text (insight rows
@@ -49,16 +50,21 @@
             :aria-expanded="isExpanded(r.name)"
             :aria-label="isExpanded(r.name) ? `collapse ${r.name}` : `expand ${r.name}`"
             @click.stop="flipExpand(r)">{{ isExpanded(r.name) ? "▾" : "▸" }}</button>
-          <input
+          <!-- the toggle is the shared TogglePill (card t_d93864e7): the
+               MCP tab's pill look, now here too - same 26px pill, same
+               dot, same armed aria. A button whose armed state comes from
+               the reactive model carries no :checked prop for Vue's prop
+               diff to skip (t_87303e8f), so the checkbox revision-remount
+               machinery is gone with it. -->
+          <TogglePill
             v-if="toggleable"
-            type="checkbox"
             class="registry-toggle"
+            :state="!r.disabled"
             :disabled="busy !== null"
-            :checked="!r.disabled"
-            :aria-label="armed === r.name
-              ? `confirm apply to ${r.name}?`
-              : `${r.disabled ? 'enable' : 'disable'} ${r.name}`"
-            @change="onToggle(r, ($event.target as HTMLInputElement).checked)" />
+            :armed="armed === r.name"
+            :label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`"
+            :confirm-label="`confirm apply to ${r.name}?`"
+            @click="onToggle(r)" />
           <span
             v-else-if="showState"
             class="registry-state"
@@ -143,35 +149,29 @@
 
   const hasDetail = (r: RegistryRow) => !!(r.detail && r.detail.length);
 
-  // --- two-step toggle: arm, then apply (ModuleToggleList mechanic) ---
-  // Card t_87303e8f: the old arm branch trusted "the checkbox re-renders
-  // from server state" - it does not. The `:checked` binding value is
-  // unchanged by the arm click, so Vue's prop diff skips the DOM prop and
-  // the checkbox stays physically toggled; the confirm click then
-  // re-toggled it back and emitted the REVERSE direction (every toggle
-  // through the UI was a no-op). ExtensionsTab (t_210a0d19) solved this
-  // with a per-row revision bump: changing the row's `:key` remounts the
-  // li, so the checkbox re-renders from server state and the confirm
-  // click emits the intended direction.
-  const armed = ref<string | null>(null);
-  const revisions = ref<Record<string, number>>({});
-  const rowKey = (r: RegistryRow) => `${r.name}-${revisions.value[r.name] ?? 0}`;
-  const bump = (name: string) => {
-    revisions.value = { ...revisions.value, [name]: (revisions.value[name] ?? 0) + 1 };
-  };
+  // one key per row identity - the registry owns the names, no remount
+  // tricks since the toggle became the shared pill
+  const rowKey = (r: RegistryRow) => r.name;
 
-  function onToggle(r: RegistryRow, checked: boolean) {
+  // --- two-step toggle: arm, then apply (ModuleToggleList mechanic) ---
+  // Card t_87303e8f's checkbox trap needed the per-row remount hack
+  // when the toggle was an input: a :checked prop Vue could skip. The
+  // shared TogglePill (card t_d93864e7) is a button whose armed state
+  // comes from the reactive model - no DOM prop to miss - so the
+  // remount machinery is gone with the checkbox.
+  const armed = ref<string | null>(null);
+
+  function onToggle(r: RegistryRow) {
     if (props.busy !== null) return;
     if (armed.value !== r.name) {
-      // arm: the note shows what the exclusion means for this namespace;
-      // bump the row key so the checkbox re-renders from server state
+      // arm: the note below the row shows what the exclusion means
       armed.value = r.name;
-      bump(r.name);
       return;
     }
     armed.value = null;
-    bump(r.name);
-    emit("toggle", r.name, checked);
+    // the target direction IS the row's disabled flag: a disabled row
+    // emits enabled=true (the fold write re-renders from the response)
+    emit("toggle", r.name, r.disabled);
   }
 
   const noteFor = (r: RegistryRow) => registryNote(props.kind, r.name, r.disabled);
@@ -258,6 +258,13 @@
   .registry-state {
     font-size: 10px;
     opacity: 0.5;
+  }
+  /* the shared TogglePill (t_d93864e7): the row line speaks baseline,
+     the pill sits centered on it - a 15px button baseline-aligned would
+     park its top above the 12px name. The pill's own CSS never lives
+     here (one component, zero copies). */
+  .registry-main .toggle-pill {
+    align-self: center;
   }
   .registry-confirm {
     font-size: 11px;
