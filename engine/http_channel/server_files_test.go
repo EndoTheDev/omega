@@ -40,10 +40,14 @@ func filesGet(t *testing.T, path string) (*http.Response, map[string]any) {
 
 func TestValidateRelPath(t *testing.T) {
 	accept := map[string]string{
-		"":             "", // empty = root
-		"go.mod":       "go.mod",
-		"cmd/omega":    "cmd/omega",
-		"docs/a b.txt": "docs/a b.txt",
+		"":                  "", // empty = root
+		"go.mod":            "go.mod",
+		"cmd/omega":         "cmd/omega",
+		"docs/a b.txt":      "docs/a b.txt",
+		".git":              ".git",              // hidden names are ordinary paths (t_ccd4a000)
+		"docs/.hidden":      "docs/.hidden",      // hidden nested name
+		".github/workflows": ".github/workflows", // hidden dir descends
+		"a/. b/c":           "a/. b/c",           // any non-traversal dot segment passes
 	}
 	for in, want := range accept {
 		got, err := validateRelPath(in)
@@ -52,18 +56,18 @@ func TestValidateRelPath(t *testing.T) {
 		}
 	}
 	reject := []string{
-		"/etc/passwd",  // absolute
-		"..",           // traversal
-		"a/../b",       // traversal segment
-		"a//b",         // empty segment
-		"a/",           // trailing empty segment
-		".git",         // dot-prefixed segment
-		"docs/.hidden", // dot-prefixed nested segment
-		"./x",          // dot-prefixed segment
+		"/etc/passwd", // absolute
+		"..",          // traversal
+		"a/../b",      // traversal segment
+		"a/./b",       // traversal segment
+		".",           // traversal segment
+		"./x",         // traversal segment
+		"a//b",        // empty segment
+		"a/",          // trailing empty segment
 	}
 	for _, in := range reject {
-		if got, err := validateRelPath(in); err == nil {
-			t.Errorf("validateRelPath(%q) = %q, nil; want error", in, got)
+		if _, err := validateRelPath(in); err == nil {
+			t.Errorf("validateRelPath(%q) = _, nil; want error", in)
 		}
 	}
 }
@@ -172,8 +176,8 @@ func TestFilesBrowseRejections(t *testing.T) {
 	cases := map[string]int{
 		"/files/browse?path=../outside":  http.StatusBadRequest, // traversal
 		"/files/browse?path=a/../b":      http.StatusBadRequest, // traversal segment
-		"/files/browse?path=.git":        http.StatusBadRequest, // hidden segment
-		"/files/browse?path=docs/.x.txt": http.StatusBadRequest, // hidden nested segment
+		"/files/browse?path=a/./b":       http.StatusBadRequest, // traversal segment
+		"/files/browse?path=./x":         http.StatusBadRequest, // traversal segment
 		"/files/browse?path=/etc/passwd": http.StatusBadRequest, // absolute
 		"/files/browse?path=a//b":        http.StatusBadRequest, // empty segment
 		"/files/browse?path=missing-dir": http.StatusNotFound,   // absent
@@ -247,7 +251,7 @@ func TestFilesReadRejections(t *testing.T) {
 	os.Mkdir(filepath.Join(dir, "adir"), 0o755) //nolint:errcheck // setup
 	cases := map[string]int{
 		"/files/read?path=../outside":  http.StatusBadRequest, // traversal
-		"/files/read?path=.secret":     http.StatusBadRequest, // hidden segment
+		"/files/read?path=a/./b.txt":   http.StatusBadRequest, // traversal segment
 		"/files/read?path=/etc/passwd": http.StatusBadRequest, // absolute
 		"/files/read?path=missing.txt": http.StatusNotFound,   // absent
 		"/files/read?path=adir":        http.StatusBadRequest, // a directory
@@ -411,12 +415,12 @@ func TestFilesWriteRefusals(t *testing.T) {
 		want int
 		why  string
 	}{
-		{`{"path":"","content":"x"}`, http.StatusBadRequest, "empty name"},
-		{`{"path":"  ","content":"x"}`, http.StatusBadRequest, "blank name"},
 		{`{"path":"../outsidespawn","content":"x"}`, http.StatusBadRequest, "traversal"},
 		{`{"path":"a/../b.txt","content":"x"}`, http.StatusBadRequest, "traversal segment"},
+		{`{"path":"a/./b.txt","content":"x"}`, http.StatusBadRequest, "traversal segment"},
+		{`{"path":"","content":"x"}`, http.StatusBadRequest, "empty name"},
+		{`{"path":"  ","content":"x"}`, http.StatusBadRequest, "blank name"},
 		{`{"path":"/etc/passwd","content":"x"}`, http.StatusBadRequest, "absolute"},
-		{`{"path":".hidden","content":"x"}`, http.StatusBadRequest, "dot segment"},
 		{`{"path":"adir","content":"x"}`, http.StatusBadRequest, "target is a directory"},
 		{`{"path":"no-parent/f.txt","content":"x"}`, http.StatusBadRequest, "missing parent"},
 		{`{"path":"adir/","content":"x"}`, http.StatusBadRequest, "empty segment"},
@@ -451,6 +455,78 @@ func TestFilesWriteSymlinkEscape(t *testing.T) {
 	}
 	got, err := os.ReadFile(outside)
 	if err != nil || string(got) != "original" {
+		t.Errorf("outside target read %q, %v; want untouched", got, err)
+	}
+}
+
+// TestFilesDotNamesServe pins the narrowed guard end to end (card
+// t_ccd4a000, the Endo report symptom): hidden names are ordinary
+// paths - a dot FILE reads, a dot FOLDER lists, a hidden name writes
+// and mkdirs - while traversal and symlink escapes through the SAME
+// hidden names stay refused. Containment rides resolveUnderRoot +
+// ensureUnderRoot, never the segment scan.
+func TestFilesDotNamesServe(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	os.Mkdir(filepath.Join(dir, ".git"), 0o755)               //nolint:errcheck // setup
+	os.Mkdir(filepath.Join(dir, ".github"), 0o755)            //nolint:errcheck // setup
+	os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref"), 0o644) //nolint:errcheck // setup
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bin/\n"), 0o644) //nolint:errcheck // setup
+
+	// a dot folder lists like any folder
+	res, body := filesGet(t, "/files/browse?path=.git")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("browse .git status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	raw, _ := json.Marshal(body["entries"])
+	var entries []fileEntry
+	json.Unmarshal(raw, &entries)
+	if len(entries) != 1 || entries[0].Name != "HEAD" {
+		t.Errorf("browse .git entries = %v; want [HEAD]", entries)
+	}
+	// a dot file previews like any file
+	res, body = filesGet(t, "/files/read?path=.gitignore")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("read .gitignore status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	if body["content"] != "bin/\n" {
+		t.Errorf("read .gitignore content = %q; want %q", body["content"], "bin/\n")
+	}
+	// a hidden name writes and mkdirs (the toolbar's surface)
+	if res, body := filesPost(t, "/files/write", `{"path":".gitignore","content":"v2"}`); res.StatusCode != http.StatusOK {
+		t.Errorf("write .gitignore status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, ".gitignore")); err != nil || string(got) != "v2" {
+		t.Errorf("hidden write read back %q, %v; want v2", got, err)
+	}
+	if res, body := filesPost(t, "/files/mkdir", `{"path":".agents"}`); res.StatusCode != http.StatusOK {
+		t.Errorf("mkdir .agents status = %d; want 200 (%v)", res.StatusCode, body)
+	}
+	if info, err := os.Stat(filepath.Join(dir, ".agents")); err != nil || !info.IsDir() {
+		t.Errorf("hidden mkdir did not create the folder: %v", err)
+	}
+}
+
+// TestFilesDotSymlinkEscape pins the containment law THROUGH the newly
+// opened hidden names: a symlink (dot-named or not) that leaves the
+// root is refused on every half, and the outside target stays untouched.
+func TestFilesDotSymlinkEscape(t *testing.T) {
+	dir := chdirToWorkdir(t)
+	outside := filepath.Join(t.TempDir(), "victim.txt")
+	os.WriteFile(outside, []byte("original"), 0o644) //nolint:errcheck // setup
+	os.Symlink(outside, filepath.Join(dir, ".victim")) //nolint:errcheck // setup
+
+	res, _ := filesGet(t, "/files/browse?path=.victim")
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("browse .victim symlink status = %d; want 400", res.StatusCode)
+	}
+	res, _ = filesGet(t, "/files/read?path=.victim")
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("read .victim symlink status = %d; want 400", res.StatusCode)
+	}
+	if res, _ := filesPost(t, "/files/write", `{"path":".victim","content":"hijack"}`); res.StatusCode != http.StatusBadRequest {
+		t.Errorf("write .victim symlink status = %d; want 400", res.StatusCode)
+	}
+	if got, err := os.ReadFile(outside); err != nil || string(got) != "original" {
 		t.Errorf("outside target read %q, %v; want untouched", got, err)
 	}
 }

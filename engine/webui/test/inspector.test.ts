@@ -25,14 +25,19 @@ describe("cleanRelPath", () => {
     assert.equal(cleanRelPath("docs/a b.txt"), "docs/a b.txt");
   });
 
-  it("rejects absolute paths, empty and dot-prefixed segments", () => {
+  it("passes hidden names through - the guard rejects traversal only (t_ccd4a000)", () => {
+    assert.equal(cleanRelPath(".git"), ".git");
+    assert.equal(cleanRelPath("docs/.hidden"), "docs/.hidden");
+    assert.equal(cleanRelPath(".github/workflows"), ".github/workflows");
+  });
+
+  it("rejects absolute paths, empty and traversal segments", () => {
     assert.equal(cleanRelPath("/etc/passwd"), null);
     assert.equal(cleanRelPath(".."), null);
     assert.equal(cleanRelPath("a/../b"), null);
+    assert.equal(cleanRelPath("a/./b"), null);
     assert.equal(cleanRelPath("a//b"), null);
     assert.equal(cleanRelPath("a/"), null);
-    assert.equal(cleanRelPath(".git"), null);
-    assert.equal(cleanRelPath("docs/.hidden"), null);
   });
 });
 
@@ -60,9 +65,14 @@ describe("parseExpandedPaths", () => {
 
   it("drops entries the backend would reject", () => {
     assert.deepEqual(
-      parseExpandedPaths(JSON.stringify(["/abs", "..", "a", "", ".x", 7, null])),
+      parseExpandedPaths(JSON.stringify(["/abs", "..", "a", "", "a/./b", 7, null])),
       ["a"],
     );
+    // hidden names survive - ordinary paths since the guard narrowed
+    assert.deepEqual(parseExpandedPaths(JSON.stringify([".git", "docs/.hidden"])), [
+      ".git",
+      "docs/.hidden",
+    ]);
   });
 
   it("collapses duplicates, preserving first occurrence order", () => {
@@ -83,7 +93,7 @@ describe("serializeExpandedPaths", () => {
 
   it("drops invalid paths so a poisoned set never persists", () => {
     assert.equal(
-      serializeExpandedPaths(["ok/sub", "", ".hid", "/abs"]),
+      serializeExpandedPaths(["ok/sub", "", "/abs", "a/.."]),
       '["ok/sub"]',
     );
   });
