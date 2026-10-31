@@ -2225,7 +2225,7 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 
 /* --- shared search input (SearchInput.vue) ---
    ONE look for both search boxes: sidebar session-search and the settings
-   filter. Wrapper elements (.session-search padding, .settings-search
+   filter. Wrapper elements (.session-search padding, .settings-filter
    inside the pane's flex gap) carry placement only. */
 .search-input {
   position: relative;
