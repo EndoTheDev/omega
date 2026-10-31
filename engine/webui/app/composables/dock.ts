@@ -38,7 +38,10 @@ import {
   MAIN_DOCKABLES,
   MENU_DOCKABLES,
   COMPONENT_TITLES,
+  CHAT_FLOOR_PX,
+  MIN_PANE_PX,
   defaultHostTabs,
+  dockableMinPx,
   isClosableTab,
   isLockedTab,
   validViewerRef,
@@ -58,6 +61,7 @@ export {
   MAIN_DOCKABLES,
   MENU_DOCKABLES,
   COMPONENT_TITLES,
+  dockableMinPx,
   isClosableTab,
   isLockedTab,
 };
@@ -79,9 +83,10 @@ export const LEGACY_WIDTH_KEYS = {
 } as const;
 
 // the pre-existing drag floor (both sidebars dragged to 128 before the
-// squeeze chain closed them) and the hard chat floor.
-export const MIN_PANE_PX = 128;
-export const CHAT_FLOOR_PX = 320;
+// squeeze chain closed them) and the hard chat floor now live in THE
+// dockable registry (dockables.ts, card t_ae9ac5cf): the per-component
+// honest floors read one law, and the engine re-exports for its consumers.
+export { MIN_PANE_PX, CHAT_FLOOR_PX } from "./dockables.ts";
 /** Endo's comment (2026-10-26): the bottom shell's max share of the
     split's content box. A drag past it (the pane swallowing the
     window) strands the divider offscreen - the pane is bottom-anchored,
@@ -140,15 +145,34 @@ export function bottomShellContract(): PaneContract {
 /** the drag floor a pane contracts to RIGHT NOW - the resolver the
     divider's cap math reads (it runs on drag; load + resize join when
     contracts serialize in v:3). Fixed panes drag down to the shared 128
-    floor; a flexible pane walls at its contract min, defaulting to the
-    chat's 320. This is the pre-contract ternary
-    (`pane.fixed !== null ? 128 : 320`) reproduced verbatim - no pane
-    carries a contract until v:3, so every characterized drag outcome
-    holds unchanged. */
+    floor; a flexible pane walls at card t_ae9ac5cf's honest pane floor
+    (paneFloorOf - the contract min lifted by its worst hosted tab), so a
+    tool-only flexible pane drags to 128 and chat keeps the 320 wall.
+    A nested split absorbs like a flexible pane STILL (the flat 320):
+    minDockPx recursion here would leak a row's HORIZONTAL sum into a
+    vertical axis (the bottom shell's column drag proved it), so the
+    honest split floors are axis-aware work - a future card, not this
+    one. The conservative absorb only ever clamps MORE. */
 export function contractFloorOf(node: DockNode): number {
   if (!isPane(node)) return CHAT_FLOOR_PX; // a nested split absorbs like a flexible pane
   if (node.fixed !== null) return MIN_PANE_PX;
-  return node.contract?.minPx ?? CHAT_FLOOR_PX;
+  return paneFloorOf(node);
+}
+
+/** card t_ae9ac5cf: a flexible pane's HONEST floor - the worst floor over
+    the tabs it HOSTS (a pane that might show chat keeps chat room; a
+    pane with only tool tabs floats at 128, Endo's 250px screenshot
+    proved the room was real), lifted by its own contract's minPx when
+    larger, and the chat wall when EMPTY (an empty pane's next tenant may
+    be the chat - the old law held there, and the fixtures hold it). One
+    consumer family: contractFloorOf (the drag clamps) and minDockPx (the
+    reveal's "no room" check) both read this - "no room" now fires exactly
+    when a drag could not free the space either. */
+export function paneFloorOf(pane: DockPane): number {
+  let floor = pane.contract?.minPx ?? MIN_PANE_PX;
+  for (const t of pane.tabs) floor = Math.max(floor, dockableMinPx(t.component));
+  if (pane.tabs.length === 0) floor = Math.max(floor, CHAT_FLOOR_PX);
+  return floor;
 }
 
 // component names panes may host: the dockable registry is the single
@@ -1083,10 +1107,12 @@ export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
 /** the minimum horizontal px a subtree needs at its axis. A row SUMS its
     children (plus the 4px dividers DockDivider renders between them), a
     column takes its WIDEST child, a fixed pane counts its px, a flexible
-    pane counts the 320px chat floor (the contract: every flexible pane
-    floors there - dragSplitDivider treats them identically). */
+    pane counts its HONEST floor (card t_ae9ac5cf: paneFloorOf - the worst
+    hosted tab's registry floor, chat 320 / tools 128, the chat wall
+    when empty - the contract "every flexible pane can host a chat" was
+    over-counting tool panes and refused reveals that fit). */
 export function minDockPx(node: DockNode): number {
-  if (isPane(node)) return node.fixed !== null ? node.fixed : CHAT_FLOOR_PX;
+  if (isPane(node)) return node.fixed !== null ? node.fixed : paneFloorOf(node);
   const reqs = node.children.map(minDockPx);
   const dividers = node.direction === "row" ? (reqs.length - 1) * 4 : 0;
   return node.direction === "row"
@@ -1635,10 +1661,13 @@ export function pruneInnerLeaf(tree: DockNode, leafId: string): DockNode {
     target's bar); left/right/top/bottom split the target with the zone's
     direction+side and the dragged tab lands IN the new half-pane (VS Code
     editor-group docking: drop left -> the target splits, the dragged tab
-    takes the left half). Refusals: zones never self-dock (body drops of a
-    pane's own tab keep the focus-only read), a vanished pane mid-gesture,
-    the shells on a split zone (their fixed shape), and the LOCKED tab -
-    it never leaves the left shell and never lands in a fresh pane. */
+    takes the left half). The split zones self-drop now (card
+    t_ae9ac5cf - a pane's own half-zone drop SPLITS that pane, the same
+    VS Code read), so refusals: the center zone's self-dock (body drops
+    of a pane's own tab keep the focus-only read), a vanished pane
+    mid-gesture, the shells' split-zones the law refuses (sidebar row
+    zones, depth caps, a grown re-growth), and the LOCKED tab - it never
+    leaves the left shell and never lands in a fresh pane. */
 export type DockDropPrediction =
   | { tree: DockNode; freshPaneId: string | null }
   | { refused: true; reason: string };
@@ -1662,7 +1691,6 @@ export function predictDockDrop(
   toPaneId: string,
   zone: DragZone,
 ): DockDropPrediction {
-  if (fromPaneId === toPaneId) return { refused: true, reason: "zones never self-dock" };
   const from = findPane(tree, fromPaneId);
   const to = findPane(tree, toPaneId);
   if (!from || !to || !from.tabs[fromIndex]) {
@@ -1671,7 +1699,12 @@ export function predictDockDrop(
   const locked = isLockedTab(from.tabs[fromIndex]!.component);
   const split = zoneSplitOf(zone);
   if (!split) {
-    // center: the moveTab locked-tab law owns the refusal (sessions only
+    // card t_ae9ac5cf: the CENTER zone is the only zone that still
+    // self-refuses - grouping a pane's own tab into its own bar is a
+    // fold (the component keeps the focus read); the SPLIT zones
+    // self-drop now and split the pane like any foreign drop.
+    if (fromPaneId === toPaneId) return { refused: true, reason: "zones never self-dock" };
+    // the moveTab locked-tab law owns the refusal (sessions only
     // ever lands back in the left shell) - report it before the call so
     // the ghost's refusal is visible without executing the commit
     if (locked && lockedBarRefusal(tree, toPaneId)) {
@@ -1693,6 +1726,22 @@ export function predictDockDrop(
     // first leaf, the fresh leaf takes the zone's side)
     const g = growRoot(tree, toPaneId, split.direction, split.side);
     if (!g) return { refused: true, reason: "the shells keep their shape" };
+    if (fromPaneId === toPaneId) {
+      // card t_ae9ac5cf: a SAME-pane shell grow already moved the shell's
+      // tabs wholesale into shellLeaf - the dragged tab now lives THERE
+      // at its own index (growRoot orders it verbatim), so the seat reads
+      // shellLeaf. Seat it from the emptied root instead and moveTab
+      // would silently no-op (the drag would "vanish" into the wholesale
+      // move). Degenerate: the shell's LAST tab splitting away empties
+      // shellLeaf and the root un-grows (ruling 8) - the tab rides back
+      // to the shell's own bar, a clean no-shape round trip.
+      const leaf = findPane(g.tree, g.shellLeafId);
+      const i = leaf && fromIndex < leaf.tabs.length ? fromIndex : 0;
+      return {
+        tree: moveTab(g.tree, g.shellLeafId, i, g.freshPaneId, 0),
+        freshPaneId: g.freshPaneId,
+      };
+    }
     return {
       tree: moveTab(g.tree, fromPaneId, fromIndex, g.freshPaneId, 0),
       freshPaneId: g.freshPaneId,

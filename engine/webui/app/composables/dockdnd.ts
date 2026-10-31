@@ -121,7 +121,10 @@ export function dropAllowedFor(
 }
 
 // --- docking zones (card t_0e833eae) -----------------------------------------
-// A tab dragged over ANOTHER pane's body predicts where the tab lands: the
+// A tab dragged over a pane's body predicts where the tab lands (same-pane
+// body hovers included - card t_ae9ac5cf lets the split zones self-drop:
+// a tab dragged to its OWN pane's edge splits that pane, VS Code's
+// editor-group read; the center self-hover stays the focus fold): the
 // four half-zones split the target pane around the dragged tab, the center
 // zone groups it into the target as a plain tab. VS Code thresholds: the
 // pointer sits in a side zone once it leaves the middle band along either
@@ -194,7 +197,9 @@ export function zoneRectFractions(zone: DragZone): ZoneRect {
     edge marker is `targetEdge` (undefined = main pane)? EDGE SHELLS keep
     their fixed shape (card t_d6b657a7: identity, not content) - their
     tabs are free but the pane never splits, so only the center zone
-    (group into the shell's bar) lands there. Main panes take every zone. */
+    (group into the shell's bar) lands there. Main panes take every zone.
+    Same-pane drops read the predictor's center-only self-fold (card
+    t_ae9ac5cf) - which zones are offered does not depend on the source. */
 export function splitAllowedFor(
   targetEdge: "left" | "right" | "bottom" | undefined,
 ): boolean {

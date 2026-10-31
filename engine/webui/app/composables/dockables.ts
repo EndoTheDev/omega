@@ -77,7 +77,16 @@ export type DockArea = "left" | "right" | "main" | "bottom";
 // registry entry as a key of ICONS, and the Icon wrapper throws at render
 // time on a name this registry never declared.
 
-// one registry entry. `title` is the display voice for the tab/menu chip
+// the honest floors (card t_ae9ac5cf). The chat family keeps the 320px
+// wall (a pane that might show a chat must keep chat room); every tool
+// component floors at the shared 128px pane minimum - Endo's screenshot
+// proved a 250px tool pane renders fine, so a tool-only tab never counts
+// 320 against the "no room" math. These also back paneFloorOf/minDockPx
+// (dock.ts) - one floor law for the reveal check AND the drag clamps.
+export const MIN_PANE_PX = 128;
+export const CHAT_FLOOR_PX = 320;
+
+/** the registry entry. `title` is the display voice for the tab/menu chip */
 // (Title Case for shell tabs - Files, Agents, Extensions, Insights - the
 // module dockable.json titles follow the same voice); the open flows add
 // their own verb (chat's multi policy reads "new chat" in the menus).
@@ -109,6 +118,11 @@ export interface DockableComponent {
   /** tab shows a hover-X. Pinned components (left/right) are unclosable:
       their pane hosts them forever; main tabs close (hover-X). */
   closable: boolean;
+  /** card t_ae9ac5cf: the component's honest px floor - a pane whose
+      WORST hosted tab is this component may never be starved below it
+      (the reveal's "no room" math and the divider drags read the same
+      floor). chat = CHAT_FLOOR_PX; the tool family = MIN_PANE_PX. */
+  minPx: number;
 }
 
 // THE pinned identity (card t_4ae27e0d): sidebar = the sessions pane
@@ -116,7 +130,7 @@ export interface DockableComponent {
 // pinned right with every view tab unclosable. card t_49d0b308: chat is
 // the only closable component left - settings moved into the inspector
 // group and the kanban board is born there.
-export const DOCKABLES: readonly DockableComponent[] = [
+export const DOCKABLE_INVENTORY: readonly DockableComponent[] = [
   {
     id: "sidebar",
     title: "Sessions",
@@ -300,6 +314,34 @@ export const DOCKABLES: readonly DockableComponent[] = [
   },
 ];
 
+// the per-component floors (card t_ae9ac5cf): chat is the only component
+// that needs the 320px wall; every other tab renders honestly at 128.
+// Expressed as one map so a new registry entry joins the floor law in
+// exactly one place - the composed DOCKABLES below attaches it.
+const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
+  sidebar: MIN_PANE_PX,
+  chat: CHAT_FLOOR_PX,
+  viewer: MIN_PANE_PX,
+  files: MIN_PANE_PX,
+  cron: MIN_PANE_PX,
+  http_channel: MIN_PANE_PX,
+  skills: MIN_PANE_PX,
+  tools: MIN_PANE_PX,
+  agents: MIN_PANE_PX,
+  settings: MIN_PANE_PX,
+  kanban: MIN_PANE_PX,
+  extensions: MIN_PANE_PX,
+  insights: MIN_PANE_PX,
+  mcp: MIN_PANE_PX,
+  notifications: MIN_PANE_PX,
+};
+
+/** THE registry, floors attached: every entry carries its honest `minPx`
+    (docks.ts paneFloorOf reads it through dockableMinPx). */
+export const DOCKABLES: readonly DockableComponent[] = DOCKABLE_INVENTORY.map(
+  (d) => ({ ...d, minPx: DOCKABLE_MIN_PX[d.id] }),
+);
+
 /** card t_36ceb99b: WHAT a viewer tab shows. `kind` "file" reads the
     name as a working-directory relative path (GET /files/read), "skill"
     as a skill folder name (GET /skills/content). The tab's identity for
@@ -346,6 +388,14 @@ export function dockableOf(id: DockComponentName): DockableComponent {
 function safeEntry(id: string): DockableComponent | null {
   if (!(DOCK_COMPONENTS as readonly string[]).includes(id)) return null;
   return dockableOf(id as DockComponentName);
+}
+
+/** card t_ae9ac5cf: the component's honest floor, lenient like
+    safeEntry: a tab id outside the registry (persisted legacy ids)
+    counts as a tool tab - 128 keeps the pane usable and never invokes
+    the chat wall for data the registry never declared. */
+export function dockableMinPx(id: string): number {
+  return safeEntry(id)?.minPx ?? MIN_PANE_PX;
 }
 
 /** the tab chip's iconset name - lenient like safeEntry: a tab carrying

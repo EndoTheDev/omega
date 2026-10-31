@@ -137,6 +137,10 @@ describe("both-flexible divider: the left pane floors at ITS contract floor (car
     const inner = makeSplit("row", [nested, makePane(null)]);
     const out = dragSplitDivider(inner, 1, [498, 498], -900, 996);
     assert.ok(Math.abs(out.split.sizes[0] * 996 - 320) < 1e-6);
+    // card t_ae9ac5cf note: the flat absorb still rides on the nested
+    // split (the per-component honest floor lives on PANES; minDockPx
+    // recursion here would leak a row's horizontal sum into a vertical
+    // axis) - the nested split's own fractions are byte-identical
     // the drag remaps only the outer split's pair; the nested split's own
     // fractions are byte-identical
     const outNested = asSplit(out.split.children[0]);
