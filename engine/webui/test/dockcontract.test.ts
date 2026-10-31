@@ -67,13 +67,14 @@ describe("dragSplitDivider characterization: both panes flexible", () => {
     assert.equal(out.collapsedPaneId, null);
   });
 
-  it("the flexible drag floors at 128 and walls at room - 320", () => {
+  it("the flexible drag walls at room - 320 on BOTH sides (t_8bcbe72e: the left floor is the chat's 320, not 128)", () => {
     // huge right drag: finalLeft clamps at pxHi = 1000 - 320 = 680
     const out = dragSplitDivider(flex(), 1, [500, 500], 900, CONTENT);
     assert.deepEqual(asSplit(out.split).sizes.map((s) => Math.round(s * 100)), [68, 32]);
-    // huge left drag: finalLeft clamps at pxLo = 128
+    // huge left drag: finalLeft clamps at pxLo = contractFloorOf(left) = 320 -
+    // the old pin here read 13 (128), the asymmetry Endo dragged his chat to
     const back = dragSplitDivider(flex(), 1, [500, 500], -900, CONTENT);
-    assert.deepEqual(asSplit(back.split).sizes.map((s) => Math.round(s * 100)), [13, 87]);
+    assert.deepEqual(asSplit(back.split).sizes.map((s) => Math.round(s * 100)), [32, 68]);
   });
 
   it("the +320 attractor snaps a flexible drag like a fixed one", () => {

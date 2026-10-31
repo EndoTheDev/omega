@@ -1161,6 +1161,11 @@ export function revealEdgePane(
       anyway); nothing stowed (or an edge-marker mismatch) falls back to
       the default minting below. */
   hidden?: DockPane | null,
+  /** card t_8bcbe72e: the pane-area's measured content px - a reveal the
+      window cannot seat is refused BEFORE any state mutates (the caller
+      gets the SAME tree back). null/absent = no measurement in play
+      (callers without a viewport) and the reveal proceeds as today. */
+  contentPx?: number | null,
 ): DockNode {
   const edge = component === "sidebar" ? "left" : "right";
   const fixed = Math.max(PANE_OPEN_MIN, fixedPx ?? EDGE_DEFAULT_PX[component]);
@@ -1178,7 +1183,59 @@ export function revealEdgePane(
       pane = revived;
     } // every restored tab already lives elsewhere: mint the default
   }
-  return insertRootEdge(tree, side, pane);
+  // card t_8bcbe72e (wall law: a gesture stops at a wall, never surprises):
+  // a reveal whose result cannot fit is checked against what the watcher's
+  // give-way could actually free - the overflow that matters lives INSIDE a
+  // grown root split, where hideEdgePane (root edges only, by ruling) frees
+  // nothing and the insert would be reaped on sight. The simulation runs
+  // THIS component protected (last-requested wins, t_66fa358e): the other
+  // root edge gives way. If the give-away CAN seat the pane the reveal
+  // proceeds (the squeeze re-check executes exactly it - the t_66fa358e
+  // toggle-reopens path); if even reaping every other root edge leaves the
+  // tree over-constrained, the reveal REFUSES - the same tree reference
+  // comes back, nothing inserts, the closed set and stows stay untouched.
+  // The old unconditional insert churned insert+prune+stow on every toggle
+  // - Endo's "the layout seems to reset somehow". contentPx omitted = no
+  // measurement in play (callers without a viewport) and the reveal
+  // proceeds as today.
+  const candidate = insertRootEdge(tree, side, pane);
+  if (
+    contentPx !== null &&
+    contentPx !== undefined &&
+    Number.isFinite(contentPx) &&
+    minDockPx(candidate) > contentPx
+  ) {
+    // can the root-edge give-away ever seat it? The protected pane (this
+    // component) is NEVER reaped; every OTHER root edge gives way. If the
+    // floor of that fully-relieved tree still exceeds the content px, the
+    // watcher could never reach a fitting state (the real overflow lives
+    // INSIDE a grown root split, which reaps nothing) - the reveal is
+    // hopeless: the caller gets the SAME tree back, zero churn.
+    let probe = candidate;
+    for (const comp of ["inspector", "sidebar"] as const) {
+      if (comp !== component && findEdgePane(probe, comp)) {
+        probe = hideEdgePane(probe, comp);
+      }
+    }
+    if (minDockPx(probe) > contentPx) return tree;
+  }
+  return candidate;
+}
+
+/** the reveal's decision wrapper: the tree AND whether it revealed (the
+    refusal returns the caller's tree reference - the toggle stays closed
+    with zero churn and surfaces a one-line "no room" hint instead of a
+    silent dead button). */
+export function tryRevealEdgePane(
+  tree: DockNode,
+  component: "sidebar" | "inspector",
+  side: "before" | "after",
+  fixedPx?: number | null,
+  hidden?: DockPane | null,
+  contentPx?: number | null,
+): { tree: DockNode; revealed: boolean } {
+  const next = revealEdgePane(tree, component, side, fixedPx, hidden, contentPx);
+  return { tree: next, revealed: next !== tree };
 }
 
 /** the restore twin of the minters: the stowed pane comes back id-for-id
@@ -1938,8 +1995,16 @@ export function dragSplitDivider(
   // guard (travelSnapAt) keeps a passive zone hold from teleporting on
   // grab; the magnet engages only when the drag brings the px into a zone.
   const content = Math.max(1, room);
-  const pxLo = MIN_PANE_PX;
-  const pxHi = Math.max(MIN_PANE_PX, room - contractFloorOf(rp));
+  // card t_8bcbe72e: the LEFT pane floors at ITS contract floor, the same
+  // law the right side has always had - the old `pxLo = MIN_PANE_PX` let a
+  // flexible chat pane shrink to 128 when it sat LEFT of the divider (a
+  // 320 floor on one side, 128 on the other; the 1:1 tracking fix
+  // t_f7201e02 exposed it because the drag now parks at sub-320 widths
+  // instead of racing to a wall). Degenerate over-constraint (the pair's
+  // floors exceed room): the controlled side takes its floor -
+  // consistent with the fixed lanes' caps.
+  const pxLo = contractFloorOf(lp);
+  const pxHi = Math.max(pxLo, room - contractFloorOf(rp));
   const raw = clamp(pxOf(li) + deltaPx, pxLo, pxHi);
   const rung = travelSnapAt(pxOf(li), raw, SNAP_STEP);
   const finalLeft = clamp(rung ?? raw, pxLo, pxHi);
@@ -2767,6 +2832,11 @@ export interface DockApi {
       memory, so the menubar toggle restores exactly what the resize took.
       Page-lifetime like a drag-close - a wider window never re-reveals. */
   narrowSqueeze: (contentPx: number) => void;
+  /** card t_8bcbe72e: the component whose last reveal was refused for
+      lack of room (the fit-check ran before any state mutated - the
+      toggle stayed closed, zero churn). The UI surfaces the one-line
+      "no room" hint and clears it; null = nothing refused. */
+  revealRefused: Ref<"sidebar" | "inspector" | null>;
 }
 
 export const DOCK_API_KEY: InjectionKey<DockApi> = Symbol("omega-dock-api");
@@ -2814,6 +2884,12 @@ export function createDock(store: Storage): DockApi {
   // card t_66fa358e: the component of the toggle's last reveal - the next
   // narrowSqueeze protects it (last-requested wins), then clears it
   let revealPending: "sidebar" | "inspector" | null = null;
+  // card t_8bcbe72e: the latest pane-area px the resize watcher measured -
+  // the toggle's fit-check reads it (the reveal refuses when the window
+  // cannot seat the pane). null until the first measurement (the boot's
+  // resize observer) - no measurement, no refusal, today's behavior.
+  let lastContentPx: number | null = null;
+  const revealRefused = ref<"sidebar" | "inspector" | null>(null);
   if (loaded?.hiddenEdges) {
     for (const comp of Object.keys(loaded.hiddenEdges) as DockEdgeComponent[]) {
       const pane = loaded.hiddenEdges[comp];
@@ -3115,18 +3191,33 @@ export function createDock(store: Storage): DockApi {
       setClosed(component, true);
       tree.value = hideEdgePane(tree.value, component);
     } else {
+      // card t_8bcbe72e: the fit-check runs BEFORE any state mutates -
+      // under chronic overflow (the grown main root leaves no room) the
+      // refusal is a clean no-op: the toggle stays closed, the stow and
+      // the closed-edge set untouched, zero tree churn (the old order
+      // setClosed()d first, inserted, and let the watcher's give-way reap
+      // the pane right back while mutating state on every attempt).
+      const stowed = hiddenState[component] ?? null;
+      const res = tryRevealEdgePane(
+        tree.value,
+        component,
+        side,
+        recalledEdgePx(store, component),
+        stowed,
+        lastContentPx,
+      );
+      if (!res.revealed) {
+        revealRefused.value = component;
+        return;
+      }
       // reopen-clamp: a stale sub-floor remembered width reopens AT 320
       setClosed(component, false);
-      const stowed = hiddenState[component] ?? null;
       delete hiddenState[component];
       // card t_66fa358e: the reveal owns the NEXT squeeze (app.vue's tree
       // watcher re-checks after the DOM settles) - the just-revealed pane
       // is exempt from the give-away there (last-requested wins).
       revealPending = component;
-      applyLayout(
-        tree.value,
-        revealEdgePane(tree.value, component, side, recalledEdgePx(store, component), stowed),
-      );
+      applyLayout(tree.value, res.tree);
     }
   };
 
@@ -3175,6 +3266,11 @@ export function createDock(store: Storage): DockApi {
   // card t_aa9dbada: the give-way's closure persists like every other hide
   // (a reload never re-reveals a pane the user's own state says is closed).
   const narrowSqueeze = (contentPx: number) => {
+    // card t_8bcbe72e: every measurement updates the toggle's fit-check
+    // baseline - the reveal refuses against the LATEST pane-area px (a
+    // stale number would either refuse a reveal that now fits or admit
+    // one that no longer does).
+    lastContentPx = contentPx;
     // card t_66fa358e: a squeeze right after a user reveal is
     // last-requested-aware - the just-revealed pane is exempt (the other
     // edge pane gives way). The pending reveal is CONSUMED here: the
@@ -3210,6 +3306,7 @@ export function createDock(store: Storage): DockApi {
     split, remove, toggleEdge, ensureMainPane, canRemovePane, isLastMainPane: lastMainPane, drag, toggleBottom,
     bottomFullscreen, toggleBottomFullscreen,
     narrowSqueeze,
+    revealRefused,
     undoLayout, beginResize: () => undoPush(tree.value),
   };
 }
