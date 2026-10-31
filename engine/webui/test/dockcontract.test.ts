@@ -67,12 +67,14 @@ describe("dragSplitDivider characterization: both panes flexible", () => {
     assert.equal(out.collapsedPaneId, null);
   });
 
-  it("the flexible drag walls at room - 320 on BOTH sides (t_8bcbe72e: the left floor is the chat's 320, not 128)", () => {
-    // huge right drag: finalLeft clamps at pxHi = 1000 - 320 = 680
+  it("the drag walls at the SIBLING's honest floor (t_8bcbe72e symmetry + t_ae9ac5cf per-component floors)", () => {
+    // huge right drag: finalLeft clamps at pxHi = room - contractFloorOf(files)
+    // - the files pane's honest floor is 128 now (a tool-only pane never
+    // counted the chat wall), so the chat absorbs to 872
     const out = dragSplitDivider(flex(), 1, [500, 500], 900, CONTENT);
-    assert.deepEqual(asSplit(out.split).sizes.map((s) => Math.round(s * 100)), [68, 32]);
-    // huge left drag: finalLeft clamps at pxLo = contractFloorOf(left) = 320 -
-    // the old pin here read 13 (128), the asymmetry Endo dragged his chat to
+    assert.deepEqual(asSplit(out.split).sizes.map((s) => Math.round(s * 100)), [87, 13]);
+    // huge left drag: finalLeft clamps at pxLo = contractFloorOf(chat) = 320 -
+    // a CHAT pane still walls at 320, never 128 (t_8bcbe72e's law, intact)
     const back = dragSplitDivider(flex(), 1, [500, 500], -900, CONTENT);
     assert.deepEqual(asSplit(back.split).sizes.map((s) => Math.round(s * 100)), [32, 68]);
   });

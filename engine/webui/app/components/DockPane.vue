@@ -598,9 +598,13 @@
       return;
     }
     const d = tabDrag.current();
-    // zones are CROSS-PANE: a body hover of the pane's own tab keeps the
-    // classic focus-on-drop read (no docking preview of itself)
-    if (d && d.paneId === props.node.id) {
+    // card t_ae9ac5cf: the split zones self-drop now (VS Code: dragging a
+    // tab to its own group's edge splits the group) - only the CENTER
+    // zone keeps the focus-only read on a same-pane body hover.
+    const selfRaw = d && d.paneId === props.node.id
+      ? zoneForPoint(e.clientX, e.clientY, bodyRect())
+      : null;
+    if (d && d.paneId === props.node.id && selfRaw === "center") {
       dropHover.value = true;
       refusedIdx.value = null;
       dropZone.value = null;
@@ -611,7 +615,7 @@
     // 1-3: the pinned roots GROW now - a shell's body offers split zones
     // like any pane (sidebars stack rows only), and the pure predictor's
     // refusal (hatched-red ghost) is the gate, not a center-fold here.
-    const raw = zoneForPoint(e.clientX, e.clientY, bodyRect());
+    const raw = selfRaw ?? zoneForPoint(e.clientX, e.clientY, bodyRect());
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
     dropZone.value = raw;
@@ -641,20 +645,24 @@
     predicted.value = null;
   }
 
-  // body drop (VS Code): same pane = focus only; another pane: the lit
-  // zone decides - split the target around the dragged tab (halves, the
-  // new half-pane seats the tab) or group it as a plain tab (center).
-  // The pure op refuses its illegal landings as no-ops (shells don't
-  // split, zones never self-dock), so release never tears the layout.
+  // body drop (VS Code): same pane + a SPLIT zone = the pane splits around
+  // the dragged tab (the tab seats in the new half, the rest stay - card
+  // t_ae9ac5cf); same pane + no zone/center = focus only; another pane:
+  // the lit zone decides - split the target around the dragged tab
+  // (halves, the new half-pane seats the tab) or group it as a plain tab
+  // (center). The pure op refuses its illegal landings as no-ops (locked
+  // tabs land nowhere fresh, the law's split caps hold), so release never
+  // tears the layout.
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation(); // the leaf owns the drop; a grown root re-handles nothing
     const d = payloadOf(e);
     const zone = dropZone.value;
     if (d && dropAllowed()) {
-      if (zone && d.p !== props.node.id) {
+      const samePane = d.p === props.node.id;
+      if (zone && (!samePane || zone !== "center")) {
         api.dockDropToZone(d.p, d.t, props.node.id, zone);
-      } else if (d.p === props.node.id) {
+      } else if (samePane) {
         api.focus(props.node.id, d.t);
       } else {
         api.moveTab(d.p, d.t, props.node.id, props.node.tabs.length);

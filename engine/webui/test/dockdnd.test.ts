@@ -168,9 +168,10 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.equal(B.active, 1, "the moved tab FOCUSES in the target");
   });
 
-  it("zones never self-dock (same-pane body hover keeps focus-on-drop)", () => {
+  it("same-pane drop: the CENTER zone still self-refuses (card t_ae9ac5cf - the split zones self-split now)", () => {
     const { root, a } = row();
-    assert.equal(dockDropToZone(root, a.id, 0, a.id, "left"), root);
+    assert.equal(dockDropToZone(root, a.id, 0, a.id, "center"), root);
+    assert.notEqual(dockDropToZone(root, a.id, 0, a.id, "left"), root, "a same-pane half drop splits (VS Code edge read)");
   });
 
   it("edge shells GROW (v0.14.4 ruling 1): sidebar rows refuse, column grows, center groups", () => {
@@ -321,23 +322,21 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   });
 
   it("refusal matrix: every refusal matches a tree-unchanged commit", () => {
-    // same-pane zones never dock
-    for (const zone of ZONES) {
-      const { root, a } = row();
-      (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
-      assert.equal(dockDropToZone(root, a.id, 0, a.id, zone), root);
-      const reason = expectRefusal(predictDockDrop(root, a.id, 0, a.id, zone));
-      assert.equal(typeof reason, "string");
-    }
+    // same-pane CENTER self-docks never (card t_ae9ac5cf: the split zones
+    // self-drop now - covered by the split tests in dockselfsplit.test.ts)
+    const { root, a } = row();
+    (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
+    assert.equal(dockDropToZone(root, a.id, 0, a.id, "center"), root);
+    assert.equal(typeof expectRefusal(predictDockDrop(root, a.id, 0, a.id, "center")), "string");
     // vanished counterpart / vanished index refuse
-    const { root, a, b } = row();
+    const { root: rv, a: av, b } = row();
     for (const zone of ZONES) {
-      assert.equal(dockDropToZone(root, "n999", 0, b.id, zone), root);
-      assert.equal(dockDropToZone(root, a.id, 0, "n999", zone), root);
-      assert.equal(dockDropToZone(root, a.id, 7, b.id, zone), root);
-      expectRefusal(predictDockDrop(root, "n999", 0, b.id, zone));
-      expectRefusal(predictDockDrop(root, a.id, 0, "n999", zone));
-      expectRefusal(predictDockDrop(root, a.id, 7, b.id, zone));
+      assert.equal(dockDropToZone(rv, "n999", 0, b.id, zone), rv);
+      assert.equal(dockDropToZone(rv, av.id, 0, "n999", zone), rv);
+      assert.equal(dockDropToZone(rv, av.id, 7, b.id, zone), rv);
+      expectRefusal(predictDockDrop(rv, "n999", 0, b.id, zone));
+      expectRefusal(predictDockDrop(rv, av.id, 0, "n999", zone));
+      expectRefusal(predictDockDrop(rv, av.id, 7, b.id, zone));
     }
     // v0.14.4 ruling 1: the SHELL's body drop grows its root now - the
     // sidebar's row zones refuse (stacked rows only), the column zones

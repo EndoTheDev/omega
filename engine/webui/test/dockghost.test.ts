@@ -52,9 +52,11 @@ describe("ghostPreview (the exact before-drop read)", () => {
 
   it("a refusal returns the commit's own reason verbatim", () => {
     const { root, a, b } = rowRoot();
-    const same = predictDockDrop(root, a.id, 0, a.id, "left");
+    // card t_ae9ac5cf: the split zones self-drop now, so the ghost's
+    // verbatim-refusal law pins on the CENTER self-fold (still refused)
+    const same = predictDockDrop(root, a.id, 0, a.id, "center");
     assert.ok("refused" in same);
-    const g = ghostPreview(root, a.id, 0, a.id, "left", 480);
+    const g = ghostPreview(root, a.id, 0, a.id, "center", 480);
     assert.equal(g.refused, same.reason);
     assert.equal(g.halves, null);
   });
