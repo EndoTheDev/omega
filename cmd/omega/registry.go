@@ -35,7 +35,7 @@ type omegaRegistries struct {
 	setAgents  func([]string) // the continuous capsule's disabled-agents fold, nil when it is not mounted
 	logger     core.LoggerProvider
 
-	mu sync.Mutex // one fold mutation + write at a time
+	mu *sync.Mutex // one fold mutation + write at a time - SHARED pointer with omegaModules (gate must-fix 1)
 }
 
 // Compile-time assertion that omegaRegistries implements the seam.

@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -616,10 +617,15 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		Tools:   cfg.Disabled.Tools,
 		Agents:  cfg.Disabled.Agents,
 	}
+	// one mutex for BOTH toggle surfaces (gate must-fix 1): module and
+	// registry toggles mutate the same fold pointer and write the same
+	// config.yaml - one lock, injected into both adapters.
+	foldMu := &sync.Mutex{}
 	mods := &omegaModules{
 		pctx:       pctx,
 		reg:        reg,
 		fold:       fold,
+		mu:         foldMu,
 		deps:       core.StartDeps{Ctx: pctx, Agent: ag, Store: store, Run: ctx},
 		configPath: configFile,
 		logger:     logger,
@@ -628,6 +634,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		pctx:       pctx,
 		reg:        reg,
 		fold:       fold,
+		mu:         foldMu,
 		configPath: configFile,
 		home:       omegaHome(),
 		setAgents:  setAgents,
