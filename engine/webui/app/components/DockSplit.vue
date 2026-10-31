@@ -69,7 +69,7 @@
   // whose pure math owns floors (128 drag / 320 chat) and the snap
   // ladder (+320, panes.ts).
   import { inject, onBeforeUnmount, onMounted, ref } from "vue";
-  import { snapCandidateAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
+  import { snapCandidateAt, travelSnapAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
     DOCK_API_KEY,
@@ -200,18 +200,29 @@
     const node = props.node as DockSplit;
     const li = dividerIndex - 1;
     const i = dividerIndex;
-    const bottomCase =
-      node.direction === "column" &&
-      (node.children[i] as DockPaneNode).fixed !== null;
+    // mirror the pure fn's branch read (a nested split child is flexible -
+    // kind must be 'pane' for the fixed reads, the bare cast misreads it)
+    const fixedPane = (k: number): boolean =>
+      node.children[k]!.kind === "pane" &&
+      (node.children[k] as DockPaneNode).fixed !== null;
+    const bottomCase = node.direction === "column" && fixedPane(i);
     const px = bottomCase
       ? startPx[i] - cumulative
-      : (node.children[li] as DockPaneNode).fixed !== null
+      : fixedPane(li)
         ? startPx[li] + cumulative
-        : (node.children[i] as DockPaneNode).fixed !== null
+        : fixedPane(i)
           ? startPx[i] - cumulative
           : startPx[li] + cumulative;
     const step = bottomCase ? BOTTOM_SNAP_STEP : SNAP_STEP;
-    snappedIdx.value = snapCandidateAt(px, step) !== null ? dividerIndex : null;
+    // the guide mirrors the drag law (t_f7201e02): on the both-flexible
+    // lane the magnet is a TRAVEL magnet - a passive zone hold at gesture
+    // start neither snaps the drag nor lights the guide; the fixed lanes
+    // keep the plain zone read (their held px sits at a rung).
+    const bothFlexible = !fixedPane(li) && !fixedPane(i);
+    const attract = bothFlexible
+      ? travelSnapAt(startPx[li], px, step)
+      : snapCandidateAt(px, step);
+    snappedIdx.value = attract !== null ? dividerIndex : null;
   }
 
   function onEnd() {

@@ -45,3 +45,16 @@ export function snapLadder(maxPx: number): number[] {
 export function openClamp(w: number): number {
   return Math.max(PANE_OPEN_MIN, w);
 }
+
+/** t_f7201e02 travel magnet: the rung a drag is attracted to. A start px
+    already sitting inside a rung's zone is a PASSIVE hold - a previous
+    gesture parked the divider at a free width, nobody traveled there - so
+    snapping it on grab would teleport on the first move. The magnet only
+    engages when the drag BRINGS the intended px into a zone (a rung the
+    start was not already held by): the fixed lanes' no-jump-on-grab feel.
+    Returns the rung to attract to, or null (follow the pointer). */
+export function travelSnapAt(startPx: number, intended: number, step: number): number | null {
+  const startRung = snapCandidateAt(startPx, step);
+  const rung = snapCandidateAt(intended, step);
+  return rung !== null && rung !== startRung ? rung : null;
+}
