@@ -234,9 +234,10 @@
     overflow-x: hidden;
     padding: 4px 12px 14px;
   }
-  .tools-list.narrow {
-    padding: 0;
-  }
+  /* narrow (the module-UI recipe, card t_a2fdc630): the ROOT stays
+     padding-free - the band mounts flush like Cron/Skills (the stray
+     narrow root padding sat the band +6/+8px inside, card t_ffab9823);
+     the body owns every inset. */
   .tools-list.narrow .tools-body {
     padding: 4px 8px 10px;
   }
@@ -244,10 +245,5 @@
     margin: 0;
     font-size: 11px;
     opacity: 0.6;
-  }
-  /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome:
-     the action detail lines live inside the rows now. */
-  .tools-list.narrow {
-    padding: 6px 8px 10px;
   }
 </style>

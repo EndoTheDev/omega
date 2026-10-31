@@ -19,7 +19,10 @@
       <TabBand title="Settings" />
       <!-- card t_f1a034dc: the filter's OWN row (the t_311fc40b shape:
            band -> controls row -> body) - it stretches nothing now, the
-           band holds the title alone at the 22/14 contract. -->
+           band holds the title alone at the 22/14 contract. card
+           t_ffab9823: the root keeps NO padding and NO flex gap - the
+           filter row seats itself (8px 10px, the sessions new-row
+           pattern) and starts at the band's own bottom edge. -->
       <div class="settings-filter">
         <SearchInput
           v-model="query"
@@ -528,7 +531,8 @@
   /* card t_f1a034dc: the filter seats on its own row BELOW the band -
      no band seating overrides stay. .search-input is display:block with
      a full-width input, so the row fills the pane's content box as-is;
-     .settings' 20px flex gap spaces band row / filter row / body. */
+     the row's own padding (8px 10px, card t_ffab9823) seats it - the
+     root keeps no flex gap (card t_ffab9823). */
   /* card t_acad02ec: the knob select is the shared BandSelect chip -
      inline (the composer's listbox pattern), never wider than its row */
   .setting-select {

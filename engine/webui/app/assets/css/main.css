@@ -2178,12 +2178,23 @@ labels stopped short of the right edge. */
   border: 1px solid var(--stroke);
   border-radius: var(--r-pane);
   min-width: 128px; /* same floor as the sidebars */
-  padding: 16px;
+  /* card t_ffab9823: the band mounts at the pane's top-left EDGE like
+     every tab (Files/Cron/Skills/Tools) - the 16px root padding sat the
+     band +10/+16px and the flex gap put a 12/20px dead gap between the
+     band and the filter row. NO root padding, NO flex gap: the rows
+     carry their own seat (the sessions new-row pattern). */
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 0;
   min-height: 0;
   flex: 1;
+}
+
+/* the filter row (the band's first row): its OWN seat, the sessions
+   new-row pattern - 8px under the band, the pane edge insets it */
+.settings-filter {
+  padding: 8px 10px;
 }
 
 /* group headers: full-row clickable, same interaction feel as the sidebar
@@ -2279,13 +2290,15 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 /* the scrolling body: same pattern as .session-list / .inspector-files -
    flex:1 + min-height:0 + overflow-y:auto. 28 knobs overflow the pane
    otherwise and nothing scrolls (reported by Endo, morning 2026-10-18).
-   search input and save row stay pinned outside it. */
+   search input and save row stay pinned outside it. Root padding is gone
+   (card t_ffab9823 - the rows carry their own seat); the 10px sides keep
+   the knob rows on the old root inset */
 .settings-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding: 0 10px 4px;
 }
 .setting-item {
   padding: 8px 0;
@@ -2381,11 +2394,8 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
    inspector's ~300px column now; the measured `narrow` class (the root's
    rendered width, composables/narrow.ts) tightens the chrome so every
    knob stays reachable and nothing clips. Controls are already stacked
-   (labels above inputs) - only the padding/scale needs a step down. */
-.settings.narrow {
-  padding: 10px;
-  gap: 12px;
-}
+   (labels above inputs) - the scale steps down. The root stays
+   padding-free in narrow too (card t_ffab9823: the band mounts flush). */
 .settings.narrow .setting-item { font-size: 13px; }
 .settings.narrow .setting-input { font-size: 12px; padding: 5px 8px; }
 .settings.narrow .setting-textarea { min-height: 48px; }
