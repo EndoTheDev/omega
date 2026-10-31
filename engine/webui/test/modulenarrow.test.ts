@@ -79,7 +79,10 @@ const RETROFIT: Array<{
     rel: "modules/tools/ui/ToolsList.vue",
     label: "tools",
     module: "tools",
-    rules: [/\.tools-list\.narrow \{/],
+    // card t_308e6d9b + t_ffab9823: the narrow padding rides the scroll
+    // body now - no ROOT narrow rule survives (the stray duplicate sat
+    // the band +6/+8px inside)
+    rules: [/\.tools-list\.narrow \.tools-body \{/],
   },
   {
     rel: "modules/mcp/ui/McpServers.vue",
