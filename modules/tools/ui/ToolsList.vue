@@ -3,12 +3,27 @@
     ref="rootEl"
     class="tools-list"
     :class="{ narrow: narrow }">
-    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
-         Tools tab has no actions, so the band is title-only (the law:
-         every tab carries the band, never conditionally hidden). The
-         band renders BEFORE the scroll body: scrolling the list never
-         moves it. -->
-    <TabBand title="Tools" />
+    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - title
+         left, the refresh action right, ONE row. Card t_f1a034dc: Tools
+         was the only RegistryList tab whose band stayed bare - Skills got
+         its refresh in the t_ec57d5b8 rollout and Tools missed it, so
+         the bare band read as unaligned next to every other tab. The
+         click re-runs the fetch chain: GET /tools is the live
+         inventory, so a tool appearing after mount shows - no restart.
+         The band renders BEFORE the scroll body: scrolling the list
+         never moves it. -->
+    <TabBand title="Tools">
+      <button
+        class="band-tool"
+        title="refresh"
+        aria-label="refresh tools"
+        :disabled="refreshing"
+        @click="refresh">
+        <Icon
+          name="refresh"
+          :size="13" />
+      </button>
+    </TabBand>
     <div class="tools-body">
     <p
       v-if="error"
@@ -61,6 +76,10 @@
   const loaded = ref(false);
   const error = ref("");
   const busy = ref<string | null>(null);
+  // the refresh's lock (card t_ec57d5b8 pattern, card t_f1a034dc): a
+  // second click while a chain is in flight is dropped (the in-flight
+  // chain answers)
+  const refreshing = ref(false);
   const toggleError = ref<string | null>(null);
   // false when the host serves no toggle seam (501 on /disabled): the
   // list stays, read-only.
@@ -96,6 +115,25 @@
       // /disabled unreachable is not fatal to the LIST; stay read-only
       // rather than guessing the fold state
       toggleable.value = false;
+    }
+  }
+
+  // the refresh (card t_ec57d5b8 pattern, card t_f1a034dc): re-run the
+  // fetch chain without a remount - GET /tools answers the live
+  // inventory (the built-in-wins merge is server-side), so a tool
+  // appearing after mount shows. A failure lands on the panel's
+  // existing error line and the current rows stand.
+  async function refresh(): Promise<void> {
+    if (refreshing.value) return;
+    refreshing.value = true;
+    toggleError.value = null;
+    try {
+      await load();
+      error.value = "";
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      refreshing.value = false;
     }
   }
 

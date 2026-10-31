@@ -10,15 +10,16 @@
        pattern's look. No chart dependency. -->
   <section class="pane insights">
     <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
-         window selector + recompute ride the band now; the period text
-         rides the band's small print. The band renders before the
-         .insights-scroll body: scrolling the dashboard never moves it. -->
+         window selector + recompute ride the band; card t_f1a034dc: the
+         plain-text period label is GONE - it rendered the SAME value the
+         BandSelect chip already shows ("Last 7 days" beside "7 days"),
+         two controls for one window. The period still travels on the
+         band's hover tooltip (title-attr) and the overview block. The
+         band renders before the .insights-scroll body: scrolling the
+         dashboard never moves it. -->
     <TabBand
       title="Insights"
       :title-attr="data ? `${data.period}${data.period_start ? ': ' + data.period_start + ' — ' + data.period_end : ''}` : undefined">
-      <span
-        class="insights-period"
-        :title="data ? data.period : 'loading'">{{ data ? data.period : "loading" }}</span>
       <!-- card t_acad02ec (audit M1): the window selector rides the themed
            listbox (BandSelect) - a native select popup is OS chrome over
            the pane. The fixed literals below are the devProxy contract
@@ -270,15 +271,11 @@
     gap: 10px;
     padding-top: 4px;
   }
-  .insights-period {
-    margin: 0;
-    font-size: 11px;
-    color: var(--text-dim);
-    white-space: nowrap;
-  }
   /* card t_acad02ec (audit M1): the window select rides the shared
      BandSelect chip now - no native select chrome; only seating rides
-     here (the chip keeps the shared .model-chip look). */
+     here (the chip keeps the shared .model-chip look). The old
+     .insights-period small-print rule died with the label
+     (card t_f1a034dc). */
   .insights-days {
     flex-shrink: 0;
   }
