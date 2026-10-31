@@ -46,9 +46,11 @@ test("SettingsTab binds the width-driven narrow class", () => {
   assert.match(src, /narrow: narrow/, "the root class binding");
   assert.match(src, /useNarrow\(rootEl\)/, "the measurement composable");
   assert.match(src, /ref="rootEl"/, "the root carries the observe target");
-  // the narrow rules exist in the stylesheet
+  // the narrow rules exist in the stylesheet (card t_ffab9823: NO block
+  // rule on .settings.narrow itself - the root keeps no padding/gap in
+  // narrow either; the rules are per-knob only)
   const css = readFileSync(join(root, "app", "assets", "css", "main.css"), "utf8");
-  assert.ok(/\.settings\.narrow \{/.test(css), "the narrow rules are in");
+  assert.ok(/\.settings\.narrow \.setting-item/.test(css), "the narrow rules are in");
 });
 
 test("the shell narrow composable exists and is mounted-safe", () => {
