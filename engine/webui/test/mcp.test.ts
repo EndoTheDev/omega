@@ -20,12 +20,15 @@ import { ICONS } from "../app/composables/icons.ts";
 import {
   MCP_EMPTY_HINT,
   MCP_EMPTY_TEXT,
+  serverEnabled,
   serverRows,
   sourceLabel,
+  statusDot,
   statusLabel,
   type McpServerWire,
 } from "../../../modules/mcp/ui/serverRows.ts";
 import { reloadMcpServers } from "../../../modules/mcp/ui/reload.ts";
+import { setMcpServerEnabled } from "../../../modules/mcp/ui/toggle.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
@@ -107,9 +110,12 @@ test("McpServers consumes the module route and the shared row model", () => {
   // and it rides the helper - the SFC itself stays GET-only against the
   // read route; PUT exists nowhere in the module UI
   assert.ok(src.includes("reloadMcpServers"), "the refresh rides the reload helper");
+  assert.ok(src.includes("setMcpServerEnabled"), "the per-row toggle rides the toggle helper (card t_83f37525)");
   const reloadTs = read(root, "modules", "mcp", "ui", "reload.ts");
-  assert.ok(reloadTs.includes('method: "POST"') && reloadTs.includes('"/mcp/reload"'), "the helper POSTs the module's reload route");
-  assert.ok(!src.includes("method:") && !reloadTs.includes("PUT"), "no PUT anywhere in the module UI");
+  const toggleTs = read(root, "modules", "mcp", "ui", "toggle.ts");
+  assert.ok(reloadTs.includes('method: "POST"') && reloadTs.includes('"/mcp/reload"'), "the reload helper POSTs the module's reload route");
+  assert.ok(toggleTs.includes('"/mcp/toggle"') && toggleTs.includes("JSON.stringify"), "the toggle helper POSTs the named flag body (card t_83f37525)");
+  assert.ok(!src.includes("method:") && !reloadTs.includes("PUT") && !toggleTs.includes("PUT"), "no PUT anywhere in the module UI");
   assert.ok(src.includes(".mcp-list.narrow {"), "its narrow rules ship in its own stylesheet");
 });
 
@@ -201,6 +207,131 @@ test("the dockable declaration matches the registry voice", () => {
   const decl = JSON.parse(read(root, "modules", "mcp", "ui", "dockable.json"));
   assert.equal(decl.title, "MCP", "the runtime title matches the registry fallback");
   assert.equal(decl.icon, "mcp");
+});
+
+// --- the per-server toggle model (card t_83f37525) -----------------------
+
+test("serverEnabled: the absent flag reads as on (old wires keep rendering)", () => {
+  assert.equal(serverEnabled({ name: "x" }), true, "an undefined enabled flag is an enabled server");
+  assert.equal(serverEnabled({ name: "x", enabled: true }), true);
+  assert.equal(serverEnabled({ name: "x", enabled: false }), false);
+});
+
+test("statusLabel: the disabled state outranks the connection truth it caused", () => {
+  const s = (over: Partial<McpServerWire>): string => statusLabel({ name: "x", ...over });
+  assert.equal(s({ connected: true }), "connected");
+  assert.equal(s({ connected: false }), "not connected");
+  assert.equal(s({ connected: true, error: "tools/list failed" }), "tools/list failed");
+  assert.equal(s({ error: "" }), "not connected", "an empty error is no error");
+  assert.equal(s({ enabled: false, connected: false }), "disabled", "the skipped server says exactly that");
+  assert.equal(
+    s({ enabled: false, error: "initialize failed" }),
+    "disabled",
+    "a disabled server carries no failure - the skip is a config decision",
+  );
+});
+
+test("statusDot: --ok rides a live connection, --err a recorded failure, dim otherwise", () => {
+  const s = (over: Partial<McpServerWire>) => statusDot({ name: "x", ...over });
+  assert.equal(s({ connected: true }), "ok");
+  assert.equal(s({ connected: false }), "off", "not connected without a recorded failure is neutral");
+  assert.equal(s({ error: "tools/list failed" }), "err");
+  assert.equal(s({ enabled: false }), "off");
+  assert.equal(s({ connected: true, error: "e" }), "err", "a recorded failure outranks the mount state");
+});
+
+// --- the toggle behavior (card t_83f37525) --------------------------------
+// The fetch-log recipe (the reload behavior tests above): the helper
+// drives the two-step chain, no SFC compile.
+
+test("setMcpServerEnabled: POST the named flag, then re-fetch the listing", async () => {
+  const calls: { url: string; method: string; body?: string }[] = [];
+  savedFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    const call = { url: String(url), method: init?.method ?? "GET", body: init?.body == null ? undefined : String(init.body) };
+    calls.push(call);
+    if (call.url === "/mcp/toggle") {
+      return new Response(
+        JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", enabled: false, connected: false }] }),
+        { status: 200 },
+      );
+    }
+    return new Response(
+      JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", enabled: false, connected: false, tools: [] }] }),
+      { status: 200 },
+    );
+  }) as typeof globalThis.fetch;
+  try {
+    const rep = await setMcpServerEnabled("echo", false);
+    assert.equal(calls.length, 2, "the ruled two-step: POST the toggle, then the re-fetch");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].url, "/mcp/toggle");
+    assert.equal(calls[0].body, JSON.stringify({ name: "echo", enabled: false }), "the body names the server and the target state");
+    assert.equal(calls[1].method, "GET");
+    assert.equal(calls[1].url, "/mcp/servers");
+    assert.equal(rep.source, "mcp.yaml");
+    assert.equal(rep.servers?.[0]?.enabled, false, "the fresh listing carries the persisted flag");
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
+test("setMcpServerEnabled: a refused write throws and never re-fetches", async () => {
+  const calls: { url: string; method: string }[] = [];
+  savedFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET" });
+    // e.g. the MCP_SERVERS / mcp.json / no-config refusals at the wire
+    return new Response("mcp toggle: config came from MCP_SERVERS - it is not a file, set the flag there", { status: 400 });
+  }) as typeof globalThis.fetch;
+  try {
+    await assert.rejects(
+      setMcpServerEnabled("echo", false),
+      /POST \/mcp\/toggle: 400/,
+      "the refusal is what the panel's error line shows",
+    );
+    assert.equal(calls.length, 1, "no re-fetch after a refused toggle - the prior rows stand");
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
+// --- the visual rebuild (card t_83f37525) ---------------------------------
+// The composition-test convention: the node suite never compiles the
+// SFC, it pins the decisions. The clipping bug was the old list
+// rendering tool names as fixed-width (22px) columns that wrapped mid-
+// word with per-line clipping; the new shape is wrapped chips that
+// ellipse per chip and NEVER clip vertically. These greps are the law
+// that shape stays dead.
+
+test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse", () => {
+  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  assert.ok(!src.includes("width: 22px"), "the zero-width column root is gone");
+  assert.ok(!/\.mcp-tool\s*\{[^}]*height:\s*\d+px/.test(src), "no fixed chip height - nothing can clip vertically");
+  assert.match(src, /\.mcp-tool\s*\{[^}]*text-overflow:\s*ellipsis/, "each chip ellipses its own text instead of overflowing");
+  assert.match(src, /\.mcp-tool\s*\{[^}]*max-width:\s*100%/, "a chip never exceeds its row (the pane-edge law)");
+  assert.match(src, /\.mcp-tools\s*\{[^}]*flex-wrap:\s*wrap/, "the tool container wraps to new lines - no horizontal crush");
+  assert.match(src, /\.mcp-row-main\s*\{[^}]*flex-wrap:\s*wrap/, "the row main line wraps its cluster too");
+});
+
+test("the source caption is its own line, never overlapped", () => {
+  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  assert.match(src, /class="mcp-source">from \{\{ sourceLabel\(source\) \}\}/, "the source echo renders in its own caption element");
+  // no negative margins riding the caption (the half-covered bug)
+  assert.ok(!/\.mcp-source\s*\{[^}]*margin-?(top|bottom)?:\s*-/.test(src), "the caption never pulls itself under the rows");
+});
+
+test("the row speaks the design tokens: status dot, transport pill, no bare mono dump", () => {
+  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  assert.match(src, /\.mcp-dot-ok\s*\{[^}]*var\(--ok\)/, "the connected dot rides the ok token");
+  assert.match(src, /\.mcp-dot-err\s*\{[^}]*var\(--err\)/, "the failure dot rides the err token");
+  assert.match(src, /\.mcp-dot-off\s*\{[^}]*var\(--text-dim\)/, "the neutral dot rides the dim text token");
+  assert.match(src, /class="mcp-pill"/, "the transport renders as a badge, not a bare string");
+  assert.match(src, /\.mcp-pill\s*\{[^}]*var\(--mono\)/, "the pill speaks the mono token for its small print");
+  assert.match(src, /\.mcp-name\s*\{[^}]*font-weight:\s*600/, "the server name is the semibold row lead");
+  assert.match(src, /serverEnabled\(s\)/, "the disabled row renders muted-but-visible in the template");
+  assert.match(src, /\.mcp-off \.mcp-name/, "its muted styling ships in the stylesheet");
+  assert.match(src, /\.mcp-list\.narrow \.mcp-state/, "the narrow rules reflow the state line");
 });
 
 test("the shell mounts the panel: the outlet template rides app.vue, the route is GET-only", () => {
