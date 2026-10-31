@@ -82,10 +82,12 @@ func (p *Plugin) Requires() []string { return nil }
 // MountWithAPI implements agent.APIPlugin. This Mount is the module's
 // whole surface (arc 6 capsule, card t_cf6b7795): the bridge tool
 // provider - every discovered MCP server tool, server-qualified - ships
-// from here, plus the module's two routes: the read-only inventory the
-// webui MCP tab lists (GET /mcp/servers, card t_c7136c50) and the
-// reload the tab's refresh button drives (POST /mcp/reload, card
-// t_d6e94e79 - mcp.yaml edits go live on refresh, no server restart).
+// from here, plus the module's routes: the read-only inventory the
+// webui MCP tab lists (GET /mcp/servers, card t_c7136c50), the reload
+// the tab's refresh button drives (POST /mcp/reload, card t_d6e94e79 -
+// mcp.yaml edits go live on refresh, no server restart), and the
+// per-server toggle (POST /mcp/toggle, card t_83f37525 - the `enabled:`
+// flag persisted into mcp.yaml, then the same reload).
 // No command, no skills, no canvas panel. The env/mcp.yaml config load
 // lives in the module too; the host's construction falls back to a
 // no-op bridge on config failure. Removal proof: TestMCPRemovalProof
@@ -110,6 +112,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// too: a module idle at boot (no config found) wakes up on the
 	// first reload - the refresh button is the whole trigger.
 	if err := api.RegisterRoute("POST /mcp/reload", p.handleReload); err != nil {
+		return err
+	}
+	// The per-server toggle route (card t_83f37525) rides the same
+	// reasoning: it persists the `enabled:` flag into mcp.yaml, then
+	// reloads through the shared bridge swap. Nil-bridge mount keeps
+	// the route surface stable (the empty tab's toggle is refused at
+	// the wire, never a module-rooted miss).
+	if err := api.RegisterRoute("POST /mcp/toggle", p.handleToggle); err != nil {
 		return err
 	}
 	// The tool provider registers even on a nil bridge (the reload
