@@ -52,17 +52,6 @@ type Context struct {
 	// PromptSectioner; the prompt builder renders their sections.
 	PromptSectioners []PromptSectioner
 
-	// Frontend (exclusive — one frontend at a time). The host calls
-	// Run after mounting all extensions.
-	Frontend Frontend
-
-	// TUI providers (additive — module-owned TUI commands and
-	// screens, card t_88bb7dcf). Each module appends its TUIProvider
-	// during Mount - the registration point; a plugin left out of
-	// buildPlugins never mounts and its TUI surface is simply absent,
-	// the same law the webui enforces through directory registration.
-	TUIProviders []TUIProvider
-
 	// Module routes (additive - v0.12 phase F): module-registered REST
 	// routes, journaled through RegisterRoute. The serving channels
 	// re-read it at wire and after every live toggle (core.LiveSeams) -

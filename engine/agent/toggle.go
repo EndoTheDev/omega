@@ -309,9 +309,6 @@ func censusGrew(before, after core.CensusSnapshot) []string {
 	if after.Channels > before.Channels {
 		out = append(out, "channels")
 	}
-	if after.TUIProviders > before.TUIProviders {
-		out = append(out, "tui_providers")
-	}
 	if after.PromptSectioners > before.PromptSectioners {
 		out = append(out, "prompt_sectioners")
 	}
@@ -343,9 +340,6 @@ func censusShrank(before, after core.CensusSnapshot) []string {
 	out = append(out, listAdded("handles", after.Handles, before.Handles)...)
 	if after.Channels < before.Channels {
 		out = append(out, "channels")
-	}
-	if after.TUIProviders < before.TUIProviders {
-		out = append(out, "tui_providers")
 	}
 	if after.PromptSectioners < before.PromptSectioners {
 		out = append(out, "prompt_sectioners")

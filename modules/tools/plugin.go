@@ -67,11 +67,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 					return handleToolsCommand(ctx, name, args)
 				})
 		},
-		// The /files browser rides the module TUI seam (the read view
-		// over the files domain). A tools plugin left out of
-		// buildPlugins takes /files out of the command table with it
-		// (card t_88bb7dcf).
-		func() error { return api.RegisterRenderer(&tui{}) },
+
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
