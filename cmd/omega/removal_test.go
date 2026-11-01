@@ -1185,12 +1185,13 @@ func TestVerdictRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// recipe step 1, declared data: verdict requires store and logging,
-	// and no other plugin's Requires may name "verdicts" - a hit here
-	// is the removal recipe's stop signal
+	// recipe step 1, declared data: verdict requires store and logging.
+	// "approval" is its one registered dependent (t_c2b52cb5: an
+	// escalation hard-pauses on a card) - anything ELSE naming
+	// "verdicts" is the removal recipe's stop signal
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
-			if req == "verdicts" {
+			if req == "verdicts" && p.Name() != "approval" {
 				t.Fatalf("FULL MOUNT precondition: %q requires verdicts - the removal takes a dependent", p.Name())
 			}
 		}
@@ -1312,9 +1313,22 @@ func TestVerdictRemovalProof(t *testing.T) {
 	t.Log("PROOF action-pipe: no panel, no actions - the pipe answers ErrUnknownModule on the full mount (module ships no canvas surface by design)")
 
 	// --- mount 2: the capsule removed ---
+	// approval goes with it: it Requires verdicts (the escalation
+	// card) - a dependent cannot mount in a world without its source;
+	// its own removal proof (TestApprovalRemovalProof) covers that
+	// world's shape
 	var removed []agent.Plugin
 	for _, p := range plugins {
 		if p.Name() == "verdict" {
+			continue
+		}
+		needsVerdicts := false
+		for _, req := range p.Requires() {
+			if req == "verdicts" {
+				needsVerdicts = true
+			}
+		}
+		if needsVerdicts {
 			continue
 		}
 		removed = append(removed, p)
@@ -1738,4 +1752,111 @@ func TestTerminalRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF removed: zero /terminal routes registered - the webui Terminal tab 404s; " +
 		"no seams, tools or commands ever rode this capsule, so nothing else can leak")
+}
+
+// TestApprovalRemovalProof is the smart-approval-capsule proof (card
+// t_c2b52cb5). Approval is the loop-side born-capsule: the detector,
+// parser, reviewer client, ladder, cache and audit log all ship from
+// the one Mount, and the whole feature is the ApprovalProvider seam
+// the agent loop consults before every tool run. No tool, no command,
+// no REST route, no canvas panel, no webui surface (settings ride the
+// Go-side groups; the escalation card rides the verdict module). The
+// three mounts are the proof:
+//
+//  1. SMART/MANUAL (default): the seam is mounted (ctx.Approvals),
+//     the Approval Gate prompt section ships from the plugin, and no
+//     other plugin Requires "approvals".
+//  2. MODE OFF: the seam is nil and the prompt section is absent -
+//     Q10 provably zero-cost: the loop consults nothing, no audit
+//     file is created, no calls or rows exist.
+//  3. REMOVED: the module is out of buildPlugins - the seam is nil,
+//     nothing Requires it, and removing modules/approval takes the
+//     feature whole (the capsule law).
+func TestApprovalRemovalProof(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+
+	// --- mount 1: the capsule mounted (default mode = manual, Q5) ---
+	plugins, err := buildPlugins(DefaultConfig())
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	// recipe step 1, declared data: approval requires verdicts (an
+	// escalation hard-pauses on a card); no OTHER plugin's Requires
+	// may name "approvals" - a hit here is the removal stop signal
+	for _, p := range plugins {
+		for _, req := range p.Requires() {
+			if p.Name() != "approval" && req == "approvals" {
+				t.Fatalf("FULL MOUNT precondition: %q requires approvals - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	cfg := DefaultConfig()
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	if ctx.Approvals == nil {
+		t.Fatal("FULL MOUNT: approvals seam nil - capsule did not mount")
+	}
+	foundGate := false
+	for _, ps := range ctx.PromptSectioners {
+		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
+			if s.Title == "Approval Gate" && strings.Contains(s.Body, "approval") {
+				foundGate = true
+			}
+		}
+	}
+	if !foundGate {
+		t.Fatal("FULL MOUNT: the Approval Gate prompt section is absent from the capsule's Mount")
+	}
+	t.Log("PROOF mount=full: seam mounted (ctx.Approvals), prompt section from the same Mount, default mode manual")
+
+	// --- mount 2: mode off - Q10, the gate is fully absent ---
+	offCfg := DefaultConfig()
+	offCfg.Approvals.Mode = "off"
+	ctxOff := &core.Context{Configs: agent.RouteConfigs(plugins, offCfg)}
+	if _, err := agent.MountAllAPI(plugins, ctxOff, nil, nil); err != nil {
+		t.Fatalf("mount off-mode: %v", err)
+	}
+	if ctxOff.Approvals != nil {
+		t.Fatal("OFF MOUNT: the seam must be nil - mode off mounts nothing")
+	}
+	for _, ps := range ctxOff.PromptSectioners {
+		for _, s := range ps.PromptSections(core.PromptBuildOptions{}) {
+			if s.Title == "Approval Gate" {
+				t.Fatal("OFF MOUNT: the Approval Gate prompt section survived mode off")
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, "approval-decisions.jsonl")); err == nil {
+		// a fresh home's audit file only ever exists if something wrote
+		// without a gate mounted - the no-hidden-logging claim
+		t.Fatal("OFF MOUNT: an audit row exists without a gate")
+	}
+	t.Log("PROOF mount=off: seam nil, no prompt section, zero audit writes - the gate is absent, not idle")
+
+	// --- mount 3: the module removed (the capsule law) ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "approval" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	for _, p := range removed {
+		for _, req := range p.Requires() {
+			if req == "approvals" {
+				t.Fatalf("REMOVED MOUNT precondition: %q requires approvals", p.Name())
+			}
+		}
+	}
+	ctxRm := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if _, err := agent.MountAllAPI(removed, ctxRm, nil, nil); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	if ctxRm.Approvals != nil {
+		t.Fatal("REMOVED MOUNT: approvals seam non-nil without the capsule")
+	}
+	t.Log("PROOF removed: the seam is the whole feature - taking the module out takes detection, ladder, cache and audit file with it")
 }

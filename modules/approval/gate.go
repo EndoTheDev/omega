@@ -335,5 +335,7 @@ func (g *Gate) row(in rowInput) AuditRow {
 	if in.cardErr != nil {
 		row.Error = in.cardErr.Error()
 	}
+	row.PolicyFP = g.questionsFP
+	row.LadderVersion = ladderVersion
 	return row
 }

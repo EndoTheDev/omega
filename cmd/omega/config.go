@@ -291,6 +291,16 @@ func DefaultConfig() Config {
 		},
 		HTTPTimeout: 300,
 		MaxTurns:    100,
+		// card t_c2b52cb5, the ship-dark default (Q5): manual IS the
+		// explicit default - the knob render reads the field directly,
+		// no helper (the pure-failure law: the approval vocabulary
+		// must die whole under scripts/nm-purity.sh --module approval,
+		// and a helper derived entirely from the config field leaves
+		// an illegal empty func behind). approval.NormalizedMode
+		// still treats empty as manual for yaml that wrote "".
+		Approvals: ApprovalConfig{
+			Mode: "manual",
+		},
 	}
 }
 

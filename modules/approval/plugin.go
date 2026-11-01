@@ -53,7 +53,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	verdicts := func() core.VerdictsProvider { return ctx.Verdicts }
 	notes := func() core.NotificationsProvider { return ctx.Notifications }
 	p.gate = NewGate(cfg, verdicts, notes, ctx.Logger)
-	return api.RegisterApprovals(p.gate)
+	if err := api.RegisterApprovals(p.gate); err != nil {
+		return err
+	}
+	// the prompt guidance rides the same Mount (every module self-
+	// registers its sectioner)
+	return api.RegisterPromptSectioner(p)
 }
 
 const promptSectionOrder = 36 // after verdict cards (35)
