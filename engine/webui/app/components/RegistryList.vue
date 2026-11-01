@@ -52,11 +52,24 @@
               class="reg-row-name">{{ r.name }}</span>
             <!-- the row law's subtitle: a flex line so bars/badges can
                  ride it; the dim 11px rides the .reg-row-sub anatomy
-                 class (the consumer keeps no row typography). -->
+                 class (the consumer keeps no row typography). Card
+                 t_2d8deb8c: the status vocabulary rides this line too -
+                 a colored dot + the short state word (green = active,
+                 dim = sleeping), cron's "next HH:MM" placement. -->
             <span
-              v-if="r.description"
+              v-if="r.description || r.status"
               class="reg-row-sub">
-              <span class="reg-row-sub-text registry-desc">{{ r.description }}</span>
+              <span
+                v-if="r.description"
+                class="reg-row-sub-text registry-desc">{{ r.description }}</span>
+              <span
+                v-if="r.status"
+                class="reg-row-status"
+                :class="{ 'status-on': r.status.on }">
+                <i
+                  class="reg-row-dot"
+                  aria-hidden="true"></i>{{ r.status.label }}
+              </span>
             </span>
           </div>
           <!-- the generic row side: numbers, bars, badges - things the
@@ -70,14 +83,18 @@
                dot, same armed aria. A button whose armed state comes from
                the reactive model carries no :checked prop for Vue's prop
                diff to skip (t_87303e8f), so the checkbox revision-remount
-               machinery is gone with it. -->
+               machinery is gone with it. A LOCKED row (card t_2d8deb8c,
+               the default agent): permanently on, non-interactive - the
+               pill renders locked-on, the arm step never arms, the
+               emit never fires. -->
           <TogglePill
             v-if="toggleable"
             class="registry-toggle reg-row-ctrl"
+            :class="{ 'toggle-locked': r.locked }"
             :state="!r.disabled"
-            :disabled="busy !== null"
+            :disabled="busy !== null || !!r.locked"
             :armed="armed === r.name"
-            :label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`"
+            :label="lockedLabel(r)"
             :confirm-label="`confirm apply to ${r.name}?`"
             @click="onToggle(r)" />
           <span
@@ -88,12 +105,9 @@
         <span
           v-if="armed === r.name"
           class="registry-confirm reg-row-note">{{ noteFor(r) }}</span>
-        <!-- card t_c7222095: the optional under-row preview (the merged
-             agent row shows the continuous last report under the facts;
-             consumers that do not set it render nothing). -->
-        <span
-          v-if="r.preview"
-          class="registry-preview">{{ r.preview }}</span>
+        <!-- card t_2d8deb8c: the under-row preview line DIED with it
+             (ruling 3) - the two-line anatomy is the law, the status
+             word rides the subtitle. -->
         <template v-if="isExpanded(r.name)">
           <ul
             v-if="hasDetail(r)"
@@ -178,6 +192,7 @@
 
   function onToggle(r: RegistryRow) {
     if (props.busy !== null) return;
+    if (r.locked) return; // card t_2d8deb8c: the locked pill never arms
     if (armed.value !== r.name) {
       // arm: the note below the row shows what the exclusion means
       armed.value = r.name;
@@ -188,6 +203,13 @@
     // emits enabled=true (the fold write re-renders from the response)
     emit("toggle", r.name, r.disabled);
   }
+
+  // lockedLabel (card t_2d8deb8c): a locked row's steady aria states
+  // the law instead of offering a toggle that would refuse.
+  const lockedLabel = (r: RegistryRow) =>
+    r.locked
+      ? `${r.name} is locked on - the default agent cannot be disabled`
+      : `${r.disabled ? "enable" : "disable"} ${r.name}`;
 
   const noteFor = (r: RegistryRow) => registryNote(props.kind, r.name, r.disabled);
 
@@ -259,15 +281,8 @@
   .registry-desc {
     min-width: 0;
   }
-  /* card t_c7222095: the under-row preview - one dim line, ellipsed */
-  .registry-preview {
-    font-size: 11px;
-    opacity: 0.6;
-    overflow: hidden;
-    padding-left: 10px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  /* card t_2d8deb8c: the under-row preview DIED (ruling 3) - the
+     under-row lines are the note line above only. */
   .registry-detail {
     list-style: none;
     margin: 2px 0 2px 10px;

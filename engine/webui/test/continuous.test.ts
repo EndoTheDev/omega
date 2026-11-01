@@ -11,7 +11,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import {
   evidenceSummary,
-  previewLine,
   rowStatus,
   shortWhen,
   verifierVoice,
@@ -49,9 +48,10 @@ describe("continuous view-model helpers", () => {
     assert.equal(rowStatus(row()), "sleeping");
   });
 
-  it("previewLine falls back to the no-report line", () => {
-    assert.equal(previewLine(row({ last_report: "patrol complete" })), "patrol complete");
-    assert.match(previewLine(row()), /no report yet/);
+  // previewLine DIED (card t_2d8deb8c, ruling 3): the row renders no
+  // third line, so the helper is gone entirely.
+  it("previewLine is deleted from the module (the row carries no preview)", () => {
+    assert.doesNotMatch(src("app/components/agents/continuousRows.ts"), /previewLine/, "the preview helper is gone");
   });
 
   it("evidenceSummary counts without fabricating a verdict on zero rows", () => {
@@ -91,12 +91,15 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
     assert.doesNotMatch(src("app/composables/icons.ts"), /continuous: CircleDot/, "the icon vocabulary entry dropped");
   });
 
-  it("the merged row renders config + runtime status + preview in one row", () => {
-    assert.match(agentsPanel, /agents-badge/, "the inline status badge renders");
-    assert.match(agentsPanel, /rowStatus/, "the badge speaks the roster status voice");
-    assert.match(agentsPanel, /preview:\s*previewLine\(/, "the row carries the last-report preview");
-    assert.match(registryList, /registry-preview/, "RegistryList renders the under-row preview");
-    assert.match(registryList, /<span[\s\S]{0,40}v-if="r\.preview"/, "the preview renders only when set");
+  it("the merged row renders config + status word in the row-law anatomy", () => {
+    // t_2d8deb8c: the status vocabulary - dot + short word riding the
+    // SUBTITLE line; the inline badge and the under-row preview died.
+    assert.doesNotMatch(agentsPanel, /agents-badge/, "the inline badge died");
+    assert.doesNotMatch(agentsPanel, /preview\s*:/, "the row carries no preview");
+    assert.match(agentsPanel, /agentStatusFor\(/, "the status word is the roster voice");
+    assert.match(registryList, /reg-row-status/, "RegistryList seats the subtitle status");
+    assert.match(registryList, /reg-row-dot/, "the live dot rides the row law's css");
+    assert.doesNotMatch(registryList, /registry-preview/, "RegistryList lost the under-row preview");
   });
 
   it("the merged AgentsPanel rides the continuous REST surface exactly (ruling 5 + 11)", () => {
@@ -116,7 +119,9 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
   it("a rostered agent's wake strip keeps the wake/sleep + unread behavior", () => {
     assert.match(agentsPanel, /wake sent - the report lands in the canonical chat/, "ruling 8 wake voice");
     assert.match(agentsPanel, /sleep sent/, "sleep feedback");
-    assert.match(agentsPanel, /agents-badge\.unread|\.unread/, "the unread state is visible");
+    // t_2d8deb8c: the unread state rides the status vocabulary - the
+    // word is rowStatus's "unread report", decorated with the dot.
+    assert.match(src("app/components/agents/agentsRows.ts"), /label !== "sleeping"/, "the on/dim split is the vocabulary");
     // the chat fetch in the merge marks the canonical session read (the
     // roster's unread flag clears on the reload) - the expand fetches it
     assert.match(agentsPanel, /\/chat`\)/, "the expand fetches the canonical chat (mark-read parity)");
@@ -140,7 +145,7 @@ describe("the merge, pure: joined row model (agentsRows.ts)", () => {
     const a = { name: "scout", skill_count: 0, memory_size: 0, dir: "/x" } as any;
     const bare = mergedRowDetail(a, null);
     assert.ok(bare.every((l) => !/wake: /.test(l)), "no phantom wake for a config-only agent");
-    assert.ok(bare.length >= 7, "the config summary stands alone");
+    assert.ok(bare.length >= 6, "the config summary stands alone (t_2d8deb8c dropped the sessions line)");
     const merged = mergedRowDetail(a, row({ next_wake: "2026-10-28T12:34:00Z" }));
     assert.equal(merged[merged.length - 1], "wake: next wake 12:34");
     assert.equal(merged.length, bare.length + 1);

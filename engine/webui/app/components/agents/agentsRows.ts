@@ -72,8 +72,10 @@ export function agentSessionTitle(s: OmegaAgentSession): string {
 
 /** agentDetailLines builds the RegistryList row's expandable detail:
     the config summary, one line per fact, the ordering the old detail
-    block used (model, provider, dir, skills, memory, sessions, last
-    activity). A missing fact renders "-" - honest empty. */
+    block used (model, provider, dir, skills, memory, last activity).
+    A missing fact renders "-" - honest empty. Card t_2d8deb8c: the
+    sessions count line DIED with the session listing (ruling 3) - the
+    tab shows the agent, not its sessions. */
 export function agentDetailLines(a: OmegaAgent): string[] {
   return [
     `model: ${agentModelText(a) || "-"}`,
@@ -81,10 +83,29 @@ export function agentDetailLines(a: OmegaAgent): string[] {
     `dir: ${a.dir}`,
     `skills: ${agentSkillsText(a) || "none"}`,
     `memory: ${agentMemoryText(a)}`,
-    `sessions: ${a.session_count}`,
     `last activity: ${a.last_activity || "-"}`,
   ];
 }
+
+/** agentStatusFor (card t_2d8deb8c, Endo's status-vocabulary ruling):
+    the subtitle line's live dot + short word - green (on) for a
+    pulsing agent (an unread report or a scheduled wake), dim
+    (asleep) for the quiet sleeper. Raw "sleeping" text alone is
+    dead: the word only ever rides WITH the dot. Returns undefined
+    for a config-only agent (no roster row, no invented state). */
+export function agentStatusFor(
+  c: OmegaContinuousRow | null,
+): { on: boolean; label: string } | undefined {
+  if (!c) return undefined;
+  const label = rowStatus(c);
+  return { on: label !== "sleeping", label };
+}
+
+/** the default-agent law (card t_2d8deb8c): the default agent cannot
+    be disabled EVER - the fold is filtered of it on display (a stale
+    entry an older build persisted must not render a disabled row)
+    and the row carries the locked pill. */
+export const DefaultAgentName = "default";
 
 /** mergedRowDetail (card t_c7222095): the merged agent row's detail -
     the config summary as today, plus the wake-state line of the

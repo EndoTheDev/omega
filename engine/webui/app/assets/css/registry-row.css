@@ -98,6 +98,28 @@
   opacity: 0.75;
 }
 
+/* card t_2d8deb8c: the status vocabulary - the colored dot + short
+   word on the subtitle line (green = active, dim = sleeping). The
+   dot is an <i>, 6px round; "on" turns it --ok green. */
+.reg-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.reg-row-dot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 6px;
+  width: 6px;
+  background: var(--text-dim, #8a8a92);
+}
+.reg-row-status.status-on .reg-row-dot {
+  background: var(--ok, #3f9);
+}
+
 /* narrow: the containers condense to their 8px inset (journey 77's
    narrow geometry); the rows keep the rhythm */
 .reg-row.narrow,
