@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
@@ -345,5 +346,125 @@ func TestStreamOpenAIUsageReported(t *testing.T) {
 	opts, _ := sent["stream_options"].(map[string]any)
 	if opts == nil || opts["include_usage"] != true {
 		t.Errorf("stream_options = %v, want include_usage true", sent["stream_options"])
+	}
+}
+
+// --- ollama done_reason "load" retry (t_854eef1b) ---
+
+// ollamaNDJSONServer writes canned ollama /api/chat responses as NDJSON.
+// The handler fn gets the 1-based attempt count and returns the lines to
+// serve for that request.
+func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httptest.Server, *uint32) {
+	t.Helper()
+	var hits uint32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddUint32(&hits, 1)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for _, line := range fn(n) {
+			fmt.Fprintln(w, line)
+		}
+	}))
+	return srv, &hits
+}
+
+// TestStreamOllamaRetriesLoadUntilContent verifies a stream ending in
+// done_reason "load" with nothing streamed is retried (same budget knob
+// and backoff shape as RetryHTTP) and the good stream wins.
+func TestStreamOllamaRetriesLoadUntilContent(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "3")
+	srv, hits := ollamaNDJSONServer(t, func(attempt uint32) []string {
+		if attempt == 1 {
+			return []string{`{"done":true,"done_reason":"load"}`}
+		}
+		return []string{
+			`{"message":{"content":"hello"},"done":false}`,
+			`{"done":true,"done_reason":"stop","prompt_eval_count":11,"eval_count":2}`,
+		}
+	})
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "test"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	if got := atomic.LoadUint32(hits); got != 2 {
+		t.Errorf("attempts = %d, want 2 (one load retry)", got)
+	}
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "stop")
+	}
+	var response string
+	for _, e := range got {
+		if ev, ok := e.(core.ResponseChunk); ok {
+			response += ev.Content
+		}
+	}
+	if response != "hello" {
+		t.Errorf("response = %q, want %q", response, "hello")
+	}
+	if end.PromptEvalCount == nil || *end.PromptEvalCount != 11 || end.EvalCount == nil || *end.EvalCount != 2 {
+		t.Errorf("usage counters = %v/%v, want 11/2", end.PromptEvalCount, end.EvalCount)
+	}
+}
+
+// TestStreamOllamaLoadExhaustedEndsAsError verifies the always-"load"
+// case: the retry budget burns, then the turn ends loud as
+// FinishReason "error" with the load failure named - never a silent
+// empty assistant message.
+func TestStreamOllamaLoadExhaustedEndsAsError(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "1")
+	srv, hits := ollamaNDJSONServer(t, func(attempt uint32) []string {
+		return []string{`{"done":true,"done_reason":"load"}`}
+	})
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "test"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	if got := atomic.LoadUint32(hits); got != 2 {
+		t.Errorf("attempts = %d, want 2 (budget OMEGA_MAX_RETRIES=1 plus first try)", got)
+	}
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "error" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "error")
+	}
+	if !strings.Contains(end.Error, `"load"`) {
+		t.Errorf("Error = %q, want the load failure named", end.Error)
+	}
+	for _, e := range got {
+		if ev, ok := e.(core.ResponseChunk); ok {
+			t.Errorf("ResponseChunk %q leaked into an exhausted-load run", ev.Content)
+		}
+	}
+}
+
+// TestStreamOllamaLoadAfterContentIsNotRetried verifies a load verdict
+// that arrives AFTER content was streamed is not retried: a retry would
+// duplicate what the consumer already received.
+func TestStreamOllamaLoadAfterContentIsNotRetried(t *testing.T) {
+	t.Setenv("OMEGA_MAX_RETRIES", "3")
+	srv, hits := ollamaNDJSONServer(t, func(attempt uint32) []string {
+		return []string{
+			`{"message":{"content":"hi"},"done":false}`,
+			`{"done":true,"done_reason":"load"}`,
+		}
+	})
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "test"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	if got := atomic.LoadUint32(hits); got != 1 {
+		t.Errorf("attempts = %d, want 1 (content already streamed blocks retry)", got)
+	}
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "load" {
+		t.Errorf("FinishReason = %q, want passthrough %q", end.FinishReason, "load")
+	}
+	var response string
+	for _, e := range got {
+		if ev, ok := e.(core.ResponseChunk); ok {
+			response += ev.Content
+		}
+	}
+	if response != "hi" {
+		t.Errorf("response = %q, want %q (no duplicated content)", response, "hi")
 	}
 }

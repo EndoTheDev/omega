@@ -38,6 +38,19 @@ func backoff(attempt int) time.Duration {
 	return base + jitter
 }
 
+// MaxRetries reports the OMEGA_MAX_RETRIES budget: the same value
+// retryHTTP uses. Stream-level retries that must react to a 200 OK
+// response (a failure the HTTP layer cannot see) read this so one knob
+// governs both layers.
+func MaxRetries() int { return maxRetries() }
+
+// Backoff returns the exponential backoff wait for retry attempt n,
+// identical to the pacing retryHTTP applies between attempts. Exported
+// for stream-level retries sharing this shape.
+func Backoff(attempt int) time.Duration {
+	return backoff(attempt)
+}
+
 // retryHTTP runs req with exponential backoff on transient failures:
 // network errors, HTTP 429, and HTTP 5xx. Client errors (other 4xx) and
 // context cancellation return immediately. Requests built from a
