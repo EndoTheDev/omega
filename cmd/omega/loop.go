@@ -590,17 +590,17 @@ func (r *loopRenderer) event(ev core.Event) {
 				r.closeBlock()
 				r.lo.printf("%s%s%s\n", r.lo.s(ansiRed), chunk.Error, r.lo.s(ansiReset))
 			}
+		case core.ToolCallEvent:
+			r.closeBlock()
+			tc := chunk.ToolCall
+			if r.toolNames == nil {
+				r.toolNames = map[string]string{}
+			}
+			r.toolNames[tc.ID] = tc.Name
+			r.lo.printf("%s> %s%s%s %s%s%s\n",
+				r.lo.s(ansiCyan), r.lo.s(ansiCyan), tc.Name, r.lo.s(ansiReset),
+				r.lo.s(ansiDim), compactToolArgs(tc.Arguments), r.lo.s(ansiReset))
 		}
-	case core.ToolCallEvent:
-		r.closeBlock()
-		tc := e.ToolCall
-		if r.toolNames == nil {
-			r.toolNames = map[string]string{}
-		}
-		r.toolNames[tc.ID] = tc.Name
-		r.lo.printf("%s> %s%s%s %s%s%s\n",
-			r.lo.s(ansiCyan), r.lo.s(ansiCyan), tc.Name, r.lo.s(ansiReset),
-			r.lo.s(ansiDim), compactToolArgs(tc.Arguments), r.lo.s(ansiReset))
 	case core.ToolResultEvent:
 		tail := "ok"
 		color := r.lo.s(ansiGreen)

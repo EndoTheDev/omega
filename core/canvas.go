@@ -159,7 +159,7 @@ type ChatPayload struct {
 // Q5a/Q4b): a module declares its panels and registers their action
 // handlers through the same interface, appended to
 // Context.PanelProviders during Mount - the same registration point
-// as ToolProviders and TUIProviders. A plugin left out of
+
 // buildPlugins never mounts, so its panels are simply absent from the
 // snapshot - the same law the webui enforces through directory
 // registration.

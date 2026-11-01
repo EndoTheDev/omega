@@ -18,17 +18,15 @@
 //	 Logger                        RegisterLogger
 //	 Memory                        RegisterMemory
 //	 PromptBuilder                 RegisterPromptBuilder
-//	 Frontend                      RegisterFrontend
 //	 Trust                         RegisterTrust
 //	 Cron                          RegisterCron
 //	 Notifications                 RegisterNotifications
 //	 Verdicts                      RegisterVerdicts
 //	 Captioner                     host-built after the mount today
 //
-//	 Additive surfaces (8)          Registration
+//	 Additive surfaces (7)          Registration
 //	 ToolProviders                 RegisterTool / RegisterRuntimeTools
 //	 PromptSectioners              RegisterPromptSectioner
-//	 TUIProviders                  RegisterRenderer
 //	 PanelProviders                RegisterPanelProvider (a stateful
 //	                              core.PanelProvider - Panels()
 //	                              computed per snapshot, a
@@ -712,21 +710,6 @@ func sameFunc(a, b any) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
-// RegisterRenderer maps the TUI ownership seam (phase E mounts
-// renderers as hosts): the provider appends to ctx.TUIProviders, the
-// same slice - and the same law (a plugin left out of the build never
-// renders) - the classic mount appends to.
-func (api *ExtensionAPI) RegisterRenderer(r core.TUIProvider) error {
-	if r == nil {
-		return fmt.Errorf("renderer %q: a registration carries its provider", api.module)
-	}
-	api.writeSlot(
-		func(c *core.Context) { c.TUIProviders = append(c.TUIProviders, r) },
-		func(c *core.Context) { c.TUIProviders = removeOne(c.TUIProviders, r) },
-	)
-	return nil
-}
-
 // RegisterPromptSectioner maps the additive prompt-section seam.
 func (api *ExtensionAPI) RegisterPromptSectioner(p core.PromptSectioner) error {
 	if p == nil {
@@ -932,17 +915,6 @@ func (api *ExtensionAPI) RegisterPromptBuilder(p core.PromptBuilder) error {
 	return api.mountSeam("prompt_builder",
 		func(c *core.Context) { c.PromptBuilder = p },
 		func(c *core.Context) { c.PromptBuilder = prev })
-}
-
-// RegisterFrontend maps the frontend seam.
-func (api *ExtensionAPI) RegisterFrontend(f core.Frontend) error {
-	if f == nil {
-		return fmt.Errorf("frontend %q: a registration carries its frontend", api.module)
-	}
-	prev := api.ctx.Frontend
-	return api.mountSeam("frontend",
-		func(c *core.Context) { c.Frontend = f },
-		func(c *core.Context) { c.Frontend = prev })
 }
 
 // RegisterTrust maps the trust seam.

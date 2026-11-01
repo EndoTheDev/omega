@@ -132,6 +132,7 @@ func run(args []string) error {
 	sub, rest := splitSubcommand(args)
 	appendPrompts := parseAppendPrompts(rest)
 	trust := parseTrustArgs(rest)
+	configPath := parseConfigFlag(rest)
 	switch sub {
 	case "setup":
 		return cmdSetup()

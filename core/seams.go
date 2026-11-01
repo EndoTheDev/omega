@@ -643,13 +643,6 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
 }
 
-// Frontend is the user-facing interface seam. The default implementation
-// is the terminal TUI (engine/tui/). A custom implementation could
-// serve a web UI or any other interactive frontend. The host calls Run
-// after mounting all extensions; Run blocks until the frontend exits.
-type Frontend interface {
-	Run(ctx context.Context, pctx *Context, opts FrontendOptions) error
-}
 
 // TrustProvider gates project context (AGENTS.md) behind a trust
 // check. The default implementation reads trust.yaml from omega home.
@@ -699,21 +692,4 @@ type NotificationsProvider interface {
 	// best-effort: a slow reader drops frames rather than blocking
 	// emission. Cancel is idempotent.
 	Subscribe() (<-chan Notification, func())
-}
-
-// FrontendOptions carries host-level settings the frontend needs that
-// are not on the Context itself. All fields are optional zero-values.
-type FrontendOptions struct {
-	ModelName     string
-	ProviderType  string
-	Compaction    *CompactionConfig
-	PromptCustom  string
-	PromptAppend  []string
-	PromptContext string
-	Skills        []Skill
-	ThemeName     string
-	TrustState    string
-	Notifications string
-	CWD           string
-	Version       string
 }
