@@ -27,7 +27,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 				Type:         "stream_end",
 				FinishReason: "error",
 				Error: fmt.Sprintf("ollama: upstream canceled generation for a cold model load %d time(s) (done_reason \"load\"); no content was produced - run ends as an error",
-					attempt+2),
+					attempt+1),
 			}
 		}
 		select {
