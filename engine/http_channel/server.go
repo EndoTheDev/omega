@@ -299,7 +299,12 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	// module-route root consults the capsule mux (missing pattern
 	// answers 404), anything else serves the SPA shell.
 	mux.HandleFunc("/", s.handleModuleOrSPA)
-	s.httpSrv = &http.Server{Handler: mux}
+	// v0.14.1 audit p10: the unauthenticated surface is loopback-local,
+	// so cross-origin writes ride the browser's own rules - the guard
+	// refuses mutating requests with a foreign Host/Origin. Wrapped at
+	// the mux top so the fixed routes AND the module capsule routes
+	// (PATCH /tasks, DELETE /boards, ...) sit behind the same law.
+	s.httpSrv = &http.Server{Handler: &hostGuard{next: mux}}
 	return s
 }
 
@@ -348,6 +353,11 @@ func (s *Server) Handler() http.Handler {
 // which passes a signal-derived context here.
 func (s *Server) Serve(ctx context.Context, addr string) error {
 	s.httpSrv.Addr = addr
+	// the Host/Origin guard learns the bind here (before the listener
+	// accepts anything) - the allowed-Host set is derived from it
+	if g, ok := s.httpSrv.Handler.(*hostGuard); ok {
+		g.addr.Store(addr)
+	}
 	// hot-reload: the themes folder watcher dies with the server ctx.
 	go s.themes.watch(ctx)
 	errCh := make(chan error, 1)
