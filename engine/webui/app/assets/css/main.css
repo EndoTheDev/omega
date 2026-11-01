@@ -2082,6 +2082,11 @@ labels stopped short of the right edge. */
 .model-chip:hover { color: var(--text); border-color: var(--text-dim); }
 .model-chip .chev { font-size: 10px; color: var(--text-dim); }
 
+/* the effort chip's pop (a BandSelect under the .thinking-select host
+   since the v0.14.1 review-lens migration): the ladder is short, so
+   the shared 200px floor drops to the chip's own narrow one */
+.thinking-select .model-pop { min-width: 130px; }
+
 /* ---- custom model dropdown (replaces native select popup) ---- */
 .model-select { position: relative; }
 .model-pop {

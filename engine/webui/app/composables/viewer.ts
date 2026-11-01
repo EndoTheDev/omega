@@ -8,18 +8,15 @@
 // pin) - app.vue listens and opens.
 
 import type { InjectionKey, Ref } from "vue";
-import { validViewerRef, type ViewerRef } from "./dockables.ts";
+import type { ViewerRef } from "./dockables.ts";
 
 /** the module->shell open event. THE LITERAL IS COPIED in
     modules/skills/ui/SkillsList.vue (module UI import law); the viewer
-    test pins both spellings identical. Detail payload: ViewerRef. */
+    test pins both spellings identical. Detail payload: ViewerRef. The
+    module side dispatches its own CustomEvent against this literal -
+    emitViewerOpen died with the v0.14.1 review lens (zero production
+    callers, and module-import law forbids the shell import anyway). */
 export const VIEWER_OPEN_EVENT = "omega:open-viewer";
-
-/** module-UI opener: dispatch the open event (never imports shell code) */
-export function emitViewerOpen(v: ViewerRef): void {
-  if (!validViewerRef(v)) return;
-  window.dispatchEvent(new CustomEvent(VIEWER_OPEN_EVENT, { detail: v }));
-}
 
 /** the injection key for the app's viewer opener (FilesTab's inject; the
     app always provides, the fallback stays null like the chat opener) */

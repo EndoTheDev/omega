@@ -136,30 +136,22 @@ function recordReloadFetch(
   return calls;
 }
 
-test("reloadMcpServers: POST the reload, then re-fetch the listing", async () => {
+test("reloadMcpServers: consume the POST body - no follow-up GET (v0.14.1 review lens)", async () => {
   savedFetch = globalThis.fetch;
   try {
-    const calls = recordReloadFetch((call) => {
-      if (call.url === "/mcp/reload") {
-        return new Response(
-          JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", connected: true }] }),
-          { status: 200 },
-        );
-      }
-      return new Response(
+    const calls = recordReloadFetch((_call) =>
+      new Response(
         JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", connected: true, tools: ["echo.echo"] }] }),
         { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    });
+      ),
+    );
     const rep = await reloadMcpServers();
-    assert.equal(calls.length, 2, "the ruled two-step: POST the reload, then the re-fetch");
+    assert.equal(calls.length, 1, "the one round-trip: the POST body IS the fresh report, the re-fetch died");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].url, "/mcp/reload");
-    assert.equal(calls[1].method, "GET");
-    assert.equal(calls[1].url, "/mcp/servers");
-    // the returned listing is the re-fetch (the fresh bridge's view)
+    // the returned listing IS the POST body (the fresh bridge's view)
     assert.equal(rep.source, "mcp.yaml");
-    assert.ok(Array.isArray(rep.servers) && rep.servers[0].tools?.includes("echo.echo"), "the fresh server's tools ride the listing");
+    assert.ok(Array.isArray(rep.servers) && rep.servers[0].tools?.includes("echo.echo"), "the fresh server's tools ride the POST body");
   } finally {
     globalThis.fetch = savedFetch;
   }
@@ -232,20 +224,14 @@ test("statusDot: --ok rides a live connection, --err a recorded failure, dim oth
 
 // --- the toggle behavior (card t_83f37525) --------------------------------
 // The fetch-log recipe (the reload behavior tests above): the helper
-// drives the two-step chain, no SFC compile.
+// drives the one round-trip, no SFC compile.
 
-test("setMcpServerEnabled: POST the named flag, then re-fetch the listing", async () => {
+test("setMcpServerEnabled: consume the POST body - no follow-up GET (v0.14.1 review lens)", async () => {
   const calls: { url: string; method: string; body?: string }[] = [];
   savedFetch = globalThis.fetch;
   globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
     const call = { url: String(url), method: init?.method ?? "GET", body: init?.body == null ? undefined : String(init.body) };
     calls.push(call);
-    if (call.url === "/mcp/toggle") {
-      return new Response(
-        JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", enabled: false, connected: false }] }),
-        { status: 200 },
-      );
-    }
     return new Response(
       JSON.stringify({ source: "mcp.yaml", servers: [{ name: "echo", transport: "stdio", enabled: false, connected: false, tools: [] }] }),
       { status: 200 },
@@ -253,12 +239,10 @@ test("setMcpServerEnabled: POST the named flag, then re-fetch the listing", asyn
   }) as typeof globalThis.fetch;
   try {
     const rep = await setMcpServerEnabled("echo", false);
-    assert.equal(calls.length, 2, "the ruled two-step: POST the toggle, then the re-fetch");
+    assert.equal(calls.length, 1, "the one round-trip: the POST body IS the fresh report, the re-fetch died");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].url, "/mcp/toggle");
     assert.equal(calls[0].body, JSON.stringify({ name: "echo", enabled: false }), "the body names the server and the target state");
-    assert.equal(calls[1].method, "GET");
-    assert.equal(calls[1].url, "/mcp/servers");
     assert.equal(rep.source, "mcp.yaml");
     assert.equal(rep.servers?.[0]?.enabled, false, "the fresh listing carries the persisted flag");
   } finally {

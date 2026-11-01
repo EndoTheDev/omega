@@ -126,9 +126,16 @@
           :model="model"
           :models="models"
           @update:model="$emit('update:model', $event)" />
-        <ThinkingSelect
-          :level="thinking"
-          @update:level="$emit('update:thinking', $event)" />
+        <!-- the effort chip rides the shared BandSelect (v0.14.1 review
+             lens: the dedicated chip+listbox was BandSelect's exact
+             grammar minus nothing - one component, one grammar; only
+             the pop's narrow floor survives, in main.css) -->
+        <BandSelect
+          class="thinking-select"
+          label="Reasoning effort"
+          :options="thinkingOptions"
+          :model-value="thinking"
+          @update:model-value="$emit('update:thinking', $event)" />
       </div>
       <!-- the workspace chip's note lives in WorkspaceSelect.vue (card
            t_9de5b009); this row orders workspace, model, effort -->
@@ -153,13 +160,14 @@
 
 <script setup lang="ts">
   import ModelSelect from "./ModelSelect.vue";
-  import ThinkingSelect from "./ThinkingSelect.vue";
   import WorkspaceSelect from "./WorkspaceSelect.vue";
+  import BandSelect from "../ui/BandSelect.vue";
   import {
     dataUrl,
     mediaTypeFromBase64,
     fetchMentionFiles,
     fetchSessions,
+    THINKING_UI_LEVELS,
     type OmegaImage,
   } from "../../composables/omega";
   import { composerFace } from "../../composables/chat";
@@ -211,6 +219,12 @@
 
   // send needs text OR an attachment - image-only messages are valid
   const canSend = computed(() => !!props.draft.trim() || props.attachments.length > 0);
+
+  // the effort chip's option ladder: same value for value + label (the
+  // UI level IS the label - the wire mapping lives in omega.ts)
+  const thinkingOptions = computed(() =>
+    THINKING_UI_LEVELS.map((level) => ({ value: level, label: level })),
+  );
 
   // the morph (t_357cbe9c): busy -> stop, else send. The retry face left
   // with the affordance (t_95d2bc34) - the action row owns replay now.
