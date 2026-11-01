@@ -14,6 +14,7 @@ import {
   deserialize,
   migrateLegacy,
   makeSplit,
+  makePane,
   findEdgePane,
   findComponentTab,
   firstMainPaneId,
@@ -30,14 +31,17 @@ import {
   hideBottomPanel,
   revealBottomPanel,
   bottomShellPane,
+  syncBottomHostTabs,
   recalledEdgePx,
   MIN_PANE_PX,
   BOTTOM_DEFAULT_PX,
   BOTTOM_MAX_FRACTION,
   BOTTOM_CLOSED_KEY,
   DOCK_LAYOUT_KEY,
+  DOCK_LAYOUT_BAK_KEY,
   type DockNode,
   type DockPane,
+  type DockTab,
   type DockSplit,
 } from "../app/composables/dock.ts";
 import { defaultHostTabs, hostsOf } from "../app/composables/dockables.ts";
@@ -330,6 +334,164 @@ describe("the boot repair (ensureBottomPanel)", () => {
     dock.toggleBottom();
     const back = revealBottomPanel(dock.tree.value, store);
     assert.ok(bottomOf(back));
+  });
+});
+
+describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", () => {
+  const bottomDefaults = defaultHostTabs("bottom");
+
+  function rootWithBottomStrip(tabs: DockTab[], active: number | null): DockNode {
+    // makePane mints the ids; the caller shapes the shell's strip directly
+    const shell = makePane(null, null, "bottom");
+    shell.tabs = tabs;
+    if (active !== null) shell.active = active;
+    return makeSplit("column", [makePane("chat"), shell]);
+  }
+
+  const shellOf = (tree: DockNode): DockPane => findEdgePane(tree, "bottom")!;
+  const stripOf = (tree: DockNode): string[] =>
+    shellOf(tree).tabs.map((t) => t.component);
+  const terminal = bottomDefaults[bottomDefaults.length - 1]!;
+
+  it("a persisted pre-terminal strip gains the missing bottom homes", () => {
+    checkStripSync([{ component: "http_channel" }], 0, 0);
+  });
+
+  it("the active index is PRESERVED (append at end)", () => {
+    checkStripSync([{ component: "http_channel" }, { component: "chat" }], 1, 1);
+  });
+
+  function checkStripSync(
+    tabs: DockTab[],
+    activeBefore: number,
+    activeAfter: number,
+  ): void {
+    const tree = rootWithBottomStrip(tabs, activeBefore);
+    const out = syncBottomHostTabs(tree);
+    assert.deepEqual(
+      stripOf(out),
+      [...tabs.map((t) => t.component), terminal],
+      "the user strip is untouched; the missing default appended at END",
+    );
+    assert.equal(shellOf(out).active, activeAfter, "active index preserved");
+    // idempotent: the second run changes NOTHING (same reference)
+    const again = syncBottomHostTabs(out);
+    assert.strictEqual(again, out);
+  }
+
+  it("an empty strip gains ALL the defaults and focuses 0", () => {
+    const tree = rootWithBottomStrip([], 5);
+    const out = syncBottomHostTabs(tree);
+    assert.deepEqual(stripOf(out), bottomDefaults, "the full default strip");
+    assert.equal(shellOf(out).active, 0, "an empty strip focuses the first");
+  });
+
+  it("a strip that already carries terminal is byte-identical (no-op)", () => {
+    const tree = rootWithBottomStrip(
+      [{ component: "http_channel" }, { component: terminal }],
+      1,
+    );
+    assert.deepEqual(stripOf(tree), bottomDefaults);
+    assert.strictEqual(syncBottomHostTabs(tree), tree, "same reference");
+  });
+
+  it("a default parked ELSEWHERE (a main pane) is never duplicated", () => {
+    // the whole-tree read (the restoreInspectorSet precedent): the
+    // singleton lives in a main pane, the strip sync adds nothing -
+    // strip-only membership would clone the singleton onto the shell
+    const main = makePane(null);
+    main.tabs = [{ component: terminal }];
+    const shell = makePane(null, null, "bottom");
+    shell.tabs = [{ component: "http_channel" }];
+    const tree = makeSplit("column", [main, shell]);
+    const out = syncBottomHostTabs(tree);
+    assert.strictEqual(out, tree, "no-op: the default is seated");
+    assert.equal(shellOf(out).tabs.length, 1, "the strip gained nothing");
+    assert.equal(findComponentTab(out, terminal)!.paneId, main.id,
+      "the singleton stays in the main pane");
+  });
+
+  it("a GROWN bottom root seats the strip in its hosting leaf (the restoreInspectorSet read)", () => {
+    const shell = makePane(null, null, "bottom");
+    shell.tabs = []; // the classic bar is empty while grown (by law)
+    const leaf = makePane(null); // the shell's original content leaf
+    leaf.tabs = [{ component: "http_channel" }];
+    shell.grown = makeSplit("row", [leaf, makePane(null)]);
+    const tree = makeSplit("column", [makePane("chat"), shell]);
+    const out = syncBottomHostTabs(tree);
+    assert.equal(shellOf(out).tabs.length, 0, "the shell's own bar stays empty");
+    for (const n of allNodes(out)) {
+      if (isPane(n) && n.tabs.some((t) => t.component === "http_channel")) {
+        assert.deepEqual(
+          n.tabs.map((t) => t.component),
+          ["http_channel", terminal],
+          "the leaf hosting the bottom-home tabs took the strip",
+        );
+        return;
+      }
+    }
+    assert.fail("no bottom-hosting leaf survived");
+  });
+
+  it("an absent/closed bottom shell is nobody's repair target", () => {
+    const tree = makePane("chat");
+    assert.strictEqual(syncBottomHostTabs(tree), tree);
+  });
+
+  it("a pre-terminal PERSISTED record heals on load, backs up once, and stays healed on reload", async () => {
+    const store = new MemoryStorage() as unknown as Storage;
+    const fresh = createDock(store); // fresh boot: [logs, terminal] today
+    store.setItem(DOCK_LAYOUT_KEY, serialize(fresh.tree.value, []));
+    // surgery: a record persisted BEFORE merge c080511 - the shell's
+    // strip predates the terminal registration
+    const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
+    let stripped = false;
+    for (const n of allNodes(rec.tree as DockNode)) {
+      if (!isPane(n) || n.edge !== "bottom") continue;
+      n.tabs = n.tabs.filter((t) => t.component !== terminal);
+      n.active = Math.min(n.active, n.tabs.length - 1);
+      stripped = true;
+    }
+    assert.ok(stripped, "pre: the shell's strip predates the terminal");
+    const raw = JSON.stringify(rec);
+    store.setItem(DOCK_LAYOUT_KEY, raw);
+    const healed = createDock(store);
+    assert.deepEqual(
+      bottomOf(healed.tree.value)?.tabs.map((t) => t.component),
+      ["http_channel", terminal],
+      "the terminal tab is back, without any storage wipe",
+    );
+    assert.ok(
+      healed.tree.value === undefined ||
+        bottomOf(healed.tree.value)?.tabs.every((t) => "key" in t === false),
+      "appended tabs carry no chat keys (not chat tabs)",
+    );
+    // ruling 6: the repaired load backs the RAW record up before re-persisting
+    assert.equal(store.getItem(DOCK_LAYOUT_BAK_KEY), raw, "the pre-repair record backed up");
+    // stable on reload: a second boot over the healed record changes nothing
+    await flush();
+    const after = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
+    assert.deepEqual(
+      ((): string[] => {
+        for (const n of allNodes(after.tree as DockNode)) {
+          if (isPane(n) && n.edge === "bottom") {
+            return (n as DockPane).tabs.map((t) => t.component);
+          }
+        }
+        return [];
+      })(),
+      ["http_channel", terminal],
+      "the healed strip persisted",
+    );
+    store.setItem(DOCK_LAYOUT_KEY, JSON.stringify(after));
+    const stable = createDock(store);
+    assert.deepEqual(
+      bottomOf(stable.tree.value)?.tabs.map((t) => t.component),
+      ["http_channel", terminal],
+      "reload: strip still [logs, terminal]",
+    );
+    // and the loaded healed tree is repair-idempotent (same reference)
+    assert.strictEqual(syncBottomHostTabs(stable.tree.value), stable.tree.value);
   });
 });
 
