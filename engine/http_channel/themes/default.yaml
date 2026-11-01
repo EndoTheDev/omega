@@ -1,0 +1,13 @@
+# Example theme. Copy this file, rename it, change the tokens - the
+# server picks up every *.yaml in this folder live. A theme carries a
+# name, an optional base (dark | light, default dark) and token
+# overrides only: keys are the webui CSS color properties (without the
+# --), values are strings. Tokens beyond the allowed set reject the
+# file - see GET /themes for each file's parse state.
+name: default
+base: dark
+tokens:
+  accent: "#7aa2f7"   # accent - links, active chips, the send affordance
+  unread: "#e0af68"   # unread - the unread marker dot on session rows
+  ok: "#9ece6a"       # ok - success states (run settled, checks green)
+  err: "#f7768e"      # err - failure states (errored run, invalid input)
