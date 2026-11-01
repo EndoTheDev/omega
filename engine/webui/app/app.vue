@@ -123,6 +123,13 @@
             module="http_channel"
             :open="isMobile ? inspectorOpen : false" />
         </template>
+        <!-- card t_55a3fc4b: the terminal tab - the integrated shell
+             (the terminal module's own view-model rides it; the shell
+             keeps running while a sibling tab activates - the outlet
+             unmounts the SSE, never the pty). -->
+        <template #pane-terminal>
+          <TerminalTab v-if="!isMobile" class="pane" />
+        </template>
         <template #pane-skills>
           <InspectorPanel
             v-if="!isMobile"

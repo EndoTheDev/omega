@@ -42,6 +42,14 @@ export const DOCK_COMPONENTS = [
   "extensions",
   "insights",
   "mcp",
+  // card t_55a3fc4b (Endo ruling 2026-11-01, the v0.15 arc): the
+  // integrated terminal joins - VS Code-style, no restrictions (no
+  // confirm-gate, no opt-in; the owner's box behind the tailnet). One
+  // terminal per pane (the singleton invariant reads one per host);
+  // more terminals = more panes/splits. Its default home is the bottom
+  // panel - the home the dock registry's comments reserved for it since
+  // card t_67fc1905 - and it moves freely like every non-locked tab.
+  "terminal",
   // card t_180db2cb (Endo ruling 2026-10-29): "notifications should move
   // from top right to its own tab (secondary pane)". The top-right bell
   // entry point is GONE entirely (deletability law - no bell chrome, no
@@ -293,6 +301,25 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
+    // card t_55a3fc4b (Endo ruling 2026-11-01): the integrated
+    // terminal - a pty per hosting pane, streamed over SSE from the
+    // terminal module's routes (POST /terminal/sessions claims, GET
+    // .../stream replays+streams, POST .../input types, DELETE kills).
+    // NO restrictions (the owner's explicit ruling): the tab opens
+    // with no gate, like the Files tab. Home is the bottom panel (the
+    // t_67fc1905 reservation cashed in); the shell keeps running
+    // server-side while another tab is active - the detached session
+    // reattaches with its 256KiB replay on remount. Unclosable (the
+    // pinned-bottom shape the logs tab has): the tab is the module's
+    // whole face, removing it means removing the module.
+    id: "terminal",
+    title: "Terminal",
+    icon: "terminal",
+    policy: "singleton",
+    area: "bottom",
+    closable: false,
+  },
+  {
     // card t_180db2cb: the notifications tab - the DURABLE feed/history
     // of finished things (kanban tasks, cron fires, chat runs), rehomed
     // from the top-right bell popover into the secondary pane (Endo's
@@ -334,6 +361,7 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   insights: MIN_PANE_PX,
   mcp: MIN_PANE_PX,
   notifications: MIN_PANE_PX,
+  terminal: MIN_PANE_PX,
 };
 
 // THE registry, floors attached (card t_ae9ac5cf): every entry carries its
