@@ -182,12 +182,13 @@
     settingsDiff,
     parseCollapsedKeys,
     serializeCollapsedKeys,
-    themeSelectValue,
+    themePickOptions,
+    colorModeOptions,
     type SettingGroup,
     type SettingKnob,
     type SettingsPayload,
     type Appearance,
-    type ThemeMode,
+    type ColorMode,
     type UserTheme,  } from "~/composables/omega";
   // card t_70c28128: the typed model pickers ride the shared catalog
   // (one /models fetch per settings open) and the ModelField control
@@ -213,7 +214,8 @@
     showThinking: boolean;
     appearance: Appearance;
     toolDisplay: ToolDisplay;
-    themeMode: ThemeMode;
+    colorMode: ColorMode;
+    themeId: string;
     userThemes: UserTheme[];
     /** the mobile drawer's overlay state (desktop tabs never pass it
         as toggled; mirrors FilesTab's prop) */
@@ -230,7 +232,8 @@
     (e: "update:showThinking", value: boolean): void;
     (e: "update:appearance", value: Appearance): void;
     (e: "update:toolDisplay", value: ToolDisplay): void;
-    (e: "set-theme", mode: ThemeMode): void;
+    (e: "set-color-mode", mode: ColorMode): void;
+    (e: "set-theme", id: string): void;
   }>();
 
   // --- server payload state ---
@@ -289,18 +292,13 @@
 
   // --- client (chat) group: props in, emits out ---
 
-  // --- theme picker: built-in modes + server-side user themes ---
+  // --- theme picker: two knobs - color mode (built-in palettes) and
+  // theme (the built-in default or a server-side user theme) ---
 
-  // A broken theme (server-flagged error) never enters the list; the
-  // option labels carry the yaml name, the value is theme:<id>.
-  const themeOptions = computed<(string | { value: string; label: string })[]>(() => [
-    "auto",
-    "light",
-    "dark",
-    ...props.userThemes
-      .filter((t) => !t.error)
-      .map((t) => ({ value: themeSelectValue(t.id), label: t.name })),
-  ]);
+  // The theme knob's option list: "default" first, then every usable
+  // theme file (option labels carry the yaml name, the value is the
+  // file id). A broken theme (server-flagged error) never enters.
+  const themeOptions = computed(() => themePickOptions(props.userThemes));
 
   // select options arrive as strings or {value,label}: one renderer each
   const optLabel = (opt: string | { value: string; label: string }) =>
@@ -329,12 +327,20 @@
         value: props.showThinking,
       },
       {
+        key: "chat.color_mode",
+        label: "color mode",
+        type: "select",
+        value: props.colorMode,
+        options: [...colorModeOptions],
+        help: "interface colour palette; auto follows the system preference live",
+      },
+      {
         key: "chat.theme",
         label: "theme",
         type: "select",
-        value: props.themeMode,
+        value: props.themeId,
         options: themeOptions.value,
-        help: "interface colour theme; auto follows the system, user themes live in the server's themes/ folder",
+        help: "colour theme; default is the built-in palette, the rest are the server's themes/ folder files",
       },
       {
         key: "chat.appearance",
@@ -452,7 +458,8 @@
     if (knob.key === "chat.appearance") return props.appearance;
     if (knob.key === "chat.tool_display") return props.toolDisplay;
     if (knob.key === "dock.bottom_width") return bottomWidthMode.value;
-    return props.themeMode;
+    if (knob.key === "chat.color_mode") return props.colorMode;
+    return props.themeId;
   };
 
   // serverValue reads draft-first: a knob the user edited (dirty or not)
@@ -496,7 +503,9 @@
 
   function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
     if (isClient(group)) {
-      if (knob.key === "chat.theme") emit("set-theme", value as ThemeMode);
+      if (knob.key === "chat.color_mode")
+        emit("set-color-mode", value as ColorMode);
+      else if (knob.key === "chat.theme") emit("set-theme", value);
       else if (knob.key === "chat.appearance")
         emit("update:appearance", value as Appearance);
       else if (knob.key === "chat.tool_display")

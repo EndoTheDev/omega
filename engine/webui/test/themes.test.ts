@@ -1,5 +1,6 @@
 // omega webui: unit tests for the themes pure helpers
-// (normalizeThemesPayload, usableThemes, themeSelect wiring).
+// (normalizeThemesPayload, usableThemes, the split knobs: color mode +
+// theme lists, the persisted-pair migration, the vanished-file fallback).
 // Run: node --test engine/webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -7,8 +8,11 @@ import assert from "node:assert/strict";
 import {
   normalizeThemesPayload,
   usableThemes,
-  themeSelectValue,
-  parseThemeSelect,
+  colorModeOptions,
+  themePickOptions,
+  resolveThemeId,
+  restoreThemeKnobs,
+  DEFAULT_THEME_ID,
   applyThemeTokens,
   clearThemeTokens,
 } from "../app/composables/omega.ts";
@@ -78,14 +82,98 @@ test("usableThemes filters only the picker's list", () => {
   assert.equal(usable[0].id, "good");
 });
 
-// --- theme select wire value ---
+// --- the split picker's option lists ---
 
-test("themeSelectValue and parseThemeSelect round-trip", () => {
-  assert.equal(themeSelectValue("palm"), "theme:palm");
-  assert.equal(parseThemeSelect("theme:palm"), "palm");
-  assert.equal(parseThemeSelect("auto"), null);
-  assert.equal(parseThemeSelect("light"), null);
+test("color mode knob lists auto/dark/light and nothing else", () => {
+  assert.deepEqual(colorModeOptions, ["auto", "dark", "light"]);
 });
+
+const fileThemes = normalizeThemesPayload({
+  themes: [
+    { id: "palm", name: "Midnight Palm", base: "light", tokens: { accent: "#ff0000" } },
+    { id: "junk", name: "Junk", error: "invalid yaml" },
+    { id: "default", name: "Default", base: "dark", tokens: { accent: "#7aa2f7" } },
+  ],
+});
+
+test("theme knob lists default plus usable files, shadows the seed id", () => {
+  const opts = themePickOptions(fileThemes);
+  // "default" first; palm usable; junk flagged (hidden, as before);
+  // the seeded default.yaml's file entry is shadowed - the picker's
+  // "default" names the built-in palettes only
+  assert.deepEqual(opts, [
+    "default",
+    { value: "palm", label: "Midnight Palm" },
+  ]);
+});
+
+test("theme knob options stay the bare list with no files", () => {
+  assert.deepEqual(themePickOptions([]), ["default"]);
+});
+
+// --- persisted-pair migration (the old merged select's values) ---
+
+test("migration: stored theme:<id> maps to theme <id> + mode auto", () => {
+  assert.deepEqual(restoreThemeKnobs(null, "theme:palm"), {
+    mode: "auto",
+    theme: "palm",
+  });
+});
+
+test("migration: stored plain mode maps to theme default + the mode", () => {
+  assert.deepEqual(restoreThemeKnobs(null, "dark"), {
+    mode: "dark",
+    theme: DEFAULT_THEME_ID,
+  });
+  assert.deepEqual(restoreThemeKnobs(null, "light"), {
+    mode: "light",
+    theme: DEFAULT_THEME_ID,
+  });
+  assert.deepEqual(restoreThemeKnobs(null, "auto"), {
+    mode: "auto",
+    theme: DEFAULT_THEME_ID,
+  });
+});
+
+test("migration: missing or tampered legacy value defaults both knobs", () => {
+  assert.deepEqual(restoreThemeKnobs(null, null), {
+    mode: "auto",
+    theme: DEFAULT_THEME_ID,
+  });
+  assert.deepEqual(restoreThemeKnobs(null, "theme:"), {
+    mode: "auto",
+    theme: DEFAULT_THEME_ID,
+  });
+});
+
+test("migration: a persisted theme id is idempotent, mode rides along", () => {
+  // after the split, the theme-id key exists and the mode key holds a
+  // plain mode: both are read back as-is, no second migration
+  assert.deepEqual(restoreThemeKnobs("palm", "dark"), {
+    mode: "dark",
+    theme: "palm",
+  });
+  assert.deepEqual(restoreThemeKnobs("palm", null), {
+    mode: "auto",
+    theme: "palm",
+  });
+});
+
+// --- fallback on a vanished or broken file ---
+
+test("fallback: a vanished file id returns to default", () => {
+  assert.equal(resolveThemeId("palm", fileThemes), "palm");
+  assert.equal(resolveThemeId("palm", []), DEFAULT_THEME_ID);
+  // the flagged junk entry is not usable either
+  assert.equal(resolveThemeId("junk", fileThemes), DEFAULT_THEME_ID);
+});
+
+test("fallback: the built-in default never falls back", () => {
+  assert.equal(resolveThemeId(DEFAULT_THEME_ID, []), DEFAULT_THEME_ID);
+  assert.equal(resolveThemeId(DEFAULT_THEME_ID, fileThemes), DEFAULT_THEME_ID);
+});
+
+// --- theme select wire value ---
 
 // --- token application against a stand-in CSSStyleDeclaration ---
 
