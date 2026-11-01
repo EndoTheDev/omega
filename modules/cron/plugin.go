@@ -107,6 +107,15 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterRenderer(&tui{p: p}); err != nil {
 		return err
 	}
+	// The per-job toggle route (card t_561dc4e0) rides the mcp toggle
+	// route's reasoning (modules/mcp/plugin.go): it persists the
+	// `enabled:` flag into the owning crons.yaml at the yaml.Node level
+	// (comments and style survive), then hot-reloads the runner. The
+	// route always mounts - the empty tab's toggle is refused at the
+	// wire (501), never a module-rooted miss.
+	if err := api.RegisterRoute("POST /cron/toggle", p.handleToggle); err != nil {
+		return err
+	}
 	// Capsule law (arc 6, t_31174f80): the module ships its view-model
 	// with its scheduler. The jobs panel rides the same mount - an
 	// unregistered plugin ships no seam, no commands, no panels. The

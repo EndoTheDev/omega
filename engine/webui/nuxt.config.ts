@@ -71,6 +71,11 @@ export default defineNuxtConfig({
     // live apart from main.css - the drawer-repairs card owns main.css's
     // media block edits this round, so the panel gets its own file
     "~/assets/css/bottompanel.css",
+    // card t_561dc4e0: THE ROW LAW - one registry-row anatomy (name /
+    // subtitle stack, one right control, hairline separators) for the
+    // cron / tools / skills / mcp / modules rows; one definition, five
+    // consumers, the TogglePill's neighbor law for tab anatomic CSS
+    "~/assets/css/registry-row.css",
   ],
   // Auto-import: the shell's own components keep their flat names (the
   // area folders are layout, not namespace); each module UI dir

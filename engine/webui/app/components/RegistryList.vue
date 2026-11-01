@@ -7,12 +7,19 @@
        arm/confirm mechanic the module list rides, no accidental
        first-click flips), rendered with the shared TogglePill
        (card t_d93864e7). A host without the toggle seam (501) renders
-       the list read-only: no checkboxes, the state text only.
+       the list read-only: no pills, the state text only.
        v0.14.3: the insights tab joins as the read-only stat consumer -
-       `showState=false` drops the on/disabled state text (insight rows
+       `showState=false` drops the right state text (insight rows
        have no fold), and the generic #side slot seats a row's right
-       cluster (the CSS width bars the plain renderer can't express);
-       existing consumers ride the defaults, byte-identical renders. -->
+       cluster (the CSS width bars the plain renderer can't express).
+       card t_561dc4e0: the rows ride THE ROW LAW - the shared
+       assets/css/registry-row.css anatomy (name / subtitle stack, one
+       right control, hairline separators). The left stack is NAME on
+       line 1, the description dim on line 2; the expander becomes the
+       row's LEAD chevron (the Modules-tab reading); the pill stays
+       the one right control (journey 92's button.registry-toggle
+       selector). The row's own geometry lives in the anatomy file --
+       this stylesheet keeps only the row's specifics. -->
   <section class="registry-list">
     <p
       v-if="error"
@@ -23,33 +30,36 @@
       <li
         v-for="r in rows"
         :key="rowKey(r)"
-        class="registry-row"
+        class="reg-row registry-row"
         :class="{ 'registry-off': r.disabled }">
-        <span class="registry-main">
-          <button
-            v-if="openable"
-            type="button"
-            class="registry-name registry-open"
-            :title="`open ${r.name}`"
-            @click.stop="emit('open', r)">{{ r.name }}</button>
-          <span
-            v-else
-            class="registry-name">{{ r.name }}</span>
-          <span
-            v-if="r.description"
-            class="registry-desc">{{ r.description }}</span>
-          <!-- the generic row side: numbers, bars, badges - things the
-               plain name/desc line doesn't express -->
-          <slot
-            name="side"
-            :row="r" />
+        <div class="reg-row-head">
           <button
             v-if="hasDetail(r)"
-            class="registry-expander"
+            class="registry-expander reg-row-lead"
             type="button"
             :aria-expanded="isExpanded(r.name)"
             :aria-label="isExpanded(r.name) ? `collapse ${r.name}` : `expand ${r.name}`"
             @click.stop="flipExpand(r)">{{ isExpanded(r.name) ? "▾" : "▸" }}</button>
+          <div class="reg-row-main">
+            <button
+              v-if="openable"
+              type="button"
+              class="reg-row-name registry-open"
+              :title="`open ${r.name}`"
+              @click.stop="emit('open', r)">{{ r.name }}</button>
+            <span
+              v-else
+              class="reg-row-name">{{ r.name }}</span>
+            <span
+              v-if="r.description"
+              class="reg-row-sub-text registry-desc">{{ r.description }}</span>
+          </div>
+          <!-- the generic row side: numbers, bars, badges - things the
+               plain name/desc stack doesn't express; seated on line 1
+               between the name and the right control -->
+          <slot
+            name="side"
+            :row="r" />
           <!-- the toggle is the shared TogglePill (card t_d93864e7): the
                MCP tab's pill look, now here too - same 26px pill, same
                dot, same armed aria. A button whose armed state comes from
@@ -58,7 +68,7 @@
                machinery is gone with it. -->
           <TogglePill
             v-if="toggleable"
-            class="registry-toggle"
+            class="registry-toggle reg-row-ctrl"
             :state="!r.disabled"
             :disabled="busy !== null"
             :armed="armed === r.name"
@@ -67,12 +77,12 @@
             @click="onToggle(r)" />
           <span
             v-else-if="showState"
-            class="registry-state"
+            class="registry-state reg-row-ctrl"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
-        </span>
+        </div>
         <span
           v-if="armed === r.name"
-          class="registry-confirm">{{ noteFor(r) }}</span>
+          class="registry-confirm reg-row-note">{{ noteFor(r) }}</span>
         <!-- card t_c7222095: the optional under-row preview (the merged
              agent row shows the continuous last report under the facts;
              consumers that do not set it render nothing). -->
@@ -189,33 +199,20 @@
 </script>
 
 <style scoped>
+  /* card t_561dc4e0: the row geometry (paddings, separators, the
+     name/subtitle typography, the right-control seat) lives in the
+     shared assets/css/registry-row.css - ONE definition, five tabs.
+     The section's old 12px horizontal inset dies with it: the row law
+     is the Cron reference's 12px pane inset, which the consumer body
+     (.skills-body / .tools-body) already carries - this block keeps
+     only the vertical seat. */
   .registry-list {
-    padding: 8px 12px 14px;
+    padding: 8px 0 14px;
   }
   .registry-rows {
     list-style: none;
     margin: 0;
     padding: 0;
-  }
-  .registry-row {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 5px 0;
-    border-bottom: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-  }
-  .registry-row:last-child {
-    border-bottom: none;
-  }
-  .registry-main {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
-  .registry-name {
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.9;
   }
   /* the openable name (t_36ceb99b): a button styled back into the row -
      same voice, the hover raises it like the other row affordances */
@@ -231,17 +228,8 @@
   .registry-open:hover {
     text-decoration: underline;
   }
-  .registry-off .registry-name {
+  .registry-off .reg-row-name {
     opacity: 0.55;
-  }
-  .registry-desc {
-    font-size: 11px;
-    opacity: 0.6;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .registry-expander {
     border: none;
@@ -258,17 +246,13 @@
   .registry-state {
     font-size: 10px;
     opacity: 0.5;
+    padding-top: 0;
   }
-  /* the shared TogglePill (t_d93864e7): the row line speaks baseline,
-     the pill sits centered on it - a 15px button baseline-aligned would
-     park its top above the 12px name. The pill's own CSS never lives
-     here (one component, zero copies). */
-  .registry-main .toggle-pill {
-    align-self: center;
-  }
-  .registry-confirm {
-    font-size: 11px;
-    opacity: 0.75;
+  /* the desc: the row law's own voice rides .reg-row-sub-text; only
+     the flex seat (it is the subtitle's one and only text child) is
+     local - nothing more. */
+  .registry-desc {
+    opacity: 0.6;
   }
   /* card t_c7222095: the under-row preview - one dim line, ellipsed */
   .registry-preview {

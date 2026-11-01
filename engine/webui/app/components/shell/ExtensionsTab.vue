@@ -20,11 +20,11 @@
         <li
           v-for="row in rows"
           :key="row.name"
-          class="extension-row"
+          class="extension-row reg-row"
           :class="{ 'module-off': row.state === 'disabled' }">
-          <div class="extension-head">
+          <div class="extension-head reg-row-head">
             <button
-              class="extension-expand"
+              class="extension-expand reg-row-lead"
               type="button"
               :aria-expanded="isExpanded(row.name)"
               :title="isExpanded(row.name) ? 'Collapse' : 'Expand'"
@@ -35,59 +35,62 @@
                 name="chevron-down"
                 :size="12" />
             </button>
-            <span class="extension-name">{{ row.name }}</span>
-            <!-- the lifecycle cockpit (card t_210a0d19): the toggle rides
-                 the row when the registry introspection knows it and the
-                 module is toggleable. Engine ring rows carry the tier-law
-                 badge instead (never in /modules); machine-critical rows
-                 keep the always-on annotation - the same law the old
-                 settings group spoke. -->
-            <span class="extension-side">
-              <!-- the shared TogglePill (card t_d93864e7): one switch
-                   everywhere - a BUTTON, so the t_87303e8f :checked-prop
-                   remount trap the checkbox carried (armedId/revisions/
-                   bump/rowKey machinery) is structurally dead; the row
-                   re-renders from the server's answer. -->
-              <TogglePill
-                v-if="seamAvailable && row.toggleable"
-                class="module-toggle"
-                :state="row.state === 'mounted'"
-                :disabled="busy !== null"
-                :armed="armed === armedId(row.name, row.state !== 'mounted')"
-                :label="`${row.state === 'mounted' ? 'disable' : 'enable'} ${row.name}`"
-                :confirm-label="`confirm: apply ${row.state === 'mounted' ? 'disable' : 'enable'}?`"
-                @click="onToggle(row, row.state !== 'mounted')" />
-              <span
-                v-else-if="row.state === 'engine'"
-                class="extension-state extension-engine">engine</span>
-              <span
-                v-else-if="!row.toggleable"
-                class="extension-state module-locked"
-                :title="row.description">always on</span>
-              <span
-                v-if="row.state === 'disabled'"
-                class="extension-state module-off-note">disabled</span>
+            <div class="reg-row-main">
+              <!-- card t_561dc4e0: a module with UI opens through its
+                   name - the RegistryList openable-name precedent
+                   (t_36ceb99b); the right control seat stays one wide
+                   for the toggle/state, per the one-control-right law. -->
               <button
                 v-if="row.hasUi"
-                class="extension-open"
-                title="Open this module's panel"
-                @click="$emit('open-module', row.name)">open</button>
+                class="extension-name extension-open-name reg-row-name"
+                :title="`open ${row.name} panel`"
+                @click="$emit('open-module', row.name)">{{ row.name }}</button>
               <span
                 v-else
-                class="extension-noui">no UI</span>
-            </span>
+                class="extension-name reg-row-name"
+                :title="row.description">{{ row.name }}</span>
+              <!-- the row law's subtitle line: the description
+                   (ellipsis), the tool/command counts and the no-UI
+                   fact riding the same dim line - the collapsed row
+                   reads two lines, the detail stays in the expander. -->
+              <span class="reg-row-sub">
+                <span
+                  v-if="row.description"
+                  class="reg-row-sub-text extension-desc"
+                  :title="row.description">{{ row.description }}</span>
+                <span class="extension-meta">{{ row.tools }} tool{{ row.tools === 1 ? "" : "s" }} - {{ row.commands }} command{{ row.commands === 1 ? "" : "s" }}</span>
+                <span
+                  v-if="!row.hasUi"
+                  class="extension-noui">no UI</span>
+              </span>
+            </div>
+            <!-- the right control seat: the shared TogglePill
+                 (card t_d93864e7) for toggleable rows - one switch, top-
+                 aligned with the name, no "disabled" text beside it (the
+                 pill IS the state, the row dims). Machine-critical rows
+                 keep the always-on annotation in the seat (the same law
+                 the old settings group spoke); engine rows the tier-law
+                 badge. -->
+            <TogglePill
+              v-if="seamAvailable && row.toggleable"
+              class="module-toggle reg-row-ctrl"
+              :state="row.state === 'mounted'"
+              :disabled="busy !== null"
+              :armed="armed === armedId(row.name, row.state !== 'mounted')"
+              :label="`${row.state === 'mounted' ? 'disable' : 'enable'} ${row.name}`"
+              :confirm-label="`confirm: apply ${row.state === 'mounted' ? 'disable' : 'enable'}?`"
+              @click="onToggle(row, row.state !== 'mounted')" />
+            <span
+              v-else-if="row.state === 'engine'"
+              class="extension-state extension-engine reg-row-ctrl">engine</span>
+            <span
+              v-else-if="!row.toggleable"
+              class="extension-state module-locked reg-row-ctrl"
+              :title="row.description">always on</span>
           </div>
           <p
-            v-if="row.description"
-            class="extension-desc">
-            {{ row.description }}
-          </p>
-          <p class="extension-meta">
-            {{ row.tools }} tool{{ row.tools === 1 ? "" : "s" }} - {{ row.commands }} command{{ row.commands === 1 ? "" : "s" }}
-          </p>
-          <p
             v-if="rowNote(row)"
-            class="setting-help module-note">{{ rowNote(row) }}</p>
+            class="setting-help module-note reg-row-note">{{ rowNote(row) }}</p>
           <!-- the expanded detail: the row's own facts, verbatim - the
                tools it provides (registry-sorted names), the slash
                commands it registered (registration order), and the
@@ -368,13 +371,18 @@
   /* the inventory voice: same scrolling body as .inspector-files
      (main.css owns .aside / the shared shell chrome), this block is the
      tab's own rows. Rows are entry list items in the session-list voice:
-     raised chip hover, mono meta on the edge. */
+     raised chip hover, mono meta on the edge. card t_561dc4e0: the row
+     geometry (paddings, separators, name/subtitle typography, the
+     right-control seat, the note line) lives in the shared
+     assets/css/registry-row.css - this block keeps the tab's specifics
+     only (the hover raise, the mono name voice, the dim states), and
+     the pane inset converges on the shared 12px (the Cron reference). */
   .inspector-extensions {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 6px 8px 8px;
+    padding: 6px 12px 8px;
   }
   .extensions-summary {
     margin: 0 0 6px;
@@ -393,83 +401,50 @@
     padding: 0;
   }
   .extension-row {
-    padding: 6px 8px;
     border-radius: var(--r-chip);
-    font-size: 12px;
   }
   .extension-row:hover { background: var(--z1-raised); }
   .extension-row.module-off .extension-name { color: var(--text-dim); }
   .extension-head {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
     min-width: 0;
   }
-  /* the right-side cluster: toggle, badges, panel action - pushed as
-     ONE group (a single auto margin keeps them together at the edge) */
-  .extension-side {
-    margin-left: auto;
-    flex: none;
-    display: flex;
-    align-items: baseline;
-    gap: 5px;
-  }
   .extension-expand {
-    flex: none;
     border: none;
     background: none;
     color: var(--text-dim);
     font: inherit;
     cursor: pointer;
     padding: 0;
-    display: flex;
-    align-items: baseline;
   }
   .extension-expand:hover { color: var(--text); }
   .extension-chevron { transition: transform 0.15s ease; }
   .extension-chevron.open { transform: rotate(90deg); }
+  /* the name line: the row law's typography rides .reg-row-name; this
+     tab keeps its mono voice, and the openable name (t_561dc4e0) is a
+     button styled back into the row - hover raises it, the registry
+     openable-name reading */
   .extension-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-family: var(--mono);
   }
-  .extension-state {
-    flex: none;
-    font-size: 10.5px;
-    color: var(--text-dim);
-  }
-  .extension-engine { font-family: var(--mono); }
-  .module-toggle { flex: none; display: flex; align-items: baseline; }
-  .extension-open {
+  .extension-open-name {
     border: none;
     background: none;
-    color: var(--accent);
-    font: inherit;
-    font-size: 11px;
+    color: inherit;
     cursor: pointer;
     padding: 0;
+    text-align: left;
   }
-  .extension-open:hover { text-decoration: underline; }
-  .extension-noui {
-    flex: none;
+  .extension-open-name:hover { text-decoration: underline; }
+  .extension-state {
     font-size: 10.5px;
-    color: var(--text-dim);
   }
-  .extension-desc {
-    margin: 2px 0 0;
-    color: var(--text-dim);
-    font-size: 11.5px;
-    overflow-wrap: anywhere;
-  }
+  .extension-engine { font-family: var(--mono); }
+  /* the subtitle specifics: the counts speak the tab's mono meta voice;
+     the dim voice is the row law's .reg-row-sub */
   .extension-meta {
-    margin: 2px 0 0;
     font-family: var(--mono);
     font-size: 10.5px;
-    color: var(--text-dim);
   }
-  .module-note { margin: 2px 0 0; }
   .extension-detail {
     margin: 6px 0 0;
     padding: 2px 0 2px 10px;
@@ -507,13 +482,14 @@
   }
   .extensions-error { color: var(--err); }
 
-  /* narrow: the module-UI recipe (card t_a2fdc630) - the name and its
-     action share the head row tightly; the description still wraps. */
+  /* narrow: the module-UI recipe (card t_a2fdc630) - the container
+     condenses to the shared 8px inset; the description still ellipses
+     within the subtitle line. */
+  .inspector-panel.narrow .inspector-extensions {
+    padding: 4px 8px 8px;
+  }
   .inspector-panel.narrow .extensions-summary {
     overflow-wrap: anywhere;
-  }
-  .inspector-panel.narrow .extension-open {
-    font-size: 10.5px;
   }
   .inspector-panel.narrow .extension-desc {
     overflow-wrap: anywhere;
