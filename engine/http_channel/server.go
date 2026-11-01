@@ -1880,6 +1880,10 @@ type toolListing struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	Actions     []toolActionListing `json:"actions,omitempty"`
+	// Origin (card t_c2da3379): where the tool registered from ("mcp"
+	// = MCP bridge, "" = native, omitted on the wire). The tools tab
+	// filters on this field - never on dotted-name shape.
+	Origin string `json:"origin,omitempty"`
 }
 
 // handleTools serves GET /tools: the agent's executable tool registry
@@ -1916,7 +1920,7 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	out := make([]toolListing, 0, len(names))
 	for _, name := range names {
 		t := inventory[name]
-		row := toolListing{Name: name, Description: t.Description}
+		row := toolListing{Name: name, Description: t.Description, Origin: t.Origin}
 		for _, a := range t.Actions {
 			row.Actions = append(row.Actions, toolActionListing{Name: a.Name, Description: a.Description})
 		}

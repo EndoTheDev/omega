@@ -19,6 +19,12 @@ export interface ToolWire {
   name: string;
   description: string;
   actions?: ToolActionWire[];
+  // where the tool registered from (card t_c2da3379): "mcp" = an MCP
+  // bridge tool, absent = native. The ONLY key the tools tab's filter
+  // reads - native tools are dotted too (sessions.search), so no name
+  // heuristics. Native dotted tools stay; MCP-origin tools are
+  // excluded and surface in the MCP tab alone.
+  origin?: string;
 }
 
 // Structural RegistryRow (module UI imports no shell code - the narrow
@@ -28,6 +34,16 @@ export interface ToolRow {
   description: string;
   detail: string[];
   disabled: boolean;
+}
+
+// nativeTools drops MCP-origin entries from the wire inventory. The
+// filter reads the origin FIELD the server stamps (core.Tool.Origin),
+// never the name shape. Input is untouched; the wire is the agent's
+// full executable registry and stays truthful - the Tools TAB shows
+// the native slice, the MCP tab owns MCP display (one surface per
+// concern, card t_c2da3379).
+export function nativeTools(tools: readonly ToolWire[]): ToolWire[] {
+  return tools.filter((t) => t.origin !== "mcp");
 }
 
 // domainOf splits the wire name: the prefix before the first dot, "" for
