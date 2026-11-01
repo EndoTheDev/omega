@@ -303,8 +303,6 @@ type Channel interface {
 // SettingsKnob is one exposed config field. Type drives the webui
 // control (toggle, number, text, secret, select, textarea, bindlist).
 // Live marks knobs the hot-apply path applies without a restart.
-// Surface declares who can USE the knob: "" = every surface, "tui" =
-// terminal app only - each serving surface filters to its own.
 type SettingsKnob struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -316,7 +314,6 @@ type SettingsKnob struct {
 	Step    *float64 `json:"step,omitempty"`
 	Help    string   `json:"help,omitempty"`
 	Live    bool     `json:"live,omitempty"`
-	Surface string   `json:"surface,omitempty"`
 }
 
 // SettingsGroup is one config section: a labeled set of knobs.
@@ -642,7 +639,6 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 	}
 	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
 }
-
 
 // TrustProvider gates project context (AGENTS.md) behind a trust
 // check. The default implementation reads trust.yaml from omega home.

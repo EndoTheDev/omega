@@ -140,13 +140,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.MaxTurns,
 					Help:  "tool-loop turn cap per chat; applies on restart"},
-				{Key: "notifications", Label: "notifications", Type: "select",
-					Options: []string{"bell", "desktop", "off"},
-					Value:   notificationsValue(cfg.Notifications),
-					Help:    "turn-complete notification (TUI)", Surface: "tui"},
-				{Key: "theme", Label: "theme (TUI)", Type: "text",
-					Value: cfg.Theme,
-					Help:  "TUI theme name; the webui theme lives in this pane's theme select", Surface: "tui"},
 			},
 		},
 		{
@@ -233,16 +226,6 @@ func compactionKnobs(cfg *Config) []core.SettingsKnob {
 }
 
 func ptrF(n float64) *float64 { return &n }
-
-// notificationsValue normalizes an unset notifications value to the
-// default the TUI ends up using, so the select never shows a stray
-// empty option.
-func notificationsValue(v string) string {
-	if strings.TrimSpace(v) == "" {
-		return "bell"
-	}
-	return strings.TrimSpace(v)
-}
 
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
@@ -342,18 +325,6 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.HTTPTimeout, key, raw, 1, math.MaxInt32)
 		case "max_turns":
 			err = setInt(&cfg.MaxTurns, key, raw, 0, math.MaxInt32)
-		case "notifications":
-			s, serr := asTrimmedString(raw)
-			if serr != nil {
-				err = fmt.Errorf("%s: %w", key, serr)
-				break
-			}
-			switch strings.ToLower(s) {
-			case "bell", "desktop", "off":
-				cfg.Notifications = strings.ToLower(s)
-			default:
-				err = fmt.Errorf("%s: %q is not one of bell, desktop, off", key, s)
-			}
 		case "memory.char_limit":
 			err = setInt(&cfg.Memory.CharLimit, key, raw, 1, math.MaxInt32)
 		case "memory.user_char_limit":
@@ -389,8 +360,6 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.Store.DBPath = v
 	case "system_prompt":
 		cfg.SystemPrompt = v
-	case "theme":
-		cfg.Theme = v
 	case "skills.dir":
 		cfg.Skills.Dir = v
 	case "memory.file":
