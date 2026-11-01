@@ -1866,6 +1866,22 @@ export function firstChatTab(
   return null;
 }
 
+/** the chat tab a pane is ACTUALLY showing (tabs[pane.active]), depth-first.
+    card t_3e12c367: boot focus must carry over the tree's chat focus - the
+    tab the user left active - not merely the first chat tab in tree order:
+    the shipped default pane holds a sessionless "new chat" draft at index
+    0 while the user's session tab sits ACTIVE at index 1, and the draft
+    pick left the focused-session seam null forever (the Files tab booted
+    on the default/cwd fallback and the re-root watch never fired). */
+export function activeChatTab(tree: DockNode): ChatTabLocation | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n)) continue;
+    const tab = n.tabs[n.active];
+    if (tab?.component === "chat") return { paneId: n.id, index: n.active, tab };
+  }
+  return null;
+}
+
 /** the first DRAFT chat tab (no session binding - the untitled new-chat
     state) in the tree, depth-first. A tab whose first send landed its
     real session id (setTabSessionRef) has sessionRef set and is no
@@ -2828,6 +2844,9 @@ export interface DockApi {
   /** t_311838e4: the first DRAFT chat tab (no session binding) - the
       '+' new flow focuses it instead of minting a duplicate. */
   firstDraftChatTab: () => ChatTabLocation | null;
+  /** card t_3e12c367: the chat tab the tree is SHOWING (the pane's active
+      tab) - boot focus and the like carry THIS over, not the first tab. */
+  activeChatTab: () => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
   /** card t_47b776ad: the menubar's desktop toggles are back. Hides the
@@ -3352,6 +3371,7 @@ export function createDock(store: Storage): DockApi {
     findChatTab: (key: string) => findChatTab(tree.value, key),
     firstChatTab: (sessionRef?: string) => firstChatTab(tree.value, sessionRef),
     firstDraftChatTab: () => firstDraftChatTab(tree.value),
+    activeChatTab: () => activeChatTab(tree.value),
     split, remove, toggleEdge, ensureMainPane, canRemovePane, isLastMainPane: lastMainPane, drag, toggleBottom,
     bottomFullscreen, toggleBottomFullscreen,
     narrowSqueeze,
