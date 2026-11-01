@@ -661,7 +661,8 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
     assert.equal(bottom.fixed, 200);
-    assert.deepEqual(bottom.tabs.map((x) => x.component), ["http_channel"]);
+    // card t_55a3fc4b: terminal rides the fresh bottom shell with logs
+    assert.deepEqual(bottom.tabs.map((x) => x.component), ["http_channel", "terminal"]);
   });
   it("persisted widths render verbatim, open flags are dead history", () => {
     const t = migrateLegacy((k) =>
