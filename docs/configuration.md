@@ -99,8 +99,9 @@ knobs sit in the reference table above. The rest of the shape is
 file-based, not config: agent homes live at `<home>/agents/<name>/`
 (folder presence is registration - there is no registry file), each
 holding its own `config/` (a config.yaml layer over the home config
-plus that agent's own human-owned `crons.yaml` - the agent has no tool
-that touches it, ruling 15), `data/` (its own session, notification,
+plus that agent's own `crons.yaml` - the agent has no tool
+that touches it, ruling 15; only the webui toggle writes the per-job
+`enabled:` flag (POST /cron/toggle), `data/` (its own session, notification,
 board, and evidence-ledger stores), `skills/`, `user.md`, `memory.md`,
 and `<name>.log`. Schedules ride the cron module's WHEN; the wake
 subprocess and the report shape live in the continuous module. The

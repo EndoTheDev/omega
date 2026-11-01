@@ -92,14 +92,14 @@ step "ok: the Agents tab is the one merged surface (no Continuous chip)"
 # The rows may carry operator agents anywhere around the seeded row
 # (sorted by name - a lane home is never guaranteed jrn-first), so every
 # assertion targets THIS journey's row, never the first row.
-wait_js "[...document.querySelectorAll('.pane.agents .registry-name')].some(el => el.textContent.trim() === '$CONT_NAME')" 10
+wait_js "[...document.querySelectorAll('.pane.agents .reg-row-name')].some(el => el.textContent.trim() === '$CONT_NAME')" 10
 step "ok: the Agents list renders the seeded row"
 
 # row_cell <selector>: the seeded row's cell text (the row that carries
 # $CONT_NAME, not the first row of the list).
 row_cell() {
   jsq '(name => (sel => [...document.querySelectorAll(".pane.agents .registry-row")]
-    .find(r => [...r.querySelectorAll(".registry-name")].some(n => n.textContent.trim() === name))
+    .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === name))
     ?.querySelector(sel)?.textContent?.trim() || "")("'"$1"'"))("'"$CONT_NAME"'")' 2>&1 | tail -1 | tr -d '"'
 }
 state=$(row_cell ".agents-badge")
@@ -113,7 +113,7 @@ assert_eq "$preview" "- no report yet -" "the fresh row shows the honest empty p
 
 # --- the wake strip opens on expand (never wakes) ---
 jsq '(name => [...document.querySelectorAll(".pane.agents .registry-row")]
-  .find(r => [...r.querySelectorAll(".registry-name")].some(n => n.textContent.trim() === name))
+  .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === name))
   ?.querySelector(".registry-expander")?.click())("'"$CONT_NAME"'")' >/dev/null 2>&1
 wait_js 'document.querySelectorAll(".pane.agents .agents-cont-wake, .pane.agents .agents-cont-sleep").length >= 2' 10 >/dev/null 2>&1
 wakes=$(jsq 'document.querySelectorAll(".pane.agents .agents-cont-wake, .pane.agents .agents-cont-sleep").length' 2>&1 | tail -1)
