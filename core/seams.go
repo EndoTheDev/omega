@@ -39,7 +39,12 @@ type LoopOptions struct {
 	InjectedMessages   <-chan InjectedMessage // subagent results (nil if no delegate extension)
 	UserInput          <-chan string          // user messages while running (nil for one-shot mode)
 	PendingDelegations func() int             // returns count of running subagent tasks
-	Logger             LoggerProvider         // optional logger; nil = no logging
+	// Approvals is the smart-approval seam (card t_c2b52cb5). Nil =
+	// no gate: the loop executes tools unchanged. Non-nil, the loop
+	// consults it before every tool run and turns a non-nil error
+	// into the tool result (the command never executes).
+	Approvals ApprovalProvider
+	Logger    LoggerProvider // optional logger; nil = no logging
 }
 
 // CompactionProvider handles context compaction when the token budget
@@ -577,6 +582,21 @@ type VerdictsProvider interface {
 	// Pending lists the unanswered, unexpired cards, oldest first.
 	// A session filter of "" lists every session's pending cards.
 	Pending(sessionID string) []VerdictPrompt
+}
+
+// ApprovalProvider is the smart-approval seam (card t_c2b52cb5). The
+// agent loop consults it before EVERY tool execution; the approval
+// capsule decides whether the call may run. Model advises, Go decides:
+// the implementation may consult a decision model, but the returned
+// contract is the deterministic outcome.
+type ApprovalProvider interface {
+	// Gate returns nil when the call may execute, or an error naming
+	// the reason it may not (denied, escalated-not-executed, answer
+	// pending that resolved against execution). An error becomes the
+	// tool result (IsError) - the run continues, the command did not
+	// happen. Gate must be safe for concurrent calls: the loop executes
+	// a turn's tool calls in parallel goroutines.
+	Gate(ctx context.Context, toolName string, args map[string]any) error
 }
 
 // Run origins (verdict cards v1): which surface launched the agent

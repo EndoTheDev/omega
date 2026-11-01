@@ -10,6 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/modules/approval"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"gopkg.in/yaml.v3"
 )
@@ -191,7 +192,35 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:  "applies on restart"},
 			},
 		},
+		// The approval gate group (card t_c2b52cb5): mode off|manual|smart,
+		// the decision model (the dropdown lists decision-capable models
+		// only), and the operator policy text. All restart-applied.
+		{
+			Key:   "approvals",
+			Label: "approvals",
+			Knobs: []core.SettingsKnob{
+				{Key: "approvals.mode", Label: "mode", Type: "select",
+					Options: []string{"off", "manual", "smart"},
+					Value:   approvalsModeValue(cfg),
+					Help:    "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies on restart"},
+				{Key: "approvals.model", Label: "decision model", Type: "model", Filter: "decision",
+					Value: cfg.Approvals.Model,
+					Help:  "the reviewer in smart mode; the dropdown lists decision-family models only (clef:27b by convention); empty = every flagged command escalates; applies on restart"},
+				{Key: "approvals.smart_policy", Label: "operator policy", Type: "textarea",
+					Value: cfg.Approvals.SmartPolicy,
+					Help:  "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies on restart"},
+			},
+		},
 	}
+}
+
+// approvalsModeValue renders the mode knob's value: the ship-dark
+// default (manual, Q5) IS the empty config string.
+func approvalsModeValue(cfg *Config) string {
+	if cfg.Approvals.Mode == "" {
+		return "manual"
+	}
+	return cfg.Approvals.Mode
 }
 
 // compactionKnobs renders the agent.CompactionConfig section. Every
@@ -333,6 +362,17 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.Memory.CharLimit, key, raw, 1, math.MaxInt32)
 		case "memory.user_char_limit":
 			err = setInt(&cfg.Memory.UserProfileCharLimit, key, raw, 1, math.MaxInt32)
+		case "approvals.mode":
+			var m string
+			if err = setString(&m, key, raw, trim); err != nil {
+				return err
+			}
+			if !approval.ValidMode(m) {
+				return fmt.Errorf("%s: must be off, manual, or smart, got %q", key, m)
+			}
+			cfg.Approvals.Mode = m
+		case "approvals.model", "approvals.smart_policy":
+			err = setStringField(cfg, key, raw)
 		default:
 			err = fmt.Errorf("unknown setting: %s", key)
 		}
@@ -372,6 +412,10 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.Memory.UserProfileFile = v
 	case "logging.file":
 		cfg.Logging.File = v
+	case "approvals.model":
+		cfg.Approvals.Model = v
+	case "approvals.smart_policy":
+		cfg.Approvals.SmartPolicy = v
 	default:
 		return fmt.Errorf("unknown setting: %s", key)
 	}

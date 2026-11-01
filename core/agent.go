@@ -103,6 +103,7 @@ type Agent struct {
 	// settles who answers a name, the disable list settles whether the
 	// tool exists at all.
 	disabledTools  map[string]bool
+	approvals      ApprovalProvider // smart-approval seam snapshot (tpMu-guarded)
 	maxTurns       int
 	compactor      CompactionProvider
 	maxToolOutput  int
@@ -269,6 +270,28 @@ func (a *Agent) SetDisabledTools(names []string) {
 	a.disabledTools = out
 }
 
+// SetApprovals installs the approval-gate seam snapshot. A nil value
+// means the gate is absent (mode off or no module): the loop pays
+// nothing. The live-toggle path calls the Refresh form below.
+func (a *Agent) SetApprovals(ap ApprovalProvider) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	a.approvals = ap
+}
+
+// RefreshApprovals re-reads the approval seam from the mounted Context
+// the agent was built from (NewFromContext): a live module toggle that
+// mounts or unmounts the gate lands here, the same law as
+// RefreshToolProviders. An agent built without a Context keeps its set.
+func (a *Agent) RefreshApprovals(ctx *Context) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	if !a.tpLive || ctx == nil {
+		return
+	}
+	a.approvals = ctx.Approvals
+}
+
 // RefreshDisabledTools re-reads the disable list from the mounted
 // Context the agent was built from (NewFromContext): the host updates
 // ctx.DisabledTools on every registry toggle, and a serving surface
@@ -420,6 +443,9 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	if ctx.Compactor != nil {
 		ag.SetCompactionProvider(ctx.Compactor)
 	}
+	// The smart-approval seam (card t_c2b52cb5): nil rides as nil -
+	// a host with no gate (mode off, no module) runs the loop ungated.
+	ag.SetApprovals(ctx.Approvals)
 	if ctx.InjectedMessages != nil {
 		ag.SetInjectedMessages(ctx.InjectedMessages)
 	}
@@ -549,6 +575,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		a.tpMu.RLock()
 		toolProviders := a.toolProviders
 		disabledTools := a.disabledTools
+		approvals := a.approvals
 		a.tpMu.RUnlock()
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
@@ -569,6 +596,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			InjectedMessages:   a.injectedMsgs,
 			UserInput:          a.userInput,
 			PendingDelegations: a.pendingDeleg,
+			Approvals:          approvals,
 			Logger:             a.logger,
 		})
 	}()

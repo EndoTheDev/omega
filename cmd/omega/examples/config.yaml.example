@@ -108,6 +108,26 @@ memory:
   file: memory.md
   user_file: user.md
 
+# Approval gate (card t_c2b52cb5): shell commands with write, network
+# or system effects pass an approval check before they run. The
+# reviewer in smart mode is a decision model (the dropdown lists
+# decision-capable models only); the audit log appends one JSONL
+# record per verdict to OMEGA_HOME (approval-decisions.jsonl).
+# Default: manual. All applies on restart.
+approvals:
+  # off | manual | smart. empty = manual.
+  mode: manual
+  # Decision model for smart mode (via the configured provider host).
+  # Empty in smart mode = every flagged command escalates (fail-closed).
+  # model: clef:27b
+  # Operator policy text the reviewer reads beside every command.
+  # smart_policy: |
+  #   Killing browser processes and deleting cache or temporary
+  #   directories are routine. Ordinary git and gh operations on
+  #   feature branches are routine. Production databases, shared
+  #   infrastructure, and force-pushes over published history still
+  #   require review.
+
 # Toggleable capsules to keep off (opinionated modules only - kanban,
 # cron, delegate, verdict, mcp, trust, notifications, memory,
 # continuous). The webui settings pane's MODULES section writes this

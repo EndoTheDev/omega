@@ -279,6 +279,21 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 			wg.Add(1)
 			go func(idx int, c core.ToolCall, t core.Tool) {
 				defer wg.Done()
+				// The smart-approval gate (card t_c2b52cb5): a mounted seam
+				// decides before the command runs - approve passes through,
+				// anything else becomes the tool result and the command never
+				// executed. Gate runs INSIDE the call's goroutine, same ctx: a
+				// run stop cancels a mid-gate block like it cancels a command.
+				if opts.Approvals != nil {
+					if err := opts.Approvals.Gate(ctx, c.Name, c.Arguments); err != nil {
+						results[idx] = core.NewToolResult(err.Error(), c.ID, true)
+						completed[idx] = time.Now()
+						if opts.Logger != nil {
+							opts.Logger.Errorf("tool %s gated: %v", c.Name, err)
+						}
+						return
+					}
+				}
 				result, err := t.Run(ctx, c.Arguments)
 				completed[idx] = time.Now()
 				if err != nil {

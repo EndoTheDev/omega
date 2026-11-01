@@ -29,6 +29,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/datadir"
 	"github.com/EndoTheDev/omega/modules/delegate"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
+	"github.com/EndoTheDev/omega/modules/approval"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/mcp"
 	"github.com/EndoTheDev/omega/modules/memory"
@@ -479,6 +480,11 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// placed after the tools module so the prompt section lands
 		// after the tools list.
 		verdict.NewPlugin(),
+		// card t_c2b52cb5: the smart approval gate - risky shell
+		// commands reach the decision model + deterministic ladder.
+		// Requires verdicts (an escalation hard-pauses on a card);
+		// mode off mounts nothing (Q10).
+		approval.NewPlugin(),
 		mcpPlugin,
 		delegate.NewPlugin(),
 		httpchannel.NewPlugin(),

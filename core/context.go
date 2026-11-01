@@ -79,6 +79,13 @@ type Context struct {
 	// answer 501.
 	Verdicts VerdictsProvider
 
+	// Approvals is the smart-approval seam (card t_c2b52cb5): the loop
+	// consults it before every tool execution; the approval module
+	// decides (approve / deny / escalate). Nil when the module is
+	// absent OR its mode is off - the gate is then fully absent,
+	// exactly as before the card, and the loop pays nothing.
+	Approvals ApprovalProvider
+
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAllAPI.
 	Channels []Channel

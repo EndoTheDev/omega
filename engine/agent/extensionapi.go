@@ -960,3 +960,14 @@ func (api *ExtensionAPI) RegisterVerdicts(v core.VerdictsProvider) error {
 		func(c *core.Context) { c.Verdicts = v },
 		func(c *core.Context) { c.Verdicts = prev })
 }
+
+// RegisterApprovals maps the smart-approval seam.
+func (api *ExtensionAPI) RegisterApprovals(a core.ApprovalProvider) error {
+	if a == nil {
+		return fmt.Errorf("approvals %q: a registration carries its provider", api.module)
+	}
+	prev := api.ctx.Approvals
+	return api.mountSeam("approvals",
+		func(c *core.Context) { c.Approvals = a },
+		func(c *core.Context) { c.Approvals = prev })
+}

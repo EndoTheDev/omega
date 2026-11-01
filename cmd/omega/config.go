@@ -14,6 +14,7 @@ import (
 
 	"github.com/EndoTheDev/omega/engine/agent"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
+	"github.com/EndoTheDev/omega/modules/approval"
 	"github.com/EndoTheDev/omega/modules/continuous"
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
@@ -53,6 +54,7 @@ type Config struct {
 	Web         WebConfig         `yaml:"web"`
 	Kanban      KanbanConfig      `yaml:"kanban"`
 	Continuous  continuous.Config `yaml:"continuous"`
+	Approvals   ApprovalConfig    `yaml:"approvals"`
 	// Disabled is the config.yaml `disabled:` toggle fold (v0.12 E1,
 	// grill Q1; home moved from the omega.json sidecar to this key in
 	// the v0.13 shell law 3 - the sidecar folds at boot). v0.14.1
@@ -230,6 +232,16 @@ type StoreConfig struct {
 // (kanban.db) resolves against OMEGA_HOME in the plugin mount.
 type KanbanConfig struct {
 	DBPath string `yaml:"db_path"`
+}
+
+// ApprovalConfig configures the approval gate (card t_c2b52cb5):
+// mode off|manual|smart, the decision model, and the operator policy
+// text. Type name carries the host's config vocabulary for the
+// nm-purity scrubber (SharedTypes law).
+type ApprovalConfig struct {
+	Mode        string `yaml:"mode"`
+	Model       string `yaml:"model"`
+	SmartPolicy string `yaml:"smart_policy"`
 }
 
 // DefaultConfig returns the configuration used when neither YAML nor
@@ -552,6 +564,8 @@ func applyEnv(cfg *Config) {
 		{"OMEGA_SKILLS_DIR", &cfg.Skills.Dir},
 		{"OMEGA_LOGGING_FILE", &cfg.Logging.File},
 		{"OMEGA_DEFAULT_WORKSPACE", &cfg.Server.DefaultWorkspace},
+		{"OMEGA_APPROVALS_MODE", &cfg.Approvals.Mode},
+		{"OMEGA_APPROVALS_MODEL", &cfg.Approvals.Model},
 	} {
 		if v := os.Getenv(s.env); v != "" {
 			*s.target = v
@@ -639,6 +653,9 @@ func (c Config) Validate() error {
 	if c.HTTPTimeout < 0 {
 		return fmt.Errorf("config: http_timeout must be >= 0, got %d", c.HTTPTimeout)
 	}
+	if !approval.ValidMode(c.Approvals.Mode) {
+		return fmt.Errorf("config: approvals.mode must be off, manual, or smart, got %q", c.Approvals.Mode)
+	}
 	return nil
 }
 
@@ -697,6 +714,18 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		cont := c.Continuous
 		cont.Disabled = slices.Clone(c.Disabled.Agents) // v0.14.1: the disabled.agents fold rides the section
 		return cont, true
+	case "approvals":
+		// card t_c2b52cb5: mode/model/policy are Endo's knobs; host
+		// and home are wiring - the reviewer targets the provider
+		// host (the keypool mirror), the audit lands in the home.
+		return approval.Config{
+			Mode:        c.Approvals.Mode,
+			Model:       c.Approvals.Model,
+			SmartPolicy: c.Approvals.SmartPolicy,
+			HTTPHost:    c.Provider.Host,
+			APIKey:      c.Provider.APIKey,
+			Home:        omegaHome(),
+		}, true
 	}
 	return nil, false
 }
