@@ -20,8 +20,9 @@ import (
 // t_a4504a25, the Files tab toolbar's add-file/add-folder): POST
 // /files/write and POST /files/mkdir create nodes INSIDE the same root,
 // guarded by the SAME three layers the read half enforces: relative
-// paths and empty segments are rejected, ANY segment starting with "."
-// is rejected (hidden files and .. traversal die under one rule), and
+// paths and empty segments are rejected, ONLY the "." and ".." traversal
+// segments die (hidden names like .git and .gitignore are ordinary
+// paths - hiding them is the listings' job, never the guard's), and
 // the cleaned path is symlink-resolved and verified to stay under the
 // root before the disk is touched.
 
@@ -39,7 +40,15 @@ type fileEntry struct {
 
 // validateRelPath checks a user-supplied relative path against the
 // segment rules and returns the cleaned relative path ("" = the root).
-// Absolute paths, empty segments, and dot-prefixed segments are rejected.
+// Absolute paths and empty segments are rejected, and the ONLY dot
+// segments rejected are "." and ".." - the traversal set (card
+// t_ccd4a000 narrowed this guard from every dot-prefixed segment: its
+// security job is traversal prevention, not name hiding; the earlier
+// width made listed dot-folders (.git, .github, .worktrees) and dot
+// files (.gitignore) permanently unopenable while hiding nothing).
+// Containment never rests on this scan: every caller resolves the
+// cleaned path under the root via EvalSymlinks and verifies it with
+// ensureUnderRoot.
 func validateRelPath(req string) (string, error) {
 	if req == "" {
 		return "", nil
@@ -53,8 +62,8 @@ func validateRelPath(req string) (string, error) {
 		if part == "" {
 			return "", errors.New("empty path segment")
 		}
-		if strings.HasPrefix(part, ".") {
-			return "", errors.New("dot-prefixed path segment")
+		if part == "." || part == ".." {
+			return "", errors.New("traversal path segment")
 		}
 		cleaned = append(cleaned, part)
 	}

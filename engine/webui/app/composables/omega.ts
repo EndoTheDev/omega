@@ -1185,14 +1185,17 @@ export interface FilesReadPayload {
 }
 
 // cleanRelPath mirrors the server's path rules so the UI never sends a
-// request the backend rejects: no absolute paths, no empty segments, no
-// dot-prefixed segments (hidden files AND .. traversal die under one
-// rule). Returns the cleaned path, or null when invalid ("" = root).
+// request the backend rejects: no absolute paths, no empty segments, and
+// the ONLY dot segments rejected are "." / ".." - the traversal set the
+// server guards (card t_ccd4a000 narrowed both sides from every
+// dot-prefixed segment; hidden names .git, .gitignore pass, exactly as
+// validateRelPath does since the guard narrowed). Returns the cleaned
+// path, or null when invalid ("" = root).
 export function cleanRelPath(p: string): string | null {
   if (p === "") return "";
   if (p.startsWith("/")) return null;
   const parts = p.split("/");
-  if (parts.some((seg) => !seg || seg.startsWith("."))) return null;
+  if (parts.some((seg) => !seg || seg === "." || seg === "..")) return null;
   return parts.join("/");
 }
 

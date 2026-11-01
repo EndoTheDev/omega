@@ -72,13 +72,13 @@ describe("postFilesWrite wire", () => {
   it("throws the server's error message, not a bare status", async () => {
     recordFetch(
       () =>
-        new Response(JSON.stringify({ error: "dot-prefixed path segment" }), {
+        new Response(JSON.stringify({ error: "traversal path segment" }), {
           status: 400,
         }),
     );
     await assert.rejects(
-      postFilesWrite(".x", ""),
-      /dot-prefixed path segment/,
+      postFilesWrite("a/../b.txt", ""),
+      /traversal path segment/,
     );
   });
 
@@ -237,15 +237,31 @@ describe("the band contract (structural pins, no DOM)", () => {
     assert.match(tab, /openFile\(path\)/, "the new file is selected via its preview");
   });
 
-  it("collapse goes through the ONE seam - FileTree owns expansion state", () => {
+  it("collapse goes through the ONE seam - the filetree store owns expansion state", () => {
     assert.match(tab, /fileTreeBus\.collapse\+\+/);
-    assert.match(tree, /watch\(\s*\(\) => fileTreeBus\.collapse/, "collapse watch");
-    assert.match(tree, /watch\(\s*\(\) => fileTreeBus\.refresh/, "refresh watch");
-    assert.match(tree, /watch\(\s*\(\) => fileTreeBus\.reveal/, "reveal watch");
-    assert.match(tree, /expanded\.clear\(\)/, "collapse folds every branch");
+    // the bus watches + cache drops live in the store composable now
+    // (card t_ccd4a000 extracted it for DOM-free unit coverage)
+    const treeStore = read("app/composables/filetree.ts");
+    assert.match(treeStore, /watch\(\s*\(\) => fileTreeBus\.collapse/, "collapse watch");
+    assert.match(treeStore, /watch\(\s*\(\) => fileTreeBus\.refresh/, "refresh watch");
+    assert.match(treeStore, /watch\(\s*\(\) => fileTreeBus\.reveal/, "reveal watch");
+    assert.match(treeStore, /expanded\.clear\(\)/, "collapse folds every branch");
     // the refresh branch drops the loaded caches so creates turn up
-    assert.match(tree, /delete kids\[p\]/);
-    assert.match(tree, /delete errs\[p\]/);
+    assert.match(treeStore, /for \(const p of Object\.keys\(kids\)\) delete kids\[p\]/);
+    assert.match(treeStore, /for \(const p of Object\.keys\(failed\)\) delete failed\[p\]/);
+  });
+
+  it("a failed expansion renders NO error row in the tree (t_ccd4a000)", () => {
+    // the backend error string must never become a child row - the
+    // leak Endo caught under .git/.github/.worktrees
+    assert.doesNotMatch(tree, /errorOf/, "no error-of accessor reaches the template");
+    assert.ok(!/\{\{\s*error/.test(tree), "no error text interpolates in the tree");
+    // the refusal is a no-op + one fixed-phrase hint via the local
+    // toast funnel (the established pattern, t_8bcbe72e) - the row
+    // body only ever shows entries or the transient loading hint
+    const treeStore = read("app/composables/filetree.ts");
+    assert.match(treeStore, /folder failed to load/, "the fixed-phrase hint");
+    assert.match(treeStore, /emitLocalToast\(FAILURE_TOAST\)/, "the hint rides the local funnel");
   });
 
   it("FileTree reports row selection up (folders included)", () => {
