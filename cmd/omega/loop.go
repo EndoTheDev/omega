@@ -1,0 +1,673 @@
+package main
+
+// The CLI agent loop (card t_0744eb8e): bare `omega` is a plain
+// readline-in, ANSI-out conversation against the mounted engine - the
+// ollama run mental model. No alt screen, no panes, no mouse, no
+// layout: the loop never owns the screen, and anything that needs one
+// belongs in the webui (the regression guard is the law). Streaming is
+// real (chunks render as they arrive), tool calls print as compact
+// text lines, sessions persist on disk so `omega serve` + the webui
+// see the same conversation.
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/modules/verdict"
+)
+
+// ANSI basics only - the loop law caps the palette here. NO_COLOR and
+// a non-character-device stdout both opt out.
+const (
+	ansiReset  = "\x1b[0m"
+	ansiBold   = "\x1b[1m"
+	ansiDim    = "\x1b[2m"
+	ansiRed    = "\x1b[31m"
+	ansiGreen  = "\x1b[32m"
+	ansiCyan   = "\x1b[36m"
+	ansiYellow = "\x1b[33m"
+)
+
+// cliLoop is the interactive loop state.
+type cliLoop struct {
+	ag    *core.Agent
+	pctx  *agent.Context
+	store core.StoreProvider
+	out   *bufio.Writer
+	in    *bufio.Reader
+	cfg   Config
+	trust trustFlags
+	cwd   string
+	ansi  bool
+
+	sessionID string
+	history   []core.Message
+	// queued lines typed while a run streamed (stdin was owned by the
+	// busy reader; chat waits its turn, verdict answers go inline).
+	queued []string
+	sig    <-chan os.Signal
+}
+
+// cmdLoop is the loop entry (bare `omega` and the legacy `chat` alias).
+// A home without config drops into the setup wizard first - the wizard
+// is the gate, never an error you must decode. A broken config refuses
+// pointing at the same gate.
+func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error {
+	cfgPath := resolveConfigPath(configPath)
+	if cfgPath == "" {
+		fmt.Println("omega: no config yet - running setup first")
+		if err := runnableSetup(); err != nil {
+			return err
+		}
+		s := setupSession{in: bufio.NewReader(os.Stdin), out: os.Stdout}
+		if err := s.Run(); err != nil {
+			return err
+		}
+		cfgPath = resolveConfigPath(configPath)
+		if cfgPath == "" {
+			return fmt.Errorf("setup wrote no config - check %s", omegaHome())
+		}
+	}
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		return fmt.Errorf("%s: %w - fix the config or run `omega setup`", cfgPath, err)
+	}
+	if err := resolveHomePaths(&cfg); err != nil {
+		return err
+	}
+	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	if name := resolveAgentName(); name != "" {
+		if err := ApplyAgentLayer(&cfg, omegaHome(), name); err != nil {
+			return fmt.Errorf("agent layer %s: %w", name, err)
+		}
+	}
+
+	ag, store, logger, pctx, _, _, err := newAgent(cfg, appendPrompts, trust)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if logger != nil {
+		defer logger.Close()
+	}
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+
+	lo := &cliLoop{
+		ag:    ag,
+		pctx:  pctx,
+		store: store,
+		out:   bufio.NewWriter(os.Stdout),
+		in:    bufio.NewReader(os.Stdin),
+		cfg:   cfg,
+		trust: trust,
+		cwd:   cwd(),
+		ansi:  loopColor(),
+		sig:   sig,
+	}
+	// One-shot mode blocks waiting for late subagent results; the loop
+	// is interactive and never blocks, so carry the flag. Nothing
+	// consumes the channel today - it is the mode marker.
+	ag.SetUserInput(make(chan string, 1))
+	lo.banner()
+	return lo.run()
+}
+
+// loopColor decides the ANSI question once.
+func loopColor() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+func (lo *cliLoop) banner() {
+	lo.printf("%somega%s  %smodel %s%s\n\n",
+		lo.s(ansiBold), lo.s(ansiReset), lo.s(ansiDim), lo.ag.ModelName(), lo.s(ansiReset))
+	lo.printf("%sthe full app lives at %s - /help for command%s\n\n",
+		lo.s(ansiDim), lo.webURL(), lo.s(ansiReset))
+}
+
+// webURL builds the webui URL from the resolved config.
+func (lo *cliLoop) webURL() string {
+	return fmt.Sprintf("http://localhost:%d/", lo.cfg.Server.Port)
+}
+
+// run is the input half: one prompt per line, `"""` opens a multiline
+// block, a trailing backslash continues the line, a leading slash is a
+// command. Output happens inside the run's event drain.
+func (lo *cliLoop) run() error {
+	for {
+		lo.prompt()
+		line, rerr := lo.in.ReadString('\n')
+		if rerr != nil {
+			lo.printf("\n")
+			break
+		}
+		line = strings.TrimRight(line, "\n")
+		select {
+		case <-lo.sig:
+			lo.printf("%s(Ctrl-C: exiting)%s\n", lo.s(ansiDim), lo.s(ansiReset))
+			lo.printExitLine()
+			return nil
+		default:
+		}
+		if line == "" {
+			continue
+		}
+		for strings.HasSuffix(line, "\\") && !strings.HasSuffix(line, "\\\\") {
+			l, _ := lo.in.ReadString('\n')
+			line = line[:len(line)-1] + " " + strings.TrimRight(l, "\n")
+		}
+		if line == `"""` {
+			line = lo.readMultiline()
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+		}
+		if strings.HasPrefix(line, "/") {
+			stop := lo.dispatch(line)
+			lo.out.Flush()
+			if stop {
+				lo.printExitLine()
+				return nil
+			}
+			continue
+		}
+		if err := lo.send(line); err != nil {
+			lo.printf("%serror: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
+			lo.out.Flush()
+		}
+		// lines typed (or queued) while the run streamed go now
+		for len(lo.queued) > 0 {
+			q := lo.queued[0]
+			lo.queued = lo.queued[1:]
+			lo.printf("%s%s%s\n", lo.s(ansiDim), q, lo.s(ansiReset))
+			if strings.HasPrefix(q, "/") {
+				if stop := lo.dispatch(q); stop {
+					lo.printExitLine()
+					return nil
+				}
+				continue
+			}
+			if err := lo.send(q); err != nil {
+				lo.printf("%serror: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
+			}
+		}
+	}
+	lo.printExitLine()
+	return nil
+}
+
+// readMultiline collects a `"""` block until the closing line.
+func (lo *cliLoop) readMultiline() string {
+	lo.printf("%s(multiline: finish with \"\"\" on its own line)%s\n", lo.s(ansiDim), lo.s(ansiReset))
+	var block []string
+	for {
+		l, rerr := lo.in.ReadString('\n')
+		if rerr != nil {
+			break
+		}
+		l = strings.TrimRight(l, "\n")
+		if l == `"""` {
+			break
+		}
+		block = append(block, l)
+	}
+	return strings.Join(block, "\n")
+}
+
+func (lo *cliLoop) prompt() {
+	lo.printf("%s>%s ", lo.s(ansiBold), lo.s(ansiReset))
+	lo.out.Flush()
+}
+
+func (lo *cliLoop) s(code string) string {
+	if !lo.ansi {
+		return ""
+	}
+	return code
+}
+
+func (lo *cliLoop) printf(format string, args ...any) {
+	fmt.Fprintf(lo.out, format, args...)
+}
+
+// printExitLine is the motivated-into-webui door: the session rode on,
+// and the browser hosts the whole app. No bullying - the door points.
+func (lo *cliLoop) printExitLine() {
+	if lo.sessionID != "" {
+		lo.printf("session saved: %s\n", lo.sessionID)
+	}
+	lo.printf("full app: %s\n", lo.webURL())
+	lo.out.Flush()
+}
+
+// dispatch runs one slash command. Returns stop=true for the exit set.
+func (lo *cliLoop) dispatch(line string) bool {
+	name, args := splitCommand(line)
+	switch name {
+	case "/exit", "/quit", "/q", "/bye":
+		return true
+	case "/help", "/?":
+		lo.printHelp()
+		return false
+	case "/session":
+		if err := lo.commandSession(args); err != nil {
+			lo.printf("%s%s%s\n", lo.s(ansiRed), err.Error(), lo.s(ansiReset))
+		}
+		return false
+	case "/workspace":
+		if err := lo.commandWorkspace(args); err != nil {
+			lo.printf("%s%s%s\n", lo.s(ansiRed), err.Error(), lo.s(ansiReset))
+		}
+		return false
+	default:
+		if err := lo.commandExtension(name, args); err != nil {
+			lo.printf("%s%s%s\n", lo.s(ansiRed), err.Error(), lo.s(ansiReset))
+		}
+		return false
+	}
+}
+
+func splitCommand(line string) (string, string) {
+	fields := strings.SplitN(strings.TrimRight(line, " \t"), " ", 2)
+	name := fields[0]
+	rest := ""
+	if len(fields) == 2 {
+		rest = strings.TrimSpace(fields[1])
+	}
+	return name, rest
+}
+
+func (lo *cliLoop) printHelp() {
+	lo.printf("commands:\n")
+	lo.printf("  /exit      leave (also /quit, /q)\n")
+	lo.printf("  /help      this list\n")
+	lo.printf("  /session [id|new]   show, switch to, or start a session on disk\n")
+	lo.printf("  /workspace [dir]    show, or change the working directory\n")
+	lo.printf("  \"\"\"        multiline input block (closing \"\"\" submits)\n")
+	for _, c := range lo.pctx.Commands {
+		lo.printf("  %-9s %s\n", c.Name, c.Description)
+	}
+	lo.out.Flush()
+}
+
+// commandSession shows or switches the persisted session. `new`
+// starts a fresh one (created on the next send); an id loads its
+// messages into this conversation.
+func (lo *cliLoop) commandSession(args string) error {
+	if args == "" {
+		if lo.sessionID == "" {
+			lo.printf("no session yet - one is created on the first message\n")
+			return nil
+		}
+		lo.printf("session: %s\n", lo.sessionID)
+		return nil
+	}
+	if args == "new" {
+		lo.sessionID = ""
+		lo.history = nil
+		lo.printf("fresh session - created on the next message\n")
+		return nil
+	}
+	msgs, err := lo.store.GetMessages(context.Background(), args)
+	if err != nil {
+		return fmt.Errorf("session %s: %w", args, err)
+	}
+	lo.sessionID = args
+	lo.history = msgs
+	lo.printf("session %s: %d messages loaded\n", args, len(msgs))
+	return nil
+}
+
+// commandWorkspace shows or changes the loop's working directory (the
+// per-run CWD the tools see). No process chdir - the run's CWD rides
+// the options.
+func (lo *cliLoop) commandWorkspace(args string) error {
+	if args == "" {
+		lo.printf("workspace: %s\n", lo.cwd)
+		return nil
+	}
+	if fi, err := os.Stat(args); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", args)
+	}
+	lo.cwd = args
+	lo.printf("workspace: %s\n", lo.cwd)
+	return nil
+}
+
+// commandExtension runs a module-owned command (provider, verdict,
+// cron, logs, ...) and prints its text result. An unclaimed name is an
+// error listing what exists.
+func (lo *cliLoop) commandExtension(name, args string) error {
+	known := false
+	for _, c := range lo.pctx.Commands {
+		if c.Name == name {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return fmt.Errorf("%s is not a command - /help lists them", name)
+	}
+	res, err := lo.pctx.CommandHandler(context.Background(), name, args)
+	if err != nil {
+		return err
+	}
+	if res.Text != "" {
+		lo.printf("%s\n", res.Text)
+	}
+	lo.out.Flush()
+	return nil
+}
+
+// ensureSession creates the on-disk session before the first send.
+func (lo *cliLoop) ensureSession() error {
+	if lo.sessionID != "" {
+		return nil
+	}
+	id, err := agent.NewSessionID()
+	if err != nil {
+		return err
+	}
+	if err := lo.store.CreateSession(context.Background(), id, "", ""); err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	lo.sessionID = id
+	return nil
+}
+
+// send runs one user message through the engine, streaming the reply.
+func (lo *cliLoop) send(text string) error {
+	if err := lo.ensureSession(); err != nil {
+		return err
+	}
+	userMsg := core.NewUser(text)
+	lo.history = append(lo.history, userMsg)
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runCtx = agent.WithSessionID(runCtx, lo.sessionID)
+	// interactive origin: the verdict tool may pause here, and the
+	// busy reader answers it while the run blocks - the loop's one
+	// mid-run interaction, matching the old busy-Enter path.
+	runCtx = core.WithRunOrigin(runCtx, core.RunOriginInteractive)
+	runCtx = agent.WithTurnSink(runCtx, agent.NewStoreTurnSink(lo.store, lo.sessionID, ""))
+	runCtx = agent.WithPersistInput(runCtx, []core.Message{userMsg})
+
+	render := &loopRenderer{lo: lo}
+	events := lo.ag.Run(runCtx, lo.history, nil)
+	lines := lo.startBusyReader(runCtx)
+
+	drain := true
+	for drain {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				drain = false
+				break
+			}
+			render.event(ev)
+		case line, ok := <-lines:
+			if !ok {
+				lines = nil
+				break
+			}
+			if !lo.answerPendingVerdict(line) {
+				lo.queued = append(lo.queued, line)
+				lo.printf("%s(queued: %s)%s\n", lo.s(ansiDim), line, lo.s(ansiReset))
+			}
+		case <-lo.sig:
+			cancel()
+			lo.printf("%s(cancelled)%s\n", lo.s(ansiDim), lo.s(ansiReset))
+		}
+	}
+	cancel()
+	// sweep the reader's leftovers: verdicts may still answer from the
+	// queue (a card can outlive its blocking call), chat waits.
+	for l := range lines {
+		if !lo.answerPendingVerdict(l) {
+			lo.queued = append(lo.queued, l)
+		}
+	}
+	lo.out.Flush()
+
+	// the sink persisted the turn; the disk is the truth
+	msgs, err := lo.store.GetMessages(context.Background(), lo.sessionID)
+	if err == nil {
+		lo.history = msgs
+	}
+	return nil
+}
+
+// startBusyReader owns stdin while a run streams. Chat typed ahead
+// queues through the channel; the verdict answer goes inline.
+func (lo *cliLoop) startBusyReader(ctx context.Context) chan string {
+	lines := make(chan string, 16)
+	go func() {
+		defer close(lines)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			line, rerr := lo.in.ReadString('\n')
+			if rerr != nil {
+				return
+			}
+			line = strings.TrimRight(line, "\n")
+			if line == "" {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case lines <- line:
+			}
+		}
+	}()
+	return lines
+}
+
+// answerPendingVerdict tries to interpret a busy-time line as the
+// answer to the oldest pending verdict card. Returns false when no
+// card is pending (the line belongs to the chat queue).
+func (lo *cliLoop) answerPendingVerdict(line string) bool {
+	if lo.pctx.Verdicts == nil {
+		return false
+	}
+	cards := lo.pctx.Verdicts.Pending(lo.sessionID)
+	if len(cards) == 0 {
+		return false
+	}
+	card := cards[0]
+	v, err := verdict.ParseCardAnswer(card, line)
+	if err != nil {
+		lo.printf("%sverdict: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
+		lo.printf("answer with a number, y/n, skip, or text: %s\n", verdictCardHint(card))
+		return true
+	}
+	if _, aerr := lo.pctx.Verdicts.Answer(lo.sessionID, card.ID, v); aerr != nil {
+		lo.printf("%sverdict answer failed: %v%s\n", lo.s(ansiRed), aerr, lo.s(ansiReset))
+		return true
+	}
+	lo.printf("%sverdict recorded: %s%s\n", lo.s(ansiGreen), verdictEcho(card, v), lo.s(ansiReset))
+	return true
+}
+
+// verdictCardHint renders a one-line answer guide for a card.
+func verdictCardHint(card core.VerdictPrompt) string {
+	parts := make([]string, 0, len(card.Options))
+	for i, o := range card.Options {
+		parts = append(parts, fmt.Sprintf("%d=%s", i+1, o.Label))
+	}
+	hint := strings.Join(parts, ", ")
+	if card.Multi {
+		hint += " (comma list)"
+	}
+	if card.AllowText {
+		hint += ", or free text"
+	}
+	return hint
+}
+
+func verdictEcho(card core.VerdictPrompt, v core.Verdict) string {
+	switch {
+	case v.Skipped:
+		return "skipped: " + card.Title
+	case len(v.Options) > 0:
+		return card.Title + " -> " + strings.Join(v.Options, ", ")
+	case v.OptionIndex > 0:
+		return card.Title + " -> " + v.Option
+	default:
+		return card.Title + " -> " + v.Text
+	}
+}
+
+// loopRenderer turns the run's event stream into plain ANSI text:
+// thinking dim, reply plain, tool calls compact cyan lines - no
+// redraws, no cursor games, the terminal scrolls like paper.
+type loopRenderer struct {
+	lo        *cliLoop
+	inText    bool
+	inThink   bool
+	toolNames map[string]string // tool_call_id -> tool name
+}
+
+func (r *loopRenderer) open(kind string) {
+	if kind == "think" && !r.inThink {
+		r.lo.printf("%s", r.lo.s(ansiDim))
+		r.inThink = true
+		r.inText = false
+	}
+}
+
+func (r *loopRenderer) closeBlock() {
+	if r.inThink {
+		r.lo.printf("%s\n", r.lo.s(ansiReset))
+		r.inThink = false
+	}
+	if r.inText {
+		r.lo.printf("\n")
+		r.inText = false
+	}
+}
+
+func (r *loopRenderer) event(ev core.Event) {
+	switch e := ev.(type) {
+	case core.AgentStart:
+		// quiet: the streaming output is the news
+	case core.StreamEvent:
+		switch chunk := e.Event.(type) {
+		case core.ThinkingChunk:
+			r.open("think")
+			r.lo.printf("%s", chunk.Content)
+		case core.ResponseChunk:
+			if r.inThink {
+				r.lo.printf("%s\n", r.lo.s(ansiReset))
+				r.inThink = false
+			}
+			r.inText = true
+			r.lo.printf("%s", chunk.Content)
+		case core.StreamEnd:
+			if chunk.Error != "" {
+				r.closeBlock()
+				r.lo.printf("%s%s%s\n", r.lo.s(ansiRed), chunk.Error, r.lo.s(ansiReset))
+			}
+		}
+	case core.ToolCallEvent:
+		r.closeBlock()
+		tc := e.ToolCall
+		if r.toolNames == nil {
+			r.toolNames = map[string]string{}
+		}
+		r.toolNames[tc.ID] = tc.Name
+		r.lo.printf("%s> %s%s%s %s%s%s\n",
+			r.lo.s(ansiCyan), r.lo.s(ansiCyan), tc.Name, r.lo.s(ansiReset),
+			r.lo.s(ansiDim), compactToolArgs(tc.Arguments), r.lo.s(ansiReset))
+	case core.ToolResultEvent:
+		tail := "ok"
+		color := r.lo.s(ansiGreen)
+		if e.Message.IsError {
+			tail = "error"
+			color = r.lo.s(ansiRed)
+		}
+		name := r.toolNames[e.Message.ToolCallID]
+		r.lo.printf("%s< %s%s%s (%d chars, %s)%s\n",
+			r.lo.s(ansiDim), r.lo.s(ansiDim), name, r.lo.s(ansiReset),
+			len(e.Message.Content), color+tail+r.lo.s(ansiReset)+r.lo.s(ansiDim), r.lo.s(ansiReset))
+	case core.AgentEnd:
+		r.closeBlock()
+		if e.Error != "" {
+			r.lo.printf("%serror: %s%s\n", r.lo.s(ansiRed), e.Error, r.lo.s(ansiReset))
+		}
+	}
+	r.lo.out.Flush()
+}
+
+// compactToolArgs renders tool arguments as one short line: keys and
+// short values only, so a tool call stays one readable line no matter
+// how fat its payload.
+func compactToolArgs(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	first := true
+	for _, k := range sortedKeys(args) {
+		v := args[k]
+		vs := ""
+		switch t := v.(type) {
+		case string:
+			vs = t
+		default:
+			j, _ := json.Marshal(t)
+			vs = string(j)
+		}
+		vs = strings.ReplaceAll(vs, "\n", " ")
+		if len(vs) > 60 {
+			vs = vs[:57] + "..."
+		}
+		if !first {
+			b.WriteString(" ")
+		}
+		first = false
+		if vs == "" {
+			b.WriteString(k)
+		} else {
+			fmt.Fprintf(&b, "%s=%s", k, vs)
+		}
+	}
+	return b.String()
+}
+
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[j] < keys[i] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
+}

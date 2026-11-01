@@ -53,10 +53,10 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 // off the tool call; nothing rendered a verdict panel before the arc).
 // The /verdicts REST routes live in http_channel behind the
 // verdicts seam's nil guard - unmount answers 501 by construction.
-// The shell's busy-Enter answer path (engine/tui/tui_verdict.go)
-// reads the same seam and is nil-guarded: no mount, no intercept.
-// Take verdict.NewPlugin() out of buildPlugins() and every face above
-// vanishes; the proof is TestVerdictRemovalProof
+// The CLI loop's busy-time answer path (cmd/omega/loop.go via
+// ParseCardAnswer) reads the same seam and is nil-guarded: no mount,
+// no answering. Take verdict.NewPlugin() out of buildPlugins() and
+// every face above vanishes; the proof is TestVerdictRemovalProof
 // (cmd/omega/removal_test.go, seventh).
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	p.hub = NewHub(ctx.Store, ctx.Logger)
@@ -68,7 +68,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return err
 		}
 	}
-	if err := api.RegisterRenderer(&tuiProvider{hub: p.hub}); err != nil {
+	if err := api.RegisterCommand("/verdict",
+		"list pending verdict cards / answer one: /verdict <N> <num|1,3|y|n|skip|text>",
+		[]string{}, verdictHandler(p)); err != nil {
 		return err
 	}
 	return api.RegisterPromptSectioner(p)
