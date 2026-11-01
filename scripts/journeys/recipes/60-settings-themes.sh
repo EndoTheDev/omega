@@ -28,10 +28,16 @@ open_app
 # settings opens as the pinned inspector dock-tab (not a menubar gear).
 # card t_502b8e81: the right edge renders ICON-ONLY chips - find the
 # chip by its aria-label (there is no "Settings" text node to find).
-# card t_31aa2542: nothing after open_app is synchronous on a cold
-# runner - poll rather than the old immediate zero-wait query.
-if ! poll_js '(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()' 10; then
-  die "Settings dock-tab chip never rendered"
+# A FRESH chrome profile boots with the inspector edge closed, so the
+# chip is absent until the edge is revealed: probe first, toggle the
+# right sidebar on a miss, then the poll (card t_31aa2542: poll, never
+# the immediate zero-wait query - the 2026-10-31 nightly red).
+CHIP_POLL='(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()'
+if ! poll_js "$CHIP_POLL" 4; then
+  jsq '(()=>{const b=document.querySelector("button[aria-label=\"Toggle right sidebar\"]"); if(!b) return false; b.click(); return true})()' >/dev/null 2>&1 || true
+  if ! poll_js "$CHIP_POLL" 10; then
+    die "Settings dock-tab chip never rendered"
+  fi
 fi
 step "ok: Settings dock-tab opens by its chip name"
 
@@ -50,7 +56,7 @@ assert_eq "$hdr" "1" "theme chip clicked (pop opens)"
 if ! wait_js '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].some(l=>(l.textContent||"").trim()==="default")})()' 10; then
   die "theme options never rendered (no default entry)"
 fi
-tlist=$(jsq '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].map(l=>(l.textContent||"").trim()).join(",")})()' 2>&1)
+tlist=$(jsq '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].map(l=>(l.textContent||"").trim()).join(",")})()' 2>&1 | tr -d "\"")
 step "ok: theme select lists [$tlist]"
 case ",$tlist," in
   *,default,*) step "ok: theme select lists default" ;;
@@ -62,16 +68,16 @@ esac
 # along (the default theme is the built-in palettes only)
 pick=$(jsq '(()=>{const o=[...document.querySelectorAll(".setting-select .model-list li")].find(l=>(l.textContent||"").trim()==="default"); if(!o) return 0; o.click(); return 1})()' 2>&1)
 assert_eq "$pick" "1" "theme option pick to default"
-after=$(jsq '(document.documentElement.dataset.theme || "unknown")' 2>&1)
+after=$(jsq '(document.documentElement.dataset.theme || "unknown")' 2>&1 | tr -d '"')
 case "$after" in dark|light) step "ok: default pick keeps the built-in palette ($after)" ;; *) die "defaultpick lost the palette (got $after)" ;; esac
-inline=$(jsq 'document.documentElement.style.getPropertyValue("--accent").trim()' 2>&1)
+inline=$(jsq 'document.documentElement.style.getPropertyValue("--accent").trim()' 2>&1 | tr -d '"')
 assert_eq "$inline" "" "default theme carries no token overrides"
 
 # close the pop, then the color-mode hot-pick: flip the built-in
 # palette and assert the live document flips instantly (auto follows
 # the OS, dark/light pin one - semantics unchanged)
 jsq 'document.body.click()' >/dev/null 2>&1 || true
-before=$(jsq '(document.documentElement.dataset.theme || "unknown").slice(-6)' 2>&1)
+before=$(jsq '(document.documentElement.dataset.theme || "unknown").slice(-6)' 2>&1 | tr -d '"')
 case "$before" in *dark*) want="light";; *light*) want="dark";; *) want="dark" ;; esac
 hdr=$(jsq '(()=>{const c=[...document.querySelectorAll(".setting-select .model-chip")].find(b=>b.getAttribute("aria-label")==="color mode"); if(!c) return 0; c.click(); return 1})()' 2>&1)
 assert_eq "$hdr" "1" "color mode chip clicked (pop opens)"
@@ -82,13 +88,13 @@ pick=$(jsq '(()=>{const o=[...document.querySelectorAll(".setting-select .model-
 assert_eq "$pick" "1" "color mode pick to $want"
 ok=0; i=0; after=""
 while [ "$i" -lt 20 ]; do
-  after=$(jsq '(document.documentElement.dataset.theme || "unknown").slice(-6)' 2>&1)
+  after=$(jsq '(document.documentElement.dataset.theme || "unknown").slice(-6)' 2>&1 | tr -d '"')
   case "$after" in *"$want"*) ok=1; break;; esac
   sleep 0.5; i=$((i + 1))
 done
 [ "$ok" = "1" ] && step "ok: color mode hot-pick applied live ($before -> $after)" \
   || die "color mode hot-pick did not apply live (got $after, want $want)"
-mode_before=$(jsq 'localStorage.getItem("omega.theme-mode") || "auto"' 2>&1)
+mode_before=$(jsq 'localStorage.getItem("omega.theme-mode") || "auto"' 2>&1 | tr -d '"')
 
 # --- seed a custom theme file into the lane home, pick it, verify
 # --- its base + tokens land, persist through a reload, then undo.
@@ -110,8 +116,12 @@ step "ok: /themes lists the seeded file ($tid) without a restart"
 # reopen settings (the open-time refetch re-reads the list) and pick
 # the seeded file's label
 open_app
-if ! poll_js '(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()' 10; then
-  die "Settings dock-tab never re-rendered"
+CHIP_POLL2='(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()'
+if ! poll_js "$CHIP_POLL2" 4; then
+  jsq '(()=>{const b=document.querySelector("button[aria-label=\"Toggle right sidebar\"]"); if(!b) return false; b.click(); return true})()' >/dev/null 2>&1 || true
+  if ! poll_js "$CHIP_POLL2" 10; then
+    die "Settings dock-tab never re-rendered"
+  fi
 fi
 if ! poll_js '(()=>{const c=[...document.querySelectorAll(".setting-select .model-chip")].find(b=>b.getAttribute("aria-label")==="theme"); if(!c) return false; c.click(); return true})()' 10; then
   die "theme chip never rendered on the reload pass"
@@ -126,21 +136,21 @@ assert_eq "$pick" "1" "custom theme pick to $THEME_LABEL"
 # the inline --accent override rides the file
 ok=0; i=0; after=""
 while [ "$i" -lt 20 ]; do
-  after=$(jsq '(document.documentElement.dataset.theme || "unknown")' 2>&1)
+  after=$(jsq '(document.documentElement.dataset.theme || "unknown")' 2>&1 | tr -d '"')
   [ "$after" = "light" ] && { ok=1; break; }
   sleep 0.5; i=$((i + 1))
 done
 [ "$ok" = "1" ] || die "custom theme base never applied (got $after, want light)"
-inline=$(jsq 'document.documentElement.style.getPropertyValue("--accent").trim()' 2>&1)
+inline=$(jsq 'document.documentElement.style.getPropertyValue("--accent").trim()' 2>&1 | tr -d '"')
 assert_eq "$inline" "$ACCENT" "custom theme token override applied"
-mode_after=$(jsq 'localStorage.getItem("omega.theme-mode") || "auto"' 2>&1)
+mode_after=$(jsq 'localStorage.getItem("omega.theme-mode") || "auto"' 2>&1 | tr -d '"')
 assert_eq "$mode_after" "$mode_before" "theme pick never touched the color mode"
 
 # the pick is local state: it survives a reload
 open_app
-persisted=$(jsq 'localStorage.getItem("omega.theme-id") || ""' 2>&1)
+persisted=$(jsq 'localStorage.getItem("omega.theme-id") || ""' 2>&1 | tr -d '"')
 assert_eq "$persisted" "$tid" "custom theme pick persists (theme-id key)"
-persisted2=$(jsq '(document.documentElement.dataset.theme || "unknown")' 2>&1)
+persisted2=$(jsq '(document.documentElement.dataset.theme || "unknown")' 2>&1 | tr -d '"')
 case "$persisted2" in light) step "ok: custom theme re-applies after reload" ;; *) die "custom theme did not re-apply after reload (got $persisted2)" ;; esac
 
 # restore: back to the built-in default so the cleanup can delete the
