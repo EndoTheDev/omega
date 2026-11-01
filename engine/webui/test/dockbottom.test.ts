@@ -121,8 +121,8 @@ describe("the bottom shell's place in the tree", () => {
     assert.equal(bottom.fixed, BOTTOM_DEFAULT_PX, "fresh height = default rung 200");
     assert.deepEqual(
       bottom.tabs.map((t) => t.component),
-      ["http_channel"],
-      "logs is the bottom host's default tab",
+      ["http_channel", "terminal"],
+      "logs + terminal are the bottom host's default tabs (card t_55a3fc4b)",
     );
   });
 
@@ -464,7 +464,8 @@ describe("persistence round-trip", () => {
 
 describe("the registry's home rulings", () => {
   it("logs' default home is the bottom host", () => {
-    assert.deepEqual(defaultHostTabs("bottom"), ["http_channel"]);
+    // card t_55a3fc4b: terminal joins the fresh bottom strip (logs first)
+    assert.deepEqual(defaultHostTabs("bottom"), ["http_channel", "terminal"]);
   });
 
   it("logs reports its bottom home; every other component single-hosts", () => {

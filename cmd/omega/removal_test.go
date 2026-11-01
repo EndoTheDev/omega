@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/modules/kanban"
+	"github.com/EndoTheDev/omega/modules/terminal"
 )
 
 // TestNotificationsRemovalProof is the arc 4b removal proof (card
@@ -1581,6 +1584,17 @@ func TestTrustRemovalProof(t *testing.T) {
 	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core/seams.go TrustProvider remains - documented as intentional")
 }
 
+// terminalMuxOf builds the module mux from a mount's ledger (the
+// production capsule mux shape: real pattern matching, PathValue on).
+func terminalMuxOf(ctx *core.Context) *http.ServeMux {
+	mux := http.NewServeMux()
+	for _, rt := range ctx.ModuleRoutes {
+		pattern, handler := rt.Pattern, rt.Handler
+		mux.HandleFunc(pattern, handler)
+	}
+	return mux
+}
+
 // sameStrings is the order-sensitive slice equality the Provides()
 // posture assertion uses.
 func sameStrings(a, b []string) bool {
@@ -1593,4 +1607,135 @@ func sameStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestTerminalRemovalProof is the v0.15 arc's removal proof (card
+// t_55a3fc4b, Endo's ruling 2026-11-01: VS Code-style, no
+// restrictions). The terminal is the purest capsule yet: no seams, no
+// tools, no commands, no panels, no config section - its whole
+// surface is six /terminal routes + the lifecycle fence that owns the
+// shells. The two mounts are the proof:
+//
+//  1. WITH terminal: the six routes claim the /terminal root, a
+//     claim+kill cycle works against a REAL pty shell (this box has
+//     /dev/ptmx; without one the spawn route answers 503 and the
+//     proof degrades to the route surface), and the lifecycle stop
+//     reaps every live shell (the toggle-off contract).
+//  2. WITHOUT terminal: no /terminal route is left registered - the
+//     webui's Terminal tab has no data path and 404s at the module
+//     mux.
+func TestTerminalRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	var termPlugin *terminal.Plugin
+	for _, p := range plugins {
+		if tp, ok := p.(*terminal.Plugin); ok {
+			termPlugin = tp
+		}
+	}
+	if termPlugin == nil {
+		t.Fatal("FULL MOUNT: the terminal capsule is absent from buildPlugins")
+	}
+	if !termPlugin.Toggleable() {
+		t.Fatal("FULL MOUNT: the terminal capsule is not toggleable")
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	wantRoutes := []string{
+		"GET /terminal/sessions",
+		"POST /terminal/sessions",
+		"GET /terminal/{id}/stream",
+		"POST /terminal/{id}/input",
+		"POST /terminal/{id}/resize",
+		"DELETE /terminal/{id}",
+	}
+	got := map[string]bool{}
+	for _, rt := range ctx.ModuleRoutes {
+		if rt.Module == "terminal" {
+			got[rt.Pattern] = true
+		}
+	}
+	for _, pattern := range wantRoutes {
+		if !got[pattern] {
+			t.Fatalf("FULL MOUNT: route %q is not registered", pattern)
+		}
+	}
+	t.Log("PROOF mount=full: the six /terminal routes registered from the capsule alone")
+
+	// the live face against a REAL pty shell (skipped when this box
+	// cannot open one - the route surface above is unconditioned)
+	if _, err := os.Stat("/dev/ptmx"); err == nil {
+		mux := terminalMuxOf(ctx)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/terminal/sessions", nil))
+		if w.Code == http.StatusOK {
+			var rep struct {
+				ID string `json:"id"`
+			}
+			_ = json.NewDecoder(w.Body).Decode(&rep)
+			if rep.ID == "" {
+				t.Fatal("FULL MOUNT: claim answered no id")
+			}
+			kill := httptest.NewRecorder()
+			mux.ServeHTTP(kill, httptest.NewRequest("DELETE", "/terminal/"+rep.ID, nil))
+			if kill.Code != http.StatusNoContent {
+				t.Fatalf("FULL MOUNT: kill answered %d, want 204", kill.Code)
+			}
+			t.Log("PROOF spawn+kill cycle: a live shell claimed and reaped through the routes")
+		}
+	}
+	// the lifecycle fence: the toggle-off reaps the shells
+	st := termPlugin.Store()
+	for range 2 {
+		if _, _, err := st.Claim(); err != nil {
+			t.Fatalf("FULL MOUNT: claim for the fence proof: %v", err)
+		}
+	}
+	if err := st.Stop(); err != nil {
+		t.Fatalf("lifecycle stop: %v", err)
+	}
+	if len(st.List()) != 0 {
+		t.Fatalf("FULL MOUNT: %d rows survive the lifecycle stop", len(st.List()))
+	}
+	t.Log("PROOF fence: the lifecycle stop reaped every shell (the toggle-off kills its terminals)")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "terminal" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	// no.Requires may name terminal: the capsule provides no seams,
+	// so nothing depends on it (the removal recipe's stop signal)
+	for _, p := range removed {
+		for _, req := range p.Requires() {
+			if req == "terminal" {
+				t.Fatalf("REMOVED MOUNT precondition: %q requires %q (terminal provides no seams)", p.Name(), req)
+			}
+		}
+	}
+	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	for _, rt := range ctx2.ModuleRoutes {
+		if rt.Module == "terminal" {
+			t.Fatalf("REMOVED MOUNT: route %q survived the removal", rt.Pattern)
+		}
+		if strings.HasPrefix(rt.Pattern, "/terminal") {
+			t.Fatalf("REMOVED MOUNT: a /terminal route survived with a foreign owner %q", rt.Pattern)
+		}
+	}
+	t.Log("PROOF removed: zero /terminal routes registered - the webui Terminal tab 404s; " +
+		"no seams, tools or commands ever rode this capsule, so nothing else can leak")
 }
