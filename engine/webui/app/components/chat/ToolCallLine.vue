@@ -10,6 +10,15 @@
         class="tool-ic"
         :class="status" />
       <span class="tool-name">{{ name }}</span>
+      <!-- card t_1b3e2a8b: the smart gate's decision record - one dim
+           line inside the guarded call's entry, a record not a control
+           (no buttons, no re-interaction). Sits in the summary row so
+           the decision is visible even when the row's details are
+           collapsed. -->
+      <span
+        v-if="gate"
+        class="tool-gate">{{ gate }}</span
+      >
       <span
         v-if="elapsedLabel"
         class="tool-elapsed">{{ elapsedLabel }}</span
@@ -60,6 +69,10 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // the smart gate's decision record (card t_1b3e2a8b): the verdict
+    // line stamped on the guarded call's result, rendered verbatim.
+    // Absent for every ungated/manual/undecided call - no line.
+    gate?: string;
     // this row's branch block when the call row is the branch's active
     // head (a text-less multi-row replay) - resolved by ChatTab
     variant?: VariantBlock | null;

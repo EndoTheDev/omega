@@ -373,7 +373,7 @@ func TestManualModeRisesCardForRisky(t *testing.T) {
 	// verdicts is captured as a closure over ctx in the plugin; the
 	// test re-points it directly on the gate
 	ctx := context.Background()
-	if err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm note.md"}); err != nil {
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm note.md"}); err != nil {
 		t.Fatalf("approved card must let the command run: %v", err)
 	}
 	if g.cache.Len() != 1 {
@@ -382,20 +382,20 @@ func TestManualModeRisesCardForRisky(t *testing.T) {
 	// second identical: cache replay, no card
 	fv.answers = core.Verdict{}
 	g.verdicts = func() core.VerdictsProvider { return fv }
-	if err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm note.md"}); err != nil {
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm note.md"}); err != nil {
 		t.Fatalf("cached approve replays: %v", err)
 	}
 	// deny
 	fv2 := &fakeVerdicts{answers: core.Verdict{OptionIndex: 2, Option: "deny"}}
 	g.verdicts = func() core.VerdictsProvider { return fv2 }
-	if err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm other.md"}); err == nil {
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm other.md"}); err == nil {
 		t.Fatal("denied card must refuse execution")
 	}
 	// expiry = fail-closed, not cached
 	nBefore := g.cache.Len()
 	fv3 := &fakeVerdicts{answers: core.Verdict{Expired: true}}
 	g.verdicts = func() core.VerdictsProvider { return fv3 }
-	if err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm third.md"}); err == nil {
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm third.md"}); err == nil {
 		t.Fatal("expired card must fail closed")
 	}
 	if g.cache.Len() != nBefore {
@@ -407,17 +407,29 @@ func TestCronEscalationNeverBlocks(t *testing.T) {
 	g := newTestGate(t, ModeSmart)
 	// reviewer unreachable (host :1): fail-closed escalate
 	ctx := core.WithRunOrigin(context.Background(), core.RunOriginCron)
-	err := g.Gate(ctx, "shell.run", map[string]any{"command": "systemctl restart foo"})
+	line, err := g.Gate(ctx, "shell.run", map[string]any{"command": "systemctl restart foo"})
 	if err == nil {
 		t.Fatal("cron escalation must produce a tool error")
 	}
 	if !strings.Contains(err.Error(), "escalated") {
 		t.Fatalf("error text must name the escalation: %v", err)
 	}
+	// A background escalation never resolved - no card, no answer, so
+	// the record carries no gate line (the tool error text is the
+	// visible truth on the record).
+	if line != "" {
+		t.Fatalf("background escalation must stamp nothing: %q", line)
+	}
 	orig := core.WithRunOrigin(context.Background(), core.RunOriginInteractive)
 	// interactive with no verdicts seam: also fail-closed
-	if err := g.Gate(orig, "shell.run", map[string]any{"command": "systemctl restart foo"}); err == nil {
+	line2, err := g.Gate(orig, "shell.run", map[string]any{"command": "systemctl restart foo"})
+	if err == nil {
 		t.Fatal("card-less interactive escalation must fail closed")
+	}
+	// A failed-close escalation settles cancelled: nothing ran, no
+	// answer landed - the record says so.
+	if line2 != GateEscCancelled {
+		t.Fatalf("card-less fail-closed must stamp %q, got %q", GateEscCancelled, line2)
 	}
 }
 
@@ -425,7 +437,7 @@ func TestAuditRows(t *testing.T) {
 	g := newTestGate(t, ModeManual)
 	home := g.cfg.Home
 	g.verdicts = func() core.VerdictsProvider { return nil }
-	_ = g.Gate(core.WithRunOrigin(context.Background(), core.RunOriginCron), "shell.run", map[string]any{"command": "rm x.txt"})
+	_, _ = g.Gate(core.WithRunOrigin(context.Background(), core.RunOriginCron), "shell.run", map[string]any{"command": "rm x.txt"})
 	raw, err := os.ReadFile(filepath.Join(home, auditFileName))
 	if err != nil {
 		t.Fatalf("audit log missing: %v", err)
@@ -450,7 +462,7 @@ func TestAuditRows(t *testing.T) {
 func TestBenignTrafficPaysNothing(t *testing.T) {
 	g := newTestGate(t, ModeSmart)
 	ctx := context.Background()
-	if err := g.Gate(ctx, "shell.run", map[string]any{"command": "ls -la"}); err != nil {
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "ls -la"}); err != nil {
 		t.Fatalf("benign must pass: %v", err)
 	}
 	if g.cache.Len() != 0 {
@@ -463,7 +475,7 @@ func TestBenignTrafficPaysNothing(t *testing.T) {
 
 func TestNonShellToolsUngated(t *testing.T) {
 	g := newTestGate(t, ModeSmart)
-	if err := g.Gate(context.Background(), "files", map[string]any{"action": "write", "path": "/etc/passwd"}); err != nil {
+	if _, err := g.Gate(context.Background(), "files", map[string]any{"action": "write", "path": "/etc/passwd"}); err != nil {
 		t.Fatalf("files tool must not gate (Q1: shell commands only): %v", err)
 	}
 }
@@ -477,5 +489,139 @@ func TestModeOffMountsNothing(t *testing.T) {
 	// cmd/omega (TestApprovalRemovalProof). Here: the constant wiring.
 	if Default().NormalizedMode() != ModeManual {
 		t.Fatal("Q5: the default mode is manual (ship dark)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gate verdict stamps (card t_1b3e2a8b): every smart-mode decision
+// lands as a transcript line on the guarded call's record; the card's
+// RESOLUTION is the line; manual mode and unresolved escalations
+// stamps nothing.
+// ---------------------------------------------------------------------------
+
+// reviewAnswers builds the reviewer's six-answer body.
+func reviewAnswers(v string, conf, blast float64) map[string]map[string]any {
+	return map[string]map[string]any{
+		"verdict":         {"choice": v, "confidence": conf},
+		"policy_allows":   {"noul": 0.0},
+		"blast_radius":    {"score": blast},
+		"self_advocating": {"noul": 0.0},
+		"reads_secrets":   {"noul": 0.0},
+		"sends_outbound":  {"noul": 0.0},
+	}
+}
+
+func TestSmartAutoVerdictsStampTheRecord(t *testing.T) {
+	cases := []struct {
+		name    string
+		answers map[string]map[string]any
+		want    string
+		wantErr bool
+	}{
+		{"auto approve", reviewAnswers("APPROVE", 0.9, 0.2), GateAutoApproved, false},
+		// step2 (read+transmit) lands a deny under the model's approve
+		{"auto deny", reviewAnswers("APPROVE", 0.9, 1.2), GateAutoDenied, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			answers := tc.answers
+			if tc.want == GateAutoDenied {
+				// step2 reads+transmits exfiltration: the canned
+				// answers carry the two high signals
+				answers["reads_secrets"] = map[string]any{"noul": 0.9}
+				answers["sends_outbound"] = map[string]any{"noul": 0.8}
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"answers": answers})
+			}))
+			defer srv.Close()
+			home := t.TempDir()
+			g := NewGate(Config{Mode: ModeSmart, Model: "m", HTTPHost: srv.URL, Home: home},
+				func() core.VerdictsProvider { return nil },
+				func() core.NotificationsProvider { return nil }, nil)
+			line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm notes.md"})
+			if tc.wantErr && err == nil {
+				t.Fatal("deny must refuse execution")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("approve must let the command run: %v", err)
+			}
+			if line != tc.want {
+				t.Fatalf("stamp = %q, want %q", line, tc.want)
+			}
+		})
+	}
+}
+
+func TestEscalatedCardResolutionsStampTheRecord(t *testing.T) {
+	cases := []struct {
+		name    string
+		answers core.Verdict
+		want    string
+		wantErr bool
+	}{
+		{"card approve", core.Verdict{OptionIndex: 1, Option: "approve"}, GateEscApproved, false},
+		{"card deny", core.Verdict{OptionIndex: 2, Option: "deny"}, GateEscDenied, true},
+		{"card expired", core.Verdict{Expired: true}, GateEscExpired, true},
+		{"card skipped", core.Verdict{Skipped: true}, GateEscCancelled, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newTestGate(t, ModeSmart)
+			fv := &fakeVerdicts{answers: tc.answers}
+			g.verdicts = func() core.VerdictsProvider { return fv }
+			line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm notes.md"})
+			if tc.wantErr && err == nil {
+				t.Fatal("fail-closed outcome must refuse execution")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("approved card must run: %v", err)
+			}
+			if line != tc.want {
+				t.Fatalf("stamp = %q, want %q", line, tc.want)
+			}
+		})
+	}
+}
+
+func TestCardApprovedReplayCarriesItsOwnStamp(t *testing.T) {
+	g := newTestGate(t, ModeSmart)
+	fv := &fakeVerdicts{answers: core.Verdict{OptionIndex: 1, Option: "approve"}}
+	g.verdicts = func() core.VerdictsProvider { return fv }
+	ctx := context.Background()
+	cmd := map[string]any{"command": "rm once.md"}
+	line, err := g.Gate(ctx, "shell.run", cmd)
+	if err != nil || line != GateEscApproved {
+		t.Fatalf("first call: stamp=%q err=%v", line, err)
+	}
+	// The replay is the recorded decision: the card's resolution
+	// stays the record - never an auto verdict.
+	fv.answers = core.Verdict{}
+	line2, err := g.Gate(ctx, "shell.run", cmd)
+	if err != nil {
+		t.Fatalf("cached approve must replay: %v", err)
+	}
+	if line2 != GateEscApproved {
+		t.Fatalf("replay stamp = %q, want %q", line2, GateEscApproved)
+	}
+}
+
+func TestManualModeStampsNothing(t *testing.T) {
+	g := newTestGate(t, ModeManual)
+	fv := &fakeVerdicts{answers: core.Verdict{OptionIndex: 1, Option: "approve"}}
+	g.verdicts = func() core.VerdictsProvider { return fv }
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err != nil {
+		t.Fatalf("manual approved card must run: %v", err)
+	}
+	if line != "" {
+		t.Fatalf("manual mode makes no machine decision: %q", line)
+	}
+	// The cached replay of a manual decision carries no stamp either.
+	g.verdicts = func() core.VerdictsProvider { return fv }
+	fv.answers = core.Verdict{}
+	line, err = g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err != nil || line != "" {
+		t.Fatalf("manual replay: stamp=%q err=%v", line, err)
 	}
 }

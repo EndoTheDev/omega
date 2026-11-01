@@ -90,3 +90,52 @@ func TestDecodeMessageBadJSON(t *testing.T) {
 		t.Fatal("DecodeMessage with invalid JSON expected error, got nil")
 	}
 }
+
+// TestToolResultGateRoundTrip (card t_1b3e2a8b): the gate's decision
+// record survives the persisted-payload round trip - what a reloaded
+// session's transcript renders is what the gate stamped.
+func TestToolResultGateRoundTrip(t *testing.T) {
+	lines := []string{
+		"smart gate: auto-approved",
+		"smart gate: auto-denied",
+		"smart gate: escalated -> approved",
+		"smart gate: escalated -> denied - command skipped",
+		"smart gate: escalated -> expired",
+		"smart gate: escalated -> cancelled",
+	}
+	for _, line := range lines {
+		role, payload, err := EncodeMessage(ToolResult{
+			Content: "output", ToolCallID: "tc1", Gate: line, Timestamp: "2026-11-01T00:00:00Z",
+		})
+		if err != nil {
+			t.Fatalf("EncodeMessage: unexpected error: %v", err)
+		}
+		if role != "tool" {
+			t.Fatalf("role = %q, want tool", role)
+		}
+		decoded, err := DecodeMessage(role, payload)
+		if err != nil {
+			t.Fatalf("DecodeMessage: unexpected error: %v", err)
+		}
+		res, ok := decoded.(ToolResult)
+		if !ok {
+			t.Fatalf("decoded %T, want ToolResult", decoded)
+		}
+		if res.Gate != line {
+			t.Fatalf("gate line lost in the round trip: got %q, want %q", res.Gate, line)
+		}
+	}
+	// A record without a stamp decodes with the field absent - no
+	// transcript line, older sessions render exactly as they always did.
+	role, payload, err := EncodeMessage(ToolResult{Content: "out", ToolCallID: "tc2"})
+	if err != nil {
+		t.Fatalf("EncodeMessage: unexpected error: %v", err)
+	}
+	decoded, err := DecodeMessage(role, payload)
+	if err != nil {
+		t.Fatalf("DecodeMessage: unexpected error: %v", err)
+	}
+	if res := decoded.(ToolResult); res.Gate != "" {
+		t.Fatalf("unstamped result carries a gate: %q", res.Gate)
+	}
+}

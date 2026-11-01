@@ -1013,6 +1013,8 @@ export function createCanvasTranscript(): CanvasTranscript {
       if (target?.kind === "tool") {
         target.result = block.content ?? "";
         target.status = block.is_error ? "error" : "done";
+        // the gate's decision record rides the result onto the call row
+        if (block.gate) target.gate = block.gate;
         // the call settled: the running meter's offset is spent
         if (!blockRunning) target.elapsedMs = undefined;
         target.finalMs = block.elapsed_ms;
@@ -1034,6 +1036,7 @@ export function createCanvasTranscript(): CanvasTranscript {
       it.name = it.name || "tool";
       it.status = block.is_error ? "error" : "done";
       it.result = block.content ?? "";
+      if (block.gate) it.gate = block.gate;
       it.finalMs = block.elapsed_ms;
       cache.set(`result:${index}:${sig}`, it);
       return it;

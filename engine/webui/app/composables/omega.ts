@@ -177,6 +177,10 @@ export interface ToolItem {
   id?: string;
   output?: string;
   result?: string;
+  // the smart gate's decision record (card t_1b3e2a8b): the verdict
+  // line stamped on the call's result, rendered on this row. Absent =
+  // no machine decision (benign, manual mode, unresolved escalation).
+  gate?: string;
   // server-measured duration from the matched result (restored)
   finalMs?: number;
   // elapsed already consumed by a STILL-RUNNING restored call (the
@@ -256,6 +260,9 @@ export type TranscriptWireItem =
       tool_call_id?: string;
       content?: string;
       is_error?: boolean;
+      // the smart gate's decision record (card t_1b3e2a8b) - rides the
+      // result onto the call row it settles
+      gate?: string;
       elapsed_ms?: number;
     };
 
@@ -360,6 +367,8 @@ export function renderTranscriptItems(
         if (!t) continue;
         t.result = it.content || "";
         t.status = it.is_error ? "error" : "done";
+        // the gate's decision record rides the result onto the call row
+        t.gate = it.gate;
         t.finalMs = it.elapsed_ms;
         // the call settled: the running meter's offset is spent
         t.elapsedMs = undefined;
@@ -389,6 +398,7 @@ export interface ChatBlockWire {
   tool_call?: { id?: string; name?: string; arguments?: unknown };
   tool_call_id?: string;
   is_error?: boolean;
+  gate?: string; // the smart gate's decision record (card t_1b3e2a8b)
   elapsed_ms?: number;
 }
 
@@ -446,6 +456,7 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
                 : undefined,
             tool_call_id: typeof b.tool_call_id === "string" ? b.tool_call_id : undefined,
             is_error: b.is_error === true ? true : undefined,
+            gate: typeof b.gate === "string" && b.gate ? b.gate : undefined,
             elapsed_ms: typeof b.elapsed_ms === "number" ? b.elapsed_ms : undefined,
           });
         }

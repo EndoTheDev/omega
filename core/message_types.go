@@ -97,10 +97,18 @@ func NewAssistant(content string) Assistant {
 // ToolResult is the result of a tool execution, appended to the
 // message history so the model can see the result. ParentID chains it
 // to the message it follows within one run (see User's comment).
+// Gate is the smart-approval gate's decision record (card
+// t_1b3e2a8b): the transcript-facing verdict line the gate produced
+// for the call this result answers, written by the approval capsule
+// and rendered by the webui on the call's own row. Empty = no machine
+// decision (ungated command, manual mode, an escalation with no
+// resolution) - no transcript line. It rides the persisted payload,
+// so a reloaded session shows the same record.
 type ToolResult struct {
 	Content    string  `json:"content"`
 	ToolCallID string  `json:"tool_call_id"`
 	IsError    bool    `json:"is_error,omitempty"`
+	Gate       string  `json:"gate,omitempty"`
 	Timing     *Timing `json:"timing,omitempty"`
 	Timestamp  string  `json:"timestamp,omitempty"`
 	ParentID   string  `json:"parent_id,omitempty"`

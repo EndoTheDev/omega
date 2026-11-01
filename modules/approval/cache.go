@@ -30,7 +30,12 @@ type record struct {
 	outcome Outcome
 	// answers carries the six answers the deciding pass produced, so
 	// the audit row of the replay shows the same shape as the original.
-	answers   Answers
+	answers Answers
+	// stamp is the decision's transcript record (card t_1b3e2a8b):
+	// the replay carries the recorded decision's own line, so a
+	// card-approved resolution replays as "escalated -> approved",
+	// never as an auto verdict.
+	stamp     string
 	modelUsed string
 	cached    bool
 }

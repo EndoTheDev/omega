@@ -19,9 +19,9 @@ import (
 //	tool_call   - tool meta (tool_call: {id, name, arguments}) - the same
 //	              nested shape the live SSE tool_call frame carries
 //	tool_result - the outcome of a call: tool_call_id + content + is_error +
-//	              elapsed_ms, delivered where history placed it (after the
-//	              calls) so the caller merges it like a live tool_result
-//	              frame
+//	              gate + elapsed_ms, delivered where history placed it
+//	              (after the calls) so the caller merges it like a live
+//	              tool_result frame
 //
 // The shape is the client transcript's component contract: items restore
 // and live stream render through the same components. ID (t_17365247)
@@ -29,17 +29,22 @@ import (
 // address branch points on the variants surface; live-tail items (the
 // run still holds the row) carry none.
 type transcriptItem struct {
-	Kind       string              `json:"kind"`
-	ID         string              `json:"id,omitempty"`
-	Content    string              `json:"content,omitempty"`
-	Time       string              `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
-	ResponseMs int64               `json:"response_ms,omitempty"`
-	ThinkingMs int64               `json:"thinking_ms,omitempty"`
-	ToolCall   *core.ToolCall      `json:"tool_call,omitempty"`
-	ToolCallID string              `json:"tool_call_id,omitempty"`
-	IsError    bool                `json:"is_error,omitempty"`
-	ElapsedMs  int64               `json:"elapsed_ms,omitempty"`
-	Images     []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
+	Kind       string         `json:"kind"`
+	ID         string         `json:"id,omitempty"`
+	Content    string         `json:"content,omitempty"`
+	Time       string         `json:"time,omitempty"` // user/message: store created_at, message timestamp as fallback
+	ResponseMs int64          `json:"response_ms,omitempty"`
+	ThinkingMs int64          `json:"thinking_ms,omitempty"`
+	ToolCall   *core.ToolCall `json:"tool_call,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	IsError    bool           `json:"is_error,omitempty"`
+	// Gate is the smart-approval gate's decision record (card
+	// t_1b3e2a8b): the verdict line the gate stamped on the call's
+	// result, rendered on the call's own row. Empty = no machine
+	// decision - no transcript line.
+	Gate      string              `json:"gate,omitempty"`
+	ElapsedMs int64               `json:"elapsed_ms,omitempty"`
+	Images    []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
 	// running marks the LIVE tail's in-flight items (the transcript-refs
 	// merge): an open thinking/response block streams from the restored
 	// item, and a tool call without its result yet renders as the
@@ -205,6 +210,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 				ToolCallID: m.ToolCallID,
 				Content:    m.Content,
 				IsError:    m.IsError,
+				Gate:       m.Gate,
 			}
 			if m.Timing != nil {
 				it.ElapsedMs = m.Timing.ElapsedMs
@@ -299,6 +305,7 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 			ToolCallID: r.ToolCallID,
 			Content:    r.Content,
 			IsError:    r.IsError,
+			Gate:       r.Gate,
 		}
 		if r.Timing != nil {
 			it.ElapsedMs = r.Timing.ElapsedMs
