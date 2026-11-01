@@ -44,17 +44,15 @@ type Config struct {
 	// TitleModel is the auxiliary title generator (title_model knob):
 	// maybeTitleSession's cheap calls (provisional + final) route
 	// through it when set. Empty = the main model (today's behavior).
-	TitleModel    string            `yaml:"title_model"`
-	HTTPTimeout   int               `yaml:"http_timeout"`
-	MaxTurns      int               `yaml:"max_turns"`
-	Theme         string            `yaml:"theme"`
-	Notifications string            `yaml:"notifications"`
-	Skills        SkillsConfig      `yaml:"skills"`
-	Memory        MemoryConfig      `yaml:"memory"`
-	Logging       LoggingConfig     `yaml:"logging"`
-	Web           WebConfig         `yaml:"web"`
-	Kanban        KanbanConfig      `yaml:"kanban"`
-	Continuous    continuous.Config `yaml:"continuous"`
+	TitleModel  string            `yaml:"title_model"`
+	HTTPTimeout int               `yaml:"http_timeout"`
+	MaxTurns    int               `yaml:"max_turns"`
+	Skills      SkillsConfig      `yaml:"skills"`
+	Memory      MemoryConfig      `yaml:"memory"`
+	Logging     LoggingConfig     `yaml:"logging"`
+	Web         WebConfig         `yaml:"web"`
+	Kanban      KanbanConfig      `yaml:"kanban"`
+	Continuous  continuous.Config `yaml:"continuous"`
 	// Disabled is the config.yaml `disabled:` toggle fold (v0.12 E1,
 	// grill Q1; home moved from the omega.json sidecar to this key in
 	// the v0.13 shell law 3 - the sidecar folds at boot). v0.14.1
@@ -279,9 +277,8 @@ func DefaultConfig() Config {
 			// before the logger is created (card t_0ccda501).
 			File: "",
 		},
-		HTTPTimeout:   300,
-		MaxTurns:      100,
-		Notifications: "bell",
+		HTTPTimeout: 300,
+		MaxTurns:    100,
 	}
 }
 
@@ -553,8 +550,6 @@ func applyEnv(cfg *Config) {
 		{"OMEGA_TITLE_MODEL", &cfg.TitleModel},
 		{"OMEGA_DB_PATH", &cfg.Store.DBPath},
 		{"OMEGA_SKILLS_DIR", &cfg.Skills.Dir},
-		{"OMEGA_THEME", &cfg.Theme},
-		{"OMEGA_NOTIFICATIONS", &cfg.Notifications},
 		{"OMEGA_LOGGING_FILE", &cfg.Logging.File},
 		{"OMEGA_DEFAULT_WORKSPACE", &cfg.Server.DefaultWorkspace},
 	} {
