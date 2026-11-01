@@ -415,7 +415,35 @@ func (s *Server) handleFilesWrite(w http.ResponseWriter, r *http.Request) {
 		fileError(w, http.StatusBadRequest, "parent directory: "+perr.Error())
 		return
 	}
-	if werr := os.WriteFile(resolved, []byte(body.Content), 0o644); werr != nil {
+	// the write is atomic (v0.14.1 audit, the same tmp+rename class the
+	// config writes run): the previous os.WriteFile could truncate an
+	// existing user file when the process died mid-write. Same-directory
+	// tmp keeps the rename same-filesystem; the leaf exists untouched
+	// until the rename lands.
+	tmpFile, terr := os.CreateTemp(filepath.Dir(resolved), filepath.Base(resolved)+".omega-write-*")
+	if terr != nil {
+		fileError(w, http.StatusInternalServerError, "write file: "+terr.Error())
+		return
+	}
+	tmp := tmpFile.Name()
+	if _, werr := tmpFile.WriteString(body.Content); werr != nil {
+		tmpFile.Close()
+		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
+		return
+	}
+	if cerr := tmpFile.Close(); cerr != nil {
+		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		fileError(w, http.StatusInternalServerError, "write file: "+cerr.Error())
+		return
+	}
+	if werr := os.Chmod(tmp, 0o644); werr != nil {
+		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
+		return
+	}
+	if werr := os.Rename(tmp, resolved); werr != nil {
+		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
 		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
 		return
 	}

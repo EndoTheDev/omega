@@ -28,7 +28,7 @@ const css = () =>
   readFileSync(join(root, "app", "assets", "css", "main.css"), "utf8");
 
 describe("composer model+effort wrap group (t_641c2870)", () => {
-  it("ModelSelect and ThinkingSelect render inside one .model-group", () => {
+  it("ModelSelect and the effort BandSelect render inside one .model-group", () => {
     const src = composer();
     // the wrapper exists ...
     assert.match(
@@ -48,8 +48,8 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
     );
     assert.match(
       group[0],
-      /<ThinkingSelect[\s\S]*?\/>/,
-      "the effort chip must live inside .model-group",
+      /<BandSelect[\s\S]*?\/>/,
+      "the effort chip must live inside .model-group (the shared BandSelect since the v0.14.1 review-lens migration)",
     );
   });
 

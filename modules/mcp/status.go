@@ -145,7 +145,29 @@ func (p *Plugin) handleReload(w http.ResponseWriter, r *http.Request) {
 func (p *Plugin) reload() (StatusReport, error) {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
+	return p.reloadLocked()
+}
 
+// setServerEnabledAndReload performs one toggle whole (v0.14.1 audit):
+// the flag write and the bridge swap under ONE reloadMu hold, so two
+// quick toggles can no longer race the read-parse-marshal-write of
+// mcp.yaml and lose the first write. The write error and the reload
+// error come back separately - the router answers a failed write 400
+// (the request's fault) and a failed reload 500 (the file was written;
+// the previous bridge keeps serving).
+func (p *Plugin) setServerEnabledAndReload(path, name string, enabled bool) (rep StatusReport, writeErr, reloadErr error) {
+	p.reloadMu.Lock()
+	defer p.reloadMu.Unlock()
+	if err := setServerEnabled(path, name, enabled); err != nil {
+		return StatusReport{}, err, nil
+	}
+	rep, reloadErr = p.reloadLocked()
+	return rep, nil, reloadErr
+}
+
+// reloadLocked is reload's body without the lock (the caller holds
+// reloadMu - either reload() above or setServerEnabledAndReload).
+func (p *Plugin) reloadLocked() (StatusReport, error) {
 	cfg, source, err := loadConfig()
 	if err != nil {
 		// a broken config keeps the old bridge serving: the refresh
@@ -180,8 +202,9 @@ type toggleRequest struct {
 // through the shared bridge swap so the listing, the tools, and the
 // connections all follow. The wire responds with the fresh
 // StatusReport (everything the tab needs to re-render, no second
-// fetch required by the route contract - the UI still re-fetches, the
-// reload.ts ruling).
+// fetch required by the route contract - status.go:171's promise the
+// v0.14.1 review lens collected: toggle.ts/reload.ts consume this
+// body, the follow-up GET died).
 //
 // Refusals (400, the panel's error line): MCP_SERVERS - the env var
 // is not a file, there is nowhere to persist; "none" - nothing
@@ -213,15 +236,20 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 			http.StatusBadRequest)
 		return
 	}
-	if err := setServerEnabled(path, req.Name, req.Enabled); err != nil {
-		http.Error(w, "mcp toggle: "+err.Error(), http.StatusBadRequest)
+	// toggle+reload under one reloadMu: setServerEnabled is a
+	// read-parse-marshal-write of mcp.yaml, and two quick toggles
+	// racing it previously lost the first write (v0.14.1 audit) -
+	// serialized, the second reads what the first wrote
+	rep, writeErr, reloadErr := p.setServerEnabledAndReload(path, req.Name, req.Enabled)
+	if writeErr != nil {
+		// a write failure keeps the file and the serving bridge untouched
+		http.Error(w, "mcp toggle: "+writeErr.Error(), http.StatusBadRequest)
 		return
 	}
-	rep, err := p.reload()
-	if err != nil {
+	if reloadErr != nil {
 		// the file is written; the failed reload keeps the previous
 		// bridge serving (the refresh surfaces it the same way)
-		http.Error(w, "mcp toggle: reload: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "mcp toggle: reload: "+reloadErr.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -267,20 +295,24 @@ func setServerEnabled(path, name string, enabled bool) error {
 		return fmt.Errorf("parse %s: no servers: array", path)
 	}
 	flag := enabledValue(enabled)
+	// v0.14.1 audit NOTE-tier: with duplicate names the flag previously
+	// landed on the first twin while both entries carry the name the
+	// bridge resolves - ambiguous on the wire. Count first, refuse loud
+	// before any write touches the file.
+	matches := 0
+	for _, item := range servers.Content {
+		if item.Kind == yaml.MappingNode && namesServer(item, name) {
+			matches++
+		}
+	}
+	if matches > 1 {
+		return fmt.Errorf("parse %s: mcp.yaml carries more than one server named %s - edit the file by hand and rename one", path, name)
+	}
 	for _, item := range servers.Content {
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
-		named := false
-		for i := 0; i+1 < len(item.Content); i += 2 {
-			key, val := item.Content[i], item.Content[i+1]
-			if key.Kind != yaml.ScalarNode || key.Value != "name" {
-				continue
-			}
-			named = val.Kind == yaml.ScalarNode && val.Value == name
-			break
-		}
-		if !named {
+		if !namesServer(item, name) {
 			continue
 		}
 		// the named entry: replace an existing `enabled:` scalar in
@@ -301,6 +333,19 @@ func setServerEnabled(path, name string, enabled bool) error {
 	return fmt.Errorf("parse %s: no server named %s", path, name)
 }
 
+// namesServer reports whether a servers: seq item is the mapping whose
+// `name:` scalar equals name - the lookup both toggling passes share.
+func namesServer(item *yaml.Node, name string) bool {
+	for i := 0; i+1 < len(item.Content); i += 2 {
+		key, val := item.Content[i], item.Content[i+1]
+		if key.Kind != yaml.ScalarNode || key.Value != "name" {
+			continue
+		}
+		return val.Kind == yaml.ScalarNode && val.Value == name
+	}
+	return false
+}
+
 // enabledValue renders the flag the way yaml node scalars carry bools.
 func enabledValue(enabled bool) string {
 	if enabled {
@@ -311,17 +356,25 @@ func enabledValue(enabled bool) string {
 
 // writeYAML marshals the whole document node and replaces the file -
 // comments and style survive because they rode the node tree. The
-// write is the caller's responsibility to surface: a parse or lookup
-// failure never reaches this point (the file stays untouched).
+// write is atomic (the same tmp+rename class writeDisabled/saveCronState
+// run, v0.14.1 audit): a crash mid-write previously truncated the live
+// mcp.yaml and silently dropped every configured server - now the tmp
+// dies alone and the old file survives the rename miss. Same-directory
+// tmp keeps the rename same-filesystem. The write is the caller's
+// responsibility to surface: a parse or lookup failure never reaches
+// this point (the file stays untouched).
 func writeYAML(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
-	// the config files are operator-owned: the same mode the
-	// fold-write uses (no chmod churn)
-	if err := os.WriteFile(path, out, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	tmp := path + ".omega-toggle.tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		return fmt.Errorf("replace %s: %w", path, err)
 	}
 	return nil
 }
