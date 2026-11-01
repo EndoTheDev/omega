@@ -9,12 +9,42 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 func (p *Provider) streamOllama(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
+	end, retriable := p.streamOllamaAttempt(ctx, events, messages, tools)
+	// done_reason "load" rides a 200 OK stream and produces nothing, so
+	// RetryHTTP never sees it: the failure happens after the HTTP retry
+	// layer has already succeeded. Retry it here with the same budget
+	// and backoff RetryHTTP applies to 429/5xx.
+	for attempt := 0; retriable; attempt++ {
+		if attempt >= ai.MaxRetries() {
+			return core.StreamEnd{
+				Type:         "stream_end",
+				FinishReason: "error",
+				Error: fmt.Sprintf("ollama: upstream canceled generation for a cold model load %d time(s) (done_reason \"load\"); no content was produced - run ends as an error",
+					attempt+2),
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
+		case <-time.After(ai.Backoff(attempt)):
+		}
+		end, retriable = p.streamOllamaAttempt(ctx, events, messages, tools)
+	}
+	return end
+}
+
+// streamOllamaAttempt runs one request/stream cycle. The second return
+// is true when the stream ended with done_reason "load" and produced no
+// events (no thinking, content, or tool calls were streamed), so a
+// retry cannot duplicate anything the consumer already received.
+func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) (core.StreamEnd, bool) {
 	payload := map[string]any{
 		"model":    p.modelName,
 		"messages": messages,
@@ -40,12 +70,12 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}, false
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/api/chat", bytes.NewReader(payloadBytes))
 	if err != nil {
-		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}, false
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
@@ -54,13 +84,13 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 
 	resp, err := ai.RetryHTTP(req)
 	if err != nil {
-		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}, false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("ollama: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("ollama: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}, false
 	}
 
 	phase := ""
@@ -76,7 +106,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 		if line != "" {
 			var chunk map[string]any
 			if jsonErr := json.Unmarshal([]byte(line), &chunk); jsonErr != nil {
-				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}, false
 			}
 
 			// In-stream error payloads surface as an error StreamEnd
@@ -85,11 +115,11 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 			switch eval := chunk["error"].(type) {
 			case string:
 				if eval != "" {
-					return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: eval}
+					return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: eval}, false
 				}
 			case map[string]any:
 				if msg, ok := eval["message"].(string); ok && msg != "" {
-					return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: msg}
+					return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: msg}, false
 				}
 			}
 
@@ -114,7 +144,14 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 				} else if dr, ok := chunk["done_reason"].(string); ok && dr != "" {
 					finishReason = dr
 				}
-				return core.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev, CachedCount: ca}
+				if finishReason == "load" && phase == "" {
+					// Cloud cold-start verdict: the generation was
+					// canceled while the model loaded and nothing was
+					// streamed. Retryable only here - a load verdict
+					// after content would duplicate that content.
+					return core.StreamEnd{Type: "stream_end", FinishReason: finishReason}, true
+				}
+				return core.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev, CachedCount: ca}, false
 			}
 
 			message, _ := chunk["message"].(map[string]any)
@@ -163,12 +200,12 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 
 		if readErr != nil {
 			if readErr == io.EOF {
-				return core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "stop"}, false
 			}
 			if ctx.Err() != nil {
-				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}, false
 			}
-			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: readErr.Error()}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: readErr.Error()}, false
 		}
 	}
 }

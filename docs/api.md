@@ -401,15 +401,18 @@ asset URL is a bug a deep link must not mask.
 ## Provider quirks that leak onto the wire
 
 - **finish_reason is the provider's string**, passed through: Ollama
-  maps its `done_reason` field directly (`tool_call`, `load`, ...), so
-  Ollama Cloud's load-without-generate shows as `finish_reason:
-  "load"` on `stream_end` — an empty turn, not an error.
+  maps its `done_reason` field directly (`tool_call`, `length`, ...).
+  The one exception is `load` on a bare stream (nothing streamed):
+  cloud load-without-generate is retried and, when it persists, ends
+  the run as `finish_reason: "error"` instead of an empty turn. A
+  `load` that follows streamed content passes through unchanged.
 - **Errors are events, not Go errors**: provider failures come back as
   `stream_end` with `finish_reason: "error"` plus an `error` event;
   the channel always closes.
 - **Retries are invisible**: 429 and 5xx retry with backoff inside the
   provider layer (budget `OMEGA_MAX_RETRIES`, default 3) before any
   frame reaches you; other 4xx and cancellation return immediately.
+  The same budget applies to the Ollama `load` retry above.
 - **Model override is per-run state**: a `/chat` model builds a provider
   copy; concurrent streams cannot bleed models into each other.
 - **Context window fallback**: `/models` probes the provider once per
