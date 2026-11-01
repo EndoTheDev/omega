@@ -130,6 +130,15 @@
         <template #pane-terminal>
           <TerminalTab v-if="!isMobile" class="pane" />
         </template>
+        <!-- card t_95c91f9c: the general web browser tab - shell-owned
+             main-pane content (like chat/viewer), the URL bar + iframe
+             embed over modules/browser's /browser/last. Singleton: the
+             opener FOCUSES the one instance. -->
+        <template #pane-browser>
+          <BrowserTab
+            v-if="!isMobile"
+            class="pane" />
+        </template>
         <template #pane-skills>
           <InspectorPanel
             v-if="!isMobile"
@@ -541,6 +550,7 @@
   // from a row click) - outlet below, opener + titles wired at the
   // provides
   import ViewerTab from "./components/ViewerTab.vue";
+  import BrowserTab from "./components/browser/BrowserTab.vue";
   import {
     DOCK_VIEWER_OPEN_KEY,
     FOCUSED_SESSION_KEY,

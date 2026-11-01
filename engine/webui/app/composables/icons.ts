@@ -27,6 +27,7 @@ import {
   FolderPlus,
   FoldVertical,
   GitFork,
+  Globe,
   History,
   Kanban,
   MessageSquare,
@@ -76,6 +77,7 @@ export const ICONS = {
   // integrated shell; the SquareTerminal lucide glyph - "file-script"
   // carries the same shape deliberately: the script-class file glyph
   // IS terminal semantics)
+  browser: Globe, // the general web browser tab (card t_95c91f9c)
   // default glyph for modules that declare no icon of their own
   module: Box,
   // shell chrome

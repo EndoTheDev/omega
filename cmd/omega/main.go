@@ -22,6 +22,7 @@ import (
 	"github.com/EndoTheDev/omega/engine/ai"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
+	browserModule "github.com/EndoTheDev/omega/modules/browser"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/continuous"
 	"github.com/EndoTheDev/omega/modules/cron"
@@ -484,6 +485,10 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		trust.NewPlugin(),
 		cron.NewPlugin(),
 		kanbanModule.NewPlugin(),
+		// The browser capsule (card t_95c91f9c, the general web browser
+		// pane): the tab's last-URL memory, the only server surface the
+		// client-side pane drives.
+		browserModule.NewPlugin(),
 		// The continuous capsule (card t_72ecca67): agent homes, the
 		// wake subprocess, the canonical chats, the evidence ledger.
 		// The home passes through the host - exe-dir resolution is
