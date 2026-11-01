@@ -1627,6 +1627,11 @@
   let systemPrefersDark = true;
   let mediaQuery: MediaQueryList | null = null;
   const userThemes = ref<UserTheme[]>([]);
+  // the list starts empty and loads async - applyTheme's vanished-file
+  // fallback may only fire after the first fetch settled, or a boot-time
+  // watch on the restored id would reset it against the not-yet-loaded
+  // list and the persisted pick would be lost on every reload
+  let userThemesLoaded = false;
 
   function applyTheme() {
     if (typeof document === "undefined") return;
@@ -1638,10 +1643,14 @@
         applyThemeTokens(document.documentElement.style, theme.tokens);
         return;
       }
-      // the theme file vanished or turned invalid: fall back to the
-      // default theme; the color mode is never touched
-      themeId.value = DEFAULT_THEME_ID;
-      localStorage.setItem(THEME_ID_KEY, DEFAULT_THEME_ID);
+      if (userThemesLoaded) {
+        // the theme file vanished or turned invalid: fall back to the
+        // default theme; the color mode is never touched
+        themeId.value = DEFAULT_THEME_ID;
+        localStorage.setItem(THEME_ID_KEY, DEFAULT_THEME_ID);
+      }
+      // still loading: keep the pick, the built-in palette applies
+      // until the refreshed list re-applies the file theme
     }
     clearThemeTokens(document.documentElement.style);
     const dark =
@@ -1695,6 +1704,10 @@
       userThemes.value = await fetchThemes();
     } catch {
       userThemes.value = [];
+    } finally {
+      // the first fetch settled: the vanished-file fallback may fire -
+      // a failure just empties the list (the pane keeps its built-ins)
+      userThemesLoaded = true;
     }
     // a file id the folder no longer serves clean falls back to the
     // built-in; the persisted pair rewrites only on the miss
