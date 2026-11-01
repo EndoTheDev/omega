@@ -1,6 +1,13 @@
 package verdict
 
+// Module-owned command surface (card t_0744eb8e): /verdict belongs to
+// the verdict module and rides the extension command seam - the CLI
+// loop dispatches it when idle, the busy-time answer path goes through
+// AnswerInline. The webui answers cards in the pane; no storage or
+// seam is reimplemented here.
+
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -8,23 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// tuiProvider is the verdict module's TUI surface (card t_88bb7dcf):
-// a /verdict command for idle answering and inspection. The live
-// answer path during a run is the shell's busy-Enter intercept
-// (tui); this command covers the case the prompt is still up
-// after the run finished (a pending card whose run was cancelled).
-type tuiProvider struct {
-	hub core.VerdictsProvider
-}
-
-// TUICommands implements core.TUIProvider.
-func (p *tuiProvider) TUICommands() []core.TUICommand {
-	return []core.TUICommand{
-		{Name: "/verdict", Help: "list pending verdict cards / answer one: /verdict <N> <num|1,3|y|n|skip|text>"},
-	}
-}
-
-// HandleTUICommand implements core.TUIProvider.
+// verdictHandler serves the /verdict extension command:
 //
 //	/verdict            list every pending card (oldest first), numbered
 //	/verdict N          pick one to answer: prints the card and its options
@@ -33,57 +24,53 @@ func (p *tuiProvider) TUICommands() []core.TUICommand {
 //	/verdict N y        y/n shortcuts map to the first two options
 //	/verdict N skip     record a skip
 //	/verdict N <text>   free text (only when the card allows it)
-func (p *tuiProvider) HandleTUICommand(name, args string, c core.TUIConsole) core.TUIResult {
-	if name != "/verdict" {
-		return core.TUIResult{}
-	}
-	if p.hub == nil {
-		c.Error("verdicts seam not mounted")
-		return core.TUIResult{}
-	}
-	cards := p.hub.Pending("")
-	if len(cards) == 0 {
-		c.Labeled("verdicts", "no pending verdict cards")
-		return core.TUIResult{}
-	}
+func verdictHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
+	return func(_ context.Context, _ string, args string) (core.CommandResult, error) {
+		if p.hub == nil {
+			return core.CommandResult{}, fmt.Errorf("verdicts seam not mounted")
+		}
+		cards := p.hub.Pending("")
+		if len(cards) == 0 {
+			return core.CommandResult{Text: "[verdicts] no pending verdict cards"}, nil
+		}
+		parts := strings.Fields(args)
+		if len(parts) == 0 {
+			return core.CommandResult{Text: "[verdicts] " + formatCardList(cards)}, nil
+		}
+		idx, err := strconv.Atoi(parts[0])
+		if err != nil || idx < 1 || idx > len(cards) {
+			return core.CommandResult{}, fmt.Errorf("usage: /verdict           list pending\n       /verdict <N> <num|1,3|y|n|skip|text>")
+		}
+		card := cards[idx-1]
 
-	parts := strings.Fields(args)
-	if len(parts) == 0 {
-		c.Labeled("pending", formatCardList(cards))
-		return core.TUIResult{}
-	}
+		// Select-only: print the card so the next command can answer it.
+		if len(parts) == 1 {
+			return core.CommandResult{
+				Text: "card " + strconv.Itoa(idx) + ": " + formatCard(card) +
+					"\nanswer with: /verdict " + strconv.Itoa(idx) + " <option # | 1,3 (multi) | y | n | skip | text>",
+			}, nil
+		}
 
-	idx, err := strconv.Atoi(parts[0])
-	if err != nil || idx < 1 || idx > len(cards) {
-		c.Error("usage: /verdict           list pending\n       /verdict <N> <num|1,3|y|n|skip|text>")
-		return core.TUIResult{}
+		v, perr := parseVerdictAnswer(card, parts[1:])
+		if perr != nil {
+			return core.CommandResult{}, perr
+		}
+		if _, err := p.hub.Answer("", card.ID, v); err != nil {
+			return core.CommandResult{}, err
+		}
+		return core.CommandResult{Text: "answered: " + formatVerdict(card, v)}, nil
 	}
-	card := cards[idx-1]
-
-	// Select-only: print the card so the next command can answer it.
-	if len(parts) == 1 {
-		c.Labeled("card "+strconv.Itoa(idx), formatCard(card))
-		c.Labeled("answer with", fmt.Sprintf("/verdict %d <option # | 1,3 (multi) | y | n | skip | text>", idx))
-		return core.TUIResult{}
-	}
-
-	v, perr := parseTUIAnswer(card, parts[1:])
-	if perr != nil {
-		c.Error(perr.Error())
-		return core.TUIResult{}
-	}
-	if _, err := p.hub.Answer("", card.ID, v); err != nil {
-		c.Error(err.Error())
-		return core.TUIResult{}
-	}
-	c.ClearError()
-	c.Labeled("answered", formatVerdict(card, v))
-	return core.TUIResult{}
 }
 
-// parseTUIAnswer maps typed tokens to an core.Verdict, mirroring the
-// design's option-number / comma-multi / y-n / free-text contract.
-func parseTUIAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, error) {
+// ParseCardAnswer maps one free-typed line to a core.Verdict for the
+// answering surface's busy-time path: option number / comma-multi /
+// y-n / skip / free text, exactly the /verdict N <answer> contract.
+func ParseCardAnswer(card core.VerdictPrompt, input string) (core.Verdict, error) {
+	return parseVerdictAnswer(card, strings.Fields(input))
+}
+
+// parseVerdictAnswer implements the typed-token contract above.
+func parseVerdictAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, error) {
 	tok := strings.TrimSpace(strings.Join(rest, " "))
 	if tok == "" {
 		return core.Verdict{}, fmt.Errorf("empty answer")

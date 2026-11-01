@@ -2,7 +2,7 @@
 # 90-module-parity - the module-owned surfaces journey (card t_88bb7dcf).
 # REST-level on purpose: the law this card pins is "one registration,
 # both ends", and the HTTP half of that is observable without a
-# browser (the TUI half is Go-gated, see TestModuleOmissionDropsTUICommands).
+# browser (the module half is Go-gated, see TestModuleOmissionDropsCommands).
 # Pins:
 #
 #   inventory  - GET /extensions lists every in-process module, the

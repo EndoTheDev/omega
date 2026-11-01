@@ -21,7 +21,6 @@ import (
 	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/engine/ai"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
-	"github.com/EndoTheDev/omega/engine/tui"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/continuous"
@@ -60,11 +59,11 @@ func main() {
 const helpText = `omega - a Go event-stream agent (Pi/Tau port)
 
 Usage:
-  omega                 start the interactive TUI
-  omega <path>          start the TUI in <path> (chdir first)
-  omega chat            start the interactive TUI
+  omega                 interactive CLI loop (first run: walks you through setup)
+  omega <path>          start the loop in <path> (chdir first)
+  omega setup           write the first config (provider, model, api key)
   omega run <prompt>    run one prompt to stdout
-  omega serve           start the HTTP server (SSE streaming)
+  omega serve           start the HTTP server (SSE streaming; serves the webui)
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
@@ -94,8 +93,10 @@ Update flags:
 
 // run parses the subcommand and dispatches. The first non-flag argument
 // selects the subcommand; --config is accepted before or after it. With
-// no argument, the TUI starts. A non-subcommand argument is treated as a
-// project path: omega chdirs there and starts the TUI.
+// no argument the CLI loop starts. A non-subcommand argument is treated
+// as a project path: omega chdirs there and starts the loop. The setup
+// gate is the law (card t_0744eb8e): serve and run refuse without a
+// config; bare `omega` walks the wizard instead of refusing.
 func run(args []string) error {
 	// Set OMEGA_HOME early so all child processes inherit it.
 	home := omegaHome()
@@ -131,10 +132,19 @@ func run(args []string) error {
 	sub, rest := splitSubcommand(args)
 	appendPrompts := parseAppendPrompts(rest)
 	trust := parseTrustArgs(rest)
+	configPath := parseConfigFlag(rest)
 	switch sub {
+	case "setup":
+		return cmdSetup()
 	case "serve":
+		if err := requireConfig(configPath); err != nil {
+			return err
+		}
 		return cmdServe(parseConfigFlag(rest), appendPrompts, trust)
 	case "run":
+		if err := requireConfig(configPath); err != nil {
+			return err
+		}
 		return cmdRun(parseConfigFlag(rest), rest, trust)
 	case "health":
 		return cmdHealth(parseConfigFlag(rest))
@@ -151,8 +161,8 @@ func run(args []string) error {
 		// swap back, health-verified.
 		return cmdRollback()
 	case "chat", "":
-		// Explicit chat subcommand, or no subcommand: default to the TUI.
-		return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
+		// The chat subcommand is a legacy alias for the CLI loop.
+		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 	default:
 		// An existing directory stays the project path - decided before
 		// the module table, an existing directory is always a workspace.
@@ -160,19 +170,19 @@ func run(args []string) error {
 			if err := os.Chdir(sub); err != nil {
 				return fmt.Errorf("chdir %s: %w", sub, err)
 			}
-			return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
+			return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 		}
 		// Module-owned subcommands (v0.12 phase D, Q6 - CLI homecoming):
 		// the dispatch table is the mount registry, the module owns its
 		// argv. No module claims the name: fall back to the project-path
-		// behavior (chdir there, then the TUI).
+		// behavior (chdir there, then the loop).
 		if handled, err := dispatchModuleCLI(args, sub, rest); handled {
 			return err
 		}
 		if err := os.Chdir(sub); err != nil {
 			return fmt.Errorf("chdir %s: %w", sub, err)
 		}
-		return cmdChat(parseConfigFlag(rest), appendPrompts, trust)
+		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 	}
 }
 
@@ -377,6 +387,20 @@ func resolveConfigPath(flagPath string) string {
 	return ""
 }
 
+// requireConfig is the setup gate (card t_0744eb8e): config-dependent
+// subcommands refuse in a home without a valid config.yaml and point at
+// the wizard - the gate is the message, not a stack trace.
+func requireConfig(configPath string) error {
+	path := resolveConfigPath(configPath)
+	if path == "" {
+		return fmt.Errorf("no config found in %s - run `omega setup` first", omegaHome())
+	}
+	if _, err := LoadConfig(path); err != nil {
+		return fmt.Errorf("%s: %w - fix it or run `omega setup`", path, err)
+	}
+	return nil
+}
+
 // resolveHomePaths fills in home-relative defaults for DBPath and
 // Skills.Dir when the config left them at their relative defaults.
 // This lets omega find its db and skills from any CWD. Returns an
@@ -456,7 +480,6 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		mcpPlugin,
 		delegate.NewPlugin(),
 		httpchannel.NewPlugin(),
-		tui.NewPlugin(),
 		trust.NewPlugin(),
 		cron.NewPlugin(),
 		kanbanModule.NewPlugin(),
@@ -827,90 +850,6 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		fmt.Println()
 	}
 	return nil
-}
-
-// cmdChat loads config and launches the interactive Bubble Tea TUI.
-func cmdChat(configPath string, appendPrompts []string, trust trustFlags) error {
-	cfg, err := LoadConfig(resolveConfigPath(configPath))
-	if err != nil {
-		return err
-	}
-	if err := resolveHomePaths(&cfg); err != nil {
-		return err
-	}
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
-
-	// Build the plugin context to get the store and skills.
-	plugins, err := buildPlugins(cfg)
-	if err != nil {
-		return fmt.Errorf("build plugins: %w", err)
-	}
-	pctx := &agent.Context{
-		CWD:     cwd(),
-		Configs: agent.RouteConfigs(plugins, cfg),
-	}
-	if _, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled.Modules); err != nil {
-		return fmt.Errorf("mount extensions: %w", err)
-	}
-	if pctx.Logger != nil {
-		defer pctx.Logger.Close()
-	}
-
-	// Open the store.
-	if pctx.Store != nil {
-		if err := pctx.Store.Open(cfg.Store.DBPath); err != nil {
-			return fmt.Errorf("open store: %w", err)
-		}
-	} else {
-		pctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
-		s, err := store.Open(":memory:")
-		if err != nil {
-			return fmt.Errorf("open in-memory store: %w", err)
-		}
-		pctx.Store = s
-	}
-	defer pctx.Store.Close()
-
-	wireCaptioner(cfg, pctx)
-
-	// Load skills.
-	var skillsList []core.Skill
-	if pctx.Skills != nil {
-		skillsList, err = pctx.Skills.LoadSkills(cfg.Skills.Dir)
-		if err != nil {
-			return fmt.Errorf("load skills: %w", err)
-		}
-	}
-
-	// Hot-reload non-disruptive config changes (theme, compaction,
-	// notifications) when config.yaml changes on disk.
-	configFile := resolveConfigPath(configPath)
-	WatchConfig(configFile, func(newCfg Config) {
-		hotApply(newCfg, pctx)
-	})
-
-	return runChat(cfg, pctx, skillsList, appendPrompts, trust)
-}
-
-// runChat launches the frontend (TUI) via the Frontend seam.
-func runChat(cfg Config, pctx *agent.Context, skills []core.Skill, appendPrompts []string, trust trustFlags) error {
-	if pctx.Frontend == nil {
-		return fmt.Errorf("no frontend extension loaded — mount a frontend plugin (e.g. tui)")
-	}
-	return pctx.Frontend.Run(context.Background(), pctx, core.FrontendOptions{
-		ModelName:     cfg.Provider.ModelName,
-		ProviderType:  cfg.Provider.Type,
-		Compaction:    &cfg.Compaction,
-		PromptCustom:  cfg.SystemPrompt,
-		PromptAppend:  appendPrompts,
-		PromptContext: trustGate(pctx.Trust, cwd(), trust, true),
-		Skills:        skills,
-		ThemeName:     cfg.Theme,
-		TrustState:    trustStatus(pctx.Trust, cwd(), trust),
-		Notifications: cfg.Notifications,
-		CWD:           cwd(),
-		Version:       omegaVersion,
-	})
 }
 
 // omegaVersion is set via ldflags at build time:

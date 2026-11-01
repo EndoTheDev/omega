@@ -9,8 +9,8 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provid
 | Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (23 of them, `RegistryToggles` newest: the config.yaml `disabled:` registry-browser toggle fold), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError) |
 | Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | Provider | `ai`        | The `ai.Provider`/`ai.ToolSchema`/`ai.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
-| CLI      | `cmd/omega` | Entry point, TUI, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, web, http_channel, tui, trust, kanban, notifications, verdict, continuous (20 plugins) + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
+| CLI      | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
+| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, continuous, notifications, trust + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -30,15 +30,15 @@ engine/ai/               Provider contract (ai.Provider aliases core.Provider), 
                   HTTP client, think-level ladder, image sniffing
 engine/agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
                   canvas runtime, insights/caption/compaction helpers
-modules/          In-process module packages (22 packages: 20 plugins +
-                  datadir, an imported leaf, + ui, the webui SPA; compiled
-                  into omega)
+modules/          In-process module packages (20 packages: 18 plugins +
+                  datadir, an imported leaf + engine/webui, the webui
+                  SPA source; compiled into omega)
   modules/continuous  Continuous-agent machinery: agent homes (folder-as-
                   registration under agents/), wake subprocesses, the
                   canonical chat, the evidence ledger, the roster REST + webui pane
 engine/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
 webui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
-docs/             User documentation (cli.md, api.md, webui.md, tui.md,
+docs/             User documentation (cli.md, api.md, webui.md,
                   configuration.md, architecture.md, troubleshooting.md, roadmap.md)
 deploy/           Install artifacts (omega.service systemd unit)
 .agents/          Commit conventions (COMMIT.md)

@@ -17,11 +17,12 @@ func TestBuildPlugins(t *testing.T) {
 		t.Fatalf("buildPlugins returned error: %v", err)
 	}
 
-	// 19 in the web-module era; 18 since v0.13 shell law 1 dissolved
-	// the web capsule into the channel (t_f76ecdbe) after the earlier
-	// +kanban (t_33487fb6), +notifications (t_5d9032d3), +verdict
-	// (t_2ecf9c51) additions; +continuous (t_72ecca67) = 19 again.
-	const want = 19
+	// TUI retired (t_0744eb8e): 19 in the web-module era; 18 since
+	// v0.13 shell law 1 dissolved the web capsule into the channel
+	// (t_f76ecdbe) after the earlier +kanban (t_33487fb6),
+	// +notifications (t_5d9032d3), +verdict (t_2ecf9c51) +
+	// continuous (t_72ecca67) = 19; the tui capsule leaves = 18.
+	const want = 18
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}
@@ -33,15 +34,16 @@ func TestBuildPlugins(t *testing.T) {
 	}
 }
 
-// TestModuleOmissionDropsTUICommands gates the module-owned TUI law
-// (card t_88bb7dcf): a plugin left out of buildPlugins takes its TUI
+// TestModuleOmissionDropsCommands gates the module-owned command law
+// (card t_0744eb8e): a plugin left out of buildPlugins takes its
 // commands out of the command table with it. Mount the default plugin
-// set minus cron; no mounted TUIProvider may serve /cron. The webui
-// half of the same law: without the cron plugin nothing provides the
-// CronLister, so GET /cron/jobs serves an empty listing (covered by
-// the http_channel inspector tests over a nil Cron seam); the removal
-// recipe in docs/tui.md walks both ends.
-func TestModuleOmissionDropsTUICommands(t *testing.T) {
+// set minus cron; no mounted module may serve /cron, and every module
+// /command rides the RegisterCommand extension seam, so ctx.Commands
+// never sees it. The webui half of the same law: without the cron
+// plugin nothing provides the CronLister, so GET /cron/jobs serves an
+// empty listing (covered by the http_channel inspector tests over a
+// nil Cron seam).
+func TestModuleOmissionDropsCommands(t *testing.T) {
 	cfg := DefaultConfig()
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
@@ -59,10 +61,8 @@ func TestModuleOmissionDropsTUICommands(t *testing.T) {
 		t.Fatalf("mount plugins: %v", err)
 	}
 	var cmds []string
-	for _, p := range ctx.TUIProviders {
-		for _, c := range p.TUICommands() {
-			cmds = append(cmds, c.Name)
-		}
+	for _, c := range ctx.Commands {
+		cmds = append(cmds, c.Name)
 	}
 	for _, gone := range []string{"/cron"} {
 		for _, name := range cmds {
@@ -71,9 +71,9 @@ func TestModuleOmissionDropsTUICommands(t *testing.T) {
 			}
 		}
 	}
-	// the mounted set keeps the other two migrated commands; the law
+	// the mounted set keeps the other migrated commands; the law
 	// is "omission removes", not "the table empties"
-	for _, want := range []string{"/files", "/logs"} {
+	for _, want := range []string{"/logs", "/verdict"} {
 		found := false
 		for _, name := range cmds {
 			if name == want {

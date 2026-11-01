@@ -11,7 +11,7 @@ import (
 const charsPerToken = 4
 
 // CompactionConfig moved to core with its Budget methods (arc 1b);
-// FrontendOptions and the host config reference it.
+// the host config references it.
 type CompactionConfig = core.CompactionConfig
 
 // EstimateTokens returns a rough token count for the message history.

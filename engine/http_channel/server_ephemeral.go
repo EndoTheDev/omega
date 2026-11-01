@@ -13,7 +13,7 @@ import (
 
 // Ephemeral sessions (card t_d96a5cd5): a chat that never touches the
 // store - no session row, no messages on disk, invisible to every
-// store-derived surface (lists, search, export, counts, the TUI's
+// store-derived surface (lists, search, export, counts, the session
 // /sessions). The conversation's whole life is THIS registry: an
 // in-memory record keyed by an `eph-` id, reattachable by id on reload
 // (server memory) and gone at restart. Close deletes the record - that

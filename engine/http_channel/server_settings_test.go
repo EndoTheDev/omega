@@ -37,15 +37,6 @@ func (f *fakeSettings) Schema() (*core.SettingsSchema, error) {
 					Type:  "toggle",
 					Value: f.current("compaction.enabled"),
 				},
-				// surface "tui": the GET filter must drop it, the
-				// PUT refresh must serve it back untouched
-				{
-					Key:     "notifications",
-					Label:   "notifications",
-					Type:    "select",
-					Value:   "bell",
-					Surface: "tui",
-				},
 			},
 		}},
 	}, nil
@@ -111,13 +102,10 @@ func TestSettingsGET(t *testing.T) {
 		t.Fatalf("unexpected groups: %+v", payload)
 	}
 	if len(payload.Groups[0].Knobs) != 1 {
-		t.Errorf("tui knob survived the GET filter: %+v", payload.Groups[0].Knobs)
+		t.Errorf("knob count = %d, want the one usable knob: %+v", len(payload.Groups[0].Knobs), payload.Groups[0].Knobs)
 	}
 	if payload.Groups[0].Knobs[0].Value != true {
 		t.Errorf("knob value %v, want true", payload.Groups[0].Knobs[0].Value)
-	}
-	if len(body) > 0 && strings.Contains(string(body), `"surface"`) {
-		t.Errorf("surface leaked onto the wire: %s", body)
 	}
 }
 
@@ -152,9 +140,6 @@ func TestSettingsPUTRoundTripsAndRefreshes(t *testing.T) {
 	}
 	if payload.Groups[0].Knobs[0].Value != false {
 		t.Errorf("refreshed payload value %v, want false", payload.Groups[0].Knobs[0].Value)
-	}
-	if len(payload.Groups[0].Knobs) != 2 {
-		t.Errorf("refreshed payload knobs %+v, want the unfiltered two", payload.Groups[0].Knobs)
 	}
 }
 

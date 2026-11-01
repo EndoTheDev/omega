@@ -4,7 +4,7 @@
 // state change onto the event spine, and routes action calls to the
 // capsule's registered handler through one seam (settled Q4b).
 //
-// The runtime is transport-blind: the TUI consumes it in-process and
+// The runtime is transport-blind: http_channel serializes it and
 // http_channel serializes the same snapshot/deltas/action shapes over
 // SSE/REST in its own phase. Registration is declarative - modules
 // append a core.PanelProvider in Mount; the host builds the Canvas

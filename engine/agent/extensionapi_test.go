@@ -31,13 +31,6 @@ func echoTool() core.Tool {
 	}
 }
 
-type plugTUI struct{}
-
-func (plugTUI) TUICommands() []core.TUICommand { return []core.TUICommand{{Name: "/plug-tui"}} }
-func (plugTUI) HandleTUICommand(name, args string, c core.TUIConsole) core.TUIResult {
-	return core.TUIResult{}
-}
-
 type plugSectioner struct{}
 
 func (plugSectioner) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
@@ -343,7 +336,6 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterRoute":           true,
 		"RegisterCommand":         true,
 		"RegisterEmitter":         true,
-		"RegisterRenderer":        true,
 		"RegisterPromptSectioner": true,
 		"RegisterChannel":         true,
 		"RegisterDelegation":      true,
@@ -355,7 +347,6 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterLogger":          true,
 		"RegisterMemory":          true,
 		"RegisterPromptBuilder":   true,
-		"RegisterFrontend":        true,
 		"RegisterTrust":           true,
 		"RegisterCron":            true,
 		"RegisterNotifications":   true,

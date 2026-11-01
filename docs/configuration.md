@@ -45,7 +45,7 @@ disabled:
 
 A `disabled:` entry skips that capsule at boot (its routes answer 404).
 Machine-critical capsules (provider, store, loop, logging) and the
-engine ring (http_channel, tui) are not on the list — booting with
+engine ring (http_channel) are not on the list — booting with
 them disabled fails loud. The v0.12 `omega.json` sidecar is folded
 into this key at boot and deleted; an unknown entry fails the boot
 naming it.
@@ -84,10 +84,8 @@ naming it.
 | `system_prompt`               | -                                  | (empty)                  | Extra custom prompt lines appended to the system prompt (applies on restart); the CLI's repeatable `--append-system-prompt` flag does the same per-run                                                                                                   |
 | `web.base_url`                | -                                  | provider host (trailing `/v1` stripped) | Override for the web tools' endpoint host (`web.search` / `web.fetch` ride the provider mirror with the same auth as every other call when unset) |
 | `kanban.db_path`              | -                                  | `<home>/data/kanban.db`  | Task-board SQLite path; relative defaults resolve against the home like `store.db_path`                                                                                                   |
-| `theme`                       | `OMEGA_THEME`                      | `dark`                   | TUI color theme (dark, light, auto)                                                                                                                                                                                                                       |
 | `vision_model`                | `OMEGA_VISION_MODEL`               | -                        | Captioner model for image messages: images are described once (persisted, content-addressed) and the main model sees the caption as text. Empty = images ride to the main model unchanged (a model that cannot see them fails loudly). Applies on restart |
 | `title_model`                 | `OMEGA_TITLE_MODEL`                | -                        | Cheap model for session-title generation (provisional + final). Empty = the main model. Applies on restart                                                                                                                                                |
-| `notifications`               | `OMEGA_NOTIFICATIONS`              | `bell`                   | Turn-complete notification (bell, desktop, off)                                                                                                                                                                                                           |
 | `disabled`                    | -                                  | (empty)                  | Toggleable capsules to keep off (e.g. `- kanban`). The webui MODULES pane writes the same key; an unknown name fails the boot. Legacy `omega.json` sidecars fold into this key on first boot and are deleted                                               |
 | `continuous.wake_turn_budget` | -                                  | `0`                      | Per-wake turn budget a continuous agent's spawned loop gets (mapped onto `OMEGA_MAX_TURNS` in the child). 0 = the config's own `max_turns` (ruling 17: the ONLY budget - no daily cap, no wallet)                                                        |
 | `continuous.wake_timeout_seconds` | -                              | `1800`                   | Wall-clock fence per wake subprocess: a wedged wake is killed, never queued (crash isolation ruling 9)                                                                                                                                                    |

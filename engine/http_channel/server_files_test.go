@@ -447,7 +447,7 @@ func TestFilesWriteRefusals(t *testing.T) {
 func TestFilesWriteSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	outside := filepath.Join(t.TempDir(), "victim.txt")
-	os.WriteFile(outside, []byte("original"), 0o644) //nolint:errcheck // setup
+	os.WriteFile(outside, []byte("original"), 0o644)   //nolint:errcheck // setup
 	os.Symlink(outside, filepath.Join(dir, "esc.lnk")) //nolint:errcheck // setup
 	res, _ := filesPost(t, "/files/write", `{"path":"esc.lnk","content":"hijack"}`)
 	if res.StatusCode != http.StatusBadRequest {
@@ -467,9 +467,9 @@ func TestFilesWriteSymlinkEscape(t *testing.T) {
 // ensureUnderRoot, never the segment scan.
 func TestFilesDotNamesServe(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.Mkdir(filepath.Join(dir, ".git"), 0o755)               //nolint:errcheck // setup
-	os.Mkdir(filepath.Join(dir, ".github"), 0o755)            //nolint:errcheck // setup
-	os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref"), 0o644) //nolint:errcheck // setup
+	os.Mkdir(filepath.Join(dir, ".git"), 0o755)                             //nolint:errcheck // setup
+	os.Mkdir(filepath.Join(dir, ".github"), 0o755)                          //nolint:errcheck // setup
+	os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref"), 0o644)  //nolint:errcheck // setup
 	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bin/\n"), 0o644) //nolint:errcheck // setup
 
 	// a dot folder lists like any folder
@@ -512,7 +512,7 @@ func TestFilesDotNamesServe(t *testing.T) {
 func TestFilesDotSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	outside := filepath.Join(t.TempDir(), "victim.txt")
-	os.WriteFile(outside, []byte("original"), 0o644) //nolint:errcheck // setup
+	os.WriteFile(outside, []byte("original"), 0o644)   //nolint:errcheck // setup
 	os.Symlink(outside, filepath.Join(dir, ".victim")) //nolint:errcheck // setup
 
 	res, _ := filesGet(t, "/files/browse?path=.victim")

@@ -1,7 +1,7 @@
 // The canvas contract (factory-flow ADR, arc 3a): view-model v1
 // schema, the panel delta event kind, and the module-facing
-// registration seam. One contract, two transports (settled Q1): the
-// TUI consumes it in-process, http_channel serializes the same shapes
+// registration seam. One contract, one transport (settled): the
+// http_channel serializes the canvas shapes
 // over SSE/REST. The schema is minimal by law (settled Q2b) - the
 // vocabulary grows one migration at a time, never designed on paper
 // ahead of a consumer. Zero transport behavior lives here: snapshot
@@ -84,7 +84,7 @@ type PanelUpdateSink interface {
 // conversation itself as a canvas surface. Panel kind 'chat' is the
 // first NEW kind since the canvas contract - grown by a real migration
 // (the http channel's chat runs), never on paper ahead of a consumer.
-// Both frontends render chat from these types (card 2a webui, 2b TUI),
+// The webui renders chat from these types (card 2a),
 // so the vocabulary lives here beside Panel - not in one module's
 // namespace, where the import law would strand the other frontend.
 // Zero behavior: the row composition is each module's concern.
@@ -159,7 +159,7 @@ type ChatPayload struct {
 // Q5a/Q4b): a module declares its panels and registers their action
 // handlers through the same interface, appended to
 // Context.PanelProviders during Mount - the same registration point
-// as ToolProviders and TUIProviders. A plugin left out of
+
 // buildPlugins never mounts, so its panels are simply absent from the
 // snapshot - the same law the webui enforces through directory
 // registration.

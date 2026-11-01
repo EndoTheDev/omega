@@ -95,7 +95,7 @@ type StoreProvider interface {
 	GetActiveView(ctx context.Context, sessionID string) (ActiveView, error)
 
 	// GetActiveMessages returns the active path as plain messages -
-	// the session-load seam (TUI resume, exports).
+	// the session-load seam (CLI resume, exports).
 	GetActiveMessages(ctx context.Context, sessionID string) ([]Message, error)
 
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
@@ -303,8 +303,6 @@ type Channel interface {
 // SettingsKnob is one exposed config field. Type drives the webui
 // control (toggle, number, text, secret, select, textarea, bindlist).
 // Live marks knobs the hot-apply path applies without a restart.
-// Surface declares who can USE the knob: "" = every surface, "tui" =
-// terminal app only - each serving surface filters to its own.
 type SettingsKnob struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -316,7 +314,6 @@ type SettingsKnob struct {
 	Step    *float64 `json:"step,omitempty"`
 	Help    string   `json:"help,omitempty"`
 	Live    bool     `json:"live,omitempty"`
-	Surface string   `json:"surface,omitempty"`
 }
 
 // SettingsGroup is one config section: a labeled set of knobs.
@@ -553,7 +550,7 @@ func (v Verdict) Kind() string {
 
 // VerdictsProvider is the interactive-question seam (verdict cards v1).
 // The verdict module implements it; the tool blocks on Ask, the HTTP
-// channel and the TUI answer through it. Whichever surface answers
+// channel and the CLI loop answer through it. Whichever surface answers
 // first wins - Answer enforces the race. Nil on the Context (module
 // absent) is the only valid "not implemented" answer: the tool refuses
 // to block without the seam.
@@ -643,18 +640,10 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
 }
 
-// Frontend is the user-facing interface seam. The default implementation
-// is the terminal TUI (engine/tui/). A custom implementation could
-// serve a web UI or any other interactive frontend. The host calls Run
-// after mounting all extensions; Run blocks until the frontend exits.
-type Frontend interface {
-	Run(ctx context.Context, pctx *Context, opts FrontendOptions) error
-}
-
 // TrustProvider gates project context (AGENTS.md) behind a trust
 // check. The default implementation reads trust.yaml from omega home.
 // The host calls ResolveContext before building the agent; State is
-// used for the TUI status bar.
+// used for the serving surfaces' status displays.
 type TrustProvider interface {
 	ResolveContext(cwd string, approve, noApprove, interactive bool) string
 	State(cwd string, approve, noApprove bool) string
@@ -699,21 +688,4 @@ type NotificationsProvider interface {
 	// best-effort: a slow reader drops frames rather than blocking
 	// emission. Cancel is idempotent.
 	Subscribe() (<-chan Notification, func())
-}
-
-// FrontendOptions carries host-level settings the frontend needs that
-// are not on the Context itself. All fields are optional zero-values.
-type FrontendOptions struct {
-	ModelName     string
-	ProviderType  string
-	Compaction    *CompactionConfig
-	PromptCustom  string
-	PromptAppend  []string
-	PromptContext string
-	Skills        []Skill
-	ThemeName     string
-	TrustState    string
-	Notifications string
-	CWD           string
-	Version       string
 }

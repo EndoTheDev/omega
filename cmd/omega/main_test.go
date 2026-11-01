@@ -285,7 +285,6 @@ func TestConfigSectionTable(t *testing.T) {
 		{"mcp", ""},
 		{"delegate", ""},
 		{"http_channel", "http_channel"},
-		{"tui", ""},
 		{"trust", "trust"},
 		{"cron", ""},
 		{"kanban", "kanban"},

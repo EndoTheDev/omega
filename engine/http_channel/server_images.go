@@ -15,7 +15,7 @@ import (
 )
 
 // maxChatImageBytes caps one user message image accepted via /chat
-// (10MB decoded). The TUI's ai.MaxImageBytes file cap (20MB) still
+// (10MB decoded). The ai.MaxImageBytes config cap (20MB) still
 // holds for local files; the browser lane sits behind the HTTP
 // channel, so it picks a tighter cap - a 400 with a clear message
 // beats a multi-second stream the model then chokes on.

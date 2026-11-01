@@ -4,7 +4,7 @@ package http_channel
 // model vocabulary's mapping, the mount registration, the delta
 // cadence law (tokens batch, structure flushes) and the action pipe's
 // chat verbs. Chat is the repo's most journey-asserted surface - these
-// tests pin the shapes the chained renderer cards (2a webui, 2b TUI)
+// tests pin the shapes the chained renderer cards (2a webui)
 // render from.
 
 import (
@@ -206,7 +206,7 @@ func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 // TestChatPanelRegistersThroughTheStartSeam (chat-last 2b ruling): the
 // plugin's Mount only CREATES the capsule - registration is gated on
 // the channel actually starting. One chat panel per live frontend: a
-// TUI-only process never reaches Start, so its canvas carries no dead
+// serve-less process never reaches Start, so its canvas carries no dead
 // http chat panel; here the channel-start handoff registers it with
 // the canvas seam, and the pipe routes to the capsule's handler.
 func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
