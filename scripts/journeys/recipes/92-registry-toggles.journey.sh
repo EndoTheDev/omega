@@ -174,7 +174,7 @@ wait_js '(()=>{return document.querySelector(".skills-list .registry-rows")?true
 step "ok: skills tab rendered"
 
 # --- the toggle round-trip: off --------------------------------------------
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list .registry-row')].some(r=>r.querySelector('.registry-name').textContent.trim()==='$SKILL')})()" 10 \
+wait_js "(()=>{return [...document.querySelectorAll('.skills-list .registry-row')].some(r=>r.querySelector('.reg-row-name').textContent.trim()==='$SKILL')})()" 10 \
   || die "the seeded skill's row never rendered"
 step "ok: seeded row renders"
 
@@ -208,7 +208,7 @@ ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 open_tab skills
-wait_js "(()=>{const r=[...document.querySelectorAll('.skills-list .registry-row')].find(x=>x.querySelector('.registry-name').textContent.trim()==='$SKILL'); const b=r&&r.querySelector('button.registry-toggle'); return !!r&&r.classList.contains('registry-off')&&!!b&&b.getAttribute('aria-label')==='enable $SKILL'})()" 10 \
+wait_js "(()=>{const r=[...document.querySelectorAll('.skills-list .registry-row')].find(x=>x.querySelector('.reg-row-name').textContent.trim()==='$SKILL'); const b=r&&r.querySelector('button.registry-toggle'); return !!r&&r.classList.contains('registry-off')&&!!b&&b.getAttribute('aria-label')==='enable $SKILL'})()" 10 \
   || die "after reload the seeded row does not render the persisted off state"
 step "ok: (b) reload renders the persisted off state"
 
