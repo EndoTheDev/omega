@@ -429,13 +429,6 @@ func (p interPanel) Panels() []core.Panel {
 
 func (p interPanel) HandleAction(core.ActionCall) (any, error) { return nil, nil }
 
-type interTUI struct{ name string }
-
-func (interTUI) TUICommands() []core.TUICommand { return nil }
-func (interTUI) HandleTUICommand(string, string, core.TUIConsole) core.TUIResult {
-	return core.TUIResult{}
-}
-
 type interSectioner struct{ name string }
 
 func (interSectioner) PromptSections(core.PromptBuildOptions) []core.PromptSection { return nil }
@@ -446,8 +439,7 @@ func (interChannel) Start(context.Context, core.ChannelDeps) error { return nil 
 func (interChannel) Stop() error                                   { return nil }
 
 // interCapsule registers every additive surface the journal appends
-// to: tool, panel provider, command, route, renderer, sectioner,
-// channel.
+// to: tool, panel provider, command, route, sectioner, channel.
 type interCapsule struct{ name string }
 
 func (c *interCapsule) Name() string       { return c.name }
@@ -478,9 +470,6 @@ func (c *interCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error 
 		return err
 	}
 	if err := api.RegisterRoute("GET /"+c.name, func(w http.ResponseWriter, r *http.Request) {}); err != nil {
-		return err
-	}
-	if err := api.RegisterRenderer(interTUI{}); err != nil {
 		return err
 	}
 	if err := api.RegisterPromptSectioner(interSectioner{}); err != nil {

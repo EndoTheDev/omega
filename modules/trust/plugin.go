@@ -26,13 +26,13 @@ func (p *Plugin) Requires() []string { return nil }
 
 // MountWithAPI registers the trust seam - the module's whole surface
 // (arc 6, card t_e1efb979): ResolveContext gates the AGENTS.md project
-// context behind trust.yaml and State feeds the frontend status bar,
+// context behind trust.yaml and State feeds the webui status bar,
 // both called by the host (serve, run, runChat) through nil-guarded
 // wrappers (cmd/omega/trust.go) before the frontends launch. No tool,
 // no slash command, no REST route, no skills, no canvas panel and no
 // module-qualified actions exist, and none did before the arc: the
-// frontends consume two strings the host computes from this seam
-// (PromptContext + TrustState on FrontendOptions). The CLI flags
+// host surfaces consume two strings the host computes from this seam
+// (the prompt context and the trust state). The CLI flags
 // (--approve/--no-approve) parse in the host and ride the same seam;
 // the boot-time store migration (trust.Bootstrap, fired by the host's
 // home bootstrap) is host wiring around a module-owned function - no

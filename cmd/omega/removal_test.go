@@ -376,11 +376,11 @@ func pluginTool(ctx *core.Context, name string) (func(context.Context, map[strin
 //  1. WITH cron: the seam is mounted, the canvas carries the jobs
 //     panel module-qualified, the refresh action answers through the
 //     action pipe and pushes the panel on the spine (the module ship
-//     carries /cron on its TUIProvider from the same registration).
+//     carries /cron on the command seam from the same registration).
 //  2. WITHOUT cron: the seam is nil (the REST route falls through to
 //     its seam-nil guard - cron's settled degrade, the empty-set
-//     answer, not 501), the canvas carries no cron panel, no TUI
-//     provider registers /cron, and no module requires
+//     answer, not 501), the canvas carries no cron panel, no module
+//     command registers /cron, and no module requires
 //     "cron" - the removal takes no dependents with it (the
 //     notifications removal is the counter-case: cron requires
 //     notifications, not the other way).
@@ -482,12 +482,10 @@ func TestCronRemovalProof(t *testing.T) {
 	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "cron", Action: "cron.refresh_jobs"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
-	// the TUI surface: no provider declares /cron
-	for _, tp := range ctx2.TUIProviders {
-		for _, c := range tp.TUICommands() {
-			if c.Name == "/cron" {
-				t.Fatal("REMOVED MOUNT: the /cron command survived the removal")
-			}
+	// the command surface: no module command declares /cron
+	for _, c := range ctx2.Commands {
+		if c.Name == "/cron" {
+			t.Fatal("REMOVED MOUNT: the /cron command survived the removal")
 		}
 	}
 	// the tool registry: cron ships no tools, and nothing cron-shaped
@@ -1277,17 +1275,15 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}
 	t.Logf("PROOF tool wiring: verdict blocked the turn, the first answer through the seam won the race - %s", strings.TrimSpace(got.res))
 
-	// the TUI face: /verdict declared through the same Mount
+	// the command face: /verdict declared through the same Mount
 	foundCommand := false
-	for _, tp := range ctx.TUIProviders {
-		for _, c := range tp.TUICommands() {
-			if c.Name == "/verdict" {
-				foundCommand = true
-			}
+	for _, c := range ctx.Commands {
+		if c.Name == "/verdict" {
+			foundCommand = true
 		}
 	}
 	if !foundCommand {
-		t.Fatal("FULL MOUNT: no /verdict command registered through the capsule's TUIProvider")
+		t.Fatal("FULL MOUNT: no /verdict command registered through the capsule's command seam")
 	}
 	t.Log("PROOF command face: /verdict registered by the same Mount that owns the tool and the hub")
 
@@ -1334,11 +1330,9 @@ func TestVerdictRemovalProof(t *testing.T) {
 			}
 		}
 	}
-	for _, tp := range ctx2.TUIProviders {
-		for _, c := range tp.TUICommands() {
-			if c.Name == "/verdict" {
-				t.Fatal("REMOVED MOUNT: the /verdict command survived the removal")
-			}
+	for _, c := range ctx2.Commands {
+		if c.Name == "/verdict" {
+			t.Fatal("REMOVED MOUNT: the /verdict command survived the removal")
 		}
 	}
 	for _, ps := range ctx2.PromptSectioners {
@@ -1381,15 +1375,16 @@ func TestVerdictRemovalProof(t *testing.T) {
 // TestTrustRemovalProof is the arc 6 trust-capsule proof (card
 // t_e1efb979), the eighth worked proof in this file. Trust is the
 // gating capsule: the trust seam (ctx.Trust - ResolveContext gates the
-// AGENTS.md project context behind trust.yaml, State feeds the status
-// bar) is the whole surface, shipped from the one Mount. No tool, no
-// slash command, no REST route, no skills, no canvas panel and no
-// module-qualified actions exist, and none did before the arc: the
-// frontends consume two strings the host computes from the seam before
-// launch (PromptContext + TrustState on FrontendOptions), the CLI
-// flags (--approve/--no-approve) parse in the host and ride the same
-// seam, and the boot-time store migration (trust.Bootstrap) is host
-// wiring firing a module-owned function - no mounted surface rides it.
+// AGENTS.md project context behind trust.yaml, State feeds the webui
+// status bar) is the whole surface, shipped from the one Mount. No
+// tool, no slash command, no REST route, no skills, no canvas panel
+// and no module-qualified actions exist, and none did before the arc:
+// the host surfaces consume two strings the host computes from the
+// seam before launch (the prompt context and the trust state), the
+// CLI flags (--approve/--no-approve) parse in the host and ride the
+// same seam, and the boot-time store migration (trust.Bootstrap) is
+// host wiring firing a module-owned function - no mounted surface
+// rides it.
 // The two mounts are the proof:
 //
 //  1. WITH trust: the seam is mounted and the gate answers through it -
@@ -1485,11 +1480,9 @@ func TestTrustRemovalProof(t *testing.T) {
 			}
 		}
 	}
-	for _, tp := range ctx.TUIProviders {
-		for _, c := range tp.TUICommands() {
-			if c.Name == "/trust" {
-				t.Fatal("FULL MOUNT: unexpected /trust command (the capsule ships no commands)")
-			}
+	for _, c := range ctx.Commands {
+		if c.Name == "/trust" {
+			t.Fatal("FULL MOUNT: unexpected /trust command (the capsule ships no commands)")
 		}
 	}
 	canvas, err := agent.NewCanvas(ctx, nil)
@@ -1541,11 +1534,9 @@ func TestTrustRemovalProof(t *testing.T) {
 			}
 		}
 	}
-	for _, tp := range ctx2.TUIProviders {
-		for _, c := range tp.TUICommands() {
-			if c.Name == "/trust" {
-				t.Fatal("REMOVED MOUNT: the /trust command survived the removal")
-			}
+	for _, c := range ctx2.Commands {
+		if c.Name == "/trust" {
+			t.Fatal("REMOVED MOUNT: the /trust command survived the removal")
 		}
 	}
 	noCanvas, err := agent.NewCanvas(ctx2, nil)
