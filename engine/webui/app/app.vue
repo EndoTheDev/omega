@@ -1127,10 +1127,10 @@
       }
     }
     // no chat focus in this gesture: keep a still-valid focus, else the
+    // chat tab that is SHOWING (the active one - t_3e12c367), else the
     // first chat tab in the tree, else none (URL home)
     if (focusedKey.value && dock.findChatTab(focusedKey.value)) return;
-    const first = dock.firstChatTab();
-    focusedKey.value = first?.tab.key ?? null;
+    focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
   }
 
   // clicks carry the pane focus: the document-level listener reads the
@@ -1842,17 +1842,24 @@
         markRead(initial);
       } else {
         history.replaceState({}, "", "/");
-        focusedKey.value = dock.firstChatTab()?.tab.key ?? null;
+        // card t_3e12c367: the carried focus is the tree's ACTIVE chat
+        // tab (the pane's active tab), not the first chat tab in tree
+        // order - the shipped default pane holds a sessionless draft at
+        // index 0 while the user's session tab is active beside it, and
+        // a draft pick left the focused-session seam null (the Files
+        // tab's boot re-root never fired - it stayed on the fallback).
+        focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
       }
     } else if (initial) {
       if (await sessionExists(initial)) openChatTab(initial);
       else {
         history.replaceState({}, "", "/");
-        focusedKey.value = dock.firstChatTab()?.tab.key ?? null;
+        // t_3e12c367: carried focus = the ACTIVE chat tab (see above)
+        focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
       }
     } else {
       // home: the persisted tree's chat focus carries over
-      focusedKey.value = dock.firstChatTab()?.tab.key ?? null;
+      focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
     }
   });
 

@@ -125,6 +125,7 @@
     postFilesWrite,
     sortFileEntries,
   } from "../../composables/omega";
+  import { latestWins } from "../../composables/latestfetch";
   import type { FileEntry, FilesBrowsePayload, SelectedNode } from "../../composables/omega";
   import { CHAT_HOST_KEY } from "../../composables/chat";
   import { useNarrow } from "~/composables/narrow";
@@ -179,18 +180,30 @@
     openViewerRef?.({ kind: "file", name: path } satisfies ViewerRef);
   }
 
+  // card t_3e12c367: the boot fetch races its own re-root. On reload the
+  // mount fetch goes out while focus is still unresolved (the sessionless
+  // boot state - server answers the default/cwd fallback), and the focus
+  // watch's refetch goes out milliseconds later. The boot response can
+  // resolve AFTER the refetch's and clobber it (last-writer-wins: the tab
+  // sat wrong on the fallback root until a remount). A round counter
+  // keeps the LATEST-REQUESTED fetch as the only writer: a stale response
+  // is dropped, never rendered.
+  const rootRounds = latestWins();
   async function loadRoot() {
+    const admitted = rootRounds.begin();
     loadingRoot.value = true;
     rootError.value = "";
     try {
       const data = await fetchFilesBrowse("", sessionId.value);
+      if (!admitted()) return; // a newer root request owns the state
       rootEntries.value = sortFileEntries(data.entries ?? []);
       headerRoot.value = data.root ?? "";
       headerSource.value = data.source;
     } catch (e) {
+      if (!admitted()) return;
       rootError.value = e instanceof Error ? e.message : String(e);
     } finally {
-      loadingRoot.value = false;
+      if (admitted()) loadingRoot.value = false;
     }
   }
 
