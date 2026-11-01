@@ -381,7 +381,6 @@ func TestToggleRaceKeepsBothWrites(t *testing.T) {
 	if err := checkBothDisabled(s); err != nil {
 		t.Fatal(err)
 	}
-	_ = path
 }
 
 // setServerEnabledAndReloadTolerant wraps the plugin toggle for the race
