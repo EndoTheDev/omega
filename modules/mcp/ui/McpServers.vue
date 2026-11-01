@@ -45,17 +45,43 @@
       <!-- card t_d93864e7: no "from mcp.yaml" caption - the tab IS the
            mcp tab, a config-file provenance label is noise (Endo). No
            replacement; the empty state below keeps its setup hint. -->
-      <!-- the server rows, the RegistryList rhythm (border-separated,
-           breathing padding - not boxed debug cards in dead space).
-           The write path is the per-row toggle (card t_83f37525): the
+      <!-- the server rows, THE ROW LAW (card t_561dc4e0): the shared
+           assets/css/registry-row.css anatomy - name / subtitle stack
+           left, ONE control right (the pill's seat, mcp's own law since
+           t_83f37525), breathing padding, hairline separators - not
+           boxed debug cards in dead space. The subtitle line carries
+           the transport badge and the inline status dot (the row law's
+           mcp reading). The write path stays the per-row toggle: the
            arm/confirm two-step, POST /mcp/toggle riding toggle.ts. -->
       <ul class="mcp-rows">
         <li
           v-for="s in rows"
           :key="rowKey(s)"
-          class="mcp-row"
+          class="mcp-row reg-row"
           :class="{ 'mcp-off': !serverEnabled(s) }">
-          <div class="mcp-row-main">
+          <div class="mcp-row-main reg-row-head">
+            <div class="reg-row-main">
+              <span
+                class="mcp-name reg-row-name"
+                :title="s.name">{{ s.name }}</span>
+              <span class="mcp-sub reg-row-sub">
+                <!-- the transport badge: a small mono pill - the chip
+                     voice, not a bare uppercase string floating in the
+                     row. -->
+                <span
+                  v-if="s.transport"
+                  class="mcp-pill"
+                  title="transport">{{ s.transport }}</span>
+                <span
+                  class="mcp-state"
+                  :title="statusLabel(s)">
+                  <span
+                    class="mcp-dot"
+                    :class="`mcp-dot-${statusDot(s)}`"></span>
+                  <span class="mcp-state-label">{{ statusLabel(s) }}</span>
+                </span>
+              </span>
+            </div>
             <!-- the toggle is the shared TogglePill (card t_d93864e7):
                  the pill this module originated in t_83f37525, extracted
                  to ui/ - a BUTTON whose armed state comes from the
@@ -63,27 +89,13 @@
                  path stays local: the arm/confirm two-step, POST
                  /mcp/toggle riding toggle.ts. -->
             <TogglePill
+              class="reg-row-ctrl"
               :state="serverEnabled(s)"
               :disabled="busy !== null"
               :armed="armed === s.name"
               :label="`${serverEnabled(s) ? 'disable' : 'enable'} ${s.name}`"
               :confirm-label="`confirm apply to ${s.name}?`"
               @click="onToggle(s)" />
-            <span
-              class="mcp-name"
-              :title="s.name">{{ s.name }}</span>
-            <span
-              v-if="s.transport"
-              class="mcp-pill"
-              title="transport">{{ s.transport }}</span>
-            <span
-              class="mcp-state"
-              :title="statusLabel(s)">
-              <span
-                class="mcp-dot"
-                :class="`mcp-dot-${statusDot(s)}`"></span>
-              <span class="mcp-state-label">{{ statusLabel(s) }}</span>
-            </span>
           </div>
           <p
             v-if="s.url || s.command"
@@ -310,8 +322,11 @@
     font-size: 11px;
     opacity: 0.55;
   }
-  /* the server rows: the RegistryList rhythm - a hairline between rows,
-     7px of breath, no boxed card floating in dead space. */
+  /* the server rows: THE ROW LAW (card t_561dc4e0) - the shared
+     assets/css/registry-row.css carries paddings, separators, the
+     name/subtitle typography and the right-control seat; this block
+     keeps only the mcp specifics (the transport badge, the status
+     dot, the tool chips, the dim-off state). */
   .mcp-rows {
     list-style: none;
     margin: 0;
@@ -319,32 +334,8 @@
     display: flex;
     flex-direction: column;
   }
-  .mcp-row {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-    padding: 7px 0;
-    border-bottom: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-  }
-  .mcp-row:last-child {
-    border-bottom: none;
-  }
-  .mcp-row-main {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
   .mcp-name {
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.9;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   /* the transport badge: a small mono pill - the chip voice, not a
      bare uppercase string floating in the row. */
@@ -361,6 +352,8 @@
     flex-shrink: 0;
   }
   .mcp-state {
+    /* the status cluster: pushed to the subtitle line's right edge -
+       the transport chip leads, the dot+label read at the line end */
     margin-left: auto;
     display: inline-flex;
     align-items: center;
@@ -393,11 +386,11 @@
   .mcp-dot-off {
     background: var(--text-dim);
   }
-  /* the toggle: no local CSS (card t_d93864e7) - the rows ride the
-     shared ui/TogglePill (the extracted t_83f37525 pill), one component,
-     zero copies. Only the row-side indent below stays. */
-  /* the meta lines keep the toggle's indent so the row reads as one
-     column under the name */
+  /* the toggle has no local CSS (card t_d93864e7): the rows ride the
+     shared ui/TogglePill in the row law's .reg-row-ctrl seat - one
+     component, zero copies. The meta lines align under the name (the
+     row law's collapsed-row column); the old 34px pill indent is gone
+     with the pill's move to the right seat. */
   .mcp-target {
     margin: 0;
     font-size: 10.5px;
@@ -405,7 +398,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding-left: 34px;
   }
   /* the tool chips: wrapped inline pills - every chip ellipses its own
      text at the pane's edge and the container wraps to the next line,
@@ -417,7 +409,6 @@
     gap: 4px;
     min-width: 0;
     margin-top: 3px;
-    padding-left: 34px;
   }
   .mcp-tool {
     font-family: var(--mono);
@@ -436,13 +427,11 @@
     margin: 0;
     font-size: 10.5px;
     opacity: 0.5;
-    padding-left: 34px;
   }
   .mcp-confirm {
     margin: 0;
     font-size: 11px;
     opacity: 0.75;
-    padding-left: 34px;
   }
   /* the disabled row stays visible, muted (the skills list law) */
   .mcp-off .mcp-name,
@@ -452,17 +441,13 @@
   .mcp-off .mcp-tools {
     opacity: 0.45;
   }
-  /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome:
-     the state drops to its own line instead of floating right; the
-     chips keep their wrap+ellipsis law at any width. */
+  /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome;
+     the subtitle line truncates as one (the state never wraps off the
+     row); the chips keep their wrap+ellipsis law at any width. */
   .mcp-list.narrow {
     padding: 0;
   }
   .mcp-list.narrow .mcp-body {
     padding: 4px 8px 10px;
-  }
-  .mcp-list.narrow .mcp-state {
-    margin-left: 0;
-    width: 100%;
   }
 </style>

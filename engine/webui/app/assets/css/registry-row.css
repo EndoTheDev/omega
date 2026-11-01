@@ -1,0 +1,106 @@
+/* omega webui: THE ROW LAW (card t_561dc4e0).
+   One registry-row anatomy for the five registry-style tabs - the
+   Endo-approved reference is the Cron list: LINE 1 the name (semibold,
+   full opacity, ~13px), LINE 2 the subtitle (dim, smaller: the mono
+   schedule / the description / transport+status / module counts), and
+   exactly ONE control on the right, top-aligned with line 1. Collapsed
+   rows only: expanded content renders below the row-head in its own
+   indent, seated on the same paddings. The quiet list: hierarchy by
+   typography weight and opacity, not borders or boxes - one hairline
+   separator between rows. The pane's ~12px horizontal inset rides the
+   consumer's scroll body (the Cron reference's own geometry, journey
+   77 pins it); the rows own the vertical rhythm and the separator.
+   One definition, five consumers (cron / tools / skills / mcp /
+   modules): consumer stylesheets keep their row specifics (chips,
+   dots, hover raises, dim states) and DELETE every row-anatomy block
+   (paddings, separators, row typography) - grep proves it. New
+   registry-style tabs adopt this family by default. */
+
+/* the row: vertical rhythm 4-5px, uniform heights, one hairline */
+.reg-row {
+  min-width: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
+}
+.reg-row:last-child {
+  border-bottom: none;
+}
+
+/* the head: line 1 name + one right control, subtitle stacked under */
+.reg-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.reg-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* line 1: the name */
+.reg-row-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  opacity: 0.9;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* line 2: the dim subtitle - a flex line so transport pills, status
+   dots and trailing badges ride it without breaking the ellipsis on
+   the leading text (.reg-row-sub-text carries the ellipsis) */
+.reg-row-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  opacity: 0.55;
+}
+.reg-row-sub-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the ONE right control, top-aligned with line 1: the 15px pill sits
+   2px down to center on the name line's height */
+.reg-row-ctrl {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+/* the leading affordance slot (expander chevrons before the name -
+   the Modules-tab reading the registry rows converge on) */
+.reg-row-lead {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+}
+
+/* the below-row lines (confirm notes, armed asks, module notes):
+   one dim small-print line under the head, aligned with the name */
+.reg-row-note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* narrow: the containers condense to their 8px inset (journey 77's
+   narrow geometry); the rows keep the rhythm */
+.reg-row.narrow,
+.narrow .reg-row {
+  padding: 4px 0;
+}

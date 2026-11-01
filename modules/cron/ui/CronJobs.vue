@@ -4,9 +4,9 @@
     class="cron-list"
     :class="{ narrow: narrow }">
     <!-- card t_308e6d9b: the UNIVERSAL band - the Files pattern lands on
-         every tab. Cron's band is title-only (the tab holds no buttons;
-         read-only v1 stands). Rendered BEFORE the scroll body: scrolling
-         never moves it. -->
+         every tab. Cron's band is title-only (row actions ride the
+         rows). Rendered BEFORE the scroll body: scrolling never moves
+         it. -->
     <TabBand title="Cron" />
     <div class="cron-body">
       <p
@@ -24,22 +24,42 @@
         class="cron-jobs">
       <li
         v-for="j in jobs"
-        :key="j.name"
-        class="cron-row"
+        :key="cronKeyOf(j)"
+        class="cron-row reg-row"
         :class="{ disabled: !j.enabled }">
-        <div class="cron-head">
-          <span class="cron-name">{{ j.name }}</span>
-          <span
-            class="cron-enabled"
-            :class="j.enabled ? 'on' : 'off'">
-            {{ j.enabled ? "enabled" : "disabled" }}
-          </span>
+        <div class="cron-head reg-row-head">
+          <div class="reg-row-main">
+            <span class="cron-name reg-row-name">{{ j.name }}</span>
+            <!-- the row law's subtitle: the mono schedule expression,
+                 with the next fire riding the same dim line - the
+                 two-line reference anatomy, uniform row heights. -->
+            <span class="reg-row-sub">
+              <span class="cron-meta reg-row-sub-text">
+                {{ j.schedule }}<template v-if="j.next"> - next {{ shortTime(j.next) }}</template>
+              </span>
+            </span>
+          </div>
+          <!-- card t_561dc4e0: the "enabled"/"disabled" text dies - the
+               one right control is the SHARED TogglePill (card
+               t_d93864e7, the MCP pill), two-step armed (no accidental
+               first-click flips), top-aligned with the name. The
+               confirmed click POSTs /cron/toggle (modules/cron/ui/
+               toggle.ts): the write path is the per-job `enabled:` flag
+               in the crons.yaml that owns the job, hot-reloaded - the
+               same config-file law the MCP tab's own toggle rides. -->
+          <TogglePill
+            class="cron-toggle reg-row-ctrl"
+            :state="j.enabled"
+            :disabled="busy !== null"
+            :armed="armed === cronKeyOf(j)"
+            :label="`${j.enabled ? 'disable' : 'enable'} ${j.name}`"
+            :confirm-label="`confirm apply to ${j.name}?`"
+            @click="onToggle(j)" />
         </div>
-        <span class="cron-meta">{{ j.schedule }}</span>
-        <span
-          v-if="j.next"
-          class="cron-meta">next {{ shortTime(j.next) }}</span>
-        </li>
+        <p
+          v-if="armed === cronKeyOf(j)"
+          class="cron-confirm reg-row-note">{{ noteFor(j) }}</p>
+      </li>
       </ul>
       <!-- card t_6072e718: the empty state is the designed pattern, not a
            bare corner status line - centered in the panel body, the cron
@@ -69,23 +89,68 @@
   // the serverRows.ts / boardLogic.ts convention): the node suite pins
   // it without compiling this SFC.
   import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "./emptyState";
+  // card t_561dc4e0: the per-job toggle chain - setCronJobEnabled
+  // POSTs /cron/toggle and re-fetches (the ruled two-step, the mcp
+  // toggle.ts precedent); CronJobWire + cronKeyOf ride the same pure
+  // module so the node suite probes the wiring without compiling this
+  // SFC.
+  import {
+    cronKeyOf,
+    setCronJobEnabled,
+    type CronJobWire,
+  } from "./toggle";
 
   // Module-owned UI (card t_db430fea): the cron scheduler's job set,
-  // from GET /cron/jobs. READ-ONLY v1 by settled decision - names,
-  // schedules, enablement and next fire time render here; toggling and
-  // editing stay where they belong (crons.yaml is human-authored, and
-  // omega may only ever propose jobs). Self-contained fetch: a module's
-  // UI carries its own wiring so it can ride the desktop / VS Code
-  // builds alone (the ToolsList canary precedent).
-  interface CronJobInfo {
-    name: string;
-    schedule: string;
-    enabled: boolean;
-    next: string;
-  }
-  const jobs = ref<CronJobInfo[]>([]);
+  // from GET /cron/jobs. v1 shipped read-only (names, schedules,
+  // enablement and next fire time); card t_561dc4e0 adds the per-job
+  // toggle: the two-step armed pill POSTs the `enabled:` flag into the
+  // owning crons.yaml (the human-authored file gets an
+  // operator-directed flag write - the same mcp.yaml law, module
+  // routes own their config's flag field). Editing prompts/schedules
+  // stays out of scope: crons.yaml remains the prompt's author.
+  const jobs = ref<CronJobWire[]>([]);
   const loaded = ref(false);
   const error = ref("");
+
+  // --- the per-job toggle (card t_561dc4e0) ----------------------------
+  // The two-step mcp mechanic, armed locally: click 1 arms the row (the
+  // confirm note states the consequence), click 2 commits - no
+  // accidental first-click flips. busy holds the committing key so a
+  // stacked double-click cannot overlap writes.
+  const armed = ref<string | null>(null);
+  const busy = ref<string | null>(null);
+
+  function onToggle(j: CronJobWire) {
+    if (busy.value !== null) return;
+    if (armed.value !== cronKeyOf(j)) {
+      armed.value = cronKeyOf(j);
+      return;
+    }
+    apply(j);
+  }
+
+  // the commit: POST the toggle (the `enabled:` flag write lands and
+  // the runner hot-reloads), then re-render from the fresh listing.
+  // Armed clears whether the write lands or throws.
+  async function apply(j: CronJobWire) {
+    const target = !j.enabled;
+    armed.value = null;
+    busy.value = cronKeyOf(j);
+    try {
+      jobs.value = await setCronJobEnabled(cronKeyOf(j), target);
+      error.value = "";
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy.value = null;
+    }
+  }
+
+  function noteFor(j: CronJobWire): string {
+    return j.enabled
+      ? `disable ${j.name}? click again to confirm`
+      : `enable ${j.name}? click again to confirm`;
+  }
 
   // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
   // root measures its OWN rendered container (the inspector column it
@@ -135,7 +200,7 @@
     try {
       const res = await fetch("/cron/jobs");
       if (!res.ok) throw new Error(`GET /cron/jobs: ${res.status}`);
-      jobs.value = await res.json();
+      jobs.value = (await res.json()) as CronJobWire[];
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
@@ -205,46 +270,21 @@
     margin: 0;
     padding: 0;
   }
-  .cron-row {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 5px 0;
-    border-bottom: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
-  }
-  .cron-row:last-child {
-    border-bottom: none;
-  }
+  /* card t_561dc4e0: the row geometry (paddings, separators, name/sub
+     typography, the right-control seat, the confirm note line) lives
+     in the shared resources css/registry-row.css anatomy - this block
+     keeps only the cron specifics: the disabled dim, the mono
+     schedule voice (the row law keeps the expression mono), the
+     narrow condensation. */
   .cron-row.disabled {
     opacity: 0.5;
   }
-  .cron-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
-  }
-  .cron-name {
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.9;
-  }
-  .cron-enabled {
-    font-size: 10px;
-  }
-  .cron-enabled.on {
-    color: var(--ok, #4caf50);
-  }
-  .cron-enabled.off {
-    opacity: 0.55;
-  }
   .cron-meta {
-    font-size: 11px;
-    opacity: 0.6;
+    font-family: var(--mono, monospace);
   }
   /* narrow: the module-UI recipe (card t_a2fdc630). The rows are
      already single-column; what dies first at ~300px is horizontal
-     breathing room - the head's name/badge pair wraps and the chrome
+     breathing room - the head's name/sub pair wraps and the chrome
      condenses so a long schedule line never elides. */
   .cron-list.narrow .cron-body {
     padding: 4px 8px 10px;
