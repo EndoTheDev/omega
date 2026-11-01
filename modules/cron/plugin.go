@@ -104,7 +104,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	); err != nil {
 		return err
 	}
-	if err := api.RegisterRenderer(&tui{p: p}); err != nil {
+	if err := api.RegisterCommand("/cron", "list cron jobs (read-only)", []string{}, cronHandler(p)); err != nil {
 		return err
 	}
 	// The per-job toggle route (card t_561dc4e0) rides the mcp toggle

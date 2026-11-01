@@ -36,7 +36,7 @@ import (
 
 // agentsHome is the omega home the profiles scan. main sets OMEGA_HOME
 // for every process early; an unset var degrades to ~ (the same
-// default the TUI path helpers used before the env became universal).
+// default the home path helpers used before the env became universal).
 func agentsHome() string {
 	if home := os.Getenv("OMEGA_HOME"); home != "" {
 		return home

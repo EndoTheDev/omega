@@ -10,13 +10,13 @@ import (
 )
 
 // Session-fork + export surface (t_6bf696e4): the webui parity batch for
-// the TUI's /branch, /label and /export commands.
+// the serving surface's /branch, /label and /export commands.
 
 // handleSessionBranch serves POST /sessions/{id}/branch (/branch parity):
-// creates a child session of id through the SAME machinery the TUI's
+// creates a child session of id through the same machinery the
 // command drives (store.CreateSession with the parent link - the store
 // rejects a missing parent), then appends ONE summary system row into
-// the child so the lineage marker lives in the store (the TUI paints the
+// the child so the lineage marker lives in the store (the webui paints the
 // equivalent "[branched from ...]" affordance client-side; the webui row
 // badge reads parent_id). Read-time semantics ride the store's merged
 // view: the child's active path is the whole ancestor chain, so the
@@ -72,7 +72,7 @@ func (s *Server) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 }
 
 // exportLine is one JSONL line of GET /sessions/{id}/export - the exact
-// shape the TUI's /export command writes{"role": "<role>",
+// shape the /export command writes{"role": "<role>",
 // "content": "<text>"} per message.
 type exportLine struct {
 	Role    string `json:"role"`
@@ -82,9 +82,9 @@ type exportLine struct {
 // handleSessionExport serves GET /sessions/{id}/export (/export parity):
 // the session's ACTIVE PATH as JSONL - one {"role","content"} line per
 // conversation message, the same shape HandleExportCommand writes to
-// disk for the TUI. For a branched session the active path is the whole
+// disk for the channel. For a branched session the active path is the whole
 // lineage (store-side ancestors), so the exported file matches what both
-// the webui and the TUI render. Served as an attachment (Content-
+// the webui renders. Served as an attachment (Content-
 // Disposition download named <session id>.jsonl); 501 without a store,
 // 404 for an unknown session, 500 on store faults.
 func (s *Server) handleSessionExport(w http.ResponseWriter, r *http.Request) {

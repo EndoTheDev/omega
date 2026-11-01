@@ -16,7 +16,7 @@ import (
 // minute is plenty and a wedged handler stops pinning the wire forever.
 const commandDispatchTimeout = time.Minute
 
-// The command palette's server surface (card t_07aed3f9). The TUI ran
+// The command palette's server surface (card t_07aed3f9). The old shell ran
 // slash commands locally - "slash commands run locally and never hit
 // the agent"; the webui palette dispatches them through the SAME
 // registration seams: ctx.Commands + the chain-on-miss
@@ -38,10 +38,10 @@ type commandDispatchRequest struct {
 
 // commandDispatchResponse announces WHAT ran: an extension command's
 // result text, or a skill whose content the client arms as a system
-// preamble on its next send (the TUI injected skill content the same
+// preamble on its next send (a submit surface may inject skill content the same
 // way - one System message into its history). The skills content DID
 // ride this wire by design: the dispatch endpoint is the command
-// execution surface, the parity of the TUI's in-process injection.
+// execution surface - each surface injects in-process.
 type commandDispatchResponse struct {
 	Kind    string           `json:"kind"` // "command" | "skill"
 	Text    string           `json:"text,omitempty"`
@@ -86,7 +86,7 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 	s.seams.mu.RUnlock()
 
 	// Extension command first: the module that registered it executes
-	// it (chain-on-miss handler, exactly the TUI's dispatch).
+	// it (chain-on-miss handler, shared dispatch law).
 	for _, c := range cmds {
 		if c.Name != req.Name {
 			continue

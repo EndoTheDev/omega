@@ -269,12 +269,6 @@ provider:
 	if cfg.MaxTurns != 200 {
 		t.Errorf("max_turns = %d, want 200", cfg.MaxTurns)
 	}
-	if cfg.Theme != "dark" {
-		t.Errorf("theme = %q, want dark", cfg.Theme)
-	}
-	if cfg.Notifications != "none" {
-		t.Errorf("notifications = %q, want none", cfg.Notifications)
-	}
 }
 
 func TestApplyEnvMemory(t *testing.T) {

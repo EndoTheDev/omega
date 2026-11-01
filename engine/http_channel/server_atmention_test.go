@@ -74,7 +74,7 @@ func TestExpandAtMentionsNoOp(t *testing.T) {
 }
 
 // Unresolvable tokens stay in the text - the persisted prompt carries
-// them, the way the TUI notice path left failing tokens.
+// them, the way every submit surface leaves failing tokens.
 func TestExpandAtMentionsUnresolvableStay(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	incoming := []core.Message{core.NewUser("ghost @ghost.md stays, url user@x.io too")}

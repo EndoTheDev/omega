@@ -42,8 +42,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"system_prompt":               true,
 		"http_timeout":                true,
 		"max_turns":                   true,
-		"notifications":               true,
-		"theme":                       true,
 		"skills.dir":                  true,
 		"memory.enabled":              true,
 		"memory.user_profile_enabled": true,
@@ -105,7 +103,6 @@ func TestApplySettingValuesTyped(t *testing.T) {
 		"compaction.threshold":     0.75,
 		"compaction.keep_first":    float64(3),
 		"http_timeout":             float64(120),
-		"notifications":            "OFF",
 		"logging.file":             "x.log",
 		"server.default_workspace": t.TempDir(),
 	})
@@ -132,9 +129,6 @@ func TestApplySettingValuesTyped(t *testing.T) {
 	}
 	if cfg.HTTPTimeout != 120 {
 		t.Errorf("http_timeout: %d", cfg.HTTPTimeout)
-	}
-	if cfg.Notifications != "off" {
-		t.Errorf("notifications not normalized: %q", cfg.Notifications)
 	}
 	if cfg.Logging.File != "x.log" {
 		t.Errorf("logging.file: %q", cfg.Logging.File)
@@ -165,7 +159,6 @@ func TestApplySettingValuesErrors(t *testing.T) {
 		{"port above uint16", map[string]any{"server.port": float64(70000)}, "out of range"},
 		{"float out of range", map[string]any{"compaction.threshold": float64(2)}, "out of range"},
 		{"bool as string", map[string]any{"compaction.enabled": "yes"}, "true or false"},
-		{"bad notifications", map[string]any{"notifications": "morse"}, "bell, desktop, off"},
 		{"string where number", map[string]any{"http_timeout": "120s"}, "whole number"},
 		{"default workspace relative", map[string]any{"server.default_workspace": "rel/path"}, "must be an absolute path"},
 		{"default workspace missing", map[string]any{"server.default_workspace": "/omega-definitely-not-here"}, "no such file or directory"},

@@ -7,7 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// parseTUIAnswer is the /verdict command's typed-answer parser (the
+// parseVerdictAnswer is the /verdict command's typed-answer parser (the
 // live busy-Enter path in the TUI shell uses the mirror helper in
 // tui). Both must agree on the option-number / comma-multi /
 // y-n / skip / free-text contract, so this pins the shared shape.
@@ -33,7 +33,7 @@ func TestParseTUIAnswer(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseTUIAnswer(tc.card, tc.tokens)
+			got, err := parseVerdictAnswer(tc.card, tc.tokens)
 			if tc.wantErr != "" {
 				if err == nil || !containsStr(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
@@ -52,7 +52,7 @@ func TestParseTUIAnswer(t *testing.T) {
 
 func TestParseTUIAnswerYNWithNoOptions(t *testing.T) {
 	card := core.VerdictPrompt{ID: "c1", Title: "Name", AllowText: true}
-	if _, err := parseTUIAnswer(card, []string{"y"}); err == nil {
+	if _, err := parseVerdictAnswer(card, []string{"y"}); err == nil {
 		t.Fatal("y on a no-options card must error")
 	}
 }
@@ -73,7 +73,7 @@ func TestParseTUIAnswerMulti(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseTUIAnswer(card, tc.tokens)
+			got, err := parseVerdictAnswer(card, tc.tokens)
 			if tc.wantErr != "" {
 				if err == nil || !containsStr(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want containing %q", err, tc.wantErr)

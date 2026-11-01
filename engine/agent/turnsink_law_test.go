@@ -23,8 +23,6 @@ import (
 var turnCopyAppendAllowlist = map[string]string{
 	"engine/http_channel/server_branch.go":   "tree operation - branch summary System marker on the child session",
 	"engine/http_channel/server_variants.go": "tree operation - core.NewVariantSelect marker",
-	"engine/tui/variant.go":                  "tree operation - core.NewVariantSelect markers",
-	"engine/tui/tui.go":                      "session entry markers (persistEntry: model/thinking-level changes) - not turn copies",
 	"modules/verdict/hub.go":                 "verdict audit records (VerdictCard/Verdict) - extension-owned Q&A records, not model turns",
 }
 

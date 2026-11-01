@@ -2,7 +2,7 @@ package http_channel
 
 // /commands palette surface tests (card t_07aed3f9): the registry read
 // is the rewire's snapshot (ctx.Commands), dispatch runs the same
-// chain-on-miss handler the TUI uses, and an unregistered "/skill"
+// chain-on-miss handler the loop uses, and an unregistered "/skill"
 // name resolves into the skill kind. Direct seam injection for the
 // registry - the rewire machinery (mount → ctx → rewireSeams) is
 // extensionapi's job and already covered there.

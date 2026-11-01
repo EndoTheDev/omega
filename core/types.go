@@ -60,10 +60,10 @@ type ExtensionCommand struct {
 }
 
 // CommandResult is what an extension command returns. Text is printed
-// to the transcript. Actions are TUI directives the host interprets.
+// to the transcript. Actions are host directives the host interprets.
 type CommandResult struct {
 	Text    string      // what to display (may be empty)
-	Actions []CmdAction // optional TUI actions
+	Actions []CmdAction // optional host actions
 }
 
 // CmdAction tells the host to do something after a command runs.

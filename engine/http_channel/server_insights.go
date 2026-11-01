@@ -2,7 +2,7 @@ package http_channel
 
 // server_insights.go: GET /insights?days=N - the webui's /insights
 // parity (card t_e1e61680). The aggregation is store-owned
-// (ComputeInsights on the StoreProvider seam); the TUI's
+// (ComputeInsights on the StoreProvider seam); the endpoint's
 // HandleInsightsCommand calls the same store surface, so both hosts
 // read identical numbers by construction. This file only shapes the
 // payload. NOTE (card t_e1e61680, same-file ruling): the mux mount
@@ -19,9 +19,9 @@ import (
 )
 
 // insightsPayload is the wire shape of one /insights response. It
-// mirrors core.Insights field-for-field (minus the TUI's Bar glyphs -
+// mirrors core.Insights field-for-field (bars render in the webui -
 // the webui renders bar width from Count itself). The notable stats
-// keep the TUI's honest zero-omission: a NotableStat of 0 renders as
+// keep the honest zero-omission: a NotableStat of 0 renders as
 // nothing on the client, not as a fake row.
 type insightsPayload struct {
 	Period         string             `json:"period"`

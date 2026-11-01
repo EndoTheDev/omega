@@ -8,7 +8,7 @@ import (
 )
 
 // The @-mention expansion on the webui submit path (card t_07aed3f9).
-// The TUI ran extractImages inline before a send; the webui gets the
+// The old shell ran extractImages inline before a send; the webui gets the
 // same law SERVER-SIDE on /chat - the browser never expands. One law,
 // one function: core.ExpandAtMentions.
 
@@ -35,7 +35,7 @@ func (s *Server) contextSkills() []core.Skill {
 // message, @session:/@skill: inject context. dir roots relative paths
 // (the session's workspace in the store-backed path, the process cwd
 // in the legacy one). Resolvable tokens are persisted in their
-// expanded form (the TUI's parity: the model and the store both see
+// expanded form (the send-path parity: the model and the store both see
 // the expansion); unresolvable ones ride through untouched.
 func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Message {
 	if len(incoming) == 0 {
@@ -55,7 +55,7 @@ func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Me
 	}
 	prompt, images, _, err := core.ExpandAtMentions(um.Content, env)
 	if err != nil {
-		// The TUI notice path: a failing token stays in the text and
+		// The submit notice law: a failing token stays in the text and
 		// the send proceeds. There is no notice channel on the wire;
 		// the persisted message carries the token instead.
 		_ = err

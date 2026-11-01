@@ -8,7 +8,7 @@ import (
 )
 
 // FormatInsights renders an Insights struct as a plain-text report.
-// Shared by the CLI (omega insights, stdout) and the TUI (/insights
+// Shared by the CLI command and the /insights
 // slash command, transcript).
 func FormatInsights(in *core.Insights) string {
 	var sb strings.Builder

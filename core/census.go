@@ -29,7 +29,6 @@ type CensusSnapshot struct {
 	// Additive surfaces by count; channels and providers carry no
 	// name seam, so counts are the identity the census can hold.
 	Channels         int
-	TUIProviders     int
 	PromptSectioners int
 	PanelProviders   int
 
@@ -71,7 +70,7 @@ func Census(ctx *Context) CensusSnapshot {
 		{"memory", ctx.Memory != nil},
 		{"prompt_builder", ctx.PromptBuilder != nil},
 		{"captioner", ctx.Captioner != nil},
-		{"frontend", ctx.Frontend != nil},
+
 		{"trust", ctx.Trust != nil},
 		{"cron", ctx.Cron != nil},
 		{"notifications", ctx.Notifications != nil},
@@ -98,7 +97,6 @@ func Census(ctx *Context) CensusSnapshot {
 	}
 	slices.Sort(s.Commands)
 	s.Channels = len(ctx.Channels)
-	s.TUIProviders = len(ctx.TUIProviders)
 	s.PromptSectioners = len(ctx.PromptSectioners)
 	s.PanelProviders = len(ctx.PanelProviders)
 	for _, pp := range ctx.PanelProviders {
@@ -135,7 +133,6 @@ func (s CensusSnapshot) Equal(o CensusSnapshot) bool {
 		slices.Equal(s.Commands, o.Commands) &&
 		slices.Equal(s.Routes, o.Routes) &&
 		s.Channels == o.Channels &&
-		s.TUIProviders == o.TUIProviders &&
 		s.PromptSectioners == o.PromptSectioners &&
 		s.PanelProviders == o.PanelProviders &&
 		slices.Equal(s.Panels, o.Panels) &&
@@ -176,9 +173,6 @@ func (s CensusSnapshot) Diff(o CensusSnapshot) []string {
 	fail("handles", s.Handles, o.Handles)
 	if s.Channels != o.Channels {
 		out = append(out, "channels")
-	}
-	if s.TUIProviders != o.TUIProviders {
-		out = append(out, "tui_providers")
 	}
 	if s.PromptSectioners != o.PromptSectioners {
 		out = append(out, "prompt_sectioners")
