@@ -156,6 +156,7 @@ describe("the dockable registry", () => {
           d.title === "Settings" && d.id === "settings" ||
           d.title === "Insights" && d.id === "insights" ||
           d.title === "MCP" && d.id === "mcp" ||
+          d.title === "Browser" && d.id === "browser" ||
           d.title === "Notifications" && d.id === "notifications" ||
           // card t_55a3fc4b: the integrated terminal's label
           d.title === "Terminal" && d.id === "terminal" ||
@@ -186,16 +187,22 @@ describe("the dockable registry", () => {
       // component left (card t_d7fd3ad3: insights' home moved to the
       // right shell; unclosable like every inspector view)
       assert.equal(isLockedTab(d.id), d.id === 'sidebar', `${d.id}: lock == sessions`);
-      // card t_36ceb99b: chat AND viewer are the closable multi class
-      assert.equal(isClosableTab(d.id), d.id === "chat" || d.id === "viewer", `${d.id}: closable == chat|viewer`);
+      // card t_36ceb99b: chat AND viewer are the closable multi class.
+      // card t_95c91f9c: browser joins the closable class - a general
+      // browser is closable like the content tabs, just singleton.
+      assert.equal(
+        isClosableTab(d.id),
+        d.id === "chat" || d.id === "viewer" || d.id === "browser",
+        `${d.id}: closable == chat|viewer|browser`,
+      );
     }
   });
 
-  it("policy split: chat + viewer multi (t_36ceb99b: the viewer mints per opened content), both closable", () => {
+  it("policy split: chat + viewer multi (t_36ceb99b: the viewer mints per opened content); the closable class adds browser singleton (t_95c91f9c)", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
     assert.deepEqual(multi, ["chat", "viewer"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
-    assert.deepEqual([...closable].sort(), ["chat", "viewer"]);
+    assert.deepEqual([...closable].sort(), ["browser", "chat", "viewer"]);
   });
 
   it("the fixed sidebars: sidebar pinned left, the inspector TWELVE pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications)", () => {
@@ -231,7 +238,12 @@ describe("the dockable registry", () => {
     // is the right shell). card t_36ceb99b: viewer joins the MAIN class
     // (multi, row-click opened) but not the MENUS - an empty viewer tab
     // is meaningless, content IS the tab.
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer"]);
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "browser"]);
+    // card t_95c91f9c: the browser joins the main class. It IS
+    // menu-fillable: the empty-pane '+' menu is a real entry point
+    // (a browser tab is meaningful with no site yet - the bar IS the
+    // content, opposite ruling from the viewer).
+    assert.ok(MAIN_DOCKABLES.includes("browser"), "browser IS a main-area tab");
     assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
     assert.ok(!MENU_DOCKABLES.includes("viewer"), "no empty viewer menu entry");
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
@@ -292,9 +304,11 @@ describe("the dockable registry", () => {
     // settings left the main class (card t_49d0b308) and insights left
     // with it (card t_d7fd3ad3: its home is the right shell).
     // card t_36ceb99b: the viewer joins the main class.
+    // card t_95c91f9c: the browser joins the main class (singleton, the
+    // '+' menu opener focuses it like every singleton).
     const ids = DOCKABLES.map((d) => d.id);
     assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer"]);
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "browser"]);
     // card t_d7fd3ad3 items 1+3: the two header voices go capital -
     // "Sessions" (primary) and "Insights" (secondary); the module-tab
     // and inspector-voice titles stay lowercase by Endo's call

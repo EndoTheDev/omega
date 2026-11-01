@@ -50,6 +50,14 @@ export const DOCK_COMPONENTS = [
   // panel - the home the dock registry's comments reserved for it since
   // card t_67fc1905 - and it moves freely like every non-locked tab.
   "terminal",
+  // card t_95c91f9c (Endo ruling 2026-11-01): the general web browser
+  // pane - URL bar + iframe embed, ANY origin allowed (no allowlist, no
+  // origin gate; the tailnet-only restriction was rejected). Known
+  // ceiling, built honestly around it: sites that send X-Frame-Options
+  // refuse the embed, and the tab answers with a clean fallback panel
+  // (open in a new tab + copy-URL), never a silent blank frame. No
+  // proxy, no header stripping in v1.
+  "browser",
   // card t_180db2cb (Endo ruling 2026-10-29): "notifications should move
   // from top right to its own tab (secondary pane)". The top-right bell
   // entry point is GONE entirely (deletability law - no bell chrome, no
@@ -320,6 +328,21 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
+    // card t_95c91f9c: the general web browser - a MAIN-pane content tab
+    // like chat and the viewer. Singleton (one browser in the shell: the
+    // menu opener FOCUSES it - two live iframes are two sites one pane
+    // should own), closable like chat. The panel body is the shell's
+    // components/browser/BrowserTab.vue over modules/browser's GET/PUT
+    // /browser/last (the resume URL); sites that refuse embedding get
+    // the tab's fallback panel, never a silent blank frame.
+    id: "browser",
+    title: "Browser",
+    icon: "browser",
+    policy: "singleton",
+    area: "main",
+    closable: true,
+  },
+  {
     // card t_180db2cb: the notifications tab - the DURABLE feed/history
     // of finished things (kanban tasks, cron fires, chat runs), rehomed
     // from the top-right bell popover into the secondary pane (Endo's
@@ -360,6 +383,7 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   extensions: MIN_PANE_PX,
   insights: MIN_PANE_PX,
   mcp: MIN_PANE_PX,
+  browser: MIN_PANE_PX,
   notifications: MIN_PANE_PX,
   terminal: MIN_PANE_PX,
 };
