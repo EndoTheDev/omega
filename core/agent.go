@@ -453,6 +453,26 @@ func (a *Agent) ListModels() ([]string, error) {
 	return a.provider.ListModels()
 }
 
+// ListModelEntries returns the provider's model list with capability
+// flags (card t_70c28128). The optional ModelCapabilitiesProvider
+// upgrade supplies the flags when the provider carries them; a
+// name-only provider (interface stayed un-upgraded) answers through
+// ListModels with empty capability sets.
+func (a *Agent) ListModelEntries() ([]ModelEntry, error) {
+	if lp, ok := a.provider.(ModelCapabilitiesProvider); ok {
+		return lp.ListModelEntries()
+	}
+	names, err := a.provider.ListModels()
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]ModelEntry, len(names))
+	for i, name := range names {
+		entries[i] = ModelEntry{Name: name}
+	}
+	return entries, nil
+}
+
 // Run executes the conversation loop and returns a channel of events.
 // The channel is closed when the loop ends. A non-nil tools map overrides
 // the agent's registered tools for this run.

@@ -819,6 +819,11 @@ export async function postVariantSelect(
 export interface ModelsInfo {
   current: string;
   models: string[];
+  // capability flags per model name, when the provider's list endpoint
+  // carries them (card t_70c28128: the ollama /api/tags "capabilities"
+  // array rides through). Absent for name-only providers - the typed
+  // model pickers fall back to their curated sets.
+  capabilities?: Record<string, string[]>;
   context_window?: number;
 }
 
@@ -1918,17 +1923,23 @@ export async function fetchExtensions(): Promise<OmegaExtension[]> {
 
 // SettingKnob is one exposed config field. Type drives the control:
 // toggle, number, text, secret, select, textarea, bindlist (comma
-// separated address list rendered as one text input). Live knobs apply
-// without a restart; the rest say so in their help text.
+// separated address list rendered as one text input), model (the
+// typed model picker of card t_70c28128 - a BandSelect dropdown of
+// the provider's live models). Live knobs apply without a restart;
+// the rest say so in their help text.
 export interface SettingKnob {
   key: string;
   label: string;
-  type: "toggle" | "number" | "text" | "secret" | "select" | "textarea" | "bindlist";
+  type: "toggle" | "number" | "text" | "secret" | "select" | "textarea" | "bindlist" | "model";
   value: unknown;
   // options drive select knobs: plain strings are value+label; the
   // object form splits them (user themes label their names, value
   // theme:<id>). Server knobs only ever send plain strings.
   options?: (string | { value: string; label: string })[];
+  // filter narrows a model knob's dropdown to the slot's capability:
+  // "decision" = System One decision family only, "vision" =
+  // vision-capable models only, undefined = the full available list.
+  filter?: "decision" | "vision";
   min?: number;
   max?: number;
   step?: number;
@@ -1950,7 +1961,7 @@ export interface SettingsPayload {
 // groups/knobs are dropped (wrong shape never blanks the pane with an
 // exception), knobs keep only known types - an unknown type would have
 // no control to render, so it falls out like any other stale entry.
-const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist"];
+const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model"];
 
 export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
   const groups: SettingGroup[] = [];
@@ -1973,6 +1984,10 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
           type: kn.type as SettingKnob["type"],
           value: kn.value,
           options: Array.isArray(kn.options) ? (kn.options as string[]) : undefined,
+          filter:
+            kn.filter === "decision" || kn.filter === "vision"
+              ? kn.filter
+              : undefined,
           min: typeof kn.min === "number" ? kn.min : undefined,
           max: typeof kn.max === "number" ? kn.max : undefined,
           step: typeof kn.step === "number" ? kn.step : undefined,

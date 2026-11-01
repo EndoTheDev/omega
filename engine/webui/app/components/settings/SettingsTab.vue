@@ -94,6 +94,15 @@
             :label="knob.label"
             drop="down"
             @update:model-value="setSelect(group, knob, $event)" />
+          <!-- model (card t_70c28128: the typed model picker - a
+               BandSelect from the provider's live list, filtered by
+               the knob's slot; free text only when the list has
+               failed/filtered empty) -->
+          <ModelField
+            v-else-if="knob.type === 'model'"
+            :knob="knob"
+            :value="modelValue(knob)"
+            @update="setServer(knob, $event)" />
           <!-- textarea -->
           <textarea
             v-else-if="knob.type === 'textarea'"
@@ -186,6 +195,10 @@
     type Appearance,
     type ThemeMode,
     type UserTheme,  } from "~/composables/omega";
+  // card t_70c28128: the typed model pickers ride the shared catalog
+  // (one /models fetch per settings open) and the ModelField control
+  import { refreshModelCatalog } from "~/composables/modelCatalog";
+  import ModelField from "./ModelField.vue";
   import { useNarrow } from "~/composables/narrow";
   import type { ToolDisplay } from "~/composables/toolDisplay";
   // card t_502b8e81: the iconset wrapper - the group collapser chevron
@@ -251,6 +264,11 @@
     saveError.value = null;
     try {
       applyPayload(await fetchSettings());
+      // card t_70c28128: the model pickers' list rides ONE request per
+      // settings open - refreshed after the knob payload lands (the
+      // fields exist only once the groups do; the composable shares
+      // the single answer across every model field).
+      refreshModelCatalog();
     } catch (err) {
       // a host without the settings seam (501) or an unreachable
       // server: keep the client-side settings usable, say why the
@@ -447,6 +465,14 @@
   // always displays what will be saved.
   const serverValue = (knob: SettingKnob): unknown =>
     draft.value[knob.key] ?? loaded.value[knob.key];
+
+  // modelValue (card t_70c28128): the model pickers take strings -
+  // a number-typed server value (never expected, tolerated) stringifies
+  // instead of breaking the BandSelect generic.
+  const modelValue = (knob: SettingKnob): string => {
+    const v = serverValue(knob);
+    return typeof v === "string" ? v : v == null ? "" : String(v);
+  };
 
   // numberValue: number inputs must never render a half-state - an
   // empty draft shows "" so the field can be cleared; anything else is

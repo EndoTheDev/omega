@@ -301,8 +301,9 @@ type Channel interface {
 }
 
 // SettingsKnob is one exposed config field. Type drives the webui
-// control (toggle, number, text, secret, select, textarea, bindlist).
-// Live marks knobs the hot-apply path applies without a restart.
+// control (toggle, number, text, secret, select, textarea, bindlist,
+// model). Live marks knobs the hot-apply path applies without a
+// restart.
 type SettingsKnob struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -314,6 +315,11 @@ type SettingsKnob struct {
 	Step    *float64 `json:"step,omitempty"`
 	Help    string   `json:"help,omitempty"`
 	Live    bool     `json:"live,omitempty"`
+	// Filter narrows a model-type knob's dropdown to the slot's
+	// capability (card t_70c28128): "decision" lists the System One
+	// decision family only, "vision" lists vision-capable models only,
+	// empty = the full available list. Non-model knobs leave it empty.
+	Filter string `json:"filter,omitempty"`
 }
 
 // SettingsGroup is one config section: a labeled set of knobs.

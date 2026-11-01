@@ -482,7 +482,7 @@ func TestListModels(t *testing.T) {
 	defer ollamaSrv.Close()
 
 	p := &Provider{typ: "ollama", baseURL: ollamaSrv.URL}
-	names, err := p.listModels()
+	names, err := p.ListModels()
 	if err != nil {
 		t.Fatalf("listModels (ollama): %v", err)
 	}
@@ -512,7 +512,7 @@ func TestListModels(t *testing.T) {
 	defer openaiSrv.Close()
 
 	p = &Provider{typ: "openai", baseURL: openaiSrv.URL, apiKey: "sk-test"}
-	names, err = p.listModels()
+	names, err = p.ListModels()
 	if err != nil {
 		t.Fatalf("listModels (openai): %v", err)
 	}
@@ -533,7 +533,7 @@ func TestListModels(t *testing.T) {
 	defer anthropicSrv.Close()
 
 	p = &Provider{typ: "anthropic", baseURL: anthropicSrv.URL, apiKey: "ak-test"}
-	names, err = p.listModels()
+	names, err = p.ListModels()
 	if err != nil {
 		t.Fatalf("listModels (anthropic): %v", err)
 	}
@@ -546,7 +546,7 @@ func TestListModels(t *testing.T) {
 
 	// unknown provider type errors out before any HTTP request.
 	p = &Provider{typ: "bogus", baseURL: ollamaSrv.URL}
-	if names, err := p.listModels(); err == nil {
+	if names, err := p.ListModels(); err == nil {
 		t.Errorf("listModels (unknown type) = %v, want error", names)
 	}
 
@@ -557,8 +557,64 @@ func TestListModels(t *testing.T) {
 	defer errSrv.Close()
 
 	p = &Provider{typ: "ollama", baseURL: errSrv.URL}
-	if names, err := p.listModels(); err == nil {
+	if names, err := p.ListModels(); err == nil {
 		t.Errorf("listModels (HTTP 500) = %v, want error", names)
+	}
+}
+
+// TestListModelEntries verifies the capability-carrying list
+// (card t_70c28128): the ollama /api/tags "capabilities" array lands
+// on the entries, the openai/anthropic id lists answer with nil
+// capabilities, and ListModels still projects plain names.
+func TestListModelEntries(t *testing.T) {
+	// ollama with capabilities: entries carry the flags as sent.
+	ollamaSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"models":[
+			{"name":"clef:27b","capabilities":["decision","vision"]},
+			{"name":"gpt-oss:20b","capabilities":["completion","tools","thinking"]}
+		]}`)
+	}))
+	defer ollamaSrv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: ollamaSrv.URL}
+	entries, err := p.ListModelEntries()
+	if err != nil {
+		t.Fatalf("ListModelEntries (ollama): %v", err)
+	}
+	if len(entries) != 2 || entries[0].Name != "clef:27b" || entries[1].Name != "gpt-oss:20b" {
+		t.Fatalf("entries = %+v, want [clef:27b gpt-oss:20b] (sorted)", entries)
+	}
+	if !reflect.DeepEqual(entries[0].Capabilities, []string{"decision", "vision"}) {
+		t.Errorf("clef capabilities = %v, want [decision vision]", entries[0].Capabilities)
+	}
+	if !reflect.DeepEqual(entries[1].Capabilities, []string{"completion", "tools", "thinking"}) {
+		t.Errorf("gpt-oss capabilities = %v, want [completion tools thinking]", entries[1].Capabilities)
+	}
+
+	// openai: ids only, capabilities stay nil.
+	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"gpt-x"}]}`)
+	}))
+	defer openaiSrv.Close()
+
+	p = &Provider{typ: "openai", baseURL: openaiSrv.URL, apiKey: "sk-test"}
+	entries, err = p.ListModelEntries()
+	if err != nil {
+		t.Fatalf("ListModelEntries (openai): %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "gpt-x" || entries[0].Capabilities != nil {
+		t.Fatalf("entries = %+v, want [{gpt-x <nil>}]", entries)
+	}
+
+	// ListModels still projects the plain names.
+	names, err := p.ListModels()
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if !reflect.DeepEqual(names, []string{"gpt-x"}) {
+		t.Errorf("ListModels = %v, want [gpt-x]", names)
 	}
 }
 

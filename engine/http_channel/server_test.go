@@ -285,8 +285,9 @@ func TestModels(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var body struct {
-		Current string   `json:"current"`
-		Models  []string `json:"models"`
+		Current      string              `json:"current"`
+		Models       []string            `json:"models"`
+		Capabilities map[string][]string `json:"capabilities"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
@@ -296,6 +297,63 @@ func TestModels(t *testing.T) {
 	}
 	if len(body.Models) != 2 || body.Models[0] != "test-model" || body.Models[1] != "other-model" {
 		t.Fatalf("models = %v, want [test-model, other-model]", body.Models)
+	}
+	// a name-only provider (the interface, un-upgraded) carries no
+	// capabilities map - the pickers' curated fallback owns it then
+	if len(body.Capabilities) != 0 {
+		t.Fatalf("capabilities = %v, want absent for a name-only provider", body.Capabilities)
+	}
+}
+
+// capsProvider is mockProvider with the ListModelEntries upgrade
+// (card t_70c28128): the /models payload carries the capability map.
+type capsProvider struct {
+	*mockProvider
+}
+
+func (p *capsProvider) ListModelEntries() ([]core.ModelEntry, error) {
+	return []core.ModelEntry{
+		{Name: "clef:27b", Capabilities: []string{"decision", "vision"}},
+		{Name: "test-model", Capabilities: []string{"completion", "tools"}},
+		{Name: "blank-caps"}, // caps-less entries ride plain
+	}, nil
+}
+
+// TestModelsCapabilities: the upgraded provider's capability flags
+// ride the /models payload alongside the plain name list, and entries
+// without flags are omitted from the map (not sent as empty lists).
+func TestModelsCapabilities(t *testing.T) {
+	provider := &capsProvider{newMockProvider("mock",
+		scripted(
+			core.ResponseChunk{Type: "response_chunk", Content: "hi"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		),
+	)}
+	a := core.NewAgent(provider, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/models", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Models       []string            `json:"models"`
+		Capabilities map[string][]string `json:"capabilities"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !reflect.DeepEqual(body.Models, []string{"clef:27b", "test-model", "blank-caps"}) {
+		t.Fatalf("models = %v, want all three names in order", body.Models)
+	}
+	want := map[string][]string{
+		"clef:27b":   {"decision", "vision"},
+		"test-model": {"completion", "tools"},
+	}
+	if !reflect.DeepEqual(body.Capabilities, want) {
+		t.Fatalf("capabilities = %v, want %v", body.Capabilities, want)
 	}
 }
 

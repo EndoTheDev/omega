@@ -396,10 +396,20 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	models, err := s.agent.ListModels()
+	entries, err := s.agent.ListModelEntries()
 	if err != nil {
 		http.Error(w, "list models: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	models := make([]string, 0, len(entries))
+	for _, e := range entries {
+		models = append(models, e.Name)
+	}
+	caps := map[string][]string{}
+	for _, e := range entries {
+		if len(e.Capabilities) > 0 {
+			caps[e.Name] = e.Capabilities
+		}
 	}
 	name := s.agent.ModelName()
 	s.ctxMu.Lock()
@@ -423,11 +433,19 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		window = 32768
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	out := map[string]any{
 		"current":        name,
 		"models":         models,
 		"context_window": window,
-	})
+	}
+	// card t_70c28128: the typed model pickers filter on capability -
+	// the flags ride the payload when the provider carries them
+	// (ollama /api/tags); name-only providers omit the map and the
+	// pickers fall back to their curated sets.
+	if len(caps) > 0 {
+		out["capabilities"] = caps
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 // chatRequest is the /chat body. tools is an optional list of tool names
