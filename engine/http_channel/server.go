@@ -284,6 +284,11 @@ func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvid
 	// REST surface. Handlers live in server_agents.go.
 	mux.HandleFunc("/agents", s.handleAgents)
 	mux.HandleFunc("/agents/{name}", s.handleAgent)
+	// card t_2d8deb8c: the expansion's edit affordance - the PUT writes
+	// the scaffold field set through the agent config layer (yaml
+	// node-preserving). Method-pinned pattern: GET /agents/{name} keeps
+	// riding the unpinned line above, this one takes only the PUT.
+	mux.HandleFunc("PUT /agents/{name}", s.handleAgentUpdate)
 	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
 	// card t_e143f41f (arc 3b): the canvas transport. GET /ui/canvas is
 	// the load-time snapshot catch-up; POST /ui/actions is the web half
