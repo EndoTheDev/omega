@@ -23,8 +23,10 @@ is a review finding; its content lands in its mapped home instead.
 - **Dependencies:** Added when a layer requires them, not before.
   Prefer the standard library. Prefer a dependency already in `go.mod`.
 - **Entry point:** `omega` (single binary: `serve`, `run`, `health`,
-  `chat`, `export`, `update`, `insights`, `rollback`;
-  no arg -> TUI, `<path>` -> chdir + TUI). CLI reference and law:
+  `chat`, `export`, `update`, `insights`, `rollback`, `setup`;
+  no arg -> the CLI agent loop (`cmd/omega/loop.go`; unconfigured
+  refuses exit 1 pointing at `omega setup`), `<path>` -> chdir +
+  loop). CLI reference and law:
   `docs/cli.md`.
 
 ## Never-violate rules
@@ -49,7 +51,7 @@ is a review finding; its content lands in its mapped home instead.
   `MountAllAPI` at startup - the universal registration surface is the
   only mount path; the agent loop reads from `Context`.
 - **The agent loop is the only place tools execute.** The HTTP channel
-  and TUI route tool calls through the agent, never directly. Each
+  and the CLI loop route tool calls through the agent, never directly. Each
   run drains a fresh events channel (channel reuse panics on the
   second write).
 - **Bind loopback only by default.** The HTTP channel is unauthenticated
@@ -88,9 +90,10 @@ Terse operational rules. Layer references live in `docs/` (map below);
   seams, messagetree); `engine/agent/` is for the loop runtime and real helpers
   only (`Plugin`, `MountAllAPI`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
-  (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26):
-  `engine/http_channel/` and `engine/tui/` are ENGINE ring, not modules - a module
-  importing them is module-imports-engine, not module-imports-module.
+  (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26;
+  TUI retired 2026-11-01, card t_0744eb8e):
+  `engine/http_channel/` is ENGINE ring, not modules - a module
+  importing it is module-imports-engine, not module-imports-module.
 - **New extension recipe.** Create `modules/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
   `buildPlugins()` in `cmd/omega/main.go`; append tools to
@@ -128,18 +131,18 @@ Terse operational rules. Layer references live in `docs/` (map below);
   NARROW_MAX_PX=360; each module keeps its own copy (module UI
   imports no shell code); modulenarrow.test.ts pins threshold
   agreement.
-- **tui.** Slash commands run locally and never hit the agent; built-in
-  commands handle inline, extension commands dispatch via
-  `handleExtensionCommand`. Add commands to `knownCommands` +
-  `commandOptions` plus a test; most commands belong to their owning
-  extension, not the TUI. Ephemeral mode (`/new --ephemeral`) rejects
-  store-dependent commands (`/sessions`, `/resume`, `/branch`,
-  `/label`, `/tree`, `/export`, `/search`, `/insights`). Context window
-  priority: provider probe > compaction config >
-  `core.DefaultContextWindow` (8192); `ModelInfo` runs on a
-  per-lookup `WithModel` copy. Transcript segments preserve narrative
-  order (thinking, tool, response) - never reorder; re-render covers
-  resize/theme/resume. Bracketed paste inserts file paths as text.
+- **cli loop.** (TUI retired 2026-11-01, card t_0744eb8e - the
+  three-shells-to-two flip.) `omega setup` is the mandatory first-run
+  wizard (provider/host/model, live connection test);
+  unconfigured `serve`/`run`/loop refuse exit 1 pointing at it. The
+  bare `omega` loop (`cmd/omega/loop.go`) is a streaming agent
+  conversation with tech-support posture: a leading slash is a
+  command (`/help` lists), `"""` opens a multiline block, a trailing
+  backslash continues the line; mid-run typing queues or answers a
+  verdict card. The webui is the app; the terminal is setup and
+  config. Context window priority: provider probe > compaction
+  config > `core.DefaultContextWindow` (8192); `ModelInfo` runs on a
+  per-lookup `WithModel` copy.
 - **ai.** Provider failures are stream events, not Go errors:
   `StreamEnd` with `FinishReason="error"` and `Error` set; the channel
   always closes. Messages and events are sealed interfaces, dispatched
@@ -153,8 +156,10 @@ Terse operational rules. Layer references live in `docs/` (map below);
   deterministic stream events for agent loop tests.
 - **cmd/omega.** Subcommands are the only entry surface;
   `--help`/`-h`/`--version`/`-v` print globally and exit before
-  dispatch - there is no per-subcommand help. No subcommand means TUI;
-  a non-subcommand argument is a project path (chdir + TUI);
+  dispatch - there is no per-subcommand help. No subcommand means the
+  CLI agent loop (unconfigured: refuse exit 1 pointing at
+  `omega setup`); a non-subcommand argument is a project path
+  (chdir + loop);
   subcommand names beat same-named directories. `resolveHomePaths`
   runs after `LoadConfig` and before opening the store. `/settings`
   masks `provider.api_key` and rejects a hot PUT of
@@ -164,9 +169,11 @@ Terse operational rules. Layer references live in `docs/` (map below);
   cwd) containing an AGENTS.md. Decisions live in
   `<home>/config/trust.yaml` (`exact` / `parent` levels);
   `--approve`/`--no-approve` are CLI-only overrides (`--no-approve`
-  wins); the TUI prompts, `run`/`serve` skip untrusted context with a
+  wins); the CLI loop prompts, `run`/`serve` skip untrusted context with a
   warning.
-- **cron.** omega never writes `crons.yaml` (boot seeds only
+- **cron.** omega writes only the per-job `enabled:` flag in
+  `crons.yaml` (via the `POST /cron/toggle` route, preserving comments);
+  everything else in the file is hand-owned (boot seeds only
   `crons.yaml.example`). A fire arriving while its job still runs is
   skipped (logged, never queued); different jobs run in parallel. A
   failed fire still persists its session; deliver targets apply only
@@ -181,7 +188,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
 | `engine/agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
 | `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
 | `engine/http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
-| `engine/tui/` | ENGINE ring (always on, never disabled): terminal frontend (Bubble Tea, slash commands, themes) | `docs/tui.md` |
+| `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01) | `docs/cli.md` |
 | `modules/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `modules/README.md` (authoring) |
 | `engine/webui/` | ENGINE shell (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
 | `modules/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
@@ -220,7 +227,6 @@ go vet ./...      # no suspicious constructs
 - `docs/cli.md` - subcommands, flags, home resolution, OMEGA_* env vars
 - `docs/api.md` - HTTP routes, `/chat` SSE semantics, provider quirks on the wire
 - `docs/webui.md` - webui reference: geometry, tokens, dock, test law, embed lane
-- `docs/tui.md` - TUI command registry and keybindings
 - `docs/architecture.md` - layer table and project structure
 - `docs/configuration.md` - config.yaml knobs
 - `docs/troubleshooting.md` - known failure modes
