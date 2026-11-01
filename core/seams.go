@@ -590,13 +590,20 @@ type VerdictsProvider interface {
 // the implementation may consult a decision model, but the returned
 // contract is the deterministic outcome.
 type ApprovalProvider interface {
-	// Gate returns nil when the call may execute, or an error naming
-	// the reason it may not (denied, escalated-not-executed, answer
-	// pending that resolved against execution). An error becomes the
-	// tool result (IsError) - the run continues, the command did not
-	// happen. Gate must be safe for concurrent calls: the loop executes
-	// a turn's tool calls in parallel goroutines.
-	Gate(ctx context.Context, toolName string, args map[string]any) error
+	// Gate returns (line, nil) when the call may execute, or (line,
+	// err) naming the reason it may not (denied, escalated-not-
+	// executed, answer pending that resolved against execution). The
+	// error becomes the tool result (IsError) - the run continues, the
+	// command did not happen. Line is the gate's transcript record
+	// (card t_1b3e2a8b): the exact decision vocabulary ("smart gate:
+	// ...") the webui renders on the call's own row, stamped onto the
+	// tool result the loop writes for the call. Empty line = no
+	// machine decision (benign command, manual mode, an escalation
+	// with no resolution) - no transcript line. The vocabulary lives
+	// in the implementing capsule. Gate must be safe for concurrent
+	// calls: the loop executes a turn's tool calls in parallel
+	// goroutines.
+	Gate(ctx context.Context, toolName string, args map[string]any) (string, error)
 }
 
 // Run origins (verdict cards v1): which surface launched the agent

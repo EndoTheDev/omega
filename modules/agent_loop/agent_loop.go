@@ -284,29 +284,43 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 				// anything else becomes the tool result and the command never
 				// executed. Gate runs INSIDE the call's goroutine, same ctx: a
 				// run stop cancels a mid-gate block like it cancels a command.
+				// The returned line is the gate's transcript record (card
+				// t_1b3e2a8b): stamped onto this call's tool result so the
+				// decision renders on the call's own row - live and restored.
+				// No seam, no stamp: the tool result carries the execution's
+				// own truth alone.
+				var gateLine string
 				if opts.Approvals != nil {
-					if err := opts.Approvals.Gate(ctx, c.Name, c.Arguments); err != nil {
-						results[idx] = core.NewToolResult(err.Error(), c.ID, true)
+					line, gerr := opts.Approvals.Gate(ctx, c.Name, c.Arguments)
+					if gerr != nil {
+						res := core.NewToolResult(gerr.Error(), c.ID, true)
+						res.Gate = line
+						results[idx] = res
 						completed[idx] = time.Now()
 						if opts.Logger != nil {
-							opts.Logger.Errorf("tool %s gated: %v", c.Name, err)
+							opts.Logger.Errorf("tool %s gated: %v", c.Name, gerr)
 						}
 						return
 					}
+					gateLine = line
 				}
 				result, err := t.Run(ctx, c.Arguments)
 				completed[idx] = time.Now()
 				if err != nil {
-					results[idx] = core.NewToolResult(err.Error(), c.ID, true)
+					res := core.NewToolResult(err.Error(), c.ID, true)
+					res.Gate = gateLine
+					results[idx] = res
 					if opts.Logger != nil {
 						opts.Logger.Errorf("tool %s error: %v", c.Name, err)
 					}
-				} else {
-					if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
-						result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
-					}
-					results[idx] = core.NewToolResult(result, c.ID, false)
+					return
 				}
+				if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
+					result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+				}
+				res := core.NewToolResult(result, c.ID, false)
+				res.Gate = gateLine
+				results[idx] = res
 			}(i, call, tool)
 		}
 		wg.Wait()

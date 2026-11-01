@@ -465,3 +465,117 @@ func TestTranscriptItemsUserImages(t *testing.T) {
 		t.Fatalf("image-only user dropped: %+v", items)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The smart gate's decision record (card t_1b3e2a8b): the stamp rides
+// the persisted tool result into the transcript wire (restore), and
+// the runHub accumulator's results into the live tail - the same item
+// in both paths, rendered on the call's own row.
+// ---------------------------------------------------------------------------
+
+func TestTranscriptItemsCarryGateStamp(t *testing.T) {
+	msgs := []core.StoredMessage{
+		{Message: core.NewUser("gated, please"), CreatedAt: "2026-11-01T00:00:00Z"},
+		{Message: func() core.Assistant {
+			a := core.NewAssistant("let me run it")
+			a.ToolCalls = []core.ToolCall{{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"command": "rm x"}}}
+			return a
+		}(), CreatedAt: "2026-11-01T00:00:01Z"},
+		{Message: core.ToolResult{
+			Content:    "approval escalated, command not executed (human_card): the user refused",
+			ToolCallID: "tc1", IsError: true,
+			Gate: "smart gate: escalated -> denied - command skipped",
+		}, CreatedAt: "2026-11-01T00:00:02Z"},
+	}
+	items := buildTranscriptItems(msgs)
+	var res *transcriptItem
+	for i := range items {
+		if items[i].Kind == "tool_result" {
+			res = &items[i]
+		}
+	}
+	if res == nil {
+		t.Fatal("tool_result item missing")
+	}
+	if res.Gate != "smart gate: escalated -> denied - command skipped" {
+		t.Fatalf("transcript wire lost the gate stamp: %q", res.Gate)
+	}
+	// an ungated result carries no gate - the wire stays sparse
+	stamped := buildTranscriptItems([]core.StoredMessage{
+		{Message: core.NewToolResult("ok", "tc2", false), CreatedAt: "t"},
+	})
+	for _, it := range stamped {
+		if it.Kind == "tool_result" && it.Gate != "" {
+			t.Fatalf("ungated result stamped: %q", it.Gate)
+		}
+	}
+}
+
+func TestLiveTranscriptItemsCarryGateStamp(t *testing.T) {
+	now := time.Now()
+	open := assistantRecord{
+		openAt:    now.Add(-2 * time.Second),
+		toolCalls: []core.ToolCall{{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"command": "rm x"}}},
+		results: []core.ToolResult{{
+			Content: "approval denied, command not executed", ToolCallID: "tc1", IsError: true,
+			Gate: "smart gate: auto-denied",
+		}},
+	}
+	items := liveTranscriptItems(nil, open, now)
+	seen := map[string]bool{}
+	for _, it := range items {
+		if it.Kind == "tool_result" {
+			seen[it.Gate] = true
+		}
+	}
+	if !seen["smart gate: auto-denied"] {
+		t.Fatalf("live tail lost the gate stamp: %v", items)
+	}
+}
+
+func TestSessionTranscriptGateStampRoundTrip(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "Gate check"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	asst := core.NewAssistant("gated")
+	asst.ToolCalls = []core.ToolCall{{ID: "tc1", Name: "shell.run", Arguments: map[string]any{"command": "lock the temp notes wide"}}}
+	res := core.NewToolResult("approval denied, command not executed", "tc1", true)
+	res.Gate = "smart gate: auto-denied"
+	for _, m := range []core.Message{
+		core.NewUser("go on"),
+		asst,
+		res,
+	} {
+		if err := st.AppendMessage(ctx, "s1", m); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			Kind    string `json:"kind"`
+			Content string `json:"content"`
+			Gate    string `json:"gate"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var gate string
+	for _, it := range body.Items {
+		if it.Kind == "tool_result" {
+			gate = it.Gate
+		}
+	}
+	if gate != "smart gate: auto-denied" {
+		t.Fatalf("reloaded transcript lost the gate stamp: %q", gate)
+	}
+}

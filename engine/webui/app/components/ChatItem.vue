@@ -31,6 +31,7 @@
     :final-ms="item.finalMs"
     :output="item.output"
     :result="item.result"
+    :gate="item.gate"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />
   <VerdictCard

@@ -1788,6 +1788,20 @@ labels stopped short of the right edge. */
   font-size: 12px;
   color: var(--text-dim);
 }
+
+/* card t_1b3e2a8b: the smart gate's decision record - the verdict line
+   riding the guarded call's own summary row. Dim, never interactive:
+   a record of what the gate decided, not a control. */
+.tool-gate {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex-shrink: 1;
+}
 .tool-section {
   display: flex;
   flex-direction: column;

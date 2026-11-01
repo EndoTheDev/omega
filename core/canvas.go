@@ -131,7 +131,11 @@ type ChatBlock struct {
 	ToolCall   *ToolCall      `json:"tool_call,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
 	IsError    bool           `json:"is_error,omitempty"`
-	ElapsedMs  int64          `json:"elapsed_ms,omitempty"`
+	// Gate rides a tool_result block: the smart-approval gate's
+	// decision record (card t_1b3e2a8b) - the verdict line rendered on
+	// the call's own row. Empty = no machine decision.
+	Gate      string `json:"gate,omitempty"`
+	ElapsedMs int64  `json:"elapsed_ms,omitempty"`
 }
 
 // ChatRow is one message row of a chat panel: role, its content
