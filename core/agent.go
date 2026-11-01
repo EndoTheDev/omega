@@ -34,7 +34,19 @@ type Tool struct {
 	// hidden from the prompt and the /tools inventory, which show the
 	// folded tool only.
 	AliasOf string
+
+	// Origin stamps WHERE the tool was registered from, for surface
+	// routing (card t_c2da3379): "mcp" = an MCP bridge tool (belongs
+	// to the webui MCP tab only), "" = native. Nothing keys on the
+	// name - native tools like sessions.search/shell.run are dotted
+	// too. Modules outside the mcp bridge never set it.
+	Origin string
 }
+
+// ToolOriginMCP is the Origin value an MCP-bridge-registered tool
+// carries. The only comparison point - consumers filter on this exact
+// value, never on dotted-name shape.
+const ToolOriginMCP = "mcp"
 
 // ActionNames returns the action names in declaration order.
 func (t Tool) ActionNames() []string {
