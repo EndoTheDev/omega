@@ -43,7 +43,7 @@ func (m *mockStore) GetActiveView(context.Context, string) (ActiveView, error) {
 func (m *mockStore) GetActiveMessages(context.Context, string) ([]Message, error) {
 	return m.messages, m.err
 }
-func (m *mockStore) GetSessionTree(context.Context) ([]*SessionNode, error)  { return nil, nil }
+func (m *mockStore) GetSessionTree(context.Context) ([]*SessionNode, error) { return nil, nil }
 func (m *mockStore) GetAncestorMessages(context.Context, string) ([]Message, error) {
 	return nil, nil
 }
@@ -66,7 +66,7 @@ func (m *mockStore) SetSessionLastRun(context.Context, string, *LastRunStats) er
 	return nil
 }
 func (m *mockStore) SetSessionPinned(context.Context, string, bool) error { return nil }
-func (m *mockStore) SetSessionRead(context.Context, string) error          { return nil }
+func (m *mockStore) SetSessionRead(context.Context, string) error         { return nil }
 func (m *mockStore) SetSessionArchived(context.Context, string, bool) error {
 	return nil
 }
@@ -500,7 +500,7 @@ func TestExpandAtMentionsDirBase(t *testing.T) {
 }
 
 // DetectImage read failure surfaces as the error return, token as-is -
-// the same notice the TUI rendered.
+// the same notice every submit surface rendered.
 func TestExpandAtMentionsDetectImageError(t *testing.T) {
 	e := env(nil, nil)
 	called := false
@@ -523,8 +523,9 @@ func TestExpandAtMentionsDetectImageError(t *testing.T) {
 		t.Fatalf("images = %d, want 0", len(images))
 	}
 }
-// --- unresolved reporting (the TUI notice law; ported from the TUI's
-// image_test.go when the expansion law moved into core, card t_07aed3f9) ---
+
+// --- unresolved reporting (the submit notice law, ported from the
+// old shell's image_test.go when the law moved into core, t_07aed3f9) ---
 
 // TestExpandAtMentionsUnresolvedReports verifies a standalone unresolvable
 // token rides along literally AND is reported so the caller can notice it.

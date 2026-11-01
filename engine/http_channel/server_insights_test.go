@@ -1,9 +1,9 @@
 package http_channel
 
 // server_insights_test.go: the /insights parity gates (card
-// t_e1e61680). The endpoint must return the same numbers the TUI's
+// t_e1e61680). The endpoint must return the same numbers the
 // /insights command prints for the same window, so every parity test
-// takes its reference from FormatInsights - the exact text the TUI
+// takes its reference from FormatInsights - the exact text the
 // transcript shows - never by re-deriving from the store.
 //
 // Route note: the mux mount line lives in server.go, which is owned
@@ -97,9 +97,9 @@ func insightsGet(t *testing.T, s *Server, url string) insightsPayload {
 	return p
 }
 
-// tuiNumbers parses the exact numbers the TUI's /insights command
+// insightNumbers parses the exact numbers the /insights command
 // prints out of its transcript text.
-func tuiNumbers(t *testing.T, st *store.Store, args string) (map[string]int, map[string]int) {
+func insightNumbers(t *testing.T, st *store.Store, args string) (map[string]int, map[string]int) {
 	t.Helper()
 	res, err := store.HandleInsightsCommand(context.Background(), st, args)
 	if err != nil {
@@ -109,7 +109,7 @@ func tuiNumbers(t *testing.T, st *store.Store, args string) (map[string]int, map
 		re := regexp.MustCompile(label + `\s+([0-9,]+)`)
 		m := re.FindStringSubmatch(res.Text)
 		if m == nil {
-			t.Fatalf("TUI insights text missing %q:\n%s", label, res.Text)
+			t.Fatalf("insights text missing %q:\n%s", label, res.Text)
 		}
 		n, err := strconv.Atoi(strings.ReplaceAll(m[1], ",", ""))
 		if err != nil {
@@ -137,9 +137,9 @@ func tuiNumbers(t *testing.T, st *store.Store, args string) (map[string]int, map
 	return overview, tools
 }
 
-// TestInsightsParityWithTUI: endpoint numbers == TUI transcript text
+// TestInsightsParityWithTranscript: endpoint numbers == transcript text
 // for the same window (default 30, explicit days=7, all time).
-func TestInsightsParityWithTUI(t *testing.T) {
+func TestInsightsParityWithTranscript(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	seedInsightsRows(t, st)
 
@@ -155,7 +155,7 @@ func TestInsightsParityWithTUI(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := insightsGet(t, s, tc.url)
-			overview, tools := tuiNumbers(t, st, tc.args)
+			overview, tools := insightNumbers(t, st, tc.args)
 			endpoint := map[string]int{
 				"sessions":      payload.Sessions,
 				"messages":      payload.Messages,
@@ -165,15 +165,15 @@ func TestInsightsParityWithTUI(t *testing.T) {
 			}
 			for label, want := range overview {
 				if got := endpoint[label]; got != want {
-					t.Errorf("%s: endpoint = %d, TUI prints %d", label, got, want)
+					t.Errorf("%s: endpoint = %d, transcript prints %d", label, got, want)
 				}
 			}
 			if len(payload.Tools) != len(tools) {
-				t.Errorf("tool rows: endpoint %v, TUI prints %v", payload.Tools, tools)
+				t.Errorf("tool rows: endpoint %v, transcript prints %v", payload.Tools, tools)
 			}
 			for _, row := range payload.Tools {
 				if tools[row.Name] != row.Count {
-					t.Errorf("tool %s: endpoint = %d, TUI prints %d", row.Name, row.Count, tools[row.Name])
+					t.Errorf("tool %s: endpoint = %d, transcript prints %d", row.Name, row.Count, tools[row.Name])
 				}
 			}
 		})
@@ -197,7 +197,7 @@ func seedOneUserTurn(t *testing.T, st *store.Store) {
 
 // TestInsightsSingleUserTurnParity: the Overview over the minimal
 // non-empty store - one session, one persisted user turn, zero tool
-// calls. The endpoint must agree with the TUI here too, the TUI must
+// calls. The endpoint must agree with the transcript here too, both must
 // print the full report (not the "[no sessions...]" special case), and
 // a window with real data but no tool calls must keep Tools a JSON
 // array (t_92f7274a's crash class: null broke the webui's boot).
@@ -206,7 +206,7 @@ func TestInsightsSingleUserTurnParity(t *testing.T) {
 	seedOneUserTurn(t, st)
 
 	payload := insightsGet(t, s, "/insights")
-	overview, tools := tuiNumbers(t, st, "")
+	overview, tools := insightNumbers(t, st, "")
 	endpoint := map[string]int{
 		"sessions":      payload.Sessions,
 		"messages":      payload.Messages,
@@ -216,7 +216,7 @@ func TestInsightsSingleUserTurnParity(t *testing.T) {
 	}
 	for label, want := range overview {
 		if got := endpoint[label]; got != want {
-			t.Errorf("%s: endpoint = %d, TUI prints %d", label, got, want)
+			t.Errorf("%s: endpoint = %d, transcript prints %d", label, got, want)
 		}
 	}
 
@@ -236,25 +236,25 @@ func TestInsightsSingleUserTurnParity(t *testing.T) {
 		t.Errorf("avg_session_msgs = %f, want 1.0", payload.AvgSessionMsgs)
 	}
 
-	// The TUI transcript shows the full report for this window and
+	// The transcript shows the full report for this window and
 	// its Avg msgs/session line agrees with the wire.
 	res, err := store.HandleInsightsCommand(context.Background(), st, "")
 	if err != nil {
 		t.Fatalf("HandleInsightsCommand(): %v", err)
 	}
 	if strings.Contains(res.Text, "[no sessions") {
-		t.Errorf("TUI prints the empty-store special case:\n%s", res.Text)
+		t.Errorf("transcript prints the empty-store special case:\n%s", res.Text)
 	}
 	m := regexp.MustCompile(`Avg msgs/session:\s+([0-9.]+)`).FindStringSubmatch(res.Text)
 	if m == nil {
-		t.Fatalf("TUI insights text missing the avg line:\n%s", res.Text)
+		t.Fatalf("insights text missing the avg line:\n%s", res.Text)
 	}
 	avg, err := strconv.ParseFloat(m[1], 64)
 	if err != nil {
-		t.Fatalf("parse TUI avg %q: %v", m[1], err)
+		t.Fatalf("parse transcript avg %q: %v", m[1], err)
 	}
 	if avg != payload.AvgSessionMsgs {
-		t.Errorf("avg: endpoint = %f, TUI prints %s", payload.AvgSessionMsgs, m[1])
+		t.Errorf("avg: endpoint = %f, transcript prints %s", payload.AvgSessionMsgs, m[1])
 	}
 
 	// Tools stays an array on the wire: nil after decode means the
@@ -263,12 +263,12 @@ func TestInsightsSingleUserTurnParity(t *testing.T) {
 		t.Errorf("tools = %v, want non-nil empty array", payload.Tools)
 	}
 	if len(tools) != 0 {
-		t.Errorf("TUI prints tool rows %v, want none", tools)
+		t.Errorf("transcript prints tool rows %v, want none", tools)
 	}
 }
 
 // TestInsightsDefaultsAndParams: default 30; honor day>=0 (period
-// label tracks the TUI's shape); junk and negatives fall back to 30.
+// label tracks the transcript shape); junk and negatives fall back to 30.
 func TestInsightsDefaultsAndParams(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	empty, _ := newTestServerWithStore(t)

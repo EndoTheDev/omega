@@ -633,7 +633,7 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 		return fmt.Errorf("subcommand %q: a registration carries its bare-word name", name)
 	}
 	if strings.HasPrefix(name, "-") || strings.HasPrefix(name, "/") {
-		return fmt.Errorf("subcommand %q: a CLI subcommand is a bare word - flags are the module's own argv, a leading / names the TUI seam", name)
+		return fmt.Errorf("subcommand %q: a CLI subcommand is a bare word - flags are the module's own argv, a leading / names the loop command seam", name)
 	}
 	if handler == nil {
 		return fmt.Errorf("subcommand %q: a registration carries its handler", name)

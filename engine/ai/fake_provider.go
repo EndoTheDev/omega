@@ -57,7 +57,7 @@ func (p *FakeProvider) ModelName() string {
 	return p.modelName
 }
 
-// SetThinkingLevel is a mutating setter for the TUI; per-run
+// SetThinkingLevel is a mutating setter for live toggles; per-run
 // derivations go through WithThinkingLevel instead.
 func (p *FakeProvider) SetThinkingLevel(level string) { p.lastRequestedLevel = level }
 

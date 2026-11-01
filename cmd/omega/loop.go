@@ -37,6 +37,22 @@ const (
 	ansiYellow = "\x1b[33m"
 )
 
+// loopPersona is the loop's fixed setup-support voice (Endo ruling
+// 2026-11-01: the terminal face of omega is tech support). It shapes
+// HOW the agent talks - patient, terminal-plain, setup-aware - but
+// never carries the knowledge itself: what each setting means and how
+// providers are configured belongs to the omega-dev skill, which the
+// CLI loads via the skill port (t_6c64480f), not a duplicated file.
+func loopPersona() string {
+	return "You are omega's terminal companion and you act as tech support. " +
+		"Many people reach you while setting omega up: walk them through " +
+		"providers, the config.yaml keys, and what `omega setup` and " +
+		"`omega serve` do, like a patient support engineer. " +
+		"Reply in short plain-text lines that survive a dumb terminal: " +
+		"no markdown tables, no banners, no layout - the terminal scrolls like paper. " +
+		"Point at `omega setup`, config.yaml.example, and `omega serve`'s webui when they help."
+}
+
 // cliLoop is the interactive loop state.
 type cliLoop struct {
 	ag    *core.Agent
@@ -90,6 +106,10 @@ func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error 
 			return fmt.Errorf("agent layer %s: %w", name, err)
 		}
 	}
+	// The loop's fixed tech-support persona rides the prompt-append
+	// seam (see loopPersona) - appended after any --append-system-prompt
+	// values so the operator's flags keep speaking last.
+	appendPrompts = append(appendPrompts, loopPersona())
 
 	ag, store, logger, pctx, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
@@ -147,34 +167,45 @@ func (lo *cliLoop) webURL() string {
 	return fmt.Sprintf("http://localhost:%d/", lo.cfg.Server.Port)
 }
 
-// run is the input half: one prompt per line, `"""` opens a multiline
-// block, a trailing backslash continues the line, a leading slash is a
-// command. Output happens inside the run's event drain.
+// run is the input half. One stdin reader goroutine owns stdin for the
+// whole session and feeds the `lines` channel; this loop is its only
+// receiver - between runs it services the channel itself, mid-run the
+// send drain does. A leading slash is a command, `"""` opens a
+// multiline block, a trailing backslash continues the line. Output
+// happens inside the run's event drain.
 func (lo *cliLoop) run() error {
+	sctx, scancel := context.WithCancel(context.Background())
+	defer scancel()
+	lines := lo.startStdinReader(sctx)
 	for {
 		lo.prompt()
-		line, rerr := lo.in.ReadString('\n')
-		if rerr != nil {
-			lo.printf("\n")
-			break
-		}
-		line = strings.TrimRight(line, "\n")
+		var line string
 		select {
 		case <-lo.sig:
 			lo.printf("%s(Ctrl-C: exiting)%s\n", lo.s(ansiDim), lo.s(ansiReset))
 			lo.printExitLine()
 			return nil
-		default:
+		case l, ok := <-lines:
+			if !ok {
+				lo.printf("\n")
+				lo.printExitLine()
+				return nil
+			}
+			line = l
 		}
 		if line == "" {
 			continue
 		}
 		for strings.HasSuffix(line, "\\") && !strings.HasSuffix(line, "\\\\") {
-			l, _ := lo.in.ReadString('\n')
-			line = line[:len(line)-1] + " " + strings.TrimRight(l, "\n")
+			nl, ok := <-lines
+			if !ok {
+				line = line[:len(line)-1]
+				break
+			}
+			line = line[:len(line)-1] + " " + nl
 		}
 		if line == `"""` {
-			line = lo.readMultiline()
+			line = lo.readMultiline(lines)
 			if strings.TrimSpace(line) == "" {
 				continue
 			}
@@ -188,7 +219,7 @@ func (lo *cliLoop) run() error {
 			}
 			continue
 		}
-		if err := lo.send(line); err != nil {
+		if err := lo.send(line, lines); err != nil {
 			lo.printf("%serror: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
 			lo.out.Flush()
 		}
@@ -204,25 +235,28 @@ func (lo *cliLoop) run() error {
 				}
 				continue
 			}
-			if err := lo.send(q); err != nil {
+			if err := lo.send(q, lines); err != nil {
 				lo.printf("%serror: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
 			}
 		}
 	}
-	lo.printExitLine()
-	return nil
 }
 
-// readMultiline collects a `"""` block until the closing line.
-func (lo *cliLoop) readMultiline() string {
+// readMultiline collects a `"""` block until the closing line arrives
+// on the same channel. EOF submits what the block holds.
+func (lo *cliLoop) readMultiline(lines <-chan string) string {
 	lo.printf("%s(multiline: finish with \"\"\" on its own line)%s\n", lo.s(ansiDim), lo.s(ansiReset))
 	var block []string
 	for {
-		l, rerr := lo.in.ReadString('\n')
-		if rerr != nil {
+		select {
+		case <-lo.sig:
+			return strings.Join(block, "\n")
+		default:
+		}
+		l, ok := <-lines
+		if !ok {
 			break
 		}
-		l = strings.TrimRight(l, "\n")
 		if l == `"""` {
 			break
 		}
@@ -393,7 +427,9 @@ func (lo *cliLoop) ensureSession() error {
 }
 
 // send runs one user message through the engine, streaming the reply.
-func (lo *cliLoop) send(text string) error {
+// While the run streams, lines typed mid-run queue for replay (or
+// answer a pending verdict card) - the session reader is the feed.
+func (lo *cliLoop) send(text string, lines <-chan string) error {
 	if err := lo.ensureSession(); err != nil {
 		return err
 	}
@@ -412,7 +448,6 @@ func (lo *cliLoop) send(text string) error {
 
 	render := &loopRenderer{lo: lo}
 	events := lo.ag.Run(runCtx, lo.history, nil)
-	lines := lo.startBusyReader(runCtx)
 
 	drain := true
 	for drain {
@@ -438,12 +473,22 @@ func (lo *cliLoop) send(text string) error {
 		}
 	}
 	cancel()
-	// sweep the reader's leftovers: verdicts may still answer from the
-	// queue (a card can outlive its blocking call), chat waits.
-	for l := range lines {
-		if !lo.answerPendingVerdict(l) {
-			lo.queued = append(lo.queued, l)
+	// non-blocking drain of the reader's buffered leftovers: a verdict
+	// card can outlive its blocking call, chat waits in the queue.
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				lines = nil
+				break
+			}
+			if !lo.answerPendingVerdict(l) {
+				lo.queued = append(lo.queued, l)
+			}
+			continue
+		default:
 		}
+		break
 	}
 	lo.out.Flush()
 
@@ -455,12 +500,12 @@ func (lo *cliLoop) send(text string) error {
 	return nil
 }
 
-// startBusyReader owns stdin while a run streams. Chat typed ahead
-// queues through the channel; the verdict answer goes inline.
-func (lo *cliLoop) startBusyReader(ctx context.Context) chan string {
+// startStdinReader owns stdin for the whole session - exactly one
+// reader goroutine, so no second goroutine ever races the bufio. Lines
+// feed the channel; EOF closes it and the loop exits with the door.
+func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	lines := make(chan string, 16)
 	go func() {
-		defer close(lines)
 		for {
 			select {
 			case <-ctx.Done():
@@ -469,6 +514,7 @@ func (lo *cliLoop) startBusyReader(ctx context.Context) chan string {
 			}
 			line, rerr := lo.in.ReadString('\n')
 			if rerr != nil {
+				close(lines)
 				return
 			}
 			line = strings.TrimRight(line, "\n")

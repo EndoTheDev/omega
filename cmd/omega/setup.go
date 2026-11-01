@@ -91,12 +91,12 @@ func (s *setupSession) Run() error {
 		}
 	}
 
-	model, err := s.pickModel(pick, host, key)
+	model, finalHost, err := s.pickModel(pick, host, key)
 	if err != nil {
 		return err
 	}
 
-	path, err := writeSetupConfig(pick.Type, model, host, key)
+	path, err := writeSetupConfig(pick.Type, model, finalHost, key, s.in)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (s *setupSession) Run() error {
 		port = cfg.Server.Port
 	}
 	fmt.Fprintf(s.out, "\nconfig written: %s\n", path)
-	fmt.Fprintf(s.out, "model: %s via %s\n", model, host)
+	fmt.Fprintf(s.out, "model: %s via %s\n", model, finalHost)
 	fmt.Fprintf(s.out, "webui: http://localhost:%d/ (serve it with `omega serve`)\n", port)
 	fmt.Fprintf(s.out, "loop:  `omega` starts a terminal session against the same model\n")
 	return nil
@@ -136,7 +136,9 @@ func (s *setupSession) pickProvider() (setupProvider, error) {
 // provider transport. A working host lists models to pick from; a
 // failing host names the error and falls back to a typed model name
 // (or a retried host) so a transient failure never strands the install.
-func (s *setupSession) pickModel(pick setupProvider, host, key string) (string, error) {
+// It returns the model AND the final base url - a retried host must
+// land in the written config, not just this conversation.
+func (s *setupSession) pickModel(pick setupProvider, host, key string) (string, string, error) {
 	for attempt := 0; ; attempt++ {
 		prov := newSetupProvider(pick.Type, "", host, key)
 		models, lerr := prov.ListModels()
@@ -175,11 +177,11 @@ func (s *setupSession) pickModel(pick setupProvider, host, key string) (string, 
 						fmt.Fprintf(s.out, "  a number between 1 and %d, or the exact model name\n", len(models))
 						continue
 					}
-					return models[n-1], nil
+					return models[n-1], host, nil
 				}
 				for _, m := range models {
 					if m == line {
-						return line, nil
+						return line, host, nil
 					}
 				}
 				fmt.Fprintf(s.out, "  %q is not in the list - use its number, or type the exact name\n", line)
@@ -199,19 +201,19 @@ func (s *setupSession) pickModel(pick setupProvider, host, key string) (string, 
 				continue
 			}
 			if line != "" {
-				return line, nil
+				return line, host, nil
 			}
-			return "", fmt.Errorf("no model chosen - start ollama (or set the right base url) and run `omega setup` again")
+			return "", host, fmt.Errorf("no model chosen - start ollama (or set the right base url) and run `omega setup` again")
 		}
 		line := s.ask("model name (or a base url to retry, empty to abort)", "")
 		if line == "" {
-			return "", fmt.Errorf("no model chosen - run `omega setup` again")
+			return "", host, fmt.Errorf("no model chosen - run `omega setup` again")
 		}
 		if strings.HasPrefix(strings.ToLower(line), "http") {
 			host = line
 			continue
 		}
-		return line, nil
+		return line, host, nil
 	}
 }
 
@@ -231,13 +233,16 @@ func (s *setupSession) ask(prompt, def string) string {
 
 // writeSetupConfig writes the fresh config.yaml under the home's
 // config/ layout. An existing file needs an explicit yes - the wizard
-// never eats a hand-tuned config silently.
-func writeSetupConfig(typ, model, host, key string) (string, error) {
+// never eats a hand-tuned config silently. The confirm reader is
+// injected so tests drive the no-overwrite path without stdin.
+func writeSetupConfig(typ, model, host, key string, confirm *bufio.Reader) (string, error) {
 	path := omegaHome() + "/config/config.yaml"
 	if _, err := os.Stat(path); err == nil {
 		fmt.Printf("config already exists: %s\noverwrite it? [y/N]: ", path)
-		rd := bufio.NewReader(os.Stdin)
-		line, _ := rd.ReadString('\n')
+		line := ""
+		if confirm != nil {
+			line, _ = confirm.ReadString('\n')
+		}
 		if !strings.EqualFold(strings.TrimSpace(line), "y") {
 			return "", fmt.Errorf("setup cancelled - %s is untouched", path)
 		}

@@ -79,6 +79,13 @@ and git history.
 
 ## Planned
 
+- **v0.15 breaking change (staged warning):** the full-screen TUI is
+  retired. `omega setup` (the first-run wizard) plus a plain streaming
+  CLI agent loop replace it — the terminal is for setup, the browser
+  is the app. Nightly users: one release of warning (this note); the
+  `/sessions`, `/variant`, `/branch`, `/files` TUI commands and the
+  theme/notifications config knobs died with the shell
+  (t_0744eb8e); the webui hosts every screen-shaped surface.
 - Agent self-improvement: read-only eval suite + propose-only
   reflection loop (evaluated improvements, never self-merged)
 - OpenTelemetry observability (research: traces, metrics, tool timings)

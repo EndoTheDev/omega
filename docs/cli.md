@@ -8,9 +8,10 @@ if a flag is not in the code, it is not in this document.
 ## Usage
 
 ```txt
-omega                 start the interactive TUI (no-arg default)
-omega <path>          start the TUI in <path> (chdir first)
-omega chat            explicit alias for the TUI
+omega                 start the CLI agent loop (first run: walks you through setup)
+omega <path>          start the loop in <path> (chdir first)
+omega chat            explicit alias for the CLI loop
+omega setup           the first-run wizard: provider, model, api key; writes config.yaml
 omega run <prompt>    run one prompt to stdout
 omega run --session <id> <prompt>   run bound to an existing session (the wake contract)
 omega serve           start the HTTP server (SSE streaming)
@@ -35,20 +36,27 @@ Deleting a module removes its registration: the subcommand vanishes
 from `omega --help` and an argument that matches nothing falls back to
 the project-path behavior.
 
-### `omega` / `omega chat` (TUI)
+### `omega` / `omega chat` (the CLI agent loop)
 
-No argument, `chat`, or a non-subcommand argument launches the Bubble
-Tea TUI. A non-subcommand first argument is treated as a project path:
-omega chdirs there first, so project context (AGENTS.md walk) and file
-tools resolve relative to that directory.
+No argument, `chat`, or a non-subcommand argument launches the CLI
+agent loop — plain readline in, streaming ANSI out, `ollama run`
+mental model. The loop never owns the screen (no alt-screen, no panes,
+no mouse); anything screen-shaped is the webui's job. A non-subcommand
+first argument is treated as a project path: omega chdirs there first,
+so project context (AGENTS.md walk) and file tools resolve relative to
+that directory.
 
 ```bash
-omega                       # TUI in the current directory
-omega ~/dev/omega           # TUI rooted at a project
+omega                       # loop in the current directory
+omega ~/dev/omega           # loop rooted at a project
 ```
 
-In-TUI slash commands (`/new`, `/variant`, `/branch`, `/files`, ...)
-are documented in [tui.md](tui.md).
+The setup gate is the law: with no config, serve and run refuse and
+bare `omega` runs the setup wizard first. Loop commands: `/exit`,
+`/help`, `/session [id|new]`, `/workspace [dir]`, plus every mounted
+module command (`/logs`, `/verdict`, `/cron`, ...) and a `"""`
+multiline input block. On exit the loop prints the webui URL — the
+browser is the app; the loop is the fallback.
 
 ### `omega serve`
 
@@ -190,7 +198,7 @@ Accepted before or after the subcommand:
 | Flag                          | Meaning                                                                 |
 | ----------------------------- | ----------------------------------------------------------------------- |
 | `--config <path>`             | Config file (default: `<home>/config.yaml`, then `<home>/config/config.yaml`; legacy home-root wins) |
-| `--append-system-prompt <text>` | Append to the system prompt; repeatable; `run`/TUI only               |
+| `--append-system-prompt <text>` | Append to the system prompt; repeatable; `run`/loop only            |
 | `--approve`                   | Trust the current project's AGENTS.md                                   |
 | `--no-approve`                | Skip the current project's AGENTS.md                                    |
 | `--version`, `-v`             | Print version                                                           |
@@ -272,6 +280,5 @@ integers below their minimum are ignored (the YAML/default value stays).
 
 ## Related
 
-- [tui.md](tui.md) — in-TUI slash commands and keybindings
 - [configuration.md](configuration.md) — full config.yaml reference
 - [api.md](api.md) — the HTTP surface `omega serve` exposes

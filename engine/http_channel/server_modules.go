@@ -15,11 +15,9 @@ import (
 // modules) answers 501 so the pane can hide the list.
 
 // engineModules never appear in the list (the tier law: engine ring,
-// always on - the frontend does not render its own on/off switch, nor
-// the TUI's).
+// always on - the frontend does not render its own on/off switch).
 var engineModules = map[string]bool{
 	"http_channel": true,
-	"tui":          true,
 }
 
 // handleModules serves GET: the module list (introspection, engine

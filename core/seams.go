@@ -95,7 +95,7 @@ type StoreProvider interface {
 	GetActiveView(ctx context.Context, sessionID string) (ActiveView, error)
 
 	// GetActiveMessages returns the active path as plain messages -
-	// the session-load seam (TUI resume, exports).
+	// the session-load seam (CLI resume, exports).
 	GetActiveMessages(ctx context.Context, sessionID string) ([]Message, error)
 
 	GetSessionTree(ctx context.Context) ([]*SessionNode, error)
@@ -550,7 +550,7 @@ func (v Verdict) Kind() string {
 
 // VerdictsProvider is the interactive-question seam (verdict cards v1).
 // The verdict module implements it; the tool blocks on Ask, the HTTP
-// channel and the TUI answer through it. Whichever surface answers
+// channel and the CLI loop answer through it. Whichever surface answers
 // first wins - Answer enforces the race. Nil on the Context (module
 // absent) is the only valid "not implemented" answer: the tool refuses
 // to block without the seam.
@@ -643,7 +643,7 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 // TrustProvider gates project context (AGENTS.md) behind a trust
 // check. The default implementation reads trust.yaml from omega home.
 // The host calls ResolveContext before building the agent; State is
-// used for the TUI status bar.
+// used for the serving surfaces' status displays.
 type TrustProvider interface {
 	ResolveContext(cwd string, approve, noApprove, interactive bool) string
 	State(cwd string, approve, noApprove bool) string

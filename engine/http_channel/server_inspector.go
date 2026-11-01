@@ -47,7 +47,7 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// extensionListing is one GET /extensions row: the same facts the TUI
+// extensionListing is one GET /extensions row: the same facts the
 // /extensions command renders (name, tools, commands, seams) plus the
 // module's own one-line description (agent.Describer, omitted when the
 // module doesn't implement it). has-ui does NOT ride this wire: the
@@ -70,9 +70,9 @@ type extensionListing struct {
 }
 
 // handleExtensions serves GET /extensions: the loaded-extension
-// inventory in mount order - the webui parity of the TUI /extensions
+// inventory in mount order - the webui parity of the /extensions
 // command. Mount order is the dependency order MountAllAPI built, the
-// same order the TUI renders; keep it, don't alphabetize away the
+// same order the inspector renders; keep it, don't alphabetize away the
 // seams-require-providers structure. A no-extension run lists as an
 // empty array, like the other inspector reads.
 //

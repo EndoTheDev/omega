@@ -1,7 +1,7 @@
 package http_channel
 
 // Branch + export endpoint tests (t_6bf696e4): the webui parity batch
-// for the TUI's /branch, /label and /export commands.
+// for the /branch, /label and /export commands.
 //
 //   - POST /sessions/{id}/branch creates a child of the parent with a
 //     summary system message in the child's rows (the /branch parity -
@@ -12,7 +12,7 @@ package http_channel
 //   - The child's active view (and therefore its transcript + its next
 //     run's context) inherits the parent's history as a prefix.
 //   - GET /sessions/{id}/export writes the active path as one
-//     {"role","content"} JSONL line per message - the TUI /export shape.
+//     {"role","content"} JSONL line per message - the /export shape.
 //   - A message appended to the child chains onto the ancestor leaf
 //     (cross-session pointer accepted).
 
@@ -161,7 +161,7 @@ func TestBranchChildInheritsAncestorPath(t *testing.T) {
 }
 
 // TestExportJSONLShape: the export endpoint emits one
-// {"role","content"} line per active-path message (the TUI /export
+// {"role","content"} line per active-path message (the /export
 // shape) as an attachment download.
 func TestExportJSONLShape(t *testing.T) {
 	s, st := newTestServerWithStore(t)
@@ -203,7 +203,7 @@ func TestExportJSONLShape(t *testing.T) {
 	if len(lines) != 2 ||
 		lines[0]["role"] != "user" || lines[0]["content"] != "hello there" ||
 		lines[1]["role"] != "assistant" || lines[1]["content"] != "hi, human" {
-		t.Fatalf("export lines = %v, want TUI /export shape {role, content} per message", lines)
+		t.Fatalf("export lines = %v, want /export shape {role, content} per message", lines)
 	}
 
 	// 404 for a missing session.

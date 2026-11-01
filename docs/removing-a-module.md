@@ -9,11 +9,9 @@ the module holds a reference. Kanban is the worked example below (arc
 5, the flagship: the biggest module - six tools folded into one, two
 commands, two panels, the REST surface).
 
-This doc is the whole-module recipe. The pre-canvas TUI/webui recipe
-remains in `docs/tui.md` ("Module removal recipe (both ends)") and
-still applies at its layer. The mount-style migration recipe (v0.12
-phase C, moving a capsule onto the universal `Register*` surface) is
-its sibling: `docs/migrating-a-module.md`.
+This doc is the whole-module recipe. The mount-style migration recipe
+(v0.12 phase C, moving a capsule onto the universal `Register*`
+surface) is its sibling: `docs/migrating-a-module.md`.
 
 ## What the law guarantees
 

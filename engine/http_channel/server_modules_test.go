@@ -54,11 +54,11 @@ func contains(body, substr string) bool { return strings.Contains(body, substr) 
 func stringBody(s string) io.Reader { return strings.NewReader(s) }
 
 func TestModulesListHidesEngineRing(t *testing.T) {
-	// http_channel and tui are engine ring: never in the list.
+	// http_channel is engine ring: never in the list. A dead module
+	// name the host still filters is proven by the never-list scan.
 	fm := &fakeModules{mods: []core.ModuleStatus{
 		fakeModule("kanban", "mounted", true),
 		fakeModule("http_channel", "mounted", false),
-		fakeModule("tui", "mounted", false),
 		fakeModule("store", "mounted", false),
 	}}
 	s := NewServer(nil, nil, nil, nil, fm, nil)
@@ -72,7 +72,7 @@ func TestModulesListHidesEngineRing(t *testing.T) {
 	if want := `"name":"kanban"`; !contains(body, want) {
 		t.Fatalf("the module list lost kanban: %s", body)
 	}
-	for _, never := range []string{"http_channel", "tui"} {
+	for _, never := range []string{"http_channel"} {
 		if contains(body, `"name":"`+never+`"`) {
 			t.Fatalf("engine ring module %q leaked into the list", never)
 		}

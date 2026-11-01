@@ -8,9 +8,9 @@
 
 omega is a terminal-based AI assistant that reads files, runs
 commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
-Anthropic) and streams responses in real time. Single binary, full-
-screen TUI, persistent session tree, context compaction, and a
-in-process module system.
+Anthropic) and streams responses in real time. Single binary: a CLI
+agent loop, a served webui, persistent sessions, context compaction,
+and an in-process module system.
 
 The same binary also serves a VS Code-style web interface: a dock
 with draggable panes, live-streaming chat with retry and image
@@ -92,7 +92,6 @@ All modules are in-process Go packages under `modules/`. See
 | --------------- | -------------------------------------------------- |
 | Configuration   | [docs/configuration.md](docs/configuration.md)     |
 | Extensions      | [docs/modules.md](docs/modules.md)           |
-| TUI Commands    | [docs/tui.md](docs/tui.md)                         |
 | Project Trust   | [docs/project-trust.md](docs/project-trust.md)     |
 | Architecture    | [docs/architecture.md](docs/architecture.md)       |
 | Landing pipeline | [docs/pipeline.md](docs/pipeline.md)              |
