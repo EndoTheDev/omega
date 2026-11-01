@@ -104,7 +104,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	); err != nil {
 		return err
 	}
-	if err := api.RegisterRenderer(&tui{p: p}); err != nil {
+	if err := api.RegisterCommand("/cron", "list cron jobs (read-only)", []string{}, cronHandler(p)); err != nil {
 		return err
 	}
 	// Capsule law (arc 6, t_31174f80): the module ships its view-model

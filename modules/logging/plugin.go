@@ -30,10 +30,10 @@ func (p *Plugin) Provides() []string { return []string{"logging"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // MountWithAPI implements agent.APIPlugin. Creates the logger from
-// config, registers the logging seam, and registers the /logs TUI
-// renderer (a logging plugin left out of buildPlugins takes /logs out
-// of the command table with it - card t_88bb7dcf). The log file stays
-// at dismount: disable never deletes data.
+// config, registers the logging seam, and registers the /logs command
+// (a logging plugin left out of buildPlugins takes /logs out of the
+// command table with it - card t_0744eb8e). The log file stays at
+// dismount: disable never deletes data.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["logging"].(Config); ok {
@@ -46,7 +46,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterLogger(logger); err != nil {
 		return err
 	}
-	return api.RegisterRenderer(&tui{})
+	return api.RegisterCommand("/logs", "tail omega.log", []string{}, logsHandler(ctx))
 }
 
 // NewPlugin creates a logging plugin instance.
