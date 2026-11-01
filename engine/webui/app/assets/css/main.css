@@ -1100,24 +1100,6 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   color: var(--text-dim);
 }
 
-/* the expander: a CSS triangle so no glyph availability is assumed;
-   files carry an empty spacer of the same width to keep names aligned.
-   Scoped to the tree: .chev is ALSO the model chip's text-glyph span
-   (ModelSelect renders ▾ inside it) - the global triangle redefinition
-   double-decorated the chip with triangle + glyph (in-app comment 3,
-   2026-10-18). */
-.files-tree .chev {
-  flex-shrink: 0;
-  align-self: center;
-  width: 0;
-  height: 0;
-  border-left: 4px solid var(--text-dim);
-  border-block: 3px solid transparent;
-  transition: transform 0.12s ease;
-}
-.files-tree .chev.file { border-left-color: transparent; }
-.files-tree .chev.open { transform: rotate(90deg); }
-
 /* row glyphs (card t_467a0386): the inline-SVG box sits where the name
    used to start; currentColor-only strokes/fills, so the row's dim text
    color and hover surface carry them - no icon colors of their own.
