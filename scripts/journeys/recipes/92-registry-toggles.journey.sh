@@ -243,14 +243,14 @@ wait_js '(()=>{return document.querySelector(".pane.agents .registry-rows")?true
   || die "the Agents tab never rendered rows"
 locked=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
   .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
-  return b ? (b.disabled ? "locked-disabled" : "LOCKED-NOT-DISABLED") : "MISSING"})()' 2>&1 | tail -1)
+  return b ? (b.disabled ? "locked-disabled" : "LOCKED-NOT-DISABLED") : "MISSING"})()' 2>&1 | tail -1 | tr -d '"')
 assert_eq "$locked" "locked-disabled" "the default row's pill renders locked-on and non-interactive"
 inert=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
   .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
-  if(!b){return "MISSING"} b.click(); return "clicked"})()' 2>&1 | tail -1)
+  if(!b){return "MISSING"} b.click(); return "clicked"})()' 2>&1 | tail -1 | tr -d '"')
 assert_eq "$inert" "clicked" "the default pill was clicked"
 armed=$(jsq '(()=>{return [...document.querySelectorAll(".pane.agents button.registry-toggle")]
-  .some(b=>(b.getAttribute("aria-label")||"").startsWith("confirm apply to default?"))?1:0})()' 2>&1 | tail -1)
+  .some(b=>(b.getAttribute("aria-label")||"").startsWith("confirm apply to default?"))?1:0})()' 2>&1 | tail -1 | tr -d '"')
 assert_eq "$armed" "0" "the locked pill never armed (clicking it does nothing)"
 # the wire: a curl hits the same wall the pill renders - refusal 409,
 # the reason text states the law, nothing persists.

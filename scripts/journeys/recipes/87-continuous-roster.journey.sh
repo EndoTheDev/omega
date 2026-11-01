@@ -113,10 +113,10 @@ case "$state" in
   *) state_is_wake=0 ;;
 esac
 assert_eq "$state_is_wake" "1" "the merged row shows the wake state (got: [$state])"
-dead=$(jsq '(()=>{const r=[...document.querySelectorAll(".pane.agents .registry-row")]
-  .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === '"$CONT_NAME"'));
-  return r && r.querySelector(".registry-preview, .agents-badge") ? 1 : 0})()' 2>&1 | tail -1)
-assert_eq "$dead" "0" "the under-row preview line is dead (ruling 3)"
+dead=$(row_cell ".registry-preview")
+if [ -n "$dead" ]; then die "the under-row preview line is dead (ruling 3) - rendered [$dead]"; fi
+deadbadge=$(row_cell ".agents-badge")
+if [ -n "$deadbadge" ]; then die "the inline badge is dead (ruling 3) - rendered [$deadbadge]"; fi
 
 # --- the wake strip opens on expand (never wakes) ---
 jsq '(name => [...document.querySelectorAll(".pane.agents .registry-row")]
