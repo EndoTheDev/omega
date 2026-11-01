@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -245,8 +246,9 @@ func (s *Server) handleFilesBrowse(w http.ResponseWriter, r *http.Request) {
 // handleFilesRead serves GET /files/read?path=<rel>&session=<id>,
 // returning up to 64 KiB of a file's content under the RESOLVED root
 // (the resolution law, same chain as browse). Non-UTF-8 bytes come back
-// as binary=true with empty content - no binary previews on this
-// surface.
+// as binary=true with empty content - the content is not previewed here;
+// the mime field tells the viewer whether the file is an image it can
+// pull from /files/raw (card t_08d822bb) or a binary it announces.
 func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -313,7 +315,102 @@ func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 		"content":   content,
 		"truncated": truncated,
 		"binary":    binary,
+		"mime":      detectFileMime(data[:min(512, len(data))], rel),
 	})
+}
+
+// detectFileMime sniffs a file's leading bytes (the card's law: stdlib
+// http.DetectContentType, max 512 bytes, no new dependency) and returns
+// the file's mime type. Extension guessing is ONLY the tiebreak the card
+// allows: DetectContentType has no SVG magic, so a text-shaped file
+// named .svg climbs to image/svg+xml; every other file rides the sniff
+// verbatim, extension or not.
+func detectFileMime(head []byte, rel string) string {
+	sniff := http.DetectContentType(head)
+	if strings.HasSuffix(strings.ToLower(rel), ".svg") &&
+		(sniff == "text/plain; charset=utf-8" ||
+			strings.HasPrefix(sniff, "text/xml") ||
+			strings.HasPrefix(sniff, "application/xml")) {
+		return "image/svg+xml"
+	}
+	return sniff
+}
+
+// handleFilesRaw serves GET /files/raw?path=<rel>&session=<id>: the raw
+// bytes behind the viewer tab's image branch (card t_08d822bb). The
+// containment is the EXACT chain /files/read runs - validateRelPath,
+// resolveFilesRoot, resolveUnderRoot, ensureUnderRoot, never a copy -
+// and one extra gate the read surface does not have: the sniffed mime
+// must be image/*, anything else refuses with 400 (the card's v1 scope
+// is images only - no pdf/audio/video surface). The file streams with
+// the sniffed Content-Type plus nosniff, so a mislabelled payload can
+// never render as something it is not.
+func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rel, err := validateRelPath(r.URL.Query().Get("path"))
+	if err != nil {
+		fileError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	root, _, err := s.resolveFilesRoot(r.Context(), r.URL.Query().Get("session"))
+	if err != nil {
+		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
+		return
+	}
+	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
+	if rerr != nil {
+		// fail closed: no containment verdict, no disk access
+		fileError(w, http.StatusInternalServerError, "resolve path: "+rerr.Error())
+		return
+	}
+	if err := ensureUnderRoot(realRoot, resolved); err != nil {
+		fileError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fileError(w, http.StatusNotFound, "not found")
+			return
+		}
+		fileError(w, http.StatusInternalServerError, "stat file: "+err.Error())
+		return
+	}
+	if info.IsDir() {
+		fileError(w, http.StatusBadRequest, "not a file")
+		return
+	}
+	f, err := os.Open(resolved)
+	if err != nil {
+		fileError(w, http.StatusInternalServerError, "open file: "+err.Error())
+		return
+	}
+	defer f.Close()
+	head := make([]byte, 512)
+	n, herr := f.Read(head)
+	if herr != nil && n == 0 && !errors.Is(herr, io.EOF) {
+		fileError(w, http.StatusInternalServerError, "read file: "+herr.Error())
+		return
+	}
+	mime := detectFileMime(head[:n], rel)
+	if !strings.HasPrefix(mime, "image/") {
+		fileError(w, http.StatusBadRequest, "not an image - the raw route serves image/* only")
+		return
+	}
+	if _, serr := f.Seek(0, io.SeekStart); serr != nil {
+		fileError(w, http.StatusInternalServerError, "rewind file: "+serr.Error())
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	if _, cerr := io.Copy(w, f); cerr != nil {
+		// the response already started; nothing structured left to send
+		return
+	}
 }
 
 // filesPostCap caps every POST body on the file surface: the path and
