@@ -150,6 +150,10 @@ func (b bridgeToolProvider) Tools() map[string]core.Tool {
 			Description: t.description,
 			Parameters:  t.parameters,
 			Run:         t.run,
+			// card t_c2da3379: the origin stamp is the whole filter
+			// contract - the webui Tools tab keys on this exact value,
+			// never on dotted-name shape.
+			Origin: core.ToolOriginMCP,
 		}
 	}
 	return tools

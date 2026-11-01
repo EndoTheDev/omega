@@ -56,7 +56,7 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
-  import { toggleTargets, toolRows, type ToolWire } from "./toolRows";
+  import { nativeTools, toggleTargets, toolRows, type ToolWire } from "./toolRows";
 
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
   // content (card t_db430fea): the tool inventory, sourced from
@@ -99,7 +99,11 @@
   async function load(): Promise<void> {
     const res = await fetch("/tools");
     if (!res.ok) throw new Error(`GET /tools: ${res.status}`);
-    tools.value = await res.json();
+    // card t_c2da3379: MCP-origin tools never reach this tab - the
+    // filter reads the origin field the wire carries, not any name
+    // shape. The MCP tab owns MCP display and toggles (one surface
+    // per concern); this list is the native registry only.
+    tools.value = nativeTools(await res.json());
     try {
       const dRes = await fetch("/disabled");
       if (dRes.status === 501) {
