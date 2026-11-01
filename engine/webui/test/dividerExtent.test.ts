@@ -177,6 +177,14 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
     assert.match(body, /background:\s*var\(--stroke\)/);
     assert.match(body, /height:\s*1px/);
     assert.match(body, /pointer-events:\s*none/);
+    // t_064b1559 amendment (the t_e539ba29 invisible-lines law governs the
+    // frame rails too): the rails track the cards' inner box - inset to
+    // the pane-area's 4px horizontal padding, never past the outermost
+    // cards' borders (full-width rails sliced through the window-edge
+    // gutters and the sidebar columns' outer edges)
+    assert.match(body, /left:\s*4px/);
+    assert.match(body, /right:\s*4px/);
+    assert.ok(!/left:\s*0\b/.test(body), "no full-width rail span left");
     const top = find(MAIN, ".pane-area::before", desktop);
     assert.match(top.body.replace(/\s+/g, " "), /top:\s*0/);
     // the 3px padding row = the cards' bottom-border row

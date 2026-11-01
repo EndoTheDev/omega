@@ -139,21 +139,31 @@ body {
    divider sits in the 4px gap between the two 1px strokes. */
 
 /* t_bc321318 (the connected frame): the layout layer's HORIZONTAL edges.
-   The pane-area paints full-width 1px strokes UNDER the cards at the exact
-   rows the cards' own top/bottom borders occupy - top:0 is the cards'
-   border-top row (pane-area starts flush at the menubar's bottom edge),
-   bottom:3px is the border-bottom row (3px padding below the content box).
+   The pane-area paints 1px strokes UNDER the cards at the exact rows the
+   cards' own top/bottom borders occupy - top:0 is the cards' border-top
+   row (pane-area starts flush at the menubar's bottom edge), bottom:3px
+   is the border-bottom row (3px padding below the content box).
    The strokes show only in the 4px gaps between cards, so every card edge
    joins its neighbors into one continuous line - the vertical divider
    lines meet both rows at their corners. Desktop law only: the mobile
-   pane-area has no padding (and no card row) for these rows to track. */
+   pane-area has no padding (and no card row) for these rows to track.
+   Amendment (t_064b1559, t_e539ba29 invisible-lines law governs the frame
+   rails too: a stroke never appears where a surface's own border is not):
+   the rails track the cards' inner box - left/right inset to the
+   pane-area's 4px horizontal padding - because full-width rails overhung
+   past the outermost cards' borders (through the window-edge gutters and
+   the sidebar columns' outer edges, reading as lines going THROUGH the
+   panels). The rail = the outer cards' own border rows, extended only
+   across the gaps BETWEEN cards. */
 @media (min-width: 769px) {
   .pane-area::before,
   .pane-area::after {
     content: "";
     position: absolute;
-    left: 0;
-    right: 0;
+    /* span = the content box: 4px in from each window edge, exactly on
+       the outermost cards' border rows - never past them */
+    left: 4px;
+    right: 4px;
     height: 1px;
     background: var(--stroke);
     pointer-events: none;
