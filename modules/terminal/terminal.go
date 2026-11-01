@@ -21,6 +21,7 @@
 package terminal
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 	"time"
@@ -34,10 +35,16 @@ import (
 // reload loop from farming shells.
 const (
 	maxSessions = 4
-	// replayLimit: the reconnect tail. A reattached pane replays the
-	// session's last 256 KiB (a restore's scrollback); the full
-	// history is the pty's and the client's, not the server's to keep.
-	replayLimit = 256 * 1024
+	// SCROLLBACK CAPS (the bounded terminal-runtime rules): the server
+	// owns at most 5,000 lines OR 8 MiB of a shell's output, whichever
+	// hits first, evicting the OLDEST. The bounded history is the
+	// server's truth - the client may show less.
+	scrollbackMax   = 8 * 1024 * 1024
+	scrollbackLines = 5000
+	// replayTail: the restoration window - a reattach reads ONLY the
+	// bounded tail of the retained history (never the whole thing; the
+	// client may show less than the server keeps).
+	replayTail = 256 * 1024
 	// noOrphanTTL: a session no pane is attached to dies this long
 	// after its last activity - a shell nobody watches and nobody
 	// typed into is an orphan, not state to keep.
@@ -110,9 +117,10 @@ func (sub *subscription) checkMissed() bool {
 	return m
 }
 
-// Session is one live shell: the child process, the reconnect replay
-// buffer, the attached panes. mu guards buf/subs/exited/lastUse and
-// the process handoff; the read and watch loops take it per publish.
+// Session is one live shell: the child process, the scrollback buffer
+// (the bounded history), the attached panes. mu guards
+// buf/lines/subs/exited/lastUse and the process handoff; the read and
+// watch loops take it per publish.
 type Session struct {
 	id   string
 	proc process
@@ -120,6 +128,7 @@ type Session struct {
 	mu        sync.Mutex
 	createdAt time.Time
 	buf       []byte
+	lines     int // complete '\n'-terminated lines retained in buf
 	subs      map[*subscription]struct{}
 	exited    bool
 	exitCode  int
@@ -151,9 +160,25 @@ func (s *Session) subscribe() (*subscription, []byte, bool) {
 	}
 	s.subs[sub] = struct{}{}
 	s.lastUse = time.Now()
-	snap := make([]byte, len(s.buf))
-	copy(snap, s.buf)
+	tail := replayTailOf(s.buf)
+	snap := make([]byte, len(tail))
+	copy(snap, tail)
 	return sub, snap, s.exited
+}
+
+// replayTailOf returns the restoration window: ONLY the bounded tail
+// of the retained history (never the whole scrollback), cut on a
+// codepoint boundary. The replay rides the SSE stream straight to the
+// pane's xterm - nothing here writes to the pty, so the restoration
+// cannot trigger fresh shell replies.
+func replayTailOf(buf []byte) []byte {
+	if len(buf) > replayTail {
+		buf = buf[len(buf)-replayTail:]
+		for len(buf) > 0 && buf[0]&0xC0 == 0x80 {
+			buf = buf[1:]
+		}
+	}
+	return buf
 }
 
 // unsubscribe detaches a pane (tab switch, reconnect, page reload).
@@ -197,8 +222,13 @@ func (s *Session) readLoop() {
 	}
 }
 
-// record appends one output chunk. The session owns the copy - the
-// caller's buffer is scratch.
+// record appends one output chunk. PTY output is INCREMENTAL - chunks
+// append, snapshots are the only materialization boundary (the
+// subscriber's tail copy under subscribe()). The retained history is
+// never echoed back into the pty (the replay path is SSE-only and
+// never touches the writer), so a running interactive program cannot
+// receive its own old output as new input. The session owns the copy -
+// the caller's buffer is scratch.
 func (s *Session) record(chunk []byte) {
 	chunkCopy := make([]byte, len(chunk))
 	copy(chunkCopy, chunk)
@@ -208,12 +238,36 @@ func (s *Session) record(chunk []byte) {
 		return
 	}
 	s.buf = append(s.buf, chunkCopy...)
-	if over := len(s.buf) - replayLimit; over > 0 {
-		s.buf = s.buf[over:]
-	}
+	s.lines += bytes.Count(chunkCopy, []byte{'\n'})
+	s.trimLocked()
 	s.lastUse = time.Now()
 	s.mu.Unlock()
 	s.publish(event{kind: 'o', data: chunkCopy})
+}
+
+// trimLocked enforces the scrollback caps (5,000 lines OR 8 MiB,
+// whichever hits first). The OLDEST output evicts, and an eviction
+// never cuts a UTF-8 codepoint: byte evictions skip the continuation
+// bytes (\x80..\xBF land mid-codepoint by construction), line
+// evictions cut after a '\n' - 0x0A is one of the few bytes that never
+// appears inside a multi-byte sequence, so a line boundary is always a
+// codepoint boundary.
+func (s *Session) trimLocked() {
+	if over := len(s.buf) - scrollbackMax; over > 0 {
+		s.lines -= bytes.Count(s.buf[:over], []byte{'\n'})
+		s.buf = s.buf[over:]
+		for len(s.buf) > 0 && s.buf[0]&0xC0 == 0x80 {
+			s.buf = s.buf[1:]
+		}
+	}
+	for s.lines > scrollbackLines {
+		i := bytes.IndexByte(s.buf, '\n')
+		if i < 0 {
+			break // an unterminated giant chunk: the byte cap owns it
+		}
+		s.buf = s.buf[i+1:]
+		s.lines--
+	}
 }
 
 // watchLoop broadcasts the exit once the child is reaped.
