@@ -2199,11 +2199,27 @@ export function toggleNote(m: ModuleRow, enable: boolean): string {
 // extensions tab lists every row with no search - the module row
 // narrowing helper left with its only consumer.)
 
-// --- themes: user token themes behind /themes ---
+// --- themes: color mode + theme, two knobs behind the picker split ---
 
-// ThemeMode is the theme select's value space: the three built-in
-// modes, or a user theme applied by id (theme:<id> from GET /themes).
-export type ThemeMode = "auto" | "light" | "dark" | `theme:${string}`;
+// ColorMode is the color-mode knob's value space: auto follows the OS
+// preference live, dark/light pin one built-in palette. The OLD merged
+// select also carried `theme:<id>` in this slot - that legacy shape is
+// migration-only, parsed off its raw string in restoreThemeKnobs.
+export type ColorMode = "auto" | "dark" | "light";
+
+// The theme knob's value space: the built-in palettes ("default") or a
+// user theme by file id.
+export const DEFAULT_THEME_ID = "default";
+
+// localStorage keys: the color mode reuses the old key (it always held
+// the mode half of the pair); the theme id gets its own.
+export const COLOR_MODE_KEY = "omega.theme-mode";
+export const THEME_ID_KEY = "omega.theme-id";
+
+export interface ColorModeTheme {
+  mode: ColorMode;
+  theme: string;
+}
 
 export interface UserTheme {
   id: string;
@@ -2234,20 +2250,71 @@ export const THEME_TOKEN_KEYS = [
   "shadow-2",
 ] as const;
 
-// themeSelectValue / parseThemeSelect: the wire value of a user theme
-// in the theme select.
+// isColorMode narrows a persisted string to the color-mode space.
+export const isColorMode = (v: unknown): v is ColorMode =>
+  v === "auto" || v === "light" || v === "dark";
+
+// the legacy wire prefix of the old merged select's theme files
 const THEME_SELECT_PREFIX = "theme:";
-export const themeSelectValue = (id: string) =>
-  `${THEME_SELECT_PREFIX}${id}`;
-export const parseThemeSelect = (value: string): string | null =>
-  value.startsWith(THEME_SELECT_PREFIX)
-    ? value.slice(THEME_SELECT_PREFIX.length)
-    : null;
+
+// restoreThemeKnobs resolves the persisted pair into today's two-knob
+// shape. One migration, first boot after the split (task t_a94b1cda):
+// the old merged select wrote "auto" | "light" | "dark" |
+// "theme:<id>" into the mode key. stored `theme:<id>` maps to theme
+// <id> with mode auto; a stored plain mode maps to theme default with
+// the mode kept. A persisted theme id (the split already ran here)
+// wins over anything legacy; the mode key always carries the mode.
+export function restoreThemeKnobs(
+  persistedId: string | null,
+  legacyMode: string | null | undefined,
+): ColorModeTheme {
+  if (persistedId !== null && persistedId.trim() !== "") {
+    return { mode: isColorMode(legacyMode) ? legacyMode : "auto", theme: persistedId };
+  }
+  if (legacyMode && legacyMode.startsWith(THEME_SELECT_PREFIX)) {
+    const id = legacyMode.slice(THEME_SELECT_PREFIX.length);
+    if (id.trim() !== "") return { mode: "auto", theme: id };
+  }
+  if (isColorMode(legacyMode)) {
+    return { mode: legacyMode, theme: DEFAULT_THEME_ID };
+  }
+  return { mode: "auto", theme: DEFAULT_THEME_ID };
+}
 
 // usableThemes: the picker lists only themes that parsed and validated.
 export function usableThemes(themes: UserTheme[]): UserTheme[] {
   return themes.filter((t) => !t.error);
 }
+
+// resolveThemeId guards a persisted theme id: the built-in default
+// always survives; a file id survives only while a clean copy of that
+// file is in the list. A vanished or broken file falls back to the
+// default - the color mode is never touched. Pure.
+export function resolveThemeId(themeId: string, themes: UserTheme[]): string {
+  if (themeId === DEFAULT_THEME_ID) return themeId;
+  return usableThemes(themes).some((t) => t.id === themeId) ?
+      themeId
+    : DEFAULT_THEME_ID;
+}
+
+// themePickOptions builds the theme knob's option list: the built-in
+// default first, then every usable theme file. A file whose id is
+// "default" is shadowed - the seeded default.yaml parses and serves
+// clean, but in the picker "default" names the built-in palettes, so
+// the file entry would just duplicate the option. Pure.
+export function themePickOptions(
+  themes: UserTheme[],
+): (string | { value: string; label: string })[] {
+  return [
+    DEFAULT_THEME_ID,
+    ...usableThemes(themes)
+      .filter((t) => t.id !== DEFAULT_THEME_ID)
+      .map((t) => ({ value: t.id, label: t.name })),
+  ];
+}
+
+// colorModeOptions: the color-mode knob's option list, in pick order.
+export const colorModeOptions: ColorMode[] = ["auto", "dark", "light"];
 
 // normalizeThemesPayload sanitizes a /themes response: malformed
 // entries drop out; error-flagged entries survive so the server's loud

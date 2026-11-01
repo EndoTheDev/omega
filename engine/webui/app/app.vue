@@ -177,9 +177,11 @@
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
             v-model:tool-display="toolDisplay"
-            :theme-mode="themeMode"
+            :color-mode="colorMode"
+            :theme-id="themeId"
             :user-themes="userThemes"
             :open="inspectorOpen"
+            @set-color-mode="setColorMode"
             @set-theme="setTheme" />
         </template>
         <template #pane-mcp>
@@ -276,9 +278,11 @@
         v-model:show-thinking="showThinking"
         v-model:appearance="appearance"
         v-model:tool-display="toolDisplay"
-        :theme-mode="themeMode"
+        :color-mode="colorMode"
+        :theme-id="themeId"
         :user-themes="userThemes"
         :open="drawerOpen"
+        @set-color-mode="setColorMode"
         @set-theme="setTheme" />
       <InspectorPanel
         v-else-if="sidebarDrawerActiveId"
@@ -304,9 +308,11 @@
         v-model:show-thinking="showThinking"
         v-model:appearance="appearance"
         v-model:tool-display="toolDisplay"
-        :theme-mode="themeMode"
+        :color-mode="colorMode"
+        :theme-id="themeId"
         :user-themes="userThemes"
         :open="inspectorOpen"
+        @set-color-mode="setColorMode"
         @set-theme="setTheme" />
       <!-- card t_14f73742: the mobile drawer seats the shell inventory
            tab like any inspector view - before the module catch-all,
@@ -368,9 +374,11 @@
         v-model:show-thinking="showThinking"
         v-model:appearance="appearance"
         v-model:tool-display="toolDisplay"
-        :theme-mode="themeMode"
+        :color-mode="colorMode"
+        :theme-id="themeId"
         :user-themes="userThemes"
         :open="bottomDrawerOpen"
+        @set-color-mode="setColorMode"
         @set-theme="setTheme" />
       <InspectorPanel
         v-else-if="bottomDrawerActiveId"
@@ -458,9 +466,13 @@
     settingValueOf,
     applyThemeTokens,
     clearThemeTokens,
-    parseThemeSelect,
+    DEFAULT_THEME_ID,
+    COLOR_MODE_KEY,
+    THEME_ID_KEY,
+    restoreThemeKnobs,
+    resolveThemeId,
     type UserTheme,
-    type ThemeMode,
+    type ColorMode,
   } from "./composables/omega";
   import type { Session, Appearance } from "./composables/omega";
   import {
@@ -1603,53 +1615,61 @@
     }
   }
 
-  // --- theme: light / dark / auto / user themes, persisted, auto
-  // follows the OS live. A user theme (theme:<id> from GET /themes)
-  // recolors live by writing its token overrides into the inline style;
-  // the built-in modes undo that (clear overrides, data-theme only). ---
-  const themeMode = ref<ThemeMode>("auto");
+  // --- theme: color mode + theme, two knobs, both persisted ---
+  // Color mode (auto/dark/light) picks the built-in palette; auto
+  // follows the OS live. Theme ("default" or a themes-folder file id)
+  // rides the color mode: default applies the built-in palette the
+  // color mode chose; a file theme applies ITS base + token overrides
+  // on top. A vanished or broken file falls back to default without
+  // touching the mode. ---
+  const colorMode = ref<ColorMode>("auto");
+  const themeId = ref<string>(DEFAULT_THEME_ID);
   let systemPrefersDark = true;
   let mediaQuery: MediaQueryList | null = null;
   const userThemes = ref<UserTheme[]>([]);
 
   function applyTheme() {
     if (typeof document === "undefined") return;
-    const userId = parseThemeSelect(themeMode.value);
-    if (userId) {
-      const theme = userThemes.value.find((t) => t.id === userId && !t.error);
+    if (themeId.value !== DEFAULT_THEME_ID) {
+      const theme = userThemes.value.find((t) => t.id === themeId.value && !t.error);
       if (theme) {
         // overrides stack on the theme file's chosen base palette
         document.documentElement.dataset.theme = theme.base;
         applyThemeTokens(document.documentElement.style, theme.tokens);
         return;
       }
-      // the theme file vanished from the folder: fall back to auto and
-      // stop persisting the dead id
-      themeMode.value = "auto";
-      localStorage.setItem("omega.theme-mode", "auto");
+      // the theme file vanished or turned invalid: fall back to the
+      // default theme; the color mode is never touched
+      themeId.value = DEFAULT_THEME_ID;
+      localStorage.setItem(THEME_ID_KEY, DEFAULT_THEME_ID);
     }
     clearThemeTokens(document.documentElement.style);
     const dark =
-      themeMode.value === "auto" ?
-        systemPrefersDark
-      : themeMode.value === "dark";
+      colorMode.value === "auto" ? systemPrefersDark : colorMode.value === "dark";
     document.documentElement.dataset.theme = dark ? "dark" : "light";
   }
 
-  function setTheme(mode: ThemeMode) {
-    themeMode.value = mode;
-    localStorage.setItem("omega.theme-mode", mode);
+  function setColorMode(mode: ColorMode) {
+    colorMode.value = mode;
+    localStorage.setItem(COLOR_MODE_KEY, mode);
     applyTheme();
   }
 
-  watch(themeMode, applyTheme);
+  function setTheme(id: string) {
+    themeId.value = id;
+    localStorage.setItem(THEME_ID_KEY, id);
+    applyTheme();
+  }
+
+  watch(colorMode, applyTheme);
+  watch(themeId, applyTheme);
   // a user theme edited (or deleted) on disk re-applies live the moment
   // the refreshed list lands - the drawer refetches on every open, so
   // an edit reflects on the next apply without restart or reload
   watch(
     userThemes,
     () => {
-      if (parseThemeSelect(themeMode.value)) applyTheme();
+      if (themeId.value !== DEFAULT_THEME_ID) applyTheme();
     },
     { deep: true },
   );
@@ -1667,7 +1687,7 @@
   );
 
   // loadUserThemes refreshes the picker's list. Fetched on mount (so a
-  // persisted theme:<id> applies) and on every settings open (so a
+  // persisted theme id applies) and on every settings open (so a
   // dropped or edited file shows up without a restart). A failure just
   // empties the list - the pane keeps its built-in modes.
   async function loadUserThemes() {
@@ -1676,10 +1696,12 @@
     } catch {
       userThemes.value = [];
     }
-    const userId = parseThemeSelect(themeMode.value);
-    if (userId && !userThemes.value.some((t) => t.id === userId && !t.error)) {
-      themeMode.value = "auto";
-      localStorage.setItem("omega.theme-mode", "auto");
+    // a file id the folder no longer serves clean falls back to the
+    // built-in; the persisted pair rewrites only on the miss
+    const resolved = resolveThemeId(themeId.value, userThemes.value);
+    if (resolved !== themeId.value) {
+      themeId.value = resolved;
+      localStorage.setItem(THEME_ID_KEY, resolved);
     }
     applyTheme();
   }
@@ -1737,15 +1759,19 @@
       closeOverlays(); // crossing the breakpoint resets overlay state
     });
 
-    // restore persisted mode: a built-in mode or theme:<id>
-    const saved = localStorage.getItem("omega.theme-mode");
-    if (
-      saved === "light" ||
-      saved === "dark" ||
-      saved === "auto" ||
-      saved?.startsWith("theme:")
-    )
-      themeMode.value = saved as ThemeMode;
+    // restore the persisted knobs; the old merged select's value
+    // migrates once (restoreThemeKnobs): stored theme:<id> -> theme
+    // <id> + mode auto, a stored plain mode -> theme default + the
+    // mode. Both keys are written back in the new shape immediately -
+    // the second boot reads only the new pair.
+    const restored = restoreThemeKnobs(
+      localStorage.getItem(THEME_ID_KEY),
+      localStorage.getItem(COLOR_MODE_KEY),
+    );
+    colorMode.value = restored.mode;
+    themeId.value = restored.theme;
+    localStorage.setItem(COLOR_MODE_KEY, restored.mode);
+    localStorage.setItem(THEME_ID_KEY, restored.theme);
     void loadUserThemes();
 
     // restore the chat appearance (chat | stacked) - parseAppearance
