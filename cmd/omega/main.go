@@ -36,6 +36,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/provider"
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/modules/terminal"
 	"github.com/EndoTheDev/omega/modules/tools"
 	"github.com/EndoTheDev/omega/modules/trust"
 	"github.com/EndoTheDev/omega/modules/verdict"
@@ -488,6 +489,11 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// The home passes through the host - exe-dir resolution is
 		// cmd/omega business, the capsule never re-guesses it.
 		continuous.NewPluginWithHome(omegaHome()),
+		// The terminal capsule (card t_55a3fc4b, Endo's ruling
+		// 2026-11-01): the webui's integrated shell - pty routes +
+		// lifecycle fence, no seams, no config, no gates. The shell's
+		// cwd is the process's working directory.
+		terminal.NewPlugin(cwd()),
 	}, nil
 }
 
