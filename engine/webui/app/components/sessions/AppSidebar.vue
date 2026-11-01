@@ -1,21 +1,34 @@
 <template>
   <aside
+    ref="asideEl"
     class="sessions"
-    :class="{ open: open }">
+    :class="{ open: open, stacked: stacked }">
     <!-- card t_308e6d9b: the head row is the UNIVERSAL band (the shared
-         TabBand) - but card t_311fc40b (Endo's layout ruling 2026-10-30)
-         takes the split new-session control OUT of it: the band row
-         carries the tab's title ALONE, the new-session button gets its
-         own full-width row below the band, and the search row follows.
-         The band, the button row and the search sit ABOVE the
+         TabBand). Card t_7ee0a673 (Endo's comment 3, 2026-11-01): the
+         sessions search seats IN the band, top right (the band-tool
+         slot), on the band's own 22px row - card t_311fc40b's separate
+         search row below the band is GONE (the "band, button, search"
+         law becomes "band [title+search], button). Card t_311fc40b still
+         holds for the new-session control: it keeps its OWN full-width
+         row below the band with the caret type-picker travelling with
+         it. The band, the button row and the list sit ABOVE the
          .session-list scrollport - scrolling the list never moves them. -->
-    <TabBand title="Sessions" />
+    <TabBand title="Sessions">
+      <!-- the search's SEAT moved here (card t_7ee0a673); the BEHAVIOR
+           stays where it was: debounced FTS5 content union (runSearch
+           below) on top of the backend's unified endpoint - same
+           SearchInput component, same v-model, same debounce -->
+      <div class="band-search">
+        <SearchInput
+          v-model="query"
+          placeholder="Search sessions" />
+      </div>
+    </TabBand>
     <!-- card t_311fc40b: the new-session control's OWN row - below the
-         band, before the search (Endo's ruling: band, button, search;
-         the caret type-picker travels with the button). The 12px side
-         padding matches the search row's, so the full-width chip and
-         the full-width filter seat on the same edges; position anchors
-         the picker dropdown. -->
+         band (card t_7ee0a673: one aligned width - the row's 8px side
+         edges are the band's inset, the single inset for the whole
+         sidebar stack). Card t_7ee0a673: position anchors the picker
+         dropdown. -->
     <div class="new-row">
       <div
         class="new-btn"
@@ -61,14 +74,6 @@
           {{ entry.label }}
         </button>
       </div>
-    </div>
-    <div class="session-search">
-      <!-- shared look (SearchInput); the BEHAVIOR stays here: debounced
-           FTS5 content union (runContentSearch below) on top of the
-           client-side title filter -->
-      <SearchInput
-        v-model="query"
-        placeholder="Search sessions" />
     </div>
     <ul class="session-list">
       <!-- sections: PINNED first (the keep-at-top group), then the
@@ -220,7 +225,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onUnmounted, ref, watch } from "vue";
+  import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
   // card t_502b8e81: the iconset wrapper - every glyph in the sidebar
   import Icon from "../ui/Icon.vue";
   import {
@@ -247,6 +252,43 @@
     streamingIds: ReadonlySet<string>;
     open: boolean;
   }>();
+
+  // --- card t_7ee0a673: the in-band search's narrow stack ---
+  // The sidebar drags down to its 128px wall; below BAND_STACK_PX a
+  // title (~58px mono) + the input's 96px floor + the band's own
+  // geometry (16px inset, 4px gap) no longer fit one band row, so the
+  // .stacked class lets the band WRAP instead: title row, then the
+  // full-width input row (the sanctioned narrow adaptation - the
+  // desktop one-row layout is the mandate). Width-MEASURED on the
+  // aside, not a breakpoint guess; the rAF delivery mirrors
+  // composables/narrow.ts (applying class INSIDE the observer callback
+  // re-enters the resize cycle).
+  const BAND_STACK_PX = 190;
+  const asideEl = ref<HTMLElement | null>(null);
+  const stacked = ref(false);
+  let bandObserver: ResizeObserver | null = null;
+  onMounted(() => {
+    const node = asideEl.value;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    bandObserver = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => [e.target as HTMLElement, Math.round(e.contentRect.width)] as const)
+        .filter(([, w]) => w > 0); // unmounted measure noise never flips the class
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        for (const [n, w] of pending) {
+          if (asideEl.value === n) stacked.value = w < BAND_STACK_PX;
+        }
+      });
+    });
+    bandObserver.observe(node);
+    const w = node.clientWidth;
+    if (w > 0) stacked.value = w < BAND_STACK_PX;
+  });
+  onBeforeUnmount(() => {
+    bandObserver?.disconnect();
+    bandObserver = null;
+  });
 
   const emit =
     defineEmits<{
@@ -473,14 +515,44 @@
    the title alone (the ruled order is band, button, search, rows). */
 /* card t_311fc40b: the band row carries the title ALONE; the split
    new-session control sits on its OWN row below the band (this block)
-   - the ruled order is band, button, search, rows. 8px top spacing
-   follows the band rhythm, 12px sides seat the chip on the same edges
-   as the search row below, and position anchors the type picker's
-   dropdown. main.css's dead .sessions-head rules are gone with the
-   band; the .tab-band-actions flex helper died with the empty slot. */
+   - card t_7ee0a673 ruled the order "band [title+search], button" and
+   the 12px side edges DEAD: the band's own 8px inset is the ONE
+   inset for the whole sidebar stack (title, button, headers, rows),
+   no stair-step. main.css's dead .sessions-head rules are gone with
+   the band. */
 .new-row {
   position: relative;
-  padding: 8px 12px;
+  padding: 8px;
+}
+/* card t_7ee0a673: the search seats IN the band (the band-tool slot).
+   The wrapper owns the seat; the input keeps the shared .search-input
+   look with the band-tool rhythm - compact height (the shared 5px
+   vertical padding would grow the band past the 22px law) and a fixed
+   comfortable width that shrinks before it forces an overflow. */
+.band-search {
+  width: 128px;
+  min-width: 96px;
+  flex: 0 1 auto;
+}
+.band-search :deep(.search-input input) {
+  padding: 2px 20px 2px 6px;
+}
+/* the narrow wall: the aside's own drag floor (128px) leaves too
+   little room for title + input on one row, so the band wraps - title
+   row, then the full-width input (the sanctioned stack; the desktop
+   one-row layout is the mandate). The wrapper's flex-shrink: 0 must
+   not fight the wrap. */
+.sessions.stacked :deep(.tab-band) {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-bottom: 4px;
+}
+.sessions.stacked :deep(.tab-band-actions) {
+  width: 100%;
+}
+.sessions.stacked .band-search {
+  width: 100%;
+  flex: 1 1 100%;
 }
 /* the split wrapper keeps the shared .new-btn chip (border, radius,
    dim text, accent hover). The halves inside are borderless - the

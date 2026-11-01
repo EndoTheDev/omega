@@ -1,13 +1,16 @@
-// omega webui: the sessions panel's ruled top-to-bottom order (card
-// t_311fc40b, Endo's ruling 2026-10-30): tab band, then the new-session
-// button on its own row, then search, then the session rows. The node
-// suite has no DOM, so the ORDER is pinned structurally on the template
-// source - the same contract style tabband.test.ts uses - plus the CSS
-// facts that seat each row (band title alone; the button row's shared
-// 12px side edges with the search; the search still first ABOVE the
-// .session-list scrollport). The mobile drawer renders the SAME
-// component (app.vue mounts AppSidebar twice), so one source order
-// covers both surfaces.
+// omega webui: the sessions panel's ruled top-to-bottom order. Card
+// t_311fc40b (Endo's ruling 2026-10-30) ruled "band, button, search";
+// card t_7ee0a673 (Endo's comment 3, 2026-11-01) SUPERSEDES it: the
+// search seats IN the band's top right (the band-tool slot), the old
+// search row below the band dies, and the ruled order is
+//   band [title + search] -> new-session button -> session rows
+// Card t_7ee0a673's second mandate: ONE ALIGNED WIDTH - the band's own
+// 8px inset is the single inset for the whole sidebar stack (title,
+// button row, section headers, rows), no stair-step. The node suite has
+// no DOM, so the order AND the geometry are pinned structurally on the
+// source - the same contract style tabband.test.ts uses. The mobile
+// drawer renders the SAME component (app.vue mounts AppSidebar twice),
+// so one source order covers both surfaces.
 // Run: node --test test/sidebar-order.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -23,59 +26,88 @@ const mainCss = src("app/assets/css/main.css");
 // template landmarks, in SOURCE order (the file renders top-to-bottom)
 const indexOf = (re: RegExp): number => sidebar.search(re);
 
-describe("AppSidebar: the ruled panel order (card t_311fc40b)", () => {
-  it("renders band -> new-session button -> search -> rows, top to bottom", () => {
-    const band = indexOf(/<TabBand title="Sessions"/);
-    const buttonRow = indexOf(/class="new-btn"/);
+describe("AppSidebar: the ruled panel order (card t_7ee0a673)", () => {
+  it("renders band [title+search] -> new-session button -> rows, top to bottom", () => {
+    const band = indexOf(/<TabBand title="Sessions">/);
     const search = indexOf(/<SearchInput/);
+    const buttonRow = indexOf(/class="new-btn"/);
     const list = indexOf(/<ul class="session-list">/);
     assert.ok(band >= 0, "the band renders");
-    assert.ok(buttonRow >= 0, "the new-session button renders");
     assert.ok(search >= 0, "the search renders");
+    assert.ok(buttonRow >= 0, "the new-session button renders");
     assert.ok(list >= 0, "the session rows render");
-    assert.ok(band < buttonRow, "the band comes BEFORE the new-session button");
-    assert.ok(buttonRow < search, "the new-session button comes BEFORE the search");
-    assert.ok(search < list, "the search comes BEFORE the session rows");
+    assert.ok(band < search, "the band comes FIRST");
+    assert.ok(search < buttonRow, "the search seats INSIDE the band, before the button row");
+    assert.ok(buttonRow < list, "the button row comes BEFORE the session rows");
   });
 
-  it("the band carries the title ALONE - the new-session button is OUT of it", () => {
-    const bandStart = sidebar.indexOf('<TabBand title="Sessions"');
-    const bandEnd = sidebar.indexOf("/>", bandStart);
+  it("the search seats IN the band's top right (the band-tool slot, card t_7ee0a673)", () => {
+    const bandStart = sidebar.indexOf('<TabBand title="Sessions">');
+    const bandEnd = sidebar.indexOf("</TabBand>", bandStart);
+    assert.ok(bandEnd > bandStart, "the band is no longer self-closing - it owns a slot");
     const bandChunk = sidebar.slice(bandStart, bandEnd);
-    // self-closing band: no slot, no actions inside
+    assert.match(bandChunk, /<SearchInput/, "the search input lives in the band");
+    assert.match(bandChunk, /v-model="query"/, "the same query ref binds in-band (behavior intact)");
+    // the NEW-session control stays OUT of the band (card t_311fc40b's
+    // ruling survives the seat change: only the search moved in)
     assert.doesNotMatch(
       sidebar.slice(bandStart, bandEnd + 40),
       /\+ New Session/,
       "the split button does not live in the band",
     );
-    assert.doesNotMatch(bandChunk, /class="head-actions"/, "the old band actions wrapper is gone");
   });
 
-  it("the old band-actions plumbing is dead - no orphan wrappers or selectors", () => {
-    assert.doesNotMatch(sidebar, /head-actions/, "no .head-actions element or selector survives");
-    assert.doesNotMatch(
-      sidebar,
-      /:deep\(\.tab-band-actions\)/,
-      "the band-actions flex helper died with the empty slot",
-    );
+  it("the search's old row below the band is DEAD (t_311fc40b's three-row law is gone)", () => {
+    assert.doesNotMatch(sidebar, /class="session-search"/, "no .session-search wrapper in the template");
+    assert.doesNotMatch(mainCss, /\.session-search/, "no .session-search selector in the shared sheet");
   });
 
-  it("the button row seats on the SAME 12px side edges as the search row", () => {
+  it("the new-session control keeps its OWN full-width row below the band", () => {
+    const bandEnd = sidebar.indexOf("</TabBand>");
     const row = sidebar.match(/\.new-row\s*\{[^}]*\}/)?.[0] ?? "";
-    const search = mainCss.match(/\.session-search\s*\{[^}]*\}/)?.[0] ?? "";
-    assert.match(row, /padding:\s*8px\s+12px/, "the button row: band rhythm top, 12px sides");
-    assert.match(search, /padding:\s*0\s+12px\s+8px/, "the search row: same 12px sides");
+    assert.ok(row.length > 0, "the button row rule exists");
+    assert.ok(sidebar.indexOf('class="new-btn"') > bandEnd, "the row renders after the band");
+    assert.match(row, /padding:\s*8px;/, "the row rides the band's rhythm (top) and insets");
     assert.match(row, /position:\s*relative/, "the row anchors the type picker dropdown");
   });
 
   it("the caret type-picker travels WITH the button row, not the band", () => {
     const rowStart = sidebar.indexOf('class="new-btn"');
-    const searchAt = sidebar.indexOf('class="session-search"');
-    assert.ok(searchAt > rowStart, "the button row precedes the search row");
-    const rowChunk = sidebar.slice(rowStart, searchAt);
+    const listAt = sidebar.indexOf('class="session-list"');
+    const rowChunk = sidebar.slice(rowStart, listAt);
     assert.match(rowChunk, /class="new-caret"/, "the caret button rides the row");
     assert.match(rowChunk, /v-for="entry in newMenuEntries"/, "the picker dropdown renders from the row");
     assert.doesNotMatch(rowChunk, /<SearchInput/, "the search does NOT share the button row");
+  });
+
+  it("ONE ALIGNED WIDTH - the band's 8px inset is the whole stack's inset (card t_7ee0a673)", () => {
+    // the geometry reference: the band component's own sides
+    const tabband = src("app/components/ui/TabBand.vue");
+    const bandRule = tabband.match(/\.tab-band\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(bandRule, /padding:\s*0\s+8px/, "the band title insets 8px - the reference edge");
+    // the button row: same 8px sides (pinned above via .new-row)
+    const newRow = sidebar.match(/\.new-row\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(newRow, /padding:\s*8px;/, "the button row seats on the band's 8px edges, not 12px");
+    // the section headers: their OWN side padding is zero - the list's
+    // 8px sides do the inset, so header text starts at the title's edge
+    const label = mainCss.match(/button\.bucket-label\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(label, /padding:\s*10px\s+0\s+4px/, "no 10px header indent - no stair-step");
+    // the rows: the list box carries the 8px sides
+    const list = mainCss.match(/\.session-list\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(list, /padding:\s*0\s+8px/, "the row boxes share the same 8px edges");
+  });
+
+  it("the in-band input keeps the band's 22px row - compact padding, no height growth", () => {
+    const seat = sidebar.match(/\.band-search :deep\(\.search-input input\)\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(seat, /padding:\s*2px/, "the band seat's input is compact (the shared 5px grows the band)");
+  });
+
+  it("the narrow adaptation stacks the band by MEASURE, not a breakpoint guess", () => {
+    assert.match(sidebar, /BAND_STACK_PX\s*=\s*\d+/, "the stack threshold is a named constant");
+    assert.match(sidebar, /new ResizeObserver/, "the width is measured on the aside");
+    assert.match(sidebar, /stacked\.value = w < BAND_STACK_PX/, "the class flips on the measured width");
+    const wrap = sidebar.match(/\.sessions\.stacked :deep\(\.tab-band\)\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(wrap, /flex-wrap:\s*wrap/, "the stacked band wraps: title row, then input row");
   });
 
   it("the scrollport contract holds - band and rows stay OUT of .session-list", () => {
