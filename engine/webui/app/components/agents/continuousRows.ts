@@ -55,11 +55,9 @@ export function shortWhen(iso: string): string {
   return cut || "-";
 }
 
-// previewLine caps the last-report preview like the server does (the
-// server already truncates; this guards a re-fetch race only).
-export function previewLine(row: OmegaContinuousRow): string {
-  return (row.last_report ?? "").trim() || "- no report yet -";
-}
+// The under-row last-report preview helper is DELETED (card
+// t_2d8deb8c, ruling 3): the row stays a two-line anatomy with the
+// status word, no third line.
 
 // evidenceSummary is the detail strip's evidence line: the run's
 // verdict counts in one voice ("4 ok, 1 failed" style), empty when no

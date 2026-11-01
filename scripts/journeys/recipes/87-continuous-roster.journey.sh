@@ -11,8 +11,10 @@
 #              Continuous chip (deletability law: the fold, not an
 #              alias, and no hidden tab).
 #   row      - the seeded agent renders in the Agents tab as ONE merged
-#              row: its name, the inline wake state ("next wake ..."
-#              from the schedule), and the honest empty preview.
+#              row: its name, the subtitle status (dot + word - the
+#              t_2d8deb8c vocabulary, "next wake ..." on the dim line)
+#              from the schedule). The under-row preview is dead
+#              (t_2d8deb8c ruling 3).
 #   detail   - expanding the row opens the wake strip (wake/sleep
 #              buttons + the wake message input). The agent is NEVER
 #              woken - a browser journey does not spend provider turns.
@@ -102,14 +104,19 @@ row_cell() {
     .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === name))
     ?.querySelector(sel)?.textContent?.trim() || "")("'"$1"'"))("'"$CONT_NAME"'")' 2>&1 | tail -1 | tr -d '"'
 }
-state=$(row_cell ".agents-badge")
+# the t_2d8deb8c vocabulary: the wake state rides the row law's
+# SUBTITLE line as the dot + word (green = active, dim = sleeping) -
+# the inline badge and the under-row preview died with ruling 3.
+state=$(row_cell ".reg-row-status")
 case "$state" in
-  "next wake"*) state_is_wake=1 ;;
+  *"next wake"*) state_is_wake=1 ;;
   *) state_is_wake=0 ;;
 esac
 assert_eq "$state_is_wake" "1" "the merged row shows the wake state (got: [$state])"
-preview=$(row_cell ".registry-preview")
-assert_eq "$preview" "- no report yet -" "the fresh row shows the honest empty preview"
+dead=$(jsq '(()=>{const r=[...document.querySelectorAll(".pane.agents .registry-row")]
+  .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === '"$CONT_NAME"'));
+  return r && r.querySelector(".registry-preview, .agents-badge") ? 1 : 0})()' 2>&1 | tail -1)
+assert_eq "$dead" "0" "the under-row preview line is dead (ruling 3)"
 
 # --- the wake strip opens on expand (never wakes) ---
 jsq '(name => [...document.querySelectorAll(".pane.agents .registry-row")]

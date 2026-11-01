@@ -2833,16 +2833,22 @@ export interface DisabledLists {
 // row reveals on expand; empty = no expansion), and the fold state.
 // `value` is the read-only stat row's number (the insights consumer's
 // bars and counts read it; toggle-less rows never set it).
-// `preview` (card t_c7222095) is an optional UNDER-row line - the
-// merged agent row shows the continuous last-report preview under the
-// config facts; consumers that set nothing render byte-identical.
+// `locked` (card t_2d8deb8c) is the permanently-on, non-interactive
+// toggle: the DEFAULT agent's pill renders locked-on, the arm/confirm
+// path never runs, the emit never fires - the backend refuses a curl,
+// the row does not offer the flip at all.
+// `status` (card t_2d8deb8c, Endo's status-vocabulary ruling) is the
+// live dot + short word riding the SUBTITLE line: on (green dot) for
+// an active agent, dim for the sleeping one. Cron's row voice - the
+// state word rides the dim line, exactly like cron's "next HH:MM".
 export interface RegistryRow {
   name: string;
   description?: string;
   detail?: string[];
   disabled: boolean;
   value?: number;
-  preview?: string;
+  locked?: boolean;
+  status?: { on: boolean; label: string };
 }
 
 // normalizeDisabledPayload never trusts the wire: any non-list-of-

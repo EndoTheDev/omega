@@ -155,15 +155,14 @@
         </template>
 
         <!-- card t_7e2b7002: the agents panel - profile inventory with
-             scaffold + new-session-as-agent (own fetch, inspector
-             family). t_1ba868bb: the session rows and the created
-             session open through openChatTab - the same main-pane
-             opener a sidebar row uses (Hermes bots parity). -->
+             scaffold (own fetch, inspector family). card t_2d8deb8c:
+             the tab renders DETAILS + EDIT on expand - the session
+             rows and the open-session opener (t_1ba868bb's openChatTab
+             wiring) are gone with ruling 3; the API keeps both. -->
         <template #pane-agents>
           <AgentsPanel
             v-if="!isMobile"
-            class="pane"
-            @open-session="openChatTab" />
+            class="pane" />
         </template>
 
         <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry

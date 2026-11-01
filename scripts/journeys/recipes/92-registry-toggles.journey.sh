@@ -233,22 +233,35 @@ for ns in skills tools agents; do
 done
 step "ok: (c) unknown-name toggles refused 404, nothing persisted"
 
-# (c, visible half) the browser-visible refusal: the default agent is
-# the main home - no roster to leave, no wake to refuse. The Agents tab
-# answers TWO clicks with a refused PUT and the visible error row.
+# (c, visible half) the LOCKED default agent (card t_2d8deb8c, Endo
+# verbatim "it cannot be disabled EVER!"). The Agents tab renders the
+# default row's pill locked-on: the aria states the law, the DOM
+# disables the button, and clicking it never arms - no confirm state
+# ever appears. The curl must hit the same wall.
 open_tab Agents
 wait_js '(()=>{return document.querySelector(".pane.agents .registry-rows")?true:false})()' 10 \
   || die "the Agents tab never rendered rows"
-clicked=$(registry_click ".pane.agents" "disable default" "__arm__")
-assert_eq "$clicked" "1" "agents default row found"
-wait_js "(()=>{return [...document.querySelectorAll('.pane.agents button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to default?')})()" 5 \
-  || die "the agents toggle never armed"
-clicked=$(registry_click ".pane.agents" "__apply__" "confirm apply to default?")
-assert_eq "$clicked" "1" "agents confirm click applied"
-wait_js '(()=>{const r=document.querySelector(".pane.agents .registry-error"); return r && r.textContent.includes("main home")})()' 10 \
-  || die "the default-agent disable was not refused with a visible error"
+locked=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
+  .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
+  return b ? (b.disabled ? "locked-disabled" : "LOCKED-NOT-DISABLED") : "MISSING"})()' 2>&1 | tail -1)
+assert_eq "$locked" "locked-disabled" "the default row's pill renders locked-on and non-interactive"
+inert=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
+  .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
+  if(!b){return "MISSING"} b.click(); return "clicked"})()' 2>&1 | tail -1)
+assert_eq "$inert" "clicked" "the default pill was clicked"
+armed=$(jsq '(()=>{return [...document.querySelectorAll(".pane.agents button.registry-toggle")]
+  .some(b=>(b.getAttribute("aria-label")||"").startsWith("confirm apply to default?"))?1:0})()' 2>&1 | tail -1)
+assert_eq "$armed" "0" "the locked pill never armed (clicking it does nothing)"
+# the wire: a curl hits the same wall the pill renders - refusal 409,
+# the reason text states the law, nothing persists.
+code=$(curl -s -o /tmp/omega-jrn-disable-default.$$ -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/disabled/agents" \
+  -H 'Content-Type: application/json' -d '{"name": "default", "enabled": false}')
+body=$(cat /tmp/omega-jrn-disable-default.$$ 2>/dev/null)
+rm -f /tmp/omega-jrn-disable-default.$$
+assert_eq "$code" "409" "the default-agent disable PUT is refused 409"
+printf '%s' "$body" | grep -q "cannot be disabled" || die "the refusal text lost the law: $body"
 case "$(disabled_names agents)" in *"default"*) die "the default agent landed in the fold (refusal bypassed)" ;; esac
-step "ok: (c) browser-visible refusal on the main-home disable"
+step "ok: (c) the default agent is locked on the pill AND on the wire"
 
 # --- (d) re-enable clears the fold -----------------------------------------
 open_tab Skills
