@@ -18,10 +18,14 @@ package browser
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 )
 
 // State is the on-disk shape: <home>/data/browser.json. One field on
@@ -97,6 +101,56 @@ func (s *Store) SetLast(u string) error {
 	return writeFileAtomic(path, append(b, '\n'), 0o644)
 }
 
+// Clear zeroes the resume memory and deletes the backing file. The
+// REST face's reset ({"url": ""}) and the hygiene paths use it; the
+// resume memory is the cheapest loss in the home.
+func (s *Store) Clear() {
+	s.mu.Lock()
+	s.last = ""
+	path := s.path
+	s.mu.Unlock()
+	if path == "" {
+		return
+	}
+	_ = os.Remove(path) // a failed removal is next boot's problem at most
+}
+
+// probeClient is the frameability probe's only dialer. Bounded: a 6s
+// total timeout and the body DISCARDED after 8KiB - the probe reads
+// headers, never content; it is not a proxy. A probed URL is exactly
+// what the user asked the pane to visit, so the probe's reach is the
+// pane's own.
+var probeClient = &http.Client{
+	Timeout: 6 * time.Second,
+}
+
+// Probe answers the frameability verdict for u as the SPA at spaOrigin
+// would see it. A transport failure is the honest null (the tab keeps
+// the iframe path) - the probe never guesses.
+func Probe(u, spaOrigin string) FrameVerdict {
+	if !ValidURL(u) {
+		return FrameVerdict{Reason: "not a browsable URL"}
+	}
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return FrameVerdict{}
+	}
+	req.Header.Set("User-Agent", "omega browser pane (frameability probe)")
+	resp, err := probeClient.Do(req)
+	if err != nil {
+		// unreachable: the probe cannot say - null verdict
+		return FrameVerdict{}
+	}
+	defer resp.Body.Close()
+	_, _ = io.CopyN(io.Discard, resp.Body, 8192)
+	fv, reason := FrameableHeaders(resp.StatusCode, resp.Header.Values("X-Frame-Options"),
+		resp.Header.Values("Content-Security-Policy"), spaOrigin)
+	if !*fv {
+		return FrameVerdict{Frameable: fv, Reason: reason, Status: resp.StatusCode}
+	}
+	return FrameVerdict{Frameable: fv, Status: resp.StatusCode}
+}
+
 // ValidURL accepts exactly what an end user pastes into a browser's
 // address bar: an absolute http(s) URL with a host. ftp:, javascript:,
 // data:, bare hosts without a scheme - all refused (the SPA's URL
@@ -123,6 +177,83 @@ func ValidURL(u string) bool {
 	}
 	return true
 }
+
+// FrameVerdict is the frameability probe's answer for one URL. The
+// boolean is THREE-state on the wire: true/false/null. null (the probed
+// host is unreachable / the probe failed) means "the probe cannot say"
+// - the tab keeps the iframe path and its late-load window instead of
+// trusting a guess.
+type FrameVerdict struct {
+	Frameable *bool  `json:"frameable"`
+	Reason    string `json:"reason,omitempty"`
+	Status    int    `json:"status,omitempty"`
+}
+
+// FrameableHeaders classifies a probed response's headers from the
+// SPA's point of view (the SPA's origin arrives as the query's origin
+// parameter - the frame's ancestor IS the SPA, whatever lane port it
+// serves on). Verdict:
+//
+//	X-Frame-Options deny / sameorigin / allow-from -> refuse (the tab
+//	  is never the site's own origin).
+//	CSP frame-ancestors: * -> allow; a specific list that includes the
+//	  SPA's origin -> allow; any other list ('none', 'self', other
+//	  hosts) -> refuse.
+//	an HTTP error status (4xx/5xx) -> refuse "http-status": the frame
+//	  would render the browser's own error surface.
+//	otherwise -> allow.
+func FrameableHeaders(status int, xfo, csp []string, spaOrigin string) (*bool, string) {
+	for _, v := range xfo {
+		switch strings.TrimSpace(strings.ToLower(v)) {
+		case "deny", "sameorigin", "allow-from":
+			return boolPtr(false), "x-frame-options"
+		}
+	}
+	for _, v := range csp {
+		for _, directive := range strings.Split(v, ";") {
+			d := strings.TrimSpace(directive)
+			if !strings.HasPrefix(strings.ToLower(d), "frame-ancestors") {
+				continue
+			}
+			toks := strings.Fields(d[len("frame-ancestors"):])
+			if len(toks) == 0 {
+				continue
+			}
+			for _, t := range toks {
+				tl := strings.ToLower(strings.Trim(t, `'"`))
+				if tl == "*" {
+					return boolPtr(true), ""
+				}
+				if spaOrigin != "" && AncestorHost(tl) == AncestorHost(spaOrigin) {
+					return boolPtr(true), ""
+				}
+			}
+			// a frame-ancestors list without * and without the SPA's
+			// origin: the embed refuses ('none', 'self', other hosts)
+			return boolPtr(false), "csp-frame-ancestors"
+		}
+	}
+	if status >= 400 {
+		return boolPtr(false), "http-status"
+	}
+	return boolPtr(true), ""
+}
+
+// AncestorHost reduces an origin to what frame-ancestors host tokens
+// compare against ("https://example.com:8098" -> "example.com:8098";
+// the default ports stay as written in the ancestors value - the
+// comparison is a plain string match, and a missing match refuses,
+// which is the safe direction).
+func AncestorHost(origin string) string {
+	o := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
+	o = strings.ToLower(o)
+	if i := strings.IndexAny(o, "/?"); i >= 0 {
+		o = o[:i]
+	}
+	return o
+}
+
+func boolPtr(b bool) *bool { return &b }
 
 // writeFileAtomic writes via a temp file in the same directory +
 // rename (v0.14.1 atomic-write law). The capsule keeps its own copy:

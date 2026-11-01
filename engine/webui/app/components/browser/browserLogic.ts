@@ -1,19 +1,47 @@
 // omega webui: pure browser-tab logic (card t_95c91f9c). The
 // BrowserTab.vue's decisions, import-safe for the node suite: URL
-// normalization, the in-frame history model, and the refused-embed
-// fallback rule.
+// normalization, the in-frame history model, the refused-embed
+// fallback rule, and the probe verdict's classification.
 //
-// The honesty note the card demands (do not paper over): the fallback
-// fires on a TIMEOUT WITHOUT A LOAD EVENT, not on a read of the
-// frame-busting headers. Cross-origin iframe DOM is unreadable and
-// Chromium fires no load event when X-Frame-Options refuses the embed,
-// so "no load within FALLBACK_AFTER_MS" is the only honest client-side
-// signal - it covers the refusal AND a dead host, and it forgives a
-// slow site (a late load flips back to the frame). No server-side
-// header probe exists in v1, on purpose.
+// The honesty note the card demands (do not paper over): a cross-origin
+// iframe's DOM is unreadable AND modern Chromium fires the load event
+// for a REFUSED embed (the frame renders Chrome's own error surface),
+// so neither "did it load" nor "can I read it" can say "refused" from
+// the client side. The honest signal is the modules/browser probe
+// (GET /browser/frameable): the capsule reads the TO-BE-EMBEDDED page's
+// X-Frame-Options / CSP frame-ancestors headers server-side and answers
+// refuse / allow / cannot-say. The tab refuses ONLY on a negative
+// verdict; a cannot-say (offline probe, exotic host) keeps the frame
+// and the late-load window as the slow path. No proxy exists in v1:
+// the probe reads headers, never content.
 
-/** the fallback timer: a load this late is a refused/failed embed */
+/** the fallback timer: a load this late is a refused/failed embed
+    (the probe-less slow path only - the probe answers refusals fast) */
 export const FALLBACK_AFTER_MS = 4000;
+
+/** the persist grace: a frame-load waits this many ms before writing
+    the resume point, so the probe's negative can still veto a refused
+    embed's error-page load (the refused URL persisted NOTHING) */
+export const PERSIST_GRACE_MS = 300;
+
+/** the verdict's wire shape (modules/browser's GET /browser/frameable) */
+export interface ProbeVerdictBody {
+  frameable?: boolean | null;
+}
+
+/** classify the probe: refused -> the fallback now, ok -> the frame
+    proceeds, unknown (null/absent - a probe that cannot say) -> the
+    iframe path keeps its late-load window. Only a definitive negative
+    may flip the fallback: the honest rule the card settled. */
+export function classifyProbe(
+  body: unknown,
+): "refused" | "ok" | "unknown" {
+  if (body && typeof body === "object" && (body as ProbeVerdictBody).frameable === false)
+    return "refused";
+  if (body && typeof body === "object" && (body as ProbeVerdictBody).frameable === true)
+    return "ok";
+  return "unknown";
+}
 
 /** normalize what the user typed into a navigable URL. Empty input
     stays empty (the bar does nothing); a schemeless input gets the

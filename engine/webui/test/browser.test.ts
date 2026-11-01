@@ -19,7 +19,9 @@ import {
 import { ICON_NAMES } from "../app/composables/icons.ts";
 import {
   FALLBACK_AFTER_MS,
+  PERSIST_GRACE_MS,
   canStep,
+  classifyProbe,
   emptyNav,
   normalizeUrl,
   pushNav,
@@ -124,25 +126,47 @@ describe("browserLogic: the refused-embed fallback", () => {
     assert.ok(FALLBACK_AFTER_MS > 1000 && FALLBACK_AFTER_MS < 10000);
   });
 
-  it("the fallback rule is load-based, never a header probe", () => {
-    // the component's wiring, pinned structurally: startEmbedWindow
-    // arms the timer, onFrameLoad clears both arms, the timer only
-    // fires refused while the frame is still pending
+  it("the persist grace is real and short (the probe vetoes inside it)", () => {
+    assert.equal(typeof PERSIST_GRACE_MS, "number");
+    assert.ok(PERSIST_GRACE_MS > 0 && PERSIST_GRACE_MS < FALLBACK_AFTER_MS);
+  });
+
+  it("the fallback rule is probe-gated, the timer stays the slow path", () => {
+    // the component's wiring, pinned structurally: beginEmbed arms the
+    // window AND fires the probe; only a definitive negative flips the
+    // fallback; a refused load event may NOT heal it (probeRefused) and
+    // may NOT persist
     const src = read("app/components/browser/BrowserTab.vue");
     assert.ok(src.includes("FALLBACK_AFTER_MS"), "the constant is used");
     assert.ok(src.includes("onFrameLoad"), "the load handler exists");
-    const win = src.match(/fallbackTimer = setTimeout\(([\s\S]*?)FALLBACK_AFTER_MS/);
+    const win = src.match(/fallbackTimer = setTimeout\(\(\) => \{[\s\S]*?FALLBACK_AFTER_MS/);
     assert.ok(win, "the timer arms the window");
-    assert.ok(win[1].includes("pending.value"), "the timer only fires while pending");
-    assert.ok(src.includes("refused.value = false"), "a late load clears the fallback");
+    assert.ok(win![0].includes("pending.value"), "the timer only fires while pending");
+    assert.ok(src.includes("runProbe"), "the probe rides every commit");
+    assert.ok(
+      /if \(probeRefused\.value\)[\s\S]{0,200}return/.test(src),
+      "a refused load event is ignored",
+    );
+    assert.ok(src.includes("refused.value = false"), "a late decision clears the fallback");
     assert.ok(src.includes("window.open"), "open in a new tab exists");
     assert.ok(src.includes("clipboard.writeText"), "copy URL exists");
   });
 
-  it("the honesty note lives in the logic file (no server probe)", () => {
+  it("the honesty note lives in the logic file (probe: headers only, never content)", () => {
     const logic = read("app/components/browser/browserLogic.ts");
-    assert.match(logic, /no load within FALLBACK_AFTER_MS/);
-    assert.match(logic, /header probe exists in v1/);
+    assert.match(logic, /Chromium fires the load event/);
+    assert.match(logic, /the probe reads headers, never content/);
+  });
+});
+
+describe("browserLogic: the probe verdict", () => {
+  it("only a definitive false refuses; null and junk stay unknown", () => {
+    assert.equal(classifyProbe({ frameable: false }), "refused");
+    assert.equal(classifyProbe({ frameable: true }), "ok");
+    assert.equal(classifyProbe({ frameable: null }), "unknown");
+    assert.equal(classifyProbe({}), "unknown");
+    assert.equal(classifyProbe(null), "unknown");
+    assert.equal(classifyProbe("junk"), "unknown");
   });
 });
 

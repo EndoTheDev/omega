@@ -73,7 +73,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterRoute("GET /browser/last", p.handleGet); err != nil {
 		return err
 	}
-	return api.RegisterRoute("PUT /browser/last", p.handlePut)
+	if err := api.RegisterRoute("PUT /browser/last", p.handlePut); err != nil {
+		return err
+	}
+	return api.RegisterRoute("GET /browser/frameable", p.handleFrameable)
 }
 
 // handleGet serves GET /browser/last: the resume URL ("" when none).
@@ -82,8 +85,9 @@ func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePut serves PUT /browser/last: {"url": "..."} - the tab
-// persists after a successful embed load. A bad body or URL is a 400
-// (the pane keeps browsing either way).
+// persists after a successful embed load; {"url": ""} RESETS the
+// resume point (Clear, 200 with an empty last). A bad body or URL is a
+// 400 (the pane keeps browsing either way).
 func (p *Plugin) handlePut(w http.ResponseWriter, r *http.Request) {
 	b, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 	if err != nil {
@@ -97,6 +101,11 @@ func (p *Plugin) handlePut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, failure("bad json"))
 		return
 	}
+	if body.URL == "" {
+		p.store.Clear()
+		writeJSON(w, http.StatusOK, map[string]string{"last": ""})
+		return
+	}
 	if !ValidURL(body.URL) {
 		writeJSON(w, http.StatusBadRequest, failure("not a browsable URL"))
 		return
@@ -106,6 +115,19 @@ func (p *Plugin) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"last": p.store.Last()})
+}
+
+// handleFrameable serves GET /browser/frameable: the frameability
+// probe (url required, origin optional - the SPA's own origin) over the
+// URL the pane is about to embed. A probe that cannot answer is a 200
+// with frameable null - the tab keeps the iframe path.
+func (p *Plugin) handleFrameable(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("url")
+	if !ValidURL(raw) {
+		writeJSON(w, http.StatusBadRequest, failure("not a browsable URL"))
+		return
+	}
+	writeJSON(w, http.StatusOK, Probe(raw, r.URL.Query().Get("origin")))
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

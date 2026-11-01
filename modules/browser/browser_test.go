@@ -3,11 +3,14 @@ package browser
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
@@ -196,5 +199,122 @@ func TestRouteRoundTrip(t *testing.T) {
 	// the toggleable shape: registry introspection names it
 	if !p.Toggleable() {
 		t.Fatal("browser capsule must be toggleable")
+	}
+}
+
+// TestStoreClear resets the resume point: memory and file both.
+func TestStoreClear(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "browser.json")
+	s, _ := OpenStore(path)
+	if err := s.SetLast("https://example.test"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	s.Clear()
+	if s.Last() != "" {
+		t.Fatalf("clear left memory: %q", s.Last())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("clear did not delete the backing file: %v", err)
+	}
+}
+
+// TestFrameableHeaders pins the header classification: XFO answers
+// refuse, frame-ancestors answers by list membership, an HTTP error
+// status refuses, silence allows.
+func TestFrameableHeaders(t *testing.T) {
+	cases := []struct {
+		name      string
+		status    int
+		xfo, csp  []string
+		spaOrigin string
+		want      bool
+		reason    string
+	}{
+		{"clean 200", 200, nil, nil, "http://127.0.0.1:8098", true, ""},
+		{"xfo deny", 200, []string{"DENY"}, nil, "", false, "x-frame-options"},
+		{"xfo sameorigin", 200, []string{"SAMEORIGIN"}, nil, "", false, "x-frame-options"},
+		{"csp none", 200, nil, []string{"default-src 'self'; frame-ancestors 'none'"}, "", false, "csp-frame-ancestors"},
+		{"csp self", 200, nil, []string{"frame-ancestors 'self'"}, "", false, "csp-frame-ancestors"},
+		{"csp star", 200, nil, []string{"frame-ancestors *"}, "", true, ""},
+		{"csp includes spa", 200, nil, []string{"frame-ancestors 'self' http://127.0.0.1:8098"}, "http://127.0.0.1:8098", true, ""},
+		{"csp other host", 200, nil, []string{"frame-ancestors https://embed.example"}, "http://127.0.0.1:8098", false, "csp-frame-ancestors"},
+		{"http 404", 404, nil, nil, "", false, "http-status"},
+		{"http 500", 500, nil, nil, "", false, "http-status"},
+	}
+	for _, c := range cases {
+		got, reason := FrameableHeaders(c.status, c.xfo, c.csp, c.spaOrigin)
+		if got != nil && *got != c.want {
+			t.Errorf("%s: frameable=%v want %v (reason %q)", c.name, *got, c.want, reason)
+		}
+		if got == nil {
+			t.Errorf("%s: no verdict (nil frameable)", c.name)
+		}
+		if !c.want && reason != c.reason {
+			t.Errorf("%s: reason %q want %q", c.name, reason, c.reason)
+		}
+	}
+}
+
+// TestProbeRoute: the frameability probe answers a deny upstream with
+// frameable=false, a friendly upstream with true, a dead host with
+// null, and a non-browsable url parameter with a 400.
+func TestProbeRoute(t *testing.T) {
+	deny := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("framebusted"))
+	}))
+	t.Cleanup(deny.Close)
+	friendly := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("hello"))
+	}))
+	t.Cleanup(friendly.Close)
+
+	// an in-memory probe client so the unreachable-host case is fast
+	savedTimeout := probeClient.Timeout
+	probeClient.Timeout = 2 * time.Second
+	t.Cleanup(func() { probeClient.Timeout = savedTimeout })
+
+	p := NewPlugin()
+	ctx := mountPlugin(t, p)
+	serve := func(target string) (int, string) {
+		return serveRoute(t, ctx, "GET /browser/frameable", "GET", target, "")
+	}
+	code, body := serve("/browser/frameable?url=" + url.QueryEscape(deny.URL) + "&origin=http://spa.test")
+	var v FrameVerdict
+	if code != 200 {
+		t.Fatalf("deny: %d", code)
+	}
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		t.Fatalf("deny body: %q (%v)", body, err)
+	}
+	if v.Frameable == nil || *v.Frameable || v.Reason != "x-frame-options" {
+		t.Fatalf("deny verdict: %+v", v)
+	}
+
+	code, body = serve("/browser/frameable?url=" + url.QueryEscape(friendly.URL))
+	if code != 200 {
+		t.Fatalf("friendly: %d", code)
+	}
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		t.Fatalf("friendly body: %q (%v)", body, err)
+	}
+	if v.Frameable == nil || !*v.Frameable {
+		t.Fatalf("friendly verdict: %+v", v)
+	}
+
+	// a dead host: the probe cannot say - null, a 200
+	code, body = serve("/browser/frameable?url=" + url.QueryEscape("http://127.0.0.1:1/"))
+	if code != 200 {
+		t.Fatalf("dead host: %d", code)
+	}
+	if !strings.Contains(body, `"frameable":null`) {
+		t.Fatalf("dead host must answer a null verdict: %s", body)
+	}
+
+	// a non-browsable url parameter: 400
+	code, body = serve("/browser/frameable?url=" + url.QueryEscape("javascript:alert(1)"))
+	if code != 400 {
+		t.Fatalf("bad scheme: %d %s", code, body)
 	}
 }

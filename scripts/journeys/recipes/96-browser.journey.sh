@@ -11,7 +11,10 @@
 # known ceiling - the refusal case made deterministic). Pins:
 #
 #   a  rest     - GET /browser/last answers 200; PUT refuses a
-#                 non-browsable scheme (400); PUT + GET round-trips.
+#                 non-browsable scheme (400); PUT + GET round-trips;
+#                 GET /browser/frameable says deny=false for the XFO
+#                 origin, true for the friendly one, null for a dead
+#                 host; PUT {"url":""} resets.
 #   b  open     - the main pane's empty-watermark menu carries Browser
 #                 (the singleton opener); clicking mounts BrowserTab
 #                 (the URL bar input, aria-label "browser url").
@@ -19,8 +22,10 @@
 #                 PUT from step a) and a local page load keeps the
 #                 fallback OUT - load = friendly, the resume is real.
 #   d  refused  - the DENY origin flips the fallback panel in (the
-#                 no-load-within-4s rule) and the refused address is NOT
-#                 persisted - the no-load rule is the write gate too.
+#                 probe's negative verdict - Chromium fires load for
+#                 refused embeds too, so a header probe is the honest
+#                 signal) and the refused address is NOT persisted -
+#                 a load event is never the write gate past a refusal.
 #   e  history  - back returns to the previous stack entry (the bar's
 #                 own record), forward returns home.
 #   f  console  - the presentation-detector: none of this makes noise.
@@ -39,6 +44,9 @@ if [ -z "${OMEGA_HOME:-}" ]; then
 fi
 cleanup() {
   [ -n "${SRVPID:-}" ] && kill "$SRVPID" >/dev/null 2>&1
+  # the reset route zeroes BOTH the lane's memory and the file; the
+  # plain removal covers a red where the route never mounted
+  curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' -d '{"url": ""}' >/dev/null 2>&1 || true
   rm -f "$OMEGA_HOME/data/browser.json" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -97,7 +105,21 @@ put=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' \
 printf '%s' "$put" | grep -qF "127.0.0.1:$P_FRIENDLY" || die "PUT did not answer the stored URL: $put"
 got=$(curl -s "$B/browser/last" | grep -oE "127\.0\.0\.1:$P_FRIENDLY" | head -1)
 [ -n "$got" ] || die "GET /browser/last lost the persisted URL"
-step "ok: the last-URL pair round-trips and refuses junk schemes"
+# the frameability probe: deny=false, friendly=true, dead host=null
+fv=$(curl -s "$B/browser/frameable?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$DENYURL")")
+printf '%s' "$fv" | grep -qF '"frameable":false' || die "the probe missed the deny header: $fv"
+fv=$(curl -s "$B/browser/frameable?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$FRIENDLY")")
+printf '%s' "$fv" | grep -qF '"frameable":true' || die "the probe refused the friendly page: $fv"
+fv=$(curl -s "$B/browser/frameable?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" http://127.0.0.1:1/)")
+printf '%s' "$fv" | grep -qF '"frameable":null' || die "an unreachable host must answer null (the probe cannot say): $fv"
+# the reset: a PUT of the empty string clears the resume point
+reset=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' -d '{"url": ""}')
+[ -n "$(printf '%s' "$reset" | grep -oF '"last":""')" ] || die "the reset did not clear the resume: $reset"
+# restore the friendly resume for step c
+put=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' \
+  -d "{\"url\": \"$FRIENDLY\"}")
+printf '%s' "$put" | grep -qF "127.0.0.1:$P_FRIENDLY" || die "PUT did not answer the stored URL: $put"
+step "ok: the last-URL pair round-trips, the probe classifies, the reset clears"
 
 # --- b+c: open the tab (empty-pane watermark), the resume mounts ----------
 open_app
@@ -110,11 +132,15 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 draftclosed=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/^new chat$/i.test((t.textContent||"").trim())));if(!hit) return 0;const t=[...hit.querySelectorAll(".dock-tab-title")].findIndex(x=>/^new chat$/i.test((x.textContent||"").trim()));if(t<0) return 0;const x=hit.querySelectorAll(".dock-tab-close")[t];if(!x) return 0;x.click();return 1})()')
 assert_eq "$draftclosed" "1" "boot draft chat tab closed"
 # the watermark's refill inventory carries Browser (singleton voice)
-wait_js '(()=>{const b=[...document.querySelectorAll(".dock-empty .dock-menu-btn")].find(x=>(x.textContent||"").trim()==="Browser");return b?1:0})()' 10 || true
-bopen=$(jsq '(()=>{const b=[...document.querySelectorAll(".dock-empty .dock-menu-btn")].find(x=>(x.textContent||"").trim()==="Browser");if(!b) return 0;b.click();return 1})()')
+bopen=0
+for i in $(seq 1 20); do
+  b=$(jsq '(()=>{const b=[...document.querySelectorAll(".dock-empty .dock-menu-btn")].find(x=>(x.textContent||"").trim()==="Browser");if(!b) return 0;b.click();return 1})()')
+  [ "$b" = "1" ] && bopen=1 && break
+  sleep 0.5
+done
 assert_eq "$bopen" "1" "Browser opened from the empty-pane menu"
 # the pane mounts: url bar input + frame shell
-wait_js 'document.querySelector(".browser-tab input[aria-label=\"browser url\"]") ? 1 : 0' 10 \
+wait_js '!!document.querySelector(".browser-tab .browser-url")' 10 \
   || die "BrowserTab never mounted (no url bar)"
 step "ok: BrowserTab mounted with the URL bar"
 
@@ -148,27 +174,27 @@ printf '%s' "$last" | grep -qF "127.0.0.1:$P_FRIENDLY" || \
 step "ok: the refusal surfaced and the refused URL persisted NOTHING"
 
 # --- e: the history belt (the pane's own stack) ---------------------------
+# the stack so far: [friendly (the resume mount), deny (the refused
+# step)] - back returns to the FRIENDLY entry, forward re-enters DENY.
 back=$(jsq '(()=>{const b=document.querySelector("button[aria-label=\"browser back\"]");if(!b||b.disabled) return 0;b.click();return 1})()')
 assert_eq "$back" "1" "back clicked"
-# back lands on the deny origin (the stack entry before the friendly
-# re-navigation) - its fallback re-opens on the same no-load rule
-backdenied=0
-for i in $(seq 1 40); do
-  r=$(jsq "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_DENY')&&f)?1:0})()" 2>&1 | tail -1)
-  [ "$r" = "1" ] && backdenied=1 && break
+backhome=0
+for i in $(seq 1 30); do
+  r=$(jsq "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const s=document.querySelector('.browser-frame');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_FRIENDLY')&&s&&s.style.display!=='none'&&!f)?1:0})()" 2>&1 | tail -1)
+  [ "$r" = "1" ] && backhome=1 && break
   sleep 0.5
 done
-[ "$backdenied" = "1" ] || die "back never returned to the deny stack entry (last: $r)"
+[ "$backhome" = "1" ] || die "back never returned to the friendly stack entry (last: $r)"
 fwd=$(jsq '(()=>{const b=document.querySelector("button[aria-label=\"browser forward\"]");if(!b||b.disabled) return 0;b.click();return 1})()')
 assert_eq "$fwd" "1" "forward clicked"
-fwdhome=0
-for i in $(seq 1 30); do
-  r=$(jsq "(()=>{const s=document.querySelector('.browser-frame');const f=document.querySelector('.browser-refused');return (s&&s.src.includes('127.0.0.1:$P_FRIENDLY')&&s.style.display!=='none'&&!f)?1:0})()" 2>&1 | tail -1)
-  [ "$r" = "1" ] && fwdhome=1 && break
-  sleep 1
+fwddenied=0
+for i in $(seq 1 40); do
+  r=$(jsq "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_DENY')&&f)?1:0})()" 2>&1 | tail -1)
+  [ "$r" = "1" ] && fwddenied=1 && break
+  sleep 0.5
 done
-[ "$fwdhome" = "1" ] || die "forward never re-mounted the friendly frame (last: $r)"
-step "ok: back/forward walk the pane's own stack"
+[ "$fwddenied" = "1" ] || die "forward never re-entered the deny entry (last: $r)"
+step "ok: back/forward walk the pane's own stack (re-probe included)"
 
 # --- f: console silence ----------------------------------------------------
 assert_no_console_errors

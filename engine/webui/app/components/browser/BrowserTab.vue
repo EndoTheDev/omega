@@ -106,7 +106,9 @@
   import { computed, onMounted, ref } from "vue";
   import {
     FALLBACK_AFTER_MS,
+    PERSIST_GRACE_MS,
     canStep,
+    classifyProbe,
     emptyNav,
     normalizeUrl,
     pushNav,
@@ -126,12 +128,18 @@
   const frameSrc = ref("");
   const frameKey = ref(0);
   const nav = ref<NavHistory>(emptyNav());
-  // the embed-load state machine (browserLogic's rule, the component owns
-  // the timers): pending -> frame navigating, refused -> the fallback
+  // the embed-load state machine: pending -> frame navigating,
+  // refused -> the fallback (the probe's negative OR the 4s
+  // no-decision window), probeRefused -> a load event may NOT heal the
+  // refusal (Chromium fires load for refused embeds too) nor persist
   const pending = ref(false);
   const refused = ref(false);
+  const probeRefused = ref(false);
   const copied = ref(false);
   let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  // the probe run's generation: a commit while a probe is in flight
+  // supersedes its answer (answers arrive out of order)
+  let probeGen = 0;
 
   // --- navigation ---
 
@@ -140,8 +148,9 @@
   }
 
   // navigate commits an address: the stack grows, the frame loads,
-  // the fallback window opens. A refused address re-navigated restarts
-  // the timer honestly (the site may have stopped refusing; no cache).
+  // the probe runs, the fallback window opens. A refused address
+  // re-navigated re-probes honestly (the site may have stopped
+  // refusing; no cache).
   function navigate(u: string) {
     if (u === "") return;
     urlInput.value = u;
@@ -149,27 +158,27 @@
     frameSrc.value = u;
     frameKey.value++;
     nav.value = pushNav(nav.value, u);
-    startEmbedWindow();
+    beginEmbed(u);
   }
 
-  // step is the history belt: the button never lies (canStep's disabled
+  // step is the history belt: the buttons never lie (canStep's disabled
   // edge), the belt re-checks on miss.
   function step(delta: number) {
     const next = stepNav(nav.value, delta);
     if (!next || !canStep(nav.value, delta)) return;
     nav.value = next;
+    // a history step REPLAYS the frame without growing the stack
     navigateReplay(nav.value.urls[nav.value.idx]);
   }
-
-  // a history step REPLAYS the frame (it cannot be trusted to have
-  // stayed navigable) - same commit path, but the stack already holds
-  // the address, so pushNav collapses the duplicate.
+  // navigateReplay steps the belt's target back THROUGH the commit
+  // path (the stack already holds the address - pushNav collapses the
+  // duplicate) and re-opens the honest window.
   function navigateReplay(u: string) {
     urlInput.value = u;
     address.value = u;
     frameSrc.value = u;
     frameKey.value++;
-    startEmbedWindow();
+    beginEmbed(u);
   }
 
   function reload() {
@@ -178,27 +187,71 @@
     // iframe src of an uncontrolled cross-origin page honors
     frameSrc.value = address.value;
     frameKey.value++;
-    startEmbedWindow();
+    beginEmbed(address.value);
   }
 
-  function startEmbedWindow() {
+  // beginEmbed opens the honest window: the 4s no-decision fallback
+  // timer, plus the frameability probe (the fast signal). Only a
+  // definitive false flips the fallback; cannot-say keeps the frame.
+  function beginEmbed(u: string) {
     pending.value = true;
     refused.value = false;
+    probeRefused.value = false;
     if (fallbackTimer) clearTimeout(fallbackTimer);
     fallbackTimer = setTimeout(() => {
       if (pending.value) refused.value = true;
       fallbackTimer = null;
     }, FALLBACK_AFTER_MS);
+    void runProbe(u, ++probeGen);
+  }
+
+  async function runProbe(u: string, gen: number) {
+    const verdict = await probeFrameable(u, window.location.origin);
+    if (gen !== probeGen || address.value !== u) return; // superseded
+    if (verdict === "refused") {
+      probeRefused.value = true;
+      pending.value = false;
+      refused.value = true;
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+    }
+  }
+
+  async function probeFrameable(u: string, origin: string): Promise<"refused" | "ok" | "unknown"> {
+    try {
+      const r = await fetch(
+        `/browser/frameable?url=${encodeURIComponent(u)}&origin=${encodeURIComponent(origin)}`,
+      );
+      if (!r.ok) return "unknown";
+      return classifyProbe(await r.json());
+    } catch {
+      return "unknown";
+    }
   }
 
   function onFrameLoad() {
+    if (probeRefused.value) {
+      // a load event fires for a refused embed in Chromium too: the
+      // probe's negative stands, the fallback stays, nothing persists
+      return;
+    }
     pending.value = false;
     refused.value = false;
     if (fallbackTimer) {
       clearTimeout(fallbackTimer);
       fallbackTimer = null;
     }
-    void persistLast(address.value);
+    // the write gate waits a beat past the load: a refused embed's
+    // error page ALSO fires load - if the probe's negative lands inside
+    // the grace window the persist never happens (a slow probe persists
+    // a harmless resume; the next mount re-probes and refuses)
+    setTimeout(() => {
+      if (!probeRefused.value && !refused.value) {
+        void persistLast(address.value);
+      }
+    }, PERSIST_GRACE_MS);
   }
 
   // --- the capsule route (GET/PUT /browser/last) ---
