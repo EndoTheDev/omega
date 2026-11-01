@@ -41,11 +41,12 @@ const TABS: Array<{
   // stretched the band past the 22px contract. Its own row below the
   // band is pinned in tests/band-breaks.test.ts.
   { file: "app/components/notifications/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: [] },
-  // card t_311fc40b (Endo's ruling 2026-10-30): the sessions band
-  // carries the TITLE ALONE - the new-session button lives on its own
-  // row below the band (pinned in test/sidebar-order.test.ts), so no
-  // action label may claim band residency.
-  { file: "app/components/sessions/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: [] },
+  // card t_7ee0a673 (Endo's comment 3, 2026-11-01): the sessions band
+  // carried the TITLE ALONE (card t_311fc40b) - now the SEARCH seats in
+  // the band's band-tool slot too ("Search sessions", the shared
+  // SearchInput's own aria-label). The new-session button keeps its own
+  // row below the band (pinned in test/sidebar-order.test.ts).
+  { file: "app/components/sessions/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: ["Search sessions"] },
 ];
 
 describe("the universal band (card t_308e6d9b)", () => {
