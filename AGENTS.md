@@ -148,7 +148,10 @@ Terse operational rules. Layer references live in `docs/` (map below);
   always closes. Messages and events are sealed interfaces, dispatched
   by type switch on concrete types. HTTP goes through `RetryHTTP`
   (429 and 5xx retry with backoff, `OMEGA_MAX_RETRIES`; other 4xx and
-  cancellation return immediately). New provider: a `streamX` function
+  cancellation return immediately). Upstream answers ending with
+  `done_reason: "load"` (ollama-cloud cold-load) are retried with the
+  same budget before surfacing as a LOUD stream error - never a silent
+  empty turn (t_854eef1b). New provider: a `streamX` function
   plus a case in the `Stream` switch in `modules/provider/`.
   Fragmented tool-call deltas (OpenAI, Anthropic) accumulate by index
   and flush in order after the stream ends; consecutive Anthropic
