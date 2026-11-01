@@ -38,9 +38,10 @@ assert_eq "$height" "200" "fresh bottom panel height = the default rung 200"
 tab=$(jsq '(() => {
   const pane = document.querySelector(".dock-pane.edge-bottom");
   if (!pane) return "";
-  return Array.from(pane.querySelectorAll(".dock-tab")).map((t) => t.textContent.trim()).join(",");
+  return Array.from(pane.querySelectorAll(".dock-tab .dock-tab-title")).map((t) => t.textContent.trim()).join(",");
 })()' 2>/dev/null | tr -d '"')
-assert_eq "$tab" "Logs" "logs is the bottom panel's default tab"
+# card t_55a3fc4b: terminal joins the fresh bottom strip (logs + terminal)
+assert_eq "$tab" "Logs,Terminal" "the bottom strip seats Logs + Terminal, logs first"
 
 # the logs body streams: it polls /logs every 2.5s - give one tick plus a
 # margin for the poll's first requests to fill the tail

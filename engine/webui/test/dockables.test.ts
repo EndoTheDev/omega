@@ -157,6 +157,8 @@ describe("the dockable registry", () => {
           d.title === "Insights" && d.id === "insights" ||
           d.title === "MCP" && d.id === "mcp" ||
           d.title === "Notifications" && d.id === "notifications" ||
+          // card t_55a3fc4b: the integrated terminal's label
+          d.title === "Terminal" && d.id === "terminal" ||
           d.title === d.id,
         `${d.id}: unexpected label "${d.title}"`,
       );

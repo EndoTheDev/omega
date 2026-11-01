@@ -160,9 +160,14 @@ test("the bottom drawer's default tab set derives from the registry bottom-home 
     (id) => COMPONENT_TITLES[id],
   );
   assert.ok(tabs.length > 0, "the registry seats at least one bottom-home tab");
+  // card t_55a3fc4b: terminal joins the fresh bottom strip (VS Code
+  // parity - the integrated ships seated), after logs.
+  assert.deepEqual(
+    tabs.map((t) => t.id),
+    ["http_channel", "terminal"],
+  );
   for (const t of tabs) {
-    assert.equal(t.id, "http_channel");
-    assert.equal(t.icon, dockableIcon("http_channel"));
+    assert.equal(t.icon, dockableIcon(t.id));
   }
 });
 

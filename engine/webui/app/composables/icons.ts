@@ -72,6 +72,10 @@ export const ICONS = {
   extensions: Puzzle, // the module cockpit tab
   insights: ChartColumn, // usage bars
   mcp: PlugZap, // the MCP servers tab (bridge connections + tools)
+  terminal: SquareTerminal, // the terminal tab (card t_55a3fc4b: the
+  // integrated shell; the SquareTerminal lucide glyph - "file-script"
+  // carries the same shape deliberately: the script-class file glyph
+  // IS terminal semantics)
   // default glyph for modules that declare no icon of their own
   module: Box,
   // shell chrome

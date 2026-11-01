@@ -22,7 +22,8 @@ func TestBuildPlugins(t *testing.T) {
 	// (t_f76ecdbe) after the earlier +kanban (t_33487fb6),
 	// +notifications (t_5d9032d3), +verdict (t_2ecf9c51) +
 	// continuous (t_72ecca67) = 19; the tui capsule leaves = 18.
-	const want = 18
+	// +terminal (t_55a3fc4b, the v0.15 arc opening) = 19.
+	const want = 19
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}
