@@ -18,8 +18,11 @@
 //   3. no border-radius on the handle (the hover band runs edge-to-edge)
 //   4. hover/snap keep their full-band backgrounds (they ARE the line
 //      while the pointer is on the handle)
-//   5. the pane-area layout layer owns the frame's horizontal edges (the
-//      ::before/::after strokes under the cards, desktop-gated)
+//   5. the gutter bridge (t_97cece1e rail law): the ROW divider carries
+//      the 1px top/bottom strokes spanning ONLY its own width - the
+//      pane-area's unconditional ::before/::after rails died (they sat
+//      on a single card's own border row and overpainted card borders
+//      everywhere but the gutter); single card = no divider = zero strokes
 //   6. the root row's vertical dividers ride the sidebars' overhang - the
 //      hover band reaches the pane bottom row beside the band
 //   7. the root column divider reaches 2px past its insets (T-junctions
@@ -169,27 +172,64 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
     assert.match(snap.body, /color-mix\(in srgb, var\(--accent\) 45%/);
   });
 
-  it("the pane-area owns the frame's horizontal edges (top + bottom rows)", () => {
+  it("the rail law: a rail renders ONLY across a gutter - the pane-area strokes are gone (single card = zero)", () => {
+    // the unconditional whole-width strokes (t_bc321318, amended twice)
+    // died: in single-pane view they sat ON the card's own border row and
+    // duplicated it (Endo 2026-11-01: "i cant think of it being intended")
+    const railRules = MAIN.filter((r) =>
+      r.selectors.some((s) => /^\.pane-area::(before|after)$/.test(s)),
+    );
+    assert.equal(
+      railRules.length,
+      0,
+      "no pane-area ::before/::after rail rule left anywhere in the sheet",
+    );
+    // the no-gap case pinned structurally: the bridge rides the divider,
+    // and DockSplit renders a divider only BETWEEN two children (idx <
+    // children.length - 1) - a single-card tree renders no divider, so
+    // zero rail elements exist; the card's own border is the whole edge
+    const split = readFileSync(
+      join(here, "../app/components/DockSplit.vue"),
+      "utf8",
+    );
+    assert.match(
+      split,
+      /node\.children\.length - 1/,
+      "dividers render only between two children - keep this guard or the no-gap pin breaks",
+    );
+  });
+
+  it("the gutter bridge: the row divider carries the 1px top+bottom strokes spanning only its own width", () => {
     const desktop = "@media (min-width: 769px)";
-    // the shared edge rule + the two offset rules in the desktop block
-    const edge = find(MAIN, ".pane-area::before, .pane-area::after", desktop);
+    // the shared stroke rule + the two offset rules in the desktop block
+    const edge = find(
+      MAIN,
+      ".dock-split.row > .dock-divider::before, .dock-split.row > .dock-divider::after",
+      desktop,
+    );
     const body = edge.body.replace(/\s+/g, " ");
     assert.match(body, /background:\s*var\(--stroke\)/);
     assert.match(body, /height:\s*1px/);
     assert.match(body, /pointer-events:\s*none/);
-    // t_064b1559 amendment (the t_e539ba29 invisible-lines law governs the
-    // frame rails too): the rails track the cards' inner box - inset to
-    // the pane-area's 4px horizontal padding, never past the outermost
-    // cards' borders (full-width rails sliced through the window-edge
-    // gutters and the sidebar columns' outer edges)
-    assert.match(body, /left:\s*4px/);
-    assert.match(body, /right:\s*4px/);
-    assert.ok(!/left:\s*0\b/.test(body), "no full-width rail span left");
-    const top = find(MAIN, ".pane-area::before", desktop);
+    // spanning ONLY the gutter: inset to the divider's own box - no
+    // pane-area-wide span survives
+    assert.match(body, /left:\s*0/);
+    assert.match(body, /right:\s*0/);
+    assert.ok(!/left:\s*4px/.test(body), "no pane-area content-box span left");
+    // aligned to the cards' border rows: no top padding = the divider's
+    // top edge is the top row; 3px bottom padding = its bottom edge is
+    // the bottom row
+    const top = find(MAIN, ".dock-split.row > .dock-divider::before", desktop);
     assert.match(top.body.replace(/\s+/g, " "), /top:\s*0/);
-    // the 3px padding row = the cards' bottom-border row
-    const bottom = find(MAIN, ".pane-area::after", desktop);
-    assert.match(bottom.body.replace(/\s+/g, " "), /bottom:\s*3px/);
+    const bottom = find(MAIN, ".dock-split.row > .dock-divider::after", desktop);
+    assert.match(bottom.body.replace(/\s+/g, " "), /bottom:\s*0/);
+    // the anchor must exist: absolute strokes need the divider positioned
+    const anchor = find(
+      MAIN,
+      ".dock-split.row > .dock-divider",
+      desktop,
+    );
+    assert.match(anchor.body.replace(/\s+/g, " "), /position:\s*relative/);
   });
 
   it("root-row dividers ride the sidebars' overhang (full window height)", () => {
