@@ -1,33 +1,27 @@
 <template>
     <!-- card t_308e6d9b: the tab carries the universal band ("Settings");
-         card t_f1a034dc: the filter is OUT of the band (the t_311fc40b
-       ruling shape: band -> controls row -> body) - the 26px-tall
-       filter stretched the band past the 22px contract and the old
-       flush seating (lead=false) killed the band's 14px top inset, the
-       only tab whose band sat higher AND taller than every other. The
-       band is the shared TabBand default again; the filter seats on
-       its own row below, before the body. The dock tab bar still
-       carries the chip and the tab lives pinned in the inspector
-       (card t_49d0b308). The aside classes carry the mobile drawer
-       shape (mirrors FilesTab); `narrow` is the width-driven
-       adaptation class (a measured on the root: the inspector's
-       ~300px column). -->
+         card t_529628d5: the EXISTING filter input SEATS IN the band
+         (the t_7ee0a673 sessions card's move, the shared .band-search
+         seat in TabBand's band-tool slot) - the filter's BEHAVIOR is
+         untouched (filterSettingGroups on the loaded groups, v-model
+         "query"); only its seat moved. The old filter row below the
+         band is GONE (card t_f1a034dc's own-row shape died with this
+         ruling). The dock tab bar still carries the chip and the tab
+         lives pinned in the inspector (card t_49d0b308). The aside
+         classes carry the mobile drawer shape (mirrors FilesTab);
+         `narrow` is the width-driven adaptation class (a measured on
+         the root: the inspector's ~300px column). -->
     <aside
       ref="rootEl"
       class="settings aside pane inspector-panel"
       :class="{ open: open, narrow: narrow }">
-      <TabBand title="Settings" />
-      <!-- card t_f1a034dc: the filter's OWN row (the t_311fc40b shape:
-           band -> controls row -> body) - it stretches nothing now, the
-           band holds the title alone at the 22/14 contract. card
-           t_ffab9823: the root keeps NO padding and NO flex gap - the
-           filter row seats itself (8px 10px, the sessions new-row
-           pattern) and starts at the band's own bottom edge. -->
-      <div class="settings-filter">
-        <SearchInput
-          v-model="query"
-          placeholder="filter settings" />
-      </div>
+      <TabBand title="Settings">
+        <div class="band-search">
+          <SearchInput
+            v-model="query"
+            placeholder="filter settings" />
+        </div>
+      </TabBand>
 
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
@@ -554,13 +548,10 @@
 </script>
 
 <style scoped>
-  /* card t_f1a034dc: the filter seats on its own row BELOW the band -
-     no band seating overrides stay. .search-input is display:block with
-     a full-width input, so the row fills the pane's content box as-is;
-     the row's own padding (8px 10px, card t_ffab9823) seats it - the
-     root keeps no flex gap (card t_ffab9823). */
-  /* card t_acad02ec: the knob select is the shared BandSelect chip -
-     inline (the composer's listbox pattern), never wider than its row */
+  /* card t_529628d5: the filter rides TabBand's shared .band-search
+     seat (the t_f1a034dc own-row shape died with this ruling). The
+     knob select is the shared BandSelect chip - inline (the
+     composer's listbox pattern), never wider than its row */
   .setting-select {
     max-width: 100%;
   }

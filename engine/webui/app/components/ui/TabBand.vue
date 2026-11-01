@@ -93,6 +93,30 @@
     font-family: var(--mono);
     font-size: 12px;
   }
+  /* card t_529628d5: the compact SEARCH SEAT, the AppSidebar's
+     t_7ee0a673 pattern promoted here (one definition, the band-tool
+     vocabulary - the five registry tabs + the sidebar seat through it).
+     The seat keeps the shared SearchInput look but with the band-tool
+     vertical rhythm: the shared 5px padding would grow the band past
+     the 22px law. Empty query = the full list; the input itself seats
+     in-band (no icon-expander). */
+  .tab-band-actions :deep(.band-search) {
+    width: 128px;
+    min-width: 96px;
+    flex: 0 0 auto;
+  }
+  .tab-band-actions :deep(.band-search .search-input input) {
+    padding: 2px 20px 2px 6px;
+  }
+  /* the Narrow-pane adaptation, self-measuring: the band only WRAPS
+     when its single row cannot hold title + seat (flex-wrap is idle
+     while anything fits, so wide panes keep the exact one-row 22px
+     geometry - the sessions card's measured stack without JS, and the
+     128px-pane wall demands the stack before anything clips). */
+  .tab-band:has(.band-search) {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
   .tab-band-actions :deep(.band-tool:hover:not(:disabled)) {
     background: var(--z2);
     color: var(--text);

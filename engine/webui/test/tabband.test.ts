@@ -27,19 +27,19 @@ const TABS: Array<{
   actions: string[];
 }> = [
   { file: "app/components/files/FilesTab.vue", title: null, scrollClass: "files-scroll", actions: ["add file", "refresh files"] },
-  { file: "../../modules/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: [] },
-  { file: "../../modules/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills"] },
-  { file: "../../modules/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools"] },
+  { file: "../../modules/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
+  { file: "../../modules/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
+  { file: "../../modules/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
   { file: "../../engine/http_channel/ui/LogsList.vue", title: "Logs", scrollClass: "logs-body", actions: [] },
-  { file: "../../modules/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers"] },
+  { file: "../../modules/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
   { file: "../../modules/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },
   { file: "app/components/agents/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
   { file: "app/components/insights/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
-  { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: [] },
-  // card t_f1a034dc: the settings filter is OUT of the band too - it
-  // stretched the band past the 22px contract. Its own row below the
-  // band is pinned in tests/band-breaks.test.ts.
+  { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: ["filter settings"] },
+  // card t_529628d5 (Endo's band-search ruling, 2026-11-01): the EXISTING
+  // settings filter SEATED IN the band - card t_f1a034dc's own filter row
+  // below it died with the ruling (band-breaks.test.ts pins the move).
   { file: "app/components/notifications/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: [] },
   // card t_7ee0a673 (Endo's comment 3, 2026-11-01): the sessions band
   // carried the TITLE ALONE (card t_311fc40b) - now the SEARCH seats in
