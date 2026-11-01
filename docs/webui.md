@@ -168,7 +168,7 @@ Everything else animates through `transition`, not keyframes.
   kills; reload reattaches from server memory (transcript endpoint,
   same reattach machinery). Never a persisted-then-deleted shape.
 - **Invisible to every store-derived surface by law**: session lists,
-  search (FTS5), export, counts, TUI `/sessions` — the store never
+  search (FTS5), export, counts `/sessions` — the store never
   sees it. The `eph-` prefix is the namespace guard every endpoint
   routes on.
 - **Memory tool denied** (run-scoped, `agent.WithDeniedTools`, the

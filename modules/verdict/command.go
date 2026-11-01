@@ -70,7 +70,8 @@ func ParseCardAnswer(card core.VerdictPrompt, input string) (core.Verdict, error
 }
 
 // parseVerdictAnswer implements the typed-token contract above.
-func parseVerdictAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, error) {	tok := strings.TrimSpace(strings.Join(rest, " "))
+func parseVerdictAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, error) {
+	tok := strings.TrimSpace(strings.Join(rest, " "))
 	if tok == "" {
 		return core.Verdict{}, fmt.Errorf("empty answer")
 	}

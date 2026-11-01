@@ -642,7 +642,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 
 	// @-mention expansion (card t_07aed3f9): the new input is expanded
 	// BEFORE history assembly, so the loop's sink persists the expanded
-	// prompt - the same truth the TUI's submit path held. The session's
+	// prompt - the same truth every submit path holds. The session's
 	// workspace roots relative paths.
 	incoming = s.expandAtMentions(incoming, req.workspace)
 	messages, err := s.sessionHistory(ctx, req, incoming)
@@ -1187,7 +1187,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 	}
 	now := time.Now()
 	// ToolResultEvent is a top-level agent event (not wrapped in
-	// StreamEvent) - the TUI persists it the same way
+	// StreamEvent) - the serving surface persists it the same way
 	if tre, ok := event.(core.ToolResultEvent); ok {
 		if start, ok := rec.callStarts[tre.Message.ToolCallID]; ok && !start.IsZero() {
 			tre.Message.Timing = &core.Timing{ElapsedMs: now.Sub(start).Milliseconds()}
@@ -1487,7 +1487,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				payload.MessageCount = c.MessageCount
 				payload.ToolCount = c.ToolCount
 			}
-			// The pinned model wins; the TUI's model_change trail is the
+			// The pinned model wins; the model_change trail is the
 			// fallback for sessions that never carried a pin (card t_9de5b009).
 			payload.Model = models[sess.ID]
 			if sess.Model != "" {

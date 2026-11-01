@@ -9,7 +9,7 @@ import (
 )
 
 // NewSessionID generates a random 32-character hex session ID.
-// Used by the store, TUI, and HTTP channel to avoid duplicating
+// Used by the store, the CLI, and the HTTP channel to avoid duplicating
 // the crypto/rand boilerplate.
 func NewSessionID() (string, error) {
 	b := make([]byte, 16)

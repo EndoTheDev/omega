@@ -65,7 +65,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// on every bind) but NOT registered with the canvas seam at Mount -
 	// registration is gated on the frontend actually starting
 	// (HTTPChannel.Start, below). One chat panel per live frontend: a
-	// TUI-only process never reaches Start, so its canvas stays free of
+	// serve-less process never reaches Start, so its canvas stays free of
 	// the dead "chat channel not started" duplicate.
 	p.chat = newChatCapsule()
 

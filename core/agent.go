@@ -94,15 +94,15 @@ type Agent struct {
 	// toggle (v0.12 E2) swaps both sets mid-process while concurrent
 	// runs and the /tools and /extensions inventories read them under
 	// the loop.
-	tpMu           sync.RWMutex
-	tpLive         bool // NewFromContext built this agent from a mounted Context
+	tpMu   sync.RWMutex
+	tpLive bool // NewFromContext built this agent from a mounted Context
 	// disabledTools is the config.yaml disabled.tools opt-out (v0.14.1
 	// registry-browser). The merge law is untouched - a built-in still
 	// wins a name conflict - and the disable filter runs AFTER the
 	// merge, dropping only names no built-in occupies: the merge
 	// settles who answers a name, the disable list settles whether the
 	// tool exists at all.
-	disabledTools map[string]bool
+	disabledTools  map[string]bool
 	maxTurns       int
 	compactor      CompactionProvider
 	maxToolOutput  int
@@ -312,8 +312,7 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 
 // ExtensionInfos returns the metadata about loaded extensions (name,
 // description, seams, tool/command counts). The http_channel inspector
-// surfaces it on GET /extensions - the webui parity of the TUI
-// /extensions listing.
+// surfaces it on GET /extensions - the webui parity surface.
 func (a *Agent) ExtensionInfos() []ExtensionInfo {
 	a.tpMu.RLock()
 	defer a.tpMu.RUnlock()
@@ -363,7 +362,7 @@ func (a *Agent) SetLoopProvider(loop LoopProvider) {
 }
 
 // SetUserInput sets a channel for receiving user messages while the
-// agent loop is running. The TUI uses this so the user can chat while
+// agent loop is running. The serving channels use this so the user can chat while
 // subagents are running. One-shot mode (omega run) leaves it nil.
 func (a *Agent) SetUserInput(ch chan string) {
 	a.userInput = ch
@@ -398,7 +397,7 @@ type AgentOptions struct {
 }
 
 // NewFromContext creates a fully-wired Agent from a mounted Context.
-// Channels, newAgent, and the TUI use this. The agent gets the loop,
+// Channels, newAgent, and the CLI loop use this. The agent gets the loop,
 // tool providers, prompt builder, compactor, injected messages,
 // pending delegations, and logger from ctx. All AgentOptions fields
 // are optional zero-values — setters tolerate zero like the

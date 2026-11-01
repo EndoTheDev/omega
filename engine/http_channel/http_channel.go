@@ -97,7 +97,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// to THIS server before the canvas runtime builds over the
 	// providers, and register it with the canvas seam here - gated on
 	// the channel actually starting (chat-last 2b ruling: one chat
-	// panel per live frontend; a TUI-only process never reaches Start,
+	// panel per live frontend; a serve-less process never reaches Start,
 	// so its canvas carries no dead http chat panel). Multi-bind binds:
 	// the registration is idempotent, the capsule follows the
 	// last-started server - one frontend is live per process.

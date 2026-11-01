@@ -11,8 +11,8 @@ import (
 
 // AtMentionEnv carries the seams the @-mention expansion reaches for.
 // Core is stdlib-only by law, so the pieces it cannot own ride in as
-// functions the caller supplies - one expansion law, two callers (the
-// TUI submit path and the webui submit path). A nil seam degrades the
+// functions the caller supplies - one expansion law, one caller per
+// submit surface (the CLI loop and the webui). A nil seam degrades the
 // exact way it always has: @file unresolvable, @session left as-is.
 type AtMentionEnv struct {
 	// Store backs @session:<id> history injection. Nil leaves those
@@ -28,7 +28,7 @@ type AtMentionEnv struct {
 	// @session injection (the agent package owns it).
 	MessageText func(Message) string
 	// Dir is the base for relative file paths and globs. Empty means
-	// the process working directory - the TUI's historical behavior.
+	// the process working directory - the original shell behavior.
 	Dir string
 }
 
@@ -44,7 +44,7 @@ const (
 
 // atMentionResolve roots a relative path (or glob pattern) at the env's
 // Dir. Absolute paths pass through; an empty Dir passes through too - the
-// expansion then behaves exactly like the process-cwd TUI did.
+// expansion behaves exactly like the process-cwd original did.
 func atMentionResolve(dir, path string) string {
 	if dir == "" || filepath.IsAbs(path) {
 		return path
@@ -65,9 +65,9 @@ func atMentionResolve(dir, path string) string {
 // never a send-blocker) and reported in `unresolved` so the caller can
 // surface them. Only a standalone @ (at input start or after a space)
 // counts as unresolved; a mid-word @ is an email address or handle, not
-// a file reference. Both submit paths (TUI and webui) run this on their
+// a file reference. Both submit paths (loop and webui) run this on their
 // own thread; there is exactly one copy of the law. The returned error
-// is the first I/O error hit (the TUI notices it; the send proceeds).
+// is the first I/O error hit (the submission surfaces it; the send proceeds).
 func ExpandAtMentions(input string, env AtMentionEnv) (prompt string, images []ImageContent, unresolved []string, err error) {
 	var b strings.Builder
 	var loadedImages []ImageContent

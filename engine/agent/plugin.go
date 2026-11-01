@@ -37,7 +37,7 @@ type Plugin interface {
 
 // Describer is an optional Plugin capability. Description is a one-
 // line, human-readable description shown by inventory surfaces (the
-// TUI /extensions listing and the webui GET /extensions endpoint);
+// serving surface extensions listing and the webui GET /extensions endpoint);
 // plugins that don't implement it are listed with an empty
 // description. ConfigKey names the config section the plugin reads
 // from ctx.Configs - empty means the plugin reads no section. The
@@ -56,7 +56,7 @@ type Describer interface {
 // Q1/Q13): only the opinionated capsules may appear in the disable
 // list. Machine-critical mounts (provider, store, loop, logging - the
 // behavior the machine needs to be a machine) and the engine ring
-// (http_channel, tui) never implement it, and disabling them fails
+// (http_channel) never implement it, and disabling them fails
 // the boot loud. Default is NOT toggleable: a plugin opts in.
 type Toggleable interface {
 	Toggleable() bool

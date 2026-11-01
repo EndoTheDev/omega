@@ -74,7 +74,7 @@ type Context struct {
 
 	// Verdicts is the interactive-question seam (verdict cards v1):
 	// the verdict tool blocks on Ask, the HTTP channel and the
-	// TUI answer through it. Nil when the verdict module is absent -
+	// CLI loop answer through it. Nil when the verdict module is absent -
 	// the tool refuses to block without the seam, the HTTP endpoints
 	// answer 501.
 	Verdicts VerdictsProvider
