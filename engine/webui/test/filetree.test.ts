@@ -125,7 +125,7 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     assert.ok(store.isFailed(".git"));
     assert.ok(!store.isOpen(".git"));
 
-    // the user retries by clicking the chevron: the failed cache was
+    // the user retries by clicking the folder row: the failed cache was
     // dropped, so a real refetch fires; this time it succeeds
     refuse = false;
     const callsBefore = calls.length;
@@ -153,7 +153,7 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     await tick();
     assert.ok(!store.isFailed(".git"), "the refresh gives failures a fresh chance");
     assert.ok(store.isOpen(".git") === false, "the collapsed branch stays closed");
-    // the user's retry (chevron click) refetches fresh and opens
+    // the user's retry (folder-row click) refetches fresh and opens
     const before = calls.length;
     store.toggle(".git");
     await tick();
