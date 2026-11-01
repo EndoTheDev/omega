@@ -1187,6 +1187,21 @@ export interface FilesReadPayload {
   content: string;
   truncated: boolean;
   binary: boolean;
+  // the server's sniffed content type (http.DetectContentType on the
+  // leading bytes, card t_08d822bb); absent on a pre-law server - the
+  // viewer treats a missing/unknown mime as its old text-or-notice path
+  mime?: string;
+}
+
+// filesRawUrl builds the raw-byte route for the viewer's image branch
+// (card t_08d822bb): GET /files/raw streams image/* bytes under the SAME
+// resolution law the read rides, so the session id (never a root) rides
+// here too. Encoding keeps the same hygiene fetchFilesRead applies.
+export function filesRawUrl(path: string, session?: string): string {
+  const q = new URLSearchParams();
+  q.set("path", path);
+  if (session) q.set("session", session);
+  return `/files/raw?${q.toString()}`;
 }
 
 // cleanRelPath mirrors the server's path rules so the UI never sends a
@@ -1381,10 +1396,13 @@ export async function fetchMentionFiles(workspace?: string): Promise<FilesBrowse
 }
 
 // fetchFilesRead previews one file: up to 64 KiB, truncated flag, and
-// binary=true (empty content) for non-UTF-8 bytes. session roots the
-// read on the resolved root (t_a5f9d185) - the viewer passes the
-// focused session so a file opened from a workspace-rooted Files tab
-// parses under the SAME root it was browsed under.
+// binary=true (empty content) for bytes the viewer cannot render as
+// text; mime carries the server's sniffed type so the viewer can spot an
+// image and bind to /files/raw instead (card t_08d822bb). session roots
+// the read on the focused session's resolved root (t_a5f9d185) - the
+// viewer passes the focused session so a file opened from a
+// workspace-rooted Files tab parses under the SAME root it was browsed
+// under.
 export function fetchFilesRead(path: string, session?: string): Promise<FilesReadPayload> {
   const q = new URLSearchParams();
   q.set("path", path);

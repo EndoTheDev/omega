@@ -34,7 +34,15 @@
           v-if="!binary && skillDesc"
           class="viewer-skill-desc">{{ skillDesc }}</p>
         <div
-          v-if="!binary"
+          v-if="isImage"
+          class="viewer-imgwrap">
+          <img
+            class="viewer-img"
+            :src="rawSrc"
+            :alt="viewer.name">
+        </div>
+        <div
+          v-else-if="!binary"
           class="viewer-body"
           role="document"
           :aria-label="viewer.name">
@@ -56,7 +64,10 @@
   // content kinds. A FILE tab reads GET /files/read (the same surface the
   // retired inline preview fetched); a SKILL tab reads GET /skills/content
   // (the loader's own parse: frontmatter description + body). Both render
-  // line-numbered monospace text; truncated/binary rides the notice line.
+  // line-numbered monospace text; truncated/binary rides the notice line,
+  // and an image mime (card t_08d822bb) swaps the text body for an <img>
+  // bound to GET /files/raw - the raw route serves image/* bytes only,
+  // under the same root jail the read rides.
   // Fetch-on-mount: a persisted viewer tab opened later re-fetches -
   // content views refresh, nothing caches stale bytes.
   import { computed, inject, onMounted, ref, watch } from "vue";
@@ -65,7 +76,7 @@
     FOCUSED_SESSION_KEY,
     fetchSkillContent,
   } from "../composables/viewer";
-  import { fetchFilesRead } from "../composables/omega";
+  import { fetchFilesRead, filesRawUrl } from "../composables/omega";
   import Icon from "./ui/Icon.vue";
   import { useNarrow } from "~/composables/narrow";
   import { glyphKindFor, glyphIcon } from "./files/rowicon";
@@ -84,6 +95,7 @@
   const content = ref("");
   const truncated = ref(false);
   const binary = ref(false);
+  const mime = ref("");
   const skillDesc = ref("");
   // a refetch when the same tab instance is handed a DIFFERENT viewer
   // (the outlet reuses the component; only the remount fetches fresh)
@@ -99,6 +111,7 @@
     content.value = "";
     truncated.value = false;
     binary.value = false;
+    mime.value = "";
     skillDesc.value = "";
     try {
       if (props.viewer.kind === "skill") {
@@ -115,6 +128,7 @@
         content.value = data.content;
         truncated.value = data.truncated;
         binary.value = data.binary;
+        mime.value = data.mime ?? "";
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
@@ -142,7 +156,18 @@
         : glyphIcon(glyphKindFor(props.viewer.name)),
   );
   const kindLabel = computed(() => (props.viewer?.kind === "skill" ? "skill" : ""));
+  // the image branch (card t_08d822bb): the read's sniffed mime decides -
+  // png/jpeg/gif/webp/svg render as an <img> on the raw route, everything
+  // else keeps the old binary notice (now honest). A pre-law server's
+  // absent mime takes the old path too; no image, no raw request.
+  const isImage = computed(() => mime.value.startsWith("image/"));
+  const rawSrc = computed(() =>
+    props.viewer && props.viewer.kind === "file"
+      ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined)
+      : "",
+  );
   const notice = computed(() => {
+    if (isImage.value) return ""; // the image renders; the notice would lie
     const parts: string[] = [];
     if (binary.value) parts.push("binary file - no preview");
     if (truncated.value) parts.push("truncated at 64 KiB");
@@ -205,6 +230,19 @@
     font-family: var(--mono);
     font-size: 11px;
     line-height: 1.5;
+  }
+  /* the image body (t_08d822bb): fits the pane (contain), scrolls when
+     the file is larger than it */
+  .viewer-imgwrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 12px 12px;
+  }
+  .viewer-img {
+    display: block;
+    max-width: 100%;
+    object-fit: contain;
   }
   .viewer-line {
     display: flex;
