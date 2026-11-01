@@ -256,6 +256,7 @@ func newTestLoop(t *testing.T) (*cliLoop, *bytes.Buffer) {
 	t.Helper()
 	buf := &bytes.Buffer{}
 	lo := &cliLoop{
+		ag: core.NewAgent(nil, nil, 8),
 		pctx: &agent.Context{
 			Commands: []core.ExtensionCommand{
 				{Name: "/cron", Description: "the cron board"},
@@ -431,5 +432,40 @@ func TestLoopPersona(t *testing.T) {
 	}
 	if !strings.Contains(p, "omega setup") {
 		t.Errorf("persona does not point at setup: %s", p)
+	}
+}
+
+// stubTrust records the dirs the loop re-gates through the seam and
+// answers whatever ResolveContext would.
+type stubTrust struct {
+	gated []string
+}
+
+func (s *stubTrust) ResolveContext(cwd string, approve, noApprove, interactive bool) string {
+	s.gated = append(s.gated, cwd)
+	return "project context for " + cwd
+}
+
+func (s *stubTrust) State(cwd string, approve, noApprove bool) string { return "trusted" }
+
+// TestLoopWorkspaceSwitch pins the real /workspace: a valid dir changes
+// the loop's CWD (echoed as an absolute path) and re-runs the trust
+// gate for the new dir - the same gate startup runs, never a silent
+// no-op.
+func TestLoopWorkspaceSwitch(t *testing.T) {
+	lo, buf := newTestLoop(t)
+	tr := &stubTrust{}
+	lo.pctx.Trust = tr
+	dir := t.TempDir()
+
+	if lo.dispatch("/workspace " + dir) {
+		t.Error("/workspace switch stopped the loop")
+	}
+	lo.out.Flush()
+	if !strings.Contains(buf.String(), "workspace: "+dir) {
+		t.Errorf("switch echo missing the absolute dir:\n%s", buf.String())
+	}
+	if len(tr.gated) != 1 || tr.gated[0] != dir {
+		t.Errorf("trust gate not re-run for the new dir: %v", tr.gated)
 	}
 }

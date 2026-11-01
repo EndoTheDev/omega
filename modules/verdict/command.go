@@ -2,9 +2,9 @@ package verdict
 
 // Module-owned command surface (card t_0744eb8e): /verdict belongs to
 // the verdict module and rides the extension command seam - the CLI
-// loop dispatches it when idle, the busy-time answer path uses
-// ParseCardAnswer directly. The webui answers cards in the pane; no
-// storage or seam is reimplemented here.
+// loop dispatches it when idle, the busy-time answer path goes through
+// AnswerInline. The webui answers cards in the pane; no storage or
+// seam is reimplemented here.
 
 import (
 	"context"

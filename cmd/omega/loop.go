@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -370,8 +371,9 @@ func (lo *cliLoop) commandSession(args string) error {
 }
 
 // commandWorkspace shows or changes the loop's working directory (the
-// per-run CWD the tools see). No process chdir - the run's CWD rides
-// the options.
+// per-run CWD the tools see). No process chdir - the agent's CWD and
+// the project context re-resolve through the trust seam, so an
+// untrusted project loads no AGENTS.md, the same gate startup runs.
 func (lo *cliLoop) commandWorkspace(args string) error {
 	if args == "" {
 		lo.printf("workspace: %s\n", lo.cwd)
@@ -380,7 +382,13 @@ func (lo *cliLoop) commandWorkspace(args string) error {
 	if fi, err := os.Stat(args); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s is not a directory", args)
 	}
-	lo.cwd = args
+	abs, err := filepath.Abs(args)
+	if err != nil {
+		return err
+	}
+	lo.cwd = abs
+	lo.ag.SetCWD(abs)
+	lo.ag.SetPromptContext(trustGate(lo.pctx.Trust, abs, lo.trust, false))
 	lo.printf("workspace: %s\n", lo.cwd)
 	return nil
 }
@@ -531,59 +539,18 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	return lines
 }
 
-// answerPendingVerdict tries to interpret a busy-time line as the
-// answer to the oldest pending verdict card. Returns false when no
-// card is pending (the line belongs to the chat queue).
-func (lo *cliLoop) answerPendingVerdict(line string) bool {
+// answerPendingVerdict hands one busy-time line to the verdict module's
+// inline answering. The named return is load-bearing for the purity
+// law (scripts/nm-purity.sh): the scrubber deletes the module wire as
+// one line and never deletes a host function, so the loop must still
+// compile and answer false with the module gone - the plain `return
+// verdict.AnswerInline(...)` shape strands a missing return.
+func (lo *cliLoop) answerPendingVerdict(line string) (handled bool) {
 	if lo.pctx.Verdicts == nil {
 		return false
 	}
-	cards := lo.pctx.Verdicts.Pending(lo.sessionID)
-	if len(cards) == 0 {
-		return false
-	}
-	card := cards[0]
-	v, err := verdict.ParseCardAnswer(card, line)
-	if err != nil {
-		lo.printf("%sverdict: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
-		lo.printf("answer with a number, y/n, skip, or text: %s\n", verdictCardHint(card))
-		return true
-	}
-	if _, aerr := lo.pctx.Verdicts.Answer(lo.sessionID, card.ID, v); aerr != nil {
-		lo.printf("%sverdict answer failed: %v%s\n", lo.s(ansiRed), aerr, lo.s(ansiReset))
-		return true
-	}
-	lo.printf("%sverdict recorded: %s%s\n", lo.s(ansiGreen), verdictEcho(card, v), lo.s(ansiReset))
-	return true
-}
-
-// verdictCardHint renders a one-line answer guide for a card.
-func verdictCardHint(card core.VerdictPrompt) string {
-	parts := make([]string, 0, len(card.Options))
-	for i, o := range card.Options {
-		parts = append(parts, fmt.Sprintf("%d=%s", i+1, o.Label))
-	}
-	hint := strings.Join(parts, ", ")
-	if card.Multi {
-		hint += " (comma list)"
-	}
-	if card.AllowText {
-		hint += ", or free text"
-	}
-	return hint
-}
-
-func verdictEcho(card core.VerdictPrompt, v core.Verdict) string {
-	switch {
-	case v.Skipped:
-		return "skipped: " + card.Title
-	case len(v.Options) > 0:
-		return card.Title + " -> " + strings.Join(v.Options, ", ")
-	case v.OptionIndex > 0:
-		return card.Title + " -> " + v.Option
-	default:
-		return card.Title + " -> " + v.Text
-	}
+	handled = verdict.AnswerInline(lo.pctx.Verdicts, lo.sessionID, line, lo.printf)
+	return handled
 }
 
 // loopRenderer turns the run's event stream into plain ANSI text:
