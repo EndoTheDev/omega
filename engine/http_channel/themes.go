@@ -2,6 +2,7 @@ package http_channel
 
 import (
 	"context"
+	_ "embed" // the example theme rides in the binary (go:embed string)
 	"encoding/json"
 	"fmt"
 	"log"
@@ -26,6 +27,43 @@ import (
 // in effect and logs loudly.
 
 const themesDirName = "themes"
+
+// defaultThemeFileName is the example theme seeded into a fresh themes
+// folder. The embedded copy is written once - an existing file is an
+// operator's edit and is never overwritten. The file's id ("default")
+// names the BUILT-IN palette in the picker, so the seeded file rides
+// along as the format's teaching copy, not as a selectable theme.
+const defaultThemeFileName = "default.yaml"
+
+// defaultThemeSeed is the example theme file shipped with the binary.
+//
+//go:embed themes/default.yaml
+var defaultThemeSeed string
+
+// seedDefaultTheme copies the embedded example into dir once. A file
+// already there (fresh or operator-owned) is left untouched - the seed
+// only fills an absence. Errors log loudly and never block startup.
+func seedDefaultTheme(dir string) {
+	if dir == "" {
+		return
+	}
+	dst := filepath.Join(dir, defaultThemeFileName)
+	if _, err := os.Stat(dst); err == nil {
+		return
+	} else if !os.IsNotExist(err) {
+		log.Printf("[themes] seed stat %s: %s", dst, err)
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("[themes] seed mkdir %s: %s", dir, err)
+		return
+	}
+	if err := os.WriteFile(dst, []byte(defaultThemeSeed), 0o644); err != nil {
+		log.Printf("[themes] seed write %s: %s", dst, err)
+		return
+	}
+	log.Printf("[themes] seeded example theme %s (copy + rename a theme file to make your own)", dst)
+}
 
 // themesPollInterval is the folder-watch tick. Package var so tests
 // can shorten it.
@@ -177,6 +215,7 @@ func resolveThemesDir() string {
 func newThemeRegistry(dir string) *themeRegistry {
 	r := &themeRegistry{dir: dir, interval: themesPollInterval, stop: make(chan struct{})}
 	if dir != "" {
+		seedDefaultTheme(dir)
 		_ = os.MkdirAll(dir, 0o755) // themes/ exists for the operator to drop into
 		r.reload()
 	}

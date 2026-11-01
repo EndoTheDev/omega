@@ -30,6 +30,55 @@ tokens:
   z1-raised: "#0a1a12"
 `
 
+// seedFile is the file name the registry seeds on construction.
+const seedFile = defaultThemeFileName
+
+// --- the default.yaml seed (fresh boot fills an absence, never clobbers) ---
+
+func TestSeedDefaultThemeCopiesWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	seedDefaultTheme(dir)
+	raw, err := os.ReadFile(filepath.Join(dir, seedFile))
+	if err != nil {
+		t.Fatalf("seed never landed: %s", err)
+	}
+	if got := string(raw); got != defaultThemeSeed {
+		t.Fatalf("seeded bytes differ from the embedded asset:\n%s", got)
+	}
+}
+
+func TestSeedDefaultThemeNeverOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	mine := "# operator's own edit - not the seed\nname: mine\ntokens:\n  accent: red\n"
+	if err := os.WriteFile(filepath.Join(dir, seedFile), []byte(mine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedDefaultTheme(dir)
+	raw, err := os.ReadFile(filepath.Join(dir, seedFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != mine {
+		t.Fatalf("seed clobbered an operator file:\n%s", raw)
+	}
+}
+
+func TestSeededFileParsesClean(t *testing.T) {
+	dir := t.TempDir()
+	seedDefaultTheme(dir)
+	got := loadThemes(dir)
+	if len(got) != 1 {
+		t.Fatalf("got %d themes, want exactly the seed", len(got))
+	}
+	th := got[0]
+	if th.ID != "default" || th.Error != "" {
+		t.Fatalf("seeded theme flagged: %+v", th)
+	}
+	if th.Tokens["accent"] == "" || th.Base == "" {
+		t.Fatalf("seeded theme lost its body: %+v", th)
+	}
+}
+
 func TestLoadThemesValid(t *testing.T) {
 	dir := t.TempDir()
 	writeTheme(t, dir, "palm.yaml", validThemeYaml)
@@ -136,27 +185,31 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 	defer cancel()
 	go reg.watch(ctx)
 
-	if n := len(reg.snapshot()); n != 0 {
-		t.Fatalf("fresh dir has %d themes, want 0", n)
+	// construction seeds the example theme first: every later count
+	// rides one seeded entry ahead of the raw folder writes
+	if n := len(reg.snapshot()); n != 1 {
+		t.Fatalf("fresh dir has %d themes, want 1 (the seed)", n)
 	}
 	// (a) drop a file -> appears without restart
 	writeTheme(t, dir, "palm.yaml", validThemeYaml)
-	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 1 })
+	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 2 })
 
 	// (c) edit -> content refreshes without restart
 	writeTheme(t, dir, "palm.yaml", "name: Edited\ntokens:\n  accent: \"#123456\"\n")
 	themeWaitFor(t, func() bool {
 		s := reg.snapshot()
-		return len(s) == 1 && s[0].Name == "Edited"
+		for _, th := range s {
+			if th.ID == "palm" && th.Name == "Edited" {
+				return true
+			}
+		}
+		return false
 	})
 
 	// (d) a file that now fails validation: previous GOOD set stays in
 	// effect AND the broken file is flagged, not dropped or crashy
 	writeTheme(t, dir, "junk.yaml", "tokens:\n  nonsense: value\n")
-	themeWaitFor(t, func() bool {
-		s := reg.snapshot()
-		return len(s) == 2 && (s[1].Error != "" || s[0].Error != "")
-	})
+	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 3 })
 	s := reg.snapshot()
 	good := 0
 	broken := 0
@@ -173,15 +226,15 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 			}
 		}
 	}
-	if good != 1 || broken != 1 {
-		t.Fatalf("good=%d broken=%d, want 1/1", good, broken)
+	if good != 2 || broken != 1 {
+		t.Fatalf("good=%d broken=%d, want 2/1", good, broken)
 	}
 
 	// delete -> gone without restart
 	if err := os.Remove(filepath.Join(dir, "junk.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 1 })
+	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 2 })
 }
 
 func TestThemeRegistryUnparseableKeepsPrevious(t *testing.T) {
@@ -194,18 +247,31 @@ func TestThemeRegistryUnparseableKeepsPrevious(t *testing.T) {
 	defer cancel()
 	go reg.watch(ctx)
 
-	if n := len(reg.snapshot()); n != 1 {
-		t.Fatalf("startup load has %d themes, want 1", n)
+	if n := len(reg.snapshot()); n != 2 {
+		t.Fatalf("startup load has %d themes, want 2 (palm + the seed)", n)
 	}
 	writeTheme(t, dir, "palm.yaml", "name: [not: closed\n  yaml: {{{")
 	// the broken edit keeps the previous good set in effect
 	themeWaitFor(t, func() bool {
 		s := reg.snapshot()
-		return len(s) == 1 && s[0].Error != "" // flagged entry replaces it
+		for _, th := range s {
+			if th.ID == "palm" && th.Error != "" {
+				return true
+			}
+		}
+		return false
 	})
 	s := reg.snapshot()
-	if s[0].ID != "palm" || s[0].Tokens != nil {
-		t.Fatalf("broken reload leaks tokens: %+v", s[0])
+	var palm Theme
+	for _, th := range s {
+		if th.ID == "palm" {
+			palm = th
+		} else if th.Error != "" {
+			t.Fatalf("seed entry flagged: %+v", th)
+		}
+	}
+	if palm.Tokens != nil {
+		t.Fatalf("broken reload leaks tokens: %+v", palm)
 	}
 }
 
@@ -243,16 +309,22 @@ func TestHandleThemes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Themes) != 2 {
-		t.Fatalf("payload has %d themes, want 2", len(body.Themes))
+	if len(body.Themes) != 3 {
+		t.Fatalf("payload has %d themes, want 3 (palm, junk, the seed)", len(body.Themes))
 	}
 	var palm Theme
+	seedSeen := false
 	for _, th := range body.Themes {
 		if th.ID == "palm" {
 			palm = th
+		} else if th.ID == "default" && th.Error == "" {
+			seedSeen = true // the seeded example parses and serves clean
 		} else if th.Error == "" {
 			t.Fatalf("theme %s served without its error flag", th.ID)
 		}
+	}
+	if !seedSeen {
+		t.Fatalf("seeded example not served clean: %+v", body.Themes)
 	}
 	if palm.Tokens["accent"] != "#2f9e6e" {
 		t.Fatalf("palm tokens missing: %+v", palm)
