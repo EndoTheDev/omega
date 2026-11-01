@@ -66,13 +66,9 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/nm-purity.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 # The scrubber: deletes the module's wires from a .go file and prunes
-# the empty constructs the deletions leave behind. Fixpoint loop so
-# nested orphans resolve. Dead identifiers grow as it goes: a deleted
-# "a, b := module.X()" kills every later read of a and b.
-# The scrubber: deletes the module's wires from a .go file and prunes
 # the orphaned constructs the deletions leave behind. The cascade is
 # confined to the declarations that reference the module's identifiers
-# - an unrelated function keeps every line, ever (the false-positive
+# - an unrelated function keeps every line (the false-positive
 # rule that ate `return nil` lives here no more).
 cat > "$TMP/scrub.py" <<'PYEOF'
 import re, sys

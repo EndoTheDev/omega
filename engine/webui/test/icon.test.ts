@@ -67,7 +67,6 @@ test("lucide-vue-next is imported ONLY by the iconset composable", () => {
     "app/components/chat/ChatMessage.vue",
     "app/components/chat/ModelSelect.vue",
     "app/components/chat/ThinkingBlock.vue",
-    "app/components/chat/ThinkingSelect.vue",
     "app/components/chat/ToolCallLine.vue",
     "app/components/chat/VariantSwitcher.vue",
     "app/components/chat/WorkspaceSelect.vue",

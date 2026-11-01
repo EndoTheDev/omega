@@ -1,7 +1,7 @@
 // omega webui: the THEMED SELECT (card t_acad02ec, audit M1). The native
 // <select> popup is OS chrome over the themed panes; every band/drawer/
-// row picker rides the shared BandSelect - the ModelSelect/ThinkingSelect
-// dropdown grammar (chip button + role="listbox" pop + pointerdown
+// row picker rides the shared BandSelect - the ModelSelect dropdown
+// grammar (chip button + role="listbox" pop + pointerdown
 // outside-close) generalized over short option ladders. The node suite
 // has no DOM: this pins the grammar on the component's source and each
 // call site's pattern presence - the listbox pattern as BEHAVIOR (open,

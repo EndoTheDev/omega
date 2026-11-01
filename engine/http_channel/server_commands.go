@@ -6,9 +6,15 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
+
+// commandDispatchTimeout caps one extension-command dispatch (v0.14.1
+// audit NOTE-tier): handlers answer in-process and fast, so a generous
+// minute is plenty and a wedged handler stops pinning the wire forever.
+const commandDispatchTimeout = time.Minute
 
 // The command palette's server surface (card t_07aed3f9). The TUI ran
 // slash commands locally - "slash commands run locally and never hit
@@ -89,7 +95,13 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no command handler mounted", http.StatusNotImplemented)
 			return
 		}
-		result, dErr := handler(context.Background(), req.Name, req.Args)
+		// the dispatch runs under a hard timeout (v0.14.1 audit
+		// NOTE-tier): a module command handler that never returned
+		// previously pinned the HTTP request forever - now the wire
+		// answers 500 and the client walks away
+		ctx, cancel := context.WithTimeout(r.Context(), commandDispatchTimeout)
+		defer cancel()
+		result, dErr := handler(ctx, req.Name, req.Args)
 		if dErr != nil {
 			http.Error(w, "command failed: "+dErr.Error(), http.StatusInternalServerError)
 			return
