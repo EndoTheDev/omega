@@ -5,12 +5,14 @@
 // stays pure: no fetch.
 import type { McpStatusWire } from "./serverRows";
 
-// setMcpServerEnabled persists the per-server flag the ruled way:
-// POST /mcp/toggle (the server writes the `enabled:` flag into
-// mcp.yaml and swaps its live bridge - no restart), then re-fetch the
-// listing off the fresh bridge. Returns the fresh listing; failure
-// throws so the panel's error line shows it and the prior rows stand
-// (a refused write never fakes a swap - the reload.ts ruling).
+// setMcpServerEnabled persists the per-server flag: POST /mcp/toggle
+// (the server writes the `enabled:` flag into mcp.yaml and swaps its
+// live bridge - no restart). The POST body IS the fresh StatusReport -
+// the one round-trip the v0.14.1 review lens collected (the old
+// two-step re-GET was dead weight the route contract never needed).
+// Returns the fresh listing; failure throws so the panel's error line
+// shows it and the prior rows stand (a refused write never fakes a
+// swap).
 export async function setMcpServerEnabled(
   name: string,
   enabled: boolean,
@@ -21,10 +23,5 @@ export async function setMcpServerEnabled(
     body: JSON.stringify({ name, enabled }),
   });
   if (!res.ok) throw new Error(`POST /mcp/toggle: ${res.status}`);
-  // the toggle body IS the fresh StatusReport; the listing is the
-  // re-fetch (the ruled two-step)
-  await res.json();
-  const list = await fetch("/mcp/servers");
-  if (!list.ok) throw new Error(`GET /mcp/servers: ${list.status}`);
-  return (await list.json()) as McpStatusWire;
+  return (await res.json()) as McpStatusWire;
 }
