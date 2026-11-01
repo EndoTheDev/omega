@@ -1351,6 +1351,52 @@ export function ensureBottomPanel(
   return ensureBottomShell(tree);
 }
 
+/** card t_841df625: the boot repair's bottom-home strip SYNC. A tree
+    persisted before a pane kind registered its bottom home carries the
+    old strip - bottomShellPane seeds only FRESH shells (the graft), and
+    ensureBottomPanel's bottom ruling leaves a PRESENT shell untouched
+    ("shell present -> present"), so merge c080511's terminal was invisible
+    to every pre-c080511 record. One pure pass fixes the class, not the
+    one-off: every bottom-home default ABSENT FROM THE WHOLE TREE joins
+    the shell's strip. The whole-tree read (not strip-only) keeps the
+    singleton law: a default the user parked in another pane is never
+    duplicated - it is seated, just elsewhere (the restoreInspectorSet
+    read; card t_d6b657a7's no-duplication law). A GROWN root keeps its
+    classic bar (empty by law): the missing strip seats in its leaf
+    hosting a bottom-home tab, else the first leaf. Appends at END - the
+    active index is preserved verbatim (nothing is removed); an empty
+    strip focuses 0 (nothing was visible before). Persisted trees heal on
+    the next load; a fully-seated shell returns the SAME tree (idempotent).
+    Runs AFTER rehomeLogsTab in the boot chain: a pre-shape tree whose only
+    logs copy sat in the right shell reads as gone there, so the sync
+    re-seats the bottom home instead of trusting the lifted ghost. */
+export function syncBottomHostTabs(tree: DockNode): DockNode {
+  const shell = findEdgePane(tree, "bottom");
+  if (!shell) return tree; // closed/absent: the graft owns re-seeding
+  const home = defaultHostTabs("bottom");
+  const missing = home.filter((c) => !findComponentTab(tree, c));
+  if (missing.length === 0) return tree;
+  let hostId = shell.id;
+  if (shell.grown) {
+    for (const n of allNodes(shell.grown)) {
+      if (isPane(n) && n.tabs.some((t) => home.includes(t.component))) {
+        hostId = n.id;
+        break;
+      }
+    }
+    if (hostId === shell.id) {
+      hostId = firstPaneOf(shell.grown)?.id ?? shell.id;
+    }
+  }
+  return cloneTreeWith(tree, (n) => {
+    if (isPane(n) && n.id === hostId) {
+      const wasEmpty = n.tabs.length === 0;
+      n.tabs = [...n.tabs, ...missing.map((c) => ({ component: c }))];
+      n.active = wasEmpty ? 0 : n.active;
+    }
+  });
+}
+
 /** the toggle's hide half (the bottom domain): remember the height, prune
     (like hideEdgePane - the guarded route around removePane's pinned
     refusals; the panel may close COMPLETELY). The closed-edge marking is
@@ -3003,6 +3049,17 @@ export function createDock(store: Storage): DockApi {
   // a shell itself (a present one already seats logs; a closed one drops
   // the copy and reseeds on reopen)
   initial = rehomeLogsTab(initial);
+  // card t_841df625: the bottom shell's strip re-syncs against the
+  // registry's bottom home AFTER the lifts - a tree persisted before a
+  // bottom-home registration (c080511's terminal) heals on this load,
+  // and the repair counts (ruling 6: the raw record backs up first)
+  const syncedBottom = syncBottomHostTabs(initial);
+  if (syncedBottom !== initial) {
+    loaded.repairs.push(
+      "a persisted bottom shell predates a bottom-home registration: the missing default tabs were appended",
+    );
+    initial = syncedBottom;
+  }
   initial = assignChatKeys(initial);
   // v0.14.4 ruling 6 BACKUP LAW: a REPAIRED record copies its raw form
   // ONCE, BEFORE the first auto-persist - the repair chain must never be
