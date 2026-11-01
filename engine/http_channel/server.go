@@ -191,6 +191,10 @@ func (s *Server) rewireSeams(ctx *core.Context) error {
 	if s.agent != nil {
 		s.agent.RefreshToolProviders(ctx)
 		s.agent.RefreshDisabledTools(ctx)
+		// The smart-approval seam rides the same Context-stays-
+		// source-of-truth law (card t_c2b52cb5): a live toggle that
+		// mounts or unmounts the gate re-arms or disarms the loop.
+		s.agent.RefreshApprovals(ctx)
 		// The extension inventory follows the same Context-stays-
 		// source-of-truth law: the toggle journal keeps ctx.Infos
 		// exact, so /extensions lists what is actually mounted.
