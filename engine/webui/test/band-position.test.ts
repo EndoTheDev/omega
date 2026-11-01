@@ -56,9 +56,8 @@ describe("settings: the band mounts flush (card t_ffab9823)", () => {
     );
   });
 
-  it("the filter row carries its own seat (the sessions pattern)", () => {
-    const block = ruleBlock(maincss, ".settings-filter {");
-    assert.match(block, /padding:\s*8px\s+10px/);
+  it("the filter's own row is GONE - the seat moved into the band (card t_529628d5)", () => {
+    assert.ok(!maincss.includes(".settings-filter"), "the .settings-filter rule is gone from the shared sheet");
   });
 
   it("the body's inset rides its own padding, not the root", () => {

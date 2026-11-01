@@ -22,6 +22,7 @@ const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
 const sidebar = src("app/components/sessions/AppSidebar.vue");
 const mainCss = src("app/assets/css/main.css");
+const tabband = src("app/components/ui/TabBand.vue");
 
 // template landmarks, in SOURCE order (the file renders top-to-bottom)
 const indexOf = (re: RegExp): number => sidebar.search(re);
@@ -82,7 +83,6 @@ describe("AppSidebar: the ruled panel order (card t_7ee0a673)", () => {
 
   it("ONE ALIGNED WIDTH - the band's 8px inset is the whole stack's inset (card t_7ee0a673)", () => {
     // the geometry reference: the band component's own sides
-    const tabband = src("app/components/ui/TabBand.vue");
     const bandRule = tabband.match(/\.tab-band\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(bandRule, /padding:\s*0\s+8px/, "the band title insets 8px - the reference edge");
     // the button row: same 8px sides (pinned above via .new-row)
@@ -98,8 +98,12 @@ describe("AppSidebar: the ruled panel order (card t_7ee0a673)", () => {
   });
 
   it("the in-band input keeps the band's 22px row - compact padding, no height growth", () => {
-    const seat = sidebar.match(/\.band-search :deep\(\.search-input input\)\s*\{[^}]*\}/)?.[0] ?? "";
+    // card t_529628d5: the seat's geometry moved into TabBand's scoped
+    // stylesheet (one shared seat in the band vocabulary); this tab
+    // consumes it through the .band-search wrapper alone.
+    const seat = tabband.match(/\.band-search \.search-input input\)\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(seat, /padding:\s*2px/, "the band seat's input is compact (the shared 5px grows the band)");
+    assert.doesNotMatch(sidebar, /^\.band-search\s*\{/m, "no per-tab seat copy - the shared definition owns it");
   });
 
   it("the narrow adaptation stacks the band by MEASURE, not a breakpoint guess", () => {

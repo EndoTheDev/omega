@@ -86,5 +86,5 @@ test("ToolsList builds rows as a computed (arity trap: a plain function rows() r
   const src = readFileSync(join(root, "modules", "tools", "ui", "ToolsList.vue"), "utf8");
   assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");
   assert.ok(!src.includes("function rows()"), "no plain-function row builder under :rows");
-  assert.ok(src.includes(':rows="rows"'), "the shared component gets the rows binding");
+  assert.ok(src.includes(':rows="visibleRows"'), "the shared component gets the rows binding (the band filter's survivors - card t_529628d5)");
 });

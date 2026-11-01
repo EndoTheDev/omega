@@ -11,8 +11,17 @@
          click re-runs the fetch chain: GET /tools is the live
          inventory, so a tool appearing after mount shows - no restart.
          The band renders BEFORE the scroll body: scrolling the list
-         never moves it. -->
+         never moves it. Card t_529628d5: the compact in-band search
+         (TabBand's shared .band-search seat) - the query filters the
+         LOADED registry by name or description, client-side on the
+         grouped rows (hide-rows-only), still inside the tab's native
+         only slice (card t_c2da3379). -->
     <TabBand title="Tools">
+      <div class="band-search">
+        <SearchInput
+          v-model="query"
+          placeholder="Search tools" />
+      </div>
       <button
         class="band-tool"
         title="refresh"
@@ -42,12 +51,12 @@
     <RegistryList
       v-else
       kind="tools"
-      :rows="rows"
+      :rows="visibleRows"
       :busy="busy"
       :error="toggleError"
       :loaded="loaded"
       :toggleable="toggleable"
-      empty-text="no tools registered"
+      :empty-text="query.trim() ? 'no matching tools' : 'no tools registered'"
       @toggle="onToggle" />
     </div>
   </section>
@@ -57,6 +66,10 @@
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { nativeTools, toggleTargets, toolRows, type ToolWire } from "./toolRows";
+  // card t_529628d5: the band search's filter (name / description on
+  // the GROUPED rows), pure so the node suite pins it without
+  // compiling the SFC.
+  import { filterToolRows } from "./search";
 
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
   // content (card t_db430fea): the tool inventory, sourced from
@@ -95,6 +108,15 @@
   // the list would never render (the t_504a78ca bug: data fetched,
   // tabs empty).
   const rows = computed(() => toolRows(tools.value, fold.value));
+
+  // card t_529628d5: the in-band search - CLIENT-SIDE on the grouped
+  // rows (no new backend route), name or description, hide-rows-only
+  // (the grouping stays intact; a filtered group row keeps its whole
+  // shape). The toggle's targets still ride the UNfiltered tool
+  // inventory (toggleTargets below), so a hidden row the user toggled
+  // keeps landing exact names.
+  const query = ref("");
+  const visibleRows = computed(() => filterToolRows(rows.value, query.value));
 
   async function load(): Promise<void> {
     const res = await fetch("/tools");

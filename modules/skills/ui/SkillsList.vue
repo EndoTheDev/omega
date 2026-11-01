@@ -8,8 +8,16 @@
          fetch chain: GET /skills is a live scan, so a skill added after
          mount appears - no restart. The band renders BEFORE the scroll
          body (structurally pinned, never sticky): scrolling the list
-         never moves it. -->
+         never moves it. Card t_529628d5: the compact in-band search
+         (TabBand's shared .band-search seat) - the query filters the
+         LOADED inventory by name or description, client-side,
+         hide-rows-only. -->
     <TabBand title="Skills">
+      <div class="band-search">
+        <SearchInput
+          v-model="query"
+          placeholder="Search skills" />
+      </div>
       <button
         class="band-tool"
         title="refresh"
@@ -39,13 +47,13 @@
       <RegistryList
         v-else
         kind="skills"
-        :rows="rows"
+        :rows="visibleRows"
         :busy="busy"
         :error="toggleError"
         :loaded="loaded"
         :toggleable="toggleable"
         openable
-        empty-text="no skills installed"
+        :empty-text="query.trim() ? 'no matching skills' : 'no skills installed'"
         @toggle="onToggle"
         @open="openSkill" />
     </div>
@@ -56,6 +64,9 @@
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { refreshSkills, type SkillInfo } from "./refresh";
+  // card t_529628d5: the band search's filter (name / description),
+  // pure so the node suite pins it without compiling the SFC.
+  import { filterSearchableRows } from "./search";
 
   // Module-owned UI (card t_db430fea): the loaded skill inventory,
   // from GET /skills, plus the per-skill enable/disable toggle
@@ -91,6 +102,13 @@
       disabled: set.has(s.name),
     }));
   });
+
+  // card t_529628d5: the in-band search - CLIENT-SIDE on the loaded
+  // inventory (no new backend route), name or description,
+  // hide-rows-only (the row anatomy law: the filtered survivors keep
+  // their exact row shape).
+  const query = ref("");
+  const visibleRows = computed(() => filterSearchableRows(rows.value, query.value));
 
   // --- the viewer open (card t_36ceb99b): a name click opens the skill
   // in a main-pane viewer tab. Module UI imports no shell code (the

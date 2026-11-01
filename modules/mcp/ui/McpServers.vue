@@ -8,8 +8,17 @@
          card t_308e6d9b: the row is the UNIVERSAL band now (the shared
          TabBand). The click makes mcp.yaml edits live (POST
          /mcp/reload + the re-fetch), no restart, no file watcher - the
-         button is the whole trigger, and it lives in the band. -->
+         button is the whole trigger, and it lives in the band. Card
+         t_529628d5: the compact in-band search (TabBand's shared
+         .band-search seat) - the query filters the LOADED servers by
+         name or transport, client-side, hide-rows-only; a tool name the
+         row's expansion shows keeps the server visible. -->
     <TabBand title="MCP">
+      <div class="band-search">
+        <SearchInput
+          v-model="query"
+          placeholder="Search MCP servers" />
+      </div>
       <button
         class="band-tool"
         title="refresh"
@@ -36,15 +45,22 @@
          a blank pane. Zero servers configured reads as WHAT is unset
          plus WHERE to set it (mcp.yaml's servers: array / MCP_SERVERS). -->
     <div
-      v-else-if="rows.length === 0"
+      v-else-if="rows.length === 0 && !query.trim()"
       class="mcp-empty">
       <p class="mcp-empty-text">{{ MCP_EMPTY_TEXT }}</p>
       <p class="mcp-empty-hint">{{ MCP_EMPTY_HINT }}</p>
     </div>
     <template v-else>
-      <!-- card t_d93864e7: no "from mcp.yaml" caption - the tab IS the
-           mcp tab, a config-file provenance label is noise (Endo). No
-           replacement; the empty state below keeps its setup hint. -->
+      <!-- card t_529628d5: the row anatomy law - the filter HIDES rows,
+           it never changes their shape; a query that hides all of them
+           reads as a search miss, NOT as the "no servers configured"
+           empty state (that state is the mcp.yaml setup story and only
+           speaks when the listing itself is empty). -->
+      <p
+        v-if="visibleRows.length === 0"
+        class="panel-status mcp-none-matches">
+        no matching servers
+      </p>
       <!-- the server rows, THE ROW LAW (card t_561dc4e0): the shared
            assets/css/registry-row.css anatomy - name / subtitle stack
            left, ONE control right (the pill's seat, mcp's own law since
@@ -55,7 +71,7 @@
            arm/confirm two-step, POST /mcp/toggle riding toggle.ts. -->
       <ul class="mcp-rows">
         <li
-          v-for="s in rows"
+          v-for="s in visibleRows"
           :key="rowKey(s)"
           class="mcp-row reg-row"
           :class="{ 'mcp-off': !serverEnabled(s) }">
@@ -135,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeUnmount, onMounted, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { reloadMcpServers } from "./reload";
   import { setMcpServerEnabled } from "./toggle";
@@ -149,6 +165,10 @@
     type McpServerWire,
     type McpStatusWire,
   } from "./serverRows";
+  // card t_529628d5: the band search's filter (name / transport / the
+  // expansion's tool names), pure so the node suite pins it without
+  // compiling the SFC.
+  import { filterMcpServers } from "./search";
 
   // Module-owned UI (card t_c7136c50): the inspector's MCP tab content,
   // sourced from GET /mcp/servers and shipped by the mcp module itself
@@ -166,6 +186,14 @@
   const loaded = ref(false);
   const error = ref("");
   const reloading = ref(false);
+
+  // card t_529628d5: the in-band search - CLIENT-SIDE on the loaded
+  // listing (no new backend route), server name / transport / the
+  // expansion's tool names, hide-rows-only. The toggle still writes by
+  // exact server name, so a row hidden by the query keeps its write
+  // target intact (the write path never routes through the filter).
+  const query = ref("");
+  const visibleRows = computed(() => filterMcpServers(rows.value, query.value));
 
   async function load(): Promise<void> {
     const res = await fetch("/mcp/servers");

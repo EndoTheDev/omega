@@ -7,8 +7,10 @@
 // label beside the BandSelect chip). The node suite has no DOM, so the
 // convergence is pinned structurally on the source - the same
 // contract style tabband.test.ts / sidebar-order.test.ts use:
-//   - settings: band -> filter row -> body, band title-only, no
-//     flush/lead=false seating left;
+//   - settings: card t_529628d5 SUPERSEDED the own-row shape - the
+//     filter seats IN the band again, the LEGAL way (the shared
+//     compact .band-search seat that holds the 22px row); the old
+//     filter row is gone;
 //   - tools: the Skills refresh band-tool pattern in the band;
 //   - insights: ONE window control, no duplicate period label.
 // Run: node --test test/band-breaks.test.ts
@@ -25,28 +27,23 @@ const tools = src("../../modules/tools/ui/ToolsList.vue");
 const insights = src("app/components/insights/InsightsTab.vue");
 const skills = src("../../modules/skills/ui/SkillsList.vue");
 const tabband = src("app/components/ui/TabBand.vue");
+const maincss = src("app/assets/css/main.css");
 
-describe("settings: the filter is OUT of the band (card t_f1a034dc)", () => {
-  it("renders band -> filter row -> body, top to bottom", () => {
-    const band = settings.indexOf('<TabBand title="Settings" />');
-    const filter = settings.indexOf('class="settings-filter"');
-    const body = settings.indexOf('class="settings-body"');
-    assert.ok(band >= 0, "the band renders");
-    assert.ok(filter >= 0, "the filter row renders");
-    assert.ok(body >= 0, "the body renders");
-    assert.ok(band < filter, "the band comes BEFORE the filter row");
-    assert.ok(filter < body, "the filter row comes BEFORE the body");
+describe("settings: the filter seats IN the band (card t_529628d5)", () => {
+  it("the band carries the filter - the shared compact seat, title + input on one row", () => {
+    const bandStart = settings.indexOf('<TabBand title="Settings">');
+    const bandEnd = settings.indexOf("</TabBand>", bandStart);
+    assert.ok(bandStart >= 0, "the band renders");
+    assert.ok(bandEnd > bandStart, "the band closes");
+    const chunk = settings.slice(bandStart, bandEnd);
+    assert.match(chunk, /class="band-search"/, "the filter rides the shared seat");
+    assert.match(chunk, /<SearchInput/, "the filter's input seats inside the band");
+    assert.match(chunk, /placeholder="filter settings"/, "same voice, same filter");
   });
 
-  it("the band is title-only - no search input lives inside it", () => {
-    const bandStart = settings.indexOf('<TabBand title="Settings" />');
-    const bandEnd = settings.indexOf("</TabBand>", bandStart);
-    // self-closing band: no slot chunk at all
-    assert.ok(bandEnd === -1, "the settings band is self-closing (title alone)");
-    assert.ok(
-      settings.indexOf("<SearchInput") > bandStart,
-      "the filter mounts below the band",
-    );
+  it("the old filter row below the band is GONE - source and shared sheet", () => {
+    assert.ok(!settings.includes('class="settings-filter"'), "no settings-filter row in the SFC");
+    assert.ok(!maincss.includes(".settings-filter"), "no settings-filter rule in main.css");
   });
 
   it("no flush seating remains - the band rides the shared 22/14 contract", () => {

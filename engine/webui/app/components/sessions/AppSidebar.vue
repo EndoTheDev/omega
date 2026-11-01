@@ -525,23 +525,11 @@
   padding: 8px;
 }
 /* card t_7ee0a673: the search seats IN the band (the band-tool slot).
-   The wrapper owns the seat; the input keeps the shared .search-input
-   look with the band-tool rhythm - compact height (the shared 5px
-   vertical padding would grow the band past the 22px law) and a fixed
-   comfortable width that shrinks before it forces an overflow. */
-.band-search {
-  width: 128px;
-  min-width: 96px;
-  flex: 0 1 auto;
-}
-.band-search :deep(.search-input input) {
-  padding: 2px 20px 2px 6px;
-}
-/* the narrow wall: the aside's own drag floor (128px) leaves too
-   little room for title + input on one row, so the band wraps - title
-   row, then the full-width input (the sanctioned stack; the desktop
-   one-row layout is the mandate). The wrapper's flex-shrink: 0 must
-   not fight the wrap. */
+   The seat's geometry is TabBand's now (card t_529628d5: the compact
+   search seat promoted into the band vocabulary - the shared
+   definition), this scoped block keeps ONLY the sidebar's narrow
+   stack: below the drag wall the stacked full-width row wins over the
+   shared 128px seat (the wrapper's width: 100% must out-weigh it). */
 .sessions.stacked :deep(.tab-band) {
   flex-wrap: wrap;
   row-gap: 4px;
@@ -552,7 +540,6 @@
 }
 .sessions.stacked .band-search {
   width: 100%;
-  flex: 1 1 100%;
 }
 /* the split wrapper keeps the shared .new-btn chip (border, radius,
    dim text, accent hover). The halves inside are borderless - the

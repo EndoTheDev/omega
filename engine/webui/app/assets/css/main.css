@@ -2195,12 +2195,6 @@ labels stopped short of the right edge. */
   flex: 1;
 }
 
-/* the filter row (the band's first row): its OWN seat, the sessions
-   new-row pattern - 8px under the band, the pane edge insets it */
-.settings-filter {
-  padding: 8px 10px;
-}
-
 /* group headers: full-row clickable, same interaction feel as the sidebar
    day groups (.bucket-chevron rotation comes from the shared chevron rule
    up top) */
@@ -2239,9 +2233,10 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 .setting-row input { accent-color: var(--accent); }
 
 /* --- shared search input (SearchInput.vue) ---
-   ONE look for both search boxes: the sessions band seat (AppSidebar's
-   scoped .band-search) and the settings filter. Wrapper elements carry
-   placement only - the component owns the input's look. */
+   ONE look for every search box: the in-band seats (TabBand's scoped
+   .band-search, card t_529628d5 - the sidebar's and the registry
+   tabs'). Wrapper elements carry placement only - the component owns
+   the input's look. */
 .search-input {
   position: relative;
   display: block;

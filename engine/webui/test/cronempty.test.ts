@@ -28,18 +28,25 @@ test("the cron empty-state copy is the designed voice: headline + activation hin
 
 test("CronJobs renders the empty-state pattern only when the jobs list is empty", () => {
   const src = read(root, "modules", "cron", "ui", "CronJobs.vue");
-  // the branch order: error -> loading -> jobs -> empty
-  const ok = src.includes('v-else-if="jobs.length"');
+  // the branch order: error -> loading -> jobs (the band search's
+  // survivors, card t_529628d5) -> the search-miss line -> empty
+  const ok = src.includes('v-else-if="filteredJobs.length"');
   const empty = src.indexOf('class="cron-empty"');
   assert.ok(ok && empty > ok, "the empty state is the terminal v-else after the jobs list");
+  // card t_529628d5: a query that hides all rows is a SEARCH MISS, not
+  // the configured-empty state - the miss line stands between them
+  const miss = src.indexOf("no matching jobs");
+  assert.ok(miss > ok && miss < empty, "the search miss is NOT the activation empty state");
   // the pattern structure: icon glyph + headline + hint, on the constants
   assert.ok(src.includes('name="cron"'), "the glyph rides the iconset's cron name");
   assert.ok(src.includes("CRON_EMPTY_TEXT"), "the headline rides the constant");
   assert.ok(src.includes("CRON_EMPTY_HINT"), "the hint rides the constant");
   assert.ok(!src.includes("(crons.yaml not activated)"), "the old bare string is gone");
-  // no invented call-to-action (card t_6072e718: activation is a file action)
-  const template = src.split("<script")[0];
-  assert.ok(!/<button/i.test(template), "no CTA button in the empty state");
+  // no invented call-to-action (card t_6072e718: activation is a file
+  // action) - the empty-state DIV itself carries no button (the band's
+  // refresh tool is chrome, not the empty state's CTA)
+  const emptyChunk = src.slice(src.indexOf('class="cron-empty"'), src.indexOf("</section>"));
+  assert.ok(!/<button/i.test(emptyChunk), "no CTA button in the empty state");
 });
 
 test("the empty state is centered in the panel body via the component's own styles", () => {
