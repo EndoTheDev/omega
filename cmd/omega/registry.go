@@ -129,7 +129,15 @@ func (r *omegaRegistries) ToggleTool(name string, enabled bool) error {
 // ToggleAgent implements core.RegistryToggles - the soft toggle. The
 // agent home directory is never touched: registration is folder
 // presence, and the fold only removes the roster row and the wake.
+// The DEFAULT agent refuses HERE at the seam as well as the handler
+// (card t_2d8deb8c): the lock is belt-and-suspenders - every caller
+// of the seam (curl through the handler, the setup wizard, a future
+// CLI verb) hits the same wall.
 func (r *omegaRegistries) ToggleAgent(name string, enabled bool) error {
+	if !enabled && name == agent.DefaultAgentName {
+		return &registryToggleError{kind: "agents", name: name,
+			cause: fmt.Errorf("the default agent cannot be disabled - it must always be on")}
+	}
 	return r.toggle("agents", name, enabled, r.agentKnown, func(next []string) {
 		if r.setAgents != nil {
 			r.setAgents(next)

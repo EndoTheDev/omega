@@ -20,10 +20,12 @@ package http_channel
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 )
 
 // disabledLists is the /disabled wire shape: always three lists - a
@@ -61,9 +63,26 @@ func (s *Server) handleDisabledTools(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDisabledAgents PUTs one disabled.agents entry (the soft
-// toggle: registration untouched, roster + wakes excluded).
+// toggle: registration untouched, roster + wake exclusion). The
+// DEFAULT agent's refusal is seated HERE, in the handler, ahead of
+// the seam (card t_2d8deb8c, Endo verbatim: "it cannot be disabled
+// EVER!") - a curl must hit the same wall the UI's locked pill
+// renders, and the fold stays untouched.
 func (s *Server) handleDisabledAgents(w http.ResponseWriter, r *http.Request) {
-	s.handleDisabledToggle(w, r, s.registries.ToggleAgent)
+	s.handleDisabledToggle(w, r, guardDefaultAgent(s.registries))
+}
+
+// guardDefaultAgent wraps the agents toggle seam with the locked
+// default agent: the disable direction never reaches the seam. The
+// enable direction passes through unchanged (it cleans a stale fold
+// entry, an honest no-op when the name is absent).
+func guardDefaultAgent(rt core.RegistryToggles) func(name string, enabled bool) error {
+	return func(name string, enabled bool) error {
+		if !enabled && name == agent.DefaultAgentName {
+			return fmt.Errorf("agents toggle refused: the default agent cannot be disabled - it must always be on")
+		}
+		return rt.ToggleAgent(name, enabled)
+	}
 }
 
 // handleDisabledToggle is the one PUT body all three namespaces share:

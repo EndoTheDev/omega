@@ -23,6 +23,7 @@ package http_channel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -119,6 +120,71 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.fillAgentSessions([]agent.Profile{p})
+	writeJSON(w, http.StatusOK, p)
+}
+
+// handleAgentUpdate serves PUT /agents/{name} (card t_2d8deb8c,
+// ruling 3: the agents tab's expansion carries an edit affordance).
+// The write set is the scaffold's field set: description,
+// provider.type / provider.model_name / provider.host /
+// provider.api_key, system_prompt. A nil field is untouched. The
+// DEFAULT agent answers 409: its config IS the home config (the
+// daemon's brain) and the agents tab renders it read-only.
+func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.PathValue("name")
+	if name == agent.DefaultAgentName {
+		http.Error(w, agent.ErrAgentConfigLocked.Error(), http.StatusConflict)
+		return
+	}
+	if _, err := agent.LoadProfile(agentsHome(), name); err != nil {
+		http.Error(w, "unknown agent", http.StatusNotFound)
+		return
+	}
+	var req struct {
+		Description  *string `json:"description"`
+		ProviderType *string `json:"provider_type"`
+		ModelName    *string `json:"model_name"`
+		Host         *string `json:"host"`
+		APIKey       *string `json:"api_key"`
+		SystemPrompt *string `json:"system_prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	updates := agent.AgentConfigUpdates{
+		Description:  req.Description,
+		ProviderType: req.ProviderType,
+		ModelName:    req.ModelName,
+		Host:         req.Host,
+		APIKey:       req.APIKey,
+		SystemPrompt: req.SystemPrompt,
+	}
+	if err := agent.UpdateAgentConfigLayer(agentsHome(), name, updates); err != nil {
+		// A scaffold-law refusal (unknown provider type, the locked
+		// default) is the caller's mistake - 400/409, not a 500. A
+		// config file that will not parse is the layer's business.
+		var scaffold *agent.AgentConfigScaffoldError
+		switch {
+		case errors.Is(err, agent.ErrAgentConfigLocked):
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		case errors.As(err, &scaffold):
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "update agent config: "+err.Error(), http.StatusConflict)
+		return
+	}
+	p, err := agent.LoadProfile(agentsHome(), name)
+	if err != nil {
+		http.Error(w, "load agent: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, p)
 }
 

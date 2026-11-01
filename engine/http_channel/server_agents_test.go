@@ -36,9 +36,13 @@ func newAgentsTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	// the exact deferred-mount lines (see server_agents.go header):
+	// the deferred-mount lines (see server_agents.go header) plus the
+	// edit affordance (card t_2d8deb8c): the method-pinned PUT rides a
+	// pattern of its own - GET /agents/{name} stays on the unpinned
+	// line above it.
 	mux.HandleFunc("/agents", s.handleAgents)
 	mux.HandleFunc("/agents/{name}", s.handleAgent)
+	mux.HandleFunc("PUT /agents/{name}", s.handleAgentUpdate)
 	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -218,4 +222,74 @@ func TestAgentsListCarriesSessionCounts(t *testing.T) {
 	if scoutCount != 1 {
 		t.Errorf("scout session_count = %d, want 1", scoutCount)
 	}
+}
+
+// TestAgentUpdateEndpoint pins the expansion's edit affordance (card
+// t_2d8deb8c, ruling 3): PUT /agents/{name} writes the scaffold field
+// set through the agent config layer, nil fields stay untouched, the
+// DEFAULT agent answers 409 locked, an unknown agent 404s, and an
+// unscaffolded provider type is the 400 lane.
+func TestAgentUpdateEndpoint(t *testing.T) {
+	srv, _ := newAgentsTestServer(t)
+
+	if res, _ := putAny(t, srv.URL+"/agents/scout", map[string]any{
+		"description":   "night watch",
+		"model_name":    "claude-4",
+		"provider_type": "openai",
+	}); res != http.StatusOK {
+		t.Fatalf("update status = %d", res)
+	}
+	code, body := getJSON(t, srv.URL+"/agents/scout")
+	if code != http.StatusOK {
+		t.Fatalf("re-read status %d: %s", code, body)
+	}
+	var p agent.Profile
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Description != "night watch" || p.ModelName != "claude-4" || p.ProviderType != "openai" {
+		t.Fatalf("after update: %+v", p)
+	}
+
+	// nil fields untouched: an empty update is an honest no-op.
+	if res, _ := putAny(t, srv.URL+"/agents/scout", map[string]any{}); res != http.StatusOK {
+		t.Errorf("empty update status = %d", res)
+	}
+	if _, body := getJSON(t, srv.URL+"/agents/scout"); len(body) == 0 {
+		t.Errorf("empty update broke the profile")
+	}
+
+	// the DEFAULT agent: 409 locked (its config is the home config).
+	if res, body := putAny(t, srv.URL+"/agents/default", map[string]any{"description": "x"}); res != http.StatusConflict {
+		t.Fatalf("default update status = %d (%s), want 409 locked", res, body)
+	}
+	// unknown agent: 404.
+	if res, _ := putAny(t, srv.URL+"/agents/ghost", map[string]any{"description": "x"}); res != http.StatusNotFound {
+		t.Errorf("ghost update status = %d, want 404", res)
+	}
+	// unscaffolded provider type: the 400 lane.
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"provider_type": "gemini"}); res != http.StatusBadRequest {
+		t.Errorf("bad provider status = %d (%s), want 400", res, body)
+	}
+}
+
+// putAny PUTs a JSON body and returns the status + body head.
+func putAny(t *testing.T, url string, payload any) (int, string) {
+	t.Helper()
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err.Error()
+	}
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
+	if err != nil {
+		return 0, err.Error()
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err.Error()
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	return res.StatusCode, string(body)
 }
