@@ -7,6 +7,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -326,4 +327,90 @@ func TestToggleRouteRefusals(t *testing.T) {
 	if strings.Contains(string(out), "enabled") {
 		t.Errorf("a refused toggle must not touch the file:\n%s", out)
 	}
+}
+
+// TestToggleDuplicateNamedServerRefused (v0.14.1 audit NOTE-tier): with
+// two entries carrying one name, the old code flagged the first twin
+// and stayed silent about the ambiguity. The route refuses loud - and
+// refuses BEFORE any write lands, so neither twin is touched.
+func TestToggleDuplicateNamedServerRefused(t *testing.T) {
+	path := writeHome(t, "servers:\n  - name: twin\n    command: cat\n  - name: twin\n    command: cat\n")
+	p, err := NewPluginFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := mountPlugin(t, p)
+	w := serveToggleRoute(t, ctx, "twin", false)
+	if w.Code != 400 {
+		t.Errorf("duplicate names: got %d, want 400 (%s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "more than one server named twin") {
+		t.Errorf("the refusal must name the ambiguity: %s", w.Body.String())
+	}
+	out, _ := os.ReadFile(path)
+	if strings.Contains(string(out), "enabled") {
+		t.Errorf("a refused toggle must not touch the file:\\n%s", out)
+	}
+}
+
+// TestToggleRaceKeepsBothWrites (v0.14.1 audit): two quick toggles
+// against DIFFERENT servers must both land. The pre-fix shape - the
+// flag write outside reloadMu - lost one when the read-parse-marshal
+// writes raced; serialized, both survive in the file and the bridge.
+func TestToggleRaceKeepsBothWrites(t *testing.T) {
+	path := writeHome(t, "servers:\n  - name: alpha\n    command: cat\n  - name: beta\n    command: cat\n")
+	p, err := NewPluginFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mountPlugin(t, p)
+	done := make(chan error, 2)
+	go func() { done <- p.setServerEnabledAndReloadTolerant(path, "alpha", false) }()
+	go func() { done <- p.setServerEnabledAndReloadTolerant(path, "beta", false) }()
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("toggle %d: %v", i, err)
+		}
+	}
+	out, _ := os.ReadFile(path)
+	s := string(out)
+	if !strings.Contains(s, "name: alpha") || strings.Count(s, "enabled") != 2 {
+		t.Fatalf("two toggles, two flags expected:\\n%s", s)
+	}
+	// both flags read false from the file the bridge last wrote
+	if err := checkBothDisabled(s); err != nil {
+		t.Fatal(err)
+	}
+	_ = path
+}
+
+// setServerEnabledAndReloadTolerant wraps the plugin toggle for the race
+// test where no live listener needs the response body.
+func (p *Plugin) setServerEnabledAndReloadTolerant(path, name string, enabled bool) error {
+	_, writeErr, reloadErr := p.setServerEnabledAndReload(path, name, enabled)
+	if writeErr != nil {
+		return writeErr
+	}
+	if reloadErr != nil {
+		return reloadErr
+	}
+	return nil
+}
+
+// checkBothDisabled reads both enabled: scalars as bare false.
+func checkBothDisabled(s string) error {
+	lines := strings.Split(s, "\n")
+	got := 0
+	for _, ln := range lines {
+		if strings.Contains(ln, "enabled") {
+			if strings.TrimSpace(ln) != "enabled: false" {
+				return fmt.Errorf("expected bare enabled: false, got %q", ln)
+			}
+			got++
+		}
+	}
+	if got != 2 {
+		return fmt.Errorf("expected 2 enabled lines, got %d", got)
+	}
+	return nil
 }
