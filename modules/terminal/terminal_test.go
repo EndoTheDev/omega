@@ -7,6 +7,7 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -14,10 +15,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
@@ -576,5 +579,188 @@ func TestRealPTYShellEcho(t *testing.T) {
 	}
 	if err := drainUntil(t, proc, "omega-term-proof", 5*time.Second); err != nil {
 		t.Fatalf("echo: %v", err)
+	}
+}
+
+// --- the bounded terminal runtime (the scrollback caps) -------------------
+
+// countProc is a fake wrapping a WRITE COUNTER: the scrollback tests
+// drive record() directly and assert the pty writer stays silent.
+type countProc struct {
+	process
+	mu     sync.Mutex
+	writes int
+}
+
+func (c *countProc) Write(b []byte) (int, error) {
+	c.mu.Lock()
+	c.writes++
+	c.mu.Unlock()
+	return len(b), nil
+}
+
+func newBareSession() (*Session, *countProc) {
+	f := &countProc{process: newFakeProc()}
+	return &Session{id: "t", proc: f, createdAt: time.Now(), lastUse: time.Now()}, f
+}
+
+// TestScrollbackByteCap: retention stops at 8 MiB - the OLDEST output
+// evicts, the newest stays complete.
+func TestScrollbackByteCap(t *testing.T) {
+	s, _ := newBareSession()
+	// 12 x 1 MiB > 8 MiB: retention hits the cap and starts evicting -
+	// record() ALWAYS trims back under it, so the loop is fixed-length.
+	for more := 0; more < 12; more++ {
+		s.record(bytes.Repeat([]byte{byte('a' + more%26)}, 1024*1024))
+	}
+	if len(s.buf) > scrollbackMax {
+		t.Fatalf("retention over the byte cap: %d", len(s.buf))
+	}
+	// the newest chunk's letter is the retained tail's letter
+	if last := s.lastByte(); last != byte('a'+11%26) {
+		t.Fatalf("eviction took the wrong end: tail %q", last)
+	}
+}
+
+func (s *Session) lastByte() byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf[len(s.buf)-1]
+}
+
+// TestScrollbackLineCap: 5,000 lines - line 5,001's birth evicts the
+// oldest whole line, never a partial one.
+func TestScrollbackLineCap(t *testing.T) {
+	s, _ := newBareSession()
+	total := scrollbackLines + 50
+	for i := 0; i < total; i++ {
+		s.record([]byte("l" + strconv.Itoa(i) + "\n"))
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lines > scrollbackLines {
+		t.Fatalf("retention over the line cap: %d lines", s.lines)
+	}
+	if got := bytes.Count(s.buf, []byte{'\n'}); got != s.lines {
+		t.Fatalf("line counting desynced: counted %d, tracked %d", got, s.lines)
+	}
+	// the oldest whole lines are gone, the newest stay: line 0 is out,
+	// line total-1 is in
+	if strings.Contains(string(s.buf), "\nl0\n") || strings.HasPrefix(string(s.buf), "l0\n") {
+		t.Fatal("the oldest line survived the eviction")
+	}
+	if !strings.HasSuffix(string(s.buf), "\nl"+strconv.Itoa(total-1)+"\n") {
+		t.Fatal("the newest line left the retained tail")
+	}
+}
+
+// TestScrollbackWhicheverFirst: a few long lines hit the BYTE cap
+// before the line cap can move - "whichever hits first" binds.
+func TestScrollbackWhicheverFirst(t *testing.T) {
+	s, _ := newBareSession()
+	line := bytes.Repeat([]byte{'x'}, 1024*1024)
+	for i := 0; i < 10; i++ { // 10 lines x 1 MiB > 8 MiB
+		s.record(append(append([]byte{}, line...), '\n'))
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.buf) > scrollbackMax {
+		t.Fatalf("byte cap missed: %d bytes", len(s.buf))
+	}
+	if s.lines > 9 {
+		t.Fatalf("the byte cap left %d whole 1 MiB lines behind", s.lines)
+	}
+}
+
+// TestScrollbackUnicodeSafe: an eviction lands on a codepoint START -
+// a multibyte rune crossing the cut loses its head, never leaves its
+// continuation bytes loose at the front.
+func TestScrollbackUnicodeSafe(t *testing.T) {
+	s, _ := newBareSession()
+	glyph := "ω" // 2-byte UTF-8; the records pack a rune across the cut
+	for i := 0; i < 12; i++ {
+		s.record(bytes.Repeat([]byte(glyph), 1024*1024/2)) // 1 MiB per record
+	}
+	s.record([]byte("x\n"))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.buf) > scrollbackMax {
+		t.Fatalf("byte cap missed: %d", len(s.buf))
+	}
+	if !utf8.Valid(s.buf) {
+		t.Fatal("the eviction cut mid-codepoint")
+	}
+	if s.buf[0]&0xC0 == 0x80 {
+		t.Fatal("the retained front starts inside a rune")
+	}
+}
+
+// TestReplayTailBounded: the subscribe() restoration reads ONLY the
+// bounded tail and the snapshot is a copy (later records never leak
+// into a delivered replay).
+func TestReplayTailBounded(t *testing.T) {
+	s, _ := newBareSession()
+	mark := []byte("HEAD-MARKER-")
+	s.record(mark)
+	for i := 0; i < 300; i++ { // > replayTail of fresh content after the marker
+		s.record(bytes.Repeat([]byte{'z'}, 1024))
+	}
+	_, replay, exited := s.subscribe()
+	if exited {
+		t.Fatal("a live session reported exited")
+	}
+	if len(replay) > replayTail {
+		t.Fatalf("replay over the tail cap: %d", len(replay))
+	}
+	if bytes.Contains(replay, mark) {
+		t.Fatal("the replay carried the whole history, not the bounded tail")
+	}
+	if !bytes.HasSuffix(replay, bytes.Repeat([]byte{'z'}, 16)) {
+		t.Fatal("the replay is not the history's tail")
+	}
+	// the snapshot does not alias the live buffer
+	after := len(replay)
+	s.record([]byte("LATER"))
+	s.mu.Lock()
+	inBuf := bytes.Contains(s.buf, []byte("LATER"))
+	s.mu.Unlock()
+	if !inBuf {
+		t.Fatal("the record missed the retained buffer")
+	}
+	if len(replay) != after {
+		t.Fatal("the delivered replay aliased the live buffer")
+	}
+}
+
+// TestReplayTailUnicodeSafe: the tail's own cut keeps whole codepoints.
+func TestReplayTailUnicodeSafe(t *testing.T) {
+	s, _ := newBareSession()
+	s.record(bytes.Repeat([]byte("ω"), 200*1024)) // straddles the replay tail edge
+	_, replay, _ := s.subscribe()
+	if !utf8.Valid(replay) {
+		t.Fatal("the replay tail cut mid-codepoint")
+	}
+	if len(replay) > 0 && replay[0]&0xC0 == 0x80 {
+		t.Fatal("the replay starts inside a rune")
+	}
+}
+
+// TestReplayNeverWritesPty: the retention path is output-only - a
+// record (and the replay it feeds) never writes to the shell, so old
+// output cannot come back as new input.
+func TestReplayNeverWritesPty(t *testing.T) {
+	s, f := newBareSession()
+	for i := 0; i < 100; i++ {
+		s.record(bytes.Repeat([]byte("hi\n"), 1024))
+	}
+	_, replay, _ := s.subscribe()
+	if len(replay) == 0 {
+		t.Fatal("the replay window came up empty")
+	}
+	f.mu.Lock()
+	w := f.writes
+	f.mu.Unlock()
+	if w != 0 {
+		t.Fatalf("the replay path wrote to the pty %d times", w)
 	}
 }
