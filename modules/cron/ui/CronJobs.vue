@@ -289,10 +289,7 @@
   .cron-list.narrow .cron-body {
     padding: 4px 8px 10px;
   }
-  .cron-list.narrow .cron-head {
-    flex-wrap: wrap;
-  }
-  .cron-list.narrow .cron-name {
-    font-size: 11.5px;
-  }
+  /* card t_561dc4e0: the narrow name shrunk to 11.5px under the old
+     bespoke anatomy - the row law's uniform heights carry narrow (the
+     shared .narrow .reg-row rule), the name keeps its one size. */
 </style>

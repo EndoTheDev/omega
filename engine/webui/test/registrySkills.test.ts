@@ -280,7 +280,7 @@ test("RegistryList's toggle is the shared TogglePill; the checkbox shape is dead
   assert.ok(!src.includes("revisions"), "the revision-remount machinery is gone with the checkbox");
   // the two-step mechanic + the confirm note stay (behavior, not pixels)
   assert.ok(src.includes("confirm apply to ${r.name}?"), "the armed aria rides the shared pill's confirm label");
-  assert.ok(src.includes('class="registry-confirm"'), "the confirm note under the row stays");
+  assert.ok(src.includes('class="registry-confirm reg-row-note"'), "the confirm note under the row stays (in the row law's note line seat)");
   const css = readFileSync(join(root, "engine", "webui", "app", "components", "ui", "TogglePill.vue"), "utf8");
   assert.match(css, /width:\s*26px/, "the MCP reference's pill dimensions live once, in ui/");
   assert.match(css, /border-color:\s*var\(--ok\)/, "the on border rides the ok token");

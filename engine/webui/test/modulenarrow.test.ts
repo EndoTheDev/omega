@@ -59,8 +59,10 @@ const RETROFIT: Array<{
     rel: "modules/cron/ui/CronJobs.vue",
     label: "cron",
     module: "cron",
-    // card t_308e6d9b: the narrow padding rides the scroll body now
-    rules: [/\.cron-list\.narrow \.cron-body \{/, /\.cron-list\.narrow \.cron-head \{/],
+    // card t_308e6d9b: the narrow padding rides the scroll body now.
+    // card t_561dc4e0: the head wrap + name shrink died with the row
+    // law - the shared anatomy's narrow rule owns the row rhythm.
+    rules: [/\.cron-list\.narrow \.cron-body \{/],
   },
   {
     rel: "engine/http_channel/ui/LogsList.vue",
@@ -89,9 +91,11 @@ const RETROFIT: Array<{
     label: "mcp",
     module: "mcp",
     // card t_83f37525 rebuilt the rows (mcp-server-head -> mcp-row/
-    // mcp-row-main): the state cluster drops to its own line at narrow,
-    // so the refilled pin is the state rule
-    rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-state \{/],
+    // mcp-row-main). Card t_561dc4e0 re-seated them on the shared row
+    // law: the state cluster rides the subtitle line (it never wraps
+    // off the row), so the narrowed line-reflow rule died - the pin is
+    // the condensed scroll body + the anatomy's narrow row rhythm.
+    rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-body \{/],
   },
   {
     // the shell's own inspector Files tab rides the same recipe

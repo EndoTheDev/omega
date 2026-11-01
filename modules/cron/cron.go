@@ -169,6 +169,12 @@ func ParseConfig(data []byte) (*Config, error) {
 	}
 
 	cfg := &Config{}
+	// the line numbers travel WITH the accumulated job list: a file
+	// that repeats the `jobs` key keeps every entry's line aligned, so
+	// a duplicate carrying across the two keys errors with both its
+	// line numbers - never an index panic (the checkDuplicates law:
+	// one rejection, both lines, serve keeps standing).
+	lines := make([]int, 0, len(body.Content)/2)
 	for i := 0; i+1 < len(body.Content); i += 2 {
 		key := body.Content[i]
 		val := body.Content[i+1]
@@ -181,7 +187,6 @@ func ParseConfig(data []byte) (*Config, error) {
 		if val.Kind != yaml.SequenceNode {
 			return nil, fmt.Errorf("line %d: 'jobs' must be a list", val.Line)
 		}
-		lines := make([]int, 0, len(val.Content))
 		for _, item := range val.Content {
 			job, err := parseJob(item)
 			if err != nil {
@@ -190,9 +195,9 @@ func ParseConfig(data []byte) (*Config, error) {
 			cfg.Jobs = append(cfg.Jobs, *job)
 			lines = append(lines, item.Line)
 		}
-		if err := checkDuplicates(cfg.Jobs, lines); err != nil {
-			return nil, err
-		}
+	}
+	if err := checkDuplicates(cfg.Jobs, lines); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

@@ -50,9 +50,14 @@
             <span
               v-else
               class="reg-row-name">{{ r.name }}</span>
+            <!-- the row law's subtitle: a flex line so bars/badges can
+                 ride it; the dim 11px rides the .reg-row-sub anatomy
+                 class (the consumer keeps no row typography). -->
             <span
               v-if="r.description"
-              class="reg-row-sub-text registry-desc">{{ r.description }}</span>
+              class="reg-row-sub">
+              <span class="reg-row-sub-text registry-desc">{{ r.description }}</span>
+            </span>
           </div>
           <!-- the generic row side: numbers, bars, badges - things the
                plain name/desc stack doesn't express; seated on line 1
@@ -250,9 +255,9 @@
   }
   /* the desc: the row law's own voice rides .reg-row-sub-text; only
      the flex seat (it is the subtitle's one and only text child) is
-     local - nothing more. */
+     local - the dim is the .reg-row-sub anatomy's, nothing more. */
   .registry-desc {
-    opacity: 0.6;
+    min-width: 0;
   }
   /* card t_c7222095: the under-row preview - one dim line, ellipsed */
   .registry-preview {
