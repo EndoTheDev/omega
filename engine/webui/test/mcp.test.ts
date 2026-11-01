@@ -301,7 +301,14 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
   assert.match(src, /\.mcp-tool\s*\{[^}]*text-overflow:\s*ellipsis/, "each chip ellipses its own text instead of overflowing");
   assert.match(src, /\.mcp-tool\s*\{[^}]*max-width:\s*100%/, "a chip never exceeds its row (the pane-edge law)");
   assert.match(src, /\.mcp-tools\s*\{[^}]*flex-wrap:\s*wrap/, "the tool container wraps to new lines - no horizontal crush");
-  assert.match(src, /\.mcp-row-main\s*\{[^}]*flex-wrap:\s*wrap/, "the row main line wraps its cluster too");
+  // card t_561dc4e0: the row main no longer wraps its cluster - the row
+  // law's head is the two-zone flex (name/subtitle stack left, ONE
+  // control right) where NOTHING wraps: the name and the subtitle
+  // ellipsize in the shared anatomy, the chips render below the row.
+  assert.match(src, /class="mcp-row-main reg-row-head"/, "the row head rides the shared reg-row-head anatomy");
+  const anatomy = read(root, "engine", "webui", "app", "assets", "css", "registry-row.css");
+  assert.match(anatomy, /\.reg-row-name\s*\{[^}]*text-overflow:\s*ellipsis/, "the shared anatomy ellipsizes the name - nothing clips vertically");
+  assert.match(anatomy, /\.reg-row-sub-text\s*\{[^}]*text-overflow:\s*ellipsis/, "the shared anatomy ellipsizes the subtitle");
 });
 
 test("the from-mcp.yaml caption is dead, the toggle is the shared pill (card t_d93864e7)", () => {
@@ -323,10 +330,20 @@ test("the row speaks the design tokens: status dot, transport pill, no bare mono
   assert.match(src, /\.mcp-dot-off\s*\{[^}]*var\(--text-dim\)/, "the neutral dot rides the dim text token");
   assert.match(src, /class="mcp-pill"/, "the transport renders as a badge, not a bare string");
   assert.match(src, /\.mcp-pill\s*\{[^}]*var\(--mono\)/, "the pill speaks the mono token for its small print");
-  assert.match(src, /\.mcp-name\s*\{[^}]*font-weight:\s*600/, "the server name is the semibold row lead");
+  // card t_561dc4e0: the name lead typography is the shared
+  // .reg-row-name (the row law's line 1) - the template rides the
+  // anatomy class, the shared file carries the semibold.
+  assert.match(src, /class="mcp-name reg-row-name"/, "the server name rides the shared row-law name line");
+  const anatomy = read(root, "engine", "webui", "app", "assets", "css", "registry-row.css");
+  assert.match(anatomy, /\.reg-row-name\s*\{[^}]*font-weight:\s*600/, "the shared anatomy carries the semibold name line");
   assert.match(src, /serverEnabled\(s\)/, "the disabled row renders muted-but-visible in the template");
   assert.match(src, /\.mcp-off \.mcp-name/, "its muted styling ships in the stylesheet");
-  assert.match(src, /\.mcp-list\.narrow \.mcp-state/, "the narrow rules reflow the state line");
+  // card t_561dc4e0: the state cluster rides the row law's subtitle
+  // line (it never wraps off the row), so the old narrow reflow rule
+  // died - narrow keeps the condensed scroll body + the anatomy's
+  // collapsed-row padding.
+  assert.match(src, /\.mcp-list\.narrow \.mcp-body \{/, "the narrow condensed body ships in its own stylesheet");
+  assert.match(anatomy, /\.narrow \.reg-row/, "the shared anatomy carries the narrow row rhythm");
 });
 
 test("the shell mounts the panel: the outlet template rides app.vue, the route is GET-only", () => {

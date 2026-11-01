@@ -143,6 +143,40 @@ jobs:
 	}
 }
 
+// TestParseConfigRepeatedJobsKeyErrorsNotPanics: a file that carries
+// TWO `jobs` keys (yaml keeps both mappings; the operator merged two
+// files by hand) errors as the clean duplicate rejection - the line
+// numbers travel with the accumulated jobs, so the crossing duplicate
+// names both its lines instead of panicking the module mount (the
+// serve-killing index-out-of-range the row-law lane's seed hit).
+func TestParseConfigRepeatedJobsKeyErrorsNotPanics(t *testing.T) {
+	raw := `
+jobs:
+  - name: original
+    schedule: "0 8 * * *"
+    prompt: "a"
+  - name: sibling
+    schedule: "0 9 * * *"
+    prompt: "b"
+
+jobs:
+  - name: daily-journal
+    schedule: "0 8 * * *"
+    prompt: "c"
+  - name: original
+    schedule: "0 11 * * *"
+    prompt: "d"
+`
+	_, err := ParseConfig([]byte(raw))
+	if err == nil {
+		t.Fatal("a duplicate spanning two jobs keys accepted")
+	}
+	if !strings.Contains(err.Error(), "duplicate job name \"original\"") ||
+		!strings.Contains(err.Error(), "lines 3 and 14") {
+		t.Fatalf("want both line numbers, got: %v", err)
+	}
+}
+
 func TestParseConfigUnknownField(t *testing.T) {
 	raw := `
 jobs:
