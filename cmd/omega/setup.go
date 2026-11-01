@@ -21,8 +21,13 @@ import (
 
 // modelsLister is the one provider surface setup touches: the live
 // model list. A module-level hook so tests drive a stub transport.
-var newSetupProvider = func(typ, modelName, baseURL, apiKey string) modelsLister {
-	return provider.NewProvider(typ, modelName, baseURL, apiKey)
+// The named return is load-bearing for the purity law (scripts/
+// nm-purity.sh): the scrubber deletes the wire line alone and never
+// deletes a host function, so the hook must still return with the
+// module gone.
+var newSetupProvider = func(typ, modelName, baseURL, apiKey string) (prov modelsLister) {
+	prov = provider.NewProvider(typ, modelName, baseURL, apiKey)
+	return prov
 }
 
 type modelsLister interface {
@@ -31,7 +36,7 @@ type modelsLister interface {
 
 // setupProvider is one pick on the wizard's provider menu.
 type setupProvider struct {
-	Type   string // the config provider.type value
+	Type   string // the config type key
 	Label  string // menu label
 	Host   string // default base URL
 	NoKey  bool   // an api key is optional (local hosts)
