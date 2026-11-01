@@ -37,3 +37,23 @@ type Provider interface {
 type ModelInfo struct {
 	ContextWindow int // max context in tokens, 0 if unknown
 }
+
+// ModelEntry is one listed model with the provider's capability flags
+// (card t_70c28128: the typed model pickers' data). Capabilities are
+// nil when the provider's list endpoint does not carry them (the
+// openai/anthropic id lists) - callers that need a slot filter fall
+// back to a curated map for those.
+type ModelEntry struct {
+	Name         string   `json:"name"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+// ModelCapabilitiesProvider is an optional interface upgrade for
+// Providers whose model-list endpoint carries capability flags
+// (the ollama family's /api/tags "capabilities" array today).
+// The core Provider interface stays name-only - a provider without
+// capabilities is a full member, the upgrade is probed at runtime the
+// same way hotApply probes the channel seams.
+type ModelCapabilitiesProvider interface {
+	ListModelEntries() ([]ModelEntry, error)
+}

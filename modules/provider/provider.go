@@ -138,9 +138,27 @@ func (p *Provider) WithThinkingLevel(level string) ai.Provider {
 	return &cp
 }
 
-// ListModels fetches available models from the provider API.
+// ListModelEntries fetches available models from the provider API with
+// the capability flags the endpoint carries (card t_70c28128). The
+// ollama family's /api/tags lists "capabilities" per model (the
+// keypool mirror passes it through); the openai/anthropic lists carry
+// ids only, so Capabilities stays nil for those.
+func (p *Provider) ListModelEntries() ([]core.ModelEntry, error) {
+	return p.listModelEntries()
+}
+
+// ListModels fetches available model names from the provider API - the
+// plain projection of listModelEntries, the core.Provider contract.
 func (p *Provider) ListModels() ([]string, error) {
-	return p.listModels()
+	entries, err := p.listModelEntries()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name
+	}
+	return names, nil
 }
 
 // ModelInfo queries the provider for the current model's context window.
@@ -335,8 +353,10 @@ func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 	}
 }
 
-// listModels fetches available models from the provider API.
-func (p *Provider) listModels() ([]string, error) {
+// listModelEntries fetches the model list and parses it into entries
+// with capability flags. The same wire shape ListModels always
+// consumed, plus the ollama "capabilities" array.
+func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
 	req, err := p.buildListModelsRequest()
 	if err != nil {
 		return nil, err
@@ -352,11 +372,14 @@ func (p *Provider) listModels() ([]string, error) {
 	}
 
 	// All three providers return a list of model objects with a
-	// name/id field.
+	// name/id field; the ollama family adds a per-model
+	// "capabilities" array (["completion","tools","thinking","vision",
+	// "decision", ...]).
 	var result struct {
 		Models []struct {
-			Name string `json:"name"`
-			ID   string `json:"id"`
+			Name         string   `json:"name"`
+			ID           string   `json:"id"`
+			Capabilities []string `json:"capabilities"`
 		} `json:"models"`
 		Data []struct {
 			Name string `json:"name"`
@@ -367,19 +390,19 @@ func (p *Provider) listModels() ([]string, error) {
 		return nil, err
 	}
 
-	var names []string
+	var entries []core.ModelEntry
 	for _, m := range result.Models {
 		if m.Name != "" {
-			names = append(names, m.Name)
+			entries = append(entries, core.ModelEntry{Name: m.Name, Capabilities: m.Capabilities})
 		}
 	}
 	for _, m := range result.Data {
 		if m.ID != "" {
-			names = append(names, m.ID)
+			entries = append(entries, core.ModelEntry{Name: m.ID})
 		}
 	}
-	sort.Strings(names)
-	return names, nil
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	return entries, nil
 }
 
 // modelInfo queries the provider for the current model's context

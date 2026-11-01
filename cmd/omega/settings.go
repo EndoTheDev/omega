@@ -74,13 +74,17 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Options: []string{"ollama", "openai", "anthropic"},
 					Value:   strings.ToLower(cfg.Provider.Type),
 					Help:    "provider flavor; empty defaults to ollama"},
-				{Key: "provider.model_name", Label: "model name", Type: "text",
+				// card t_70c28128: model fields are typed pickers - the
+				// webui renders type "model" as a dropdown of the
+				// provider's live models, filtered by the knob's Filter
+				// (vision slots see vision-capable models only).
+				{Key: "provider.model_name", Label: "model name", Type: "model",
 					Value: cfg.Provider.ModelName,
-					Help:  "default model the agent serves; the webui model picker overrides per chat"},
-				{Key: "provider.vision_model", Label: "vision model", Type: "text",
+					Help:  "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
+				{Key: "provider.vision_model", Label: "vision model", Type: "model", Filter: "vision",
 					Value: cfg.VisionModel,
-					Help:  "captioner model for image messages (e.g. gemma4:31b); empty = images reach the main model unchanged and may fail loudly; applies on restart"},
-				{Key: "provider.title_model", Label: "title model", Type: "text",
+					Help:  "captioner model for image messages; the dropdown lists vision-capable models only; empty = images reach the main model unchanged and may fail loudly; applies on restart"},
+				{Key: "provider.title_model", Label: "title model", Type: "model",
 					Value: cfg.TitleModel,
 					Help:  "cheap model for session titles; empty = the main model; applies on restart"},
 				{Key: "provider.host", Label: "host", Type: "text",

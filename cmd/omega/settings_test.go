@@ -65,6 +65,60 @@ func schemaKnobKeys(groups []core.SettingsGroup) map[string]bool {
 	return out
 }
 
+// TestModelKnobsTyped pins the typed model pickers' schema shape
+// (card t_70c28128): every model field rides type "model", the vision
+// slot carries the vision filter, and no other knob type claims the
+// model rendering.
+func TestModelKnobsTyped(t *testing.T) {
+	cfg := DefaultConfig()
+	for _, g := range settingGroups(&cfg) {
+		for _, k := range g.Knobs {
+			switch k.Key {
+			case "provider.model_name":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "" {
+					t.Errorf("%s filter = %q, want empty (full chat list)", k.Key, k.Filter)
+				}
+			case "provider.title_model":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "" {
+					t.Errorf("%s filter = %q, want empty (full chat list)", k.Key, k.Filter)
+				}
+			case "provider.vision_model":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "vision" {
+					t.Errorf("%s filter = %q, want vision", k.Key, k.Filter)
+				}
+			default:
+				if k.Type == "model" {
+					t.Errorf("%s renders a model picker but is not a model slot", k.Key)
+				}
+			}
+		}
+	}
+}
+
+// TestModelKnobFilterValidValues fails a filter value the webui has no
+// renderer for - the seam vocabulary stays closed until the approval
+// gate lands its decision slot with its own value here.
+func TestModelKnobFilterValidValues(t *testing.T) {
+	valid := map[string]bool{"": true, "vision": true, "decision": true}
+	cfg := DefaultConfig()
+	for _, g := range settingGroups(&cfg) {
+		for _, k := range g.Knobs {
+			if k.Type == "model" && !valid[k.Filter] {
+				t.Errorf("%s: unknown model filter %q", k.Key, k.Filter)
+			}
+		}
+	}
+}
+
 func TestSettingGroupsCoverEveryConfigKnob(t *testing.T) {
 	cfg := DefaultConfig()
 	got := schemaKnobKeys(settingGroups(&cfg))

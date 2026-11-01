@@ -16,6 +16,16 @@ provider:
   # ANTHROPIC_API_KEY. Ignored by ollama.
   api_key:
 
+# Auxiliary model fields (card t_70c28128: model slots are typed
+# pickers in the webui settings pane - the vision slot's dropdown lists
+# vision-capable models only; the decision-model slot the approval gate
+# uses arrives with that card). Both empty by default.
+# Captioner model for image messages. Empty = images reach the main
+# model unchanged and may fail loudly.
+# vision_model: gemma4:31b
+# Cheap model for session titles. Empty = the main model.
+# title_model:
+
 server:
   # HTTP listen port. Default: 8099
   port: 8099
