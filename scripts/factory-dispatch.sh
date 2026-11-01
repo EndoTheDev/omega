@@ -162,7 +162,17 @@ overlaps() {  # candidate tokens, running tokens -> hit if any token pair overla
 }
 
 # -- running cards + their combined surface --
-mapfile -t RUNNING < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='running' ORDER BY created_at;")
+# guard bug #9 (2026-11-01, proven live): the cap gate below read this
+# snapshot, and a claim-expired zombie pair (workers dead the same minute,
+# pids gone, heartbeats stale) held the gate shut - while the only reaper
+# (release_stale_claims) runs INSIDE the dispatch call the gate holds back.
+# Deadlock: no pass ever reaped them. The inner counts running AFTER its
+# reclaim phase (guard bug #8), so this snapshot must too: a running card
+# whose claim_expires elapsed is 'ready' at the inner, not running. Drop it
+# here; the gate, the surface holds and the slot math all read the same
+# post-reclaim set. A zombie the inner somehow keeps stays bounded -
+# DISPATCH_MAX is a hard cap either way.
+mapfile -t RUNNING < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='running' AND (claim_expires IS NULL OR claim_expires > strftime('%s','now')) ORDER BY created_at;")
 SURF=/tmp/fd_running_surface.$$; : >"$SURF"
 for r in "${RUNNING[@]:-}"; do
   [ -z "$r" ] && continue
