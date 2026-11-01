@@ -37,6 +37,8 @@ documented below that is not in that mux is not real.
 | `/mcp/servers`                        | GET        | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge |
 | `/mcp/reload`                         | POST       | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list |
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501) |
+| `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
+| `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |
 | `/skills`                            | GET        | loaded skills (name + description only)        |
 | `/commands`                          | GET        | extension command registry (palette rows)      |
 | `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
@@ -320,8 +322,10 @@ up edits without restart.
 ## Read-only inspector surfaces
 
 - `GET /tools` — the tool inventory (name + description).
-- `GET /cron/jobs` — name/schedule/enabled/next, sorted by name; an
-  empty list when cron is unmounted (a normal state, not 501).
+- `GET /cron/jobs` — the job definitions (name, kind, schedule or
+  minutes, resolved deliver target, agent, model, file, enabled, next
+  fire time), sorted by name; an empty list when cron is unmounted (a
+  normal state, not 501).
 - `GET /skills` — name + description only; skill content, directories,
   and the prompt section never ride the wire.
 - `GET /logs?lines=N` — tail of the omega log (default 200, clamped

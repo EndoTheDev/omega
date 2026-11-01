@@ -216,7 +216,40 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	defer r.release(key)
 
 	if job.IsAgent() {
-		r.fireAgentWake(job, key)
+		r.fireAgentWake(job, job.Agent, key)
+		r.recordFire(job, when)
+		return
+	}
+	if job.DeliverTarget() == deliverContinuous {
+		// A main-home job naming deliver: continuous-agent is the same
+		// wake, aimed by the job's own agent field (the defaulting law
+		// resolves empty to the default agent). The wake validation is
+		// FIRE-TIME by law: agent homes are dynamic, so a bad or
+		// non-continuous name is a clear logged error - the scheduler
+		// keeps standing and the schedule survives (the acceptance
+		// law: bad agent name never crashes the runner).
+		name := job.ResolveAgent()
+		prof, err := agent.LoadProfile(r.home, name)
+		if err != nil {
+			r.errorf("job %s: agent %q unknown: %v", key, name, err)
+			r.recordFire(job, when)
+			return
+		}
+		if !prof.Continuous {
+			r.errorf("job %s: agent %q has no continuous session (main never wakes); deliver continuous-agent needs an agent home", key, name)
+			r.recordFire(job, when)
+			return
+		}
+		r.fireAgentWake(job, name, key)
+		r.recordFire(job, when)
+		return
+	}
+	// In-process targets run under the default agent. A job naming a
+	// non-default agent with an in-process deliver is a wrong-target
+	// reference, not a crash: clear error in the job log, the run never
+	// starts under the wrong persona, the schedule survives.
+	if name := job.ResolveAgent(); name != agent.DefaultAgentName {
+		r.errorf("job %s: agent %q: deliver %q runs in-process as the default agent; use deliver: continuous-agent to fire agent %s", key, name, job.DeliverTarget(), name)
 		r.recordFire(job, when)
 		return
 	}
@@ -292,18 +325,25 @@ type wakeTickPayload struct {
 	Agent  string `json:"agent"`
 	Job    string `json:"job"`
 	Prompt string `json:"prompt"`
+	// Model rides the defaulting law: empty = inherit (the payload
+	// law keeps the capsule decoupled - the field is optional JSON,
+	// the continuous capsule decides what a model override means,
+	// today OMEGA_MODEL on the wake child's env).
+	Model string `json:"model,omitempty"`
 }
 
-// fireAgentWake is the agent-job fire body: one tick through the event
-// spine, then done. Nil tickEmit = the continuous capsule is toggled
-// off - the tick lands on an empty spine, the wake goes inert (the
-// log names it), the schedule stays.
-func (r *Runner) fireAgentWake(job Job, key string) {
+// fireAgentWake is the agent-wake fire body: one tick through the
+// event spine, then done. agent is the resolved target (the owning
+// agent home's name, or the job's agent field via the defaulting law).
+// Nil tickEmit = the continuous capsule is toggled off - the tick
+// lands on an empty spine, the wake goes inert (the log names it), the
+// schedule stays.
+func (r *Runner) fireAgentWake(job Job, target string, key string) {
 	if r.tickEmit == nil {
 		r.logf("wake %s: continuous not mounted, wake inert", key)
 		return
 	}
-	r.tickEmit(wakeTickPayload{Agent: job.Agent, Job: job.Name, Prompt: job.Prompt})
+	r.tickEmit(wakeTickPayload{Agent: target, Job: job.Name, Prompt: job.Prompt, Model: job.Model})
 	r.logf("wake %s: tick emitted", key)
 }
 
@@ -315,24 +355,43 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 	if r.ag == nil {
 		return "", fmt.Errorf("no agent wired (cron runner started without deps.Agent)")
 	}
-	// The turn-copy sink: store-backed, cron:<name> session, no head
-	// pin (fresh session, the derived leaf starts empty).
+	// The defaulting law, model field: empty = the session provider
+	// model (this exact wire), non-empty = a per-run provider derived
+	// with WithModel - the copy discipline keeps parallel fires of
+	// different jobs from racing shared provider state; the turn's
+	// model dies with the run, the serve session's model never moves.
+	//
+	// The turn-copy sink wraps ctx BEFORE the run starts: Run captures
+	// the context it is given, a sink applied after the call would
+	// miss the whole turn's persistence.
 	ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(r.store, sessionID, ""))
 	ctx = agent.WithPersistInput(ctx, []core.Message{core.NewUser(job.Prompt)})
-	var prompt, completion int
+	prompt := []core.Message{core.NewUser(job.Prompt)}
+	var events <-chan core.Event
+	if model := strings.TrimSpace(job.Model); model != "" {
+		if p := r.ag.Provider(); p != nil {
+			events = r.ag.RunWithProvider(ctx, p.WithModel(model), prompt, nil)
+		} else {
+			r.logf("job %s: model %q ignored, no provider wired", job.Name, model)
+			events = r.ag.Run(ctx, prompt, nil)
+		}
+	} else {
+		events = r.ag.Run(ctx, prompt, nil)
+	}
+	var promptTokens, completionTokens int
 	var final string
 	var runErr error
-	for event := range r.ag.Run(ctx, []core.Message{core.NewUser(job.Prompt)}, nil) {
+	for event := range events {
 		switch e := event.(type) {
 		case core.AssistantMessageEvent:
 			final = e.Message.Content
 		case core.StreamEvent:
 			if end, ok := e.Event.(core.StreamEnd); ok {
 				if end.PromptEvalCount != nil {
-					prompt += *end.PromptEvalCount
+					promptTokens += *end.PromptEvalCount
 				}
 				if end.EvalCount != nil {
-					completion += *end.EvalCount
+					completionTokens += *end.EvalCount
 				}
 			}
 		case core.AgentEnd:
@@ -342,7 +401,7 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 		}
 	}
 	if r.store != nil {
-		if err := r.store.AddSessionTokens(ctx, sessionID, prompt, completion); err != nil {
+		if err := r.store.AddSessionTokens(ctx, sessionID, promptTokens, completionTokens); err != nil {
 			r.errorf("job %s: persist usage: %v", job.Name, err)
 		}
 	}
@@ -373,11 +432,11 @@ func (r *Runner) applyDeliver(ctx context.Context, job Job, final string) {
 		return
 	}
 	switch job.DeliverTarget() {
-	case deliverJournal:
-		if err := appendJournal(r.home, job, r.now(), final); err != nil {
-			r.errorf("job %s: journal: %v", job.Name, err)
+	case deliverAppendToFile:
+		if err := appendDeliverFile(r.home, job, r.now(), final); err != nil {
+			r.errorf("job %s: file append: %v", job.Name, err)
 		} else {
-			r.logf("job %s: journal updated", job.Name)
+			r.logf("job %s: file updated", job.Name)
 		}
 	case deliverMemory:
 		if r.memory == nil {
@@ -390,21 +449,28 @@ func (r *Runner) applyDeliver(ctx context.Context, job Job, final string) {
 			r.logf("job %s: memory updated", job.Name)
 		}
 	default:
-		// none: session only.
+		// new-session: session only.
 	}
 }
 
-// appendJournal appends the run summary to <home>/journal/YYYY-MM-DD.md,
-// creating the directory and file on demand.
-func appendJournal(home string, job Job, when time.Time, final string) error {
-	dir := filepath.Join(home, "journal")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create journal dir: %w", err)
+// appendDeliverFile appends the run summary to the job's `file`
+// (home-relative), creating directories on demand. An empty file keeps
+// the legacy journal naming (<home>/journal/YYYY-MM-DD.md) - that is
+// the journal alias's exact shape, and the append-to-file default so a
+// job without a file still lands somewhere sane.
+func appendDeliverFile(home string, job Job, when time.Time, final string) error {
+	name := job.File
+	if name == "" {
+		name = filepath.Join("journal", when.Format("2006-01-02")+".md")
 	}
-	path := filepath.Join(dir, when.Format("2006-01-02")+".md")
+	path := filepath.Join(home, filepath.FromSlash(name))
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create dir %s: %w", dir, err)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return fmt.Errorf("open journal: %w", err)
+		return fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
 	_, err = fmt.Fprintf(f, "## %s - %s\n\n%s\n\n", job.Name, when.Format("2006-01-02 15:04"), final)
@@ -418,7 +484,10 @@ func appendJournal(home string, job Job, when time.Time, final string) error {
 // missed fire within the last 24h fires once (state records the missed
 // scheduled time, so a restart before the next scheduled fire does not
 // double-fire). Older missed fires are skipped and logged. A job with
-// no recorded last fire (new or never fired) gets no catch-up.
+// no recorded last fire (new or never fired) gets no catch-up. Interval
+// jobs ride the same walk: schedulePrev steps everySchedule.Next
+// minute-by-minute over the window, an interval miss aligns onto the
+// same epoch-minute grid a live fire would have hit.
 func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 	for _, job := range r.jobsSnapshot() {
 		if !job.IsEnabled() {
@@ -429,7 +498,7 @@ func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 			r.logf("job %s: no recorded last fire, no catch-up", job.Name)
 			continue
 		}
-		sched, err := scheduleParser.Parse(job.Schedule)
+		sched, err := scheduleFor(job)
 		if err != nil {
 			continue // validated at load; unreachable on a fresh parse
 		}
@@ -466,6 +535,34 @@ func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	return prev
 }
 
+// scheduleFor returns the cron.Schedule a job fires on: the parsed
+// 5-field grammar for kind cron, the epoch-minute interval for kind
+// interval. Both satisfy cron.Schedule, so the live scheduler, the
+// catch-up walk and the next-fire inspector share one mechanism.
+func scheduleFor(job Job) (cron.Schedule, error) {
+	if job.KindResolved() == kindInterval {
+		return everySchedule{minutes: job.Minutes}, nil
+	}
+	return scheduleParser.Parse(job.Schedule)
+}
+
+// everySchedule fires on minute multiples of N aligned to the epoch:
+// time.Truncate is absolute, so the grid is timezone-independent and
+// restart-stable (a job with minutes: 5 fires at :00, :05, :10 ... on
+// every wall clock whose offset is whole minutes). Implements
+// cron.Schedule - interval jobs are ordinary robfig schedules, nothing
+// in the scheduler knows the kind exists. Next always returns a time
+// STRICTLY after t (the robfig contract).
+type everySchedule struct{ minutes int }
+
+func (s everySchedule) Next(t time.Time) time.Time {
+	dur := time.Duration(s.minutes) * time.Minute
+	if t.Truncate(dur).Equal(t) {
+		return t.Add(dur)
+	}
+	return t.Truncate(dur).Add(dur)
+}
+
 // --- scheduling ---
 
 // scheduleEnabled rebuilds the scheduler from the current job set,
@@ -478,10 +575,16 @@ func (r *Runner) scheduleEnabled(ctx context.Context) {
 		if !job.IsEnabled() {
 			continue
 		}
-		_, err := c.AddJob(job.Schedule, cron.FuncJob(func() { r.fire(ctx, job, time.Now()) }))
-		if err != nil {
-			r.errorf("job %s: schedule: %v (validated at load, unexpected)", job.Name, err)
-			continue
+		run := cron.FuncJob(func() { r.fire(ctx, job, time.Now()) })
+		if job.KindResolved() == kindInterval {
+			// Interval jobs are their own cron.Schedule: the live
+			// scheduler cannot tell the two kinds apart.
+			c.Schedule(everySchedule{minutes: job.Minutes}, run)
+		} else {
+			if _, err := c.AddJob(job.Schedule, run); err != nil {
+				r.errorf("job %s: schedule: %v (validated at load, unexpected)", job.Name, err)
+				continue
+			}
 		}
 		r.scheduled[job.StateKey()] = true
 	}
@@ -533,9 +636,19 @@ func (r *Runner) Jobs() []core.CronJobInfo {
 	now := r.now()
 	out := make([]core.CronJobInfo, 0, len(jobs))
 	for _, j := range jobs {
-		row := core.CronJobInfo{Name: j.Name, Schedule: j.Schedule, Enabled: j.IsEnabled(), Agent: j.Agent}
+		row := core.CronJobInfo{
+			Name:     j.Name,
+			Kind:     j.KindResolved(),
+			Schedule: j.Schedule,
+			Minutes:  j.Minutes,
+			Deliver:  j.DeliverTarget(),
+			Agent:    j.Agent,
+			Model:    j.Model,
+			File:     j.File,
+			Enabled:  j.IsEnabled(),
+		}
 		if row.Enabled {
-			if sched, err := scheduleParser.Parse(j.Schedule); err == nil {
+			if sched, err := scheduleFor(j); err == nil {
 				if next := sched.Next(now); !next.IsZero() {
 					row.Next = next.Format(time.RFC3339)
 				}
