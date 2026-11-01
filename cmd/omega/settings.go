@@ -201,7 +201,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Knobs: []core.SettingsKnob{
 				{Key: "approvals.mode", Label: "mode", Type: "select",
 					Options: []string{"off", "manual", "smart"},
-					Value:   approvalsModeValue(cfg),
+					Value:   cfg.Approvals.Mode,
 					Help:    "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies on restart"},
 				{Key: "approvals.model", Label: "decision model", Type: "model", Filter: "decision",
 					Value: cfg.Approvals.Model,
@@ -212,15 +212,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			},
 		},
 	}
-}
-
-// approvalsModeValue renders the mode knob's value: the ship-dark
-// default (manual, Q5) IS the empty config string.
-func approvalsModeValue(cfg *Config) string {
-	if cfg.Approvals.Mode == "" {
-		return "manual"
-	}
-	return cfg.Approvals.Mode
 }
 
 // compactionKnobs renders the agent.CompactionConfig section. Every

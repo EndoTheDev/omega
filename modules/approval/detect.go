@@ -59,8 +59,11 @@ var plainRules = []struct {
 		"truncate", "dd", "mv", "cp", "rsync", "ln", "chmod", "chown",
 		"chgrp", "chattr", "install", "patch")},
 	{"network-egress", set(
-		"curl", "wget", "fetch", "scp", "sftp", "ssh", "mosh", "nc", "ncat",
+		"scp", "sftp", "ssh", "mosh", "nc", "ncat",
 		"netcat", "socat", "telnet", "ftp", "gitsend")},
+	{
+		name: "secret-material", words: wordSet{}, // name/arg matching, see secretMaterialHit
+	},
 	{"privilege-escalation", set(
 		"sudo", "su", "doas", "pkexec", "chroot", "setpriv")},
 	{"dynamic-exec", set(
@@ -167,26 +170,46 @@ func assessSegment(seg Segment) []string {
 		return out
 	}
 	fired := map[string]bool{}
-	first := baseWord(seg.Words[0])
 
-	// interpreter invocation (any interpreter + non-inert args)
-	if interpreters[first] {
-		inert := true
-		for _, w := range seg.Words[1:] {
-			if !interpreterInerts[baseWord(w)] {
-				inert = false
-				break
+	// interpreter invocation (any interpreter, any position): flag when
+	// the segment would run code the reviewer cannot certify - a bare
+	// interpreter (stdin REPL), a code-carrying flag (-c/-e/--eval),
+	// or an unvetted arg. Probe args (--version, -h) and test files
+	// (*.test.*) stay inert.
+	if segHitsInterpreter(seg) {
+		invoked, work := false, 0
+		for _, w := range seg.Words {
+			b := baseWord(w)
+			if interpreters[b] {
+				invoked = true
+				continue
+			}
+			switch {
+			case interpreterInerts[b], runnerFlags[b], b == "":
+			case strings.HasPrefix(b, "<<"), strings.HasPrefix(b, ">"):
+				// heredoc markers and redirect wrappers are not
+				// interpreter work: a heredoc body rides the command
+				// text itself (Q7 - the reviewer reads it), and its
+				// words are assessed as their own segments.
+			case interpreterCodeFlags[b]:
+				work++
+			case strings.Contains(w, ".test."):
+			case hasScriptExtension(w):
+				work++
+			case strings.HasPrefix(b, "-"):
+			default:
+				work++
 			}
 		}
-		if !inert || len(seg.Words) == 1 {
-			// `python3` bare: runs a REPL reading stdin - code not
-			// visible, flag; `python3 --version` never reaches here
+		if invoked && (work > 0 || len(seg.Words) == 1) {
 			fired["script-execution"] = true
 		}
 	}
 	// a script file named as a command word: ./deploy.sh, bin/setup.sh
+	// (*.test.* files stay inert - the project's own declared test
+	// surface, e.g. `node --test test/*.test.ts`)
 	for _, w := range seg.Words {
-		if hasScriptExtension(w) {
+		if hasScriptExtension(w) && !strings.Contains(w, ".test.") {
 			fired["script-execution"] = true
 			break
 		}
@@ -213,6 +236,12 @@ func assessSegment(seg Segment) []string {
 	}
 	if writesThrough(seg) {
 		fired["redirect-writes"] = true
+	}
+	if dataEgressHit(seg) {
+		fired["network-egress"] = true
+	}
+	if secretMaterialHit(seg) {
+		fired["secret-material"] = true
 	}
 	for r := range fired {
 		out = append(out, r)
@@ -256,6 +285,88 @@ func gitHardFlagsHit(seg Segment) bool {
 						return true
 					}
 				}
+			}
+		}
+	}
+	return false
+}
+
+// segHitsInterpreter reports whether an interpreter word rides the
+// segment (any position; a piped-in REPL is as invisible-run as a
+// bare one).
+func segHitsInterpreter(seg Segment) bool {
+	for _, w := range seg.Words {
+		if interpreters[baseWord(w)] {
+			return true
+		}
+	}
+	return false
+}
+
+// runnerFlags: interpreter arguments that run a project's OWN declared
+// surface (node --test on the repo's *.test.* files) - routine dev
+// work, never an ask.
+var runnerFlags = set("--test", "--check", "--compile-only", "lint")
+
+// interpreterCodeFlags: flags whose value IS code (visible, but it
+// still executes unvetted - it flags and the reviewer sorts it).
+var interpreterCodeFlags = set("-c", "-e", "-x", "--eval", "-X")
+
+// dataEgressHit: curl/wget/fetch that SENDS data (POST/PUT/form/
+// upload) flags; a bare GET/HEAD fetch reads a remote and writes
+// nothing - the corpus's real traffic includes exactly those.
+func dataEgressHit(seg Segment) bool {
+	dataFlags := set("-d", "--data", "--data-binary", "--data-raw",
+		"--data-urlencode", "-F", "--form", "--form-string", "-T",
+		"--upload-file", "--upload", "-P", "--publish")
+	for i := range seg.Words {
+		b := baseWord(seg.Words[i])
+		if b != "curl" && b != "wget" && b != "fetch" && b != "httpie" {
+			continue
+		}
+		for j := i + 1; j < len(seg.Words); j++ {
+			ab := baseWord(seg.Words[j])
+			if dataFlags[ab] {
+				return true
+			}
+			if (ab == "-X" || ab == "--request") && j+1 < len(seg.Words) {
+				next := strings.ToUpper(baseWord(seg.Words[j+1]))
+				if next == "POST" || next == "PUT" || next == "PATCH" || next == "DELETE" {
+					return true
+				}
+				j++
+				continue
+			}
+			// -XPOST / --request=POST fused forms
+			if strings.HasPrefix(ab, "-X") {
+				tail := strings.TrimPrefix(ab, "-X")
+				tail = strings.TrimPrefix(tail, "--request=")
+				if tail == "POST" || tail == "PUT" || tail == "PATCH" || tail == "DELETE" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// secretMaterialHit: credential-material paths and names ride the
+// would-interrupt set so the reviewer's reads_secrets question can
+// act on them (the reference's measured case: `cat id_rsa` was
+// approved on blast radius alone until the question existed).
+var secretVocabulary = []string{
+	".ssh", "id_rsa", "id_ed25519", "id_ecdsa", ".aws/credentials",
+	".netrc", ".git-credentials", ".env", "auth.json", "keyring",
+	".gnupg", "private_key", "secret", "password", "shadow", ".npmrc",
+	".docker/config.json", "known_hosts",
+}
+
+func secretMaterialHit(seg Segment) bool {
+	for _, w := range seg.Words {
+		low := strings.ToLower(w)
+		for _, vocab := range secretVocabulary {
+			if strings.Contains(low, vocab) {
+				return true
 			}
 		}
 	}

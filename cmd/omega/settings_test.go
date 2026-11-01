@@ -51,6 +51,9 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"memory.user_file":            true,
 		"logging.enabled":             true,
 		"logging.file":                true,
+		"approvals.mode":              true,
+		"approvals.model":             true,
+		"approvals.smart_policy":      true,
 	}
 }
 
@@ -94,6 +97,13 @@ func TestModelKnobsTyped(t *testing.T) {
 				}
 				if k.Filter != "vision" {
 					t.Errorf("%s filter = %q, want vision", k.Key, k.Filter)
+				}
+			case "approvals.model":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "decision" {
+					t.Errorf("%s filter = %q, want decision (the decision-family dropdown)", k.Key, k.Filter)
 				}
 			default:
 				if k.Type == "model" {

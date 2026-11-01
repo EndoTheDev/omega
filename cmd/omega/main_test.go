@@ -375,7 +375,7 @@ func TestBuildConfigs(t *testing.T) {
 	wantKeys := []string{
 		"store", "provider", "http_channel", "skills",
 		"memory", "logging", "compactor", "trust",
-		"kanban", "continuous",
+		"kanban", "continuous", "approvals",
 	}
 	for _, k := range wantKeys {
 		if _, ok := configs[k]; !ok {

@@ -47,6 +47,7 @@ type AuditRow struct {
 	HasPolicy      bool     `json:"has_policy"`
 	PolicyHash     string   `json:"policy_hash,omitempty"` // the operator policy fingerprint
 	PolicyFP       string   `json:"policy_fp,omitempty"`   // the questions fingerprint
+	LadderVersion  string   `json:"ladder_version,omitempty"` // the threshold set that decided
 	DecidedBy      string   `json:"decided_by"`            // reviewer | human_card | manual | cache
 	CacheKey       string   `json:"cache_key,omitempty"`
 	Cached         bool     `json:"cached"`
