@@ -116,6 +116,19 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterRoute("POST /cron/toggle", p.handleToggle); err != nil {
 		return err
 	}
+	// The job editor routes (card t_ecec864e): POST /cron/save upserts
+	// one full job definition into the MAIN crons.yaml at the node
+	// level (the toggle write's fold-write law, schema-validated
+	// through ParseConfig), POST /cron/delete removes one. Both answer
+	// the fresh job set - the one-response contract the toggle carries.
+	// The routes always mount; the runner-less posture refuses at the
+	// wire with 501.
+	if err := api.RegisterRoute("POST /cron/save", p.handleSaveJob); err != nil {
+		return err
+	}
+	if err := api.RegisterRoute("POST /cron/delete", p.handleDeleteJob); err != nil {
+		return err
+	}
 	// Capsule law (arc 6, t_31174f80): the module ships its view-model
 	// with its scheduler. The jobs panel rides the same mount - an
 	// unregistered plugin ships no seam, no commands, no panels. The

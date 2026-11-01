@@ -18,12 +18,12 @@ const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
 test("the cron empty-state copy is the designed voice: headline + activation hint", () => {
   assert.equal(CRON_EMPTY_TEXT, "no cron jobs");
-  // the hint keeps the literal config key - the user must know WHERE
-  // to act (activation is a file action, so there is no CTA button)
+  // the hint names both doors of activation (card t_ecec864e): the +
+  // editor tool (which writes the file the same way the toggle route
+  // does) and the literal config key
   assert.ok(CRON_EMPTY_HINT.includes("crons.yaml"), "the hint names the config key");
+  assert.ok(CRON_EMPTY_HINT.includes("add one"), "the hint names the editor's add affordance");
   assert.ok(CRON_EMPTY_HINT.includes("schedule"), "the hint says what activating does");
-  // and it is a hint line, not the old bare parenthetical string
-  assert.ok(!CRON_EMPTY_HINT.includes("("), "no inline parenthetical");
 });
 
 test("CronJobs renders the empty-state pattern only when the jobs list is empty", () => {

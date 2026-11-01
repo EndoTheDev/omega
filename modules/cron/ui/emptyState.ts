@@ -4,13 +4,13 @@
 //
 // The empty state is the designed pattern: the cron clock glyph, the
 // muted "no cron jobs" headline, and the activation hint below it. The
-// hint keeps the literal config key (crons.yaml) - the user has to know
-// WHERE to act, since activation is a file action, not an in-pane
-// button (READ-ONLY v1, card t_db430fea).
+// hint points at the + editor tool (card t_ecec864e: the tab edits jobs
+// on the main home) and keeps the literal config key - both doors stay
+// named.
 
 /** the muted headline shown when GET /cron/jobs returns zero jobs */
 export const CRON_EMPTY_TEXT = "no cron jobs";
 
 /** the activation hint - keeps the config key the user must create */
 export const CRON_EMPTY_HINT =
-  "crons.yaml is not activated - create it in omega's home dir to schedule jobs";
+  "no jobs configured - add one with the + tool (writes crons.yaml) to schedule work, or copy the file into omega's home dir";
