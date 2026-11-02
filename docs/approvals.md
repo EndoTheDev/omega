@@ -10,7 +10,7 @@ cloud call or a prompt.
 | mode     | behavior |
 |----------|----------|
 | `off`    | The gate is fully absent: no detection, no calls, no logging. The seam mounts nothing (proved by `TestApprovalRemovalProof`). |
-| `manual` | Default (ship dark). Every flagged command asks YOU via a 2-option verdict card - approve/deny. |
+| `manual` | Default (ship dark). Every flagged command asks YOU via a verdict card - approve/deny (+ a typed follow-up answer, t_63204dfd). |
 | `smart`  | A decision model reviews flagged commands first; the deterministic ladder decides from its answers. |
 
 Empty config value = `manual`. Reviewer unreachable, timed out, or
