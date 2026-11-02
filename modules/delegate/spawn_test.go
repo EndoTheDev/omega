@@ -95,8 +95,11 @@ func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	}
 }
 
-// TestRunDelegateTaskFailingBinary verifies a child process that exits
-// non-zero still delivers an injected result, with the error captured.
+// TestRunDelegateTaskFailingBinary verifies the ruling's failure
+// shape: a child that exits non-zero still delivers an injected turn,
+// but a SHORT failure line only - the child's output stays in its
+// session and the task record, never spammed into the caller's
+// context.
 func TestRunDelegateTaskFailingBinary(t *testing.T) {
 	bin := writeStub(t, "stub-fail", "boom", 3)
 	t.Setenv("OMEGA_BIN", bin)
@@ -108,14 +111,15 @@ func TestRunDelegateTaskFailingBinary(t *testing.T) {
 
 	select {
 	case msg := <-d.InjectedChannel():
-		if !strings.Contains(msg.text, "boom") {
-			t.Fatalf("expected child output in result, got %q", msg.text)
+		wanted := "error: delegate task task-1 failed: exit status 3"
+		if msg.text != wanted {
+			t.Fatalf("expected short failure line %q, got %q", wanted, msg.text)
 		}
-		if !strings.Contains(msg.text, "error:") {
-			t.Fatalf("expected error prefix in result, got %q", msg.text)
+		if msg.source != "delegate:task-1" {
+			t.Fatalf("expected source delegate:task-1, got %q", msg.source)
 		}
-		if !strings.Contains(msg.text, "subagent=1") {
-			t.Fatalf("expected subagent guard in child env, got %q", msg.text)
+		if strings.Contains(msg.text, "boom") {
+			t.Fatalf("failure line leaked child output: %q", msg.text)
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("timed out waiting for injected failure result")

@@ -808,6 +808,13 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		if err := ApplyAgentLayer(&cfg, omegaHome(), name); err != nil {
 			return fmt.Errorf("agent layer %s: %w", name, err)
 		}
+		// The model override is caller intent (the wake contract:
+		// config.go's applyEnv table honors OMEGA_MODEL over the
+		// child's own provider.model). Layers apply AFTER applyEnv, so
+		// an agent layer defining provider.model would silently
+		// clobber it - re-assert the env. Empty env = inherit (the
+		// defaulting law): the layer's model IS the session model.
+		applyModelEnvOverride(&cfg)
 	}
 	ai.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, _, _, _, err := newAgent(cfg, appendPrompts, trust)
