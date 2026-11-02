@@ -17,7 +17,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -65,13 +65,13 @@ func (m *mockProvider) SetThinkingLevel(level string) { m.thinkingLevel = level 
 // the same lock-free value-copy discipline as WithModel: the receiver
 // is untouched, so concurrent derivations stay isolated. thinkingLevel
 // is read by tests; Stream itself never touches it.
-func (m *mockProvider) WithThinkingLevel(level string) ai.Provider {
+func (m *mockProvider) WithThinkingLevel(level string) llm.Provider {
 	cp := *m
 	cp.thinkingLevel = level
 	return &cp
 }
 
-func (m *mockProvider) WithModel(model string) ai.Provider {
+func (m *mockProvider) WithModel(model string) llm.Provider {
 	cp := *m
 	cp.modelName = model
 	return &cp
@@ -81,11 +81,11 @@ func (m *mockProvider) ListModels() ([]string, error) {
 	return []string{"test-model", "other-model"}, nil
 }
 
-func (m *mockProvider) ModelInfo() (ai.ModelInfo, error) {
-	return ai.ModelInfo{}, nil
+func (m *mockProvider) ModelInfo() (llm.ModelInfo, error) {
+	return llm.ModelInfo{}, nil
 }
 
-func (m *mockProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (m *mockProvider) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	m.mu.Lock()
 	*m.seenLevels = append(*m.seenLevels, m.thinkingLevel)
 	*m.seenModels = append(*m.seenModels, m.modelName)
@@ -456,7 +456,7 @@ func TestChatThinkingLevelDefault(t *testing.T) {
 // TestChatThinkingLevelInvalid: out-of-ladder indexes are a 400.
 func TestChatThinkingLevelInvalid(t *testing.T) {
 	s := newTestServer()
-	rec := postChatBody(s, chatThinking(t, len(ai.ThinkingLevels)))
+	rec := postChatBody(s, chatThinking(t, len(llm.ThinkingLevels)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
@@ -1609,7 +1609,7 @@ func newCaptureProvider(scripts ...[]core.ProviderStreamEvent) *captureProvider 
 	return &captureProvider{mockProvider: *newMockProvider("mock", scripts...)}
 }
 
-func (c *captureProvider) Stream(ctx context.Context, msgs []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (c *captureProvider) Stream(ctx context.Context, msgs []core.Message, tools []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	c.mu.Lock()
 	for _, m := range msgs {
 		if core.MessageRole(m) == "user" {

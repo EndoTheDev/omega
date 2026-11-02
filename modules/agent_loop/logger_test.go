@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // mockLogger records all Printf/Errorf calls so tests can assert on
@@ -57,7 +57,7 @@ func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 // TestLoopWithLogger verifies the logger records "agent loop starting"
 // and "agent ended" for a basic one-turn conversation.
 func TestLoopWithLogger(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -89,7 +89,7 @@ func TestLoopWithLogger(t *testing.T) {
 // TestLoopLoggerMaxTurns verifies the logger records "max turns reached"
 // when the turn cap is hit.
 func TestLoopLoggerMaxTurns(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		// Turn 1: emit a tool call so the loop continues.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{}}},
@@ -137,7 +137,7 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 // TestLoopLoggerStreamError verifies the logger records "stream error"
 // when the provider sends a StreamEnd with an Error.
 func TestLoopLoggerStreamError(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "something broke"},
 	)
 	logger := &mockLogger{}
@@ -165,7 +165,7 @@ func TestLoopLoggerStreamError(t *testing.T) {
 // TestLoopLoggerToolError verifies the logger records a tool error when
 // a tool's Run returns an error.
 func TestLoopLoggerToolError(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -215,7 +215,7 @@ func TestLoopLoggerToolError(t *testing.T) {
 // "context full, no compactor loaded" when the provider sends an
 // overflow error and no compactor is configured.
 func TestLoopLoggerOverflowNoCompactor(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
 	)
 	logger := &mockLogger{}

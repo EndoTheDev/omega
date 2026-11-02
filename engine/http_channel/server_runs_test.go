@@ -20,7 +20,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -40,12 +40,12 @@ func (p *stepProvider) ModelName() string { return p.modelName }
 
 func (p *stepProvider) SetThinkingLevel(level string) {}
 
-func (p *stepProvider) WithThinkingLevel(level string) ai.Provider {
+func (p *stepProvider) WithThinkingLevel(level string) llm.Provider {
 	cp := *p
 	return &cp
 }
 
-func (p *stepProvider) WithModel(model string) ai.Provider {
+func (p *stepProvider) WithModel(model string) llm.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -55,11 +55,11 @@ func (p *stepProvider) ListModels() ([]string, error) {
 	return []string{p.modelName}, nil
 }
 
-func (p *stepProvider) ModelInfo() (ai.ModelInfo, error) {
-	return ai.ModelInfo{}, nil
+func (p *stepProvider) ModelInfo() (llm.ModelInfo, error) {
+	return llm.ModelInfo{}, nil
 }
 
-func (p *stepProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *stepProvider) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)

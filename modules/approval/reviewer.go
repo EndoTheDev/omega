@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // The reviewer client (design Q12 + the folded assumption): ONE
 // systemone forward pass per reviewed command, against the configured
 // keypool provider's /v1/systemone passthrough. No new HTTP knob -
-// the client is engine/ai's shared one (http_timeout config), and the
+// the client is llm's shared one (http_timeout config), and the
 // practical budget lives keypool-side (~15-30s per request). Every
 // failure mode - unreachable, timeout, malformed answers - raises and
 // the caller escalates (Q4: fail-closed).
@@ -124,7 +124,7 @@ func (r Reviewer) Review(ctx context.Context, command, flagged, policy string, h
 	if err != nil {
 		return Answers{}, fmt.Errorf("approval reviewer: %w", err)
 	}
-	resp, err := ai.HTTPClient().Do(req)
+	resp, err := llm.HTTPClient().Do(req)
 	if err != nil {
 		return Answers{}, fmt.Errorf("approval reviewer: %w", err)
 	}

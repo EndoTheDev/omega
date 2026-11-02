@@ -3,7 +3,7 @@ package http_channel
 import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"strings"
 )
 
@@ -50,7 +50,7 @@ func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Me
 	env := core.AtMentionEnv{
 		Store:         s.store,
 		Skills:        s.contextSkills(),
-		DetectImage:   ai.DetectImage,
+		DetectImage:   llm.DetectImage,
 		MessageText:   agent.MessageText,
 		Dir:           dir,
 		ReferenceOnly: true, // the webui attaches PATHS (card t_7f09bd0c)

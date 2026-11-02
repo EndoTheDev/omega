@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
@@ -56,7 +56,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	resp, err := ai.RetryHTTP(req)
+	resp, err := llm.RetryHTTP(req)
 	if err != nil {
 		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
@@ -78,7 +78,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 	sawUsage := false
 
 	for {
-		payloadLine, ok, readErr := ai.SSEData(reader)
+		payloadLine, ok, readErr := llm.SSEData(reader)
 		if readErr != nil {
 			if readErr == io.EOF {
 				break

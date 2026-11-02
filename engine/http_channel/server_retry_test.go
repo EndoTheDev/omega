@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -36,11 +36,11 @@ func (p *multiProvider) arm() { p.next = make(chan []core.ProviderStreamEvent) }
 
 func (p *multiProvider) ModelName() string             { return p.modelName }
 func (p *multiProvider) SetThinkingLevel(level string) {}
-func (p *multiProvider) WithThinkingLevel(level string) ai.Provider {
+func (p *multiProvider) WithThinkingLevel(level string) llm.Provider {
 	cp := *p
 	return &cp
 }
-func (p *multiProvider) WithModel(model string) ai.Provider {
+func (p *multiProvider) WithModel(model string) llm.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -48,11 +48,11 @@ func (p *multiProvider) WithModel(model string) ai.Provider {
 func (p *multiProvider) ListModels() ([]string, error) {
 	return []string{p.modelName}, nil
 }
-func (p *multiProvider) ModelInfo() (ai.ModelInfo, error) {
-	return ai.ModelInfo{}, nil
+func (p *multiProvider) ModelInfo() (llm.ModelInfo, error) {
+	return llm.ModelInfo{}, nil
 }
 
-func (p *multiProvider) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *multiProvider) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	events := make(chan core.ProviderStreamEvent)
 	next := p.next
 	go func() {

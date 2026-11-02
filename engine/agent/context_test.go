@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // stubPromptBuilder satisfies PromptBuilder for testing.
@@ -141,7 +141,7 @@ func TestNewFromContextFull(t *testing.T) {
 
 	// ToolProviders wired — run with a provider that streams a tool call
 	// for "alpha" and confirm the extension tool is available.
-	prov2 := ai.NewFakeProviderScripts("full-model",
+	prov2 := llm.NewFakeProviderScripts("full-model",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "alpha", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},

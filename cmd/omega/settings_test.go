@@ -10,7 +10,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"gopkg.in/yaml.v3"
 )
@@ -403,7 +403,7 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	cfg.Server.DefaultWorkspace = "/tmp/lane"
 	hotApply(cfg, pctx)
 
-	if got := ai.HTTPClient().Timeout; got != 42*time.Second {
+	if got := llm.HTTPClient().Timeout; got != 42*time.Second {
 		t.Errorf("http client timeout %v, want 42s", got)
 	}
 	if pushed != "/tmp/lane" {

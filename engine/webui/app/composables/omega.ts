@@ -2789,7 +2789,7 @@ export function dataUrl(img: OmegaImage): string {
   return `data:${img.media_type};base64,${img.base64}`;
 }
 
-// MEDIA_MAGIC mirrors the engine/ai/image.go magic signatures so the
+// MEDIA_MAGIC mirrors the llm/image.go magic signatures so the
 // composer-side validation matches what the backend accepts. Order
 // matters visually but not logically: first hit wins, and webp needs
 // its RIFF marker confirmed at offset 8.
@@ -2927,7 +2927,7 @@ async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<voi
   if (!state.sawEnd) throw new StreamInterruptedError();
 }
 
-// THINKING_LEVELS mirrors ai.ThinkingLevels (engine/ai/provider.go): the
+// THINKING_LEVELS mirrors ai.ThinkingLevels (llm/provider.go): the
 // /chat thinking_level field is the index into this array, 0 = "none"
 // = no thinking parameter sent (provider default).
 export const THINKING_LEVELS = [

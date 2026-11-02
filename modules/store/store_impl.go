@@ -528,7 +528,7 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Mess
 // no unread state could ever be derived from the row.
 //
 // Conversation messages get their tree pointer materialized here
-// (t_17365247): an explicitly set ai.*.ParentID wins (validated against
+// (t_17365247): an explicitly set llm.*.ParentID wins (validated against
 // this session's rows); a missing pointer resolves to the active path
 // leaf - the message follows (or answers) whatever the active
 // conversation currently ends at. Bookkeeping entries

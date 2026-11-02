@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // maxChatImageBytes caps one user message image accepted via /chat
-// (10MB decoded). The ai.MaxImageBytes config cap (20MB) still
+// (10MB decoded). The llm.MaxImageBytes config cap (20MB) still
 // holds for local files; the browser lane sits behind the HTTP
 // channel, so it picks a tighter cap - a 400 with a clear message
 // beats a multi-second stream the model then chokes on.
@@ -143,7 +143,7 @@ var internalHostGuard = isInternalHost
 // follows up to 10 hops without looking. Each hop re-runs the same
 // internalHostGuard; an internal target aborts the fetch.
 var attachClient = &http.Client{
-	Transport: ai.HTTPClient().Transport,
+	Transport: llm.HTTPClient().Transport,
 	Timeout:   60 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if host := req.URL.Hostname(); internalHostGuard(host) {
@@ -155,7 +155,7 @@ var attachClient = &http.Client{
 
 // handleAttachImage serves POST /attach-image: the SERVER fetches the
 // URL's bytes (the webui never fetches cross-origin itself), sniffs
-// the magic bytes, and answers {media_type, base64} in the ai.Image-
+// the magic bytes, and answers {media_type, base64} in the llm.Image-
 // Content shape - the client then rides the normal /chat image field.
 // Fetches ride attachClient (per-hop internal-address guard, no
 // retry); the web module's mirror fetch is text-only so binary image
@@ -216,7 +216,7 @@ func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("image too large (%d bytes, max %d)", len(data), maxChatImageBytes), http.StatusRequestEntityTooLarge)
 		return
 	}
-	img, err := ai.DetectImageBytes(data)
+	img, err := llm.DetectImageBytes(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 		return

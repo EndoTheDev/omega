@@ -12,7 +12,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -277,7 +277,7 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	}
 	// WithDelay spaces the scripted events so the phase meters measure
 	// real wall-clock - the zero-delay fake floors every span to 0.
-	r.ag = core.NewAgent(ai.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
+	r.ag = core.NewAgent(llm.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
 		"nop": {
 			Description: "test no-op",
 			Run:         func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },

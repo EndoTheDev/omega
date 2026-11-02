@@ -21,7 +21,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -523,12 +523,12 @@ type gateHoldProvider struct {
 
 func (p *gateHoldProvider) ModelName() string                    { return "gate" }
 func (p *gateHoldProvider) SetThinkingLevel(string)              {}
-func (p *gateHoldProvider) WithModel(string) ai.Provider         { return p }
-func (p *gateHoldProvider) WithThinkingLevel(string) ai.Provider { return p }
+func (p *gateHoldProvider) WithModel(string) llm.Provider         { return p }
+func (p *gateHoldProvider) WithThinkingLevel(string) llm.Provider { return p }
 func (p *gateHoldProvider) ListModels() ([]string, error)        { return []string{"gate"}, nil }
-func (p *gateHoldProvider) ModelInfo() (ai.ModelInfo, error)     { return ai.ModelInfo{}, nil }
+func (p *gateHoldProvider) ModelInfo() (llm.ModelInfo, error)     { return llm.ModelInfo{}, nil }
 
-func (p *gateHoldProvider) Stream(context.Context, []core.Message, []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *gateHoldProvider) Stream(context.Context, []core.Message, []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)
