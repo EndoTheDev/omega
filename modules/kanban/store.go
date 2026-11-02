@@ -63,7 +63,7 @@ var (
 )
 
 // Open opens (creating if needed) the board database at dsn and
-// ensures the schema exists. \":memory:\" works for tests. A dsn inside
+// ensures the schema exists. ":memory:" works for tests. A dsn inside
 // a data/ directory gets the boot-time data-dir migration first
 // (legacy home-root databases move into data/ before the handle is
 // opened - see modules/datadir).
