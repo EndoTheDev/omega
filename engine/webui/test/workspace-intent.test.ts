@@ -1,9 +1,7 @@
 // omega webui: unit tests for the draft workspace intent (card
 // t_ea7e6a58). The wire half: streamChat carries {workspace} only on
 // the bare create. The host half: the unbound state's workspaceIntent
-// rides the FIRST send (consumed there), never an ephemeral one. The
-// @ picker half: fetchMentionFiles roots at the workspace when one is
-// set, keeps the process-CWD read when not.
+// rides the FIRST send (consumed there), never an ephemeral one.
 // Run: node --test test/workspace-intent.test.ts
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +10,6 @@ import {
   normalizeSettingsPayload,
   settingValueOf,
   streamChat,
-  fetchMentionFiles,
   type StreamHandlers,
 } from "../app/composables/omega.ts";
 
@@ -87,25 +84,6 @@ describe("streamChat: the workspace wire half", () => {
     await streamChat([{ role: "user", content: "q" }], null, silent);
     const body3 = calls[2]?.[2] as Record<string, unknown>;
     assert.equal("workspace" in body3, false, "no intent, no field");
-  });
-});
-
-describe("fetchMentionFiles: the @ listing root", () => {
-  it("a workspace lists /workspaces/files for THAT folder", async () => {
-    const calls = recordFetch((u) =>
-      ({ ok: true, json: async () => ({ path: "/tmp/proj", entries: [{ name: "note.txt", is_dir: false }] }) }) as unknown as Response);
-    const payload = await fetchMentionFiles("/tmp/proj");
-    assert.match(calls[0]![1], /^\/workspaces\/files\?path=/, "the workspace endpoint serves the listing");
-    assert.ok(calls[0]![1].includes(encodeURIComponent("/tmp/proj")));
-    assert.equal(payload.entries[0]?.name, "note.txt");
-  });
-
-  it("rootless keeps the /files/browse read", async () => {
-    const calls = recordFetch((u) =>
-      ({ ok: true, json: async () => ({ entries: [{ name: "cwd.txt", is_dir: false }] }) }) as unknown as Response);
-    const payload = await fetchMentionFiles("");
-    assert.equal(calls[0]![1], "/files/browse");
-    assert.equal(payload.entries[0]?.name, "cwd.txt");
   });
 });
 
