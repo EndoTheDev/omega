@@ -18,11 +18,12 @@
 //   3. no border-radius on the handle (the hover band runs edge-to-edge)
 //   4. hover/snap keep their full-band backgrounds (they ARE the line
 //      while the pointer is on the handle)
-//   5. the gutter bridge (t_97cece1e rail law): the ROW divider carries
-//      the 1px top/bottom strokes spanning ONLY its own width - the
-//      pane-area's unconditional ::before/::after rails died (they sat
-//      on a single card's own border row and overpainted card borders
-//      everywhere but the gutter); single card = no divider = zero strokes
+//   5. the gutter bridge is GONE (t_9846a12e, Endo stroke-cleanup ruling
+//      2026-11-02): the ROW divider's ::before/::after top/bottom strokes
+//      (t_97cece1e) read as dashes at the divider's ends - zero rules for
+//      them in the sheet; the cards' own borders carry the seams alone.
+//      The pane-area's unconditional ::before/::after rails stay dead
+//      too (t_97cece1e); single card = no divider = zero strokes
 //   6. the root row's vertical dividers ride the sidebars' overhang - the
 //      hover band reaches the pane bottom row beside the band
 //   7. the root column divider reaches 2px past its insets (T-junctions
@@ -184,10 +185,10 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
       0,
       "no pane-area ::before/::after rail rule left anywhere in the sheet",
     );
-    // the no-gap case pinned structurally: the bridge rides the divider,
-    // and DockSplit renders a divider only BETWEEN two children (idx <
-    // children.length - 1) - a single-card tree renders no divider, so
-    // zero rail elements exist; the card's own border is the whole edge
+    // the no-gap case pinned structurally: DockSplit renders a divider
+    // only BETWEEN two children (idx < children.length - 1) - a
+    // single-card tree renders no divider, so zero rail elements exist;
+    // the card's own border is the whole edge
     const split = readFileSync(
       join(here, "../app/components/DockSplit.vue"),
       "utf8",
@@ -199,37 +200,38 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
     );
   });
 
-  it("the gutter bridge: the row divider carries the 1px top+bottom strokes spanning only its own width", () => {
-    const desktop = "@media (min-width: 769px)";
-    // the shared stroke rule + the two offset rules in the desktop block
-    const edge = find(
-      MAIN,
-      ".dock-split.row > .dock-divider::before, .dock-split.row > .dock-divider::after",
-      desktop,
+  it("the gutter bridge is gone: zero rules for the row divider's ::before/::after (and the sheet has no strays)", () => {
+    // t_9846a12e (Endo stroke-cleanup ruling 2026-11-02): the bridge's
+    // 1px dashes at the row divider's top/bottom ends are strokes the
+    // frame layer paints - dead by the ruling, in ANY at-rule (desktop
+    // or otherwise). Nothing anchors absolute strokes to the row
+    // divider's box anymore either: the position:relative anchor died
+    // with them (bottompanel's row-divider rule uses margins only).
+    const bridgeRules = MAIN.filter((r) =>
+      r.selectors.some((s) =>
+        /^\.dock-split\.row > \.dock-divider::(before|after)$/.test(s),
+      ),
     );
-    const body = edge.body.replace(/\s+/g, " ");
-    assert.match(body, /background:\s*var\(--stroke\)/);
-    assert.match(body, /height:\s*1px/);
-    assert.match(body, /pointer-events:\s*none/);
-    // spanning ONLY the gutter: inset to the divider's own box - no
-    // pane-area-wide span survives
-    assert.match(body, /left:\s*0/);
-    assert.match(body, /right:\s*0/);
-    assert.ok(!/left:\s*4px/.test(body), "no pane-area content-box span left");
-    // aligned to the cards' border rows: no top padding = the divider's
-    // top edge is the top row; 3px bottom padding = its bottom edge is
-    // the bottom row
-    const top = find(MAIN, ".dock-split.row > .dock-divider::before", desktop);
-    assert.match(top.body.replace(/\s+/g, " "), /top:\s*0/);
-    const bottom = find(MAIN, ".dock-split.row > .dock-divider::after", desktop);
-    assert.match(bottom.body.replace(/\s+/g, " "), /bottom:\s*0/);
-    // the anchor must exist: absolute strokes need the divider positioned
-    const anchor = find(
-      MAIN,
-      ".dock-split.row > .dock-divider",
-      desktop,
+    assert.equal(
+      bridgeRules.length,
+      0,
+      "no gutter-bridge pseudo-element rules left anywhere in the sheet",
     );
-    assert.match(anchor.body.replace(/\s+/g, " "), /position:\s*relative/);
+    const anchored = MAIN.filter(
+      (r) =>
+        r.selectors.includes(".dock-split.row > .dock-divider") &&
+        r.body.includes("position"),
+    );
+    assert.equal(
+      anchored.length,
+      0,
+      "no position anchor on the row divider's box - its absolutes are gone",
+    );
+    // regression guard, not the ruling: the COLUMN grab band (8px hover
+    // band) keeps its own ::before overlay
+    const grab = find(MAIN, ".dock-split.column > .dock-divider::before");
+    assert.match(grab.body.replace(/\s+/g, " "), /top:\s*-8px/);
+    assert.match(grab.body.replace(/\s+/g, " "), /bottom:\s*-8px/);
   });
 
   it("root-row dividers ride the sidebars' overhang (full window height)", () => {
