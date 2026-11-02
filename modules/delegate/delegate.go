@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Delegate manages background subagent tasks. It implements ToolProvider

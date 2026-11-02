@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 const toggleTestCrons = `# the human-authored file: a comment that must survive every write

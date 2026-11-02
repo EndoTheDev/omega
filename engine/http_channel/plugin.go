@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Plugin implements agent.Plugin for the HTTP channel. It reads the

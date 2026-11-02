@@ -2,7 +2,7 @@ package verdict
 
 import (
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Plugin mounts the verdicts seam and its surfaces: the

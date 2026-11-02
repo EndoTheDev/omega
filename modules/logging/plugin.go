@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Plugin implements agent.Plugin for the logging seam. It creates

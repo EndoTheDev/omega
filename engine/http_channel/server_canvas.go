@@ -17,7 +17,7 @@ import (
 	"net/http"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // NewCanvas wires the server's canvas from a mounted Context. The

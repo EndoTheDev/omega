@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/skills"
 )

@@ -1,6 +1,6 @@
 package agent
 
-// engine/agent/profiles.go: continuous-agent homes (card t_72ecca67, settled
+// agent/profiles.go: continuous-agent homes (card t_72ecca67, settled
 // design 2026-10-26). An agent IS a home directory:
 //
 //	main (the default agent) = the home root itself

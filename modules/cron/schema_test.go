@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/llm"
-	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -321,7 +321,7 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "m", Schedule: "0 8 * * *", Prompt: "p"})
 	r.store = st
 	r.ag = core.NewAgent(spawner, nil, 0)
-	r.ag.SetLoopProvider(agent_loop.Loop{})
+	r.ag.SetLoopProvider(loop.Loop{})
 
 	// the defaulting law, model side: empty model = the session
 	// provider model - the base provider streams, no derivation

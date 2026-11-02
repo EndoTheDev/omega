@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // The gate (design Q3/Q11/Q13): one gate, one policy text - agent

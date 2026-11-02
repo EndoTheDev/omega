@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 var _ core.AgentSessionStore = (*Store)(nil)

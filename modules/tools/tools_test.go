@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // TestRunShellContextKill: the shell tool must run under the call ctx -

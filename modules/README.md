@@ -2,7 +2,7 @@
 
 Modules are in-process Go packages that provide capabilities to
 omega. Each module implements the `Plugin` interface from
-`engine/agent/plugin.go` and mounts into a shared `Context`.
+`agent/plugin.go` and mounts into a shared `Context`.
 
 ## How it works
 
@@ -31,7 +31,7 @@ type Plugin interface {
 (*) `MountWithAPI` is the ONLY mount method. Every seam claim,
     additive append, tool, command, panel, route and emitter is a
     journaled `api.Register*` call inside it - see the census table
-    in the `engine/agent/extensionapi.go` header and the capsule table below
+    in the `agent/extensionapi.go` header and the capsule table below
     for what each registration builds.
 ```
 
@@ -82,7 +82,6 @@ the disable list. No web module exists.
 
 | Package         | Seam(s)        | Description                                          |
 | --------------- | -------------- | ---------------------------------------------------- |
-| `agent_loop/`   | loop           | Default conversation loop (LoopProvider impl)        |
 | `provider/`     | provider       | Ollama, OpenAI, Anthropic streaming                  |
 | `store/`        | store, tools   | SQLite session store + sessions.search tool          |
 | `skills/`       | skills, tools, prompt_sections | Skill loading + skills domain tool (read/write/update) + /skills command + Available Skills section |

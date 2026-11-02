@@ -1,16 +1,16 @@
 # Architecture
 
 ```txt
-webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> ai (provider streaming)
+webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> llm (provider streaming)
 ```
 
 | Layer    | Package     | Responsibility                                                                                                                                          |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (23 of them, `RegistryToggles` newest: the config.yaml `disabled:` registry-browser toggle fold), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError) |
 | Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
-| Provider | `ai`        | The `ai.Provider`/`ai.ToolSchema`/`ai.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
+| LLM      | `llm`       | The `llm.Provider`/`llm.ToolSchema`/`llm.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
 | CLI      | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | In-process Go packages: agent_loop, provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process (detached background-process registry), terminal, browser, trust + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
+| Modules  | `modules/`  | In-process Go packages: provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process (detached background-process registry), terminal, browser, trust + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -30,9 +30,9 @@ cmd/omega/        Single binary entry point (serve, run, health, chat, update)
 cmd/omega/examples/  Config templates, embedded for first-run bootstrap
 core/             Zero-behavior contracts: message vocabulary, seam interfaces,
                   Context, canvas panel types, captioner, kanban vocabulary
-llm/               Provider contract (ai.Provider aliases core.Provider), retry,
+llm/               Provider contract (llm.Provider aliases core.Provider), retry,
                   HTTP client, think-level ladder, image sniffing
-engine/agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
+agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
                   canvas runtime, insights/caption/compaction helpers
 modules/          In-process module packages (21 packages: 20 plugins +
                   datadir, an imported leaf + engine/webui, the webui
@@ -105,7 +105,7 @@ dual-mount parity tests and the fail-loud stubs went with them):
   (module, seam, failed predicate) records toggle-level refusals
 
 The seam census (15 exclusive slots) and its registration mapping
-live in the header of `engine/agent/extensionapi.go`; the vocabulary types
+live in the header of `agent/extensionapi.go`; the vocabulary types
 (Refusal, RefusalSink, ModulePanicError) live in
 `core/api.go`. Hosts call `agent.MountAllAPI` (it returns the
 registry: claims, module routes, the refusal ledger) - every host

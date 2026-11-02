@@ -17,7 +17,7 @@ import (
 // testLoop is a minimal LoopProvider for agent tests. It mirrors the
 // real loop's behavior for the cases the agent package tests exercise:
 // stream provider responses, execute tool calls, feed results back.
-// The real loop lives in modules/agent_loop/ — this is a test-only
+// The real loop lives in agent/loop/ — this is a test-only
 // copy that avoids an import cycle.
 type testLoop struct{}
 
@@ -159,7 +159,7 @@ func newTestAgent(provider llm.Provider, tools map[string]core.Tool, maxTurns in
 	return a
 }
 
-// isOverflowError is duplicated from the real loop (modules/agent_loop/)
+// isOverflowError is duplicated from the real loop (agent/loop/)
 // because the agent test package can't import the extension.
 func isOverflowError(err string) bool {
 	lower := strings.ToLower(err)

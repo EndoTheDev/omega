@@ -40,7 +40,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    assignment.
 
 2. **Map every classic assignment to its registration.** The census
-   (`engine/agent/extensionapi.go` header) is the table; the short list:
+   (`agent/extensionapi.go` header) is the table; the short list:
 
    | Classic assignment                    | Registration                |
    | ------------------------------------- | --------------------------- |

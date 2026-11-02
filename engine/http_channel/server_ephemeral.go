@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Ephemeral sessions (card t_d96a5cd5): a chat that never touches the
