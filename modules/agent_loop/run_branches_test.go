@@ -4,12 +4,54 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/engine/ai"
 )
+
+// stubStream is a core.InjectedStream with per-key buffers for the
+// drain tests: keys model the run affinity, so a test can pin that one
+// run's drain leaves another run's queue untouched.
+type stubStream struct {
+	mu   sync.Mutex
+	pend map[string][]core.InjectedMessage
+}
+
+func newStubStream() *stubStream {
+	return &stubStream{pend: map[string][]core.InjectedMessage{}}
+}
+
+func (s *stubStream) push(affinity, text string) {
+	s.mu.Lock()
+	s.pend[affinity] = append(s.pend[affinity], core.InjectedMessage{Text: text, Source: "test"})
+	s.mu.Unlock()
+}
+
+func (s *stubStream) Poll(affinity string) []core.InjectedMessage {
+	s.mu.Lock()
+	msgs := s.pend[affinity]
+	delete(s.pend, affinity)
+	s.mu.Unlock()
+	return msgs
+}
+
+func (s *stubStream) Wait(ctx context.Context, affinity string) (core.InjectedMessage, bool) {
+	for {
+		msgs := s.Poll(affinity)
+		if len(msgs) > 0 {
+			return msgs[0], true
+		}
+		select {
+		case <-time.After(5 * time.Millisecond):
+		case <-ctx.Done():
+			return core.InjectedMessage{}, false
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Mock implementations for PromptBuilder and CompactionProvider
@@ -334,9 +376,10 @@ func TestRunUnknownTool(t *testing.T) {
 	}
 }
 
-// TestRunInjectedMessagesDraining covers lines 256-275: pass an
-// InjectedMessages channel with buffered messages. After a turn, the loop
-// should drain them, combine into a user message, and continue.
+// TestRunInjectedMessagesDraining covers the after-turn drain: pass an
+// InjectedMessages stream with buffered messages for THIS run's
+// affinity key (pinned on the run ctx). After a turn, the loop should
+// drain them, combine into a user message, and continue.
 func TestRunInjectedMessagesDraining(t *testing.T) {
 	provider := ai.NewFakeProviderScripts("test",
 		// Turn 1: respond and stop (no tool calls).
@@ -351,18 +394,18 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 		},
 	)
 
-	injected := make(chan core.InjectedMessage, 2)
-	injected <- core.InjectedMessage{Text: "injected message 1", Source: "test"}
-	injected <- core.InjectedMessage{Text: "injected message 2", Source: "test"}
+	stream := newStubStream()
+	stream.push("run-affinity-1", "injected message 1")
+	stream.push("run-affinity-1", "injected message 2")
 
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(agent.WithRunAffinity(context.Background(), "run-affinity-1"), core.LoopOptions{
 			Provider:         provider,
 			Messages:         []core.Message{core.NewUser("go")},
 			Events:           events,
-			InjectedMessages: injected,
+			InjectedMessages: stream,
 		})
 	}()
 
@@ -390,6 +433,64 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 	}
 	if !foundInjected {
 		t.Error("injected messages were not combined into a user message for the second turn")
+	}
+}
+
+// TestRunInjectedMessagesRunAffinityIsolation pins the t_f3fb7c52 fix at
+// the seam's consumer: a loop drains ONLY its own affinity key's queue -
+// a sibling run's queued result (the wrong-run steal the title turn
+// committed) is unreachable.
+func TestRunInjectedMessagesRunAffinityIsolation(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "first"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "second"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	stream := newStubStream()
+	stream.push("run-affinity-1", "injected message for run 1")
+	stream.push("run-affinity-2", "injected message for run 2")
+
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		Loop{}.Run(agent.WithRunAffinity(context.Background(), "run-affinity-1"), core.LoopOptions{
+			Provider:         provider,
+			Messages:         []core.Message{core.NewUser("go")},
+			Events:           events,
+			InjectedMessages: stream,
+		})
+	}()
+
+	end := drainEvents(t, events)
+	if end.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want stop", end.FinishReason)
+	}
+	var foundForeign, foundOwn bool
+	for _, msg := range provider.LastMessages {
+		if u, ok := msg.(core.User); ok {
+			if strings.Contains(u.Content, "message for run 2") {
+				foundForeign = true
+			}
+			if strings.Contains(u.Content, "message for run 1") {
+				foundOwn = true
+			}
+		}
+	}
+	if foundForeign {
+		t.Error("this run's drain consumed a FOREIGN run's queued result")
+	}
+	if !foundOwn {
+		t.Error("this run's own queued result never arrived")
+	}
+	// the sibling key's queue is untouched
+	if got := stream.Poll("run-affinity-2"); len(got) != 1 || got[0].Text != "injected message for run 2" {
+		t.Errorf("sibling run's queue = %+v, want its result intact", got)
 	}
 }
 
@@ -626,7 +727,7 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	injected := make(chan core.InjectedMessage)
+	stream := newStubStream()
 
 	events := make(chan core.Event, 64)
 	go func() {
@@ -635,7 +736,7 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 			Provider:         provider,
 			Messages:         []core.Message{core.NewUser("hi")},
 			Events:           events,
-			InjectedMessages: injected,
+			InjectedMessages: stream,
 			// One-shot mode: UserInput is nil.
 			UserInput: nil,
 			PendingDelegations: func() int {

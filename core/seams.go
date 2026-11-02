@@ -36,9 +36,17 @@ type LoopOptions struct {
 	PromptAppend       []string // extra prompts from --append-system-prompt
 	PromptContext      string   // trust-gated AGENTS.md project context
 	Events             chan<- Event
-	InjectedMessages   <-chan InjectedMessage // subagent results (nil if no delegate extension)
-	UserInput          <-chan string          // user messages while running (nil for one-shot mode)
-	PendingDelegations func() int             // returns count of running subagent tasks
+	// InjectedMessages is the run-affinity drain seam for subagent
+	// results (t_f3fb7c52): the loop polls/waits for its OWN run
+	// affinity key (engine/agent.RunAffinityFromContext), so a sibling
+	// run's queued results are unreachable from here. Nil if the
+	// delegate extension is absent.
+	InjectedMessages InjectedStream
+	UserInput        <-chan string // user messages while running (nil for one-shot mode)
+	// PendingDelegations counts THIS run's running subagent tasks, per
+	// run affinity (t_f3fb7c52); a serve-wide count would park a run's
+	// blocking drain on foreign children forever.
+	PendingDelegations func(affinity string) int
 	// Approvals is the smart-approval seam (card t_c2b52cb5). Nil =
 	// no gate: the loop executes tools unchanged. Non-nil, the loop
 	// consults it before every tool run and turns a non-nil error

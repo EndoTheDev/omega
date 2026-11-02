@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/ai"
@@ -22,6 +24,42 @@ func (s *stubPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOpt
 }
 
 func (s *stubPromptBuilder) Guidelines() []string { return s.guidelines }
+
+// stubStream satisfies core.InjectedStream for the wiring tests: it
+// queues everything under one key and answers Poll/Wait from that
+// key only.
+type stubStream struct {
+	mu   sync.Mutex
+	pend map[string][]core.InjectedMessage
+}
+
+func newStubStream(items ...core.InjectedMessage) *stubStream {
+	s := &stubStream{pend: map[string][]core.InjectedMessage{}}
+	s.pend[""] = append([]core.InjectedMessage(nil), items...)
+	return s
+}
+
+func (s *stubStream) Poll(affinity string) []core.InjectedMessage {
+	s.mu.Lock()
+	msgs := s.pend[affinity]
+	delete(s.pend, affinity)
+	s.mu.Unlock()
+	return msgs
+}
+
+func (s *stubStream) Wait(ctx context.Context, affinity string) (core.InjectedMessage, bool) {
+	for {
+		msgs := s.Poll(affinity)
+		if len(msgs) > 0 {
+			return msgs[0], true
+		}
+		select {
+		case <-time.After(5 * time.Millisecond):
+		case <-ctx.Done():
+			return core.InjectedMessage{}, false
+		}
+	}
+}
 
 // stubLogger satisfies LoggerProvider for testing. It records calls so
 // tests can assert the logger was wired through.
@@ -52,7 +90,7 @@ func TestNewFromContextFull(t *testing.T) {
 		Run:         func(_ context.Context, _ map[string]any) (string, error) { return "alpha-ok", nil },
 	}}}
 	infos := []core.ExtensionInfo{{Name: "ext-a", Tools: 1}}
-	injected := make(chan core.InjectedMessage, 1)
+	injected := newStubStream(core.InjectedMessage{Text: "queued", Source: "test"})
 	pending := func() int { return 3 }
 
 	ctx := &Context{

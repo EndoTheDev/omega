@@ -28,12 +28,12 @@ import (
 )
 
 // Delegate manages background subagent tasks. It implements ToolProvider
-// and supplies InjectedMessages + PendingDelegations to the agent Context.
+// and supplies InjectedMessages (the run-affinity InjectedStream) +
+// PendingDelegations to the agent Context.
 type Delegate struct {
 	mu          sync.Mutex
 	tasks       map[string]*delegateTask
 	taskCounter int64
-	injected    chan injectedMsg
 	logger      core.LoggerProvider
 	// notifier is the finished-things seam (card t_5d9032d3), wired by
 	// the plugin at mount. Nil-safe: no seam, no notification.
@@ -47,32 +47,38 @@ type Delegate struct {
 	// inside a subagent child (OMEGA_SUBAGENT set) - delegate.task
 	// never registers there, so depth stays at one level.
 	spawnable bool
-}
 
-// injectedMsg carries a subagent result to be injected as a new turn.
-// It is converted to core.InjectedMessage by the plugin adapter.
-type injectedMsg struct {
-	text   string
-	source string
+	// The injected results (t_f3fb7c52, run affinity): a queue keyed by
+	// the spawning Run's affinity key, with per-key wake signals. Poll
+	// and Wait drain ONLY their key's results - a concurrent run (the
+	// title turn, a sibling /chat) can never take another run's result.
+	// qmu guards everything below, including the cap.
+	qmu     sync.Mutex
+	queues  map[string][]core.InjectedMessage
+	waiters map[string][]chan struct{}
+	qTotal  int
 }
 
 type delegateTask struct {
-	id      string
-	prompt  string
-	session string // child --session id ("" when no store seam) - the stored, searchable surface
-	cmd     *exec.Cmd
-	out     strings.Builder // child stdout only: the final answer, never stderr noise
-	errOut  strings.Builder // child stderr, kept on the task for status depth
-	mu      sync.Mutex
-	done    bool
+	id            string
+	prompt        string
+	affinity      string // the spawning run's affinity key; "" = unaddressed (no-key runs)
+	session       string // child --session id ("" when no store seam) - the stored, searchable surface
+	cmd           *exec.Cmd
+	out           strings.Builder // child stdout only: the final answer, never stderr noise
+	errOut        strings.Builder // child stderr, kept on the task for status depth
+	mu            sync.Mutex
+	done          bool
 }
 
-// NewDelegate creates a Delegate ready to mount. The injected channel
-// is created internally; the host reads it via InjectedMessages.
+// NewDelegate creates a Delegate ready to mount. The affinity-keyed
+// result queues are created internally; the host reads them through the
+// InjectedStream seam (ctx.InjectedMessages).
 func NewDelegate() *Delegate {
 	return &Delegate{
 		tasks:     make(map[string]*delegateTask),
-		injected:  make(chan injectedMsg, 16),
+		queues:    make(map[string][]core.InjectedMessage),
+		waiters:   make(map[string][]chan struct{}),
 		spawnable: os.Getenv("OMEGA_SUBAGENT") == "",
 	}
 }
@@ -85,6 +91,11 @@ const (
 	summaryCap  = 6000
 	summaryHead = 3500
 	summaryTail = 1500
+	// injectedCap bounds the TOTAL buffered injected results across
+	// every affinity queue (t_f3fb7c52) - the old shared channel's cap
+	// - so a dead run's undrained results cannot grow the buffer
+	// unboundedly. A full cap drops the newest result (dropResult).
+	injectedCap = 16
 )
 
 // Description constants for the delegate tools (the machine-facing
@@ -160,14 +171,20 @@ func (d *Delegate) runDelegate(ctx context.Context, args map[string]any) (string
 	}
 }
 
-// PendingCount returns the number of still-running subagent tasks.
-func (d *Delegate) PendingCount() int {
+// PendingCount implements the pending-delegations seam per run
+// (t_f3fb7c52): the count includes only the running tasks the RUN named
+// by affinity spawned. A serve-wide count here would keep a run's
+// blocking drain parked on foreign children (and, with run affinity,
+// forever - results for foreign children can never enter this run's
+// queue). delegate.status's own listing stays serve-wide on purpose:
+// it is the user's read surface, not the drain's gate.
+func (d *Delegate) PendingCount(affinity string) int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	count := 0
 	for _, t := range d.tasks {
 		t.mu.Lock()
-		if !t.done {
+		if !t.done && t.affinity == affinity {
 			count++
 		}
 		t.mu.Unlock()
@@ -175,10 +192,99 @@ func (d *Delegate) PendingCount() int {
 	return count
 }
 
-// InjectedChannel returns the read-only channel of subagent results.
-// The plugin adapter exposes this as agent.Context.InjectedMessages.
-func (d *Delegate) InjectedChannel() <-chan injectedMsg {
-	return d.injected
+// Poll implements core.InjectedStream (t_f3fb7c52): every result
+// queued for affinity comes back FIFO and the queue empties. A
+// different key's results are unreachable from this call - the drain
+// cannot cross runs.
+func (d *Delegate) Poll(affinity string) []core.InjectedMessage {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	msgs := d.queues[affinity]
+	delete(d.queues, affinity)
+	d.qTotal -= len(msgs)
+	return msgs
+}
+
+// Wait implements core.InjectedStream (t_f3fb7c52): blocks until one
+// result for affinity arrives or ctx ends.
+func (d *Delegate) Wait(ctx context.Context, affinity string) (core.InjectedMessage, bool) {
+	if msgs := d.Poll(affinity); len(msgs) > 0 {
+		return msgs[0], true
+	}
+	for {
+		d.qmu.Lock()
+		if msgs := d.queues[affinity]; len(msgs) > 0 {
+			m := msgs[0]
+			d.queues[affinity] = msgs[1:]
+			d.qTotal--
+			d.qmu.Unlock()
+			return m, true
+		}
+		// nothing pending: arm a wake signal for this key (one push
+		// wakes one waiter; a second waiter on the same key re-arms on
+		// the next loop pass, a popped-empty wake included).
+		wake := make(chan struct{}, 1)
+		d.waiters[affinity] = append(d.waiters[affinity], wake)
+		d.qmu.Unlock()
+		select {
+		case <-wake:
+			if msgs := d.Poll(affinity); len(msgs) > 0 {
+				return msgs[0], true
+			}
+			// woken by a push another same-key waiter already took -
+			// re-check and re-arm.
+			continue
+		case <-ctx.Done():
+			// deregister the wake slot so a later push does not leak it
+			d.qmu.Lock()
+			ws := d.waiters[affinity]
+			for i, w := range ws {
+				if w == wake {
+					d.waiters[affinity] = append(ws[:i], ws[i+1:]...)
+					break
+				}
+			}
+			if len(d.waiters[affinity]) == 0 {
+				delete(d.waiters, affinity)
+			}
+			d.qmu.Unlock()
+			return core.InjectedMessage{}, false
+		}
+	}
+}
+
+// pushResult adds one finished child's result to the affinity-keyed
+// queue and wakes its waiters. The buffer is still capped (the
+// injectedCap law, formerly the channel's cap): a full cap drops the
+// new result with the same logged shape as before.
+func (d *Delegate) pushResult(affinity, source, text string) {
+	d.qmu.Lock()
+	if d.qTotal >= injectedCap {
+		d.qmu.Unlock()
+		d.dropResult(source)
+		return
+	}
+	d.queues[affinity] = append(d.queues[affinity], core.InjectedMessage{Text: text, Source: source})
+	d.qTotal++
+	wake := d.waiters[affinity]
+	d.waiters[affinity] = nil
+	d.qmu.Unlock()
+	for _, w := range wake {
+		select {
+		case w <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// dropResult logs (or stderrs) the cap-full drop - the classic
+// non-blocking send's overflow arm, keyless now.
+func (d *Delegate) dropResult(source string) {
+	if d.logger != nil {
+		d.logger.Errorf("delegate: injected queue full, dropping result for %s", source)
+	} else {
+		fmt.Fprintf(os.Stderr, "delegate: injected queue full, dropping result for %s\n", source)
+	}
 }
 
 // resolveAgent applies the defaulting law (Endo, 2026-11-01,
@@ -317,7 +423,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	// was created to fix).
 	agent.SetupProcessGroupKill(cmd)
 
-	task := &delegateTask{id: taskID, prompt: prompt, session: session, cmd: cmd}
+	task := &delegateTask{id: taskID, prompt: prompt, affinity: agent.RunAffinityFromContext(ctx), session: session, cmd: cmd}
 	cmd.Stdout = &task.out
 	cmd.Stderr = &task.errOut
 
@@ -356,17 +462,10 @@ func (d *Delegate) finish(taskID string, runErr error) {
 	d.mu.Unlock()
 
 	if task != nil {
-		// Inject result into host conversation. Non-blocking send;
-		// if buffer full, the result is logged and dropped.
-		select {
-		case d.injected <- injectedMsg{text: result, source: "delegate:" + taskID}:
-		default:
-			if d.logger != nil {
-				d.logger.Errorf("delegate: injected channel full, dropping result for %s", taskID)
-			} else {
-				fmt.Fprintf(os.Stderr, "delegate: injected channel full, dropping result for %s\n", taskID)
-			}
-		}
+		// Queue the result for the spawning run's affinity key and wake
+		// its waiters (t_f3fb7c52). Non-blocking; if the global buffer
+		// is full, the result is logged and dropped.
+		d.pushResult(task.affinity, "delegate:"+taskID, result)
 	}
 
 	if d.notifier == nil {

@@ -126,6 +126,19 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 	turns := 0
 	overflowRetries := 0
 
+	// Run affinity (t_f3fb7c52): every run drains injected results for
+	// ITS OWN key only. The host may pin a deterministic key (tests);
+	// otherwise a fresh nonce is minted per Run - the title turn and
+	// sibling /chat runs sharing one session id each get their own key,
+	// so a delegated child's result can only reach the run that spawned
+	// it. The tool ctx below carries the same key, the delegate tool
+	// stamps it at spawn.
+	affinity := agent.RunAffinityFromContext(ctx)
+	if affinity == "" {
+		affinity = agent.NewRunAffinity()
+		ctx = agent.WithRunAffinity(ctx, affinity)
+	}
+
 	// Turn-copy persistence (card t_471f6d4a): the run's new input
 	// persists here first, then one assistant + its tool results per
 	// turn, provider-correct order - user -> assistant(A + thinking +
@@ -362,25 +375,19 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 			}
 		}
 
-		// Non-blocking: drain all buffered subagent results and
+		// Non-blocking: pull THIS run's buffered subagent results and
 		// batch them into one user message. Runs after every turn
 		// (not just when there are no tool calls) so that results
 		// are picked up even while the agent polls with delegate.status.
+		// Run affinity (t_f3fb7c52): Poll fetches only this run's
+		// key-addressed queue.
 		if opts.InjectedMessages != nil {
 			var combined string
-			draining := true
-			for draining {
-				select {
-				case msg, ok := <-opts.InjectedMessages:
-					if ok {
-						if combined != "" {
-							combined += "\n\n---\n\n"
-						}
-						combined += msg.Text
-					}
-				default:
-					draining = false
+			for _, msg := range opts.InjectedMessages.Poll(affinity) {
+				if combined != "" {
+					combined += "\n\n---\n\n"
 				}
+				combined += msg.Text
 			}
 			if combined != "" {
 				injected := core.NewUser(combined)
@@ -393,20 +400,25 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 		if len(toolCalls) == 0 {
 			// One-shot mode (UserInput == nil): block if subagents are
 			// still running. TUI mode (UserInput != nil) never blocks.
-			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.PendingDelegations != nil && opts.PendingDelegations() > 0 {
-				select {
-				case msg, ok := <-opts.InjectedMessages:
-					if ok {
-						injected := core.NewUser(msg.Text)
-						persistTurnMessage(ctx, sink, opts.Logger, injected, "user input")
-						messages = append(messages, injected)
-						continue
-					}
-				case <-ctx.Done():
-					end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: ctx.Err().Error()}
+			// Run affinity (t_f3fb7c52): the wait is addressed to THIS
+			// run's key - another run's result never releases or
+			// enters this block.
+			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.PendingDelegations != nil && opts.PendingDelegations(affinity) > 0 {
+				msg, ok := opts.InjectedMessages.Wait(ctx, affinity)
+				if ok {
+					injected := core.NewUser(msg.Text)
+					persistTurnMessage(ctx, sink, opts.Logger, injected, "user input")
+					messages = append(messages, injected)
+					continue
+				}
+				if err := ctx.Err(); err != nil {
+					end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "cancelled", Error: err.Error()}
 					opts.Events <- end
 					return nil
 				}
+				// The seam settled without a result and without a
+				// cancellation (a stream that stopped): no result will
+				// ever come - fall through to the run's own end.
 			}
 			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			opts.Events <- end

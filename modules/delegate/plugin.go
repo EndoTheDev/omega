@@ -6,8 +6,9 @@ import (
 )
 
 // Plugin implements agent.Plugin. It wraps a Delegate and mounts it
-// into the agent Context as a ToolProvider plus InjectedMessages channel
-// and PendingDelegations func.
+// into the agent Context as a ToolProvider plus the run-affinity
+// InjectedStream (ctx.InjectedMessages, t_f3fb7c52) and
+// PendingDelegations func.
 type Plugin struct {
 	delegate *Delegate
 }
@@ -76,16 +77,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			}
 		}
 	}
-	// Bridge the internal injectedMsg channel to core.InjectedMessage.
-	agentCh := make(chan core.InjectedMessage, 16)
-	if err := api.RegisterDelegation(agentCh, d.PendingCount); err != nil {
+	// Mount the run-affinity drain seam (t_f3fb7c52): the Delegate
+	// itself is the InjectedStream - results are queued per spawning
+	// run and drained by the run's own affinity key. The channel bridge
+	// goroutine this replaces offered no affinity: any loop could drain
+	// any run's result.
+	if err := api.RegisterDelegation(d, d.PendingCount); err != nil {
 		return err
 	}
-	go func() {
-		for msg := range d.InjectedChannel() {
-			agentCh <- core.InjectedMessage{Text: msg.text, Source: msg.source}
-		}
-	}()
 	return nil
 }
 

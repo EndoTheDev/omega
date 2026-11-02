@@ -128,8 +128,8 @@ type Agent struct {
 	extensionInfos []ExtensionInfo
 	captioner      Captioner
 	userInput      chan string
-	injectedMsgs   <-chan InjectedMessage
-	pendingDeleg   func() int
+	injectedStream InjectedStream
+	pendingDeleg   func(affinity string) int
 	loop           LoopProvider
 	logger         LoggerProvider
 	// eventObserverSource reads the Context's spine subscriptions at
@@ -410,14 +410,17 @@ func (a *Agent) SetUserInput(ch chan string) {
 	a.userInput = ch
 }
 
-// SetInjectedMessages sets the channel for subagent result injection.
-func (a *Agent) SetInjectedMessages(ch <-chan InjectedMessage) {
-	a.injectedMsgs = ch
+// SetInjectedStream sets the run-affinity drain seam for subagent
+// result injection (t_f3fb7c52). The loop polls and waits through this
+// seam addressed by its OWN run affinity key, so concurrent runs never
+// drain each other's results.
+func (a *Agent) SetInjectedStream(stream InjectedStream) {
+	a.injectedStream = stream
 }
 
 // SetPendingDelegations sets the function that returns the count of
-// running subagent tasks.
-func (a *Agent) SetPendingDelegations(f func() int) {
+// this run's running subagent tasks (per-run affinity, t_f3fb7c52).
+func (a *Agent) SetPendingDelegations(f func(affinity string) int) {
 	a.pendingDeleg = f
 }
 
@@ -469,7 +472,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 		ag.SetTurnNudger(ctx.Nudge)
 	}
 	if ctx.InjectedMessages != nil {
-		ag.SetInjectedMessages(ctx.InjectedMessages)
+		ag.SetInjectedStream(ctx.InjectedMessages)
 	}
 	if ctx.PendingDelegations != nil {
 		ag.SetPendingDelegations(ctx.PendingDelegations)
@@ -530,11 +533,11 @@ func (a *Agent) ListModelEntries() ([]ModelEntry, error) {
 // channel, so parallel runs are safe by construction; use RunWithProvider
 // to give a run its own model.
 //
-// ponytail: the injected-messages channel and pending delegations are
-// shared across concurrent runs, so a delegated message drains into an
-// arbitrary active run - fine at single-user load. Upgrade path: a
-// per-run injected channel (a config-defined agent registry builds on
-// that later).
+// Run affinity (t_f3fb7c52): injected subagent results are queued per
+// run and drained through the InjectedStream seam addressed by the
+// run's own affinity key, so concurrent runs can no longer drain each
+// other's delegate results (the ponytail note this replaces: the shared
+// channel drained into an arbitrary active run).
 func (a *Agent) Run(ctx context.Context, messages []Message, tools map[string]Tool) <-chan Event {
 	return a.RunWithProvider(ctx, a.provider, messages, tools)
 }
@@ -615,7 +618,11 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			PromptAppend:       a.promptAppend,
 			PromptContext:      runPromptContext,
 			Events:             inner,
-			InjectedMessages:   a.injectedMsgs,
+			// InjectedMessages is the run-affinity drain seam
+			// (t_f3fb7c52): the loop drains for its OWN run's affinity
+			// key (engine/agent.RunAffinityFromContext), so a sibling
+			// run's queued results never drain into this Run.
+			InjectedMessages:   a.injectedStream,
 			UserInput:          a.userInput,
 			PendingDelegations: a.pendingDeleg,
 			Approvals:          approvals,

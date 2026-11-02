@@ -99,8 +99,10 @@ type Context struct {
 	// Cross-cutting (set by specific plugins).
 	Commands           []ExtensionCommand
 	CommandHandler     func(ctx context.Context, name, args string) (CommandResult, error)
-	InjectedMessages   <-chan InjectedMessage
-	PendingDelegations func() int
+	InjectedMessages   InjectedStream // run-affinity subagent-result drain (t_f3fb7c52)
+	// PendingDelegations counts THIS run's running subagent tasks
+	// (per-run affinity, t_f3fb7c52).
+	PendingDelegations func(affinity string) int
 
 	// Shared state.
 	CWD     string

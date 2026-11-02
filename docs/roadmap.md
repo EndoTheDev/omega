@@ -118,9 +118,6 @@ and git history.
 - `omega serve` has no authentication, TLS, or CORS - it binds loopback
   by default; exposing it requires an explicit `server.bind` entry and
   an authenticating reverse proxy in front
-- The shared injected-messages channel means a delegated message drains
-  into an arbitrary active run at single-user load (concurrent /chat
-  runs themselves are safe since v0.7.0)
 - `omega health` only checks HTTP 200 on `/health` - does not probe the
   provider or database
 - Compaction is irreversible - summarized messages cannot be restored

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // writeStub writes a platform-appropriate stub script that echoes the
@@ -67,19 +66,18 @@ func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	}
 
 	// Wait for the goroutine to finish and inject the result.
-	select {
-	case msg := <-d.InjectedChannel():
-		// Normalize CRLF stub output to LF for assertion.
-		msg.text = strings.ReplaceAll(msg.text, "\r\n", "\n")
-		msg.text = strings.TrimSpace(msg.text)
-		if msg.text != "stub-result\nsubagent=1" {
-			t.Fatalf("expected stub result with subagent=1 guard, got %q", msg.text)
-		}
-		if msg.source != "delegate:task-1" {
-			t.Fatalf("expected source delegate:task-1, got %q", msg.source)
-		}
-	case <-time.After(15 * time.Second):
+	msg, ok := d.Wait(ctx15(t), "")
+	if !ok {
 		t.Fatal("timed out waiting for injected result")
+	}
+	// Normalize CRLF stub output to LF for assertion.
+	msgText := strings.ReplaceAll(msg.Text, "\r\n", "\n")
+	msgText = strings.TrimSpace(msgText)
+	if msgText != "stub-result\nsubagent=1" {
+		t.Fatalf("expected stub result with subagent=1 guard, got %q", msgText)
+	}
+	if msg.Source != "delegate:task-1" {
+		t.Fatalf("expected source delegate:task-1, got %q", msg.Source)
 	}
 
 	// Task must now be marked done.
@@ -109,20 +107,19 @@ func TestRunDelegateTaskFailingBinary(t *testing.T) {
 		t.Fatalf("runDelegateTask: %v", err)
 	}
 
-	select {
-	case msg := <-d.InjectedChannel():
-		wanted := "error: delegate task task-1 failed: exit status 3"
-		if msg.text != wanted {
-			t.Fatalf("expected short failure line %q, got %q", wanted, msg.text)
-		}
-		if msg.source != "delegate:task-1" {
-			t.Fatalf("expected source delegate:task-1, got %q", msg.source)
-		}
-		if strings.Contains(msg.text, "boom") {
-			t.Fatalf("failure line leaked child output: %q", msg.text)
-		}
-	case <-time.After(15 * time.Second):
+	msg, ok := d.Wait(ctx15(t), "")
+	if !ok {
 		t.Fatal("timed out waiting for injected failure result")
+	}
+	wanted := "error: delegate task task-1 failed: exit status 3"
+	if msg.Text != wanted {
+		t.Fatalf("expected short failure line %q, got %q", wanted, msg.Text)
+	}
+	if msg.Source != "delegate:task-1" {
+		t.Fatalf("expected source delegate:task-1, got %q", msg.Source)
+	}
+	if strings.Contains(msg.Text, "boom") {
+		t.Fatalf("failure line leaked child output: %q", msg.Text)
 	}
 }
 

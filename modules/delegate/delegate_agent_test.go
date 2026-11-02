@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/EndoTheDev/omega/engine/agent"
 )
@@ -60,14 +59,13 @@ func TestDelegateAgentTargetEnv(t *testing.T) {
 		t.Fatalf("delegate to scout: %v (%s)", err, out)
 	}
 	// The result lands async, but the spawn must carry the env var.
-	// The stub result is injected; poll the injected channel.
-	select {
-	case msg := <-d.injected:
-		if !strings.Contains(msg.text, "agent=scout") {
-			t.Errorf("child saw agent=%q... want agent=scout", extractAgent(msg.text))
-		}
-	case <-time.After(10 * time.Second):
+	// The stub result is injected; wait on the affinity queue.
+	msg, ok := d.Wait(ctx10(t), "")
+	if !ok {
 		t.Fatalf("no injected result in 10s: %s", out)
+	}
+	if !strings.Contains(msg.Text, "agent=scout") {
+		t.Errorf("child saw agent=%q... want agent=scout", extractAgent(msg.Text))
 	}
 }
 
