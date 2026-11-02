@@ -729,8 +729,9 @@ func TestMemoryRemovalProof(t *testing.T) {
 // ctx.InjectedMessages / PendingDelegations fields) - the seam signature
 // references them and layers never import modules. Intentional residue,
 // documented: this test compiles them to prove it. The OMEGA_SUBAGENT
-// recursion guard is the tool's own env wiring on the spawn - nothing
-// outside the module implements the guard.
+// recursion guard lives inside the module twice over: the spawn writes
+// the var on the child's env, and the child's own mount (MountWithAPI)
+// refuses the delegate tools when the var is set.
 func TestDelegateRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -825,7 +826,10 @@ func TestDelegateRemovalProof(t *testing.T) {
 		if m.Source != "delegate:task-1" {
 			t.Fatalf("FULL MOUNT: injected message source = %q, want delegate:task-1", m.Source)
 		}
-		if !strings.Contains(m.Text, "run arc 6 proof") {
+		// the echo child's stdout is its argv (echo echoes the flag
+		// vector too); the pin is that the child's output - the prompt
+		// among it - rides the summary, trimmed, not lost.
+		if !strings.Contains(m.Text, "arc 6 proof") {
 			t.Fatalf("FULL MOUNT: injected result lost the child output: %.80q", m.Text)
 		}
 	case <-time.After(9 * time.Second):

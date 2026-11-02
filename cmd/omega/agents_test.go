@@ -53,6 +53,29 @@ func TestApplyAgentLayerOverridesModel(t *testing.T) {
 	}
 }
 
+// TestApplyModelEnvOverrideBeatsLayer pins the wake contract's model
+// specificity: an explicit OMEGA_MODEL (a delegate fire's or cron
+// fire's per-run model riding the env) wins over a persona layer's
+// provider.model, which otherwise applies AFTER applyEnv and would
+// silently clobber it. Empty env = inherit - the layer's model stands.
+func TestApplyModelEnvOverrideBeatsLayer(t *testing.T) {
+	t.Setenv("OMEGA_MODEL", " glm-5.2 ")
+	cfg := agentLayerBase()
+	cfg.Provider.ModelName = "qwen3-coder" // what the layer just wrote
+	applyModelEnvOverride(&cfg)
+	if cfg.Provider.ModelName != "glm-5.2" {
+		t.Errorf("explicit model = %q, want the OMEGA_MODEL glm-5.2 (trimmed)", cfg.Provider.ModelName)
+	}
+
+	t.Setenv("OMEGA_MODEL", "")
+	cfg = agentLayerBase()
+	cfg.Provider.ModelName = "qwen3-coder"
+	applyModelEnvOverride(&cfg)
+	if cfg.Provider.ModelName != "qwen3-coder" {
+		t.Errorf("empty env must inherit, got %q", cfg.Provider.ModelName)
+	}
+}
+
 func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)

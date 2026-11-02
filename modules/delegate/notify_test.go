@@ -47,7 +47,7 @@ func TestFinishEmitsNotification(t *testing.T) {
 	d.notifier = n
 	registerTask(d, "task-7")
 
-	d.finish("task-7", []byte("subagent output"), nil)
+	d.finish("task-7", nil)
 	if len(n.got) != 1 {
 		t.Fatalf("clean finish emitted %d records, want 1", len(n.got))
 	}
@@ -58,7 +58,7 @@ func TestFinishEmitsNotification(t *testing.T) {
 		t.Fatalf("title leaked run content: %q", n.got[0].Title)
 	}
 
-	d.finish("task-8", []byte("boom"), context.DeadlineExceeded)
+	d.finish("task-8", context.DeadlineExceeded)
 	if len(n.got) != 2 || n.got[1].Verdict != "failed" {
 		t.Fatalf("failed finish emitted %+v", n.got)
 	}
@@ -67,7 +67,7 @@ func TestFinishEmitsNotification(t *testing.T) {
 func TestFinishWithoutNotifierIsHarmless(t *testing.T) {
 	d := NewDelegate()
 	registerTask(d, "task-9")
-	d.finish("task-9", []byte("out"), nil) // no panic, no emission
+	d.finish("task-9", nil) // no panic, no emission
 	select {
 	case msg := <-d.InjectedChannel():
 		if msg.text == "" {

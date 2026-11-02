@@ -28,6 +28,21 @@ func resolveAgentName() string {
 	return strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
 }
 
+// applyModelEnvOverride re-asserts the OMEGA_MODEL env table entry on a
+// config that an agent layer just laid over. applyEnv runs inside
+// LoadConfig, BEFORE the layer, so a layer defining provider.model
+// silently clobbered an explicit override (wake children combine both:
+// OMEGA_AGENT for the layer, OMEGA_MODEL for the fire's model - the
+// wake contract says the env table entry wins). Empty env = inherit -
+// no re-assert, the layer's model IS the session model (the
+// defaulting law).
+func applyModelEnvOverride(cfg *Config) {
+	m := strings.TrimSpace(os.Getenv("OMEGA_MODEL"))
+	if m != "" {
+		cfg.Provider.ModelName = m
+	}
+}
+
 // ApplyAgentLayer overlays agents/<name>/config/config.yaml onto cfg
 // and resolves agent-scoped paths for everything that is not shared
 // infrastructure. The main agent (default) layers nothing: the home

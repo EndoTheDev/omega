@@ -49,6 +49,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// the logger is read at mount time - the logging Requires edge
 	// stays (recipe law 4)
 	p.delegate.logger = ctx.Logger
+	// the store seam is an opportunistic capture, NOT a Requires edge:
+	// the store mounts before delegate (slice-order tiebreak) and is
+	// not toggleable, but an edge naming delegate from here would be
+	// the removal recipe's stop signal in the other direction. Nil-safe.
+	p.delegate.store = ctx.Store
 	// card t_5d9032d3: dispatched runs report to the finished-things
 	// store. The hook receives the mounted notifications seam at mount
 	// end, nil when the module is absent (nil is legal - the emitter
@@ -59,9 +64,16 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}); err != nil {
 		return err
 	}
-	for name, tool := range d.Tools() {
-		if err := api.RegisterTool(name, tool); err != nil {
-			return err
+	// The recursion guard's mount face (THE delegation ruling, depth):
+	// inside a subagent child (OMEGA_SUBAGENT set) the delegate tools
+	// do not register at all - the child cannot spawn children. The
+	// inject seam still mounts (no ops ever drain it); the plugin
+	// census keeps counting the module.
+	if d.spawnable {
+		for name, tool := range d.Tools() {
+			if err := api.RegisterTool(name, tool); err != nil {
+				return err
+			}
 		}
 	}
 	// Bridge the internal injectedMsg channel to core.InjectedMessage.
