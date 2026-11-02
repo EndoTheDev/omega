@@ -164,9 +164,6 @@ func run(args []string) error {
 		// Alias for `omega update --rollback` — same one-generation
 		// swap back, health-verified.
 		return cmdRollback()
-	case "curator":
-		// The learning loop's weekly pass + audit ledger (t_9972dfd0).
-		return cmdCurator(rest)
 	case "chat", "":
 		// The chat subcommand is a legacy alias for the CLI loop.
 		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)

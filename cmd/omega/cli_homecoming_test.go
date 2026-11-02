@@ -119,16 +119,17 @@ func TestModuleCLISubcommandVanishes(t *testing.T) {
 	}
 	t.Log("PROOF vanish: kanban absent from the registry, dispatch falls through")
 
-	// the help listing is the same introspection: an empty module
-	// table prints no section, a removed module's line is gone
+	// the help listing is the same introspection: a removed module's
+	// line is gone. The skills capsule still claims curator, so the
+	// section itself stays - only the kanban line vanishes.
 	out, _ := captureStdout(t, func() error {
 		printModuleSubcommands(reg.Subcommands(), os.Stdout)
 		return nil
 	})
-	if out != "" {
-		t.Fatalf("REMOVED MOUNT: help still lists module subcommands: %q", out)
+	if strings.Contains(out, "kanban") {
+		t.Fatalf("REMOVED MOUNT: help still lists the kanban subcommand: %q", out)
 	}
-	t.Log("PROOF help-vanish: the module section is gone from the help listing")
+	t.Log("PROOF help-vanish: the kanban line is gone from the help listing")
 }
 
 // TestHelpListsModuleSubcommands pins the settings-list law end to
