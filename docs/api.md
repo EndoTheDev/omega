@@ -327,7 +327,7 @@ window help reports what startup auto-probed).
   `"web"`, so the board can tell a human UI comment from an agent tool
   comment.
 
-All registered by the capsule (`modules/kanban/rest.go`) and served
+All registered by the capsule (`harness/kanban/rest.go`) and served
 from the live registry - absent module, unregistered path (the SPA
 catch-all answers it).
 

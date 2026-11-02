@@ -8,12 +8,12 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/engine/http_channel"
-	"github.com/EndoTheDev/omega/modules/logging"
-	"github.com/EndoTheDev/omega/modules/memory"
-	"github.com/EndoTheDev/omega/modules/provider"
-	"github.com/EndoTheDev/omega/modules/skills"
-	"github.com/EndoTheDev/omega/modules/store"
-	"github.com/EndoTheDev/omega/modules/trust"
+	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/harness/memory"
+	"github.com/EndoTheDev/omega/harness/provider"
+	"github.com/EndoTheDev/omega/harness/skills"
+	"github.com/EndoTheDev/omega/harness/store"
+	"github.com/EndoTheDev/omega/harness/trust"
 )
 
 // TestRunChdirError verifies a non-subcommand argument that is not a

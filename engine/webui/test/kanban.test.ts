@@ -1,5 +1,5 @@
 // Module-owned kanban board: logic + composition wiring. The board lives
-// in modules/kanban/ui/ and rides the module-UI composition - the shell
+// in harness/kanban/ui/ and rides the module-UI composition - the shell
 // knows only the mount slot. Logic is pure (boardLogic.ts), so these
 // tests are plain node:test like everything else in the suite.
 import { test } from "node:test";
@@ -23,7 +23,7 @@ import {
   withBoard,
   type BoardInfo,
   type BoardTask,
-} from "../../../modules/kanban/ui/board/boardLogic.ts";
+} from "../../../harness/kanban/ui/board/boardLogic.ts";
 
 const uiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -95,12 +95,12 @@ test("statuses: the exact hermes grammar, terminal set last", () => {
 // --- structural: the shell mounts the board through the composition
 
 test("board view ships module-owned and the shell mounts it", () => {
-  const boardVue = join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue");
-  const logic = join(uiRoot, "..", "..", "modules", "kanban", "ui", "board", "boardLogic.ts");
-  const drawer = join(uiRoot, "..", "..", "modules", "kanban", "ui", "board", "DetailDrawer.vue");
-  assert.ok(existsSync(boardVue), "modules/kanban/ui/Board.vue missing");
-  assert.ok(existsSync(logic), "modules/kanban/ui/board/boardLogic.ts missing");
-  assert.ok(existsSync(drawer), "modules/kanban/ui/board/DetailDrawer.vue missing");
+  const boardVue = join(uiRoot, "..", "..", "harness", "kanban", "ui", "Board.vue");
+  const logic = join(uiRoot, "..", "..", "harness", "kanban", "ui", "board", "boardLogic.ts");
+  const drawer = join(uiRoot, "..", "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue");
+  assert.ok(existsSync(boardVue), "harness/kanban/ui/Board.vue missing");
+  assert.ok(existsSync(logic), "harness/kanban/ui/board/boardLogic.ts missing");
+  assert.ok(existsSync(drawer), "harness/kanban/ui/board/DetailDrawer.vue missing");
 
   // the shell's only kanban knowledge: the panel-list lookup in app.vue
   const appVue = readFileSync(join(uiRoot, "app", "app.vue"), "utf8");
@@ -125,8 +125,8 @@ test("board view ships module-owned and the shell mounts it", () => {
     "the outlet hosts the composition panel",
   );
   // the module declares its dockable title (the DOCK_TAB_TITLE resolver)
-  const kanbanDockable = join(uiRoot, "..", "..", "modules", "kanban", "ui", "dockable.json");
-  assert.ok(existsSync(kanbanDockable), "modules/kanban/ui/dockable.json missing");
+  const kanbanDockable = join(uiRoot, "..", "..", "harness", "kanban", "ui", "dockable.json");
+  assert.ok(existsSync(kanbanDockable), "harness/kanban/ui/dockable.json missing");
   assert.deepEqual(JSON.parse(readFileSync(kanbanDockable, "utf8")), { title: "Kanban" });
   assert.match(
     readFileSync(join(uiRoot, "app", "composables", "omega.ts"), "utf8"),
@@ -154,7 +154,7 @@ test("pickBootBoard: current flagged row wins, first row is the fallback", () =>
 });
 
 test("board view wires the switcher through every board call", () => {
-  const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
+  const boardVue = readFileSync(join(uiRoot, "..", "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /<BandSelect/, "the switcher rides the shared themed listbox (card t_acad02ec)");
   assert.match(boardVue, /fetch\(withBoard\("\/tasks", boardName\.value\)\)/, "list calls carry ?board=");
   assert.match(boardVue, /fetchBoards\(\)/, "boot reads the registry");
@@ -163,7 +163,7 @@ test("board view wires the switcher through every board call", () => {
   const rawTaskFetches = boardVue.match(/fetch\(`?\/tasks/g) ?? [];
   assert.equal(rawTaskFetches.length, 0, "all fetches must be withBoard-wrapped");
   // the drawer (inspector) has no self-contained fetch: it receives props
-  const drawer = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
+  const drawer = readFileSync(join(uiRoot, "..", "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
   assert.doesNotMatch(drawer, /fetch\(/, "the inspector follows the switch via props");
 });
 
@@ -171,7 +171,7 @@ test("board head keeps the fillet-tuck top spacing", () => {
   // card t_308e6d9b: the head row is the shared TabBand now - the band
   // carries the 14px lead-in that survives the 8px tab-strip tuck (the
   // Files-band contract); the switcher rides the band's actions.
-  const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
+  const boardVue = readFileSync(join(uiRoot, "..", "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   const band = readFileSync(join(uiRoot, "app", "components", "ui", "TabBand.vue"), "utf8");
   assert.match(boardVue, /<TabBand title="Kanban">/, "the kanban head is the universal band");
   assert.ok(boardVue.indexOf("<TabBand") < boardVue.indexOf("board-scroll"), "the band renders ABOVE the scroll columns");
@@ -194,7 +194,7 @@ test("canRemoveBoard + boardDeletePath: the default board never carries the cont
 });
 
 test("board view carries the remove control: armed confirm, DELETE route, notice, default fallback", () => {
-  const boardVue = readFileSync(join(uiRoot, "..", "..", "modules", "kanban", "ui", "Board.vue"), "utf8");
+  const boardVue = readFileSync(join(uiRoot, "..", "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /id="board-remove-btn"/, "the remove button exists beside the switcher");
   assert.match(
     boardVue,

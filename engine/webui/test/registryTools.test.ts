@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   registryNote,
 } from "../app/composables/omega.ts";
-import { toolRows, toggleTargets } from "../../../modules/tools/ui/toolRows.ts";
+import { toolRows, toggleTargets } from "../../../harness/tools/ui/toolRows.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
@@ -65,7 +65,7 @@ test("arming a tool disable names the tool-list consequence; enable is silent", 
 });
 
 test("ToolsList consumes the shared component and the fold wire", () => {
-  const src = readFileSync(join(root, "modules", "tools", "ui", "ToolsList.vue"), "utf8");
+  const src = readFileSync(join(root, "harness", "tools", "ui", "ToolsList.vue"), "utf8");
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes('kind="tools"'), "the tools namespace rides to the note law");
   assert.ok(src.includes('fetch("/tools")'), "self-contained inventory fetch");
@@ -83,7 +83,7 @@ test("ToolsList consumes the shared component and the fold wire", () => {
 // the tab renders empty. The rows binding must hand RegistryList an
 // array (computed, the AgentsPanel shape), not a function.
 test("ToolsList builds rows as a computed (arity trap: a plain function rows() renders empty)", () => {
-  const src = readFileSync(join(root, "modules", "tools", "ui", "ToolsList.vue"), "utf8");
+  const src = readFileSync(join(root, "harness", "tools", "ui", "ToolsList.vue"), "utf8");
   assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");
   assert.ok(!src.includes("function rows()"), "no plain-function row builder under :rows");
   assert.ok(src.includes(':rows="visibleRows"'), "the shared component gets the rows binding (the band filter's survivors - card t_529628d5)");

@@ -7,7 +7,7 @@
 // iframe's DOM is unreadable AND modern Chromium fires the load event
 // for a REFUSED embed (the frame renders Chrome's own error surface),
 // so neither "did it load" nor "can I read it" can say "refused" from
-// the client side. The honest signal is the modules/browser probe
+// the client side. The honest signal is the harness/browser probe
 // (GET /browser/frameable): the capsule reads the TO-BE-EMBEDDED page's
 // X-Frame-Options / CSP frame-ancestors headers server-side and answers
 // refuse / allow / cannot-say. The tab refuses ONLY on a negative
@@ -24,7 +24,7 @@ export const FALLBACK_AFTER_MS = 4000;
     embed's error-page load (the refused URL persisted NOTHING) */
 export const PERSIST_GRACE_MS = 300;
 
-/** the verdict's wire shape (modules/browser's GET /browser/frameable) */
+/** the verdict's wire shape (harness/browser's GET /browser/frameable) */
 export interface ProbeVerdictBody {
   frameable?: boolean | null;
 }

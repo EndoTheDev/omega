@@ -49,7 +49,7 @@ and git history.
 
 ### v0.9.0 (shipped)
 
-- Module-owned UI: modules ship components in `modules/<name>/ui/`,
+- Module-owned UI: modules ship components in `harness/<name>/ui/`,
   composed at build time (no runtime registry)
 - Backend-owns-facts foundation: transcript endpoint (render-ready
   items, one contract for restore + live SSE), explicit running state

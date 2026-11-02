@@ -19,12 +19,12 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/modules/compactor"
-	"github.com/EndoTheDev/omega/modules/logging"
-	"github.com/EndoTheDev/omega/modules/provider"
-	"github.com/EndoTheDev/omega/modules/skills"
-	"github.com/EndoTheDev/omega/modules/store"
-	"github.com/EndoTheDev/omega/modules/tools"
+	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/harness/provider"
+	"github.com/EndoTheDev/omega/harness/skills"
+	"github.com/EndoTheDev/omega/harness/store"
+	"github.com/EndoTheDev/omega/harness/tools"
 )
 
 // mountRealRegistry in cmd/omega's image: buildPlugins → buildConfigs →

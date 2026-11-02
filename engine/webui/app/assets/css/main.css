@@ -1286,7 +1286,7 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   min-height: 320px;
 }
 
-/* board view (module-owned UI from modules/kanban/ui): the component's
+/* board view (module-owned UI from /harness/kanban/ui): the component's
    root fills this holder; the holder is the only shell-side CSS the
    board gets - column/card chrome is the module's own */
 .board-pane {

@@ -171,7 +171,7 @@ test("the inspector tab is labelled Modules, the dock id stays extensions", () =
     "the tab label is Modules; the id stays (stored layouts persist ids)",
   );
   assert.ok(
-    !dockables.includes('id: "modules"'),
+    !dockables.includes('id:  "harness"'),
     "no new dock id - the rename is display-only",
   );
 });

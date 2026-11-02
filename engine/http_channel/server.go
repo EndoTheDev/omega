@@ -1899,7 +1899,7 @@ type toolListing struct {
 // (agent.Tools() copies defensively; the server's own set overlays on
 // top, matching the loop's merge precedent where existing entries
 // win). The webui's module-owned tools panel
-// (modules/tools/ui/ToolsList.vue) renders this. Descriptions only -
+// (harness/tools/ui/ToolsList.vue) renders this. Descriptions only -
 // parameter maps would only bloat the listing the UI shows.
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

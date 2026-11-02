@@ -16,7 +16,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/llm"
-	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 // multiProvider is stepProvider re-armable across runs (t_357cbe9c

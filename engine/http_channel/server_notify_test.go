@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/modules/notifications"
+	"github.com/EndoTheDev/omega/harness/notifications"
 )
 
 // notifyTestServer builds a Server + a real finished-things store, and

@@ -25,9 +25,9 @@ import {
   statusDot,
   statusLabel,
   type McpServerWire,
-} from "../../../modules/mcp/ui/serverRows.ts";
-import { reloadMcpServers } from "../../../modules/mcp/ui/reload.ts";
-import { setMcpServerEnabled } from "../../../modules/mcp/ui/toggle.ts";
+} from "../../../harness/mcp/ui/serverRows.ts";
+import { reloadMcpServers } from "../../../harness/mcp/ui/reload.ts";
+import { setMcpServerEnabled } from "../../../harness/mcp/ui/toggle.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
@@ -89,7 +89,7 @@ test("the empty state is named in the helpers' voice (never composed ad hoc in t
 // --- the panel source wiring (the composition-test convention) ----------
 
 test("McpServers consumes the module route and the shared row model", () => {
-  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
   assert.ok(src.includes('fetch("/mcp/servers")'), "self-contained inventory fetch");
   assert.ok(src.includes("serverRows"), "the row model lives in the pure helper");
   assert.ok(src.includes("statusLabel"), "the status truth comes from the helper");
@@ -101,8 +101,8 @@ test("McpServers consumes the module route and the shared row model", () => {
   // read route; PUT exists nowhere in the module UI
   assert.ok(src.includes("reloadMcpServers"), "the refresh rides the reload helper");
   assert.ok(src.includes("setMcpServerEnabled"), "the per-row toggle rides the toggle helper (card t_83f37525)");
-  const reloadTs = read(root, "modules", "mcp", "ui", "reload.ts");
-  const toggleTs = read(root, "modules", "mcp", "ui", "toggle.ts");
+  const reloadTs = read(root, "harness", "mcp", "ui", "reload.ts");
+  const toggleTs = read(root, "harness", "mcp", "ui", "toggle.ts");
   assert.ok(reloadTs.includes('method: "POST"') && reloadTs.includes('"/mcp/reload"'), "the reload helper POSTs the module's reload route");
   assert.ok(toggleTs.includes('"/mcp/toggle"') && toggleTs.includes("JSON.stringify"), "the toggle helper POSTs the named flag body (card t_83f37525)");
   assert.ok(!src.includes("method:") && !reloadTs.includes("PUT") && !toggleTs.includes("PUT"), "no PUT anywhere in the module UI");
@@ -172,7 +172,7 @@ test("reloadMcpServers: a failed reload throws and never re-fetches", async () =
 });
 
 test("the refresh button renders the FilesTab toolbar pattern", () => {
-  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
   // card t_308e6d9b: the single header row IS the shared TabBand now -
   // the toolbar role/aria-label are the band component's contract, the
   // panel composes the band with its title.
@@ -186,7 +186,7 @@ test("the refresh button renders the FilesTab toolbar pattern", () => {
 });
 
 test("the dockable declaration matches the registry voice", () => {
-  const decl = JSON.parse(read(root, "modules", "mcp", "ui", "dockable.json"));
+  const decl = JSON.parse(read(root, "harness", "mcp", "ui", "dockable.json"));
   assert.equal(decl.title, "MCP", "the runtime title matches the registry fallback");
   assert.equal(decl.icon, "mcp");
 });
@@ -279,7 +279,7 @@ test("setMcpServerEnabled: a refused write throws and never re-fetches", async (
 // that shape stays dead.
 
 test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse", () => {
-  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
   assert.ok(!src.includes("width: 22px"), "the zero-width column root is gone");
   assert.ok(!/\.mcp-tool\s*\{[^}]*height:\s*\d+px/.test(src), "no fixed chip height - nothing can clip vertically");
   assert.match(src, /\.mcp-tool\s*\{[^}]*text-overflow:\s*ellipsis/, "each chip ellipses its own text instead of overflowing");
@@ -296,7 +296,7 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
 });
 
 test("the from-mcp.yaml caption is dead, the toggle is the shared pill (card t_d93864e7)", () => {
-  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
   // the tab IS the mcp tab: a config-file provenance label is noise
   assert.ok(!src.includes("mcp-source"), "no source caption element left");
   assert.ok(!src.includes("sourceLabel"), "no dead source helper rides the component");
@@ -308,7 +308,7 @@ test("the from-mcp.yaml caption is dead, the toggle is the shared pill (card t_d
 });
 
 test("the row speaks the design tokens: status dot, transport pill, no bare mono dump", () => {
-  const src = read(root, "modules", "mcp", "ui", "McpServers.vue");
+  const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
   assert.match(src, /\.mcp-dot-ok\s*\{[^}]*var\(--ok\)/, "the connected dot rides the ok token");
   assert.match(src, /\.mcp-dot-err\s*\{[^}]*var\(--err\)/, "the failure dot rides the err token");
   assert.match(src, /\.mcp-dot-off\s*\{[^}]*var\(--text-dim\)/, "the neutral dot rides the dim text token");
@@ -333,9 +333,9 @@ test("the row speaks the design tokens: status dot, transport pill, no bare mono
 test("the shell mounts the panel: the outlet template rides app.vue, the route is GET-only", () => {
   const appvue = read(root, "engine", "webui", "app", "app.vue");
   assert.match(appvue, /#pane-mcp[\s\S]*?module="mcp"/, "the outlet template hosts the composition panel");
-  const plugin = read(root, "modules", "mcp", "plugin.go");
+  const plugin = read(root, "harness", "mcp", "plugin.go");
   assert.ok(plugin.includes(`"GET /mcp/servers"`), "the go route pattern is registered in the mount");
-  const status = read(root, "modules", "mcp", "status.go");
+  const status = read(root, "harness", "mcp", "status.go");
   assert.ok(
     !status.includes("MethodPut") && !status.includes("PUT"),
     "no write verb vocabulary",

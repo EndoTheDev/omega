@@ -26,7 +26,7 @@ import (
 	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/llm"
-	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 // eventDelay spaces consecutive streamed events so chunk-to-chunk and

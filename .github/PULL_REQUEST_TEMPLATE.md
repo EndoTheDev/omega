@@ -20,7 +20,7 @@ and CI is the only place this code runs.
 - [ ] Gates pass in CI: build, vet, test, -race - plus an SPA re-sync
       via engine/webui/scripts/build.sh if engine/webui changed
 - [ ] I understand review is read-only: my code runs only on GitHub CI runners
-- [ ] Security-touch surfaces named: modules/trust/, attach/fetch
+- [ ] Security-touch surfaces named: harness/trust/, attach/fetch
       endpoints, config, shell tool, server-side URL fetch - or "none touched"
 - [ ] New dependencies in go.mod / package.json are justified in the
       PR description, or none were added

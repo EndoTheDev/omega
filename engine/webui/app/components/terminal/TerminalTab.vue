@@ -42,7 +42,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import type { ITheme } from "@xterm/xterm";
 
-  // the module routes (modules/terminal): claim, stream, input, resize,
+  // the module routes (harness/terminal): claim, stream, input, resize,
   // kill. The ids are server-minted hex - encodeURIComponent is the
   // honest form even for them.
   const CLAIM = "/terminal/sessions";

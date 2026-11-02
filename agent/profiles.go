@@ -122,7 +122,7 @@ func AgentConfigPath(home, name string) string {
 var personaFiles = []string{"memory.md", "user.md"}
 
 // Warnf prints a loud migration warning to stderr. Package-level so
-// tests can capture it (mirrors modules/datadir's hook).
+// tests can capture it (mirrors harness/datadir's hook).
 var Warnf = func(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "omega agents: "+format+"\n", args...)
 }

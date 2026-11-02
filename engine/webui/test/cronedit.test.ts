@@ -22,7 +22,7 @@ import {
   saveCronJob,
   validateDraft,
   type JobDraft,
-} from "../../../modules/cron/ui/edit.ts";
+} from "../../../harness/cron/ui/edit.ts";
 
 let savedFetch: typeof globalThis.fetch;
 
@@ -144,7 +144,7 @@ test("deleteCronJob POSTs the name and answers the fresh listing; unknown is lou
   }
 });
 
-// --- the client-side schema law (mirrors modules/cron validateJob) ---
+// --- the client-side schema law (mirrors harness/cron validateJob) ---
 
 test("validateDraft mirrors the Go schema law exactly", () => {
   assert.equal(validateDraft(draft()), "");

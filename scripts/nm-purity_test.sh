@@ -97,7 +97,7 @@ rm -f "$OWNFILE" "$OWNFILE.out"
 # an itab with a mixed shape (modules operand + main.process operand)
 # keeps the host operand after the strip. The -w word law is unchanged:
 # main.processRunner is a substring, not the word, and stays green.
-STRIP_SED="$(grep "sed -E 's|" "$PURITY" | sed -e "s/^.*sed -E '//" -e "s/'.*//" | head -1)"
+STRIP_SED="$(grep "sed -E 's" "$PURITY" | sed -e "s/^.*sed -E '//" -e "s/'.*//" | head -1)"
 if [ -z "$STRIP_SED" ]; then
   bad "noun check has no host-strip sed to extract"
 else

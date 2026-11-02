@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
       # rotation: every capsule not in the removal-needs manifest
       # (scripts/nm-purity.modules). Manifest entries are reported as
       # SKIP with their reason - a known finding, not a nightly red.
-      for d in modules/*/; do MODULES+=("$(basename "$d")"); done ;;
+      for d in harness/*/; do MODULES+=("$(basename "$d")"); done ;;
     --module) shift; MODULES+=("$1") ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "nm-purity: unknown arg '$1'" >&2; exit 2 ;;
@@ -124,7 +124,7 @@ def scrub(text, modules):
     for ln in lines:
         deleted = False
         for name in mnames:
-            m = re.match(r'^(\s*)([A-Za-z_][A-Za-z0-9_]*\s+)?"[^"]*/modules/' + re.escape(name) + r'"(\s*//.*)?$', ln)
+            m = re.match(r'^(\s*)([A-Za-z_][A-Za-z0-9_]*\s+)?"[^"]*/harness/' + re.escape(name) + r'"(\s*//.*)?$', ln)
             if m:
                 alias = (m.group(2) or "").strip() or name
                 for tok in re.split(r"[,\s]+", alias):
@@ -537,11 +537,11 @@ for MOD in "${MODULES[@]}"; do
   WORK="$TMP/$MOD"
   mkdir -p "$WORK"
   ( cd "$ROOT" && git archive HEAD | tar -x -C "$WORK" )
-  if [ ! -d "$WORK/modules/$MOD" ]; then
-    echo "nm-purity [$MOD]: FAIL - no modules/$MOD in the tree" >&2
+  if [ ! -d "$WORK/harness/$MOD" ]; then
+    echo "nm-purity [$MOD]: FAIL - no harness/$MOD in the tree" >&2
     fails=$((fails+1)); continue
   fi
-  rm -rf "$WORK/modules/$MOD"
+  rm -rf "$WORK/harness/$MOD"
 
   ( cd "$WORK" && find cmd -name '*.go' | sort > "$TMP/$MOD.gofiles.txt" )
   FALLIST="$TMP/$MOD.gofiles.txt"
@@ -570,7 +570,7 @@ for MOD in "${MODULES[@]}"; do
     sed 's/^/    /' "$TMP/$MOD.nm.err" | head -5 >&2
     fails=$((fails+1)); continue
   fi
-  if grep -F "modules/$MOD" "$TMP/$MOD.nm" > "$TMP/$MOD.nm.log" 2>&1; then
+  if grep -F "harness/$MOD" "$TMP/$MOD.nm" > "$TMP/$MOD.nm.log" 2>&1; then
     echo "nm-purity [$MOD]: FAIL - module symbols in the binary:" >&2
     sed 's/^/    /' "$TMP/$MOD.nm.log" | head -10 >&2
     fails=$((fails+1)); continue
@@ -580,7 +580,7 @@ for MOD in "${MODULES[@]}"; do
   # paths under the omega module, main-package symbols, and type
   # descriptors naming a main-scope type ([^/]main\. - never a /main/
   # third-party path component) carry the noun; github.com/robfig/cron
-  # (modules/continuous's scheduler), modernc.org/memory (the sqlite
+  # (harness/continuous's scheduler), modernc.org/memory (the sqlite
   # driver) and the crypto/internal stdlib are somebody else's names
   # and stay in the binary no matter how cleanly a module leaves.
   # (string constants live in rodata, not in symbol names - this is a
@@ -593,15 +593,15 @@ for MOD in "${MODULES[@]}"; do
   # 1.27 lane never sees (the nightly red on the runner toolchain),
   # and a bare noun grep over Omega-owned symbols counts the
   # DIFFERENT module's type name against the process check. Strip
-  # every omega modules/<name> segment out of the symbol names before
+  # every omega harness/<name> segment out of the symbol names before
   # the noun grep: an itab whose type operands all live under
-  # modules/<other> falls out of scope, while a host operand
+  # harness/<other> falls out of scope, while a host operand
   # (github.com/EndoTheDev/omega/core or main-package vocabulary)
   # survives the strip and still reds. The segment swallow runs to the
   # next comma or whitespace - comma-bearing mangled generic names can
   # over-strip, which only widens the exclusion across another
   # capsule's own text, never across the host's.
-  sed -E 's|github\.com/EndoTheDev/omega/modules/[A-Za-z0-9_][^, ]*||g' \
+  sed -E 's#github\.com/EndoTheDev/omega/(modules|harness)/[A-Za-z0-9_][^, ]*##g' \
     "$TMP/$MOD.own" > "$TMP/$MOD.own.host" 2>/dev/null || true
   if grep -w "$MOD" "$TMP/$MOD.own.host" > "$TMP/$MOD.noun.log" 2>&1; then
     echo "nm-purity [$MOD]: FAIL - the module noun survives as an omega-owned symbol:" >&2

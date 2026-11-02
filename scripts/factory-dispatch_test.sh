@@ -73,20 +73,20 @@ t_newer_low" ] && ok || bad "T4: priority sort wrong - got: $order"
 rm -f "$T4DB"
 
 # T5 (local + CI): guard bug #6 - brace-list FILES surfaces. A FILES line
-# like `modules/{cron,memory}/` must expand to every member before token
+# like `harness/{cron,memory}/` must expand to every member before token
 # extraction (proven live 2026-10-26: it collapsed to a bare modules/
-# token and the guard read a modules/cron collision false-legal). The
+# token and the guard read a harness/cron collision false-legal). The
 # eval gate admits path chars only; metachar lines pass through raw.
 # Also pins the bash 5.3 =~ shape: the regex must ride an UNQUOTED var -
 # a quoted RHS is literal in 5.3 and matches nothing.
 tok=$(bash -c '
 source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "'"$GUARD"'")
-printf "FILES: modules/{cron,memory,delegate}/\nplain modules/x/ text\ncmd;bad {a,b}\n" | tokens_of
+printf "FILES: harness/{cron,memory,delegate}/\nplain harness/x/ text\ncmd;bad {a,b}\n" | tokens_of
 ' 2>/dev/null)
-[ "$(printf "%s\n" "$tok" | grep -c "^modules/")" = "4" ] \
-	&& ok || bad "T5: brace list emitted $(printf "%s\n" "$tok" | grep -c "^modules/") tokens, expected 4 (got: $tok)"
-printf "%s" "$tok" | grep -q "^modules/cron/" && ok || bad "T5: modules/cron/ missing from expansion"
-printf "%s" "$tok" | grep -q "^modules/delegate/" && ok || bad "T5: modules/delegate/ missing from expansion"
+[ "$(printf "%s\n" "$tok" | grep -c "^harness/")" = "4" ] \
+	&& ok || bad "T5: brace list emitted $(printf "%s\n" "$tok" | grep -c "^harness/") tokens, expected 4 (got: $tok)"
+printf "%s" "$tok" | grep -q "^harness/cron/" && ok || bad "T5: harness/cron/ missing from expansion"
+printf "%s" "$tok" | grep -q "^harness/delegate/" && ok || bad "T5: harness/delegate/ missing from expansion"
 printf "%s" "$tok" | grep -q "cmd;bad" && bad "T5: metachar line was eval-expanded (gate failed)" || ok
 
 # T6 (local + CI): guard bug #7 - move-shaped lines. A move line names the
@@ -99,12 +99,12 @@ source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "'"$GUARD"'")
 printf "%s\n" \
   "engine ring move: webui/ -> engine/webui/, http_channel/ -> engine/http_channel/" \
   "moves agent/ ai/ tui/ webui/ + docs + CI paths" \
-  "modules/{cron,memory}/ dissolves into core/" \
+  "harness/{cron,memory}/ dissolves into core/" \
   "an arrow (\`->\`, \`=>\`) in prose with no paths" \
   | tokens_of
 ' 2>/dev/null)
 for want in "webui/" "engine/webui/" "http_channel/" "engine/http_channel/" \
-            "agent/" "ai/" "tui/" "modules/cron/" "modules/memory/" "core/"; do
+            "agent/" "ai/" "tui/" "harness/cron/" "harness/memory/" "core/"; do
   printf "%s" "$tok" | grep -qx "$want" && ok || bad "T6: move token '$want' missing (got: $tok)"
 done
 printf "%s" "$tok" | grep -q "arrow" && bad "T6: prose arrow line leaked tokens" || ok
