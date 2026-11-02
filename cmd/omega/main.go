@@ -19,7 +19,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/modules/agent_loop"
 	browserModule "github.com/EndoTheDev/omega/modules/browser"
@@ -616,7 +616,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	if err := resolveHomePaths(&cfg); err != nil {
 		return err
 	}
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, pctx, reg, setAgents, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
@@ -812,7 +812,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		// defaulting law): the layer's model IS the session model.
 		applyModelEnvOverride(&cfg)
 	}
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, _, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err

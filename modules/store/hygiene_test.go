@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // fakeSummary answers every consult with one fixed paragraph.
-func fakeSummary(text string) *ai.FakeProvider {
-	return ai.NewFakeProvider("test-model",
+func fakeSummary(text string) *llm.FakeProvider {
+	return llm.NewFakeProvider("test-model",
 		core.ResponseChunk{Type: "response.chunk", Content: text},
 		core.StreamEnd{Type: "stream.end", FinishReason: "stop"})
 }

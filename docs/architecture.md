@@ -30,7 +30,7 @@ cmd/omega/        Single binary entry point (serve, run, health, chat, update)
 cmd/omega/examples/  Config templates, embedded for first-run bootstrap
 core/             Zero-behavior contracts: message vocabulary, seam interfaces,
                   Context, canvas panel types, captioner, kanban vocabulary
-engine/ai/               Provider contract (ai.Provider aliases core.Provider), retry,
+llm/               Provider contract (ai.Provider aliases core.Provider), retry,
                   HTTP client, think-level ladder, image sniffing
 engine/agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
                   canvas runtime, insights/caption/compaction helpers

@@ -18,7 +18,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 //go:embed static/*
@@ -468,7 +468,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 // id rides the first `session` SSE frame). Without a store the run stays
 // ephemeral. model, when set, serves this run on that model - the
 // default stays untouched, so concurrent chats keep their own model.
-// thinking_level indexes the shared ai.ThinkingLevels ladder (0 = none
+// thinking_level indexes the shared llm.ThinkingLevels ladder (0 = none
 // = no thinking parameter sent = provider default); unset means
 // provider default.
 type chatRequest struct {
@@ -622,7 +622,7 @@ func (e *runError) Error() string { return e.msg }
 // pinned provider and tool set, and the resolved context messages.
 type chatPrepare struct {
 	run      *activeRun
-	prov     ai.Provider
+	prov     llm.Provider
 	messages []core.Message
 	tools    map[string]core.Tool
 }
@@ -1133,17 +1133,17 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 // parameter sent, the provider keeps its default. The copy rides
 // LoopOptions - no shared state mutated. Shared by the prepareRun
 // detach path and the legacy inline path (chat-last 1/3).
-func (s *Server) pinProvider(req *chatRequest) (ai.Provider, *runError) {
+func (s *Server) pinProvider(req *chatRequest) (llm.Provider, *runError) {
 	prov := s.agent.Provider()
 	if req.Model != "" {
 		prov = prov.WithModel(req.Model)
 	}
 	if req.ThinkingLevel != 0 {
-		if req.ThinkingLevel < 0 || req.ThinkingLevel >= len(ai.ThinkingLevels) {
+		if req.ThinkingLevel < 0 || req.ThinkingLevel >= len(llm.ThinkingLevels) {
 			return nil, &runError{http.StatusBadRequest, fmt.Sprintf("invalid thinking_level: %d (0..%d)",
-				req.ThinkingLevel, len(ai.ThinkingLevels)-1)}
+				req.ThinkingLevel, len(llm.ThinkingLevels)-1)}
 		}
-		prov = prov.WithThinkingLevel(ai.ThinkingLevels[req.ThinkingLevel])
+		prov = prov.WithThinkingLevel(llm.ThinkingLevels[req.ThinkingLevel])
 	}
 	return prov, nil
 }
@@ -1169,7 +1169,7 @@ func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
 // prov is the per-request provider (a copy carrying the request's model).
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov ai.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov llm.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
 	// tools run in THIS session's context: board tools read the session
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
@@ -1317,7 +1317,7 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 // error is RETURNED, not written to a wire - the caller owns the wire
 // (the legacy request writes one error frame; the detached run
 // broadcasts one).
-func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) error {
+func (s *Server) persistAssistant(ctx context.Context, prov llm.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) error {
 	if req.Ephemeral && req.SessionID != "" {
 		// In-memory commit (card t_d96a5cd5): the run's records land in
 		// the registry (transcript items + telemetry) - the messages
@@ -1377,7 +1377,7 @@ func (s *Server) persistAssistant(ctx context.Context, prov ai.Provider, req cha
 // /sessions/{id}, /label) is never overwritten by a generated one.
 // prov is the pinned per-request provider copy. Runs detached; failure
 // is silent - an untitled session is cosmetic, not fatal.
-func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req chatRequest, lastAssistant string, final bool) {
+func (s *Server) maybeTitleSession(ctx context.Context, prov llm.Provider, req chatRequest, lastAssistant string, final bool) {
 	// title_model knob: when set, BOTH title calls route through it -
 	// the request's pinned provider (the model that served the chat)
 	// is overridden. Without the knob everything is unchanged.

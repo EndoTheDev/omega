@@ -18,7 +18,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -312,7 +312,7 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	}
 	defer st.Close()
 	spawner := &streamSpy{
-		inner: ai.NewFakeProviderScripts("session-model", []core.ProviderStreamEvent{
+		inner: llm.NewFakeProviderScripts("session-model", []core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		}),

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 func (p *Provider) streamOllama(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
@@ -22,7 +22,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 	// layer has already succeeded. Retry it here with the same budget
 	// and backoff RetryHTTP applies to 429/5xx.
 	for attempt := 0; retriable; attempt++ {
-		if attempt >= ai.MaxRetries() {
+		if attempt >= llm.MaxRetries() {
 			return core.StreamEnd{
 				Type:         "stream_end",
 				FinishReason: "error",
@@ -33,7 +33,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 		select {
 		case <-ctx.Done():
 			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
-		case <-time.After(ai.Backoff(attempt)):
+		case <-time.After(llm.Backoff(attempt)):
 		}
 		end, retriable = p.streamOllamaAttempt(ctx, events, messages, tools)
 	}
@@ -82,7 +82,7 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 
-	resp, err := ai.RetryHTTP(req)
+	resp, err := llm.RetryHTTP(req)
 	if err != nil {
 		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}, false
 	}

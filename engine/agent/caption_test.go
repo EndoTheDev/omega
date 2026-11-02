@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // countingCaptioner implements Captioner by returning a fixed caption
@@ -75,7 +75,7 @@ func runOnce(t *testing.T, ag *core.Agent, messages []core.Message) (core.AgentE
 // while the caller's original message keeps its images untouched
 // (channels persist and re-render the originals).
 func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
-	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
@@ -114,7 +114,7 @@ func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 
 // A text-only turn never consults the captioner, even when set.
 func TestRunTextOnlySkipsCaptioner(t *testing.T) {
-	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	captioner := &countingCaptioner{caption: "unused"}
@@ -133,7 +133,7 @@ func TestRunTextOnlySkipsCaptioner(t *testing.T) {
 // the run ends with a LOUD, captioner-attributed error before any
 // streaming - not a provider 400 about unseen pixels.
 func TestRunCaptionFailureEndsRun(t *testing.T) {
-	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	ag.SetCaptioner(&countingCaptioner{err: context.DeadlineExceeded})
@@ -153,7 +153,7 @@ func TestRunCaptionFailureEndsRun(t *testing.T) {
 // behavior, byte for byte - images ride to the main provider, which
 // surfaces its own refusal.
 func TestRunNoCaptionerKeepsImages(t *testing.T) {
-	ag := core.NewAgent(ai.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model does not support images (400)"},
 	}...), nil, 0)
 	end, loop := runOnce(t, ag, []core.Message{imageUserMessage("look")})

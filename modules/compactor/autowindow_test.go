@@ -6,20 +6,20 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // contextWindowProvider wraps a provider with a forced ModelInfo
 // result, so the auto-probe path can be asserted against a known
 // window (and a known failure).
 type contextWindowProvider struct {
-	ai.Provider
-	info  ai.ModelInfo
+	llm.Provider
+	info  llm.ModelInfo
 	err   error
 	calls int
 }
 
-func (p *contextWindowProvider) ModelInfo() (ai.ModelInfo, error) {
+func (p *contextWindowProvider) ModelInfo() (llm.ModelInfo, error) {
 	p.calls++
 	return p.info, p.err
 }
@@ -107,7 +107,7 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 	// threshold 1.0 -> budget 1500 -> compaction triggers.
 	summary := "summary text"
 	provider := &contextWindowProvider{
-		Provider: ai.NewFakeProvider("test",
+		Provider: llm.NewFakeProvider("test",
 			core.ResponseChunk{Type: "response_chunk", Content: summary},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
@@ -133,7 +133,7 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 }
 
 func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
-	p := &contextWindowProvider{info: ai.ModelInfo{ContextWindow: 123456}}
+	p := &contextWindowProvider{info: llm.ModelInfo{ContextWindow: 123456}}
 	ctx := &core.Context{Provider: p, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 0}}}
 
 	plugin := &Plugin{}
@@ -150,7 +150,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 	}
 
 	// Manual: config > 0 -> no probe at all.
-	p2 := &contextWindowProvider{info: ai.ModelInfo{ContextWindow: 999999}}
+	p2 := &contextWindowProvider{info: llm.ModelInfo{ContextWindow: 999999}}
 	ctx2 := &core.Context{Provider: p2, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 32768}}}
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: &Plugin{}, seam: "provider"}, &Plugin{}}, ctx2, nil, nil); err != nil {
 		t.Fatal(err)

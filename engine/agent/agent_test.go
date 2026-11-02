@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // testLoop is a minimal LoopProvider for agent tests. It mirrors the
@@ -153,7 +153,7 @@ func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 }
 
 // newTestAgent creates an core.Agent with the test loop pre-wired.
-func newTestAgent(provider ai.Provider, tools map[string]core.Tool, maxTurns int) *core.Agent {
+func newTestAgent(provider llm.Provider, tools map[string]core.Tool, maxTurns int) *core.Agent {
 	a := core.NewAgent(provider, tools, maxTurns)
 	a.SetLoopProvider(testLoop{})
 	return a
@@ -210,7 +210,7 @@ func lastAgentEnd(events []core.Event) core.AgentEnd {
 }
 
 func TestRunSingleTurn(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -230,7 +230,7 @@ func TestRunSingleTurn(t *testing.T) {
 }
 
 func TestRunMultiTurnToolLoop(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -265,7 +265,7 @@ func TestRunMultiTurnToolLoop(t *testing.T) {
 }
 
 func TestRunMaxTurnsCap(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -286,7 +286,7 @@ func TestRunMaxTurnsCap(t *testing.T) {
 }
 
 func TestRunContextCancellation(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
 		core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 	)
@@ -308,7 +308,7 @@ func TestRunContextCancellation(t *testing.T) {
 }
 
 func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -326,7 +326,7 @@ func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
 }
 
 func TestRunUnknownTool(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nope", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -346,7 +346,7 @@ func TestRunUnknownTool(t *testing.T) {
 }
 
 func TestRunExtensionToolInLoop(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "hello"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -390,7 +390,7 @@ func TestRunExtensionToolInLoop(t *testing.T) {
 }
 
 func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo_tool", Arguments: map[string]any{"text": "x"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -435,7 +435,7 @@ func TestRunExtensionToolWinsNoConflictWithBuiltIn(t *testing.T) {
 }
 
 func TestRunEventStreamCompletes(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -446,7 +446,7 @@ func TestRunEventStreamCompletes(t *testing.T) {
 }
 
 func TestRunNoExtensionsCompletes(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -459,7 +459,7 @@ func TestRunNoExtensionsCompletes(t *testing.T) {
 }
 
 func TestRunToolExecutionLifecycle(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -498,7 +498,7 @@ func TestRunToolExecutionLifecycle(t *testing.T) {
 }
 
 func TestRunToolErrorHandling(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "boom", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -536,7 +536,7 @@ func TestRunToolErrorHandling(t *testing.T) {
 }
 
 func TestRunConcurrentPromptRejection(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "first"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -559,7 +559,7 @@ func TestRunConcurrentPromptRejection(t *testing.T) {
 }
 
 func TestRunErrorBodyPassthrough(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
 	agent := newTestAgent(provider, nil, 0)
@@ -603,7 +603,7 @@ func hasCompactedSystem(history []core.Message) bool {
 }
 
 func TestRunCompactionTriggersAtThreshold(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -617,7 +617,7 @@ func TestRunCompactionTriggersAtThreshold(t *testing.T) {
 }
 
 func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -632,7 +632,7 @@ func TestRunCompactionNotTriggeredBelowThreshold(t *testing.T) {
 }
 
 func TestRunCompactionDisabled(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -650,7 +650,7 @@ func TestRunCompactionDisabled(t *testing.T) {
 func TestRunCompactionErrorPropagates(t *testing.T) {
 	// The first Stream call (the turn) succeeds; the second (the
 	// summarize call inside compact) fails.
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -672,7 +672,7 @@ func TestRunCompactionErrorPropagates(t *testing.T) {
 func TestRunOverflowTriggersRetry(t *testing.T) {
 	// First call overflows; second call succeeds. Small history so the
 	// threshold compaction does not consume the first script.
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 		},
@@ -696,7 +696,7 @@ func TestRunOverflowTriggersRetry(t *testing.T) {
 }
 
 func TestRunOverflowNoRetryWhenCompactionDisabled(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 	)
 	agent := newTestAgent(provider, nil, 0) // no compaction set
@@ -716,7 +716,7 @@ func TestRunOverflowNoRetryWhenCompactionDisabled(t *testing.T) {
 }
 
 func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
-	provider := ai.NewFakeProvider("fake",
+	provider := llm.NewFakeProvider("fake",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "upstream exploded"},
 	)
 	agent := newTestAgent(provider, nil, 0)
@@ -736,7 +736,7 @@ func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
 func TestRunOverflowRetryCap(t *testing.T) {
 	// Two overflow scripts then success; the retry cap (1) must surface
 	// the second overflow as an error.
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
 		},
@@ -766,7 +766,7 @@ func TestRunOverflowRetryCap(t *testing.T) {
 // after response chunks were already streamed does not retry - the
 // user saw the partial output and retrying would duplicate it.
 func TestRunOverflowNoRetryAfterContent(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("fake",
+	provider := llm.NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "partial "},
 			core.ResponseChunk{Type: "response_chunk", Content: "response"},
@@ -791,7 +791,7 @@ func TestRunOverflowNoRetryAfterContent(t *testing.T) {
 	}
 }
 
-// modelRecorder is an ai.Provider stub whose WithModel copies share one
+// modelRecorder is an llm.Provider stub whose WithModel copies share one
 // recording sink. Each Stream call records the receiving copy's model
 // name, so a test can assert which model served which run.
 type modelRecorder struct {
@@ -818,7 +818,7 @@ func (r *modelRecord) snapshot() []string {
 	return append([]string(nil), r.models...)
 }
 
-func (p *modelRecorder) Stream(_ context.Context, _ []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *modelRecorder) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	if p.delay > 0 {
 		time.Sleep(p.delay)
 	}
@@ -832,13 +832,13 @@ func (p *modelRecorder) Stream(_ context.Context, _ []core.Message, _ []ai.ToolS
 
 func (p *modelRecorder) ModelName() string       { return p.modelName }
 func (p *modelRecorder) SetThinkingLevel(string) {}
-func (p *modelRecorder) WithThinkingLevel(string) ai.Provider {
+func (p *modelRecorder) WithThinkingLevel(string) llm.Provider {
 	return p
 }
 func (p *modelRecorder) ListModels() ([]string, error)    { return nil, nil }
-func (p *modelRecorder) ModelInfo() (ai.ModelInfo, error) { return ai.ModelInfo{}, nil }
+func (p *modelRecorder) ModelInfo() (llm.ModelInfo, error) { return llm.ModelInfo{}, nil }
 
-func (p *modelRecorder) WithModel(model string) ai.Provider {
+func (p *modelRecorder) WithModel(model string) llm.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp

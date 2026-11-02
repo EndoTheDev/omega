@@ -6,7 +6,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // Compile-time interface checks.
@@ -15,7 +15,7 @@ var _ agent.Plugin = (*Plugin)(nil)
 
 func TestCompactDisabled(t *testing.T) {
 	c := &Compactor{
-		provider: ai.NewFakeProvider("test"),
+		provider: llm.NewFakeProvider("test"),
 		config:   core.CompactionConfig{Enabled: false},
 	}
 	msgs := []core.Message{core.NewUser("hello")}
@@ -30,7 +30,7 @@ func TestCompactDisabled(t *testing.T) {
 
 func TestCompactUnderBudget(t *testing.T) {
 	c := &Compactor{
-		provider: ai.NewFakeProvider("test"),
+		provider: llm.NewFakeProvider("test"),
 		config: core.CompactionConfig{
 			Enabled:       true,
 			Threshold:     0.6,
@@ -51,7 +51,7 @@ func TestCompactUnderBudget(t *testing.T) {
 
 func TestCompactSummarizes(t *testing.T) {
 	summary := "This is a summary."
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: summary},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -109,7 +109,7 @@ func TestCompactCommand(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
 	// Compactor requires provider seam — mount a fake provider.
-	ctx.Provider = ai.NewFakeProvider("test")
+	ctx.Provider = llm.NewFakeProvider("test")
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: p, seam: "provider"}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
@@ -72,7 +72,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := ai.RetryHTTP(req)
+	resp, err := llm.RetryHTTP(req)
 	if err != nil {
 		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
 	}
@@ -92,7 +92,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 	var promptTokens, completionTokens, cachedTokens *int
 
 	for {
-		payloadLine, ok, err := ai.SSEData(reader)
+		payloadLine, ok, err := llm.SSEData(reader)
 		if err != nil {
 			if err == io.EOF {
 				break

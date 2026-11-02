@@ -9,7 +9,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
@@ -540,13 +540,13 @@ func (m *phaseMeter) delta(last, now time.Time) time.Duration {
 }
 
 // toolSchemas converts a tools map to the provider schema list.
-func toolSchemas(tools map[string]core.Tool) []ai.ToolSchema {
+func toolSchemas(tools map[string]core.Tool) []llm.ToolSchema {
 	if len(tools) == 0 {
 		return nil
 	}
-	result := make([]ai.ToolSchema, 0, len(tools))
+	result := make([]llm.ToolSchema, 0, len(tools))
 	for name, tool := range tools {
-		result = append(result, ai.ToolSchema{
+		result = append(result, llm.ToolSchema{
 			Name:        name,
 			Description: tool.Description,
 			// The action enum derives from the tool's Actions metadata,

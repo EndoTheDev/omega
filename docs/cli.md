@@ -276,7 +276,7 @@ integers below their minimum are ignored (the YAML/default value stays).
 | `OMEGA_BIN`            | set       | The binary's own path, for the delegate extension's subagent spawns        |
 | `OMEGA_HEALTH_HOST`    | read      | Host for `omega health` (default `localhost`)                              |
 | `OMEGA_UPDATE_API_BASE`| read      | Test seam: overrides the GitHub API base during `omega update` (`https://api.github.com` by default). Never set in production |
-| `OMEGA_MAX_RETRIES`    | read      | Provider retry budget (`engine/ai/retry.go`), default `3` — HTTP 429/5xx and Ollama `done_reason: load` retried with backoff |
+| `OMEGA_MAX_RETRIES`    | read      | Provider retry budget (`llm/retry.go`), default `3` — HTTP 429/5xx and Ollama `done_reason: load` retried with backoff |
 
 ## Related
 

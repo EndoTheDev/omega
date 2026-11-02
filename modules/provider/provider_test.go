@@ -14,7 +14,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // testContext returns a background context for tests.
@@ -37,9 +37,9 @@ func drainEvents(events <-chan core.ProviderStreamEvent) core.StreamEnd {
 }
 
 // TestProviderImplementsAIProvider verifies Provider satisfies the
-// ai.Provider interface at compile time.
+// llm.Provider interface at compile time.
 func TestProviderImplementsAIProvider(t *testing.T) {
-	var _ ai.Provider = (*Provider)(nil)
+	var _ llm.Provider = (*Provider)(nil)
 }
 
 // TestNewProviderDefaults verifies defaults are applied: empty type
@@ -651,7 +651,7 @@ func TestModelInfo(t *testing.T) {
 		t.Errorf("request body model = %v, want gemma4", sent["model"])
 	}
 
-	// Exported ModelInfo() wrapper should return an ai.ModelInfo with
+	// Exported ModelInfo() wrapper should return an llm.ModelInfo with
 	// ContextWindow set to the value extracted by modelInfo().
 	expInfo, err := p.ModelInfo()
 	if err != nil {
@@ -898,7 +898,7 @@ func TestStreamOllamaToolCalls(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tools := []ai.ToolSchema{{Name: "get_weather", Description: "Get current weather", Parameters: map[string]any{"type": "object"}}}
+	tools := []llm.ToolSchema{{Name: "get_weather", Description: "Get current weather", Parameters: map[string]any{"type": "object"}}}
 	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
 	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("weather?")}, tools))
 

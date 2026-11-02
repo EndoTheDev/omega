@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -35,7 +35,7 @@ func (captionTestLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 	return nil
 }
 
-// countingProvider is a scripted ai.Provider whose call counter and
+// countingProvider is a scripted llm.Provider whose call counter and
 // seen records are shared across WithModel copies - NewCaptioner pins a
 // WithModel copy, so test assertions must see through it.
 type countingProvider struct {
@@ -55,23 +55,23 @@ func newCountingProvider(model string, script ...core.ProviderStreamEvent) *coun
 	return &countingProvider{mu: &sync.Mutex{}, seen: &countingSeen{}, name: model, scripts: script}
 }
 
-func (p *countingProvider) WithModel(model string) ai.Provider {
+func (p *countingProvider) WithModel(model string) llm.Provider {
 	cp := *p
 	cp.name = model
 	return &cp
 }
 
-func (p *countingProvider) WithThinkingLevel(level string) ai.Provider { return p }
+func (p *countingProvider) WithThinkingLevel(level string) llm.Provider { return p }
 func (p *countingProvider) ModelName() string                          { return p.name }
 func (p *countingProvider) SetThinkingLevel(level string)              {}
 func (p *countingProvider) ListModels() ([]string, error) {
 	return []string{p.name}, nil
 }
-func (p *countingProvider) ModelInfo() (ai.ModelInfo, error) {
-	return ai.ModelInfo{}, nil
+func (p *countingProvider) ModelInfo() (llm.ModelInfo, error) {
+	return llm.ModelInfo{}, nil
 }
 
-func (p *countingProvider) Stream(ctx context.Context, messages []core.Message, _ []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *countingProvider) Stream(ctx context.Context, messages []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	p.mu.Lock()
 	p.seen.calls++
 	p.seen.models = append(p.seen.models, p.name)

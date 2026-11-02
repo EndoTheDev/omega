@@ -12,7 +12,7 @@ import (
 // The curator's LLM access (card t_9972dfd0): the thin bridge over
 // the provider seam. The pass streams one completion per consult and
 // collects the text - no tool loop, no retries beyond the client's
-// own (engine/ai/RetryHTTP), failures surface to the caller and the
+// own (llm/RetryHTTP), failures surface to the caller and the
 // pass moves on.
 
 // complete runs ONE collect-the-text completion over the provider.

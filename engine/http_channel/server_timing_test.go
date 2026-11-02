@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -69,7 +69,7 @@ func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server,
 		core.ResponseChunk{Type: "response_chunk", Content: "done"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
-	prov := ai.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
+	prov := llm.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
 	a := core.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(agent_loop.Loop{})
 	st, err := store.Open(":memory:")

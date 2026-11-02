@@ -11,7 +11,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // Compile-time interface checks.
@@ -787,7 +787,7 @@ func (stubProviderPlugin) Requires() []string { return nil }
 
 func (s stubProviderPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	if s.prov == nil {
-		s.prov = ai.NewFakeProvider("test-model")
+		s.prov = llm.NewFakeProvider("test-model")
 	}
 	return api.RegisterProvider(s.prov)
 }

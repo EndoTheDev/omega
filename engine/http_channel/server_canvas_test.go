@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -237,12 +237,12 @@ func newGatedProvider() *gatedProvider {
 
 func (p *gatedProvider) ModelName() string                    { return "gated" }
 func (p *gatedProvider) SetThinkingLevel(string)              {}
-func (p *gatedProvider) WithModel(string) ai.Provider         { return p }
-func (p *gatedProvider) WithThinkingLevel(string) ai.Provider { return p }
+func (p *gatedProvider) WithModel(string) llm.Provider         { return p }
+func (p *gatedProvider) WithThinkingLevel(string) llm.Provider { return p }
 func (p *gatedProvider) ListModels() ([]string, error)        { return []string{"gated"}, nil }
-func (p *gatedProvider) ModelInfo() (ai.ModelInfo, error)     { return ai.ModelInfo{}, nil }
+func (p *gatedProvider) ModelInfo() (llm.ModelInfo, error)     { return llm.ModelInfo{}, nil }
 
-func (p *gatedProvider) Stream(context.Context, []core.Message, []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *gatedProvider) Stream(context.Context, []core.Message, []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	events := make(chan core.ProviderStreamEvent)
 	go func() {
 		defer close(events)

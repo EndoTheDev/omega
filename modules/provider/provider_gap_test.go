@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // sseAnthropicServer serves a canned anthropic SSE stream shaped like
@@ -259,7 +259,7 @@ func TestStreamOpenAISynthesizesToolCallIDs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tools := []ai.ToolSchema{{Name: "get_weather", Description: "d", Parameters: map[string]any{"type": "object"}}}
+	tools := []llm.ToolSchema{{Name: "get_weather", Description: "d", Parameters: map[string]any{"type": "object"}}}
 	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
 	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, tools))
 

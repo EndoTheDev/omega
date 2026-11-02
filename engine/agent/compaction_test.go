@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 func TestEstimateTokens(t *testing.T) {
@@ -62,7 +62,7 @@ func TestBuildCompactedMessagesNoOpWhenNothingToCompact(t *testing.T) {
 // and wraps it with BuildCompactedMessages. Disabled or under-budget
 // = no-op.
 type mockCompactionProvider struct {
-	Provider ai.Provider
+	Provider llm.Provider
 	Config   *CompactionConfig
 }
 

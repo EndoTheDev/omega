@@ -10,7 +10,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // stubStream is a core.InjectedStream with per-key buffers for the
@@ -97,7 +97,7 @@ func (m *mockCompactionProvider) Compact(_ context.Context, messages []core.Mess
 // context. The loop should emit AgentEnd with FinishReason="cancelled" and
 // an error containing "context canceled".
 func TestRunContextCancellation(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -128,7 +128,7 @@ func TestRunContextCancellation(t *testing.T) {
 // (plural) with tools that get merged. The merged tool should be callable
 // by the provider.
 func TestRunToolProvidersMerging(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		// Turn 1: call a tool provided by ToolProviders.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "merged_tool", Arguments: map[string]any{}}},
@@ -179,7 +179,7 @@ func TestRunToolProvidersMerging(t *testing.T) {
 // prompt and guidelines. The loop should prepend a system message containing
 // the prompt and guidelines to the message history.
 func TestRunPromptBuilder(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -231,7 +231,7 @@ func TestRunPromptBuilder(t *testing.T) {
 // that compacts messages. It should be called each turn and the compacted
 // messages should replace the original history.
 func TestRunCompactionProvider(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -272,7 +272,7 @@ func TestRunCompactionProvider(t *testing.T) {
 func TestRunMaxToolOutputTruncation(t *testing.T) {
 	longOutput := strings.Repeat("a", 100)
 
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		// Turn 1: call the verbose tool.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "verbose", Arguments: map[string]any{}}},
@@ -333,7 +333,7 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 // exist in the tools map. The result should contain "unknown tool: <name>"
 // and have IsError=true.
 func TestRunUnknownTool(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		// Turn 1: call a non-existent tool.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nonexistent", Arguments: map[string]any{}}},
@@ -381,7 +381,7 @@ func TestRunUnknownTool(t *testing.T) {
 // affinity key (pinned on the run ctx). After a turn, the loop should
 // drain them, combine into a user message, and continue.
 func TestRunInjectedMessagesDraining(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		// Turn 1: respond and stop (no tool calls).
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "first"},
@@ -441,7 +441,7 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 // a sibling run's queued result (the wrong-run steal the title turn
 // committed) is unreachable.
 func TestRunInjectedMessagesRunAffinityIsolation(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "first"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -498,7 +498,7 @@ func TestRunInjectedMessagesRunAffinityIsolation(t *testing.T) {
 // ThinkingChunk events. They should appear in the assistant message's
 // Thinking field.
 func TestRunThinkingChunk(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ThinkingChunk{Type: "thinking_chunk", Content: "Let me think..."},
 		core.ThinkingChunk{Type: "thinking_chunk", Content: " about this."},
 		core.ResponseChunk{Type: "response_chunk", Content: "Here is my answer."},
@@ -541,7 +541,7 @@ func TestRunThinkingChunk(t *testing.T) {
 // TestRunToolProviderSingular covers passing a single ToolProvider
 // via ToolProviders (plural) should merge its tools.
 func TestRunToolProviderSingular(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "singular_tool", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -589,7 +589,7 @@ func TestRunToolProviderSingular(t *testing.T) {
 // TestRunCompactionError covers lines 121-124: CompactionProvider.Compact
 // returns an error. The loop should emit AgentEnd with FinishReason="error".
 func TestRunCompactionError(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -625,7 +625,7 @@ func (errorCompactor) Compact(_ context.Context, _ []core.Message) ([]core.Messa
 // TestRunOverflowRetryWithCompactor covers lines 174-187: an overflow error
 // with a CompactionProvider triggers one auto-compaction and retry.
 func TestRunOverflowRetryWithCompactor(t *testing.T) {
-	provider := ai.NewFakeProviderScripts("test",
+	provider := llm.NewFakeProviderScripts("test",
 		// Turn 1: overflow error with no content streamed.
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
@@ -667,7 +667,7 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 // TestRunNilToolProviderEntry covers line 43: a nil entry in ToolProviders
 // should be skipped without panic.
 func TestRunNilToolProviderEntry(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -693,7 +693,7 @@ func TestRunNilToolProviderEntry(t *testing.T) {
 // TestRunNilToolsMap covers lines 32-35: nil Tools map should be initialized
 // to an empty map (the loop should not panic).
 func TestRunNilToolsMap(t *testing.T) {
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -721,7 +721,7 @@ func TestRunNilToolsMap(t *testing.T) {
 func TestRunBlockingInjectionCancellation(t *testing.T) {
 	// Provider that always stops without tool calls, so we reach the
 	// blocking-injection path on every turn.
-	provider := ai.NewFakeProvider("test",
+	provider := llm.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)

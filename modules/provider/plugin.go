@@ -7,7 +7,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // Plugin is the in-process adapter for the provider extension.
@@ -120,16 +120,16 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 				current = "medium"
 			}
 			idx := 0
-			for i, l := range ai.ThinkingLevels {
+			for i, l := range llm.ThinkingLevels {
 				if l == current {
 					idx = i
 					break
 				}
 			}
-			level = ai.ThinkingLevels[(idx+1)%len(ai.ThinkingLevels)]
+			level = llm.ThinkingLevels[(idx+1)%len(llm.ThinkingLevels)]
 		} else {
 			valid := false
-			for _, l := range ai.ThinkingLevels {
+			for _, l := range llm.ThinkingLevels {
 				if l == level {
 					valid = true
 					break

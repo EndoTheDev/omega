@@ -24,7 +24,7 @@ One repo becomes two:
   provider choice, session persistence). New module path; a new repo.
 
 The direction law already exists and is already enforced today:
-`scripts/gate-deps.sh` fails the build if `engine/ai/` or `engine/agent/` (and transitively
+`scripts/gate-deps.sh` fails the build if `llm/` or `engine/agent/` (and transitively
 anything below `core/`) imports `modules/...`, directly or
 transitively. The extraction changes nothing about that law; it moves
 the enforced line from "import rule inside one repo" to "one module
@@ -39,7 +39,7 @@ direction: the harness depends on the engine, never the reverse.
 |---|---|---|
 | `core/` | Zero-behavior contract layer: message vocabulary, seam interfaces, Context, canvas panel types, captioner, kanban task vocabulary | stdlib-only by law (core/importability_test.go) |
 | `engine/agent/` | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers | imports core only (verified by scripts/gate-deps.sh today) |
-| `engine/ai/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `ai.Provider` streaming contract, fake provider | imports core only; imported by engine (agent_loop) and harness capsules alike — it must sit under the engine or the agent loop would reach upward |
+| `llm/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `ai.Provider` streaming contract, fake provider | imports core only; imported by engine (agent_loop) and harness capsules alike — it must sit under the engine or the agent loop would reach upward |
 | `modules/agent_loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
 | `modules/tools` | The bare-minimum tools: `shell.run`, `files` (read/write/edit + batch), /files browser, db deny-guard | the north-star ruling; verdict tool status is separate (see §6) |
 | `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
@@ -164,10 +164,10 @@ The harness inherits the rest of the deps (sqlite, cron scheduler,
 beeep) through its own moved capsules when `go mod tidy` runs on the
 harness side.
 
-engine/ai/: nothing "lives" there by accident. After the split engine/ai/ stays
+llm/: nothing "lives" there by accident. After the split llm/ stays
 engine-side exactly as it is (imports core + stdlib only); the
 provider capsule (harness) and the loop (engine) both keep importing
-it. No file in engine/ai/ moves. `core/message_types.go:277` documents why
+it. No file in llm/ moves. `core/message_types.go:277` documents why
 MessageRole had to land in core rather than ai — that history stays
 put too.
 
@@ -242,7 +242,7 @@ compiler-checkable end state.
    package paths change only where they referenced the old single
    module — `github.com/EndoTheDev/omega/modules/<x>` becomes
    the harness module path. Imports of `omega/core`, `omega/engine/agent`,
-   `omega/engine/ai` are rewritten by the compiler pointing at the engine's
+   `omega/llm` are rewritten by the compiler pointing at the engine's
    require line (import lines stay literally the same path if the
    replace directive is a filesystem path — that is the point of
    replace). `gofmt -w` + `go build` in both repos is the check.

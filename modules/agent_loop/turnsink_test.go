@@ -7,7 +7,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // recordingSink captures the loop's turn-copy writes in order - the
@@ -44,7 +44,7 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 		core.ResponseChunk{Type: "response_chunk", Content: "two"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
-	prov := ai.NewFakeProviderScripts("test", script1, script2).WithDelay(5 * time.Millisecond)
+	prov := llm.NewFakeProviderScripts("test", script1, script2).WithDelay(5 * time.Millisecond)
 
 	events := make(chan core.Event, 64)
 	opts := core.LoopOptions{

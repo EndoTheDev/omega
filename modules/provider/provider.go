@@ -1,6 +1,6 @@
 // Package provider implements the provider seam for omega.
 // It contains the Ollama, OpenAI, and Anthropic provider
-// implementations. The Provider struct implements ai.Provider directly.
+// implementations. The Provider struct implements llm.Provider directly.
 package provider
 
 import (
@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
-// Provider implements ai.Provider for Ollama, OpenAI, and Anthropic.
+// Provider implements llm.Provider for Ollama, OpenAI, and Anthropic.
 type Provider struct {
 	typ           string // "ollama", "openai", "anthropic"
 	modelName     string
@@ -79,7 +79,7 @@ func (p *Provider) initDefaults() {
 // Stream sends a completion request to the provider and streams
 // events on the returned channel. The channel is closed when the
 // stream ends. Errors are encoded as StreamEnd (FinishReason="error").
-func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []ai.ToolSchema) <-chan core.ProviderStreamEvent {
+func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	events := make(chan core.ProviderStreamEvent, 64)
 	go func() {
 		defer close(events)
@@ -121,18 +121,18 @@ func (p *Provider) SetThinkingLevel(level string) { p.thinkingLevel = level }
 // WithModel returns a copy of the provider serving the given model.
 // The receiver is left unchanged, so per-run providers are derived
 // without mutating the mounted base provider.
-func (p *Provider) WithModel(model string) ai.Provider {
+func (p *Provider) WithModel(model string) llm.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
 }
 
 // WithThinkingLevel returns a copy of the provider streaming at the
-// given thinking level (the shared ai.ThinkingLevels ladder; "none"
+// given thinking level (the shared llm.ThinkingLevels ladder; "none"
 // sends no thinking parameter). Copy discipline matches WithModel:
 // the receiver is left unchanged, so per-run providers derived from
 // the mounted base never mutate it.
-func (p *Provider) WithThinkingLevel(level string) ai.Provider {
+func (p *Provider) WithThinkingLevel(level string) llm.Provider {
 	cp := *p
 	cp.thinkingLevel = level
 	return &cp
@@ -163,12 +163,12 @@ func (p *Provider) ListModels() ([]string, error) {
 
 // ModelInfo queries the provider for the current model's context window.
 // Ollama: POST /api/show. OpenAI/Anthropic: return 0 (not exposed).
-func (p *Provider) ModelInfo() (ai.ModelInfo, error) {
+func (p *Provider) ModelInfo() (llm.ModelInfo, error) {
 	ctx, err := p.modelInfo()
 	if err != nil {
-		return ai.ModelInfo{}, err
+		return llm.ModelInfo{}, err
 	}
-	return ai.ModelInfo{ContextWindow: ctx}, nil
+	return llm.ModelInfo{ContextWindow: ctx}, nil
 }
 
 // --- message/tool serialization ---
@@ -273,7 +273,7 @@ func imagesToOllamaWire(messages []map[string]any) {
 
 // toolSchemasToJSON converts ToolSchema values to the generic map
 // format expected by the streaming functions.
-func toolSchemasToJSON(tools []ai.ToolSchema) []map[string]any {
+func toolSchemasToJSON(tools []llm.ToolSchema) []map[string]any {
 	toolJSON := make([]map[string]any, len(tools))
 	for i, t := range tools {
 		toolJSON[i] = map[string]any{
@@ -362,7 +362,7 @@ func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
 		return nil, err
 	}
 
-	resp, err := ai.HTTPClient().Do(req)
+	resp, err := llm.HTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +421,7 @@ func (p *Provider) modelInfo() (int, error) {
 		if p.apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+p.apiKey)
 		}
-		resp, err := ai.HTTPClient().Do(req)
+		resp, err := llm.HTTPClient().Do(req)
 		if err != nil {
 			return 0, err
 		}
@@ -461,7 +461,7 @@ func (p *Provider) modelInfo() (int, error) {
 		if p.apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+p.apiKey)
 		}
-		resp, err := ai.HTTPClient().Do(req)
+		resp, err := llm.HTTPClient().Do(req)
 		if err != nil {
 			return 0, err
 		}

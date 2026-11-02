@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 const keypoolModel = "glm-5.3"
@@ -40,7 +40,7 @@ func TestLiveKeypoolAnthropic(t *testing.T) {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
 	}
 	p, host := keypoolProvider(t, "anthropic")
-	tools := []ai.ToolSchema{{
+	tools := []llm.ToolSchema{{
 		Name:        "get_weather",
 		Description: "Get current weather for a city",
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
@@ -118,7 +118,7 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
 	}
 	p, host := keypoolProvider(t, "openai")
-	tools := []ai.ToolSchema{{
+	tools := []llm.ToolSchema{{
 		Name:        "get_weather",
 		Description: "Get current weather for a city",
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
@@ -192,7 +192,7 @@ func TestLiveKeypoolOllama(t *testing.T) {
 		host = strings.TrimSuffix(keypoolDefaultHost, "/v1")
 	}
 	p := &Provider{typ: "ollama", baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}
-	tools := []ai.ToolSchema{{
+	tools := []llm.ToolSchema{{
 		Name:        "get_weather",
 		Description: "Get current weather for a city",
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},

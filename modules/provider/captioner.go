@@ -11,7 +11,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // captionPrompt is the deterministic instruction the vision model gets
@@ -32,7 +32,7 @@ const captionTimeout = 2 * time.Minute
 // image a cache hit - the caption is computed ONCE per image and
 // persisted, never re-run for old images.
 type Captioner struct {
-	prov  ai.Provider // pinned copy serving the vision model
+	prov  llm.Provider // pinned copy serving the vision model
 	sink  agent.CaptionStore
 	cache sync.Map // image id -> caption string
 	log   core.LoggerProvider
@@ -44,7 +44,7 @@ type Captioner struct {
 // into caption calls. model empty makes Caption fail loudly - but the
 // host only wires the captioner when vision_model is set, so that is a
 // misconfiguration guard, not a mode.
-func NewCaptioner(base ai.Provider, model string, sink agent.CaptionStore, log core.LoggerProvider) *Captioner {
+func NewCaptioner(base llm.Provider, model string, sink agent.CaptionStore, log core.LoggerProvider) *Captioner {
 	if base == nil {
 		return &Captioner{sink: sink, log: log}
 	}

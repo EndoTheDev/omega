@@ -12,14 +12,14 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // Compactor implements core.CompactionProvider. It holds a reference
 // to the provider (set at Mount time) and the compaction config (read
 // from ctx.Configs at Mount time).
 type Compactor struct {
-	provider ai.Provider
+	provider llm.Provider
 	config   core.CompactionConfig
 	// autoWindow is the context window probed from the provider once
 	// at Mount (server start). The value is cached for the process
