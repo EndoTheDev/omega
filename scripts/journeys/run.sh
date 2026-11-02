@@ -11,6 +11,9 @@
 #   scripts/journeys/run.sh                    # full suite vs $JOURNEY_BASE_URL
 #   scripts/journeys/run.sh --base <url>       # other lane (seed-broken.sh uses this)
 #   scripts/journeys/run.sh <journey-name>...  # subset (e.g. 20-chat-send-response)
+#   scripts/journeys/run.sh --regression       # ONLY the named regression set
+#                                              # (regression.list - the
+#                                              # incidents-as-eval set)
 #   JOURNEY_JSON=1 run.sh                      # machine summary on the final line
 #   JOURNEY_LOCK_WAIT=600 run.sh               # queue behind a live suite
 #                                              # instead of refusing
@@ -269,7 +272,30 @@ fi
 
 # --- pick journeys -----------------------------------------------------------
 all=$(find "$JROOT/recipes" -name '*.sh' | sort)
-if [ "$#" -eq 0 ]; then
+# --regression: run ONLY the named regression set (regression.list, the
+# incidents-as-eval set - card t_8abdbb15). This is the gate-time
+# minimum and the fast lane-sha proof; the full suite still runs the
+# set as part of everything. A listed name that matches no recipe is
+# an ERROR (exit 2) - a rotting entry reads as deleted proof.
+if [ "${1:-}" = "--regression" ]; then
+  shift
+  want=""
+  while read -r regname _ || [ -n "$regname" ]; do
+    case "$regname" in ""|\#*) continue ;; esac
+    found=""
+    for cand in $all; do
+      case "$(basename "$cand")" in
+        "$regname"|"$regname".sh) found="$cand" ;;
+      esac
+    done
+    if [ -z "$found" ]; then
+      echo "journeys: regression.list names unknown recipe: $regname (deleted entry = deleted proof - fix the list)" >&2
+      exit 2
+    fi
+    want="$want $found"
+  done < "$JROOT/regression.list"
+  [ -n "$want" ] || { echo "journeys: regression.list carries no recipes" >&2; exit 2; }
+elif [ "$#" -eq 0 ]; then
   want="$all"
 else
   want=""
