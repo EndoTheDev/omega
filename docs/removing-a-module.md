@@ -81,8 +81,8 @@ surface) is its sibling: `docs/migrating-a-module.md`.
 
    That is: seam absent (routes 404), canvas panels absent, tool
    registry without the domain tool AND its alias shims, commands
-   unregistered, the other modules mounted - the TUI and webui stay
-   alive, the canvas snapshot simply misses the module.
+   unregistered, the other modules mounted - the CLI loop and webui
+   stay alive, the canvas snapshot simply misses the module.
 
 6. **Run the removal through the nm machine.** The final proof is
    mechanical, not assertive: `scripts/nm-purity.sh --module kanban`

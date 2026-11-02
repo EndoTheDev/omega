@@ -108,6 +108,56 @@ face: `GET /continuous/roster`, `GET|POST /continuous/{name}/chat`,
 `GET /continuous/{name}/evidence`, `POST /continuous/{name}/sleep`,
 `POST /continuous` (create).
 
+## Cron jobs (crons.yaml)
+
+`<home>/config/crons.yaml` holds the scheduled jobs; an agent home
+carries its own copy in `agents/<name>/config/`. Every job runs its
+prompt as a full agent turn in a session labeled `cron:<name>`.
+
+| Field       | Meaning                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `name`      | required, unique, `[a-z0-9-]`                                                               |
+| `kind`      | `cron` (default) or `interval`                                                              |
+| `schedule`  | required iff kind `cron` — the 5-field cron grammar (minute hour day month weekday), server-local time; no seconds, no `@descriptors` |
+| `minutes`   | required iff kind `interval` — integer >= 1; the job fires every N minutes on the minute grid |
+| `agent`     | optional — the agent home the fire runs under                                               |
+| `model`     | optional — the provider model for this fire                                                 |
+| `prompt`    | required, the user message the run sends                                                    |
+| `deliver`   | `new-session` (default) \| `continuous-agent` \| `append-to-file`                            |
+| `file`      | the append-to-file target (home-relative); empty = the journal naming                        |
+| `enabled`   | default true                                                                                |
+
+**The defaulting law** (t_ecec864e): an empty `agent` runs the fire
+under the default agent; an empty `model` uses the session's provider
+model. Empty = inherit, never an error. A bad agent name is a clear
+fire-time error in the job log — the scheduler keeps standing.
+
+Deliver targets: `new-session` is a fresh session (the default);
+`continuous-agent` is a wake through the event spine into an existing
+continuous agent session (set `agent: <name>`); `append-to-file`
+appends the run's final message to `file`. Legacy values
+(`none`, `journal`, `memory`) still parse but are deprecated.
+
+omega runs the scheduler at serve; jobs hot-reload from the file.
+The webui Cron tab edits every field through `POST /cron/save` +
+`/cron/delete` (schema-validated upserts) and the two-step toggle via
+`POST /cron/toggle`, which writes only the per-job `enabled:` flag.
+An agent-home wake job is refused by the editor (the cross-home law).
+omega can propose jobs in conversation but never writes the file
+itself.
+
+## The approval gate
+
+The approval capsule (`modules/approval/`, ship-dark default
+`manual`) takes three config.yaml knobs (full story:
+[approvals.md](approvals.md)):
+
+| Key                  | Default   | Meaning                                                                                      |
+| -------------------- | --------- | -------------------------------------------------------------------------------------------- |
+| `approvals.mode`     | `manual`  | `off` \| `manual` \| `smart`. Empty = manual                                                  |
+| `approvals.model`    | -         | The smart mode's decision model (a `/v1/systemone` forward pass per flagged command; fail-closed when unreachable) |
+| `approvals.smart_policy` | -     | The operator policy text the reviewer sees (never command text)                              |
+
 ## Providers
 
 | Provider       | Type        | Requires      | Default Host                   |
@@ -128,9 +178,8 @@ Ollama supports three connection modes:
   `api_key: <your-key>`. omega sends a Bearer token in the
   Authorization header.
 
-Switch providers at runtime in the TUI:
-
-```txt
-/provider openai
-/model gpt-4o
-```
+Provider changes (`provider.type`, `provider.api_key`) apply on
+restart. Per-run model changes ride the webui: the
+composer's model chip and each `/chat` request's `model` field build a
+provider copy for that run — the running sessions never share model
+state (see [api.md](api.md)).

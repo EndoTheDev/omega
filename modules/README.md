@@ -47,9 +47,12 @@ type Plugin interface {
 | `logging`        | exclusive | Operational logging (file logger)              |
 | `memory`         | exclusive | Persistent memory (two-file store)             |
 | `prompt_builder` | exclusive | System prompt builder                          |
-| `frontend`       | exclusive | User-facing interface (TUI, web UI)            |
 | `trust`          | exclusive | Project trust gate (AGENTS.md context loading) |
 | `cron`           | exclusive | Scheduled agent turns (crons.yaml)             |
+| `notifications`  | exclusive | Finished-things store (SQLite)                 |
+| `verdicts`       | exclusive | Verdict cards (the blocking `verdict` tool)    |
+| `approvals`      | exclusive | Smart approval gate ([approvals.md](../docs/approvals.md)) |
+| `kanban`         | exclusive | Task board (the kanban SQLite store)           |
 | `tools`          | additive  | Tool provider (multiple plugins contribute)    |
 | `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)       |
 | `prompt_sections` | additive | Prompt sections (modules render their own block) |
@@ -61,18 +64,13 @@ modules that own prompt content append a `PromptSectioner` to
 `Context.PromptSectioners`; the prompt builder renders their
 sections between Project Context and Environment.
 
-## Module-owned TUI (agent.TUIProvider)
+## Module-owned surfaces
 
-The webui law applies to the TUI too (card t_88bb7dcf): a module that
-owns a TUI face implements `agent.TUIProvider` in `<name>/tui.go` -
-`TUICommands()` declares the slash commands, `HandleTUICommand`
-executes them through the `agent.TUIConsole` the shell hands over -
-and appends itself to `ctx.TUIProviders` during `Mount()`. The
-registration is the plugin: a plugin left out of `buildPlugins()`
-takes its commands out of the TUI table with it. A handler may
-return a full-screen view (`TUIResult{Overlay}`, the `/files`
-shape) or a follow loop (`TUIResult{Tick}`, the `/logs -f` shape);
-reference: `docs/tui.md`, module-owned command owners.
+A module's surface is whatever it registers at Mount: seams, tools,
+slash commands (`ctx.Commands` via the extension command seam), REST
+routes (`api.RegisterRoute`, served by the live registry), webui UI
+(`modules/<name>/ui/`), canvas panels. Removing the module removes the
+feature whole; the removal proofs under each capsule pin the claim.
 
 ## Available modules
 
@@ -89,21 +87,22 @@ the disable list. No web module exists.
 | `store/`        | store, tools   | SQLite session store + sessions.search tool          |
 | `skills/`       | skills, tools, prompt_sections | Skill loading + skills domain tool (read/write/update) + /skills command + Available Skills section |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
-| `logging/`      | logging, TUI   | Operational logging (file logger, LoggerProvider) + /logs tail+follow command |
+| `logging/`      | logging        | Operational logging (file logger, LoggerProvider) + the /logs module command (the old follow mode died with the TUI shell) |
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block. The born-capsule: seam + tool + prompt section all ship from the same Mount; no command, REST route or canvas panel exists. Removal proof `TestMemoryRemovalProof` - arc 6 capsule |
 | `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
-| `tools/`        | tools, prompt_sections, TUI | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools); /files browser + /tools command |
+| `tools/`        | tools, prompt_sections | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools) |
 | `mcp/`          | tools          | MCP bridge (stdio + Streamable HTTP servers, MCP_SERVERS env or mcp.yaml). The additive born-capsule: the bridge tool provider is the whole surface - every discovered server tool ships server-qualified from the single Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestMCPRemovalProof` - arc 6 capsule |
 | `delegate/`     | tools          | Subagent delegation (consolidated `delegate` tool with task/status actions + one-release alias shims, the ctx.InjectedMessages/PendingDelegations seam, notifications emitter). The wired born-capsule: seam + tool + emitter capture all ship from the same Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestDelegateRemovalProof` - arc 6 capsule |
-| `verdict/`      | verdicts, tools, prompt_sections, TUI | Verdict cards (the single-answer hub, the blocking `verdict` tool, /verdict command + Verdict Cards prompt section). The interactive born-capsule: seam + tool + command + prompt section all ship from the same Mount; no canvas panel or actions exist (the card renders off the tool call; the /verdicts routes live in http_channel behind the seam-nil guard). Removal proof `TestVerdictRemovalProof` - arc 6 capsule |
+| `verdict/`      | verdicts, tools, prompt_sections | Verdict cards (the single-answer hub, the blocking `verdict` tool, /verdict command + Verdict Cards prompt section). The interactive born-capsule: seam + tool + command + prompt section all ship from the same Mount; no canvas panel or actions exist (the card renders off the tool call; the /verdicts routes live in http_channel behind the seam-nil guard). Removal proof `TestVerdictRemovalProof` - arc 6 capsule |
 | `approval/`     | approvals, prompt_sections | Smart approval gate: risky shell commands reach a reviewer before they run (decision model + deterministic ladder in smart mode, a verdict card in manual mode). Loop-side born-capsule: detector, parser, reviewer client, ladder, cache and audit log all ship from the one Mount and the whole feature is the `ctx.Approvals` seam the agent loop consults; no tool, command, route or webui surface exists (see [docs/approvals.md](../docs/approvals.md)). Removal proof `TestApprovalRemovalProof` |
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
 | `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
 | `notifications/` | notifications, panels | Finished-things store (SQLite, the bell) + the first module capsule: list panel with row mark-read actions through the action pipe, the toast as a canvas event, emitter wiring via the same registration (arc 4b) |
 | `engine/http_channel/` | channel, panels | HTTP/SSE delivery channel (omega serve transport) + the chat canvas panel (chat-last 1/3, Start-gated registration per 2b): the conversation rides the snapshot + deltas + action pipe contract; the /chat REST + SSE wire stays untouched |
-| `engine/tui/`          | frontend, panels | Terminal frontend (Bubble Tea TUI, themes, @file) + the module-owned chat capsule (chat-last 2b): the chat pane renders from the canvas panel's payload and deltas, stop/retry actions ride the pipe; one chat panel per live frontend by construction (registration rides the live Frontend.Run) |
-| `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before the frontends launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
-| `cron/`         | cron, TUI, panels | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron, the jobs canvas panel - arc 6 capsule) |
+| `terminal/`     | -              | The webui terminal pane (t_55a3fc4b): a PTY in the bottom host over the ws channel; the dockable rides the engine registry, journey 95 |
+| `browser/`      | -              | The webui browser pane (t_95c91f9c): any-origin iframe tab, GET/PUT /browser/last resume URL + GET /browser/frameable embed probe, journey 96 |
+| `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before serve/loop launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
+| `cron/`         | cron, panels   | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron module command, the jobs canvas panel - arc 6 capsule; POST /cron/toggle /cron/save /cron/delete) |
 
 ### Authored skill files
 
@@ -122,10 +121,11 @@ auto-migration, the rename is the fix (card t_5baad951).
 2. Implement the module logic as a struct.
 3. Create a `plugin.go` with a `NewPlugin(...)` function returning
    a `Plugin` implementation.
-4. `Mount` populates `Context` slots from config.
+4. `MountWithAPI` populates `Context` slots and registers every
+   claim/tool/command/route through `api.Register*`.
 5. Register the plugin in `buildPlugins()` in `cmd/omega/main.go` -
    an unregistered plugin never mounts.
-6. Tools append to `ctx.ToolProviders` during `Mount()`; commands
+6. Tools append to `ctx.ToolProviders` in `MountWithAPI`; commands
    append to `ctx.Commands` and chain `ctx.CommandHandler` (call the
    previous handler on miss).
 7. Leave `<name>_test.go` behind - each non-trivial package carries
@@ -161,7 +161,7 @@ type Plugin struct{}
 func (p *Plugin) Name() string       { return "my-module" }
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return nil }
-func (p *Plugin) Mount(ctx *agent.Context) error {
+func (p *Plugin) MountWithAPI(ctx *agent.Context, api *agent.ExtensionAPI) error {
     ctx.ToolProviders = append(ctx.ToolProviders, myToolProvider{})
     return nil
 }

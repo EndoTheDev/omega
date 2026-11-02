@@ -23,8 +23,11 @@ trusted:
 
 ## Behavior
 
-- **TUI** - an untrusted project prompts `Trust files in <dir>? [y/N]`.
-- **`run`/`serve`** - an untrusted project skips context with a warning.
+- An untrusted project SKIPS context with a stderr warning
+  (`omega: untrusted project <dir>; AGENTS.md context skipped (use
+  --approve to trust)`) - the CLI loop, `run`, `serve` and the
+  `/workspace` command all share this gate. The interactive stdin
+  prompt is a TUI-era shape today's hosts never enable.
 - **`--approve`** - trust the current project (records an `exact` entry).
 - **`--no-approve`** - skip the current project's context. Wins over
   `--approve`.
