@@ -313,6 +313,60 @@ t_driftde|blocked|pibtw:design-hold" ] \
 	&& ok || bad "T13: parked shape wrong after pass (got: $sh13)"
 rm -rf "$FDHOME"
 
+# T14 (local + CI): strict arg validation - unknown flags, malformed
+# --max values and bare --help must die BEFORE any state is touched.
+# Proven live 2026-11-02: `factory-dispatch.sh --help` printed the
+# verdicts and then EXECUTED a real dispatch (Spawned: 1, run 871) - the
+# parse loop had no default-reject branch. Pinned here: every refusal
+# exits 2 (help: 0), usage text prints, and ZERO dispatch side effects
+# occur: the stub hermes logs every invocation and the fake board keeps
+# its exact status/lock shape. Legal invocations (bare pass, --max N,
+# dry-run) stay covered by T9/T10/T12.
+FDHOME=$(mktemp -d)
+mkdir -p "$FDHOME/.hermes/kanban/boards/project-omega" "$FDHOME/bin"
+AVB="$FDHOME/.hermes/kanban/boards/project-omega/kanban.db"
+sqlite3 "$AVB" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
+INSERT INTO tasks VALUES('t_cand','ready','webui fix','FILES: engine/webui/',NULL,0,0,'2026-11-01T01:00');" 2>/dev/null
+cat >"$FDHOME/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+echo "[STUB CALLED] $*" >>"${HERMES_STUB_LOG:?}"   # ANY invocation = side effect
+echo "Spawned: 1"
+EOF
+chmod +x "$FDHOME/bin/hermes"
+SNAP0=$(sqlite3 "$AVB" "SELECT id||' '||status||' '||coalesce(claim_lock,'') FROM tasks;")
+stub_log="$FDHOME/stub-calls.log"; : >"$stub_log"
+no_side_effect() {  # rc, stub log, board shape all match refusal law
+  local rc="$1" want="$2" msg="$3" log rcnt
+  log=$(cat "$stub_log" 2>/dev/null || echo MISSING)
+  rcnt=$(sqlite3 "$AVB" "SELECT count(*) FROM tasks WHERE status='running';")
+  s=$(sqlite3 "$AVB" "SELECT id||' '||status||' '||coalesce(claim_lock,'') FROM tasks;")
+  [ "$s" = "$SNAP0" ] || bad "$msg: board shape drifted ('$s' != '$SNAP0')"
+  [ "$rcnt" = "0" ] || bad "$msg: a card entered running (spawn side effect)"
+  [ "$log" = "" ] || bad "$msg: stub hermes invoked ('${log:-MISSING}')"
+  [ "$rc" = "$want" ] || bad "$msg: exit $rc (expected $want)"
+}
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --help 2>&1); rc=$?
+[ "$rc" = "0" ] || bad "T14: --help exited $rc (expected 0)"
+printf "%s" "$out" | grep -q "collision-aware dispatch" || bad "T14: --help printed no usage (out: $out)"
+no_side_effect "$rc" 0 "T14 --help"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" -h 2>&1); rc=$?
+[ "$rc" = "0" ] || bad "T14: -h exited $rc (expected 0)"
+no_side_effect "$rc" 0 "T14 -h"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --typo 2>&1); rc=$?
+printf "%s" "$out" | grep -q "unknown argument: --typo" || bad "T14: --typo message wrong (out: $out)"
+printf "%s" "$out" | grep -q "collision-aware dispatch" || bad "T14: --typo printed no usage"
+no_side_effect "$rc" 2 "T14 --typo"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 2>&1); rc=$?
+printf "%s" "$out" | grep -q -- "--max needs a value" || bad "T14: valueless --max message wrong (out: $out)"
+no_side_effect "$rc" 2 "T14 --max missing value"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max abc 2>&1); rc=$?
+printf "%s" "$out" | grep -q -- "--max must be a positive integer" || bad "T14: non-integer --max message wrong (out: $out)"
+no_side_effect "$rc" 2 "T14 --max abc"
+out=$(HOME="$FDHOME" PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 0 2>&1); rc=$?
+no_side_effect "$rc" 2 "T14 --max 0"
+rm -rf "$FDHOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
