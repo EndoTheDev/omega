@@ -205,34 +205,44 @@ func (d *Delegate) Poll(affinity string) []core.InjectedMessage {
 	return msgs
 }
 
+// takeOrArm pops the oldest queued result for affinity, leaving any
+// later results queued (Wait returns ONE result - a Poll here would
+// empty the queue and silently drop the siblings queued in the same
+// window). Nothing queued: it arms and returns a wake signal - the pop
+// check and the arming share ONE qmu hold, so no push can land between
+// them (that gap would strand a queued result behind a waiter that
+// never wakes).
+func (d *Delegate) takeOrArm(affinity string) (core.InjectedMessage, chan struct{}, bool) {
+	wake := make(chan struct{}, 1)
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	msgs := d.queues[affinity]
+	if len(msgs) > 0 {
+		m := msgs[0]
+		if len(msgs) == 1 {
+			delete(d.queues, affinity)
+		} else {
+			d.queues[affinity] = msgs[1:]
+		}
+		d.qTotal--
+		return m, nil, true
+	}
+	d.waiters[affinity] = append(d.waiters[affinity], wake)
+	return core.InjectedMessage{}, wake, false
+}
+
 // Wait implements core.InjectedStream (t_f3fb7c52): blocks until one
 // result for affinity arrives or ctx ends.
 func (d *Delegate) Wait(ctx context.Context, affinity string) (core.InjectedMessage, bool) {
-	if msgs := d.Poll(affinity); len(msgs) > 0 {
-		return msgs[0], true
-	}
 	for {
-		d.qmu.Lock()
-		if msgs := d.queues[affinity]; len(msgs) > 0 {
-			m := msgs[0]
-			d.queues[affinity] = msgs[1:]
-			d.qTotal--
-			d.qmu.Unlock()
+		m, wake, ok := d.takeOrArm(affinity)
+		if ok {
 			return m, true
 		}
-		// nothing pending: arm a wake signal for this key (one push
-		// wakes one waiter; a second waiter on the same key re-arms on
-		// the next loop pass, a popped-empty wake included).
-		wake := make(chan struct{}, 1)
-		d.waiters[affinity] = append(d.waiters[affinity], wake)
-		d.qmu.Unlock()
 		select {
 		case <-wake:
-			if msgs := d.Poll(affinity); len(msgs) > 0 {
-				return msgs[0], true
-			}
-			// woken by a push another same-key waiter already took -
-			// re-check and re-arm.
+			// woken by a push (or a popped-empty wake a sibling
+			// waiter already took) - re-check and re-arm.
 			continue
 		case <-ctx.Done():
 			// deregister the wake slot so a later push does not leak it
