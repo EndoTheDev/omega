@@ -30,13 +30,14 @@ func (s *Server) contextSkills() []core.Skill {
 }
 
 // expandAtMentions runs the core @-mention law over the run's new
-// input: the LAST incoming user message is the prompt, text-file
-// tokens inline, image tokens become base64 ImageContent on the
-// message, @session:/@skill: inject context. dir roots relative paths
-// (the session's workspace in the store-backed path, the process cwd
-// in the legacy one). Resolvable tokens are persisted in their
-// expanded form (the send-path parity: the model and the store both see
-// the expansion); unresolvable ones ride through untouched.
+// input: the LAST incoming user message is the prompt. Card t_7f09bd0c
+// rules the webui's attach semantics: the composer attaches PATHS - the
+// @file token rides through as a REFERENCE the model follows with its
+// own tools; no content inline, no image attach, no mime work on this
+// path (the pill'd token survives in the text, the transcript renders
+// it). @session:/@skill: still inject. dir roots the injections'
+// relative file reads (the session's workspace in the store-backed
+// path, the process cwd in the legacy one).
 func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Message {
 	if len(incoming) == 0 {
 		return incoming
@@ -47,11 +48,12 @@ func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Me
 		return incoming
 	}
 	env := core.AtMentionEnv{
-		Store:       s.store,
-		Skills:      s.contextSkills(),
-		DetectImage: ai.DetectImage,
-		MessageText: agent.MessageText,
-		Dir:         dir,
+		Store:         s.store,
+		Skills:        s.contextSkills(),
+		DetectImage:   ai.DetectImage,
+		MessageText:   agent.MessageText,
+		Dir:           dir,
+		ReferenceOnly: true, // the webui attaches PATHS (card t_7f09bd0c)
 	}
 	prompt, images, _, err := core.ExpandAtMentions(um.Content, env)
 	if err != nil {

@@ -136,11 +136,14 @@ describe("production-boundary wiring (test law: the served shape)", () => {
     assert.ok(composer.includes("@pointerdown.prevent"), "clicking a row never steals focus");
   });
 
-  it("slash commands never reach the submit path - ChatTab intercepts before the send", () => {
+  it("/skill tokens reach the message path - command drafts route through the host's send law", () => {
     const sendIdx = chatTab.indexOf("function onSend");
     const interceptIdx = chatTab.indexOf('text.startsWith("/")');
     assert.ok(interceptIdx > sendIdx, "the intercept lives in onSend");
-    assert.ok(chatTab.includes("host.command(stateKey, text)"), "the host routes the command");
+    assert.ok(
+      chatTab.includes("host.command(stateKey, text,"),
+      "the host routes the command - with the t_7f09bd0c send ctx, a skill dispatch arms AND posts",
+    );
     // and the intercept really returns - the plain send path stays after it
     const after = chatTab.slice(interceptIdx, interceptIdx + 400);
     assert.ok(after.includes("return;"), "a slash draft is consumed");

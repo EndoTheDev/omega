@@ -53,6 +53,8 @@ import {
   Trash2,
   Users,
   Wrench,
+  // card t_7f09bd0c: the skill reference pill's glyph
+  Zap,
 } from "lucide-vue-next";
 import type { LucideIcon } from "lucide-vue-next";
 
@@ -122,6 +124,8 @@ export const ICONS = {
   "folder-plus": FolderPlus,
   refresh: RefreshCw,
   unfoldless: FoldVertical, // "collapse folders" - the fold glyph
+  // card t_7f09bd0c: the skill reference pill - the zap reads "invocation"
+  zap: Zap,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

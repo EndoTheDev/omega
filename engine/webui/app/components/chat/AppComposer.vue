@@ -31,6 +31,28 @@
         title="drop the fork anchor"
         @click="$emit('clear-fork')">&times;</button>
     </div>
+    <!-- the reference pills (card t_7f09bd0c): the draft's /skill and
+         @file tokens as clickable pills ABOVE the textarea - the strip
+         is the same family as the attach strip and the fork chip above
+         (the composer stays a textarea; the raw text is always the
+         recoverable truth). Click opens the target, x removes the token
+         from the draft; Backspace with the caret behind a token kills it
+         whole (tokenBeforeCaret's law). -->
+    <div
+      v-if="refPills.length"
+      class="ref-strip">
+      <span
+        v-for="t in refPills"
+        :key="t.kind + ':' + t.start"
+        class="ref-pill-wrap">
+        <ReferencePill :pill="t" @open="openRef(t)" />
+        <button
+          class="ref-remove"
+          type="button"
+          :title="'remove ' + t.name"
+          @click="removeToken(t)">&times;</button>
+      </span>
+    </div>
     <div class="composer-row">
       <button
         class="plus-btn"
@@ -162,12 +184,15 @@
   import ModelSelect from "./ModelSelect.vue";
   import WorkspaceSelect from "./WorkspaceSelect.vue";
   import BandSelect from "../ui/BandSelect.vue";
+  import ReferencePill from "./ReferencePill.vue";
   import {
     dataUrl,
     mediaTypeFromBase64,
-    fetchMentionFiles,
+    fetchFilesBrowse,
     fetchSessions,
+    fetchWorkspaceFiles,
     THINKING_UI_LEVELS,
+    type FileEntry,
     type OmegaImage,
   } from "../../composables/omega";
   import { composerFace } from "../../composables/chat";
@@ -176,13 +201,25 @@
     filterCommands,
     mentionQueryAt,
     mentionPrefixOf,
-    mentionInnerQuery,
     replaceMentionToken,
     clampIndex,
     fetchPaletteCommands,
     fetchPaletteSkills,
   } from "../../composables/commands";
   import type { PaletteItem } from "../../composables/commands";
+  // the pill token model (t_7f09bd0c): the strip scan, the Backspace
+  // token surgery, and the @ path list's dir-first helpers share one
+  // module with the sent-message renderer
+  import {
+    deleteTokenAt,
+    filterMentionRows,
+    mentionDirOf,
+    mentionRows,
+    scanRefTokens,
+    tokenBeforeCaret,
+  } from "../../composables/pills";
+  import type { RefToken } from "../../composables/pills";
+  import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
 
   const props = defineProps<{
     draft: string;
@@ -369,7 +406,7 @@
   const extCmds = ref<{ name: string; description?: string }[]>([]);
   const skillRows = ref<{ name: string; description: string }[]>([]);
   const sessionRows = ref<{ id: string; label: string }[]>([]);
-  const fileRows = ref<{ name: string }[]>([]);
+  const fileRows = ref<FileEntry[]>([]);
 
   let paletteLoaded = false;
   async function loadPaletteData() {
@@ -381,18 +418,32 @@
   }
 
   async function loadMentionRows() {
-    const [sess, files] = await Promise.all([
-      fetchSessions().catch(() => []),
-      // the @ file rows root at the workspace the send will run in: a
-      // draft intent (or a pinned row folder, t_ea7e6a58) lists ITS
-      // first-level files; rootless keeps the process-CWD read
-      fetchMentionFiles(props.workspace).catch(() => ({ entries: [] })),
-    ]);
+    const sess = await fetchSessions().catch(() => []);
     sessionRows.value = sess.map((s) => ({ id: s.id, label: s.label || "" }));
-    fileRows.value = files.entries
-      .filter((e) => !e.is_dir)
-      .map((e) => ({ name: e.name }))
-      .slice(0, 50);
+  }
+
+  // the @ file rows (card t_7f09bd0c): ONE directory's listing at a time -
+  // the token's dir (mentionDirOf). A draft workspace routes through the
+  // workspace reader (an absolute-path read), a rootless one through
+  // /files/browse (the resolved root + relative dir). The cached dir
+  // skips refetches of the same listing; a mention close resets it so a
+  // reopen sees the workspace that is bound NOW.
+  const fileDir = ref<string | null>(null);
+  const fileLoading = ref(false);
+  async function loadFileRows(dir: string) {
+    if (fileDir.value === dir || fileLoading.value) return;
+    fileDir.value = dir;
+    fileLoading.value = true;
+    try {
+      const payload = props.workspace ?
+        await fetchWorkspaceFiles(props.workspace + (dir ? "/" + dir.replace(/\/$/, "") : ""))
+      : await fetchFilesBrowse(dir);
+      fileRows.value = (payload.entries ?? []) as FileEntry[];
+    } catch {
+      fileRows.value = [];
+    } finally {
+      fileLoading.value = false;
+    }
   }
 
   const mention = computed(() => mentionQueryAt(props.draft, caretAt.value));
@@ -416,7 +467,6 @@
     if (mention.value.active) {
       const tok = mention.value.token;
       const prefix = mentionPrefixOf(tok);
-      const inner = mentionInnerQuery(tok);
       if (prefix === "session:") {
         return sessionRows.value.map((s) => ({
           name: "session:" + s.id,
@@ -431,18 +481,15 @@
           kind: "skill" as const,
         }));
       }
-      // bare @: workspace-root files plus the two prefix rows
+      // bare @: the two prefix rows plus the token's dir listing - the
+      // rows are dirs first (mentionRows, t_7f09bd0c); the leaf filters
+      // (a drilled token's path part is its dir, not query text)
       const prefixRows: PaletteItem[] = [
         { name: "session:", description: "inject a session's history", kind: "session" },
         { name: "skill:", description: "inject a skill's content", kind: "skill" },
       ];
-      const files: PaletteItem[] = fileRows.value.map((f) => ({
-        name: f.name,
-        description: "inline this file (images attach)",
-        kind: "file" as const,
-      }));
-      const rows = [...prefixRows, ...files];
-      return inner ? filterCommands(inner, rows) : rows;
+      const rows: PaletteItem[] = [...prefixRows, ...mentionRows(fileRows.value)];
+      return filterMentionRows(tok, rows);
     }
     if (!props.draft.startsWith("/")) return [];
     const query = props.draft.slice(0, caretAt.value).replace(/\s.*/, "");
@@ -494,6 +541,20 @@
       void loadPaletteData();
     }
   });
+  // the @ drill (t_7f09bd0c): the token's dir drives the file rows - a
+  // typed or drilled path lists its own directory, a closed mention
+  // resets the cache dir so the next open refetches with the workspace
+  // that is bound NOW
+  watch(
+    () => (mentionActive.value ? mentionDirOf(mention.value.token) : null),
+    (dir) => {
+      if (dir === null) {
+        fileDir.value = null;
+        return;
+      }
+      void loadFileRows(dir);
+    },
+  );
   watch(slashSurface, (on) => {
     if (on) void loadPaletteData();
   });
@@ -505,13 +566,72 @@
     dismissed.value = true;
   }
 
+  // --- the pill strip (t_7f09bd0c) ---
+  // The draft's pills: a skill token validates against the loaded skills
+  // (a shell verb like "/theme" is a command, never a pill - the slash
+  // surface has already loaded the skills snapshot for any "/ "-draft);
+  // a file token stands as-is (the path reference IS the semantics).
+  const skillNames = computed(() => new Set(skillRows.value.map((s) => s.name)));
+  const refPills = computed<RefToken[]>(() =>
+    scanRefTokens(props.draft).filter(
+      (p) => p.kind === "file" || skillNames.value.has(p.name),
+    ),
+  );
+
+  // pill click (the card's law): a file opens in the Files pane, a skill
+  // opens its SKILL.md - the same inject the Files tab's row clicks ride
+  const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
+  function openRef(t: RefToken) {
+    openViewerRef?.({ kind: t.kind, name: t.name });
+  }
+
+  // removeToken: the strip's x - the token dies out of the draft, the
+  // caret parks at the cut
+  function removeToken(t: RefToken) {
+    const next = deleteTokenAt(props.draft, t);
+    emit("update:draft", next.draft);
+    nextTick(() => {
+      const el = ta.value;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(next.caret, next.caret);
+        caretAt.value = next.caret;
+      }
+    });
+  }
+
   // acceptItem: mention rows insert their completed token at the caret;
   // command rows complete the draft to the command (typed args ride
   // along) and SUBMIT - selecting a command runs it, no agent
   // round-trip ever (the palette's law: commands act locally).
   function acceptItem(item: PaletteItem) {
     if (!paletteOpen.value) return;
-    if (!mention.value.active && (item.kind === "shell" || item.kind === "extension" || item.kind === "skill")) {
+    // a SKILL row (t_7f09bd0c) is a reference pill now, not a
+    // fire-and-forget dispatch: the completed /<name> stays in the draft
+    // (typed args ride along), the pill forms - the send resolves the
+    // skill (the host arms the content) AND posts the message, so the
+    // pill lives in the transcript too
+    if (
+      !mention.value.active &&
+      item.kind === "skill"
+    ) {
+      const space = props.draft.indexOf(" ");
+      const rest = space === -1 ? "" : props.draft.slice(space);
+      const text = item.name + rest;
+      closePalette();
+      emit("update:draft", text);
+      active.value = -1;
+      nextTick(() => {
+        const el = ta.value;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(text.length, text.length);
+          caretAt.value = text.length;
+        }
+      });
+      return;
+    }
+    if (!mention.value.active && (item.kind === "shell" || item.kind === "extension")) {
       // preserve any args typed after the command word
       const space = props.draft.indexOf(" ");
       const rest = space === -1 ? "" : props.draft.slice(space);
@@ -521,9 +641,16 @@
       active.value = -1;
       return;
     }
-    const insertion = "@" + item.name;
+    // the insert (t_07aed3f9's replace law): a file or dir row's name is
+    // the entry's own - the completed token carries the token's dir part
+    // (t_7f09bd0c), so a drilled pick is the full relative path. A dir
+    // row DRILLS: the token keeps its trailing slash, the list refetches
+    // and the palette stays open.
+    const isDir = item.kind === "dir";
+    const dir = mentionDirOf(mention.value.token);
+    const insertion = "@" + dir + item.name + (isDir ? "/" : "");
     const next = replaceMentionToken(props.draft, caretAt.value, mention.value.token, insertion);
-    closePalette();
+    if (!isDir) closePalette();
     emit("update:draft", next.draft);
     active.value = -1;
     nextTick(() => {
@@ -582,6 +709,26 @@
         e.preventDefault();
         acceptActive(true);
         return;
+      }
+    }
+    // Backspace ON a pill kills the token whole (t_7f09bd0c): no
+    // selection and the caret immediately behind a token. While the
+    // palette is open the Backspace edits the running query char by
+    // char - untouched, this branch must not hijack the list.
+    if (e.key === "Backspace" && !paletteOpen.value) {
+      const el = ta.value;
+      const start = el?.selectionStart ?? -1;
+      const end = el?.selectionEnd ?? -1;
+      if (el && start >= 0 && start === end) {
+        const tok = tokenBeforeCaret(props.draft, start);
+        if (tok) {
+          e.preventDefault();
+          const next = deleteTokenAt(props.draft, tok);
+          emit("update:draft", next.draft);
+          caretAt.value = next.caret;
+          nextTick(() => el.setSelectionRange(next.caret, next.caret));
+          return;
+        }
       }
     }
     if (e.key === "Enter" && !e.shiftKey) {

@@ -159,8 +159,18 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   workspaceIntent: "",
 };
 
-/** the app-level callbacks the host needs - the session LIST, the dock
-    tree and the focus concept stay app-owned. */
+/** a "/" command send's context (t_7f09bd0c): marks the dispatch as a
+    SEND - a resolving skill arms AND posts the token as a message (the
+    reference pill survives the transcript); without it the dispatch
+    keeps the t_07aed3f9 law (arm, never a transcript row). */
+export interface CommandSend {
+  model?: string;
+  thinking?: number;
+  fork?: string;
+}
+
+// the app-level callbacks the host needs - the session LIST, the dock
+// tree and the focus concept stay app-owned.
 export interface ChatHostDeps {
   /** write the session id back onto the tab (unsaved -> created) */
   setTabSessionRef(key: string, sessionId: string | null): void;
@@ -255,8 +265,10 @@ export interface ChatHost {
       app's local handler; module commands and /<skill-name> dispatch
       to POST /commands/dispatch (the ctx.CommandHandler chain and the
       skill content arm - never the agent loop). Returns false when the
-      command surface refused the text outright. */
-  command(key: string, text: string): Promise<boolean>;
+      command surface refused the text outright. A send ctx (card
+      t_7f09bd0c) marks a SEND: a skill dispatch then arms AND posts the
+      token as a message - the reference pill survives the transcript. */
+  command(key: string, text: string, send?: CommandSend): Promise<boolean>;
   /** retry: the chat panel's retry action through the pipe - the
       server replays the session's last user turn as a sibling variant.
       False while the gate refused or the pipe call failed. */
@@ -754,7 +766,16 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   // module's command server-side, or /<skill-name> resolves into the
   // skill content the next send arms. A failure lands in statusLine,
   // never as a swallowed throw.
-  async function command(key: string, text: string): Promise<boolean> {
+  //
+  // A send ctx (t_7f09bd0c) changes the skill arm's shape: the send
+  // arms the resolved content AND posts the token as a message in one
+  // beat - the pendingSkill rides the very submit that carries the
+  // pill'd draft, so nothing stale stays armed.
+  async function command(
+    key: string,
+    text: string,
+    send?: CommandSend,
+  ): Promise<boolean> {
     const st = ensureState(key);
     const fields = text.split(/\s+/);
     const name = fields[0] ?? "";
@@ -776,6 +797,12 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       const res = await dispatchCommand(name, args);
       if (res.kind === "skill") {
         st.pendingSkill = { name: res.name || name.slice(1), content: res.content || "" };
+        if (send) {
+          // the send (t_7f09bd0c): the message posts with the pill'd
+          // token - submit consumes the armed content as the preamble
+          await submit(key, text, send.model, send.thinking, send.fork);
+          return true;
+        }
         st.statusLine = `[skill: ${st.pendingSkill!.name}] armed - the next send carries it`;
       } else {
         const line = (res.text || `${name}: done`).split("\n")[0]!;

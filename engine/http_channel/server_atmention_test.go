@@ -3,49 +3,40 @@ package http_channel
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Submit-path expansion (card t_07aed3f9): the last incoming user
-// message is the prompt; image tokens become ImageContent, text tokens
-// inline, and relative paths root at the session workspace.
-func TestExpandAtMentionsLastUserMessage(t *testing.T) {
+// Submit-path expansion (t_07aed3f9, re-ruled by card t_7f09bd0c): the
+// last incoming user message is the prompt; the webui attaches PATHS -
+// file tokens ride through as references, nothing inlines or attaches,
+// and the pill'd token survives in the persisted text.
+func TestExpandAtMentionsReferencesRide(t *testing.T) {
 	dir := t.TempDir()
-	writeFile := func(name, body string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-		return p
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("inlined body"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
-	imgPath := filepath.Join(dir, "chart.png")
-	if err := os.WriteFile(imgPath, png, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "chart.png"), png, 0o644); err != nil {
 		t.Fatalf("write png: %v", err)
 	}
-	txtPath := writeFile("notes.txt", "inlined body")
-
 	s := NewServer(nil, nil, nil, nil, nil, nil)
+	inner := "see @chart.png and @notes.txt and @missing.bin"
 	incoming := []core.Message{
 		core.NewUser("earlier question"),
-		core.NewUser("see @" + imgPath + " and @" + txtPath),
+		core.NewUser(inner),
 	}
 	out := s.expandAtMentions(incoming, dir)
 	last, ok := out[len(out)-1].(core.User)
 	if !ok {
 		t.Fatalf("last message = %T, want User", out[len(out)-1])
 	}
-	if len(last.Images) != 1 || last.Images[0].MediaType != "image/png" {
-		t.Fatalf("images = %+v, want one png", last.Images)
+	if got := last.Content; got != inner {
+		t.Fatalf("content = %q, want the tokens untouched %q", got, inner)
 	}
-	if !strings.Contains(last.Content, "inlined body") {
-		t.Fatalf("prompt = %q, want the text file inlined", last.Content)
-	}
-	if strings.Contains(last.Content, "@"+imgPath) {
-		t.Fatalf("prompt = %q, want the image token consumed", last.Content)
+	if len(last.Images) != 0 {
+		t.Fatalf("images = %+v, want none - the path reference law attaches nothing", last.Images)
 	}
 	first, ok := out[0].(core.User)
 	if !ok || first.Content != "earlier question" {
@@ -89,7 +80,9 @@ func TestExpandAtMentionsUnresolvableStay(t *testing.T) {
 }
 
 // Relative paths root at the dir argument - the workspace-scoped
-// session case. Without dir they land on the process cwd.
+// session case. Under t_7f09bd0c the webui attaches PATHS: an
+// unresolvable token stays exactly as written either way; the ride
+// through is the same on the workspace-scoped path.
 func TestExpandAtMentionsDirWorkspace(t *testing.T) {
 	root := t.TempDir()
 	ws := filepath.Join(root, "workspace")
@@ -102,7 +95,7 @@ func TestExpandAtMentionsDirWorkspace(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	out := s.expandAtMentions([]core.Message{core.NewUser("read @spec.md")}, ws)
 	got := out[0].(core.User).Content
-	if !strings.Contains(got, "the spec body") {
-		t.Fatalf("content = %q, want workspace-rooted inline", got)
+	if got != "read @spec.md" {
+		t.Fatalf("content = %q, want the token riding as a reference", got)
 	}
 }
