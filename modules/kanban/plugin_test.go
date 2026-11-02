@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // mountAt mounts a fresh plugin on an existing home (OMEGA_HOME must

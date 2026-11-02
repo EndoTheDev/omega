@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // disabledLists is the /disabled wire shape: always three lists - a

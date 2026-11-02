@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -151,7 +151,7 @@ func newTestServer() *Server {
 // the caller's PersistInput writes first, then the streamed turn's
 // assistant record - built from the content the provider actually sent,
 // the same shape the real loop persists. The real loop lives in
-// modules/agent_loop/ (the timing suites run it directly).
+// agent/loop/ (the timing suites run it directly).
 type testLoop struct{}
 
 // testToolProvider is a stub ToolProvider for the /tools inventory test.

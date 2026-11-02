@@ -11,7 +11,7 @@ import (
 
 // The turn-copy persistence law (card t_471f6d4a): the agent run loop
 // is the ONLY writer of turn copies. `AppendMessage` calls outside the
-// storage packages (engine/agent/ owns the TurnSink seam, modules/store/ is
+// storage packages (agent/ owns the TurnSink seam, modules/store/ is
 // the store implementation itself) must be tree operations, session
 // metadata entries, or extension-owned audit records - never user /
 // assistant / tool-result copies of a run. Channels fetch and render;
@@ -29,7 +29,7 @@ var turnCopyAppendAllowlist = map[string]string{
 var appendMessageCall = regexp.MustCompile(`\.AppendMessage\(`)
 
 // TestTurnCopyPersistenceLaw walks the repository source and fails on
-// any AppendMessage call site outside engine/agent/ and modules/store/ that
+// any AppendMessage call site outside agent/ and modules/store/ that
 // the allowlist has not classified.
 func TestTurnCopyPersistenceLaw(t *testing.T) {
 	root := repoRootForLaws(t)
@@ -63,7 +63,7 @@ func TestTurnCopyPersistenceLaw(t *testing.T) {
 		}
 		rel = filepath.ToSlash(rel)
 		// The seam's home and the store implementation are exempt.
-		if rel == "engine/agent" || strings.HasPrefix(rel, "engine/agent/") ||
+		if rel == "agent" || strings.HasPrefix(rel, "agent/") ||
 			rel == "modules/store" || strings.HasPrefix(rel, "modules/store/") {
 			return nil
 		}

@@ -10,7 +10,7 @@ mkdir -p bin
 
 echo "==> vet"
 go vet $(go list ./... | grep -v '/bin/')
-echo "==> dep law (llm/ and engine/agent/ never import modules/)"
+echo "==> dep law (llm/ and agent/ never import modules/)"
 if OMEGA_GATE_FIXTURE=scripts/gate-deps_testdata/bad.txt ./scripts/gate-deps.sh; then
 	echo "self-test broken: fixture violation not detected"
 	exit 1

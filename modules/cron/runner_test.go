@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/llm"
-	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -283,7 +283,7 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 			Run:         func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },
 		},
 	}, 0)
-	r.ag.SetLoopProvider(agent_loop.Loop{})
+	r.ag.SetLoopProvider(loop.Loop{})
 
 	fireTime := r.now()
 	r.fire(context.Background(), r.jobsSnapshot()[0], fireTime)

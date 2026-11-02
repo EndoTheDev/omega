@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 func toolProvider(t *testing.T) (*ToolProvider, KanbanProvider) {

@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/modules/approval"
 	"github.com/EndoTheDev/omega/modules/continuous"

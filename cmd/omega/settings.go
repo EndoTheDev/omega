@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/approval"
 	"github.com/EndoTheDev/omega/modules/compactor"

@@ -1,4 +1,4 @@
-package agent_loop
+package loop
 
 import (
 	"reflect"

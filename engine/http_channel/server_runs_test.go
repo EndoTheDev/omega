@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/store"
 )
@@ -491,7 +491,7 @@ func fetchDetail(t *testing.T, url string) map[string]any {
 	return m
 }
 
-// hangLoop mirrors the real loop's timeout path (modules/agent_loop):
+// hangLoop mirrors the real loop's timeout path (agent/loop):
 // turn one streams a tool call and executes it with the run ctx (the
 // hang tool blocks there), and every turn boundary checks ctx.Err()
 // first - so cancelling the run ctx ends the run with a cancelled

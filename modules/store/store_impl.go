@@ -14,7 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/modules/datadir"
 )
 

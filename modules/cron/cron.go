@@ -15,7 +15,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"

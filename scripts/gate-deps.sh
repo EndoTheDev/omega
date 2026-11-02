@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Dependency-law gate: llm/ and engine/agent/ never import modules/, directly or
+# Dependency-law gate: llm/ and agent/ never import modules/, directly or
 # transitively. Modules may import agent and ai; the layers below never
 # reach back. Standalone or in the build.sh cascade (after vet).
 #
@@ -24,11 +24,11 @@ violation() {
 
 gen() {
 	# -test pulls in each layer package's test files; second call yields
-	# the flat transitive closure of llm/ and engine/agent/.
+	# the flat transitive closure of llm/ and agent/.
 	go list -test -f \
 		'{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}' \
-		./llm/... ./engine/agent/... &&
-	go list -deps -test ./llm/... ./engine/agent/...
+		./llm/... ./agent/... &&
+	go list -deps -test ./llm/... ./agent/...
 }
 
 scan() {

@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Plugin adapts the MCP bridge into omega's plugin system. It provides

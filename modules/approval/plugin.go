@@ -2,7 +2,7 @@ package approval
 
 import (
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Plugin mounts the approval capsule (card t_c2b52cb5): the

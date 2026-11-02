@@ -6,7 +6,7 @@ import (
 )
 
 // LoopProvider drives the multi-turn conversation. The default
-// implementation (agent_loop.Loop in modules/agent_loop/) runs the
+// implementation (loop.Loop in agent/loop/) runs the
 // standard turn loop: stream provider responses, execute tool calls,
 // feed results back. A custom implementation can replace the entire
 // loop logic.
@@ -38,7 +38,7 @@ type LoopOptions struct {
 	Events             chan<- Event
 	// InjectedMessages is the run-affinity drain seam for subagent
 	// results (t_f3fb7c52): the loop polls/waits for its OWN run
-	// affinity key (engine/agent.RunAffinityFromContext), so a sibling
+	// affinity key (agent.RunAffinityFromContext), so a sibling
 	// run's queued results are unreachable from here. Nil if the
 	// delegate extension is absent.
 	InjectedMessages InjectedStream

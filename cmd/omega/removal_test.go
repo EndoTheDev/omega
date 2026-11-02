@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/process"
 	"github.com/EndoTheDev/omega/modules/terminal"

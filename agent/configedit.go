@@ -1,6 +1,6 @@
 package agent
 
-// engine/agent/configedit.go: the agents-tab edit write path (card
+// agent/configedit.go: the agents-tab edit write path (card
 // t_2d8deb8c, ruling 3 - "maybe lets me edit/update them there too").
 //
 // ScaffoldAgent seeds agents/<name>/config/config.yaml as a COMMENTED

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // Plugin adapts the cron Runner into omega's plugin system. It

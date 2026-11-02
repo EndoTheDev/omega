@@ -1,6 +1,6 @@
 package agent
 
-// engine/agent/configedit_test.go: the agents-tab edit write path
+// agent/configedit_test.go: the agents-tab edit write path
 // gates (card t_2d8deb8c). The law: node-preserving upserts only -
 // a hand-edited layer's comments and unknown keys survive every
 // write, the default agent never gets written, and an unscaffolded

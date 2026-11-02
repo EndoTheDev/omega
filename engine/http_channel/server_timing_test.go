@@ -8,7 +8,7 @@ package http_channel
 // timing only on the first segment; post-tool segments reloaded with
 // timing=nil.
 //
-// The real agent loop (modules/agent_loop) runs against a delayed fake
+// The real agent loop (agent/loop) runs against a delayed fake
 // provider: each streamed event lands ~timingDelay after the previous
 // one, so every phase boundary is measurable wall-clock time.
 
@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/llm"
-	agent_loop "github.com/EndoTheDev/omega/modules/agent_loop"
 	"github.com/EndoTheDev/omega/modules/store"
 )
 
@@ -71,7 +71,7 @@ func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server,
 	}
 	prov := llm.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
 	a := core.NewAgent(prov, nil, 0)
-	a.SetLoopProvider(agent_loop.Loop{})
+	a.SetLoopProvider(loop.Loop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)

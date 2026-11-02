@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // mountCtx mounts a fresh plugin through agent.MountAllAPI - the same

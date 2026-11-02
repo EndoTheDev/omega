@@ -21,7 +21,7 @@ import (
 	"syscall"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/modules/verdict"
 )

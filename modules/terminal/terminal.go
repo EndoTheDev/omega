@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // The hard shapes. maxSessions is the cap law: one terminal per pane

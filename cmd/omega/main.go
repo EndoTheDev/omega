@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
-	"github.com/EndoTheDev/omega/modules/agent_loop"
+	"github.com/EndoTheDev/omega/agent/loop"
 	browserModule "github.com/EndoTheDev/omega/modules/browser"
 	"github.com/EndoTheDev/omega/modules/compactor"
 	"github.com/EndoTheDev/omega/modules/continuous"
@@ -456,7 +456,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 	}
 	return []agent.Plugin{
 		logging.NewPlugin(),
-		agent_loop.NewPlugin(),
+		loop.NewPlugin(),
 		&provider.Plugin{},
 		store.NewPlugin(),
 		skills.NewPlugin(),
