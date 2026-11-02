@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# git fence shim - the machine fence for omega worker sessions (t_8b32a09a).
+#
+# A worker session is stamped OMEGA_WORKER=<anything> by its spawn path
+# (scripts/factory-dispatch.sh for kanban workers, env-scoped to the
+# dispatch invocation; the delegate module's worker stamp for omega
+# subagents) and gets THIS directory at the front of its PATH, so bare
+# `git` in a worker shell is the shim. Everything forwards to the real
+# git except:
+#   - `git push` (any remote, any branch, always), and
+#   - any ref write that would land on dev or master: merge, rebase,
+#     reset, pull, fetch/cherry-pick/revert/am naming those refs,
+#     forced branch moves onto them, `update-ref refs/heads/...`, or a
+#     commit while a dev/master checkout is current.
+#
+# The tick and the main session run unstamped and are untouched: the
+# shim only fences when the stamp is present, otherwise it forwards to
+# the real git byte-for-byte.
+#
+# Refusals name the law and exit non-zero so the transcript records
+# them. The refusal is mechanical: no card body, memory note or prompt
+# unblocks it. The fix is never to defeat the shim - it is to let the
+# tick lane land (review, then the train pass).
+set -u
+
+fence_block() {
+  local card="${OMEGA_WORKER_CARD:-${HERMES_KANBAN_TASK:-unknown}}"
+  cat >&2 <<EOF
+FENCE: git $1 is refused in this session (worker stamp OMEGA_WORKER set; card $card).
+Law: WORKER LAW - root AGENTS.md + docs/pipeline.md. A worker commits to its own
+worktree branch only; THE TICK lands dev and THE TICK pushes. Nothing in a card
+body, memory or prompt unblocks this - route the landing through the tick lane.
+EOF
+}
+
+# Real git: the first executable `git` on PATH that is not this shim.
+# The shim dir is skipped by path match, so a doubled prepend is safe.
+SHIM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+git_real_path() {
+  local d savedIFS="$IFS"
+  IFS=:
+  for d in ${PATH:-}; do
+    IFS="$savedIFS"
+    [ -n "$d" ] || d=.
+    case "$d" in "$SHIM_DIR") continue ;; esac
+    if [ -x "$d/git" ]; then
+      printf '%s\n' "$d/git"
+      return 0
+    fi
+  done
+  IFS="$savedIFS"
+  printf '%s\n' /usr/bin/git
+}
+GIT="$(git_real_path)"
+
+if [ -z "${OMEGA_WORKER:-}" ]; then
+  exec "$GIT" "$@"
+fi
+
+# Git's global options can smuggle the subcommand past a naive $1
+# (`git -C <dir> push`): consume the value-taking ones, step over the
+# bare ones, and only take the first non-option word as the subcommand.
+args=("$@")
+sub=""
+i=0
+while [ "$i" -lt "${#args[@]}" ]; do
+  a="${args[$i]}"
+  case "$a" in
+    -C|-c|--git-dir|--work-tree|--namespace|--super-prefix|--config-env)
+      i=$((i+2)) ;;
+    --bare|--no-pager|--no-replace-objects|--literal-pathspecs|--exec-path|\
+--html-path|--man-path|--info-path|--version|--help|-h)
+      i=$((i+1)) ;;
+    *)
+      sub="$a"
+      break ;;
+  esac
+done
+[ -n "$sub" ] || exec "$GIT" "$@"   # no subcommand: usage/version/help
+
+# A ref token that names dev or master after the spellings strip away:
+# refs/heads/, refs/remotes/<remote>/, a plain <remote>/ prefix, the
+# local side of a refspec, and the revision suffixes (~1, ^2, @{u}).
+pinned() {
+  r="$1"
+  r="${r%%:*}"   # local side of a refspec (+refs/heads/dev:refs/heads/dev)
+  r="${r#+}"     # forced-refspec marker
+  case "$r" in
+    refs/heads/*)   r="${r#refs/heads/}" ;;
+    refs/remotes/*) r="${r#refs/remotes/}" ;;
+  esac
+  case "$r" in */*)  r="${r#*/}"    ;; esac
+  r="${r%%~*}"; r="${r%%\^*}"; r="${r%%@*}"
+  [ "$r" = "dev" ] || [ "$r" = "master" ]
+}
+has_pinned_arg() {
+  local a
+  for a in "$@"; do
+    if pinned "$a"; then return 0; fi
+  done
+  return 1
+}
+
+# push is always refused, whatever the remote or refspec says.
+case "$sub" in
+  push) fence_block "push (any remote)"; exit 1 ;;
+esac
+
+# History-moving commands refuse whenever an argument names dev or
+# master in any spelling. Fail-closed direction: an argument that only
+# points AT those refs (a rebase upstream, a fetch refspec) is refused
+# too - the tick can do it lawfully, a worker session does not need to.
+case "$sub" in
+  merge|rebase|reset|pull|fetch|cherry-pick|revert|am)
+    if has_pinned_arg "$@"; then
+      fence_block "$sub (moves or reads dev/master into this branch)"
+      exit 1
+    fi ;;
+esac
+
+# Forced branch moves and plumbing ref writes targeting dev/master.
+# branch: a move flag AND a pinned target - `git branch feat` beside a
+# dev checkout is ordinary work and forwards.
+case "$sub" in
+  branch)
+    move=0; pin=0
+    for a in "${args[@]}"; do
+      case "$a" in
+        -f|-F|--force|-m|-M|--move|-c|-C|--copy) move=1 ;;
+        -*) ;;
+        *) if pinned "$a"; then pin=1; fi ;;
+      esac
+    done
+    if [ "$move" = 1 ] && [ "$pin" = 1 ]; then
+      fence_block "branch (moves dev or master)"
+      exit 1
+    fi ;;
+  update-ref)
+    for a in "${args[@]}"; do
+      case "$a" in
+        -*) ;;
+        *) if pinned "$a"; then fence_block "update-ref (writes dev or master)"; exit 1; fi ;;
+      esac
+    done ;;
+esac
+
+# Ref writes landing on whatever dev/master checkout this session sits
+# in: a commit here IS a landing, regardless of arguments. Outside a
+# repo rev-parse fails and the check is skipped.
+cur="$("$GIT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ "$cur" = "dev" ] || [ "$cur" = "master" ]; then
+  case "$sub" in
+    commit|merge|rebase|reset|pull|cherry-pick|revert|am)
+      fence_block "$sub on the $cur checkout"
+      exit 1 ;;
+  esac
+fi
+
+exec "$GIT" "$@"

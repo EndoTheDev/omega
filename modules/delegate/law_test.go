@@ -64,6 +64,51 @@ func TestChildEnvDefaultingLaw(t *testing.T) {
 	}
 }
 
+// TestWorkerFenceStamp pins the machine-fence spawn deltas (card
+// t_8b32a09a): every delegate child is stamped OMEGA_WORKER=1 and
+// OMEGA_WORKER_CARD=<task>; the PATH delta appears only when an
+// executable shim sits beside the binary.
+func TestWorkerFenceStamp(t *testing.T) {
+	stamp := workerStamp("task-1", "")
+	if stamp[0] != "OMEGA_WORKER=1" {
+		t.Errorf("workerStamp[0] = %q, want OMEGA_WORKER=1", stamp[0])
+	}
+	if stamp[1] != "OMEGA_WORKER_CARD=task-1" {
+		t.Errorf("workerStamp[1] = %q, want OMEGA_WORKER_CARD=task-1", stamp[1])
+	}
+	if len(stamp) != 2 {
+		t.Errorf("workerStamp(no binary) must carry no PATH delta, got %v", stamp)
+	}
+
+	// Real shim beside the binary: exe dir + shims/git, executable.
+	bindir := t.TempDir()
+	shimsdir := filepath.Join(bindir, "shims")
+	if err := os.MkdirAll(shimsdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(shimsdir, "git")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stamp = workerStamp("task-2", filepath.Join(bindir, "omega"))
+	if len(stamp) != 3 {
+		t.Errorf("workerStamp(beside shim) lost deltas: %v", stamp)
+	} else if want := shimsdir + ":" + os.Getenv("PATH"); stamp[2] != "PATH="+want {
+		t.Errorf("workerStamp PATH delta = %q, want PATH=<shims>:<inherited PATH>", stamp[2])
+	}
+
+	// A non-executable or missing shim yields no PATH delta.
+	if err := os.Chmod(shim, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := workerStamp("task-3", filepath.Join(bindir, "omega")); len(s) != 2 {
+		t.Errorf("non-executable shim leaked a PATH delta: %v", s)
+	}
+	if s := workerStamp("task-4", filepath.Join(t.TempDir(), "elsewhere", "omega")); len(s) != 2 {
+		t.Errorf("absent shims dir leaked a PATH delta: %v", s)
+	}
+}
+
 // TestSpawnRefusedInsideSubagent pins the recursion guard's tool face:
 // inside a subagent child (OMEGA_SUBAGENT set) delegate.task refuses at
 // dispatch - depth stays at one level even if nothing else holds.

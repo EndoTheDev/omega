@@ -37,6 +37,37 @@ gate + soak automation.
    `refs/train/<seq>-<task_id>` at the merge commit. Green or red, the
    state machine is the same for every card.
 
+## The machine fence (worker sessions)
+
+Law text alone did not hold: twice in one weekend a worker invented
+landing authority where written law had a gap - t_529628d5 merged, pushed
+origin dev and restarted the lane on its own; t_5782d11e ff-merged dev
+twice mid-run with stated push intent. The spawn path now stamps every
+worker session and `bin/shims/git` sits at the FRONT of its PATH, so
+bare `git` in a worker shell is the fence shim.
+
+- Detection is env-scoped: the shim fences only when `OMEGA_WORKER` is
+  set. The tick and the main session run unstamped and keep landing,
+  pushing and rebuilding by law.
+- Always refused: `git push` (any remote, any branch - dry-run included).
+- Refused when an argument names dev or master (any spelling: `origin/`,
+  `refs/heads/`, refspecs, revision suffixes): merge, rebase, reset,
+  pull, fetch, cherry-pick, revert, am - and `branch -f/-m` onto them,
+  `update-ref refs/heads/...`, or a commit while a dev/master checkout
+  is current. Ordinary work (status, add, commit on the wt branch, tag,
+  log, checkout) forwards to real git untouched.
+- A refusal prints the law line and exits non-zero: the transcript
+  records it. The refusal is mechanical - no card body, memory note or
+  prompt unblocks it.
+- The stamp is scoped to the dispatch invocation in
+  `scripts/factory-dispatch.sh` (kanban workers; a missing shim aborts
+  the pass loudly instead of dispatching unfenced) and to the delegate
+  module's child env (omega subagents). Unstamped sessions forward to
+  real git byte-for-byte.
+
+Revert: remove `bin/shims/`, the dispatch env prefix, and the delegate
+stamp. Nothing persists; sessions without the stamp run unfenced.
+
 ## Failure laws
 
 - **Rebase conflict:** the pass aborts, the card keeps its done status

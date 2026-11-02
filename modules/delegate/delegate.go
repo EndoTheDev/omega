@@ -220,6 +220,38 @@ func childEnv(agentName, model string) []string {
 	return env
 }
 
+// workerStamp builds the machine-fence env deltas for a delegate child
+// (card t_8b32a09a). Every delegate child is a worker session, so it is
+// stamped OMEGA_WORKER=1 (the machine fence is env-scoped: the tick and
+// the main session run unstamped) and OMEGA_WORKER_CARD=<task>-tagged,
+// and the repo's git fence shim (bin/shims) rides the front of the
+// child's PATH when it sits next to the omega binary (bin/omega beside
+// bin/shims in a checkout). An installed home has no repo tree: the
+// child runs stamped but the environment alone fences nothing - the
+// shim does - so the PATH delta is simply absent there.
+func workerStamp(taskID, omegaBin string) []string {
+	env := []string{"OMEGA_WORKER=1", "OMEGA_WORKER_CARD=" + taskID}
+	if dir := fenceShimDir(omegaBin); dir != "" {
+		env = append(env, "PATH="+dir+":"+os.Getenv("PATH"))
+	}
+	return env
+}
+
+// fenceShimDir returns the bin/shims dir sitting next to the omega
+// binary, when that dir holds an executable `git` shim. Empty when it
+// does not - an installed instance never fakes a fence.
+func fenceShimDir(omegaBin string) string {
+	if omegaBin == "" {
+		return ""
+	}
+	dir := filepath.Join(filepath.Dir(omegaBin), "shims")
+	fi, err := os.Stat(filepath.Join(dir, "git"))
+	if err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
+		return ""
+	}
+	return dir
+}
+
 func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (string, error) {
 	if !d.spawnable {
 		return "", fmt.Errorf("delegate: spawn refused - this process is itself a subagent (OMEGA_SUBAGENT), depth stays at one level")
@@ -278,6 +310,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	cmd := exec.CommandContext(taskCtx, omegaBin, childArgs...)
 	cmd.Env = append(os.Environ(), childEnv(agentName, model)...)
+	cmd.Env = append(cmd.Env, workerStamp(taskID, omegaBin)...)
 	// Process-group kill, same as the shell tool: without it the
 	// timeout kills only the omega child while shells it spawned
 	// survive as orphans holding locks (the bug class shellKillSetup

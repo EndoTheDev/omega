@@ -9,6 +9,9 @@ bin/*
 !bin/mcp.yaml.example
 !bin/skills/
 !bin/skills/**
+# the git fence shim is product code shipped by the repo (t_8b32a09a)
+!bin/shims/
+!bin/shims/**
 data/
 
 # Improvement loop temp files
