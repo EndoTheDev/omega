@@ -45,7 +45,7 @@ against localhost from the same host is unaffected.
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)      |
 | `/insights`                          | GET        | session usage analytics                        |
 | `/workspaces/browse`, `/workspaces/files` | GET   | the workspace surface (browsers + Files tab root) |
-| `/boards`                           | GET        | board registry (multi-board, current flagged)   |
+| `/boards`                           | GET, POST  | board registry (multi-board, current flagged) / create |
 | `/tasks`                             | GET, POST  | kanban board (list/create, `?board=` picker)    |
 | `/tasks/{id}`                        | GET, PATCH | task detail (task+comments+events) / edits     |
 | `/tasks/{id}/comments`               | POST       | add a comment (author default: `web`)          |
@@ -300,6 +300,9 @@ window help reports what startup auto-probed).
 ### /boards (multi-board registry)
 
 - `GET /boards` — the board registry, the current board flagged.
+  `POST /boards` (`{"name": ...}`) creates one; `DELETE /boards/{name}`
+  removes an empty, non-current, non-default board (guards refused
+  with a 400 carrying the refusal text - there is no force).
   Registered by the capsule while the module is mounted (see module
   REST above); an error from the handler is the capsule's own answer
   (single-board implementations stay legal).
@@ -307,7 +310,7 @@ window help reports what startup auto-probed).
 ### /tasks (kanban)
 
 - Every task route takes `?board=<name>`; the empty value is the
-  current board (the pointer target resolved at mount, CLI:
+  current board (the is_current row in the one kanban.db, CLI:
   `omega kanban board use <name>`). There is no cross-board mutation
   endpoint: a PATCH moves a card inside its board only, switching
   boards is a pointer operation, never a card op.

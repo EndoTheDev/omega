@@ -415,13 +415,9 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Store.DBPath = datadir.DBPath(home, "omega.db")
 	}
 	if cfg.Kanban.DBPath == "kanban.db" {
-		// the relative default resolves through the board registry:
-		// the pointer file names the board "" means (missing = "main")
-		dsn, derr := kanbanModule.PointerDSN(home)
-		if derr != nil {
-			return fmt.Errorf("kanban board registry: %w", derr)
-		}
-		cfg.Kanban.DBPath = dsn
+		// one kanban.db owns all boards (t_feae19d3): the pointer file
+		// is retired, resolution is the single database
+		cfg.Kanban.DBPath = datadir.DBPath(home, "kanban.db")
 	}
 	if cfg.Skills.Dir == "skills" {
 		cfg.Skills.Dir = home + "/skills"

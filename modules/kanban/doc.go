@@ -1,6 +1,8 @@
 // Package kanban provides the omega task board: a SQLite-backed kanban
 // store with the 9-status hermes grammar (triage todo scheduled ready
-// running blocked review done archived), the board verbs folded
+// running blocked review done archived), ONE kanban.db owning every
+// board (t_feae19d3 - the boards table is the registry, is_current is
+// the pointer), the board verbs folded
 // into one kanban domain tool, the /board and /boards commands,
 // the canvas panels
 // (the task list and the board switcher - panel.go, arc 5), and the

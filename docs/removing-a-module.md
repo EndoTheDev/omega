@@ -146,10 +146,10 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    before removal (`91-canvas-tab` and the module journeys) and green
    after - the canvas host tab renders whatever is mounted, so it
    passes both ways.
-9. **Data is not code.** A removed module's databases
-   (`<home>/data/kanban.db`, `<home>/data/boards/`) stay on disk.
-   Say so in the removal note; never ship a migration that deletes a
-   user's boards.
+9. **Data is not code.** A removed module's database
+   (`<home>/data/kanban.db` - one database owns every board) stays on
+   disk. Say so in the removal note; never ship a migration that
+   deletes a user's boards.
 
 ## What breaks the capsule (do not do these)
 

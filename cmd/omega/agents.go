@@ -15,7 +15,6 @@ import (
 
 	"github.com/EndoTheDev/omega/engine/agent"
 	"github.com/EndoTheDev/omega/modules/datadir"
-	kb "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/store"
 	"gopkg.in/yaml.v3"
 )
@@ -115,14 +114,11 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 		cfg.Store.DBPath == datadir.DBPath(home, "omega.db") {
 		cfg.Store.DBPath = filepath.Join(agentDataDir, "omega.db")
 	}
-	if mainBoard, err := kb.PointerDSN(home); err == nil {
-		if cfg.Kanban.DBPath == "" || cfg.Kanban.DBPath == "kanban.db" || cfg.Kanban.DBPath == mainBoard {
-			agentBoard, aerr := kb.PointerDSN(dir)
-			if aerr != nil {
-				return fmt.Errorf("agent %s board registry: %w", name, aerr)
-			}
-			cfg.Kanban.DBPath = agentBoard
-		}
+	if cfg.Kanban.DBPath == "" || cfg.Kanban.DBPath == "kanban.db" ||
+		cfg.Kanban.DBPath == datadir.DBPath(home, "kanban.db") {
+		// one kanban.db owns all boards (t_feae19d3); the agent's own
+		// data dir carries its own single database
+		cfg.Kanban.DBPath = datadir.DBPath(dir, "kanban.db")
 	}
 	_ = os.MkdirAll(agentDataDir, 0o755)
 	return nil

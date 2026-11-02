@@ -16,11 +16,11 @@ import (
 // ones the webui consumes, byte-stable from the engine-side move:
 // GET /tasks list/filter, POST /tasks create, GET /tasks/{id} detail
 // (task + comments + events), PATCH /tasks/{id}, POST
-// /tasks/{id}/comments, GET /boards, and DELETE /boards/{name} to
-// remove an empty non-default board (a registry op riding home paths,
-// so it mounts only when the registry exists). A disabled kanban
-// answers 404 - no route registered, nothing to degrade to (Q7: one
-// mount path).
+// /tasks/{id}/comments, GET /boards, and - since the boards folded
+// into the one database (t_feae19d3) - POST /boards to create and
+// DELETE /boards/{name} to remove an empty non-default board. A
+// disabled kanban answers 404 - no route registered, nothing to
+// degrade to (Q7: one mount path).
 //
 // There is deliberately no cross-board mutation endpoint: a PATCH
 // moves a card inside its board only. Switching boards is the
@@ -211,21 +211,53 @@ func taskCommentsHandler(store restProvider) func(http.ResponseWriter, *http.Req
 	}
 }
 
+// boardCreateHandler serves POST /boards: create a board (name in the
+// JSON body, board-name grammar enforced). Duplicates and reserved
+// names answer 400 with the refusal text.
+func boardCreateHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := store.CreateBoardRow(body.Name); err != nil {
+			http.Error(w, "create board: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"created": body.Name})
+	}
+}
+
+// boardRegistry is the slice of *Store the board routes need (the DB
+// registry is a store capability now, not a home-path op).
+type boardRegistry interface {
+	CreateBoardRow(name string) error
+	DeleteBoardRow(name string) error
+}
+
 // boardDeleteHandler serves DELETE /boards/{name}: remove a board
-// through the registry's own DeleteBoard, keeping every guard (the
-// default board, the current pointer target, and any board that still
-// holds tasks are refused with a 400 carrying the refusal text - the
-// webui surfaces it verbatim). DeleteBoard is the irreversible step
-// (os.RemoveAll on the board's sqlite dir); the webui's confirm click
-// is only a courtesy double-take, this handler is the law.
-func boardDeleteHandler(home string) func(http.ResponseWriter, *http.Request) {
+// through the registry's own DeleteBoardRow, keeping every guard (the
+// default board, the current board, unknown boards, and any board that
+// still holds tasks are refused with a 400 carrying the refusal text -
+// the webui surfaces it verbatim). There is no force: the guards are
+// the law. DeleteBoardRow is the irreversible step (the board's rows
+// are already gone; an empty board loses only its row); the webui's
+// confirm click is only a courtesy double-take, this handler is the law.
+func boardDeleteHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		if name == "" {
 			http.Error(w, "missing board name", http.StatusBadRequest)
 			return
 		}
-		if err := DeleteBoard(home, name); err != nil {
+		if err := store.DeleteBoardRow(name); err != nil {
 			http.Error(w, "delete board: "+err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -263,11 +295,15 @@ func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 			pattern string
 			handler func(http.ResponseWriter, *http.Request)
 		}{"GET /boards", boardsHandler(b)})
-		if p.home != "" {
+		if reg, ok := any(p.store).(boardRegistry); ok {
 			rows = append(rows, struct {
 				pattern string
 				handler func(http.ResponseWriter, *http.Request)
-			}{"DELETE /boards/{name}", boardDeleteHandler(p.home)})
+			}{"POST /boards", boardCreateHandler(reg)})
+			rows = append(rows, struct {
+				pattern string
+				handler func(http.ResponseWriter, *http.Request)
+			}{"DELETE /boards/{name}", boardDeleteHandler(reg)})
 		}
 	}
 	for _, row := range rows {

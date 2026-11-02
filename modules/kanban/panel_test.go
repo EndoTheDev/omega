@@ -21,7 +21,6 @@ import (
 func testCapsule(t *testing.T) (*capsule, *string) {
 	t.Helper()
 	s := testStore(t)
-	s.ConfigureBoards(BoardsDir(t.TempDir()), DefaultBoardName, "")
 	active := ""
 	c := newCapsule(s, func() string { return active }, func(name string) { active = name })
 	return c, &active
@@ -228,11 +227,10 @@ func TestCapsuleSwitchAction(t *testing.T) {
 func TestCapsuleSwitchOnRegistryBoard(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	if err := CreateBoard(home, "aux"); err != nil {
+	s := openRegistryStore(t, home)
+	if err := s.CreateBoardRow("aux"); err != nil {
 		t.Fatal(err)
 	}
-	s := testStore(t)
-	s.ConfigureBoards(BoardsDir(home), "main", "")
 	active := "main"
 	c := newCapsule(s, func() string { return active }, func(name string) { active = name })
 
@@ -285,11 +283,10 @@ func TestCapsuleSwitchOnRegistryBoard(t *testing.T) {
 func TestCapsuleTaskPanelFollowsSessionBoard(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	if err := CreateBoard(home, "aux"); err != nil {
+	s := openRegistryStore(t, home)
+	if err := s.CreateBoardRow("aux"); err != nil {
 		t.Fatal(err)
 	}
-	s := testStore(t)
-	s.ConfigureBoards(BoardsDir(home), "main", "")
 	ctx := context.Background()
 	if _, err := s.CreateTask(ctx, "aux", KanbanTask{Title: "aux-resident work"}); err != nil {
 		t.Fatalf("create: %v", err)

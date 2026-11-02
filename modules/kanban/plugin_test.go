@@ -58,7 +58,7 @@ func TestMountWithAPIShape(t *testing.T) {
 		}
 		patterns[rt.Pattern] = true
 	}
-	for _, want := range []string{"GET /tasks", "POST /tasks", "GET /tasks/{id}", "PATCH /tasks/{id}", "POST /tasks/{id}/comments", "GET /boards"} {
+	for _, want := range []string{"GET /tasks", "POST /tasks", "GET /tasks/{id}", "PATCH /tasks/{id}", "POST /tasks/{id}/comments", "GET /boards", "POST /boards", "DELETE /boards/{name}"} {
 		if !patterns[want] {
 			t.Fatalf("route %q not registered: %v", want, patterns)
 		}
@@ -116,17 +116,18 @@ func TestMountWithAPIShape(t *testing.T) {
 	}
 }
 
-func TestMountResolvesPointerBoard(t *testing.T) {
+func TestMountSeesCurrentBoard(t *testing.T) {
 	home := t.TempDir()
 	p := mountAt(t, home)
-	if err := CreateBoard(home, "alpha"); err != nil {
+	if err := p.store.CreateBoardRow("alpha"); err != nil {
 		t.Fatal(err)
 	}
-	if err := WritePointer(home, "alpha"); err != nil {
+	if err := p.store.SetCurrentBoard("alpha"); err != nil {
 		t.Fatal(err)
 	}
 
-	// second mount on the switched pointer: the default board is alpha.
+	// the flag moves; the FIRST mount's "" resolution reads the registry
+	// live (the row is the one truth), so both mounts converge on alpha.
 	// t.Setenv restores between; set it again for the remount.
 	t.Setenv("OMEGA_HOME", home)
 	p2 := NewPlugin()
@@ -135,27 +136,26 @@ func TestMountResolvesPointerBoard(t *testing.T) {
 		t.Fatalf("remount: %v", err)
 	}
 	t.Cleanup(func() { p2.store.Close() })
-	if p2.store.defaultName != "alpha" {
-		t.Fatalf("defaultName = %q, want alpha", p2.store.defaultName)
+	if cur, err := p2.store.CurrentBoard(); err != nil || cur != "alpha" {
+		t.Fatalf("current = %q err %v, want alpha", cur, err)
 	}
-	out, err := p2.tools.runTaskOp(context.Background(), map[string]any{"action": "list"})
-	if err != nil || !strings.Contains(out, "no tasks") {
-		t.Fatalf("list on alpha: %q %v", out, err)
+	out, err := p2.tools.runTaskOp(context.Background(), map[string]any{"action": "create", "title": "alpha-born"})
+	if err != nil || !strings.HasPrefix(out, "created t_") {
+		t.Fatalf("create on alpha: %q %v", out, err)
 	}
-
-	// the tools on the FIRST mount still see main as default (the
-	// pointer file was written after that mount)
-	if tests, err := p.store.ListTasks(context.Background(), "", ""); err != nil || len(tests) != 0 {
-		t.Fatalf("main tasks = %d %v", len(tests), err)
+	// the first mount's store resolves "" live too: it sees alpha's card
+	if tests, err := p.store.ListTasks(context.Background(), "", ""); err != nil || len(tests) != 1 {
+		t.Fatalf("first mount default tasks = %d %v", len(tests), err)
 	}
-	if tests, err := p.store.ListTasks(context.Background(), "alpha", ""); err != nil || len(tests) != 0 {
-		t.Fatalf("alpha tasks = %d %v", len(tests), err)
+	// main reachable by name, still empty
+	if tests, err := p.store.ListTasks(context.Background(), "alpha", ""); err != nil || len(tests) != 1 {
+		t.Fatalf("alpha named = %d %v", len(tests), err)
 	}
 }
 
 func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
-	p, _, home := mountPlugin(t)
-	if err := CreateBoard(home, "alpha"); err != nil {
+	p, _, _ := mountPlugin(t)
+	if err := p.store.CreateBoardRow("alpha"); err != nil {
 		t.Fatal(err)
 	}
 

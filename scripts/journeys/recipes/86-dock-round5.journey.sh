@@ -16,7 +16,7 @@
 # No model needed: pure shell UI. Runs against JOURNEY_BASE_URL.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
-BTAG="j86$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
+BTAG="j86" # the pin (t_feae19d3): fixed board name - idempotent across runs
 OMEGA_BIN="${OMEGA_BIN:-$JROOT/../../bin/omega}"
 BOARD="$BTAG-b"
 TID=""
@@ -25,8 +25,13 @@ trap 'curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${TID}?board=${BOARD}" \
   -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1 || true' EXIT
 
 # ---- seed: a done task on a NON-default board (the notification) ------
-step "creating registry board: $BOARD"
-"$OMEGA_BIN" kanban board create "$BOARD" >/dev/null || die "board create"
+step "pinning registry board: $BOARD"
+if ! "$OMEGA_BIN" kanban board create "$BOARD" >/dev/null 2>&1; then
+  # create refused: the pinned board already exists (fine) unless the
+  # registry does not list it
+  "$OMEGA_BIN" kanban board list 2>/dev/null | sed 's/^[* ] \+//' | awk '{print $1}' | grep -qx "$BOARD" \
+    || die "board ensure $BOARD"
+fi
 TID=$(curl -s -X POST "${JOURNEY_BASE_URL}/tasks?board=$BOARD" \
   -H 'Content-Type: application/json' -d "{\"title\": \"card on $BOARD\"}" |
   grep -oE 't_[0-9a-f]+' | head -1)

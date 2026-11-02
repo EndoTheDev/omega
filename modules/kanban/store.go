@@ -5,10 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 
 	_ "modernc.org/sqlite"
 
@@ -24,22 +21,12 @@ var ErrNotFound = ErrTaskNotFound
 // concurrent use via *sql.DB (WAL + busy_timeout, same recipe as the
 // session store).
 //
-// Multi-board: one handle per board. db is the DEFAULT board ("" calls
-// land here - the pointer target resolved at mount); every other board
-// opens lazily from boardsDir/<name>/kanban.db and caches in named.
-// ConfigureBoards wires the registry when the host knows a home.
+// ONE DATABASE (t_feae19d3): db is the single <home>/data/kanban.db -
+// every board is a row in its boards table and every card, comment and
+// event carries a board_id FK. There is no per-board handle and no
+// pointer file; a board argument is resolved to its row id at the door.
 type Store struct {
-	// db is the default board's handle (pointer-resolved at mount).
 	db *sql.DB
-
-	// board registry wiring (all optional; empty = single-board mode
-	// where any named board errors).
-	boardsDir   string
-	defaultName string // pointer target at mount ("" = unknown)
-	legacyDSN   string // the main board's real path
-
-	mu    sync.Mutex
-	named map[string]*sql.DB
 
 	// notifier is the finished-things seam (card t_5d9032d3), wired by
 	// the kanban plugin after MountAllAPI order places notifications
@@ -76,7 +63,7 @@ var (
 )
 
 // Open opens (creating if needed) the board database at dsn and
-// ensures the schema exists. ":memory:" works for tests. A dsn inside
+// ensures the schema exists. \":memory:\" works for tests. A dsn inside
 // a data/ directory gets the boot-time data-dir migration first
 // (legacy home-root databases move into data/ before the handle is
 // opened - see modules/datadir).
@@ -97,7 +84,7 @@ func Open(dsn string) (*Store, error) {
 }
 
 // openDB is the dsn-widening + sql.Open step, shared by Open and the
-// lazy per-board open.
+// migration's short-lived source handles.
 func openDB(dsn string) (*sql.DB, error) {
 	dsnParams := dsn
 	if !strings.Contains(dsn, "?") {
@@ -112,141 +99,46 @@ func openDB(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-// ConfigureBoards wires the multi-board registry. Called by the plugin
-// Mount with the home-derived values; tests may call it directly. The
-// default board ("" board arg) is the handle Open made; defaultName
-// names it for Boards(), legacyDSN lets "main" resolve even when the
-// pointer points elsewhere.
-func (s *Store) ConfigureBoards(boardsDir, defaultName, legacyDSN string) {
-	s.boardsDir = boardsDir
-	s.defaultName = defaultName
-	s.legacyDSN = legacyDSN
-	s.mu.Lock()
-	s.named = map[string]*sql.DB{}
-	s.mu.Unlock()
-}
-
-// handleFor resolves a board name to its store handle. "" and the
-// mount-time pointer target land on the default handle; "main" opens
-// the legacy dsn when the pointer points elsewhere; other valid names
-// open lazily from the registry directory. Unknown or illegal boards
-// error at the door - the store never auto-creates a named board.
-func (s *Store) handleFor(board string) (*sql.DB, error) {
-	if board == "" || board == s.defaultName {
-		return s.db, nil
-	}
-	if !ValidBoardName(board) {
-		return nil, fmt.Errorf("illegal board name %q", board)
-	}
-	s.mu.Lock()
-	if s.named == nil {
-		s.named = map[string]*sql.DB{}
-	}
-	if db, ok := s.named[board]; ok {
-		s.mu.Unlock()
-		return db, nil
-	}
-	s.mu.Unlock()
-
-	var dsn string
-	switch {
-	case board == DefaultBoardName:
-		if s.legacyDSN == "" {
-			return nil, fmt.Errorf("board %q is not available", board)
-		}
-		dsn = s.legacyDSN
-	case s.boardsDir == "":
-		return nil, fmt.Errorf("named boards not configured")
-	default:
-		dsn = filepath.Join(s.boardsDir, board, "kanban.db")
-		if _, err := os.Stat(dsn); err != nil {
-			return nil, fmt.Errorf("no such board %q", board)
-		}
-	}
-
-	db, err := openDB(dsn)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.migrate(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	s.mu.Lock()
-	if s.named == nil {
-		s.named = map[string]*sql.DB{}
-	}
-	if existing, ok := s.named[board]; ok { // raced to the same draw
-		s.mu.Unlock()
-		db.Close()
-		return existing, nil
-	}
-	s.named[board] = db
-	s.mu.Unlock()
-	return db, nil
-}
-
-// Boards implements BoardLister: the default board first, then
-// the registry directories that hold a kanban.db.
-func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
-	out := []BoardInfo{{Name: DefaultBoardName, Current: s.currentName() == DefaultBoardName || s.defaultName == ""}}
-	if s.boardsDir == "" {
-		return out, nil
-	}
-	entries, err := os.ReadDir(s.boardsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return out, nil
-		}
-		return nil, err
-	}
-	for _, e := range entries {
-		if !e.IsDir() || e.Name() == DefaultBoardName {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(s.boardsDir, e.Name(), "kanban.db")); err != nil {
-			continue
-		}
-		out = append(out, BoardInfo{Name: e.Name(), Current: e.Name() == s.defaultName})
-	}
-	return out, nil
-}
-
-// currentName reports the pointer name the default handle represents
-// (empty when the host never wired a registry).
-func (s *Store) currentName() string {
-	if s.defaultName == "" {
-		return DefaultBoardName
-	}
-	return s.defaultName
-}
-
-// Close releases the database handles.
+// Close releases the database handle.
 func (s *Store) Close() error {
-	s.mu.Lock()
-	named := make([]*sql.DB, 0, len(s.named))
-	for _, db := range s.named {
-		named = append(named, db)
-	}
-	s.named = nil
-	s.mu.Unlock()
-	var firstErr error
-	for _, db := range named {
-		if err := db.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if err := s.db.Close(); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	return firstErr
+	return s.db.Close()
 }
 
-// migrate ensures the schema on any board's handle. Task, comment and
-// event tables are identical on every board (isolation is by handle,
-// not by column).
+// migrate ensures the schema on the single database. Fresh schemas
+// carry the full multi-board shape (boards table + board_id FKs); a
+// database from the legacy shape is rebuilt in place - new tables with
+// board_id, the rows copied with main's board id backfilled.
+// boardIndexes is the board_id index set. It runs AFTER the board
+// tables exist - on a legacy database, board_id only arrives with
+// rebuildLegacyRows, so migrate() creates the tables (IF NOT EXISTS,
+// no board_id index touching), upgrades the legacy rows, and only then
+// lays the board indexes.
+const boardIndexes = `
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id);
+CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
+CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id);
+CREATE INDEX IF NOT EXISTS idx_task_comments_board ON task_comments(board_id);
+CREATE INDEX IF NOT EXISTS idx_task_events_board ON task_events(board_id);
+`
+
 func (s *Store) migrate(db *sql.DB) error {
-	_, err := db.Exec(`
+	if err := ensureBoardsTable(db); err != nil {
+		return err
+	}
+	if _, err := db.Exec(taskTables); err != nil {
+		return err
+	}
+	if err := rebuildLegacyRows(db); err != nil {
+		return err
+	}
+	_, err := db.Exec(boardIndexes)
+	return err
+}
+
+// taskTables is the three card tables in the boards-aware shape (fresh
+// databases are born with board_id; legacy databases rebuild below).
+const taskTables = `
 CREATE TABLE IF NOT EXISTS tasks (
 	id           TEXT PRIMARY KEY,
 	title        TEXT NOT NULL,
@@ -257,32 +149,140 @@ CREATE TABLE IF NOT EXISTS tasks (
 	source       TEXT NOT NULL DEFAULT '',
 	created_at   TEXT NOT NULL,
 	started_at   TEXT NOT NULL DEFAULT '',
-	completed_at TEXT NOT NULL DEFAULT ''
+	completed_at TEXT NOT NULL DEFAULT '',
+	board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE TABLE IF NOT EXISTS task_comments (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
 	author     TEXT NOT NULL,
 	body       TEXT NOT NULL,
-	created_at TEXT NOT NULL
+	created_at TEXT NOT NULL,
+	board_id   INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id);
 CREATE TABLE IF NOT EXISTS task_events (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
 	kind       TEXT NOT NULL,
 	detail     TEXT NOT NULL DEFAULT '',
-	created_at TEXT NOT NULL
+	created_at TEXT NOT NULL,
+	board_id   INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id);
-`)
-	return err
+`
+
+// rebuildLegacyRows upgrades a database from the boardless legacy
+// shape: tasks/task_comments/task_events without a board_id column.
+// The rows are rebuilt into new boards-aware tables in one transaction
+// (all legacy rows belong to "main" - the boards table's seeded row is
+// the backfill source), the old tables drop, the new ones take their
+// places and the indexes are re-created. A database that already has
+// board_id columns is a no-op. The table re-creation must exist in the
+// same file because sqlite has no ALTER TABLE ADD CONSTRAINT.
+func rebuildLegacyRows(db *sql.DB) error {
+	if !tableMissingColumn(db, "tasks", "board_id") {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// board_id backfill: everything already in this db is main's
+	stmts := []string{
+		`ALTER TABLE task_events RENAME TO legacy_task_events`,
+		`ALTER TABLE task_comments RENAME TO legacy_task_comments`,
+		`ALTER TABLE tasks RENAME TO legacy_tasks`,
+		`CREATE TABLE tasks (
+	id           TEXT PRIMARY KEY,
+	title        TEXT NOT NULL,
+	body         TEXT NOT NULL DEFAULT '',
+	assignee     TEXT NOT NULL DEFAULT '',
+	status       TEXT NOT NULL DEFAULT 'triage',
+	session_id   TEXT NOT NULL DEFAULT '',
+	source       TEXT NOT NULL DEFAULT '',
+	created_at   TEXT NOT NULL,
+	started_at   TEXT NOT NULL DEFAULT '',
+	completed_at TEXT NOT NULL DEFAULT '',
+	board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
+)`,
+		`CREATE TABLE task_comments (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	author     TEXT NOT NULL,
+	body       TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	board_id   INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
+)`,
+		`CREATE TABLE task_events (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+	kind       TEXT NOT NULL,
+	detail     TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	board_id   INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
+)`,
+		`INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
+			SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at,
+			       (SELECT id FROM boards WHERE name = 'main') FROM legacy_tasks`,
+		`INSERT INTO task_comments (task_id, author, body, created_at, board_id)
+			SELECT task_id, author, body, created_at,
+			       (SELECT id FROM boards WHERE name = 'main') FROM legacy_task_comments`,
+		`INSERT INTO task_events (task_id, kind, detail, created_at, board_id)
+			SELECT task_id, kind, detail, created_at,
+			       (SELECT id FROM boards WHERE name = 'main') FROM legacy_task_events`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_comments_board ON task_comments(board_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_events_board ON task_events(board_id)`,
+		`DROP TABLE legacy_tasks`,
+		`DROP TABLE legacy_task_comments`,
+		`DROP TABLE legacy_task_events`,
+	}
+	for _, q := range stmts {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("kanban schema upgrade: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
-// CreateTask inserts a task on the named board ("" = default). ID,
-// Status (default triage) and CreatedAt are filled by the store;
-// title must be non-empty.
+// tableMissingColumn reports whether table lacks column (false for a
+// table that does not exist at all - the CREATE above then makes it).
+func tableMissingColumn(db *sql.DB, table, column string) bool {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	found := false
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notNull   int
+			dflt      any
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false
+	}
+	return !found
+}
+
+// CreateTask inserts a task on the named board ("" = the current
+// board). ID, Status (default triage) and CreatedAt are filled by the
+// store; title must be non-empty.
 func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error) {
 	if strings.TrimSpace(in.Title) == "" {
 		return KanbanTask{}, fmt.Errorf("task title is required")
@@ -294,7 +294,7 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 	if !IsStatus(status) {
 		return KanbanTask{}, fmt.Errorf("illegal status %q", status)
 	}
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return KanbanTask{}, err
 	}
@@ -302,18 +302,18 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 		in.ID = newTaskID()
 		in.Status = status
 		in.CreatedAt = now()
-		_, err := db.ExecContext(ctx, `
-INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		_, err := s.db.ExecContext(ctx, `
+INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			in.ID, in.Title, in.Body, in.Assignee, in.Status,
-			in.SessionID, in.Source, in.CreatedAt, in.StartedAt, in.CompletedAt)
+			in.SessionID, in.Source, in.CreatedAt, in.StartedAt, in.CompletedAt, bid)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue // id collision: retry with a fresh draw
 			}
 			return KanbanTask{}, err
 		}
-		if err := recordEvent(ctx, db, in.ID, "created", describeNew(in)); err != nil {
+		if err := recordEvent(ctx, s.db, bid, in.ID, "created", describeNew(in)); err != nil {
 			return KanbanTask{}, err
 		}
 		return in, nil
@@ -334,23 +334,24 @@ func describeNew(t KanbanTask) string {
 }
 
 // ListTasks returns tasks on the named board, newest first. Empty
-// status lists every task.
+// status lists every task. The board filter is ALWAYS applied - the
+// board_id column carries the isolation the per-board files used to.
 func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks`
-	args := []any{}
+	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE board_id = ?`
+	args := []any{bid}
 	if status != "" {
 		if !IsStatus(status) {
 			return nil, fmt.Errorf("illegal status %q", status)
 		}
-		query += " WHERE status = ?"
+		query += " AND status = ?"
 		args = append(args, status)
 	}
 	query += " ORDER BY created_at DESC, id DESC"
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -378,11 +379,11 @@ func scanTask(row interface{ Scan(...any) error }) (*KanbanTask, error) {
 
 // GetTask returns one task by id on the named board.
 func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, error) {
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return KanbanTask{}, ErrNotFound
@@ -395,12 +396,12 @@ func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, erro
 
 // GetTaskComments returns the comment thread, oldest first.
 func (s *Store) GetTaskComments(ctx context.Context, board, taskID string) ([]KanbanComment, error) {
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `
-SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = ? ORDER BY id`, taskID)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = ? AND board_id = ? ORDER BY id`, taskID, bid)
 	if err != nil {
 		return nil, err
 	}
@@ -418,12 +419,12 @@ SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = 
 
 // GetTaskEvents returns the audit trail, oldest first.
 func (s *Store) GetTaskEvents(ctx context.Context, board, taskID string) ([]KanbanEvent, error) {
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `
-SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? ORDER BY id`, taskID)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? AND board_id = ? ORDER BY id`, taskID, bid)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +448,7 @@ func (s *Store) AddComment(ctx context.Context, board, taskID, author, body stri
 	if author == "" {
 		author = "user"
 	}
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return KanbanComment{}, err
 	}
@@ -455,9 +456,9 @@ func (s *Store) AddComment(ctx context.Context, board, taskID, author, body stri
 	if _, err := s.GetTask(ctx, board, taskID); err != nil {
 		return KanbanComment{}, err
 	}
-	res, err := db.ExecContext(ctx, `
-INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)`,
-		taskID, author, body, now())
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO task_comments (task_id, author, body, created_at, board_id) VALUES (?, ?, ?, ?, ?)`,
+		taskID, author, body, now(), bid)
 	if err != nil {
 		return KanbanComment{}, err
 	}
@@ -466,7 +467,7 @@ INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?
 		return KanbanComment{}, err
 	}
 	c := KanbanComment{ID: id, TaskID: taskID, Author: author, Body: body, CreatedAt: now()}
-	err = recordEvent(ctx, db, taskID, "comment", "author "+author)
+	err = recordEvent(ctx, s.db, bid, taskID, "comment", "author "+author)
 	return c, err
 }
 
@@ -476,17 +477,17 @@ INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?
 // running stamps started_at once. The board argument selects which
 // board holds the task - patches cannot move a task across boards.
 func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch KanbanPatch) (KanbanTask, error) {
-	db, err := s.handleFor(board)
+	bid, err := s.boardID(board)
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return KanbanTask{}, err
 	}
 	defer tx.Rollback()
 
-	t, err := getTaskTx(ctx, tx, taskID)
+	t, err := getTaskTx(ctx, tx, bid, taskID)
 	if err != nil {
 		return KanbanTask{}, err
 	}
@@ -553,13 +554,13 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 
 	if _, err := tx.ExecContext(ctx, `
 UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
-	started_at=?, completed_at=? WHERE id=?`,
+	started_at=?, completed_at=? WHERE id=? AND board_id=?`,
 		t.Title, t.Body, t.Assignee, t.Status, t.SessionID, t.Source,
-		t.StartedAt, t.CompletedAt, t.ID); err != nil {
+		t.StartedAt, t.CompletedAt, t.ID, bid); err != nil {
 		return KanbanTask{}, err
 	}
 	for _, e := range events {
-		if err := recordEventTx(ctx, tx, taskID, e[0], e[1]); err != nil {
+		if err := recordEventTx(ctx, tx, bid, taskID, e[0], e[1]); err != nil {
 			return KanbanTask{}, err
 		}
 	}
