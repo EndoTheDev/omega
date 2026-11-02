@@ -6,19 +6,43 @@
 # Each fire runs the prompt as a full agent turn in a session labeled
 # cron:<name>.
 #
-# deliver targets (what happens to the run's final message):
-#   none    - session only (default)
-#   journal - appended to <OMEGA_HOME>/journal/YYYY-MM-DD.md
-#   memory  - stored via the memory extension
+# Two job kinds:
+#   kind: cron (default)  - schedule is the 5-field grammar above.
+#   kind: interval        - minutes is an integer >= 1; the job fires
+#                           every N minutes on the minute grid.
+#
+# The defaulting law: an `agent` field left empty runs the fire under
+# the default agent; a `model` field left empty uses the session's
+# provider model. Empty = inherit, never an error. A bad agent name is
+# a clear error in the job log when it fires - the scheduler keeps
+# standing.
+#
+# deliver targets (where the fire lands, one field for the whole shape):
+#   new-session       - fresh session, the default (runs in-process)
+#   continuous-agent  - a WAKE into an existing continuous agent
+#                       session (set agent: <name> to an agent home;
+#                       the fire goes through the event spine)
+#   append-to-file    - the run's final message appends to `file`
+#                       (home-relative); empty file = journal
+#                       naming (<OMEGA_HOME>/journal/YYYY-MM-DD.md)
+#
+# Legacy values (deprecated, still accepted): none (= new-session),
+# journal (= append-to-file with the journal naming), memory.
 #
 # omega can propose jobs in conversation but never writes this file
-# itself - copy it by hand.
+# itself - copy it by hand, or edit jobs in the webui Cron tab (the
+# editor writes this file the same way the toggle route does).
 #
 # jobs:
 #   - name: daily-journal        # required, unique, [a-z0-9-]
-#     schedule: "0 8 * * *"      # required, 5-field cron
+#     kind: cron                 # cron | interval, default cron
+#     schedule: "0 8 * * *"      # required iff kind cron, 5-field
+#     minutes: 5                 # required iff kind interval, >= 1
+#     agent: scout               # optional; empty = default agent
+#     model: glm-5.3             # optional; empty = session model
 #     prompt: "..."              # required, the user message the run sends
-#     deliver: journal           # journal | memory | none, default none
+#     deliver: new-session       # new-session | continuous-agent | append-to-file
+#     file: notes/report.md      # the append-to-file target (home-relative)
 #     enabled: true              # default true
 
 jobs:

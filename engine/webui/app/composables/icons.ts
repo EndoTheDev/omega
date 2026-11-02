@@ -28,6 +28,7 @@ import {
   FoldVertical,
   GitFork,
   Globe,
+  Plus,
   History,
   Kanban,
   MessageSquare,
@@ -93,6 +94,7 @@ export const ICONS = {
   star: Star, // pinned sessions
   download: Download, // session export
   pencil: Pencil, // inline rename
+  plus: Plus, // the cron tab's add-job editor tool (card t_ecec864e)
   branch: GitFork, // session fork
   archive: Archive,
   unarchive: ArchiveRestore,

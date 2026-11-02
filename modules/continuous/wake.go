@@ -36,6 +36,9 @@ type wakeTickPayload struct {
 	Agent  string `json:"agent"`
 	Job    string `json:"job"`
 	Prompt string `json:"prompt"`
+	// Model is cron's per-fire override (card t_ecec864e, the
+	// defaulting law); empty = inherit, no env on the child.
+	Model string `json:"model,omitempty"`
 }
 
 // tickObserver returns the spine subscription that turns cron's wake
@@ -53,7 +56,7 @@ func (m *Machine) tickObserver() core.EventObserver {
 			return // malformed tick: skip, never invent a wake
 		}
 		go func() {
-			if err := m.Wake(p.Agent, p.Prompt); err != nil && !errors.Is(err, ErrAwake) {
+			if err := m.Wake(p.Agent, p.Prompt, p.Model); err != nil && !errors.Is(err, ErrAwake) {
 				m.logf("wake %s: %v", p.Agent, err)
 			}
 		}()
@@ -77,11 +80,16 @@ func (m *Machine) logf(format string, args ...any) {
 }
 
 // Wake spawns one wake for the named agent: a human wake (ruling 8's
-// second trigger) or a cron tick dispatch. One live wake per agent -
-// a second call returns ErrAwake. The call returns once the child is
-// RUNNING, never when its loop finishes; the report lands in the
-// agent's own canonical session by the child's own persistence.
-func (m *Machine) Wake(name, message string) error {
+// second trigger) or a cron tick dispatch. model is the job's per-fire
+// model override (the defaulting law: empty = inherit - the agent's
+// own provider config, untouched); non-empty it rides OMEGA_MODEL on
+// the child's env, the same wall the per-wake turn budget rides, so
+// the override dies with the wake and never leaks into any other
+// session. One live wake per agent - a second call returns ErrAwake.
+// The call returns once the child is RUNNING, never when its loop
+// finishes; the report lands in the agent's own canonical session by
+// the child's own persistence.
+func (m *Machine) Wake(name, message, model string) error {
 	// The soft-disable law (v0.14.1): every wake trigger - the cron
 	// tick, the human's canonical-chat POST, a scripted spawn - passes
 	// this one wall. A disabled agent's home is never touched.
@@ -102,7 +110,7 @@ func (m *Machine) Wake(name, message string) error {
 	}
 	m.live[name] = func() {} // placeholder replaced when the child arms
 	m.mu.Unlock()
-	go m.runWake(p, message)
+	go m.runWake(p, message, model)
 	return nil
 }
 
@@ -117,9 +125,10 @@ func (m *Machine) Sleep(name string) {
 	}
 }
 
-// runWake builds and runs the child process for one wake. Guarded by
-// Wake's lock bracket; clears the live entry when the child exits.
-func (m *Machine) runWake(p agent.Profile, message string) {
+// runWake builds and runs the child process for one wake. model is the
+// cron job's per-fire override (empty = inherit). Guarded by Wake's
+// lock bracket; clears the live entry when the child exits.
+func (m *Machine) runWake(p agent.Profile, message, model string) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.live, p.Name)
@@ -156,6 +165,14 @@ func (m *Machine) runWake(p agent.Profile, message string) {
 	)
 	if m.cfg.WakeTurnBudget > 0 {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("OMEGA_MAX_TURNS=%d", m.cfg.WakeTurnBudget))
+	}
+	// The per-fire model override (card t_ecec864e, the defaulting
+	// law): a non-empty cron-job model rides OMEGA_MODEL - the child's
+	// config applyEnv table honors it over its own provider.model -
+	// scoped to this one child process. Empty inherits: no env, the
+	// agent's own provider config stands.
+	if model != "" {
+		cmd.Env = append(cmd.Env, "OMEGA_MODEL="+model)
 	}
 	// The log: the agent home holds <name>.log (ruling 1). stdout of a
 	// run child is the report text; both streams append here.
@@ -229,5 +246,5 @@ func (m *Machine) Evidence(name string) ([]EvidenceRow, error) {
 // WakeNow is the roster's wake button: a manual wake carrying the
 // agent's standing prompt.
 func (m *Machine) WakeNow(name string) error {
-	return m.Wake(name, "")
+	return m.Wake(name, "", "")
 }

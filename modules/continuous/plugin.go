@@ -202,7 +202,7 @@ func wakeHandler(m *Machine) http.HandlerFunc {
 		if strings.TrimSpace(body.Message) == "" {
 			body.Message = "" // a bare wake rides the standing prompt
 		}
-		if err := m.Wake(name, body.Message); err != nil {
+		if err := m.Wake(name, body.Message, ""); err != nil {
 			if err == ErrAwake {
 				httpError(w, http.StatusConflict, "%v", err)
 				return

@@ -43,7 +43,13 @@ const (
 // binding - the module is read-only.
 type jobRow struct {
 	Name     string `json:"name"`
-	Schedule string `json:"schedule"`
+	Kind     string `json:"kind"`
+	Schedule string `json:"schedule,omitempty"`
+	Minutes  int    `json:"minutes,omitempty"`
+	Deliver  string `json:"deliver"`
+	Agent    string `json:"agent,omitempty"`
+	Model    string `json:"model,omitempty"`
+	File     string `json:"file,omitempty"`
 	Enabled  bool   `json:"enabled"`
 	Next     string `json:"next,omitempty"`
 }
@@ -116,7 +122,13 @@ func (c *capsule) jobsPanel() core.Panel {
 	for _, j := range infos {
 		rows = append(rows, jobRow{
 			Name:     j.Name,
+			Kind:     j.Kind,
 			Schedule: j.Schedule,
+			Minutes:  j.Minutes,
+			Deliver:  j.Deliver,
+			Agent:    j.Agent,
+			Model:    j.Model,
+			File:     j.File,
 			Enabled:  j.Enabled,
 			Next:     j.Next,
 		})
