@@ -57,12 +57,6 @@ func ValidBoardName(name string) bool {
 	return boardNameRE.MatchString(name)
 }
 
-// RegistryDSN names the ONE kanban database for a home:
-// <home>/data/kanban.db. Every board lives here.
-func RegistryDSN(home string) string {
-	return datadir.DBPath(home, "kanban.db")
-}
-
 // registryStaleDSN reports whether dsn carries the legacy pointer-era
 // resolution: a path inside the boards directory (dirs/<name>/kanban.db
 // was BoardDSN's answer for every non-main board).
@@ -154,16 +148,15 @@ func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
 // back to "main" when no row claims the flag - main always exists and
 // the board must answer, a missing flag is not a boot failure.
 func (s *Store) CurrentBoard() (string, error) {
-	boards, err := s.Boards(context.Background())
+	var name string
+	err := s.db.QueryRow(`SELECT name FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`).Scan(&name)
+	if err == sql.ErrNoRows {
+		return DefaultBoardName, nil
+	}
 	if err != nil {
 		return "", err
 	}
-	for _, b := range boards {
-		if b.Current {
-			return b.Name, nil
-		}
-	}
-	return DefaultBoardName, nil
+	return name, nil
 }
 
 // SetCurrentBoard points the home at the named board: the flag moves
@@ -288,8 +281,20 @@ func (s *Store) migrateLegacyBoards(home string) error {
 	}
 	defer tx.Rollback()
 
-	position := 1
-	migrated := map[string]bool{}
+	// the legacy sources ride ATTACHed aliases for the whole migration
+	// (one tx): sqlite refuses ATTACH/DETACH inside a transaction that
+	// has already written, so every migrating board attaches UP FRONT
+	// - before any write - and detaches after the commit. A failed
+	// migration leaves the sources attached; the handle closes on the
+	// mount failure path, and an attached read-only source is harmless
+	// to the same handle otherwise (detached on Close).
+	// alias is index-derived, never name-derived: board names may
+	// carry characters sqlite parses as operators inside an
+	// unquoted alias (legacy-crew -> legacy_legacy-crew reads as
+	// arithmetic and reds "no such column").
+	attach := map[string]string{} // alias -> dsn
+	var aliases []string
+	boards := []struct{ name, alias string }{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -302,24 +307,33 @@ func (s *Store) migrateLegacyBoards(home string) error {
 			// journey junk: never migrates, dies with the layout
 			continue
 		}
-		if migrated[e.Name()] {
-			continue // unreachable for distinct dir names, belt for races
+		alias := fmt.Sprintf("legacy%d", len(aliases))
+		if _, ok := attach[alias]; !ok { // distinct dir names, belt for dupes
+			attach[alias] = dsn
+			aliases = append(aliases, alias)
+			boards = append(boards, struct{ name, alias string }{e.Name(), alias})
+			if _, err := tx.Exec(`ATTACH DATABASE ? AS ` + alias, dsn); err != nil {
+				return fmt.Errorf("migrate board %q: attach: %w", e.Name(), err)
+			}
 		}
-		migrated[e.Name()] = true
+	}
+
+	position := 1
+	for _, b := range boards {
 		res, err := tx.Exec(`INSERT INTO boards (name, created_at, position, is_current) VALUES (?, ?, ?, 0)`,
-			e.Name(), now(), position)
+			b.name, now(), position)
 		if err != nil {
-			return fmt.Errorf("migrate board %q: %w", e.Name(), err)
+			return fmt.Errorf("migrate board %q: %w", b.name, err)
 		}
 		position++
 		id, err := res.LastInsertId()
 		if err != nil {
-			return fmt.Errorf("migrate board %q: %w", e.Name(), err)
+			return fmt.Errorf("migrate board %q: %w", b.name, err)
 		}
-		if err := copyLegacyBoard(dsn, e.Name(), tx, id); err != nil {
+		if err := copyLegacyBoard(b.alias, b.name, tx, id); err != nil {
 			return err
 		}
-		if err := verifyBoardCopy(dsn, e.Name(), tx, id); err != nil {
+		if err := verifyBoardCopy(b.alias, b.name, tx, id); err != nil {
 			return err
 		}
 	}
@@ -337,18 +351,20 @@ func (s *Store) migrateLegacyBoards(home string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	for _, alias := range aliases {
+		if _, err := s.db.Exec(`DETACH DATABASE ` + alias); err != nil {
+			return fmt.Errorf("migrate: detach %s: %w", alias, err)
+		}
+	}
 	// the old layout is dead: delete the directory AND every legacy
 	// sqlite file inside (migrated boards + the junk that never moves)
 	return os.RemoveAll(dir)
 }
 
 // boardRowIDTx resolves a board name inside the open migration tx, 0
-// when the name does not name a row. "main" is always a valid pointer
-// target (the default board exists by definition); junk names refuse.
+// when the name does not name a row (junk names refuse; main is a
+// seeded row like any other).
 func (s *Store) boardRowIDTx(tx *sql.Tx, pointer string) int64 {
-	if pointer == DefaultBoardName {
-		return 1
-	}
 	if !ValidBoardName(pointer) || junkBoardRE.MatchString(pointer) {
 		return 0
 	}
@@ -374,148 +390,45 @@ func readPointerContent(path string) string {
 }
 
 // copyLegacyBoard copies one legacy board db's rows into the single
-// database (board_id set on every row) inside the migration tx.
-func copyLegacyBoard(dsn, name string, tx *sql.Tx, boardID int64) error {
-	src, err := openDB(dsn)
-	if err != nil {
-		return fmt.Errorf("migrate board %q: %w", name, err)
+// database (board_id stamped on every row) inside the migration tx.
+// The source rides an already-ATTACHed alias - INSERT INTO ... SELECT
+// is the file-to-file table copy the sqlite driver ships.
+func copyLegacyBoard(alias, name string, tx *sql.Tx, boardID int64) error {
+	copies := []struct{ sql, what string }{
+		{`INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
+			SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, ? FROM ` + alias + `.tasks`, "tasks"},
+		{`INSERT INTO task_comments (task_id, author, body, created_at, board_id)
+			SELECT task_id, author, body, created_at, ? FROM ` + alias + `.task_comments`, "comments"},
+		{`INSERT INTO task_events (task_id, kind, detail, created_at, board_id)
+			SELECT task_id, kind, detail, created_at, ? FROM ` + alias + `.task_events`, "events"},
 	}
-	defer src.Close()
-
-	// openDB sets WAL which writes to the source dir; read the rows
-	// through a short-lived handle and close before the caller's
-	// os.RemoveAll - deferral order: this Close runs first.
-	taskRows, err := src.Query(`SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks`)
-	if err != nil {
-		return fmt.Errorf("migrate board %q: read tasks: %w", name, err)
-	}
-	type pending struct {
-		id, title, body, assignee, status, sessionID, source, created, started, completed string
-	}
-	tasks := []pending{}
-	for taskRows.Next() {
-		var t pending
-		if err := taskRows.Scan(&t.id, &t.title, &t.body, &t.assignee, &t.status,
-			&t.sessionID, &t.source, &t.created, &t.started, &t.completed); err != nil {
-			taskRows.Close()
-			return fmt.Errorf("migrate board %q: scan task: %w", name, err)
-		}
-		tasks = append(tasks, t)
-	}
-	if err := taskRows.Err(); err != nil {
-		taskRows.Close()
-		return fmt.Errorf("migrate board %q: tasks: %w", name, err)
-	}
-	taskRows.Close()
-
-	commentRows, err := src.Query(`SELECT task_id, author, body, created_at FROM task_comments`)
-	if err != nil {
-		return fmt.Errorf("migrate board %q: read comments: %w", name, err)
-	}
-	comments := [][4]string{}
-	for commentRows.Next() {
-		var c [4]string
-		if err := commentRows.Scan(&c[0], &c[1], &c[2], &c[3]); err != nil {
-			commentRows.Close()
-			return fmt.Errorf("migrate board %q: scan comment: %w", name, err)
-		}
-		comments = append(comments, c)
-	}
-	if err := commentRows.Err(); err != nil {
-		commentRows.Close()
-		return fmt.Errorf("migrate board %q: comments: %w", name, err)
-	}
-	commentRows.Close()
-
-	eventRows, err := src.Query(`SELECT task_id, kind, detail, created_at FROM task_events`)
-	if err != nil {
-		return fmt.Errorf("migrate board %q: read events: %w", name, err)
-	}
-	events := [][4]string{}
-	for eventRows.Next() {
-		var e [4]string
-		if err := eventRows.Scan(&e[0], &e[1], &e[2], &e[3]); err != nil {
-			eventRows.Close()
-			return fmt.Errorf("migrate board %q: scan event: %w", name, err)
-		}
-		events = append(events, e)
-	}
-	if err := eventRows.Err(); err != nil {
-		eventRows.Close()
-		return fmt.Errorf("migrate board %q: events: %w", name, err)
-	}
-	eventRows.Close()
-
-	for _, t := range tasks {
-		if _, err := tx.Exec(`INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			t.id, t.title, t.body, t.assignee, t.status, t.sessionID, t.source,
-			t.created, t.started, t.completed, boardID); err != nil {
-			return fmt.Errorf("migrate board %q: insert task: %w", name, err)
-		}
-	}
-	for _, c := range comments {
-		if _, err := tx.Exec(`INSERT INTO task_comments (task_id, author, body, created_at, board_id)
-			VALUES (?, ?, ?, ?, ?)`, c[0], c[1], c[2], c[3], boardID); err != nil {
-			return fmt.Errorf("migrate board %q: insert comment: %w", name, err)
-		}
-	}
-	for _, e := range events {
-		if _, err := tx.Exec(`INSERT INTO task_events (task_id, kind, detail, created_at, board_id)
-			VALUES (?, ?, ?, ?, ?)`, e[0], e[1], e[2], e[3], boardID); err != nil {
-			return fmt.Errorf("migrate board %q: insert event: %w", name, err)
+	for _, c := range copies {
+		if _, err := tx.Exec(c.sql, boardID); err != nil {
+			return fmt.Errorf("migrate board %q: copy %s: %w", name, c.what, err)
 		}
 	}
 	return nil
 }
 
-// countSourceRows returns a legacy board db's (tasks, comments, events)
-// row counts, the migration's verification baseline.
-func countSourceRows(dsn, name string) (tasks, comments, events int, err error) {
-	src, err := openDB(dsn)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("migrate board %q: %w", name, err)
+// verifyBoardCopy demands the migrated row counts match the source
+// exactly: tasks, comments AND events. The source is already ATTACHed;
+// a mismatch fails the whole migration (one tx - everything rolls
+// back, the old layout survives untouched).
+func verifyBoardCopy(alias, name string, tx *sql.Tx, boardID int64) error {
+	type pair struct{ sql, what string }
+	pairs := []pair{
+		{"SELECT (SELECT COUNT(*) FROM " + alias + ".tasks), (SELECT COUNT(*) FROM tasks WHERE board_id = ?)", "task"},
+		{"SELECT (SELECT COUNT(*) FROM " + alias + ".task_comments), (SELECT COUNT(*) FROM task_comments WHERE board_id = ?)", "comment"},
+		{"SELECT (SELECT COUNT(*) FROM " + alias + ".task_events), (SELECT COUNT(*) FROM task_events WHERE board_id = ?)", "event"},
 	}
-	defer src.Close()
-	if err := src.QueryRow(`SELECT COUNT(*) FROM tasks`).Scan(&tasks); err != nil {
-		return 0, 0, 0, fmt.Errorf("migrate board %q: count tasks: %w", name, err)
-	}
-	if err := src.QueryRow(`SELECT COUNT(*) FROM task_comments`).Scan(&comments); err != nil {
-		return 0, 0, 0, fmt.Errorf("migrate board %q: count comments: %w", name, err)
-	}
-	if err := src.QueryRow(`SELECT COUNT(*) FROM task_events`).Scan(&events); err != nil {
-		return 0, 0, 0, fmt.Errorf("migrate board %q: count events: %w", name, err)
-	}
-	return tasks, comments, events, nil
-}
-
-// verifyBoardCopy re-derives the destination counts for the board's
-// board_id and demands: tasks, comments AND events match the source
-// exactly. A mismatch fails the whole migration (one tx - everything
-// rolls back, the old layout survives untouched).
-func verifyBoardCopy(dsn, name string, tx *sql.Tx, boardID int64) error {
-	srcTasks, srcComments, srcEvents, err := countSourceRows(dsn, name)
-	if err != nil {
-		return err
-	}
-	var dstTasks, dstComments, dstEvents int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE board_id = ?`, boardID).Scan(&dstTasks); err != nil {
-		return fmt.Errorf("migrate board %q: verify: %w", name, err)
-	}
-	if srcTasks != dstTasks {
-		return fmt.Errorf("migrate board %q: task count %d != source %d - migration aborted, old layout kept", name, dstTasks, srcTasks)
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM task_comments WHERE board_id = ?`, boardID).Scan(&dstComments); err != nil {
-		return fmt.Errorf("migrate board %q: verify: %w", name, err)
-	}
-	if srcComments != dstComments {
-		return fmt.Errorf("migrate board %q: comment count %d != source %d - migration aborted, old layout kept", name, dstComments, srcComments)
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM task_events WHERE board_id = ?`, boardID).Scan(&dstEvents); err != nil {
-		return fmt.Errorf("migrate board %q: verify: %w", name, err)
-	}
-	if srcEvents != dstEvents {
-		return fmt.Errorf("migrate board %q: event count %d != source %d - migration aborted, old layout kept", name, dstEvents, srcEvents)
+	for _, p := range pairs {
+		var src, dst int
+		if err := tx.QueryRow(p.sql, boardID).Scan(&src, &dst); err != nil {
+			return fmt.Errorf("migrate board %q: verify: %w", name, err)
+		}
+		if src != dst {
+			return fmt.Errorf("migrate board %q: %s count %d != source %d - migration aborted, old layout kept", name, p.what, dst, src)
+		}
 	}
 	return nil
 }
@@ -526,7 +439,7 @@ func verifyBoardCopy(dsn, name string, tx *sql.Tx, boardID int64) error {
 // failure is a startup error - a board that silently dropped rows is
 // worse than a crash.
 func MountRegistry(home string) (*Store, error) {
-	return MountRegistryDSN(home, RegistryDSN(home))
+	return MountRegistryDSN(home, datadir.DBPath(home, "kanban.db"))
 }
 
 // MountRegistryDSN is MountRegistry against an explicit dsn (custom

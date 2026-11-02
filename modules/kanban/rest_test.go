@@ -367,9 +367,17 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "current board") {
 		t.Fatalf("delete current board = %d %q", res.StatusCode, string(body))
 	}
-	if err := reg2CurrentBack(t, home); err != nil {
+	// back to main: the pre-delete guard order the old pointer test
+	// walked
+	reg, err = MountRegistry(home)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := reg.SetCurrentBoard(DefaultBoardName); err != nil {
+		reg.Close()
+		t.Fatal(err)
+	}
+	reg.Close()
 
 	// a board holding tasks is refused
 	res, _ = http.Post(ts.URL+"/tasks?board=alpha", "application/json", strings.NewReader(`{"title":"stays"}`))
@@ -383,19 +391,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "still holds") {
 		t.Fatalf("delete non-empty = %d %q", res.StatusCode, string(body))
 	}
-}
-
-// reg2CurrentBack points the current flag at main again (the pre-delete
-// guard order the old pointer file test walked).
-func reg2CurrentBack(t *testing.T, home string) error {
-	t.Helper()
-	reg, err := MountRegistry(home)
-	if err != nil {
-		return err
-	}
-	err = reg.SetCurrentBoard(DefaultBoardName)
-	reg.Close()
-	return err
 }
 
 func TestBoardsCreateEndpoint(t *testing.T) {

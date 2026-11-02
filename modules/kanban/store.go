@@ -231,12 +231,6 @@ func rebuildLegacyRows(db *sql.DB) error {
 		`INSERT INTO task_events (task_id, kind, detail, created_at, board_id)
 			SELECT task_id, kind, detail, created_at,
 			       (SELECT id FROM boards WHERE name = 'main') FROM legacy_task_events`,
-		`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id)`,
-		`CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_comments_board ON task_comments(board_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_events_board ON task_events(board_id)`,
 		`DROP TABLE legacy_tasks`,
 		`DROP TABLE legacy_task_comments`,
 		`DROP TABLE legacy_task_events`,
@@ -560,7 +554,7 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
 		return KanbanTask{}, err
 	}
 	for _, e := range events {
-		if err := recordEventTx(ctx, tx, bid, taskID, e[0], e[1]); err != nil {
+		if err := recordEvent(ctx, tx, bid, taskID, e[0], e[1]); err != nil {
 			return KanbanTask{}, err
 		}
 	}

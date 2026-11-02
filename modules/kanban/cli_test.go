@@ -38,19 +38,12 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 // the way a mount does it).
 func cardCount(t *testing.T, home, board string) int {
 	t.Helper()
-	s := openBoardStore(t, home)
+	s := openRegistryStore(t, home)
 	tasks, err := s.ListTasks(context.Background(), board, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return len(tasks)
-}
-
-// openBoardStore opens the home's single kanban database, matching a
-// mount.
-func openBoardStore(t *testing.T, home string) *Store {
-	t.Helper()
-	return openRegistryStore(t, home)
 }
 
 func TestKanbanBoardRegistryCLI(t *testing.T) {
@@ -155,7 +148,7 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 
 func listBoardTasks(t *testing.T, home, board string) []KanbanTask {
 	t.Helper()
-	s := openBoardStore(t, home)
+	s := openRegistryStore(t, home)
 	tasks, err := s.ListTasks(context.Background(), board, "")
 	if err != nil {
 		t.Fatal(err)
