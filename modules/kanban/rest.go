@@ -23,12 +23,12 @@ import (
 // degrade to (Q7: one mount path).
 //
 // There is deliberately no cross-board mutation endpoint: a PATCH
-// moves a card inside its board only. Switching boards is the
-// registry pointer's job (omega kanban board use), never a card op.
+// moves a card inside its board only. Switching boards is the registry
+// is_current flag's job (omega kanban board use), never a card op.
 // Deleting is a registry op like switching, but destructive - the
-// handler keeps DeleteBoard's guards verbatim (default board, unknown
-// board, current pointer target, non-empty boards all refused) and
-// answers 400 with the refusal text.
+// handler keeps DeleteBoardRow's guards verbatim (default board,
+// unknown board, current flag holder, non-empty boards all refused)
+// and answers 400 with the refusal text.
 
 // writeJSON encodes v and answers status, the envelope the
 // engine-side handlers wrote.

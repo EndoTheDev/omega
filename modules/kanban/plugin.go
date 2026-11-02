@@ -77,11 +77,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		return fmt.Errorf("kanban board registry: %w", aerr)
 	}
 	if home != "" {
-		if dsn == "" || dsn == "kanban.db" {
-			dsn = datadir.DBPath(home, "kanban.db")
-		} else if registryStaleDSN(home, dsn) {
-			// a stale pointer-era resolution (data/boards/<name>/)
-			// re-points at the one database
+		if dsn == "" || dsn == "kanban.db" || registryStaleDSN(home, dsn) {
+			// unresolved default or a stale pointer-era resolution
+			// (data/boards/<name>/): the one database
 			dsn = datadir.DBPath(home, "kanban.db")
 		}
 	} else if dsn == "" || dsn == "kanban.db" {

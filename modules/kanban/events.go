@@ -5,6 +5,12 @@ import (
 	"database/sql"
 )
 
+// ExecContexter is the write half *sql.DB and *sql.Tx share - the
+// event recorder accepts either.
+type ExecContexter interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // getTaskTx scans one task inside an open transaction. The board_id
 // filter carries the isolation: a task id only answers on its board.
 func getTaskTx(ctx context.Context, tx *sql.Tx, boardID int64, taskID string) (KanbanTask, error) {
@@ -20,16 +26,10 @@ func getTaskTx(ctx context.Context, tx *sql.Tx, boardID int64, taskID string) (K
 }
 
 // recordEvent appends one audit-trail entry (board_id stamped - the
-// events all live in the one database now).
-func recordEvent(ctx context.Context, db *sql.DB, boardID int64, taskID, kind, detail string) error {
+// events all live in the one database now). db may be *sql.DB or an
+// open *sql.Tx.
+func recordEvent(ctx context.Context, db ExecContexter, boardID int64, taskID, kind, detail string) error {
 	_, err := db.ExecContext(ctx, `INSERT INTO task_events (task_id, kind, detail, created_at, board_id) VALUES (?, ?, ?, ?, ?)`,
-		taskID, kind, detail, now(), boardID)
-	return err
-}
-
-// recordEventTx is recordEvent inside an open transaction.
-func recordEventTx(ctx context.Context, tx *sql.Tx, boardID int64, taskID, kind, detail string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO task_events (task_id, kind, detail, created_at, board_id) VALUES (?, ?, ?, ?, ?)`,
 		taskID, kind, detail, now(), boardID)
 	return err
 }
