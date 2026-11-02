@@ -81,7 +81,7 @@ func TestWakeSpawnContract(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "child.out")
 	m := NewMachine(home, Config{WakeTurnBudget: 7, WakeTimeoutSeconds: 300})
 	m.setSpawnExe(stubExeScript(t, out))
-	if err := m.Wake("scout", "patrol now"); err != nil {
+	if err := m.Wake("scout", "patrol now", ""); err != nil {
 		t.Fatalf("Wake: %v", err)
 	}
 	data := waitFile(t, out, func(d string) bool { return strings.Contains(d, "ARGV:run") })
@@ -126,14 +126,14 @@ func TestWakeOneLiveGuardAndSleep(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "child.out")
 	m := NewMachine(home, Default())
 	m.setSpawnExe(stubExeScript(t, out))
-	if err := m.Wake("scout", "hello"); err != nil {
+	if err := m.Wake("scout", "hello", ""); err != nil {
 		t.Fatal(err)
 	}
 	// The child armed (the DONE sentinel proves the stub fully wrote
 	// its record); the guard is already holding.
 	waitFile(t, out, func(d string) bool { return strings.Contains(d, "OMEGA_AGENT=scout") })
 	// A second wake while the child lives is refused, never queued.
-	if err := m.Wake("scout", "again"); !errors.Is(err, ErrAwake) {
+	if err := m.Wake("scout", "again", ""); !errors.Is(err, ErrAwake) {
 		t.Fatalf("second wake = %v, want ErrAwake", err)
 	}
 	// Sleep terminates the live child (the roster's sleep button).
@@ -152,11 +152,38 @@ func TestWakeOneLiveGuardAndSleep(t *testing.T) {
 func TestWakeMainNeverSpawns(t *testing.T) {
 	home := testHome(t)
 	m := NewMachine(home, Default())
-	if err := m.Wake("default", ""); err == nil {
+	if err := m.Wake("default", "", ""); err == nil {
 		t.Fatal("main accepted a subprocess wake")
 	}
-	if err := m.Wake("nobody", ""); err == nil {
+	if err := m.Wake("nobody", "", ""); err == nil {
 		t.Fatal("unknown agent accepted a wake")
+	}
+}
+
+// TestWakeModelOverrideRidesEnv (card t_ecec864e): a cron job's
+// per-fire model rides OMEGA_MODEL on the child's env; an empty model
+// (the defaulting law's inherit case) sets no env line at all - the
+// agent's own provider config stands untouched.
+func TestWakeModelOverrideRidesEnv(t *testing.T) {
+	home := testHome(t)
+	testAgent(t, home)
+	out := filepath.Join(t.TempDir(), "model.out")
+	m := NewMachine(home, Default())
+	m.setSpawnExe(stubExeScript(t, out))
+	if err := m.Wake("scout", "hello", "override-model"); err != nil {
+		t.Fatal(err)
+	}
+	waitFile(t, out, func(d string) bool { return strings.Contains(d, "OMEGA_MODEL=override-model") })
+
+	out2 := filepath.Join(t.TempDir(), "inherit.out")
+	m2 := NewMachine(home, Default())
+	m2.setSpawnExe(stubExeScript(t, out2))
+	if err := m2.Wake("scout", "hello", ""); err != nil {
+		t.Fatal(err)
+	}
+	data := waitFile(t, out2, func(d string) bool { return strings.Contains(d, "OMEGA_AGENT=scout") })
+	if strings.Contains(data, "OMEGA_MODEL=") {
+		t.Errorf("empty model must inherit, env carries an override:\\n%s", data)
 	}
 }
 

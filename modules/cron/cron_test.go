@@ -32,12 +32,12 @@ jobs:
 		t.Fatalf("want 3 jobs, got %d", len(cfg.Jobs))
 	}
 	j := cfg.Jobs[0]
-	if j.Name != "daily-journal" || j.Schedule != "0 8 * * *" || j.DeliverTarget() != "journal" || !j.IsEnabled() {
+	if j.Name != "daily-journal" || j.Schedule != "0 8 * * *" || j.DeliverTarget() != "append-to-file" || j.Deliver != "journal" || !j.IsEnabled() {
 		t.Fatalf("job 0 misparsed: %+v", j)
 	}
-	// Defaults: deliver none, enabled true.
+	// Defaults: deliver resolves to new-session, enabled true.
 	d := cfg.Jobs[1]
-	if d.DeliverTarget() != "none" || !d.IsEnabled() {
+	if d.DeliverTarget() != "new-session" || d.Deliver != "" || !d.IsEnabled() {
 		t.Fatalf("defaults wrong: %+v", d)
 	}
 	// enabled: false honored.
