@@ -46,21 +46,11 @@ func cardCount(t *testing.T, home, board string) int {
 	return len(tasks)
 }
 
-// openBoardStore opens the pointer-default dsn with the registry
-// wired, matching a mount.
+// openBoardStore opens the home's single kanban database, matching a
+// mount.
 func openBoardStore(t *testing.T, home string) *Store {
 	t.Helper()
-	dsn, err := BoardDSN(home, DefaultBoardName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := Open(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.ConfigureBoards(BoardsDir(home), DefaultBoardName, dsn)
-	t.Cleanup(func() { s.Close() })
-	return s
+	return openRegistryStore(t, home)
 }
 
 func TestKanbanBoardRegistryCLI(t *testing.T) {

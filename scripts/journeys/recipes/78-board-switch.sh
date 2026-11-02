@@ -4,19 +4,33 @@
 # board switch re-renders the columns from that board only - a card on
 # board A never bleeds into board B. The inspector follows the switch.
 #
-# Registry boards are CLI-made on purpose (the HTTP surface has no
-# board-create endpoint: the registry is a filesystem+pointer, not card
-# data). Cards ride ?board= on POST /tasks. The two j78 boards stay on
-# the lane with archived cards each - the isolation probe the card's
-# VERIFY section asks for, visible on every later run.
+# One kanban.db owns all boards (t_feae19d3): the registry is the
+# boards TABLE - the board rows answer GET /boards, cards ride ?board=
+# on POST /tasks. The boards are PINNED (fixed names j78-a/j78-b,
+# reused across runs - a second run must create zero new boards) and
+# the throwaway cards arch out at exit as ever; the isolation probe
+# stays visible on every later run.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
-BTAG="j78$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
+BTAG="j78"
 OMEGA_BIN="${OMEGA_BIN:-$JROOT/../../bin/omega}"
 BOARD_A="$BTAG-a"
 BOARD_B="$BTAG-b"
 A_IDS=""
 B_ID=""
+
+# ensure_board <name>: the pinned board exists on every run after the
+# first - create only when genuinely missing (create on an existing
+# board is a refusal; a listed board proves the reuse).
+ensure_board() {
+  if "$OMEGA_BIN" kanban board create "$1" >/dev/null 2>&1; then
+    return 0
+  fi
+  if "$OMEGA_BIN" kanban board list 2>/dev/null | sed 's/^[* ] \+//' | awk '{print $1}' | grep -qx "$1"; then
+    return 0
+  fi
+  die "board ensure $1"
+}
 
 # archive_board_cards <board> <ids...>: the throwaway cleanup - the
 # store has no delete, so journey cards arch out quietly.
@@ -28,9 +42,9 @@ archive_board_cards() {
   done
 }
 
-step "creating registry boards: $BOARD_A / $BOARD_B"
-"$OMEGA_BIN" kanban board create "$BOARD_A" >/dev/null || die "board create a"
-"$OMEGA_BIN" kanban board create "$BOARD_B" >/dev/null || die "board create b"
+step "pinning registry boards: $BOARD_A / $BOARD_B"
+ensure_board "$BOARD_A" || die "board ensure a"
+ensure_board "$BOARD_B" || die "board ensure b"
 
 # seed: two cards on a, one on b (via the ?board= picker)
 card_id() {
@@ -61,9 +75,9 @@ fi
 step "ok: switcher lists the registry"
 
 # ---- switch ---------------------------------------------------------------
-# default boot = pointer board; switch to a and count its two cards
-# (the pop may be open from the registry check - clicking the chip
-# toggles; open only when closed, then pick the option)
+# default boot = the current (is_current) board; switch to a and count
+# its two cards (the pop may be open from the registry check - clicking
+# the chip toggles; open only when closed, then pick the option)
 js "(()=>{const c=document.querySelector('.board-switch-select .model-chip'); if(c.getAttribute('aria-expanded')!=='true') c.click(); return 1})()" >/dev/null
 if ! wait_js "(()=>{return [...document.querySelectorAll('.board-switch-select .model-list li')].some(l=>(l.textContent||'').trim()==='$BOARD_A')})()" 15; then
   die "switch options never rendered ($BOARD_A)"

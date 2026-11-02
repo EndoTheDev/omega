@@ -285,8 +285,8 @@ func (c *capsule) HandleAction(call core.ActionCall) (any, error) {
 		if name != DefaultBoardName && !ValidBoardName(name) {
 			return nil, fmt.Errorf("illegal board name %q", name)
 		}
-		if _, err := c.store.handleFor(name); err != nil {
-			return nil, err
+		if !c.store.BoardExists(name) {
+			return nil, fmt.Errorf("no such board %q", name)
 		}
 		if c.setBoard != nil {
 			c.setBoard(name)

@@ -25,10 +25,6 @@ type Plugin struct {
 	store   *Store
 	tools   *ToolProvider
 	capsule *capsule
-	// home is the agent home the board registry lives under, captured
-	// at mount ("" = no registry; the DELETE /boards/{name} route
-	// needs it - DeleteBoard is a home-path op, not a store call).
-	home string
 }
 
 // Compile-time assertions: *Plugin is a Plugin, *Store a KanbanProvider.
@@ -63,54 +59,39 @@ func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 // edge retired with the mount-time capture (v0.12 phase C1).
 func (p *Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin. The store opens here (same
-// resolution the classic body ran); every face registers through the
-// api: the kanban seam, the folded task tool, the live panel capsule,
-// the /board and /boards commands, and the finished-things emitter.
-// A mount failure (bad dsn, unreadable path, corrupt pointer) is a
-// startup error - a board that silently does not exist is worse than
-// a crash.
+// MountWithAPI implements agent.APIPlugin. The store opens here (the
+// one database, legacy per-board dirs folded in - MountRegistry); every
+// face registers through the api: the kanban seam, the folded task
+// tool, the live panel capsule, the /board and /boards commands, and
+// the finished-things emitter. A mount failure (bad dsn, unreadable
+// path, a migration that failed its count verification) is a startup
+// error - a board that silently does not exist is worse than a crash.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["kanban"].(Config); ok {
 		cfg = c
 	}
 	dsn := cfg.DBPath
-	name := ""
-	var boardsNamed bool
-	ahome, aerr := datadir.AgentHome()
+	home, aerr := datadir.AgentHome()
 	if aerr != nil {
 		return fmt.Errorf("kanban board registry: %w", aerr)
 	}
-	if home := ahome; home != "" {
-		pointer, err := ReadPointer(home)
-		if err != nil {
-			return fmt.Errorf("kanban board registry: %w", err)
-		}
+	if home != "" {
 		if dsn == "" || dsn == "kanban.db" {
-			// unresolved default: the pointer picks the board
-			resolved, derr := BoardDSN(home, pointer)
-			if derr != nil {
-				return fmt.Errorf("kanban board registry: %w", derr)
-			}
-			dsn = resolved
-			name = pointer
-		} else if resolved, derr := BoardDSN(home, pointer); derr == nil && resolved == dsn {
-			// host pre-resolved through the pointer: keep the name
-			name = pointer
+			dsn = datadir.DBPath(home, "kanban.db")
+		} else if registryStaleDSN(home, dsn) {
+			// a stale pointer-era resolution (data/boards/<name>/)
+			// re-points at the one database
+			dsn = datadir.DBPath(home, "kanban.db")
 		}
-		boardsNamed = true
-		p.home = ahome
+	} else if dsn == "" || dsn == "kanban.db" {
+		return fmt.Errorf("kanban board registry: omega home not determinable - set OMEGA_HOME")
 	}
-	s, oerr := Open(dsn)
-	if oerr != nil {
-		return fmt.Errorf("kanban store: %w", oerr)
+	s, err := MountRegistryDSN(home, dsn)
+	if err != nil {
+		return err
 	}
 	p.store = s
-	if boardsNamed {
-		home := ahome
-		s.ConfigureBoards(BoardsDir(home), name, datadir.DBPath(home, "kanban.db"))
-	}
 	p.tools = &ToolProvider{board: s}
 	// Capsule law (arc 5, t_7bd3dc06): the module ships its view-model
 	// with its store. The task panel and the board switcher ride the
@@ -212,8 +193,8 @@ func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 		if rest != DefaultBoardName && !ValidBoardName(rest) {
 			return core.CommandResult{}, fmt.Errorf("illegal board name %q", rest)
 		}
-		if _, err := p.store.handleFor(rest); err != nil {
-			return core.CommandResult{}, err
+		if !p.store.BoardExists(rest) {
+			return core.CommandResult{}, fmt.Errorf("no such board %q", rest)
 		}
 		p.setSessionBoard(rest)
 		// the switch moved the active marker AND the covered board:

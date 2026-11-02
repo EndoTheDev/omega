@@ -15,7 +15,6 @@ import (
 	httptest2 "net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,27 +149,25 @@ func TestTasksIllegalStatusFiltered400(t *testing.T) {
 }
 
 // multiBoardCtx mounts on a temp home registry with alpha and beta
-// created before the mount, pointer on main.
+// created before the mount, current board = main.
 func multiBoardCtx(t *testing.T) (*core.Context, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
+	reg, err := MountRegistry(home)
+	if err != nil {
+		t.Fatalf("registry mount: %v", err)
+	}
 	for _, name := range []string{"alpha", "beta"} {
-		if err := CreateBoard(home, name); err != nil {
+		if err := reg.CreateBoardRow(name); err != nil {
 			t.Fatalf("create board %s: %v", name, err)
 		}
 	}
-	dsn, err := PointerDSN(home)
-	if err != nil {
+	if err := reg.SetCurrentBoard(DefaultBoardName); err != nil {
+		t.Fatalf("current back to main: %v", err)
+	}
+	if err := reg.Close(); err != nil {
 		t.Fatal(err)
-	}
-	board, err := Open(dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	board.Close()
-	if err := WritePointer(home, DefaultBoardName); err != nil {
-		t.Fatalf("pointer back to main: %v", err)
 	}
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
 	if _, err := agent.MountAllAPI([]agent.Plugin{NewPlugin()}, ctx, nil, nil); err != nil {
@@ -305,11 +302,8 @@ func TestBoardParamIsolation(t *testing.T) {
 func TestBoardsDeleteEndpoint(t *testing.T) {
 	ctx, home := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
-	boardDir := func(name string) string {
-		return filepath.Join(BoardsDir(home), name, "kanban.db")
-	}
 
-	// DELETE an empty non-default board -> 200, sqlite dir gone for real
+	// DELETE an empty non-default board -> 200, and its rows are gone
 	res, err := do("DELETE", ts.URL+"/boards/beta", "")
 	if err != nil {
 		t.Fatal(err)
@@ -317,9 +311,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("delete beta = %d, want 200", res.StatusCode)
-	}
-	if _, serr := os.Stat(boardDir("beta")); !os.IsNotExist(serr) {
-		t.Fatalf("beta sqlite dir survives: %v", serr)
 	}
 
 	// the registry answer agrees: main + alpha only
@@ -357,18 +348,27 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete ghost = %d, want 400", res.StatusCode)
 	}
 
-	// the current pointer target is refused (switch first)
-	if werr := WritePointer(home, "alpha"); werr != nil {
-		t.Fatal(werr)
+	// the current board is refused (switch first). The flag lives in
+	// the one database now: SetCurrentBoard through a second handle
+	// on the same file, the served routes see it (the row is the one
+	// truth).
+	reg, rerr := MountRegistry(home)
+	if rerr != nil {
+		t.Fatal(rerr)
 	}
+	if rerr := reg.SetCurrentBoard("alpha"); rerr != nil {
+		reg.Close()
+		t.Fatal(rerr)
+	}
+	reg.Close()
 	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "current board") {
-		t.Fatalf("delete pointer target = %d %q", res.StatusCode, string(body))
+		t.Fatalf("delete current board = %d %q", res.StatusCode, string(body))
 	}
-	if werr := WritePointer(home, DefaultBoardName); werr != nil {
-		t.Fatal(werr)
+	if err := reg2CurrentBack(t, home); err != nil {
+		t.Fatal(err)
 	}
 
 	// a board holding tasks is refused
@@ -383,7 +383,71 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "still holds") {
 		t.Fatalf("delete non-empty = %d %q", res.StatusCode, string(body))
 	}
-	if _, serr := os.Stat(boardDir("alpha")); serr != nil {
-		t.Fatalf("alpha dsn vanished: %v", serr)
+}
+
+// reg2CurrentBack points the current flag at main again (the pre-delete
+// guard order the old pointer file test walked).
+func reg2CurrentBack(t *testing.T, home string) error {
+	t.Helper()
+	reg, err := MountRegistry(home)
+	if err != nil {
+		return err
+	}
+	err = reg.SetCurrentBoard(DefaultBoardName)
+	reg.Close()
+	return err
+}
+
+func TestBoardsCreateEndpoint(t *testing.T) {
+	ctx, home := multiBoardCtx(t)
+	ts := serveRoutes(t, ctx)
+
+	// create -> 201, listed afterwards
+	res, err := do("POST", ts.URL+"/boards", `{"name":"gamma"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create gamma = %d %q", res.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), `"created":"gamma"`) {
+		t.Fatalf("create body = %q", string(body))
+	}
+	res, _ = http.Get(ts.URL + "/boards")
+	var got struct {
+		Boards []BoardInfo `json:"boards"`
+	}
+	json.NewDecoder(res.Body).Decode(&got)
+	res.Body.Close()
+	if len(got.Boards) != 4 || got.Boards[3].Name != "gamma" {
+		t.Fatalf("boards after create = %+v", got.Boards)
+	}
+
+	// duplicate -> 400; illegal name -> 400
+	for _, tc := range []struct {
+		payload string
+		want    string
+	}{
+		{`{"name":"gamma"}`, "already exists"},
+		{`{"name":"Not A Board"}`, "illegal board name"},
+		{`{"name":"main"}`, "already exists"},
+		{`{"name":""}`, "illegal board name"},
+	} {
+		res, err := do("POST", ts.URL+"/boards", tc.payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), tc.want) {
+			t.Fatalf("create %s = %d %q, want 400 %q", tc.payload, res.StatusCode, string(body), tc.want)
+		}
+	}
+
+	// the row is the one truth: the file tree stayed a single db
+	if _, serr := os.Stat(datadir.DBPath(home, "boards")); !os.IsNotExist(serr) {
+		t.Fatalf("boards dir exists: %v", serr)
 	}
 }

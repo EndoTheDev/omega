@@ -61,10 +61,10 @@ var ErrTaskNotFound = errors.New("task not found")
 
 // BoardInfo is one row of the board registry (multi-board listing).
 type BoardInfo struct {
-	// Name is the board's registry name ("main" is the legacy default).
+	// Name is the board's registry name ("main" is the default).
 	Name string `json:"name"`
-	// Current reports whether the store's default board is this one
-	// (the pointer target resolved at mount).
+	// Current reports whether this row carries the is_current flag
+	// (the board "" resolves to).
 	Current bool `json:"current"`
 }
 
