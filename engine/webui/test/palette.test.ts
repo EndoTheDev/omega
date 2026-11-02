@@ -23,6 +23,14 @@ import {
   replaceMentionToken,
   clampIndex,
 } from "../app/composables/commands.ts";
+// card t_6215474b: the shell's TopLevel command palette (Ctrl+K) - the
+// registry build + filter are pure, the overlay's grammar is pinned by
+// file assertions (node cannot import .vue)
+import {
+  buildPaletteCommands,
+  filterPaletteCommands,
+  type PaletteCommandDeps,
+} from "../app/composables/commandRegistry.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const composer = readFileSync(
@@ -148,5 +156,121 @@ describe("production-boundary wiring (test law: the served shape)", () => {
   it("the palette is a themed dropdown on the tokens, above the draft", () => {
     assert.ok(css.includes(".composer-palette"), "the palette has real CSS");
     assert.ok(css.includes("var(--z2)") || css.includes("background: var(--z2)"), "it reads the design tokens");
+  });
+});
+
+// --- card t_6215474b: the shell command palette (Ctrl+K) ---------------
+
+function fakeDeps(rec: string[]): PaletteCommandDeps {
+  const tag = (s: string) => () => rec.push(s);
+  return {
+    openDockable: (id) => rec.push("open:" + id),
+    openChat: tag("open:chat"),
+    closeCurrentTab: tag("tab:close"),
+    toggleBottomPanel: tag("panel:toggle-bottom"),
+    toggleSidebar: (side) => rec.push("sidebar:toggle-" + side),
+    openSessionsSidebar: tag("sessions:pane"),
+    openRecentSession: tag("sessions:recent"),
+    reloadLayout: tag("layout:reload"),
+    clearSavedLayout: tag("layout:clear"),
+  };
+}
+
+describe("command registry build (t_6215474b)", () => {
+  it("derives an open command for every dockable but sidebar and viewer", () => {
+    const rec: string[] = [];
+    const cmds = buildPaletteCommands(fakeDeps(rec));
+    const opens = cmds.filter((c) => c.id.startsWith("open:")).map((c) => c.id.slice(5));
+    assert.ok(opens.includes("browser"), "Browser is reachable - THE user pain case");
+    assert.ok(opens.includes("terminal"));
+    assert.ok(opens.includes("settings"), "the + menu's exclusion never applied to the palette");
+    assert.ok(!opens.includes("sidebar"), "the locked tab is the toggle's business");
+    assert.ok(!opens.includes("viewer"), "an empty viewer tab is meaningless");
+    // chat is multi: "open chat" is a fresh tab, labeled honestly
+    const chat = cmds.find((c) => c.id === "open:chat")!;
+    assert.ok(chat, "every dockable is reachable - chat included");
+    assert.equal(chat.title, "New chat");
+    assert.ok(cmds.some((c) => c.title === "Open Browser"));
+  });
+
+  it("ships the shell-action set with real deps wired", () => {
+    const rec: string[] = [];
+    const cmds = buildPaletteCommands(fakeDeps(rec));
+    const run = (id?: string) => cmds.find((c) => c.id === id)!.run();
+    run("tab:close");
+    run("panel:toggle-bottom");
+    run("sidebar:toggle-left");
+    run("sidebar:toggle-right");
+    run("sessions:recent");
+    run("layout:reload");
+    run("layout:clear");
+    assert.deepEqual(rec, [
+      "tab:close",
+      "panel:toggle-bottom",
+      "sidebar:toggle-left",
+      "sidebar:toggle-right",
+      "sessions:recent",
+      "layout:reload",
+      "layout:clear",
+    ]);
+  });
+
+  it("no command fakes a keybinding hint (the keybindings card owns them)", () => {
+    const cmds = buildPaletteCommands(fakeDeps([]));
+    assert.ok(cmds.every((c) => !c.hint));
+  });
+});
+
+describe("command registry filter (substring, the settled lazy default)", () => {
+  const cmds = buildPaletteCommands(fakeDeps([]));
+
+  it("matches case-insensitively over title, id and keywords", () => {
+    assert.ok(filterPaletteCommands("brow", cmds).some((c) => c.title === "Open Browser"));
+    assert.ok(filterPaletteCommands("BROW", cmds).some((c) => c.title === "Open Browser"));
+    // keywords rescue odd voice titles
+    assert.ok(filterPaletteCommands("logs", cmds).some((c) => c.id === "open:http_channel"));
+    // the id is fuel too
+    assert.ok(filterPaletteCommands("tab:close", cmds).some((c) => c.id === "tab:close"));
+  });
+
+  it("an empty/whitespace query returns the full list in order", () => {
+    assert.deepEqual(filterPaletteCommands("", cmds), [...cmds]);
+    assert.equal(filterPaletteCommands("   ", cmds).length, cmds.length);
+    assert.equal(filterPaletteCommands("zzz-none", cmds).length, 0);
+  });
+});
+
+describe("command palette overlay + wiring (t_6215474b)", () => {
+  const overlay = readFileSync(
+    join(here, "../app/components/nav/CommandPalette.vue"),
+    "utf8",
+  );
+  const app = readFileSync(join(here, "../app/app.vue"), "utf8");
+  const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
+
+  it("the overlay: input autofocus, listbox rows, the keyboard grammar", () => {
+    assert.ok(overlay.includes('role="dialog"'), "it is a dialog overlay");
+    assert.ok(overlay.includes('role="listbox"') && overlay.includes('role="option"'));
+    assert.ok(overlay.includes("inputEl.value?.focus()"), "input autofocus on open");
+    for (const k of ["ArrowDown", "ArrowUp", "Enter", "Escape"]) {
+      assert.ok(overlay.includes(`"${k}"`), `${k} drives the overlay`);
+    }
+    assert.ok(overlay.includes("clampIndex"), "one arithmetic with the composer palette");
+    assert.ok(overlay.includes("scrollIntoView"), "the selection stays in the visible window");
+    assert.ok(overlay.includes("no matching command"), "an empty query state renders");
+  });
+
+  it("app.vue mounts the overlay and feeds the built registry", () => {
+    assert.ok(app.includes("<CommandPalette"), "the overlay is mounted");
+    assert.ok(app.includes(':open="paletteOpen"'));
+    assert.ok(app.includes('@close="paletteOpen = false"'));
+    assert.ok(app.includes("buildPaletteCommands"), "the registry builds from app deps");
+  });
+
+  it("the overlay CSS reads the tokens, top-center above the menubar", () => {
+    assert.ok(css.includes(".command-palette {"), "the overlay has real CSS");
+    const block = css.slice(css.indexOf(".command-palette {"), css.indexOf(".command-palette-input"));
+    assert.ok(block.includes("position: fixed") && block.includes("top:"), "top-center fixed");
+    assert.ok(css.includes("background: var(--z2)"), "tokens carry it");
   });
 });
