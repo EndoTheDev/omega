@@ -116,6 +116,94 @@ body {
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
 
+/* ---- card t_6215474b: the nav cluster + command palette ----
+   The cluster seats CENTERED in the menubar (the panes' row owns the
+   rest of the flex content; the cluster floats over the middle). The
+   ends dim via the real disabled attribute - VS Code states. */
+.nav-cluster {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  color: var(--text-dim);
+  background: transparent;
+}
+.nav-btn:hover:disabled { background: transparent; }
+
+/* the palette overlay: top-center, above every chrome (menubar z 40);
+   no scrim - the panes stay readable behind it */
+.command-palette {
+  position: fixed;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 480px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-2);
+  z-index: 200;
+  overflow: hidden;
+}
+.command-palette-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--mono);
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--stroke);
+  outline: none;
+}
+.command-palette-list {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.command-palette-list li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: var(--r-chip);
+  cursor: pointer;
+  min-width: 0;
+}
+.command-palette-list li:hover,
+.command-palette-list li.active { background: var(--z1-raised); color: var(--text); }
+.command-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.command-hint {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.command-palette-list li.command-none {
+  cursor: default;
+  display: block;
+}
+
 /* ---- layer 1: pane area — floating rounded panes on the canvas ---- */
 .pane-area {
   position: relative; /* anchors the layout layer's frame edges below */

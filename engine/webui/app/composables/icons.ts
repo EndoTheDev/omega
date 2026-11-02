@@ -8,6 +8,10 @@
 import {
   Archive,
   ArchiveRestore,
+  // card t_6215474b: the nav cluster + command palette chrome
+  ArrowLeft,
+  ArrowRight,
+  Command,
   Inbox,
   Book,
   Box,
@@ -81,6 +85,11 @@ export const ICONS = {
   browser: Globe, // the general web browser tab (card t_95c91f9c)
   // default glyph for modules that declare no icon of their own
   module: Box,
+  // card t_6215474b: the nav cluster (back / forward) + the command
+  // palette trigger - the chrome lives in the menubar's centered cluster
+  "nav-back": ArrowLeft, // the back arrow (history bottom dims)
+  "nav-forward": ArrowRight, // the forward arrow (stack top dims)
+  "palette": Command, // the command palette button (Ctrl+K)
   // shell chrome
   "panel-left-open": PanelLeftOpen,
   "panel-left-close": PanelLeftClose,
