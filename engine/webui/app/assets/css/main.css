@@ -233,41 +233,16 @@ body {
    amended t_064b1559/t_e539ba29) die: painted unconditionally, they sat
    ON the single card's own border row and duplicated it (Endo 2026-11-01:
    "i cant think of it being intended"), and beside multiple cards they
-   overpainted card borders everywhere except the gutter. The bridge now
-   lives ON the gutter seam itself - the row-split divider IS the gap
-   between two cards, so its own top/bottom edges land exactly on the
-   cards' border rows: the split stretches (align-items: stretch), the
-   pane-area has no top padding (cards' border-top row = the divider's
-   top edge) and 3px bottom padding (cards' border-bottom row = the
-   divider's bottom edge). The strokes span ONLY the divider's own 4px
-   width - they stop dead at each card's border. One card, no divider,
-   zero strokes: the card's own border is the whole edge. A row divider
-   that rides the sidebars' overhang (bottompanel.css) carries its bottom
-   stroke on the sidebar cards' extended border row - the same alignment.
-   The menubar keeps its border-bottom and the statusbar its border-top -
-   the pane-area contributes no connecting stroke; a frame that reads
+   overpainted card borders everywhere except the gutter. The bridge
+   (the row divider's own ::before/::after top+bottom strokes, spanning
+   the 4px gutter seam) lived t_97cece1e→73fe761 and is GONE now
+   (t_9846a12e, Endo stroke-cleanup ruling 2026-11-02): still strokes
+   painted by the frame layer, they read as dashes at the divider's
+   ends; the cards' own borders carry the seams alone. The menubar
+   keeps its border-bottom and the statusbar its border-top - the
+   pane-area contributes no connecting stroke; a frame that reads
    disconnected at those seams is the intended look (cards own their
-   seams). Desktop law only (the mobile pane-area has no inset rows for
-   these rows to track). */
-@media (min-width: 769px) {
-  .dock-split.row > .dock-divider {
-    position: relative; /* anchors the gutter's top/bottom strokes */
-  }
-  .dock-split.row > .dock-divider::before,
-  .dock-split.row > .dock-divider::after {
-    content: "";
-    position: absolute;
-    /* span = the gutter itself: the divider's own width, never past a
-       card's border - pseudo-elements can't escape the divider box */
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: var(--stroke);
-    pointer-events: none;
-  }
-  .dock-split.row > .dock-divider::before { top: 0; }
-  .dock-split.row > .dock-divider::after { bottom: 0; }
-}
+   seams). */
 
 /* ---- dock (card t_63253264): the recursive layout tree ---- */
 .dock-split {
