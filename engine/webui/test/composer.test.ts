@@ -298,6 +298,10 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
       composer.indexOf("// fullscreen canvas law"),
     );
     assert.match(toggle, /if \(expanded\.value\) ta\.value\?\.focus\(\)/);
+    // the height math must read the POST-class layout: a sync resize on
+    // collapse measures the still-stretched textarea and pins the compact
+    // height to the old 84px cap (live-probed collapse round-trip)
+    assert.match(toggle, /nextTick\(\(\) => \{/, "resize runs after the class lands");
   });
 
   it("the chevron is a real button: >=24px target, inset from the corner", () => {
