@@ -739,7 +739,7 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 			InjectedMessages: stream,
 			// One-shot mode: UserInput is nil.
 			UserInput: nil,
-			PendingDelegations: func() int {
+			PendingDelegations: func(affinity string) int {
 				return 1 // always report 1 pending delegation
 			},
 		})

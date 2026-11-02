@@ -81,7 +81,7 @@ func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	}
 
 	// Task must now be marked done.
-	if d.PendingCount() != 0 {
+	if d.PendingCount("") != 0 {
 		t.Fatal("expected 0 pending after completion")
 	}
 	status, err := d.runDelegateStatus(context.Background(), nil)

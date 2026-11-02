@@ -51,7 +51,7 @@ func TestDelegateStatus(t *testing.T) {
 // TestPendingCount verifies pending count is 0 with no tasks.
 func TestPendingCount(t *testing.T) {
 	d := NewDelegate()
-	if c := d.PendingCount(); c != 0 {
+	if c := d.PendingCount(""); c != 0 {
 		t.Fatalf("expected 0 pending, got %d", c)
 	}
 }
@@ -107,8 +107,8 @@ func TestPluginMount(t *testing.T) {
 	if ctx.PendingDelegations == nil {
 		t.Fatal("PendingDelegations not set")
 	}
-	if ctx.PendingDelegations() != 0 {
-		t.Fatalf("expected 0 pending, got %d", ctx.PendingDelegations())
+	if ctx.PendingDelegations("") != 0 {
+		t.Fatalf("expected 0 pending, got %d", ctx.PendingDelegations(""))
 	}
 	// the logger capture still happens at mount time (the logging edge)
 	if p.delegate.logger == nil {

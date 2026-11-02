@@ -760,7 +760,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if ctx.PendingDelegations == nil {
 		t.Fatal("FULL MOUNT: pending-delegations func nil - the capsule did not mount")
 	}
-	if n := ctx.PendingDelegations(); n != 0 {
+	if n := ctx.PendingDelegations(""); n != 0 {
 		t.Fatalf("FULL MOUNT: pending delegations = %d, want 0 on a fresh mount", n)
 	}
 	t.Log("PROOF mount=full: inject seam mounted (ctx.InjectedMessages + ctx.PendingDelegations), pending count 0")
