@@ -52,9 +52,20 @@ The model advises, Go decides. The ladder (`ladder.go`), in order:
 
 ## Escalation
 
-- Interactive: a 2-option approve/deny verdict card (title = the
-  command, body = the fired step and why). 20-minute expiry is
-  fail-closed - nothing ran.
+- Interactive: an approve/deny/follow-up verdict card (title = the
+  command, body = the fired step and why; card t_63204dfd). Approve
+  runs it, deny skips it, follow-up prompt denies it AND carries the
+  typed guidance to the agent (its tool error reads
+  "follow-up guidance: <text>"). A typed answer never runs the
+  command and is never cached (situational, not a standing verdict);
+  the smart-mode stamp is `escalated -> answered` with the text
+  attached. 20-minute expiry is fail-closed - nothing ran.
+- Answerable from two surfaces: the chat transcript (full
+  three-option card at the escalated tool call row) and the
+  notifications tab (approve/deny only; the row click still jumps to
+  the session). Both answer the SAME pending card through the SAME
+  verdict endpoint; first resolution wins, every other surface
+  collapses.
 - Cron/delegate: the command is NOT executed; the worker gets a clean
   "escalated" tool error it routes around, and a notification surfaces
   to the operator. Workers never block on a human.

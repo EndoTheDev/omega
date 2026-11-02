@@ -609,10 +609,11 @@ export async function fetchVerdicts(sessionId = ""): Promise<{ cards: PendingVer
 // optional: absent means the session's oldest pending card (the common
 // case - one run per session). A 409 (the race was lost: answered,
 // skipped, or expired) throws with the server's reason so the losing
-// surface shows it instead of retrying.
+// surface shows it instead of retrying. message is the follow-up
+// guidance (card t_63204dfd) - a deny that carries typed directions.
 export async function postVerdict(
   sessionId: string,
-  body: { card_id?: string; option_indexes?: number[]; option_index?: number; option?: string; text?: string; skip?: boolean },
+  body: { card_id?: string; option_indexes?: number[]; option_index?: number; option?: string; text?: string; message?: string; skip?: boolean },
 ): Promise<void> {
   const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/verdicts`, {
     method: "POST",
@@ -627,6 +628,130 @@ export async function postVerdict(
     } catch { /* the status-code message stands */ }
     throw new Error(msg);
   }
+}
+
+// --- gate questions, answerable (card t_63204dfd) ---
+//
+// A pending gate escalation (the shell.run that froze the run) rides
+// the SAME pending-card listing and verdict endpoint the verdict tool's
+// cards use. These pure helpers are the two answer surfaces' shared
+// vocabulary: which card is which, what body each option posts, and
+// how a losing race reads.
+
+// approveDenyOptions finds the approve/deny pair on a pending card's
+// options (case-insensitive labels, 1-based option indexes). Null when
+// the card is not a gate question (the notification surface renders
+// buttons only for the pair contract).
+export function approveDenyOptions(
+  options: VerdictOptionItem[] | undefined,
+): { approve: number; deny: number } | null {
+  let approve = 0;
+  let deny = 0;
+  (options ?? []).forEach((o, i) => {
+    const label = (o.label || "").trim().toLowerCase();
+    if (!approve && label === "approve") approve = i + 1;
+    if (!deny && label === "deny") deny = i + 1;
+  });
+  return approve && deny ? { approve, deny } : null;
+}
+
+// gateAnswerBody builds the POST body for one gate question's option:
+// approve runs the command, deny skips it, followup denies it AND
+// rides the typed guidance as `message` (empty / blank input falls
+// back to the plain deny - the server sees no message field).
+export function gateAnswerBody(
+  card: { id?: string; options?: VerdictOptionItem[] },
+  kind: "approve" | "deny" | "followup",
+  text = "",
+): Parameters<typeof postVerdict>[1] {
+  const ix = approveDenyOptions(card.options) ?? { approve: 1, deny: 2 };
+  const body: Parameters<typeof postVerdict>[1] = {};
+  if (card.id) body.card_id = card.id;
+  body.option_index = kind === "approve" ? ix.approve : ix.deny;
+  if (kind === "followup" && text.trim() !== "") body.message = text.trim();
+  return body;
+}
+
+// isSettledRace reads a failed verdict POST: the settled-vocabulary
+// reasons mean the question resolved on another surface first - the
+// losing surface collapses, it does not error.
+export function isSettledRace(message: string): boolean {
+  return (
+    message.includes("already answered") ||
+    message.includes("already skipped") ||
+    message.includes("already expired")
+  );
+}
+
+// toolCallCommand reads a tool row's rendered arguments for the shell
+// command - the gate card binds to the running call by it (the card
+// title IS the command preview, byte-truncated by the backend).
+export function toolCallCommand(item: ToolItem): string {
+  if (!item.output) return "";
+  try {
+    const j = JSON.parse(item.output) as Record<string, unknown>;
+    return typeof j.command === "string" ? j.command : "";
+  } catch {
+    return "";
+  }
+}
+
+// GateBinding is a chat transcript's gate-question layout: cards bound
+// to their running shell.run row (the card renders at that row), and
+// cards with no row to ride - the chat surface renders them standalone
+// at the transcript tail.
+export interface GateBinding {
+  assigned: { item: ToolItem; card: PendingVerdictCard }[];
+  standalone: PendingVerdictCard[];
+}
+
+// bindGateQuestions lays the session's pending gate cards onto the
+// rendered transcript. Binding is by command match (the card title =
+// the command preview), falling back to the first unbound running
+// shell.run row (one run per session - the cards land oldest first).
+// A pending verdict-tool card owns the pause when one is on the
+// transcript (its own card is the surface), so nothing binds. Pure.
+export function bindGateQuestions(
+  items: TranscriptItem[],
+  cards: PendingVerdictCard[],
+  sessionId: string | null | undefined,
+): GateBinding {
+  const out: GateBinding = { assigned: [], standalone: [] };
+  if (!sessionId) return out;
+  const mine = cards.filter((c) => c.session_id === sessionId);
+  if (!mine.length) return out;
+  // a verdict-tool card that is pending (and not dead) is THE question
+  // this run awaits - its own card renders from the call row
+  if (items.some((it) => it.kind === "verdict" && it.status === "pending" && !it.stale)) {
+    return out;
+  }
+  const running = items.filter(
+    (it): it is ToolItem => it.kind === "tool" && it.status === "running" && it.name === "shell.run",
+  );
+  const taken = new Set<ToolItem>();
+  for (const card of mine) {
+    const cmd = card.title; // the command preview
+    let target: ToolItem | undefined;
+    for (const it of running) {
+      if (taken.has(it)) continue;
+      const command = toolCallCommand(it);
+      if (command && command.slice(0, 100) === cmd.slice(0, 100)) {
+        target = it;
+        break;
+      }
+    }
+    if (!target) {
+      // oldest-first fallback: the first unbound running guard row
+      target = running.find((it) => !taken.has(it));
+    }
+    if (target) {
+      taken.add(target);
+      out.assigned.push({ item: target, card });
+    } else {
+      out.standalone.push(card);
+    }
+  }
+  return out;
 }
 
 // --- chat appearance (card t_84e4653c) ---

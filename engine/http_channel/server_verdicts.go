@@ -2,8 +2,10 @@ package http_channel
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -35,6 +37,11 @@ type verdictCardWire struct {
 // option_indexes (multi), option_index, option (label), text, or skip.
 // card_id is optional: when absent the session's oldest pending card
 // is answered (one run per session, so the common case is exactly one).
+// Message is the follow-up guidance field (card t_63204dfd): when set
+// it rides the answer as the resolution's free text (an option pick +
+// message = deny with directions; message alone = a typed answer where
+// the card allows text). Capped at maxVerdictMessage runes; empty =
+// the plain answer, no guidance.
 type verdictAnswerRequest struct {
 	CardID        string `json:"card_id,omitempty"`
 	OptionIndexes []int  `json:"option_indexes,omitempty"`
@@ -42,7 +49,11 @@ type verdictAnswerRequest struct {
 	Option        string `json:"option,omitempty"`
 	Text          string `json:"text,omitempty"`
 	Skip          bool   `json:"skip,omitempty"`
+	Message       string `json:"message,omitempty"`
 }
+
+// maxVerdictMessage caps the resolution message (card t_63204dfd).
+const maxVerdictMessage = 2000
 
 func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 	// All verdict endpoints live under /verdicts (cross-session listing)
@@ -95,11 +106,21 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The follow-up guidance (card t_63204dfd): message wins over text
+	// (the newer field), and one size cap covers both spellings.
+	text := req.Text
+	if req.Message != "" {
+		text = req.Message
+	}
+	if utf8.RuneCountInString(text) > maxVerdictMessage {
+		http.Error(w, fmt.Sprintf("message over the %d character cap", maxVerdictMessage), http.StatusBadRequest)
+		return
+	}
 	v := core.Verdict{
 		OptionIndexes: req.OptionIndexes,
 		OptionIndex:   req.OptionIndex,
 		Option:        req.Option,
-		Text:          req.Text,
+		Text:          text,
 		Skipped:       req.Skip,
 	}
 	answered, err := s.Verdicts().Answer(sessionID, req.CardID, v)
