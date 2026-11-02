@@ -172,8 +172,9 @@ Terse operational rules. Layer references live in `docs/` (map below);
   cwd) containing an AGENTS.md. Decisions live in
   `<home>/config/trust.yaml` (`exact` / `parent` levels);
   `--approve`/`--no-approve` are CLI-only overrides (`--no-approve`
-  wins); the CLI loop prompts, `run`/`serve` skip untrusted context with a
-  warning.
+  wins); every untrusted surface (the CLI loop, `run`, `serve`, the
+  `/workspace` command) skips context with a stderr warning; the
+  interactive stdin prompt is a TUI-era shape no live host enables.
 - **cron.** omega writes only the per-job `enabled:` flag in
   `crons.yaml` (via the `POST /cron/toggle` route, preserving comments);
   everything else in the file is hand-owned (boot seeds only
