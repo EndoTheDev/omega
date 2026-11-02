@@ -41,6 +41,20 @@ store:
   # Default: <home>/data/omega.db (legacy home-root dbs migrate there on boot)
   db_path: omega.db
 
+sessions:
+  # The hygiene pass knobs. The pass runs from the crons.yaml
+  # `session-hygiene` job's fires (one agent turn calling the
+  # sessions.hygiene tool). Applies on restart.
+  # Sessions inactive longer than this many days are deleted (pinned
+  # sessions are exempt). Default: 90. 0 = never prune.
+  # retention_days: 90
+  # Settled sessions without a summary get an LLM-written one (one
+  # short paragraph, searchable) once idle at least this many hours.
+  # Default: 24.
+  # summarize_after_hours: 24
+  # Model the summarizer consults. Empty = the session provider model.
+  # summarizer_model:
+
 compaction:
   # Summarize old messages when the conversation nears the context
   # window. Default: enabled.

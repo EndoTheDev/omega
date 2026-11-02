@@ -67,7 +67,32 @@ func FormatInsights(in *core.Insights) string {
 		}
 	}
 
+	// Store on-disk shape (card t_329b9312's surface ruling: db size
+	// lives HERE, no duplicate surface). A store without a file path
+	// reports zero - the section stays out.
+	if in.DBSizeBytes > 0 {
+		sb.WriteString("\n  Store\n")
+		sb.WriteString("  ─────────────────────────────────────\n")
+		wal := "0 B"
+		if in.WALSizeBytes > 0 {
+			wal = humanBytes(in.WALSizeBytes)
+		}
+		sb.WriteString(fmt.Sprintf("  Database (db + WAL):  %s + %s\n", humanBytes(in.DBSizeBytes), wal))
+	}
+
 	return sb.String()
+}
+
+// humanBytes renders a byte count as B/KB/MB - one decimal past 1 KB.
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 // FormatNumber adds thousands separators to an integer.

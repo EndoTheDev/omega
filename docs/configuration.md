@@ -89,6 +89,25 @@ naming it.
 | `disabled`                    | -                                  | (empty)                  | Toggleable capsules to keep off (e.g. `- kanban`). The webui MODULES pane writes the same key; an unknown name fails the boot. Legacy `omega.json` sidecars fold into this key on first boot and are deleted                                               |
 | `continuous.wake_turn_budget` | -                                  | `0`                      | Per-wake turn budget a continuous agent's spawned loop gets (mapped onto `OMEGA_MAX_TURNS` in the child). 0 = the config's own `max_turns` (ruling 17: the ONLY budget - no daily cap, no wallet)                                                        |
 | `continuous.wake_timeout_seconds` | -                              | `1800`                   | Wall-clock fence per wake subprocess: a wedged wake is killed, never queued (crash isolation ruling 9)                                                                                                                                                    |
+| `sessions.retention_days`     | -                                  | `90`                     | The hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt). 0 = never prune. Applies on restart                                                                                                                    |
+| `sessions.summarize_after_hours` | -                               | `24`                     | Settled sessions without a summary get an LLM-written one (one short paragraph, searchable) once idle at least this many hours. 0 = the default. Applies on restart                                                                                        |
+| `sessions.summarizer_model`   | -                                  | the session model        | Model the hygiene summarizer consults. Empty = the session provider model (the curator ruling). Applies on restart                                                                                                                                        |
+
+## Session hygiene
+
+The hygiene pass (a cron job's agent turn calling the
+`sessions.hygiene` tool, one job definition in `crons.yaml.example`,
+seeded `enabled: false`) is the end-of-life service for the session
+store: it summarizes settled sessions that lack a summary (one LLM call
+per session, at most 5 per pass - the backlog clears across runs),
+deletes sessions past `sessions.retention_days` (by last activity,
+pinned exempt, children cascade), and reclaims disk: a WAL
+`TRUNCATE` checkpoint plus the incremental auto-vacuum conversion on
+the first pass. Session summaries ride the unified search
+(`/sessions/search`, the `summary` hit class alongside label and
+content) and the session list payload. The pass's counts and the
+resulting db + WAL file sizes surface in insights. The compactor is a
+different organ - in-context compaction is untouched.
 
 ## Continuous agents
 

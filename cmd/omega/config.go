@@ -50,6 +50,7 @@ type Config struct {
 	HTTPTimeout int               `yaml:"http_timeout"`
 	MaxTurns    int               `yaml:"max_turns"`
 	Skills      SkillsConfig      `yaml:"skills"`
+	Sessions    SessionsConfig    `yaml:"sessions"`
 	Memory      MemoryConfig      `yaml:"memory"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	Web         WebConfig         `yaml:"web"`
@@ -239,6 +240,23 @@ type StoreConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
+// SessionsConfig configures the sessions hygiene pass (card t_329b9312):
+// the LLM session summarizer and the retention window. Mirrors
+// store.HygieneConfig without importing the module knob-for-knob - the
+// router below copies the fields.
+type SessionsConfig struct {
+	// RetentionDays prunes sessions older than this. 0 = never prune.
+	RetentionDays int `yaml:"retention_days"`
+
+	// SummarizeAfterHours is the minimum age before the summarizer
+	// writes a session's summary.
+	SummarizeAfterHours int `yaml:"summarize_after_hours"`
+
+	// SummarizerModel is the model the summarizer consults. Empty =
+	// the session provider model (the curator ruling).
+	SummarizerModel string `yaml:"summarizer_model"`
+}
+
 // KanbanConfig configures the board database. The relative default
 // (kanban.db) resolves against OMEGA_HOME in the plugin mount.
 type KanbanConfig struct {
@@ -277,6 +295,10 @@ func DefaultConfig() Config {
 		},
 		Store: StoreConfig{
 			DBPath: "omega.db",
+		},
+		Sessions: SessionsConfig{
+			RetentionDays:       store.DefaultHygiene().RetentionDays,
+			SummarizeAfterHours: store.DefaultHygiene().SummarizeAfterHours,
 		},
 		Kanban: KanbanConfig{
 			DBPath: "kanban.db",
@@ -725,6 +747,14 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	switch name {
 	case "store":
 		return store.Config{DBPath: c.Store.DBPath}, true
+	case "sessions":
+		// card t_329b9312: the hygiene pass reads its knobs from the
+		// store capsule (the config session rides cfg.Sessions).
+		return store.HygieneConfig{
+			RetentionDays:       c.Sessions.RetentionDays,
+			SummarizeAfterHours: c.Sessions.SummarizeAfterHours,
+			SummarizerModel:     c.Sessions.SummarizerModel,
+		}, true
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":

@@ -65,7 +65,7 @@ func MigrateAgentRows(mainDSN string, agentDSNs map[string]string) error {
 const sessionInsertCols = `id, parent_id, label, created_at, updated_at,
 	prompt_tokens, completion_tokens,
 	pinned, archived, title_state, last_read_at,
-	agent, last_run, model, workspace`
+	agent, last_run, model, workspace, summary`
 
 const sessionSelectCols = `id,
 	CASE WHEN parent_id IS NULL OR parent_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)
@@ -73,7 +73,7 @@ const sessionSelectCols = `id,
 	label, created_at, updated_at,
 	prompt_tokens, completion_tokens,
 	pinned, archived, title_state, last_read_at,
-	agent, last_run, model, workspace`
+	agent, last_run, model, workspace, summary`
 
 // moveAgentRows performs one agent's copy-verify-delete move. The agent
 // store is opened first (its schema migrates into existence); the whole

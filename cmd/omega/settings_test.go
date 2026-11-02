@@ -21,41 +21,44 @@ import (
 func settingsKnobKeys(t *testing.T) map[string]bool {
 	t.Helper()
 	return map[string]bool{
-		"provider.type":               true,
-		"provider.model_name":         true,
-		"provider.vision_model":       true,
-		"provider.title_model":        true,
-		"provider.host":               true,
-		"provider.api_key":            true,
-		"server.port":                 true,
-		"server.bind":                 true,
-		"server.run_timeout":          true,
-		"server.default_workspace":    true,
-		"store.db_path":               true,
-		"compaction.enabled":          true,
-		"compaction.threshold":        true,
-		"compaction.context_window":   true,
-		"compaction.keep_first":       true,
-		"compaction.keep_last":        true,
-		"compaction.reserve_tokens":   true,
-		"compaction.max_tool_output":  true,
-		"system_prompt":               true,
-		"http_timeout":                true,
-		"max_turns":                   true,
-		"skills.dir":                  true,
-		"skills.nudge_interval":       true,
-		"skills.curator_model":        true,
-		"memory.enabled":              true,
-		"memory.user_profile_enabled": true,
-		"memory.char_limit":           true,
-		"memory.user_char_limit":      true,
-		"memory.file":                 true,
-		"memory.user_file":            true,
-		"logging.enabled":             true,
-		"logging.file":                true,
-		"approvals.mode":              true,
-		"approvals.model":             true,
-		"approvals.smart_policy":      true,
+		"provider.type":                  true,
+		"provider.model_name":            true,
+		"provider.vision_model":          true,
+		"provider.title_model":           true,
+		"provider.host":                  true,
+		"provider.api_key":               true,
+		"server.port":                    true,
+		"server.bind":                    true,
+		"server.run_timeout":             true,
+		"server.default_workspace":       true,
+		"store.db_path":                  true,
+		"sessions.retention_days":        true,
+		"sessions.summarize_after_hours": true,
+		"sessions.summarizer_model":      true,
+		"compaction.enabled":             true,
+		"compaction.threshold":           true,
+		"compaction.context_window":      true,
+		"compaction.keep_first":          true,
+		"compaction.keep_last":           true,
+		"compaction.reserve_tokens":      true,
+		"compaction.max_tool_output":     true,
+		"system_prompt":                  true,
+		"http_timeout":                   true,
+		"max_turns":                      true,
+		"skills.dir":                     true,
+		"skills.nudge_interval":          true,
+		"skills.curator_model":           true,
+		"memory.enabled":                 true,
+		"memory.user_profile_enabled":    true,
+		"memory.char_limit":              true,
+		"memory.user_char_limit":         true,
+		"memory.file":                    true,
+		"memory.user_file":               true,
+		"logging.enabled":                true,
+		"logging.file":                   true,
+		"approvals.mode":                 true,
+		"approvals.model":                true,
+		"approvals.smart_policy":         true,
 	}
 }
 
@@ -108,6 +111,13 @@ func TestModelKnobsTyped(t *testing.T) {
 					t.Errorf("%s filter = %q, want decision (the decision-family dropdown)", k.Key, k.Filter)
 				}
 			case "skills.curator_model":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "" {
+					t.Errorf("%s filter = %q, want empty (the full model list)", k.Key, k.Filter)
+				}
+			case "sessions.summarizer_model":
 				if k.Type != "model" {
 					t.Errorf("%s type = %q, want model", k.Key, k.Type)
 				}

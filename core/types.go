@@ -52,6 +52,14 @@ type Insights struct {
 	NotableMsgs    NotableStat
 	NotableTokens  NotableStat
 	NotableTools   NotableStat
+
+	// DBSizeBytes / WALSizeBytes are the store's on-disk file sizes at
+	// compute time (0 on stores without a file path, e.g. ":memory:").
+	// The hygiene pass's vacuum report reads these - the insights
+	// surface is where db size lives (card t_329b9312, no duplicate
+	// surface).
+	DBSizeBytes  int64 `json:"db_size_bytes,omitempty"`
+	WALSizeBytes int64 `json:"wal_size_bytes,omitempty"`
 }
 
 // ExtensionCommand is a slash command registered by an extension.

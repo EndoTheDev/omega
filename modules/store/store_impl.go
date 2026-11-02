@@ -34,6 +34,9 @@ type Store struct {
 	// main's. Non-empty = a continuous agent's isolated store - the
 	// whole file belongs to that agent, list filters stay off.
 	identity string
+	// dbPath is the dsn the store opened with (the hygiene pass reads
+	// the main + WAL file sizes off it). ":memory:" reads zero.
+	dbPath string
 }
 
 // Open opens (creating if needed) the SQLite database at dsn and ensures
@@ -99,7 +102,7 @@ func openStore(dsn string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, identity: storeAgentIdentity()}
+	s := &Store{db: db, identity: storeAgentIdentity(), dbPath: dsn}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -130,7 +133,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	agent TEXT NOT NULL DEFAULT 'default',
 	last_run TEXT NOT NULL DEFAULT '',
 	model TEXT NOT NULL DEFAULT '',
-	workspace TEXT NOT NULL DEFAULT ''
+	workspace TEXT NOT NULL DEFAULT '',
+	summary TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,14 +166,17 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
 	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
 END;
 
--- FTS5 index over session labels, the title half of the unified
--- /sessions/search. Standalone (no external content): one row per
--- session, kept in sync by these triggers on INSERT, label UPDATE and
--- DELETE. Labels change in three places (manual rename, auto-title,
--- creation) - trigger coverage beats a hook at each call site.
+-- FTS5 index over session labels and hygiene summaries - the title
+-- and summary halves of the unified /sessions/search. Standalone (no
+-- external content): one row per session, kept in sync by these
+-- triggers on INSERT, label UPDATE, summary UPDATE and DELETE. Labels
+-- change in three places (manual rename, auto-title, creation);
+-- summaries arrive from the hygiene pass - trigger coverage beats a
+-- hook at each call site.
 CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
 	session_id UNINDEXED,
-	label
+	label,
+	summary
 );
 -- Image captions keyed by content hash (vision_model knob). Captions
 -- are shared across sessions by design: one row per distinct image.
@@ -179,11 +186,21 @@ CREATE TABLE IF NOT EXISTS image_captions (
 	created_at TEXT NOT NULL
 );
 CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
-	INSERT INTO sessions_fts(session_id, label) VALUES (new.id, new.label);
+	INSERT INTO sessions_fts(session_id, label, summary)
+	VALUES (new.id, new.label, new.summary);
 END;
+-- The label and summary triggers both read the OTHER column from the
+-- sessions row: rewriting either field reindexes both, so a rename
+-- never drops the summary from the index (and the other way around).
 CREATE TRIGGER IF NOT EXISTS sessions_au AFTER UPDATE OF label ON sessions BEGIN
 	DELETE FROM sessions_fts WHERE session_id = old.id;
-	INSERT INTO sessions_fts(session_id, label) VALUES (new.id, new.label);
+	INSERT INTO sessions_fts(session_id, label, summary)
+	VALUES (new.id, new.label, (SELECT summary FROM sessions WHERE id = new.id));
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_asum AFTER UPDATE OF summary ON sessions BEGIN
+	DELETE FROM sessions_fts WHERE session_id = old.id;
+	INSERT INTO sessions_fts(session_id, label, summary)
+	VALUES (new.id, (SELECT label FROM sessions WHERE id = new.id), new.summary);
 END;
 CREATE TRIGGER IF NOT EXISTS sessions_ad AFTER DELETE ON sessions BEGIN
 	DELETE FROM sessions_fts WHERE session_id = old.id;
@@ -200,12 +217,6 @@ END;
 	// Rebuild FTS index to pick up any messages that existed before
 	// the FTS table was created (triggers only fire on new writes).
 	s.db.Exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
-	// Same catch-up for the label index: standalone tables have no
-	// 'rebuild', so a full delete-and-reload picks up labels that
-	// predate the index (and heals any drift). One row per session,
-	// runs once per open - trivially cheap.
-	s.db.Exec(`DELETE FROM sessions_fts;
-INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 	// Add columns that may be missing from older databases. SQLite
 	// does not support IF NOT EXISTS on ALTER TABLE, so we catch
 	// the "duplicate column" error and ignore it.
@@ -222,6 +233,7 @@ INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -248,6 +260,43 @@ INSERT INTO sessions_fts(session_id, label) SELECT id, label FROM sessions;`)
 				return err
 			}
 		}
+	}
+	// The label+summary index: standalone FTS tables have no 'rebuild',
+	// so a full delete-and-reload picks up rows (and heals any drift)
+	// that predate the index. Runs AFTER the ALTER loop above - it
+	// reads the summary column the loop just added. One row per
+	// session, once per open - trivially cheap.
+	s.db.Exec(`DELETE FROM sessions_fts;
+INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`)
+	// Existing databases predate the summary index column: a
+	// CREATE VIRTUAL TABLE IF NOT EXISTS never broadens its column
+	// list, so a stale two-column index would silently drop every
+	// summary from search. The one-time rebuild: drop the table AND
+	// its triggers (their bodies name the old arity), recreate both at
+	// the new arity, then the reload above already ran at the old
+	// arity - so this block reloads itself when it rebuilds.
+	var ftsSummary int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions_fts') WHERE name = 'summary'`).Scan(&ftsSummary); err == nil && ftsSummary == 0 {
+		s.db.Exec(`DROP TRIGGER IF EXISTS sessions_ai; DROP TRIGGER IF EXISTS sessions_au; DROP TRIGGER IF EXISTS sessions_asum; DROP TRIGGER IF EXISTS sessions_ad; DROP TABLE sessions_fts;
+CREATE VIRTUAL TABLE sessions_fts USING fts5(session_id UNINDEXED, label, summary);
+CREATE TRIGGER sessions_ai AFTER INSERT ON sessions BEGIN
+	INSERT INTO sessions_fts(session_id, label, summary)
+	VALUES (new.id, new.label, new.summary);
+END;
+CREATE TRIGGER sessions_au AFTER UPDATE OF label ON sessions BEGIN
+	DELETE FROM sessions_fts WHERE session_id = old.id;
+	INSERT INTO sessions_fts(session_id, label, summary)
+	VALUES (new.id, new.label, (SELECT summary FROM sessions WHERE id = new.id));
+END;
+CREATE TRIGGER sessions_asum AFTER UPDATE OF summary ON sessions BEGIN
+	DELETE FROM sessions_fts WHERE session_id = old.id;
+	INSERT INTO sessions_fts(session_id, label, summary)
+	VALUES (new.id, (SELECT label FROM sessions WHERE id = new.id), new.summary);
+END;
+CREATE TRIGGER sessions_ad AFTER DELETE ON sessions BEGIN
+	DELETE FROM sessions_fts WHERE session_id = old.id;
+END;
+INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`)
 	}
 	return nil
 }
@@ -282,7 +331,8 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
-		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.Workspace); err != nil {
+		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.Workspace,
+		&sess.Summary); err != nil {
 		return core.Session{}, err
 	}
 	sess.ParentID = parent.String
@@ -306,7 +356,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, workspace"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, workspace, summary"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
@@ -627,6 +677,17 @@ func (s *Store) SetSessionTitle(ctx context.Context, sessionID string, title str
 	return err
 }
 
+// SetSessionSummary writes the hygiene pass's digest on the session
+// row. Like a generated title, a summary is not activity - updated_at
+// is untouched, so a summary landing after a read stamp must not turn
+// the session unread. The trigger reindexes the FTS row with both
+// fields.
+func (s *Store) SetSessionSummary(ctx context.Context, sessionID, summary string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET summary = ? WHERE id = ?`, summary, sessionID)
+	return err
+}
+
 // SessionModels returns the last recorded model per session from the
 // session's model_change entries, read at read time (no schema or
 // counters). Sessions with no model entry are absent from the map.
@@ -745,16 +806,20 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.Search
 }
 
 // SearchSessions performs the unified search behind /sessions/search:
-// one phrase-quoted term (quoteFTS, `"term"*`) queries BOTH the
-// session-label index (sessions_fts) and the message-content index
-// (messages_fts), merged to ONE hit per session. A label match
-// outranks any content match for the same session; label-matching
-// sessions lead, content-only sessions follow in their best rank.
-// Progressive typing is preserved end to end: "fib", "fibo",
-// "fibonacci" each still hit (quoteFTS trailing star, in-app comment
-// 5 2026-10-18).
+// one phrase-quoted term (quoteFTS, `"term"*`) queries the session
+// label index, the hygiene-summary index AND the message-content index
+// (all via sessions_fts / messages_fts), merged to ONE hit per session.
+// A label match outranks a summary match, which outranks any content
+// match for the same session; title-matching sessions lead, then
+// summary-matching, then content-only in best rank. Progressive typing
+// is preserved end to end: "fib", "fibo", "fibonacci" each still hit
+// (quoteFTS trailing star, in-app comment 5 2026-10-18). Column filters
+// scope each index query to its own column so a summary match is never
+// misread as a label match.
 func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.SearchResult, error) {
 	fts := quoteFTS(query)
+	labelScoped := `{label} : ` + fts
+	summaryScoped := `{summary} : ` + fts
 	out := []core.SearchResult{}
 	seen := make(map[string]bool)
 
@@ -762,7 +827,7 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	// content context to bracket-mark.
 	trows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, label FROM sessions_fts
-		 WHERE sessions_fts MATCH ? ORDER BY rank`, fts)
+		 WHERE sessions_fts MATCH ? ORDER BY rank`, labelScoped)
 	if err != nil {
 		return nil, err
 	}
@@ -787,7 +852,33 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	}
 	trows.Close()
 
-	// Content hits, best rank first; label-matched sessions skip.
+	// Summary hits, best rank first. The snippet is the FTS excerpt of
+	// the summary text itself (column index 2).
+	srows, err := s.db.QueryContext(ctx,
+		`SELECT session_id, snippet(sessions_fts, 2, '[', ']', '...', 20)
+		 FROM sessions_fts WHERE sessions_fts MATCH ? ORDER BY rank`, summaryScoped)
+	if err != nil {
+		return nil, err
+	}
+	for srows.Next() {
+		var id, snippet string
+		if err := srows.Scan(&id, &snippet); err != nil {
+			srows.Close()
+			return nil, err
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, core.SearchResult{SessionID: id, Snippet: snippet, Summary: true})
+	}
+	if err := srows.Err(); err != nil {
+		srows.Close()
+		return nil, err
+	}
+	srows.Close()
+
+	// Content hits, best rank first; label- or summary-matched sessions skip.
 	crows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
 		 FROM messages_fts WHERE messages_fts MATCH ? ORDER BY rank`, fts)
@@ -976,6 +1067,10 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, 
 	})
 
 	buildDailyActivity(&in.Daily, dayCounts, weekdays)
+
+	// The store's on-disk shape: db + WAL file sizes. Zero on
+	// in-memory stores.
+	in.DBSizeBytes, in.WALSizeBytes = s.DBFileSizes()
 
 	if days > 0 {
 		in.PeriodStart = cutoff.Format("2006-01-02")

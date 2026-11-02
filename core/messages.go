@@ -58,6 +58,13 @@ type Session struct {
 	// session's prompt context. Absolute path; validated to be an
 	// existing directory when written.
 	Workspace string `json:"workspace,omitempty"`
+
+	// Summary is the hygiene pass's LLM-written one-paragraph digest
+	// of the session. Empty until written (sessions saved before the
+	// summarizer existed keep empty - the pass fills them on its next
+	// run). A summary is generated prose, not activity: writing one
+	// never touches updated_at.
+	Summary string `json:"summary,omitempty"`
 }
 
 // LastRunStats is one completed run's average rates, written with the
@@ -102,6 +109,10 @@ type SearchResult struct {
 	// message content (SearchSessions). When set, Snippet holds the
 	// label itself.
 	Title bool `json:"title"`
+	// Summary marks a hit that matched the hygiene pass's session
+	// summary rather than message content or label (SearchSessions).
+	// When set, Snippet holds the bracketed summary excerpt.
+	Summary bool `json:"summary"`
 }
 
 // InjectedMessage is a message injected by an extension (e.g. a

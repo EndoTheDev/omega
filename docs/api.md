@@ -250,9 +250,11 @@ named `<session id>.jsonl`.
 
 ### GET /sessions/search?q=<term>
 
-Unified FTS5 search over session labels AND message content, deduped
-to ONE hit per session (label hits ranked first, with a bracketed
-content snippet). The term is wrapped as the phrase-with-prefix
+Unified FTS5 search over session labels, hygiene summaries AND message
+content, deduped to ONE hit per session (label hits ranked first, then
+summary hits, then content - each hit carries `title` or `summary` when
+it matched that index, with a bracketed excerpt otherwise). The term is
+wrapped as the phrase-with-prefix
 `"term"*` per FTS5 string rules — progressive typing keeps hitting
 `"fib"` finds `"fibonacci"`). `200 []` on a missing/empty `q`; **400**
 when FTS5 rejects the query itself; 501 without a store. Archived

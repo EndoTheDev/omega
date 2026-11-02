@@ -8,6 +8,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -58,4 +59,106 @@ func (p *searchToolProvider) runSearch(ctx context.Context, args map[string]any)
 		out += fmt.Sprintf("[%s] %s\n", label, r.Snippet)
 	}
 	return out, nil
+}
+
+// hygieneToolProvider provides the sessions.hygiene tool: the tool the
+// async cron's hygiene fire (an agent turn) calls to run the pass -
+// the same shape the skills curator rides. The cron module stays
+// store-agnostic (no module imports a module): the wiring is yaml job
+// definition -> agent turn -> THIS tool.
+type hygieneToolProvider struct {
+	store      *Store
+	cfg        HygieneConfig
+	providerFn func() core.Provider // live provider reader, wired at mount
+}
+
+// provider resolves the live provider seam at call time (nil-safe,
+// mirroring the skills capsule's providerFn discipline).
+func (p *hygieneToolProvider) provider() core.Provider {
+	if p.providerFn == nil {
+		return nil
+	}
+	return p.providerFn()
+}
+
+// Tools returns the sessions.hygiene tool definition.
+func (p *hygieneToolProvider) Tools() map[string]core.Tool {
+	return map[string]core.Tool{
+		"sessions.hygiene": {
+			Description: "Run the session hygiene pass: summarize settled sessions that lack a summary " +
+				"(one LLM call each, at most 5 per run), prune sessions past the retention window " +
+				"(pinned sessions are exempt), and vacuum the SQLite database (WAL checkpoint + " +
+				"incremental vacuum). Returns a counts report.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"action": map[string]any{
+						"type":        "string",
+						"enum":        []string{"run", "summarize", "prune", "vacuum"},
+						"description": "Pass step to run. Default (empty) = run, the whole pass in order.",
+					},
+				},
+			},
+			Run: p.runHygiene,
+		},
+	}
+}
+
+// runHygiene executes one tool call. The full pass summarizes BEFORE
+// pruning (the consult reads history that is going nowhere before
+// anything is deleted) and vacuums last, so the report's file sizes
+// state the post-maintenance shape.
+func (p *hygieneToolProvider) runHygiene(ctx context.Context, args map[string]any) (string, error) {
+	if p.store == nil {
+		return "", fmt.Errorf("sessions.hygiene: no store")
+	}
+	action, _ := args["action"].(string)
+	action = strings.TrimSpace(strings.ToLower(action))
+	switch action {
+	case "", "run":
+		rep, err := p.store.RunHygiene(ctx, p.provider(), p.cfg)
+		if err != nil {
+			return formatHygieneReport(rep), err
+		}
+		return formatHygieneReport(rep), nil
+	case "summarize":
+		rep, err := p.store.RunSummarizer(ctx, p.provider(), p.cfg.SummarizerModel, p.cfg.SummarizeAfterHours)
+		if err != nil {
+			return formatHygieneReport(rep), err
+		}
+		return formatHygieneReport(rep), nil
+	case "prune":
+		ids, err := p.store.PruneSessions(ctx, p.cfg.RetentionDays)
+		if err != nil {
+			return "", err
+		}
+		return formatHygieneReport(HygieneReport{Pruned: len(ids), PrunedIDs: ids}), nil
+	case "vacuum":
+		beforeDB, beforeWAL := p.store.DBFileSizes()
+		if err := p.store.RunVacuum(ctx); err != nil {
+			return "", err
+		}
+		afterDB, afterWAL := p.store.DBFileSizes()
+		return fmt.Sprintf("vacuum: db %d -> %d bytes, WAL %d -> %d bytes",
+			beforeDB, afterDB, beforeWAL, afterWAL), nil
+	default:
+		return "", fmt.Errorf("unknown action %q - run | summarize | prune | vacuum", action)
+	}
+}
+
+// formatHygieneReport renders the counts the agent turn relays.
+func formatHygieneReport(rep HygieneReport) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "hygiene: %d summarized, %d pending, %d pruned, vacuum %v",
+		rep.Summarized, rep.Pending, rep.Pruned, rep.Vacuumed)
+	if rep.DBSizeBytes > 0 {
+		fmt.Fprintf(&sb, "\ndb: %d bytes, WAL %d bytes", rep.DBSizeBytes, rep.WALSizeBytes)
+	}
+	for _, id := range rep.PrunedIDs {
+		sb.WriteString("\npruned: " + id)
+	}
+	for _, s := range rep.Skipped {
+		sb.WriteString("\nskipped: " + s)
+	}
+	return sb.String()
 }

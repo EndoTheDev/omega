@@ -60,8 +60,15 @@ jobs:
     prompt: "Backup this omega home: copy omega.db and config.yaml into <OMEGA_HOME>/backups/<today's date>/ (create the directory if missing), then keep only the 14 newest backup directories and report what was copied and pruned."
 
   - name: session-hygiene
-    schedule: "0 4 * * 0"
-    prompt: "Review this week's omega sessions for hygiene issues - untitled sessions, stale labels, oversized tool outputs, repeated questions. Produce a report only; never delete or modify anything."
+    schedule: "0 3 * * *"
+    # The REAL hygiene pass: one agent turn calling the sessions.hygiene
+    # tool (summarize settled sessions, prune past retention, vacuum the
+    # database; the knobs live in config.yaml's `sessions:` section).
+    # DISABLED BY DEFAULT: live jobs stay off until omega is the daily
+    # driver. Flip enabled: true (or the Cron tab's toggle) by hand -
+    # never let a background job be born on.
+    enabled: false
+    prompt: "Run this omega home's session hygiene pass: call the sessions.hygiene tool with no arguments and relay the counts report it returns."
 
   - name: improver-reflection
     schedule: "30 4 * * 0"

@@ -64,10 +64,24 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		return err
 	}
 	search := &searchToolProvider{store: s}
+	// The hygiene pass's knobs ride the `sessions:` config section
+	// (card t_329b9312), routed by the host's config.go section table.
+	// Absent section = the defaults; apply-on-restart like the rest of
+	// the capsule's config.
+	hyg := DefaultHygiene()
+	if c, ok := ctx.Configs["sessions"].(HygieneConfig); ok {
+		hyg = c
+	}
+	hygiene := &hygieneToolProvider{store: s, cfg: hyg, providerFn: func() core.Provider { return api.Provider() }}
 	steps := []func() error{
 		func() error { return api.RegisterStore(s) },
 		func() error {
 			for name, t := range search.Tools() {
+				if err := api.RegisterTool(name, t); err != nil {
+					return err
+				}
+			}
+			for name, t := range hygiene.Tools() {
 				if err := api.RegisterTool(name, t); err != nil {
 					return err
 				}
