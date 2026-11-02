@@ -91,7 +91,7 @@ func TestNewFromContextFull(t *testing.T) {
 	}}}
 	infos := []core.ExtensionInfo{{Name: "ext-a", Tools: 1}}
 	injected := newStubStream(core.InjectedMessage{Text: "queued", Source: "test"})
-	pending := func() int { return 3 }
+	pending := func(affinity string) int { return 3 }
 
 	ctx := &Context{
 		Provider:           prov,
@@ -182,7 +182,7 @@ func TestNewFromContextFull(t *testing.T) {
 	ctx2 := &Context{
 		Provider:           prov,
 		Loop:               testLoop{},
-		PendingDelegations: func() int { pendingCalled = true; return 7 },
+		PendingDelegations: func(affinity string) int { pendingCalled = true; return 7 },
 	}
 	ag3 := core.NewFromContext(ctx2, opts)
 	_ = ag3 // pendingDeleg is internal; the nil-safety test covers the path.

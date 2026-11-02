@@ -124,7 +124,7 @@ func TestSpawnRefusedInsideSubagent(t *testing.T) {
 	if !strings.Contains(err.Error(), "subagent") {
 		t.Fatalf("refusal names the subagent origin, got %v", err)
 	}
-	if d.PendingCount() != 0 {
+	if d.PendingCount("") != 0 {
 		t.Fatal("a refused spawn must not register a task")
 	}
 }
