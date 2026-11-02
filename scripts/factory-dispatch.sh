@@ -15,9 +15,39 @@
 # running card exposes NO surface at all, hold everything (conservative).
 # Upgrade path: card bodies grow a FILES: line the script reads first.
 #
-# Usage: scripts/factory-dispatch.sh [--dry-run]
+# Usage: scripts/factory-dispatch.sh [--dry-run] [--max N]
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# Usage + strict arg validation BEFORE any state is read (no config, no
+# kanban DB, no worktrees, nothing spawns). The original case loop had no
+# default-reject branch: every unknown flag fell through silently and the
+# script continued into the dispatch path (proven live 2026-11-02:
+# `factory-dispatch.sh --help` printed the verdicts and then EXECUTED a
+# real spawn - a typo'd flag must never reach the real dispatcher).
+usage() {
+  cat <<'USAGE_EOF'
+factory-dispatch.sh - collision-aware dispatch for the omega factory.
+
+Applies the same-file law at dispatch time: computes each running card's
+write surface, holds every ready candidate whose surface collides, then
+dispatches the legal remainder through the fence-stamped inner dispatcher
+(OMEGA_WORKER=1, repo git shims on PATH). Legal/hold verdicts print per
+candidate; the pass ends with a handoff report (wanted/after/over-run).
+
+Flags:
+  --dry-run   evaluate and print verdicts only; no dispatch, no writes
+  --max N     pass N as the inner dispatcher's bound for this invocation
+              (explicit true concurrency; overrides the config cap)
+  -h, --help  this usage text, exit 0
+
+An unknown or malformed flag is refused (exit 2, this usage text to
+stderr) before anything happens - it must never fall through to a real
+dispatch. Without --max the cap is the LIVE config knob
+kanban.max_in_progress_per_profile; it is never hardcoded.
+USAGE_EOF
+}
+usage_err() { echo "factory-dispatch.sh: $1" >&2; usage >&2; exit 2; }
 
 DB="$HOME/.hermes/kanban/boards/project-omega/kanban.db"
 
@@ -39,7 +69,12 @@ DRY=0; MAXARG=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;
-    --max) MAXARG="${2:-0}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --max)
+      [ $# -ge 2 ] || usage_err "--max needs a value"
+      case "$2" in ''|*[!0-9]*|0) usage_err "--max must be a positive integer, got '$2'" ;; esac
+      MAXARG="$2"; shift ;;
+    *) usage_err "unknown argument: $1" ;;
   esac
   shift
 done
