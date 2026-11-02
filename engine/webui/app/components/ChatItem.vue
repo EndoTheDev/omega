@@ -34,6 +34,12 @@
     :gate="item.gate"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />
+  <!-- card t_63204dfd: a pending gate question bound to this running
+       tool row - the three-option card rides the row it froze -->
+  <GateCard
+    v-if="item.kind === 'tool' && gateCard"
+    :card="gateCard"
+    :session-id="sessionId" />
   <VerdictCard
     v-else-if="item.kind === 'verdict'"
     :item="item"
@@ -41,7 +47,8 @@
 </template>
 
 <script setup lang="ts">
-  import type { TranscriptItem, VariantBlock } from "../composables/omega";
+  import type { PendingVerdictCard, TranscriptItem, VariantBlock } from "../composables/omega";
+  import GateCard from "./chat/GateCard.vue";
 
   defineProps<{
     item: TranscriptItem;
@@ -54,6 +61,9 @@
     retryable?: boolean;
     // the chat tab's session id - verdict cards POST answers against it
     sessionId?: string;
+    // card t_63204dfd: the pending gate question bound to THIS tool
+    // row (ChatTab's binding) - the three-option card rides the row
+    gateCard?: PendingVerdictCard | null;
   }>();
   const emit = defineEmits<{
     (e: "select", messageId: string, index: number): void;

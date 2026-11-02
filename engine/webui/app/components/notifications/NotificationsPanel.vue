@@ -34,7 +34,31 @@
         <span class="notif-row-main">
           <span class="notif-row-title">{{ p.title }}</span>
           <span class="notif-row-meta">
-            <span class="notif-verdict pending">pending question</span>
+            <!-- card t_63204dfd: the notification surface answers a gate
+                 question with approve/deny only (the pair contract on
+                 the card's options). The row click still jumps to the
+                 session; the buttons answer the SAME pending card the
+                 chat card answers - first resolution wins, a losing
+                 click collapses (no error, no double-apply). -->
+            <template v-if="resolvedVerdicts.has(p.id)">
+              <span class="notif-verdict resolved">{{ resolvedVerdicts.get(p.id) }}</span>
+            </template>
+            <template v-else-if="answerOptionsFor(p)">
+              <span class="notif-verdict pending">pending question</span>
+              <span class="notif-answer-btns">
+                <button
+                  class="notif-answer-btn"
+                  :disabled="answeringId === p.id"
+                  @click.stop="answerQuestion(p, 'approve')">approve</button>
+                <button
+                  class="notif-answer-btn"
+                  :disabled="answeringId === p.id"
+                  @click.stop="answerQuestion(p, 'deny')">deny</button>
+              </span>
+            </template>
+            <template v-else>
+              <span class="notif-verdict pending">pending question</span>
+            </template>
             <span class="notif-age">session {{ shortId(p.session_id) }}</span>
           </span>
         </span>
@@ -67,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-  import { onMounted } from "vue";
+  import { onMounted, reactive, ref } from "vue";
   import {
     notificationsList,
     notificationsUnread,
@@ -78,7 +102,13 @@
     refreshNotifications,
     startNotificationFeed,
   } from "./store";
-  import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
+  import {
+    approveDenyOptions,
+    fetchVerdicts,
+    isSettledRace,
+    postVerdict,
+    type PendingVerdictCard,
+  } from "../../composables/omega";
   import type { OmegaNotification } from "../../composables/notifications";
 
   const emit = defineEmits<{
@@ -117,6 +147,41 @@
       source_id: p.session_id,
       title: p.title,
     } as OmegaNotification);
+  }
+
+  // --- gate questions, answerable (card t_63204dfd): approve/deny on
+  // the notification surface --- the pair contract lives on the card's
+  // options; buttons render only when the pending card IS an
+  // approve/deny question. The body click (unstopped) still jumps to
+  // the session - the buttons answer in place.
+  // resolvedVerdicts: this surface's flip after a POST (win or a lost
+  // race) - the render collapses to the resolved state until the poll
+  // drops the settled card out of the pending list.
+  function answerOptionsFor(p: PendingVerdictCard) {
+    return approveDenyOptions(p.options);
+  }
+  const resolvedVerdicts = reactive(new Map<string, string>());
+  const answeringId = ref("");
+  async function answerQuestion(p: PendingVerdictCard, kind: "approve" | "deny"): Promise<void> {
+    const ix = approveDenyOptions(p.options);
+    if (!ix || resolvedVerdicts.has(p.id) || answeringId.value) return;
+    answeringId.value = p.id;
+    try {
+      await postVerdict(p.session_id, {
+        card_id: p.id,
+        option_index: kind === "approve" ? ix.approve : ix.deny,
+      });
+      resolvedVerdicts.set(p.id, "resolved: " + kind);
+    } catch (e) {
+      // a late click on an already-resolved question renders the
+      // resolved stamp, no error, no double-apply (first resolution
+      // won on the chat surface, another tab, or the CLI)
+      const msg = e instanceof Error ? e.message : String(e);
+      if (isSettledRace(msg)) resolvedVerdicts.set(p.id, "resolved (another surface)");
+    } finally {
+      answeringId.value = "";
+    }
+    void refreshNotifications();
   }
 
   async function openRecord(n: OmegaNotification) {
@@ -190,6 +255,34 @@
   }
   .notif-verdict.pending {
     color: var(--accent, #e8833a);
+  }
+  /* card t_63204dfd: the notification surface's approve/deny buttons
+     and its resolved flip */
+  .notif-answer-btns {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .notif-answer-btn {
+    font: inherit;
+    font-size: 10.5px;
+    font-family: var(--mono);
+    color: var(--text);
+    background: var(--z0);
+    border: 1px solid var(--stroke, #444);
+    border-radius: 4px;
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+  .notif-answer-btn:hover:not(:disabled) {
+    border-color: var(--accent, #e8833a);
+  }
+  .notif-answer-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .notif-verdict.resolved {
+    color: var(--text-dim);
+    font-style: italic;
   }
   .notif-row {
     display: flex;

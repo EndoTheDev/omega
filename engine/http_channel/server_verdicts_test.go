@@ -278,3 +278,114 @@ func TestVerdictsMethodNotAllowed(t *testing.T) {
 		t.Fatalf("DELETE /verdicts = %d, want 405", resp.StatusCode)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The follow-up message field (card t_63204dfd): the verdict endpoint
+// accepts an optional message - the resolution guidance the agent
+// receives. Cards below mirror the gate card's shape (approve/deny
+// pair + typed text allowed).
+// ---------------------------------------------------------------------------
+
+// gateHubCard issues one gate-shaped card in the background.
+func gateHubCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{} {
+	t.Helper()
+	return issueCardShaped(t, h, session, id, core.VerdictPrompt{
+		ID: id, SessionID: session, Title: "rm -rf /tmp/scratch", Options: vo("approve", "deny"), AllowText: true,
+	})
+}
+
+// issueCardShaped is issueCard with the card shape a parameter.
+func issueCardShaped(t *testing.T, h *verdict.Hub, session, id string, card core.VerdictPrompt) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		_, _ = h.Ask(context.Background(), card)
+		close(done)
+	}()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if len(h.Pending(session)) > 0 {
+			return done
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("card %s did not register in session %s", id, session)
+	return done
+}
+
+func TestVerdictsMessageCarriesToTheVerdict(t *testing.T) {
+	ts, h := verdictServer(t)
+	done := gateHubCard(t, h, "s1", "c1")
+	t.Cleanup(func() { <-done })
+
+	// deny + guidance: the record rides both the option and the text
+	r, err := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
+		strings.NewReader(`{"card_id":"c1","option_index":2,"message":"use cp instead"}`))
+	if err != nil {
+		t.Fatalf("POST answer: %v", err)
+	}
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("message answer = %d, want 200: %s", r.StatusCode, body)
+	}
+	var ans map[string]any
+	if err := json.Unmarshal(body, &ans); err != nil {
+		t.Fatalf("answer decode: %v", err)
+	}
+	if ans["verdict"] != "answer" || ans["option"] != "deny" || ans["text"] != "use cp instead" {
+		t.Fatalf("answer body = %v, want answer/deny with the message as text", ans)
+	}
+	<-done
+}
+
+func TestVerdictsEmptyMessageIsThePlainDeny(t *testing.T) {
+	ts, h := verdictServer(t)
+	done := gateHubCard(t, h, "s1", "c1")
+	t.Cleanup(func() { <-done })
+
+	// no message field: the plain option pick, no text anywhere
+	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
+		strings.NewReader(`{"card_id":"c1","option_index":2}`))
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("plain deny = %d, want 200: %s", r.StatusCode, body)
+	}
+	var ans map[string]any
+	_ = json.Unmarshal(body, &ans)
+	if _, has := ans["text"]; has {
+		t.Fatalf("no message in, no text out: %v", ans)
+	}
+	if ans["option"] != "deny" {
+		t.Fatalf("plain pick = %v, want deny", ans["option"])
+	}
+	<-done
+}
+
+func TestVerdictsMessageCap(t *testing.T) {
+	ts, h := verdictServer(t)
+	done := gateHubCard(t, h, "s1", "c1")
+	t.Cleanup(func() { <-done })
+
+	over := `{"card_id":"c1","message":"` + strings.Repeat("y", 2001) + `"}`
+	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json", strings.NewReader(over))
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != http.StatusBadRequest {
+		t.Fatalf("over-cap message = %d, want 400: %s", r.StatusCode, body)
+	}
+	// the card is untouched - the POST died before any resolution
+	if len(h.Pending("s1")) != 1 {
+		t.Fatalf("a capped POST must not settle the card: %d pending", len(h.Pending("s1")))
+	}
+	// settle the card so the background Ask returns (a plain deny is
+	// fine here - the over-cap POST never resolved anything)
+	settle, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
+		strings.NewReader(`{"card_id":"c1","option_index":2}`))
+	settle.Body.Close()
+	if settle.StatusCode != http.StatusOK {
+		t.Fatalf("late settle = %d, want 200", settle.StatusCode)
+	}
+	<-done
+}

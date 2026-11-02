@@ -625,3 +625,121 @@ func TestManualModeStampsNothing(t *testing.T) {
 		t.Fatalf("manual replay: stamp=%q err=%v", line, err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The follow-up surface (card t_63204dfd): a typed answer resolves the
+// question - deny + guidance; empty guidance = the plain deny.
+// ---------------------------------------------------------------------------
+
+// followUpGate wires a smart gate whose reviewer is unreachable (host
+// :1) so every interactive ask escalates to the card, answered by the
+// fake verdicts seam's canned verdict.
+func followUpGate(t *testing.T, answers core.Verdict) (*Gate, *fakeVerdicts) {
+	t.Helper()
+	g := newTestGate(t, ModeSmart)
+	fv := &fakeVerdicts{answers: answers}
+	g.verdicts = func() core.VerdictsProvider { return fv }
+	g.audit = NewAudit(t.TempDir())
+	return g, fv
+}
+
+func TestCardAnsweredWithTypedGuidance(t *testing.T) {
+	g, _ := followUpGate(t, core.Verdict{OptionIndex: 2, Option: "deny", Text: "use cp instead"})
+	// interactive escalation -> the card -> the typed answer
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err == nil {
+		t.Fatal("a follow-up answer never runs the command")
+	}
+	if !strings.Contains(err.Error(), "follow-up guidance: use cp instead") {
+		t.Fatalf("the agent must receive the typed guidance: %v", err)
+	}
+	const want = GateEscAnswered + ": use cp instead"
+	if line != want {
+		t.Fatalf("stamp = %q, want %q", line, want)
+	}
+	// deny-with-directions is situational: never a standing verdict
+	if g.cache.Len() != 0 {
+		t.Fatalf("a follow-up answer must not cache: %d", g.cache.Len())
+	}
+}
+
+func TestCardTypedTextAloneIsTheFollowUp(t *testing.T) {
+	// a text answer with no option pick (the verdict endpoint's text
+	// path on the AllowText card) resolves the same way
+	g, _ := followUpGate(t, core.Verdict{Text: "run it in the sandbox first"})
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err == nil {
+		t.Fatal("a typed answer never runs the command")
+	}
+	if !strings.Contains(err.Error(), "follow-up guidance: run it in the sandbox first") {
+		t.Fatalf("guidance must reach the agent: %v", err)
+	}
+	if line != GateEscAnswered+": run it in the sandbox first" {
+		t.Fatalf("stamp = %q", line)
+	}
+}
+
+func TestTypedGuidanceBeatsAnOptionPick(t *testing.T) {
+	// a rogue client sending approve AND guidance: the text wins, the
+	// command never runs (the follow-up ruling is a safety ruling)
+	g, _ := followUpGate(t, core.Verdict{OptionIndex: 1, Option: "approve", Text: "do not run anything"})
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err == nil || line != GateEscAnswered+": do not run anything" {
+		t.Fatalf("guidance dominates: stamp=%q err=%v", line, err)
+	}
+}
+
+func TestEmptyGuidanceIsThePlainDeny(t *testing.T) {
+	g, fv := followUpGate(t, core.Verdict{OptionIndex: 2, Option: "deny"})
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err == nil {
+		t.Fatal("deny must refuse execution")
+	}
+	if line != GateEscDenied {
+		t.Fatalf("stamp = %q, want %q", line, GateEscDenied)
+	}
+	// the plain deny IS a settlement: cached (repeat costs zero)
+	if g.cache.Len() != 1 {
+		t.Fatalf("plain deny must cache: %d", g.cache.Len())
+	}
+	_ = fv
+}
+
+func TestManualFollowUpStampsNothingButKeepsTheGuidance(t *testing.T) {
+	// manual mode makes no machine decision (t_1b3e2a8b) - even an
+	// answered card; the guidance still reaches the agent
+	g := newTestGate(t, ModeManual)
+	fv := &fakeVerdicts{answers: core.Verdict{OptionIndex: 2, Option: "deny", Text: "archive it instead"}}
+	g.verdicts = func() core.VerdictsProvider { return fv }
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err == nil {
+		t.Fatal("a follow-up answer never runs the command")
+	}
+	if !strings.Contains(err.Error(), "follow-up guidance: archive it instead") {
+		t.Fatalf("guidance must reach the agent: %v", err)
+	}
+	if line != "" {
+		t.Fatalf("manual mode stamps nothing: %q", line)
+	}
+	if g.cache.Len() != 0 {
+		t.Fatalf("a follow-up answer must not cache in manual mode either: %d", g.cache.Len())
+	}
+	_ = fv
+}
+
+func TestFollowUpGuidanceCapped(t *testing.T) {
+	long := strings.Repeat("y", 3000)
+	g, fv := followUpGate(t, core.Verdict{Text: long})
+	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
+	if err == nil {
+		t.Fatal("capped guidance still refuses execution")
+	}
+	if !strings.Contains(line, GateEscAnswered) {
+		t.Fatalf("stamp must carry the answered vocabulary: %q", line)
+	}
+	// the cap: the stamp's guidance tail is the truncated 2000
+	if len(line) > len(GateEscAnswered)+len(": ")+followUpMax+3 {
+		t.Fatalf("stamp guidance over cap: %d", len(line))
+	}
+	_ = fv
+}

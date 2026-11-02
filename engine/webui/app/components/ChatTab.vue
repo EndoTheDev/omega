@@ -34,8 +34,16 @@
             :key="itemKey(item)"
             :item="item"
             :variant="variantOfItem(item)"
+            :gate-card="gateCardForItem(item)"
             :session-id="sessionId"
             :show-thinking="showThinking" />
+          <!-- card t_63204dfd: pending gate questions with no running
+               row to ride render standalone at the tail -->
+          <GateCard
+            v-for="card in sessionGateBinding.standalone"
+            :key="card.id"
+            :card="card"
+            :session-id="sessionId ?? undefined" />
         </div>
       </template>
       <div
@@ -66,6 +74,7 @@
               :item="item"
               :variant="variantOfItem(item)"
               :retryable="retryableOfItem(item)"
+              :gate-card="gateCardForItem(item)"
               :session-id="sessionId"
               :show-thinking="showThinking"
               @select="onSelect"
@@ -80,12 +89,20 @@
             :item="item"
             :variant="variantOfItem(item)"
             :retryable="retryableOfItem(item)"
+            :gate-card="gateCardForItem(item)"
             :session-id="sessionId"
             :show-thinking="showThinking"
             @select="onSelect"
             @fork="onFork"
             @retry="onRetry" />
         </template>
+        <!-- card t_63204dfd: pending gate questions with no running row
+             to ride render standalone at the tail -->
+        <GateCard
+          v-for="card in sessionGateBinding.standalone"
+          :key="card.id"
+          :card="card"
+          :session-id="sessionId ?? undefined" />
       </div>
       <!-- the activity line (card t_e9baac4b): phase-aware narration
            above the composer, mode-independent, hidden when idle. The
@@ -152,6 +169,7 @@
     createElapsedMeter,
     type ElapsedMeter,
     createItemKeySource,
+    bindGateQuestions,
     isAtBottom,
     pillVisible,
     normalizeChatPayload,
@@ -167,8 +185,10 @@
     type VariantBlock,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
+  import { pendingVerdictList, refreshNotifications } from "../components/notifications/store";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
+  import GateCard from "./chat/GateCard.vue";
 
   const props = defineProps<{
     /** the tab this instance renders (its `key` is the state key) */
@@ -361,6 +381,54 @@
       busy.value &&
       liveRun.value.user !== null,
   );
+
+  // --- pending gate questions (card t_63204dfd): the chat surface ---
+  //
+  // The escalated shell.run froze the run; the pending card (the
+  // shared verdict-card listing, already polled for the badge) binds
+  // to the rendered running shell.run row - the three-option card
+  // rides the row it froze. The tool_result lands with the gate's
+  // stamp line, the row stops running, the binding is gone: the card
+  // collapses into the permanent stamp. Cards with no running row to
+  // ride render standalone at the tail.
+  const sessionGateBinding = computed(() =>
+    bindGateQuestions(transcript.value, pendingVerdictList.value, sessionId.value ?? null),
+  );
+  const gateByItem = computed(() => {
+    const m = new Map<TranscriptItem, NonNullable<ReturnType<typeof bindGateQuestions>["assigned"][number]["card"]>>();
+    for (const a of sessionGateBinding.value.assigned) m.set(a.item, a.card);
+    return m;
+  });
+  function gateCardForItem(item: TranscriptItem) {
+    return gateByItem.value.get(item) ?? null;
+  }
+
+  // the freeze cadence: the feed's 15s poll is a badge cadence. While
+  // a pending question rides this session, refresh the shared store
+  // every 5s (and once on a run start - the card exists by the time
+  // the tool row renders only if a poll saw it).
+  let gatePoll: ReturnType<typeof setInterval> | null = null;
+  watch(
+    () => sessionGateBinding.value.assigned.length + sessionGateBinding.value.standalone.length,
+    (n) => {
+      if (n > 0 && gatePoll === null) {
+        gatePoll = setInterval(() => void refreshNotifications(), 5000);
+      } else if (n === 0 && gatePoll !== null) {
+        clearInterval(gatePoll);
+        gatePoll = null;
+      }
+    },
+    { immediate: true },
+  );
+  watch(busy, (live) => {
+    if (live) void refreshNotifications();
+  });
+  onBeforeUnmount(() => {
+    if (gatePoll) {
+      clearInterval(gatePoll);
+      gatePoll = null;
+    }
+  });
 
   // --- the activity line (card t_e9baac4b): the phase is a pure
   // derivation of the rendered items + the session's busy gate (no new

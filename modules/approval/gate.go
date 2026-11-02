@@ -60,7 +60,24 @@ const (
 	GateEscDenied    = "smart gate: escalated -> denied - command skipped"
 	GateEscExpired   = "smart gate: escalated -> expired"
 	GateEscCancelled = "smart gate: escalated -> cancelled"
+	// GateEscAnswered is the follow-up resolution (card t_63204dfd):
+	// the card was answered with typed guidance instead of an option
+	// pick. Deny with directions - the command does NOT run, the agent
+	// receives the text. The stamp carries the guidance after the
+	// vocabulary (truncTo renders the tail).
+	GateEscAnswered = "smart gate: escalated -> answered"
 )
+
+// followUpReasonPrefix marks a follow-up resolution's reason (before
+// the guidance text): the vocabulary the tool error and the audit row
+// carry.
+const followUpReasonPrefix = "follow-up guidance: "
+
+// followUpMax is the guidance size cap (card t_63204dfd): the verdict
+// endpoint caps its message field, and the gate caps whatever arrives
+// by any other surface (the CLI's typed answer).
+const followUpMax = 2000
+const stampGuidanceMax = 240
 
 // stamp renders the transcript-facing decision record (card
 // t_1b3e2a8b). Only smart-mode decisions are machine decisions: a
@@ -152,6 +169,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		answers   Answers
 		reviewErr error
 		fromCard  bool
+		followUp  string // the card's typed guidance when follow-up answered
 	)
 	switch g.mode() {
 	case ModeManual:
@@ -194,12 +212,13 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 			return "", fmt.Errorf("approval escalated, command not executed (%s): %s", outcome.Step, outcome.Reason)
 		}
 		// Q13: the interactive escalation rides the EXISTING verdict
-		// card machinery - a 2-option approve/deny card, title =
-		// command, body = the ladder step + why. Expiry = fail-closed.
-		// The card's RESOLUTION (or fail-closed outcome) stamps this
-		// call's record - the permanent gate line (card t_1b3e2a8b).
+		// card machinery - the card answers with approve, deny, or
+		// typed follow-up guidance (card t_63204dfd). Expiry =
+		// fail-closed. The card's RESOLUTION (or fail-closed outcome)
+		// stamps this call's record - the permanent gate line (card
+		// t_1b3e2a8b).
 		var cardErr error
-		outcome, cardErr = g.humanCard(ctx, sanitized, outcome)
+		outcome, followUp, cardErr = g.humanCard(ctx, sanitized, outcome)
 		if cardErr != nil {
 			g.audit.Append(g.row(rowInput{
 				mode: g.mode(), origin: origin, session: session,
@@ -214,6 +233,14 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 	}
 
 	stamp := g.stamp(outcome, fromCard)
+	if fromCard && followUp != "" && g.mode() == ModeSmart {
+		// the follow-up resolution's stamp carries the guidance (card
+		// t_63204dfd): "escalated -> answered" plus the typed text.
+		// Smart-only: manual mode stamps nothing (the t_1b3e2a8b law -
+		// a manual ask is the human's own verdict), the guidance still
+		// rides the tool error.
+		stamp = GateEscAnswered + ": " + truncTo(followUp, stampGuidanceMax)
+	}
 	g.audit.Append(g.row(rowInput{
 		mode: g.mode(), origin: origin, session: session,
 		command: sanitized, rules: risk.Reasons, answers: answers,
@@ -222,11 +249,15 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		executed: outcome.Verdict == VerdictApprove,
 		latency:  time.Since(start),
 	}))
-	if outcome.Verdict == VerdictApprove || outcome.Verdict == VerdictDeny {
+	if (outcome.Verdict == VerdictApprove || outcome.Verdict == VerdictDeny) &&
+		outcome.Step != "human_card_followup" {
 		// Only settlements cache: approve/deny are the stable answers;
 		// an escalation (model or human refusal) is situational and
-		// never replays in place of a fresh decision. The stamp rides
-		// the record: the replay carries the decision's own line.
+		// never replays in place of a fresh decision. A follow-up
+		// answer is deny-with-directions (card t_63204dfd) - equally
+		// situational, never a standing verdict for the command. The
+		// stamp rides the record: the replay carries the decision's
+		// own line.
 		g.cache.Store(key, record{outcome: outcome, answers: answers, modelUsed: g.cfg.Model, stamp: stamp})
 	}
 	return stamp, outcomeError(outcome)
@@ -247,15 +278,19 @@ func outcomeError(o Outcome) error {
 	}
 }
 
-// humanCard rides the verdicts seam (Q13 - no new webui UI): a
-// 2-option approve/deny card, title = command, body = ladder step +
-// why. Approve and deny are decisions; expiry, skip and a dead
+// humanCard rides the verdicts seam (Q13 - no new webui UI): the
+// card's title = command, body = the ladder step + why, options
+// approve/deny (+ typed guidance, card t_63204dfd). Approve and deny
+// are decisions; a typed follow-up answer denies the command and hands
+// the agent the text as its resolution guidance (the tool error
+// carries "follow-up guidance: <text>"); expiry, skip and a dead
 // verdicts seam are fail-closed non-decisions (executed = false,
-// never cached).
-func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcome, error) {
+// never cached). The second return is the follow-up guidance (empty
+// on every other resolution) for the "answered" stamp.
+func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcome, string, error) {
 	hub := g.verdicts()
 	if hub == nil {
-		return Outcome{VerdictEscalate, "card_failure", "no verdicts seam mounted"}, fmt.Errorf("no verdicts seam mounted")
+		return Outcome{VerdictEscalate, "card_failure", "no verdicts seam mounted"}, "", fmt.Errorf("no verdicts seam mounted")
 	}
 	title := command
 	if len(title) > 120 {
@@ -269,25 +304,34 @@ func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcom
 			{Label: "approve", Description: "run the command"},
 			{Label: "deny", Description: "refuse; the agent is told the command did not run"},
 		},
-		TimeoutS: 0, // the hub's 20-minute default (Q13)
+		AllowText: true, // the follow-up surface (card t_63204dfd)
+		TimeoutS:  0,    // the hub's 20-minute default (Q13)
 	}
 	verdict, err := hub.Ask(ctx, card)
 	if err != nil {
 		// run stopped / the seam closed - fail-closed
-		return Outcome{VerdictEscalate, "card_failure", err.Error()}, err
+		return Outcome{VerdictEscalate, "card_failure", err.Error()}, "", err
 	}
 	switch verdict.Kind() {
 	case "expired":
-		return Outcome{VerdictEscalate, "card_expired", "the approval card expired - fail-closed, nothing ran"},
+		return Outcome{VerdictEscalate, "card_expired", "the approval card expired - fail-closed, nothing ran"}, "",
 			fmt.Errorf("card expired")
 	case "skip":
-		return Outcome{VerdictEscalate, "card_skipped", "the approval card was skipped - treated as non-execution"},
+		return Outcome{VerdictEscalate, "card_skipped", "the approval card was skipped - treated as non-execution"}, "",
 			fmt.Errorf("card skipped")
 	default:
-		if verdict.OptionIndex == 1 && verdict.Option == "approve" {
-			return Outcome{VerdictApprove, "human_card", "the user approved"}, nil
+		// The card's third way (card t_63204dfd): ANSWERED - typed
+		// guidance wins over any option pick, the command never runs.
+		if msg := strings.TrimSpace(verdict.Text); msg != "" {
+			if len(msg) > followUpMax {
+				msg = truncTo(msg, followUpMax)
+			}
+			return Outcome{VerdictDeny, "human_card_followup", followUpReasonPrefix + msg}, msg, nil
 		}
-		return Outcome{VerdictDeny, "human_card", "the user refused"}, nil
+		if verdict.OptionIndex == 1 && verdict.Option == "approve" {
+			return Outcome{VerdictApprove, "human_card", "the user approved"}, "", nil
+		}
+		return Outcome{VerdictDeny, "human_card", "the user refused"}, "", nil
 	}
 }
 
