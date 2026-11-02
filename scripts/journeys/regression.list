@@ -1,0 +1,27 @@
+# regression.list - the named regression set (incidents-as-eval, card
+# t_8abdbb15). Every recipe here once burned a lane and must never
+# fail again. Format: one recipe per line, recipe FILE name first,
+# then the red it pins (text only; the parser strips '#' comments).
+#
+# run.sh --regression executes exactly this set (gate-time minimum,
+# lane SHA); the full suite - the nightly and every train pass - runs
+# it as part of everything. A name here that no longer matches a
+# recipe file is an ERROR, not a silent skip: a regression entry that
+# rots quietly is the same as deleting the proof.
+#
+# The set also carries pin tests that are NOT journey recipes (a
+# journey cannot see compile-time shape) - they run in go test ./...
+# and in the train gate list, documented here so the set is complete:
+#   - TestToggleConcurrentSharedFoldLock (cmd/omega/modules_test.go):
+#     the shared-fold toggle race - lost updates under concurrent
+#     toggles through the shared mutex (v0.14.0 release-gate must-fix).
+#   - cmd/omega/purity_wires_test.go: the nm-purity wire-shape pins -
+#     the verdict answer exchange stays in modules/verdict (no inline
+#     ParseCardAnswer in cmd/, loop.go keeps the named-return wire) and
+#     the wizard provider hook keeps its named return (bea6abc rotations).
+#   - scripts/fence-test.sh: the worker fence eval - a worker session's
+#     push/landing must refuse or be mechanically blocked; the eval
+#     fails if the operation succeeds. Runs in the train gate list.
+60-settings-themes t_31aa2542 - the Settings chip/knob poll contract: the cold-runner wait_js race (theme picker "got [0] want [1]") - poll, never a zero-wait query
+61-session-title-fallback  t_8abdbb15 - session titles never lean on a model: the label renders with zero title runs; the unlabeled tab keeps the stable generic fallback (the nightly's no-provider reds, f82f4ee)
+75-divider-resize  t_38c0e960 - dock-stuck divider shapes: the v0.9.0 drag rework crossed the cumulative/per-event delta contract - the divider looked dead (~10px per full drag)

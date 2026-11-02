@@ -349,6 +349,15 @@ gates_pass() {
       go vet $pkglist
       echo "==> dep law"
       ./scripts/gate-deps.sh
+      # worker fence eval (card t_8abdbb15): the regression set's
+      # landing eval. A worker session's push/landing must refuse or be
+      # mechanically blocked - the eval FAILS if the operation
+      # succeeds. Cheap (throwaway fixture repos, no network): it rides
+      # every train pass, like the journeys do.
+      if [ -f scripts/fence-test.sh ] && [ -f bin/shims/git ]; then
+        echo "==> worker fence eval"
+        bash scripts/fence-test.sh || exit 1
+      fi
       echo "==> go test"
       go test $pkglist
       # -race on the package(s) the landing actually touches.

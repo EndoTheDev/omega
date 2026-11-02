@@ -14,7 +14,9 @@ gate + soak automation.
    but NEVER lands on dev and NEVER pushes the card branch. When done:
    `hermes kanban request-review`.
 2. **Reviewer** reviews at close with a fresh cold diff, never a stale
-   pre-review from card creation time:
+   pre-review from card creation time. The gate's operating law - the
+   3-round cap, the tag shape (Important / Nit / Pre-existing), the
+   no-repeat rule - lives in `docs/release-gate.md`:
 
    ```
    scripts/review-at-close.sh <task_id>
@@ -231,6 +233,7 @@ stable channel from ever seeing a nightly.
 
 | Piece                | Job                                                     |
 | -------------------- | ------------------------------------------------------- |
+| `docs/release-gate.md` | the gate's operating law: round cap, noise tags, lens brief, regression set |
 | `scripts/embed-lane.sh` | the ONE owner of committed `engine/http_channel/static/` |
 | `scripts/train-pass.sh` | one mechanical landing per pass + marker refs + strikes |
 | `scripts/train-bisect.sh` | the marker-chain walk: --list, or bisect by check   |

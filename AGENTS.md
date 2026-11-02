@@ -184,6 +184,30 @@ Terse operational rules. Layer references live in `docs/` (map below);
   to a non-empty final assistant message. Stale `cronstate.json`
   entries are ignored.
 
+## Gate law
+
+The review gate's operating law (Anthropic agent-volume review steal-list,
+card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
+
+- **Gate rounds are capped at 3.** After 3 gate rounds on one card, a
+  4th round is FORBIDDEN: stop, and card the approach reconsideration
+  for Endo (author-agent vs reviewer-agent can ping-pong forever
+  otherwise). From round 3 on, a re-review covers the NEW DIFF only -
+  the changed lines against the last round's diff, never a fresh full
+  pass.
+- **Every finding is tagged at post:** `Important` (blocks the merge),
+  `Nit` (never blocks a merge), `Pre-existing` (present at the
+  merge-base - the change did not introduce it; never the card
+  author's blame, never a blocker).
+- **A finding posted in one round is never repeated in a later round.**
+  Re-stating is noise; the original comment stands until resolved.
+- **Incidents become evals.** Every red that burned a lane once
+  enters the named regression set (`scripts/journeys/regression.list`)
+  and runs forever - `scripts/journeys/run.sh --regression` at gate
+  time, the full suite on the nightly. A recipe (where the browser is
+  the only honest witness) or a pin test (where the shape is
+  compile-time). A deliberately-broken shape must stay red.
+
 ## Wide-angle map
 
 | Area | What it is | Docs |
@@ -236,6 +260,7 @@ go vet ./...      # no suspicious constructs
 - `docs/troubleshooting.md` - known failure modes
 - `docs/project-trust.md` - trust gate
 - `docs/pipeline.md` - the landing pipeline (merge train)
+- `docs/release-gate.md` - the review gate law: rounds, tags, the lens brief, the regression set
 - `docs/removing-a-module.md` - the module removal recipe (capsule law)
 - `docs/migrating-a-module.md` - the module migration recipe (universal mount)
 - `modules/README.md` - extension authoring guide
