@@ -4,9 +4,14 @@
       :sidebar-open="isMobile ? drawerOpen : sidebarDocked"
       :bottom-open="isMobile ? bottomDrawerOpen : bottomDocked"
       :inspector-open="isMobile ? inspectorOpen : inspectorDocked"
+      :can-back="canBack"
+      :can-forward="canForward"
+      @back="nav.back()"
+      @forward="nav.forward()"
       @toggle-sidebar="toggleSidebar"
       @toggle-bottom="toggleBottomPanel"
       @toggle-inspector="toggleInspector"
+      @open-palette="openPalette"
       @open-notification="openNotification" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
@@ -387,6 +392,13 @@
         :open="bottomDrawerOpen" />
     </MobileDrawer>
 
+    <!-- card t_6215474b: the command palette (Ctrl+K / cluster button) -
+         fixed top-center above every chrome; it never touches the agent -->
+    <CommandPalette
+      :open="paletteOpen"
+      :commands="paletteCommands"
+      @close="paletteOpen = false" />
+
     <!-- destructive confirm: delete walks the store cascade server-side,
          so there is no undo - the dialog names the session -->
     <div
@@ -484,11 +496,17 @@
     createDock,
     findPane,
     findEdgePane,
+    findComponentTab,
     isPinnedPane,
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
+    DOCK_LAYOUT_KEY,
+    DOCK_LAYOUT_BAK_KEY,
     nextTabKey,
+    type DockApi,
+    type DockNode,
+    type DockTab,
   } from "./composables/dock";
   // card t_d7fd3ad3 item 6: the bottom panel's width mode - the applier
   // reads the shared ref; settings writes it
@@ -500,7 +518,9 @@
   import {
     INSPECTOR_TAB_COMPONENTS,
     COMPONENT_TITLES,
+    DOCKABLES,
     defaultHostTabs,
+    isClosableTab,
     type DockComponentName,
   } from "./composables/dockables";
   // card t_e76ce7b6: the mobile drawer's pure tab derivation (decoupled
@@ -539,6 +559,19 @@
   // hardcoded list (Q5a).
   import { createCanvasStore, emitLocalToast } from "./composables/canvas";
   import ChatTab from "./components/ChatTab.vue";
+  // card t_6215474b: the command palette overlay (Ctrl+K) + the nav
+  // history composable + its command registry
+  import CommandPalette from "./components/nav/CommandPalette.vue";
+  import {
+    createNavHistory,
+    locateEntry,
+    navTabId,
+    type NavEntry,
+  } from "./composables/navHistory";
+  import {
+    buildPaletteCommands,
+    type PaletteCommand,
+  } from "./composables/commandRegistry";
   import SettingsTab from "./components/settings/SettingsTab.vue";
   // card t_5d9032d3: notification open intents route here from the bell;
   // card t_556ee727: the board select seams (the task row's board pick)
@@ -644,7 +677,81 @@
   // source of layout truth. Loading seeds from omega.dock-layout or
   // migrates the pre-dock pane keys once; every mutation persists the
   // whole tree. The components resolve it via injection. ---
-  const dock = createDock(window.localStorage);
+  // card t_6215474b: the RAW store is wrapped below - every ACTIVATION
+  // op (focus / openTab / openSingleton / setComponent / openViewer)
+  // records the (paneId, tabId) pair into the back/forward history, one
+  // record path for tab clicks, opener flows, the palette and the
+  // keyboard.
+  const rawDock = createDock(window.localStorage);
+
+  // --- back/forward history (card t_6215474b, Endo's ruling 2026-11-02):
+  // entries are (paneId, tabId) pairs pushed on tab activation AND pane
+  // focus; consecutive duplicates suppress. The activator is the one
+  // path back/forward take: it resolves the entry against the live tree
+  // (a dead pane/tab returns false and the walk continues past it) and
+  // reuses the raw store's focus - a chat entry moves the chat focus too,
+  // like the same click would. ---
+  const nav = createNavHistory((e) => {
+    const i = locateEntry(rawDock.tree.value, e);
+    if (i === null) return false;
+    const tab = findPane(rawDock.tree.value, e.paneId)?.tabs[i];
+    rawDock.focus(e.paneId, i);
+    if (tab && tab.component === "chat" && tab.key) focusedKey.value = tab.key;
+    return true;
+  });
+
+  // THE one record path: the pane's NOW-active tab (a navTabId identity,
+  // not an index - indices move on close/reorder, identities survive
+  // both). A closed pane or an empty pane records nothing.
+  function recordNav(paneId: string) {
+    const pane = findPane(rawDock.tree.value, paneId);
+    const tab = pane?.tabs[pane.active];
+    if (pane && tab) nav.push({ paneId, tabId: navTabId(tab) });
+  }
+
+  // locate a tab by predicate - the viewer opener's record rides the
+  // tab's payload identity (navTabId of the viewer ref)
+  function findNavEntryBy(tree: DockNode, pred: (t: DockTab) => boolean): NavEntry | null {
+    if (tree.kind === "pane") {
+      const i = tree.tabs.findIndex(pred);
+      return i >= 0 ? { paneId: tree.id, tabId: navTabId(tree.tabs[i]!) } : null;
+    }
+    for (const c of tree.children) {
+      const f = findNavEntryBy(c, pred);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  const dock: DockApi = {
+    ...rawDock,
+    focus: (paneId, index) => {
+      rawDock.focus(paneId, index);
+      recordNav(paneId);
+    },
+    openTab: (paneId, tab) => {
+      rawDock.openTab(paneId, tab);
+      recordNav(paneId);
+    },
+    openSingleton: (paneId, component) => {
+      const r = rawDock.openSingleton(paneId, component);
+      recordNav(paneId);
+      return r;
+    },
+    setComponent: (paneId, component) => {
+      rawDock.setComponent(paneId, component);
+      recordNav(paneId);
+    },
+    openViewer: (v) => {
+      rawDock.openViewer(v);
+      const landed = findNavEntryBy(
+        rawDock.tree.value,
+        (t) => t.component === "viewer" && !!t.viewer &&
+          t.viewer.kind === v.kind && t.viewer.name === v.name,
+      );
+      if (landed) nav.push(landed);
+    },
+  };
   provide(DOCK_API_KEY, dock);
   // card t_d54c718a (v0.14.4 ruling 6): a repaired layout surfaces ONCE
   // at boot - one toast for the whole receipt, never one per repair,
@@ -1156,6 +1263,10 @@
       null;
     const paneId = el?.getAttribute("data-pane-id") ?? null;
     if (paneId) lastPaneId.value = paneId;
+    // card t_6215474b: a pane focus records too (ruling 2) - the click
+    // seam is where every pane gesture (tab bars, DnD landings, menus,
+    // composers) already reports; the dedupe swallows the no-ops
+    if (paneId) recordNav(paneId);
     refocusFrom(paneId);
   }
 
@@ -1507,6 +1618,123 @@
     applyShellToggle("inspector");
   }
 
+  // --- card t_6215474b: the command palette (Ctrl+K, the cluster button,
+  // one overlay) - a plain command array over the shell's own flows; the
+  // registry never owns app state (PaletteCommandDeps is the one seam).
+  const paletteOpen = ref(false);
+  function openPalette() {
+    paletteOpen.value = true;
+  }
+
+  // open (or focus) any dockable from the palette - the singleton opener
+  // focuses a live instance wherever it sits; a hidden edge is revealed
+  // first (the same route openNotification takes), a main dockable mints
+  // into the active/ensured main pane.
+  function paletteOpenDockable(id: DockComponentName) {
+    const area = DOCKABLES.find((d) => d.id === id)?.area ?? "main";
+    if (area === "left" && !findEdgePane(dock.tree.value, "sidebar")) {
+      dock.toggleEdge("sidebar", "after");
+    } else if (area === "right" && !findEdgePane(dock.tree.value, "inspector")) {
+      dock.toggleEdge("inspector", "after");
+    } else if (area === "bottom" && !findEdgePane(dock.tree.value, "bottom")) {
+      dock.toggleBottom();
+    }
+    const tree = dock.tree.value;
+    const found = findComponentTab(tree, id);
+    if (found) {
+      dock.focus(found.paneId, found.index);
+      return;
+    }
+    const paneId = area === "main"
+      ? dock.ensureMainPane()
+      : (findEdgePane(tree, area)?.id ?? dock.ensureMainPane());
+    dock.openSingleton(paneId, id);
+  }
+
+  // "Switch to recent session" - the newest non-archived row, or the
+  // sessions pane when the store is empty.
+  function openRecentSessionTab() {
+    const rec = sessions.value
+      .filter((s) => !s.archived)
+      .sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0))[0];
+    if (rec) openChatTab(rec.id);
+    else openSessionsPane();
+  }
+
+  function openSessionsPane() {
+    const pane = findEdgePane(dock.tree.value, "sidebar");
+    if (!pane) {
+      dock.toggleEdge("sidebar", "after");
+      return;
+    }
+    const i = pane.tabs.findIndex((t) => t.component === "sidebar");
+    dock.focus(pane.id, i >= 0 ? i : pane.active);
+  }
+
+  // "Close current tab" - the last-focused pane's active tab, when it is
+  // closable; a locked/pinned tab refuses (the X policy reads isClosableTab).
+  function paletteCloseCurrent() {
+    const paneId = lastPaneId.value ??
+      dock.activeChatTab()?.paneId ??
+      dock.ensureMainPane();
+    const pane = findPane(dock.tree.value, paneId);
+    if (!pane) return;
+    const tab = pane.tabs[pane.active];
+    if (!tab || !isClosableTab(tab.component)) return;
+    dock.closeTab(pane.id, pane.active);
+  }
+
+  function clearSavedLayout() {
+    // the primary record + the repair backup (v0.14.4 law) both die - the
+    // reload boots the default shape and re-asserts the pinned edges
+    localStorage.removeItem(DOCK_LAYOUT_KEY);
+    localStorage.removeItem(DOCK_LAYOUT_BAK_KEY);
+    window.location.reload();
+  }
+
+  const paletteCommands = computed<readonly PaletteCommand[]>(() =>
+    buildPaletteCommands({
+      openDockable: paletteOpenDockable,
+      openChat: () => openChatTab(null),
+      closeCurrentTab: paletteCloseCurrent,
+      toggleBottomPanel,
+      toggleSidebar: (side) => {
+        if (side === "left") toggleSidebar();
+        else toggleInspector();
+      },
+      openSessionsSidebar: openSessionsPane,
+      openRecentSession: openRecentSessionTab,
+      reloadLayout: () => window.location.reload(),
+      clearSavedLayout,
+    }),
+  );
+
+  // the cluster + keys share the nav's back/forward (one path); the
+  // template reads the exposed computeds (top-level refs unwrap there)
+  const canBack = nav.canBack;
+  const canForward = nav.canForward;
+
+  // Alt+Left / Alt+Right walk the history; Ctrl+K opens the palette
+  // (ruling 1). Same paths the buttons emit - nothing here re-implements.
+  function onNavKeys(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "k" && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      if (deleteId.value) return; // the confirm dialog owns the window then
+      if (paletteOpen.value) paletteOpen.value = false;
+      else openPalette();
+      return;
+    }
+    if (e.altKey && e.key === "ArrowLeft" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault(); // the browser's own back never fires instead
+      nav.back();
+      return;
+    }
+    if (e.altKey && e.key === "ArrowRight" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      nav.forward();
+    }
+  }
+
   // togglePin flips the pinned flag on a session row: optimistically, so
   // the section move is instant, then PATCHes it onto the server row - a
   // failed PATCH reverts the local state and the refresh stays honest.
@@ -1750,6 +1978,8 @@
     // type-to-capture: window-level keydown (any printable key jumps
     // into the focused chat's composer when no text field holds focus)
     window.addEventListener("keydown", onKeyCapture);
+    // card t_6215474b: Ctrl+K palette + Alt+Left/Right history walk
+    window.addEventListener("keydown", onNavKeys);
     // the give-way belt: the resize event alone misses layout changes that
     // never touch window.width (emulated viewports, a toggle-reopen into a
     // still-narrow window) - the pane-area observer feeds the same squeeze
@@ -1905,6 +2135,7 @@
   onUnmounted(() => {
     document.removeEventListener("click", onDocClick);
     window.removeEventListener("keydown", onKeyCapture);
+    window.removeEventListener("keydown", onNavKeys);
     window.removeEventListener("resize", onWinResize);
     areaObserver?.disconnect();
     window.removeEventListener("popstate", onPop);
