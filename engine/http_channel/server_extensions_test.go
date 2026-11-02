@@ -136,8 +136,8 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 		if !found {
 			t.Errorf("skills: tool_names %v does not name the skills provider tool", row.ToolNames)
 		}
-		if len(row.CommandNames) != 1 || row.CommandNames[0] != "/skills" {
-			t.Errorf("skills: command_names %v, want [\"/skills\"]", row.CommandNames)
+		if len(row.CommandNames) != 2 || row.CommandNames[0] != "/skills" || row.CommandNames[1] != "/curator" {
+			t.Errorf("skills: command_names %v, want [\"/skills\", \"/curator\"]", row.CommandNames)
 		}
 	}
 }

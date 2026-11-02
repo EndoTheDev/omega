@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/modules/provider"
 	"github.com/EndoTheDev/omega/modules/skills"
 )
 
@@ -48,6 +50,10 @@ func cmdCurator(rest []string) error {
 	}
 	sp := skills.NewSkillsProvider(dir)
 	sp.CuratorModel = cfg.Skills.CuratorModel
+	// The CLI pass consults through the configured provider (the
+	// session provider's model when skills.curator_model is empty).
+	prov := provider.NewProvider(cfg.Provider.Type, cfg.Provider.ModelName, cfg.Provider.Host, cfg.Provider.APIKey)
+	sp.SetProviderFn(func() core.Provider { return prov })
 	out, runErr := sp.HandleCommand(context.Background(), "/curator", strings.TrimSpace(verb+" "+strings.Join(args, " ")))
 	if out != "" {
 		fmt.Println(out)

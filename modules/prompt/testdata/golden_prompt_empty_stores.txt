@@ -24,8 +24,9 @@ Project rules live here.
 ### skills
 - skills: Skills (one SKILL.md folder per skill) the agent loads on demand: read a skill's full content, create a new skill, or patch an existing one. The prompt's Available Skills list is the name + description inventory.
   .read: Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live.
-  .write: Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description) over the body. The frontmatter shape must parse exactly the way the loader parses it.
+  .write: Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description, author: agent) over the body. The frontmatter shape must parse exactly the way the loader parses it.
   .update: Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md.
+  .curate: Run one learning-loop curator pass: the deterministic staleness pass (stale at 14d, archive at 30d) plus LLM-proposed merges/distills applied with backup and audit ledger. Returns the report and ledger ids.
 
 ### tools
 - files: Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.

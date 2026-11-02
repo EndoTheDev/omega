@@ -33,10 +33,10 @@ func (p *Plugin) ConfigKey() string { return "skills" }
 
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudge"} }
 
-// Requires names logging (the legacy-shape boot warning reads it)
-// and the provider seam: the curator pins ctx.Provider at mount
-// (requires-before-capture, the compactor's law, card t_9972dfd0).
-func (p *Plugin) Requires() []string { return []string{"logging", "provider"} }
+// Requires names the logging seam: Mount runs WarnLegacyShape, which
+// reads ctx.Logger to mirror the legacy-format boot warning into the
+// log file. Logging must mount first or the edge is meaningless.
+func (p *Plugin) Requires() []string { return []string{"logging"} }
 
 // MountWithAPI implements agent.APIPlugin. Populates the skills seam,
 // the skills domain tool (read/write/update), the prompt section, and
@@ -55,7 +55,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	sp := NewSkillsProvider(dir)
 	sp.SharedDir = cfg.SharedDir
 	sp.SetDisabled(cfg.Disabled)
-	sp.SetProvider(ctx.Provider)
+	// The curator reads the provider seam LIVE at consult time - the
+	// api accessor, not a mount-time pin (toggles swap the seam).
+	sp.SetProviderFn(func() core.Provider { return api.Provider() })
 	sp.CuratorModel = cfg.CuratorModel
 	// Legacy-format visibility (card t_5baad951): a folder holding
 	// <name>.md without SKILL.md is invisible to discovery - one boot

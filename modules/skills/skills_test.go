@@ -11,6 +11,7 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/engine/ai"
 )
 
 // Compile-time interface checks.
@@ -151,7 +152,7 @@ func TestPluginMountWarnsLegacyShape(t *testing.T) {
 			"skills": Config{Dir: dir},
 		},
 	}
-	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if len(log.msgs) != 1 {
@@ -240,7 +241,7 @@ func TestPluginMount(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
 	ctx := &core.Context{CWD: dir}
-	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if ctx.Skills == nil {
@@ -249,8 +250,8 @@ func TestPluginMount(t *testing.T) {
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
 	}
-	if len(ctx.Commands) != 1 {
-		t.Fatalf("expected 1 command, got %d", len(ctx.Commands))
+	if len(ctx.Commands) != 2 {
+		t.Fatalf("expected 2 commands (skills + curator), got %d", len(ctx.Commands))
 	}
 	if ctx.CommandHandler == nil {
 		t.Fatal("CommandHandler not set")
@@ -264,7 +265,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 	// panic with a nil Config.
 	p := NewPlugin()
 	ctx := &core.Context{}
-	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount with nil config: %v", err)
 	}
 }
@@ -474,7 +475,7 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 			"skills": Config{Dir: dir},
 		},
 	}
-	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, p}, ctx, nil, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount with config: %v", err)
 	}
 	if ctx.Skills == nil {
@@ -589,7 +590,7 @@ func TestToolsWriteCreatesSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(raw)
-	if !strings.HasPrefix(content, "---\ndescription: A fresh skill\n---\n") {
+	if !strings.HasPrefix(content, "---\ndescription: A fresh skill\nauthor: agent\n---\n") {
 		t.Fatalf("SKILL.md frontmatter = %q", content)
 	}
 	// the loader sees it: available in the listing with the description
@@ -773,6 +774,22 @@ func (s stubProvides) Requires() []string { return nil }
 func (s stubProvides) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	_ = s.plugin
 	return nil
+}
+
+// stubProviderPlugin mounts the provider seam with a fake provider.
+// The skills plugin Requires("provider") (the curator pins the seam
+// at mount), so every plugin-mount test carries this stub.
+type stubProviderPlugin struct{ prov core.Provider }
+
+func (stubProviderPlugin) Name() string       { return "stub-provider" }
+func (stubProviderPlugin) Provides() []string { return []string{"provider"} }
+func (stubProviderPlugin) Requires() []string { return nil }
+
+func (s stubProviderPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	if s.prov == nil {
+		s.prov = ai.NewFakeProvider("test-model")
+	}
+	return api.RegisterProvider(s.prov)
 }
 
 // Mount satisfies the interface until phase F retires it; the stub

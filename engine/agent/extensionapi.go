@@ -842,6 +842,12 @@ func (api *ExtensionAPI) RegisterProvider(p core.Provider) error {
 		func(c *core.Context) { c.Provider = prev })
 }
 
+// Provider reads the provider seam live - the lazy read seam a
+// module's later call uses when it must see the CURRENT provider
+// (module-toggles and re-mounts swap it) instead of a mount-time
+// pin (t_9972dfd0, the skills curator).
+func (api *ExtensionAPI) Provider() core.Provider { return api.ctx.Provider }
+
 // RegisterCompactor maps the compactor seam.
 func (api *ExtensionAPI) RegisterCompactor(cp core.CompactionProvider) error {
 	if cp == nil {

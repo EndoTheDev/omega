@@ -41,7 +41,7 @@ const (
 
 // UsageRecord is one skill's activity record.
 type UsageRecord struct {
-	CreatedAt  string `json:"created_at,omitempty"`  // anchored at creation/first sight
+	CreatedAt  string `json:"created_at,omitempty"`   // anchored at creation/first sight
 	LastUsed   string `json:"last_used_at,omitempty"` // freshest read/write/update
 	UseCount   int    `json:"use_count,omitempty"`
 	PatchCount int    `json:"patch_count,omitempty"`

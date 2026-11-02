@@ -43,6 +43,8 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"http_timeout":                true,
 		"max_turns":                   true,
 		"skills.dir":                  true,
+		"skills.nudge_interval":       true,
+		"skills.curator_model":        true,
 		"memory.enabled":              true,
 		"memory.user_profile_enabled": true,
 		"memory.char_limit":           true,
@@ -104,6 +106,13 @@ func TestModelKnobsTyped(t *testing.T) {
 				}
 				if k.Filter != "decision" {
 					t.Errorf("%s filter = %q, want decision (the decision-family dropdown)", k.Key, k.Filter)
+				}
+			case "skills.curator_model":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "" {
+					t.Errorf("%s filter = %q, want empty (the full model list)", k.Key, k.Filter)
 				}
 			default:
 				if k.Type == "model" {
