@@ -8,8 +8,12 @@ package core
 type Skill struct {
 	Name        string
 	Description string
-	Content     string
-	Dir         string
+	// Author is the provenance class stamped in frontmatter: "agent"
+	// when skills.write created the skill (the curator's
+	// agent-created class), empty for hand-written skills.
+	Author  string
+	Content string
+	Dir     string
 }
 
 // ToolStat is one row in the tool breakdown.

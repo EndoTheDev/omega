@@ -124,6 +124,7 @@ type Agent struct {
 	promptAppend   []string
 	promptContext  string
 	promptBuilder  PromptBuilder
+	nudge          TurnNudger // learning-loop reminder seam (t_9972dfd0; nil = off)
 	extensionInfos []ExtensionInfo
 	captioner      Captioner
 	userInput      chan string
@@ -345,6 +346,12 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb
 }
 
+// SetTurnNudger installs the learning-loop reminder seam (t_9972dfd0).
+// Nil = no nudging, the loop runs unchanged.
+func (a *Agent) SetTurnNudger(n TurnNudger) {
+	a.nudge = n
+}
+
 // ExtensionInfos returns the metadata about loaded extensions (name,
 // description, seams, tool/command counts). The http_channel inspector
 // surfaces it on GET /extensions - the webui parity surface.
@@ -458,6 +465,9 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	// The smart-approval seam (card t_c2b52cb5): nil rides as nil -
 	// a host with no gate (mode off, no module) runs the loop ungated.
 	ag.SetApprovals(ctx.Approvals)
+	if ctx.Nudge != nil {
+		ag.SetTurnNudger(ctx.Nudge)
+	}
 	if ctx.InjectedMessages != nil {
 		ag.SetInjectedMessages(ctx.InjectedMessages)
 	}
@@ -609,6 +619,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			UserInput:          a.userInput,
 			PendingDelegations: a.pendingDeleg,
 			Approvals:          approvals,
+			Nudge:              a.nudge,
 			Logger:             a.logger,
 		})
 	}()

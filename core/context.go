@@ -86,6 +86,12 @@ type Context struct {
 	// exactly as before the card, and the loop pays nothing.
 	Approvals ApprovalProvider
 
+	// Nudge is the learning-loop reminder seam (t_9972dfd0): the
+	// skills module counts tool iterations between skill writes; the
+	// loop injects the seam's one-line reminder into the next turn
+	// prep. Nil when the module is absent - nudging is off.
+	Nudge TurnNudger
+
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAllAPI.
 	Channels []Channel

@@ -44,6 +44,7 @@ type LoopOptions struct {
 	// consults it before every tool run and turns a non-nil error
 	// into the tool result (the command never executes).
 	Approvals ApprovalProvider
+	Nudge     TurnNudger       // learning-loop reminder seam (t_9972dfd0; nil = off)
 	Logger    LoggerProvider // optional logger; nil = no logging
 }
 
@@ -72,6 +73,24 @@ type DefaultToolProvider struct {
 
 // Tools returns the tool map.
 func (d DefaultToolProvider) Tools() map[string]Tool { return d.ToolsMap }
+
+// TurnNudger is the learning-loop seam (t_9972dfd0): the loop reports
+// every executed tool call, the implementer counts tool iterations
+// between persisted lessons (skills writes) and hands back the
+// one-line reminder that rides the next turn prep. Nil seam = no
+// nudging; the loop pays nothing.
+type TurnNudger interface {
+	// ObserveToolRun notes one executed tool call. Called from the
+	// execution goroutine, so the implementation must be safe for
+	// concurrent calls. runErr is the tool's own result error - a
+	// failed call still executed.
+	ObserveToolRun(name string, args map[string]any, runErr error)
+	// NudgeLine returns the reminder line due for the next turn prep
+	// ("" = none). Called once per turn after the tool batch lands in
+	// the history; a due nudge consumes itself (the counter resets)
+	// so the next one fires a full interval later.
+	NudgeLine() string
+}
 
 // StoreProvider is the session persistence seam. The default
 // implementation is SQLite (store.Store in modules/store/), provided via the store

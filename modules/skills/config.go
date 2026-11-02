@@ -13,9 +13,22 @@ type Config struct {
 	// in from the disabled: fold at config routing. A disabled skill
 	// stays loaded (the tab lists it) and just leaves the prompt.
 	Disabled []string `yaml:"-"`
+	// NudgeInterval is the learning-loop reminder cadence (card
+	// t_9972dfd0): after this many executed tool calls without a
+	// persisted lesson (skills write/update), the next turn prep
+	// carries one reminder line. 0 = nudging off.
+	NudgeInterval int `yaml:"nudge_interval"`
+	// CuratorModel is the model the weekly curator pass consults for
+	// its merge/distill proposals. Empty = the session provider's own
+	// model (Endo's ruling: default A, configurable in settings).
+	CuratorModel string `yaml:"curator_model"`
 }
+
+// DefaultNudgeInterval is the learning-loop cadence (card t_9972dfd0):
+// the nudge fires after 15 tool iterations without a persisted lesson.
+const DefaultNudgeInterval = 15
 
 // Default returns the default skills configuration.
 func Default() Config {
-	return Config{Dir: "skills"}
+	return Config{Dir: "skills", NudgeInterval: DefaultNudgeInterval}
 }

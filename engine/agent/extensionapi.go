@@ -20,7 +20,9 @@
 //	 PromptBuilder                 RegisterPromptBuilder
 //	 Trust                         RegisterTrust
 //	 Cron                          RegisterCron
-//	 Notifications                 RegisterNotifications
+//	RegisterApprovals              RegisterApprovals
+//	RegisterTurnNudger             RegisterTurnNudger (t_9972dfd0)
+//	RegisterNotifications          RegisterNotifications
 //	 Verdicts                      RegisterVerdicts
 //	 Captioner                     host-built after the mount today
 //
@@ -871,6 +873,19 @@ func (api *ExtensionAPI) RegisterSkills(s core.SkillsProvider) error {
 	return api.mountSeam("skills",
 		func(c *core.Context) { c.Skills = s },
 		func(c *core.Context) { c.Skills = prev })
+}
+
+// RegisterTurnNudger maps the learning-loop reminder seam (t_9972dfd0):
+// the loop injects the nudger's one line into the next turn prep when
+// the tool-iteration interval elapses without a skill write.
+func (api *ExtensionAPI) RegisterTurnNudger(n core.TurnNudger) error {
+	if n == nil {
+		return fmt.Errorf("turn-nudger %q: a registration carries its nudger", api.module)
+	}
+	prev := api.ctx.Nudge
+	return api.mountSeam("nudge",
+		func(c *core.Context) { c.Nudge = n },
+		func(c *core.Context) { c.Nudge = prev })
 }
 
 // RegisterLoop maps the loop seam.
