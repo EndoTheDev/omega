@@ -200,3 +200,175 @@ describe("source canary: the guard exists, the unconditional branch does not", (
     assert.doesNotMatch(outside, /e\.key === "Enter"\)/);
   });
 });
+// --- the fullscreen column anatomy (card t_08ef793b) -------------------
+// Endo's settled design (2026-11-02, "card it"): fullscreen = a floating
+// CARD, not a window-sized focus ring - the text region is the tall
+// element (a typeable canvas the placeholder + cursor live in), the
+// control row (+ joins the chips, send anchors right) pins to the card's
+// bottom edge with the compact padding rhythm, and the collapse chevron
+// is a real button in its own gutter. Source canaries on AppComposer.vue
+// + main.css; the compact skeleton is the regression guard.
+const css = readFileSync(
+  join(here, "../app/assets/css/main.css"),
+  "utf8",
+);
+
+// a CSS block by selector: from the selector to its closing brace
+// (composer rules are flat - no nesting - so this is exact)
+function rule(sel: string): string {
+  // anchor at a line start - a suffix selector must not grab an earlier
+  // longer rule's tail (".composer.expanded .composer-row" contains
+  // ".composer-row {")
+  const anchor = css.indexOf("\n" + sel);
+  assert.ok(anchor > -1, `main.css carries ${sel} at a rule start`);
+  const end = css.indexOf("}", anchor);
+  return css.slice(anchor, end + 1);
+}
+
+describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
+  it("the expanded row is the tall element: it grows and stretches the textarea", () => {
+    const row = rule(".composer.expanded .composer-row {");
+    assert.match(row, /flex:\s*1/, "the row eats the card's free height");
+    assert.match(
+      row,
+      /align-items:\s*stretch/,
+      "the textarea fills the grown row's height (flex-start would leave dead space)",
+    );
+    const ta = rule(".composer.expanded textarea {");
+    assert.match(ta, /flex:\s*1/);
+    assert.match(ta, /height:\s*auto/);
+    assert.match(ta, /min-height:\s*0/);
+  });
+
+  it("the control row pins to the bottom through the composer-bottom class", () => {
+    // the row grows above the toolbar - the toolbar, last flex child of
+    // the card column, rests on the card's bottom edge
+    assert.match(
+      css,
+      /\.composer\.expanded \.composer-row \{[^}]*flex:\s*1/,
+      "the grown row is a composer child above the toolbar",
+    );
+    const bottom = rule(".composer-bottom {");
+    assert.match(
+      bottom,
+      /align-items:\s*center/,
+      "one shared baseline: chips + send center on the row",
+    );
+    // the template binds the class to the expanded state only
+    assert.match(
+      composer,
+      /'composer-bottom':\s*expanded/,
+      "composer-bottom exists only in fullscreen",
+    );
+  });
+
+  it("the + rides the bottom row; the placeholder waits in the canvas", () => {
+    assert.match(
+      composer,
+      /v-if="expanded"\s*\n\s*class="plus-btn"/,
+      "fullscreen: the + joins the chips' row",
+    );
+    assert.match(
+      composer,
+      /placeholder="message omega"/,
+      "the placeholder renders in the grown canvas",
+    );
+  });
+
+  it("a click on empty canvas space lands the caret in the input", () => {
+    assert.match(composer, /function onCanvasClick/, "the canvas click law");
+    assert.match(
+      composer,
+      /@click="onCanvasClick"/,
+      "wired on the composer root",
+    );
+    // the guard: control clicks pass, empty-space clicks focus
+    const fn = composer.slice(
+      composer.indexOf("function onCanvasClick"),
+      composer.indexOf("// draft clears after send"),
+    );
+    assert.match(fn, /expanded\.value/, "compact stays untouched (no hijack)");
+    assert.match(fn, /closest\(/, "controls opt out");
+    assert.match(fn, /ta\.value\?\.focus\(\)/, "the canvas focuses the input");
+  });
+
+  it("entering fullscreen parks the cursor in the canvas", () => {
+    const toggle = composer.slice(
+      composer.indexOf("function toggleExpand"),
+      composer.indexOf("// fullscreen canvas law"),
+    );
+    assert.match(toggle, /if \(expanded\.value\) ta\.value\?\.focus\(\)/);
+  });
+
+  it("the chevron is a real button: >=24px target, inset from the corner", () => {
+    const btn = rule(".expand-btn {");
+    assert.match(btn, /min-width:\s*24px/);
+    assert.match(btn, /min-height:\s*24px/);
+    assert.match(btn, /top:\s*6px/);
+    assert.match(btn, /right:\s*8px/, "inset, not edge-to-edge");
+  });
+
+  it("the textarea's scrollbar clears the chevron's gutter in fullscreen", () => {
+    const ta = rule(".composer.expanded textarea {");
+    assert.match(ta, /margin-right:\s*40px/, "a dedicated right-edge gutter");
+  });
+
+  it("the fullscreen focus ring dies - the card keeps its own stroke", () => {
+    const fullscreen = rule(".composer.expanded:focus-within {");
+    assert.match(
+      fullscreen,
+      /border-color:\s*var\(--stroke\)/,
+      "no orange on the pane-sized card",
+    );
+    // the compact ruler is untouched
+    const compact = rule(".composer:focus-within {");
+    assert.match(compact, /rgba\(232,\s*131,\s*58,\s*0\.55\)/);
+  });
+
+  it("card geometry: inset margin on all four sides, radius kept", () => {
+    const card = rule(".composer.expanded {");
+    assert.match(card, /margin:\s*12px/, "floating card, not a pane overlay");
+    assert.match(card, /flex-grow/);
+    const base = rule(".composer {");
+    assert.match(base, /border-radius:\s*var\(--r-card\)/, "radius unchanged");
+    assert.match(base, /border:\s*1px solid var\(--stroke\)/, "stroke unchanged");
+  });
+
+  it("the send keeps its accent fill at normal contrast in the bottom row", () => {
+    assert.match(
+      css,
+      /\.composer-bottom \.send:disabled \{ opacity: 1/,
+      "ruling 4: no wash in fullscreen (base .send:disabled stays the compact ruler)",
+    );
+  });
+
+  it("the collapse affordance never disappears in fullscreen", () => {
+    assert.match(
+      composer,
+      /v-if="overflowing \|\| expanded"/,
+      "a shrinking draft never strands the user in fullscreen",
+    );
+  });
+});
+
+describe("compact composer regression guard (card t_08ef793b: untouched)", () => {
+  it("the row keeps its compact skeleton", () => {
+    const row = rule(".composer-row {");
+    assert.match(row, /align-items:\s*flex-start/);
+    assert.doesNotMatch(row, /flex:\s*1/);
+  });
+  it("the toolbar keeps its compact padding rhythm", () => {
+    const toolbar = rule(".toolbar {");
+    assert.match(toolbar, /padding:\s*6px 8px/);
+    assert.doesNotMatch(toolbar, /composer-bottom/);
+  });
+  it("the textarea keeps the deterministic 21px row math", () => {
+    const ta = rule(".composer textarea {");
+    assert.match(ta, /line-height:\s*21px/);
+    assert.doesNotMatch(ta, /margin-right/);
+  });
+  it("the base textarea block carries no fullscreen-only declarations", () => {
+    // the gutter and the stretch live under .composer.expanded only
+    assert.doesNotMatch(css, /\.composer textarea \{[^}]*margin-right/);
+  });
+});

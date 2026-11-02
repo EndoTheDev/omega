@@ -184,12 +184,38 @@ describe("composer structure: one button, + in the input row", () => {
     // t_641c2870 it nests a .model-group div - slicing to the first
     // '</div>' would stop at the group's closer, BEFORE the send
     // button, so slice to the template end instead.
-    const start = composer.indexOf('<div class="toolbar">');
-    assert.ok(start > -1, "composer has a toolbar");
+    // t_08ef793b adds the fullscreen + seat (v-if="expanded", card
+    // ruling 2): the row keeps it EXACTLY once in the two exclusive
+    // states - the morphing slot is still the only unconditional button
+    // and compact renders one +, in the input row, as before.
+    const m = composer.match(/<div\s+class="toolbar"/);
+    assert.ok(m, "composer has a toolbar");
+    const start = composer.indexOf(m[0]);
     const toolbar = composer.slice(start, composer.indexOf("</template>", start));
-    const buttons = toolbar.match(/<button/g) ?? [];
-    assert.equal(buttons.length, 1, "toolbar has exactly one button");
-    assert.match(toolbar, /:class="\{ cancel: face === 'stop'/, "the stop face rides the same element");
+    const slot = toolbar.match(/<button/g) ?? [];
+    assert.equal(slot.length, 2, "toolbar: the morphing slot + the fullscreen + seat");
+    assert.match(
+      toolbar,
+      /:class="\{ cancel: face === 'stop'/,
+      "the stop face rides the same element",
+    );
+    // the extra seat is fullscreen-gated, carrying the attach affordance
+    const plusStart = composer.indexOf('+', composer.indexOf('v-if="expanded"\n        class="plus-btn"'));
+    assert.ok(plusStart > -1, "the fullscreen + rides the toolbar");
+  });
+  it("the + attach affordance keeps exactly ONE seat per state (v-if exclusive)", () => {
+    // compact: row seat (v-if="!expanded"); fullscreen: toolbar seat
+    // (v-if="expanded"). Never both at once, never zero - the compact DOM
+    // is byte-identical to pre-t_08ef793b (regression guard).
+    const rowPlus = composer.match(/v-if="!expanded"\s*\n\s*class="plus-btn"/);
+    assert.ok(rowPlus, "compact + keeps the input-row seat");
+    const toolbarPlus = composer.match(/v-if="expanded"\s*\n\s*class="plus-btn"/);
+    assert.ok(toolbarPlus, "fullscreen + rides the toolbar seat");
+    assert.equal(
+      (composer.match(/class="plus-btn"/g) ?? []).length,
+      2,
+      "exactly two source seats, both v-if exclusive",
+    );
   });
   it("the paperclip toolbar button is dead", () => {
     assert.doesNotMatch(composer, /pick-btn/);
