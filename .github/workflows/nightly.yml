@@ -65,6 +65,21 @@ jobs:
           # home resolution: OMEGA_HOME wins, else the exe dir) - the
           # journeys step must inherit it, no recipe has a default
           echo "OMEGA_HOME=$RUNNER_TEMP/omega-lane" >> "$GITHUB_ENV"
+          # Setup gate (card t_0744eb8e): serve refuses in a home
+          # without config.yaml. The lane home is fresh, so the step
+          # writes the minimal lane config first (card t_c95e0c04) -
+          # the automation lane, not a human home; the gate law stands
+          # for serve/run everywhere else. OMEGA_* env still wins on
+          # top (applyEnv order). The dummy values keep the lane a
+          # zero-provider lane on purpose: boot only validates the
+          # wire, /health never calls the provider.
+          mkdir -p "$RUNNER_TEMP/omega-lane/config"
+          cat > "$RUNNER_TEMP/omega-lane/config/config.yaml" <<'LANE_CONFIG'
+          provider:
+            type: ollama
+            model_name: dummy
+            host: http://127.0.0.1:9
+          LANE_CONFIG
           OMEGA_MODEL=dummy OMEGA_HOST=http://127.0.0.1:9 OMEGA_PORT=8098 \
             OMEGA_DB_PATH="$RUNNER_TEMP/nightly-lane.db" \
             "$RUNNER_TEMP/omega-lane/omega" serve >"$RUNNER_TEMP/lane.log" 2>&1 &
