@@ -25,7 +25,8 @@ func TestBuildPlugins(t *testing.T) {
 	// +terminal (t_55a3fc4b, the v0.15 arc opening) = 19.
 	// +browser (t_95c91f9c, the general web browser pane) = 20.
 	// +approval (t_c2b52cb5, the smart approval gate) = 21.
-	const want = 21
+	// +process (t_5782d11e, the background process registry) = 22.
+	const want = 22
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}
