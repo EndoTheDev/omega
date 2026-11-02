@@ -136,6 +136,23 @@ func TestAffinityWaitCancellation(t *testing.T) {
 	}
 }
 
+// TestWaitKeepsQueuedSiblings pins the review fix: Wait returns ONE
+// result and leaves the siblings queued for the next drain (the
+// Poll-based fast paths emptied the queue and silently dropped them).
+func TestWaitKeepsQueuedSiblings(t *testing.T) {
+	d := NewDelegate()
+	d.pushResult("run-a", "delegate:task-1", "first")
+	d.pushResult("run-a", "delegate:task-2", "second")
+	m, ok := d.Wait(context.Background(), "run-a")
+	if !ok || m.Text != "first" {
+		t.Fatalf("Wait = (%+v, %v), want the first result", m, ok)
+	}
+	rest := d.Poll("run-a")
+	if len(rest) != 1 || rest[0].Text != "second" {
+		t.Fatalf("sibling result lost after Wait: %+v", rest)
+	}
+}
+
 // TestInjectedCapDropsNewest pins the global buffer cap law: the 17th
 // undrained result across all keys drops (and a drained buffer frees
 // room again).
