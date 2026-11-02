@@ -19,6 +19,7 @@ import (
 	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
 	"github.com/EndoTheDev/omega/modules/logging"
 	"github.com/EndoTheDev/omega/modules/memory"
+	"github.com/EndoTheDev/omega/modules/process"
 	"github.com/EndoTheDev/omega/modules/provider"
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/store"
@@ -55,6 +56,7 @@ type Config struct {
 	Kanban      KanbanConfig      `yaml:"kanban"`
 	Continuous  continuous.Config `yaml:"continuous"`
 	Approvals   ApprovalConfig    `yaml:"approvals"`
+	Process     ProcessConfig     `yaml:"process"`
 	// Disabled is the config.yaml `disabled:` toggle fold (v0.12 E1,
 	// grill Q1; home moved from the omega.json sidecar to this key in
 	// the v0.13 shell law 3 - the sidecar folds at boot). v0.14.1
@@ -242,6 +244,15 @@ type ApprovalConfig struct {
 	Mode        string `yaml:"mode"`
 	Model       string `yaml:"model"`
 	SmartPolicy string `yaml:"smart_policy"`
+}
+
+// ProcessConfig configures the background process registry (card
+// t_5782d11e). Zero values are valid: the module applies its own
+// defaults, so an absent `process:` section rides the constants
+// (DefaultLogMaxBytes, DefaultKillGraceSeconds).
+type ProcessConfig struct {
+	LogMaxBytes      int64 `yaml:"log_max_bytes"`
+	KillGraceSeconds int   `yaml:"kill_grace_seconds"`
 }
 
 // DefaultConfig returns the configuration used when neither YAML nor
@@ -735,6 +746,14 @@ func (c Config) ConfigSection(name string) (any, bool) {
 			HTTPHost:    c.Provider.Host,
 			APIKey:      c.Provider.APIKey,
 			Home:        omegaHome(),
+		}, true
+	case "process":
+		// card t_5782d11e: zero knobs ride the module's constants -
+		// the section only carries explicit user overrides.
+		return process.Config{
+			Home:             omegaHome(),
+			LogMaxBytes:      c.Process.LogMaxBytes,
+			KillGraceSeconds: c.Process.KillGraceSeconds,
 		}, true
 	}
 	return nil, false

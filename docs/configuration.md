@@ -158,6 +158,22 @@ The approval capsule (`modules/approval/`, ship-dark default
 | `approvals.model`    | -         | The smart mode's decision model (a `/v1/systemone` forward pass per flagged command; fail-closed when unreachable) |
 | `approvals.smart_policy` | -     | The operator policy text the reviewer sees (never command text)                              |
 
+## The process registry
+
+The process capsule (`modules/process/`) runs detached, long-running
+shell commands (builds, transfers, servers) and manages them by
+handle. The synchronous shell stays the tool for anything expected to
+finish in seconds; `process.*` exists so long ops never block a turn
+or flood the context. State: `<home>/data/process.json`; log: one
+`<name>.log` per process at `<home>/logs/process/` (rotation drops one
+generation to `<name>.log.1` when a name spawns again); a pid gone at
+boot = exited. Two config.yaml knobs (absent section = the defaults):
+
+| Key                     | Default   | Meaning                                                     |
+| ----------------------- | --------- | ----------------------------------------------------------- |
+| `process.log_max_bytes` | `5242880` | Log rotation cap across generations (5 MB)                  |
+| `process.kill_grace_seconds` | `10` | How long a SIGTERM kill waits before escalating to SIGKILL  |
+
 ## Providers
 
 | Provider       | Type        | Requires      | Default Host                   |

@@ -35,6 +35,7 @@ import (
 	"github.com/EndoTheDev/omega/modules/memory"
 	"github.com/EndoTheDev/omega/modules/notifications"
 	"github.com/EndoTheDev/omega/modules/prompt"
+	"github.com/EndoTheDev/omega/modules/process"
 	"github.com/EndoTheDev/omega/modules/provider"
 	"github.com/EndoTheDev/omega/modules/skills"
 	"github.com/EndoTheDev/omega/modules/store"
@@ -474,6 +475,10 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),
+		// card t_5782d11e: the background process registry - the five
+		// process.* verbs over the detached state (long ops only; the
+		// synchronous shell stays where it is).
+		process.NewPlugin(),
 		// card t_2ecf9c51: verdict cards - verdict tool, the
 		// verdicts seam, and the /verdict TUI command. Requires store
 		// (the hub captures it at Mount to persist card + verdict rows);
