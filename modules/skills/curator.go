@@ -143,9 +143,11 @@ func (sp *SkillsProvider) applyStaleness(rep *CuratorReport) error {
 			continue
 		}
 		if !anchor.After(archiveCutoff) && rec.State != StateArchived && !rec.Pinned {
-			if _, err := sp.archiveOne(name, rec, usage); err != nil {
+			id, err := sp.archiveOne(name, rec, usage)
+			if err != nil {
 				return err
 			}
+			rep.LedgerIDs = append(rep.LedgerIDs, id)
 			touched = true
 			rep.Archived++
 			continue
