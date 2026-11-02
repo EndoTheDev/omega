@@ -43,8 +43,7 @@ direction: the harness depends on the engine, never the reverse.
 | `modules/agent_loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
 | `modules/tools` | The bare-minimum tools: `shell.run`, `files` (read/write/edit + batch), /files browser, db deny-guard | the north-star ruling; verdict tool status is separate (see §6) |
 | `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
-| `tui` | The terminal connector: the TUI shell, canvas pane rendering | frontend seam implementation on the engine side |
-| `engine/webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) — build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module) |
+| `engine/webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) — build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01, t_0744eb8e — the webui is the only screen-shaped surface.) |
 | `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell | see HURT-4: today's shell is NOT yet minimal |
 
 ### The harness side (moves to TigerClaw)

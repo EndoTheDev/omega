@@ -10,6 +10,13 @@ the public edge always sits behind an auth wall.
 Routes are registered in `engine/http_channel/server.go`. Anything
 documented below that is not in that mux is not real.
 
+**The Host/Origin guard** (t_b52d09f3): the unauthenticated surface is
+loopback-local, so cross-origin writes ride the browser's own rules —
+the `hostGuard` wraps the whole mux and refuses a MUTATING request
+whose Origin/Host is not the serving origin with 403 (GETs pass). The
+guard covers the fixed routes AND the module capsule routes; curl
+against localhost from the same host is unaffected.
+
 | Route                                | Methods    | Notes                                          |
 | ------------------------------------ | ---------- | ---------------------------------------------- |
 | `/health`                            | GET        | liveness                                       |
@@ -23,8 +30,21 @@ documented below that is not in that mux is not real.
 | `/sessions/{id}/stop`                | POST       | cancel the live run                            |
 | `/sessions/{id}/transcript`          | GET        | render-ready items (restore + live contract)   |
 | `/sessions/{id}/variants`            | GET, POST, PATCH | branch points + active-variant select    |
-| `/sessions/{id}/branch`              | POST       | fork a child session (store-linked)            |
+| `/sessions/{id}/branch`              | POST       | fork a child session (store-linked)                    |
 | `/sessions/{id}/export`              | GET        | active path as JSONL attachment                |
+| `/sessions/{id}/verdicts`            | GET, POST  | one session's verdict cards / the answer POST  |
+| `/verdicts`                          | GET        | cross-session verdict listing (the bell count) |
+| `/agents`                            | GET        | agent homes (roster rows)                      |
+| `/agents/{name}`                     | GET, PUT   | detail / the node-preserving config layer editor |
+| `/agents/{name}/sessions`            | GET        | the agent's session list                       |
+| `/disabled`                          | GET        | the registry-browser folded state (skills/tools/agents namespaces) |
+| `/disabled/skills`, `/disabled/tools` | PUT       | registry-browser toggle fold (one entry per name) |
+| `/disabled/agents`                   | PUT        | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on) |
+| `/modules`                           | GET        | mounted module capsules (introspection)         |
+| `/modules/{name}`                    | PUT        | the live module toggle (`disabled:` fold)       |
+| `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)      |
+| `/insights`                          | GET        | session usage analytics                        |
+| `/workspaces/browse`, `/workspaces/files` | GET   | the workspace surface (browsers + Files tab root) |
 | `/boards`                           | GET        | board registry (multi-board, current flagged)   |
 | `/tasks`                             | GET, POST  | kanban board (list/create, `?board=` picker)    |
 | `/tasks/{id}`                        | GET, PATCH | task detail (task+comments+events) / edits     |
@@ -32,14 +52,20 @@ documented below that is not in that mux is not real.
 | `/notifications`                     | GET        | finished-things list + unread (`?unread=1`, `?limit/?offset`) |
 | `/notifications/read`                | POST       | mark one (`{"id": N}`) or all (`{"all": true}`) |
 | `/notifications/events`              | GET        | SSE record stream (the public API surface; the webui's toasts ride the canvas) |
-| `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector |
+| `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector; read carries `mime` |
+| `POST /files/write`, `POST /files/mkdir` | POST   | the toolbar's write half: add file / add folder (same root jail) |
+| `/files/raw`                         | GET        | raw bytes for `image/*` files ONLY, under the read surface's root jail |
 | `/tools`                             | GET        | tool inventory                                 |
 | `/mcp/servers`                        | GET        | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge |
 | `/mcp/reload`                         | POST       | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list |
+| `/mcp/toggle`                         | POST       | the live MCP toggle through the module seam     |
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501) |
 | `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
 | `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |
+| `/cron/toggle`                       | POST       | the row's two-step toggle commit: writes the per-job `enabled:` flag only |
 | `/skills`                            | GET        | loaded skills (name + description only)        |
+| `/skills/content`                    | GET        | one skill's SKILL.md body for the viewer tab (64 KiB cap) |
+| `/browser/last`, `/browser/frameable`| GET, PUT   | module REST (browser capsule): the resume URL + the embed-permission probe |
 | `/commands`                          | GET        | extension command registry (palette rows)      |
 | `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
 | `/logs?lines=N`                      | GET        | omega.log tail (default 200, clamped 1..2000)  |
@@ -100,8 +126,8 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   at 10 MB decoded per image (400 above it, checked before anything
   runs).
 - **@-mentions expand server-side** (card t_07aed3f9): the LAST user
-  message runs through the one `core.ExpandAtMentions` law (the same
-  seam the TUI submit path calls) before the run starts. Relative
+  message runs through the one `core.ExpandAtMentions` law
+  (`core/atmention.go`) before the run starts. Relative
   paths root at the session's workspace; `@file.png` attaches, text
   files and `@glob` patterns inline, `@session:<id>` injects that
   session's history, `@skill:<name>` injects skill content;
@@ -210,8 +236,8 @@ multi-variant point return an EMPTY list, not an absent key.
 
 ### POST /sessions/{id}/branch
 
-Creates a child session through the same store machinery as the TUI's
-`/branch`, then appends one summary system row into the child. Read-time
+Creates a child session through the store's branch machinery, then
+appends one summary system row into the child. Read-time
 the child inherits the whole ancestor chain as its active-path prefix.
 501 without a store, 404 on an unknown parent, 201 with the child
 session.
@@ -239,8 +265,10 @@ same param the list takes).
 
 GET returns the knob schema + effective values (`agent.SettingsSchema`
 groups: provider, server, store, compaction, runtime, skills, memory,
-logging — the same surface the settings pane renders; no-store cache
-headers). `provider.api_key` is MASKED (`****`) and never round-trips.
+logging, approvals — the same surface the settings pane renders;
+model slots ride typed pickers, approvals.mode is a select; no-store
+cache headers). `provider.api_key` is MASKED (`****`) and never
+round-trips.
 PUT applies a **diff-only** values map keyed by the schema's dotted
 knob paths (`provider.api_key`, `compaction.keep_first`, ...) — note
 these are not all literal yaml paths (the vision/title models are root
@@ -249,6 +277,23 @@ unknown keys are 400; `server.bind` and `provider.api_key` are gated —
 config.yaml is their only door. Knob help lines note which apply on
 restart vs hot-apply live (http timeout + compaction hot-apply; context
 window help reports what startup auto-probed).
+
+### The registry-browser toggles and the agent editor
+
+- `GET /disabled` — the folded state of the registry-browser
+  namespaces (skills, tools, agents) as the config `disabled:` fold
+  carries them.
+- `PUT /disabled/skills|tools|agents` — body `{"name": ...,  "enabled":
+  true|false}`; the write lands in config.yaml's `disabled:` fold and a
+  live toggle re-reads the seams. One refusal stands above the fold:
+  `PUT /disabled/agents` for the default agent answers **409**
+  ("the default agent cannot be disabled - it must always be on",
+  t_2d8deb8c) and leaves config.yaml untouched.
+- `PUT /agents/{name}` — the node-preserving agent config layer
+  editor: description, the provider layer (type, model_name, host,
+  api_key), system_prompt. Absent/nil fields leave the layer untouched;
+  the default agent answers 409 (`ErrAgentConfigLocked`). Sits beside
+  the Agents tab's expansion editor.
 
 ### /boards (multi-board registry)
 
@@ -333,13 +378,23 @@ up edits without restart.
   (logging disabled).
 - `GET /files/browse` + `GET /files/read` — the process working
   directory for the webui inspector: read-only, GET-only, 64 KiB
-  preview cap, dot-segment + absolute + symlink-containment guards.
-  No write path exists on this surface.
+  preview cap, and the path guard is the traversal set (absolute
+  paths, empty segments and only `.` / `..` rejected — dotfiles list
+  and read like everything else; t_ccd4a000) plus
+  symlink-containment. `/files/read` carries `mime` for every file
+  (sniffed from the bytes); the viewer branches on it.
+- `GET /files/raw` (t_08d822bb) — the mime's byte face: raw bytes for
+  `image/*` files ONLY, under the read surface's exact root jail.
+  Non-image or binary requests answer 400, missing files 404; the
+  response is `Content-Type: <mime>`, `nosniff`, byte-identical body.
+- `POST /files/write` + `POST /files/mkdir` — the Files tab toolbar's
+  write half (add file / add folder), same root jail and guard,
+  POST-only bodies.
 
 ## Commands (the slash palette's server surface)
 
 The webui's `/` command palette rides two endpoints (card t_07aed3f9).
-Slash commands run LOCALLY and never hit the agent — the TUI's law,
+Slash commands run LOCALLY and never hit the agent — the command law,
 same registration seams:
 
 - `GET /commands` — the extension command registry
@@ -347,14 +402,14 @@ same registration seams:
   here — they ride `/skills` and the palette renders them as
   `/<skill-name>` rows itself.
 - `POST /commands/dispatch` — body `{"name": "/<command>"}` (plus
-  optional `"args"`). Resolution order matches the TUI dispatch: a
+  optional `"args"`). Resolution order: a
   registered extension command executes through the chain-on-miss
   `ctx.CommandHandler` (rewired at boot and on every live module
   toggle) and answers `{"kind":"command","text":...,"actions":[...]}`;
   if no command matches and the name resolves to a skill, it answers
   `{"kind":"skill","name":...,"content":...}` — the content the client
-  arms as a System preamble on its next send (the TUI injected skill
-  content in-process the same way). Unknown names are 404, non-slash
+  arms as a System preamble on its next send. Unknown names are 404,
+  non-slash
   names 400, a missing handler 501. Dispatch is a local execution
   surface: it never enqueues an agent run.
 
@@ -387,12 +442,8 @@ cover the newest 40 rows, streaming tokens batch onto
 immediately. Its actions (`stop`, `retry`, module `http_channel`) route
 through the pipe and serve the same faces the REST routes serve. The
 registration is Start-gated: the panel exists only once a channel
-actually starts - a TUI-only process carries no dead http chat panel.
-In a TUI process the module-owned capsule from `tui` (module
-`tui`, same panel id and kind, the same `ChatPayload` vocabulary)
-covers the conversation: the chat pane renders from the canvas
-snapshot and its deltas natively, the stop/retry actions wrap the
-native cancel/retry through the same pipe. The `/chat` REST + SSE API
+actually starts - a process that never serves carries no dead http
+chat panel. The `/chat` REST + SSE API
 surface stays untouched - the panel is additive for canvas renderers.
 
 ## SPA catch-all

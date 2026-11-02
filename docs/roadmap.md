@@ -9,10 +9,10 @@ and git history.
   multi-turn agent loop with parallel tool execution, session tree
   (branching, labeling, full persistence), context compaction with
   auto-retry, skills system, 15-module system (11 exclusive + 2
-  additive seams), SQLite store with FTS5 search, complete TUI,
-  model discovery, image input, self-update
+  additive seams), SQLite store with FTS5 search, web UI and CLI
+  agent loop, model discovery, image input, self-update
 - **Module architecture (v0.3-v0.5):** channel seam + HTTP channel,
-  store and TUI moved to modules, per-module config, config
+  store moved to modules, per-module config, config
   hot-reload, subagent delegation, session insights + export,
   AGENTS.md ancestor walk, 10-level thinking control
 - **Distribution (v0.6.0-v0.6.4):** Nuxt web UI embedded in the binary
@@ -77,15 +77,34 @@ and git history.
 - Webui/HTTP reference docs live in `docs/webui.md` / `docs/api.md`;
   the binary reference in `docs/cli.md`
 
+### v0.14.x (shipped, 2026-11)
+
+- **The TUI is retired whole** (t_0744eb8e; the v0.15 breaking change
+  landed inside the 0.14 line): `engine/tui` is deleted, zero
+  tui vocabulary survives in core/engine. `omega setup` (the first-run
+  wizard, mandatory until config exists) plus the plain streaming CLI
+  agent loop take the terminal's job — the terminal is for setup, the
+  browser is the app.
+- The webui law wave: honest per-component floors (chat 320, tools
+  128, "no room - close a pane first"), the TogglePill one-switch
+  law, the registry row anatomy, the band position contract, frame
+  rails that stop at card borders, edge-pane state hiding, the
+  give-away law, chevronless file tree with hover indent guides,
+  image previews in the viewer (`GET /files/raw`), the locked default
+  agent with the 409 refusal, boot repair for persisted dock shells.
+- The approval gate (t_c2b52cb5): risky shell commands reach a
+  reviewer — manual verdict card or smart decision model + ladder;
+  corpus-passing detector with a removal proof ([docs/approvals.md](approvals.md)).
+- The async cron overhaul (t_ecec864e): the `interval` kind, per-job
+  agent + model under the defaulting law, deliver targets
+  (new-session / continuous-agent / append-to-file), the webui Cron
+  tab editor (`POST /cron/save`).
+- New modules: terminal (the bottom-host PTY, t_55a3fc4b), browser
+  (the any-origin iframe tab, t_95c91f9c); the ollama cold-`load`
+  retry law (b5ae303) ends silent empty turns.
+
 ## Planned
 
-- **v0.15 breaking change (staged warning):** the full-screen TUI is
-  retired. `omega setup` (the first-run wizard) plus a plain streaming
-  CLI agent loop replace it — the terminal is for setup, the browser
-  is the app. Nightly users: one release of warning (this note); the
-  `/sessions`, `/variant`, `/branch`, `/files` TUI commands and the
-  theme/notifications config knobs died with the shell
-  (t_0744eb8e); the webui hosts every screen-shaped surface.
 - Agent self-improvement: read-only eval suite + propose-only
   reflection loop (evaluated improvements, never self-merged)
 - OpenTelemetry observability (research: traces, metrics, tool timings)

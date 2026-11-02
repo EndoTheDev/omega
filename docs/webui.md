@@ -49,16 +49,42 @@ the others:
 | ----------------- | ------- |
 | MenuBar height    | 35px    |
 | StatusBar height  | 29px    |
-| Chat floor        | 320px   |
+| Tool pane floor   | 128px   |
+| Chat pane floor   | 320px   |
 | Gutter (divider)  | 8px     |
 | Mobile breakpoint | 768px   |
 
-The gutter divider retains magnetic snap rebase mechanics
-(`PaneDivider`). Sidebar panes obey a 128px floor (`MIN_PANE_PX`,
-composables/dock.ts) while the main pane's floor is the 320px wall —
-the sidebars yield first. Below the mobile breakpoint the sidebars
-collapse into slide-in drawers over a scrim; chrome (menu/status bar)
-rides above all overlays: drawers z12, scrim z10.
+**Honest floors** (cards t_ae9ac5cf + t_8bcbe72e): the floor is a
+PER-COMPONENT registry fact, not a sidebar rule. `DOCKABLE_MIN_PX`
+(composables/dockables.ts) attaches every dockable's `minPx` — chat is
+the only 320px component (`CHAT_FLOOR_PX`), every tool component floors
+at the shared 128px pane minimum (`MIN_PANE_PX`). One floor law backs
+BOTH sides of every divider: the reveal's "no room" check and the
+divider drag clamps read the same number through `paneFloorOf` /
+`minDockPx` (composables/dock.ts) — a chat-holding pane keeps 320 on
+both sides of a split; a tool pane keeps 128 from both sides. A reveal
+or split that cannot seat every pane's floor does not squeeze into a
+lie: it is refused and the shell surfaces the one-line toast
+"no room - close a pane first" (app.vue) instead of a sub-floor pane.
+
+The gutter divider (`PaneDivider`) retains its magnetic snap rebase
+mechanics. On a drag between two FLEXIBLE panes the shares re-derive
+from the frozen pre-drag baseline (c50b749) — the squeeze chain is
+dead: a divider never pushes a third pane around (t_6a74d5a1's
+wall-law). Fixed panes drag down to the shared 128 floor. Below the
+mobile breakpoint the sidebars collapse into slide-in drawers over a
+scrim; chrome (menu/status bar) rides above all overlays: drawers z12,
+scrim z10.
+
+**Same-pane split drag** (t_ae9ac5cf, the VS Code read): tab
+drag-and-drop runs ONE pure formula behind both the commit and the
+ghost preview. Dropping a tab on an EDGE zone splits the target pane
+and lands the dragged tab in the new half-pane; a drop on the CENTER
+zone focuses/reorders within the target's bar. A pane's OWN edge
+half-zones split that pane — center body drops stay focus-only.
+Refusals render the hatched-red ghost with the reason (a sidebar row
+zone, depth caps, a grown re-growth, the locked sessions tab — it
+never leaves the left shell).
 
 The universal panel band (`components/ui/TabBand.vue`) is a geometry
 contract too: every tab panel (module tabs: files, cron, logs, skills,
@@ -69,6 +95,53 @@ left, tab actions right, 22px min-height, 14px lead-in clearing the
 The band renders OUTSIDE the panel's scrollport, structurally pinned:
 scrolling the body never moves the band. Band action buttons use the
 shared `.band-tool` look (dimmed at rest, hover raises, disabled 0.4).
+The BAND POSITION CONTRACT (t_9ae4dea5): the tools/settings/insights
+tab roots stop sitting the band inside — the band is the host frame's
+top row, never a child of the scroll body (the 22/14 numbers above are
+the shared contract; a module panel that renders its own inner band is
+a review finding).
+
+**Frame rails** (t_bc321318 → t_97cece1e, amended t_064b1559 /
+t_e539ba29): a rail renders ONLY across a GUTTER between two
+horizontally-adjacent cards — the row divider's own top/bottom strokes,
+spanning exactly the divider's 4px width, aligned to the cards' border
+rows. Nothing else strokes. The old whole-width pane-area strokes are
+dead: a stroke never appears where a surface's own border is not —
+one card means zero strokes, the card's border is the whole edge. The
+menubar keeps its border-bottom and the statusbar its border-top; the
+pane-area contributes no connecting stroke. Desktop law only.
+
+## Registry rows and the toggle pill
+
+**THE ROW LAW** (card t_561dc4e0): one registry-row anatomy for the
+registry-style tabs — LINE 1 the name (semibold, full opacity, ~13px),
+LINE 2 the subtitle (dim, smaller: the mono schedule, the description,
+transport + status, module counts), and exactly ONE control on the
+right, top-aligned with line 1. Expanded content renders below the
+row-head in its own indent, seated on the same paddings. The quiet
+list: hierarchy by typography weight and opacity, not borders or
+boxes — one hairline separator between rows. Shared definition in
+`assets/css/registry-row.css`, five consumers (cron, tools, skills,
+mcp, modules); consumer stylesheets keep their row specifics and carry
+NO row-anatomy blocks. Status dots speak dot + word: green active, dim
+sleeping (the agents roster's law); an enabled/disabled text label is
+dead — the control column rides the pill.
+
+**THE TOGGLE PILL** (card t_d93864e7): `components/ui/TogglePill.vue`
+is the one switch everywhere — the 26px rounded pill with the 11px
+state DOT inside (dot shifts, border goes `--ok` when on, transparent
+background). It is a BUTTON, never a checkbox: no `:checked` prop
+exists for Vue's prop diff to skip, so the stale-arm re-render trap is
+structurally dead for every host that adopts it. The pill owns the
+LOOK and the armed aria; the host owns the two-step arm/confirm — the
+first click ARMS (the confirm question becomes the aria/title, the
+confirm note seats under the row), the second commits — and the write
+path, re-rendering the row from the server's answer. Adopted across
+the registry tabs (skills, tools, agents, MCP, modules) and the
+agents roster; the MCP tab's "from mcp.yaml" caption is gone (rows
+speak transport + live state from GET /mcp/servers). The default
+agent's pill is locked-on and non-interactive with no arm path —
+the default agent cannot be disabled (api.md's 409).
 
 ## Motion
 
@@ -105,9 +178,13 @@ Everything else animates through `transition`, not keyframes.
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
 - **Dockables** (`composables/dockables.ts`): the registry of openable
-  domains — the pinned shells (sidebar, the inspector tabs above) plus
-  chat and viewer in the main pane (the only closable, multi instances;
-  viewer's only entry point is a row click). `inspector` is legacy
+  domains — the pinned shells (sessions sidebar left, the inspector
+  tabs right, the bottom host under the main pane) plus the main-pane
+  tabs: chat (multi, closable), the viewer (multi, closable,
+  row-click only), the browser (singleton main tab, closable — the
+  menu opener focuses the one instance), the terminal (bottom host,
+  unclosable) and the notifications feed (right pane, unclosable,
+  inbox glyph — the bell died). `inspector` is legacy
   only: deserialization still accepts the persisted id and modernizes
   it, nothing opens one. `continuous` and the `canvas` host tab left
   the registry — the continuous roster folded into the Agents tab, the
@@ -116,8 +193,29 @@ Everything else animates through `transition`, not keyframes.
   merge, the action pipe, the toast funnel). Settings has no entry
   point: the menubar gear and the `+`-menu entry are gone; persistence
   and the default arrangement are its only paths.
-- **Tab drag-and-drop** moves tabs between panes; sessions stay in the
-  sidebar.
+- **Closing an edge pane HIDES state, never deletes it** (t_9ed6cad7):
+  a sidebar/bottom pane's collapse removes the host from the tree but
+  keeps the domain's state (search text, selected tab, scroll) so the
+  reveal puts it back exactly as it was.
+- **The give-away law** (t_66fa358e): pure window-narrow arithmetic —
+  when the window cannot seat every fixed edge pane at its floor, the
+  give-away squeezes the other edge roots to make room, but the
+  component the user JUST revealed (the last request) is exempt: it
+  survives, the other edge gives way. Reveal and resize read the same
+  formula, so "no room" never fires while a give-away could seat the
+  pane.
+- **Sessions panel order** (t_311fc40b as amended by t_7ee0a673):
+  the head row IS the universal band — tab title left, the search seats
+  IN the band top right (band-tool slot, on the band's own 22px row;
+  the separate search row below the band is dead), and the new-session
+  control keeps its own full-width row under the band.
+- **Tab drag-and-drop** moves tabs between panes (edge zones split,
+  see the geometry section); sessions stay in the sidebar.
+- **Boot repair** (t_841df625): a persisted dock shell from before a
+  built host's bottom-home addition is repaired at boot — new
+  bottom-home registry members are injected into the persisted bottom
+  shell with the persisted layout untouched (the repair count is
+  logged), so a fresh tab host survives old shells.
 - **Module-owned UI (build-time composition)**: modules ship UI in
   `modules/<name>/ui/`; `nuxt.config.ts` composes them by array —
   `app/composables/module-panels.generated.ts` is generated at build
@@ -184,17 +282,17 @@ Everything else animates through `transition`, not keyframes.
 
 ## The composer's `/` palette and `@` mentions (card t_07aed3f9)
 
-Parity with the TUI (`engine/tui/tui.go` is the spec, not a new
-design):
+The webui is the shell; the palette is webui-native. Registration and
+resolution mirror the one command law every surface follows:
 
 - **`/` at input start opens the command palette.** Rows: the webui's
   shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` —
-  the TUI's knownCommands minus `/exit`, plus `/new` and `/sessions`;
-  `/copy /modules /fork /help /panels /retry /theme /variant` map
-  to webui-native local actions; `/extensions` rides the palette as
+  `/new` and `/sessions` plus the local-action set
+  `/copy /modules /fork /help /panels /retry /theme /variant`;
+  `/extensions` rides the palette as
   the /modules alias), then extension commands from
-  `GET /commands`, then skills as `/<skill-name>` rows — the TUI's
-  `buildCommands` assembly order. Typing filters case-insensitively
+  `GET /commands`, then skills as `/<skill-name>` rows.
+  Typing filters case-insensitively
   over name AND description; ArrowUp/ArrowDown navigate, Enter picks
   or (with the draft not in palette mode) submits, Esc dismisses.
 - **Shell commands act LOCALLY and never hit the agent.** `/fork`,
@@ -209,9 +307,58 @@ design):
   `@session:` lists sessions, `@skill:` lists skills. Picking inserts
   the completed token at the caret. The picker only helps TYPE tokens
   — expansion is SERVER-SIDE on the `/chat` submit path through the
-  one `core.ExpandAtMentions` law the TUI submit path also calls
-  (`core/atmention.go`). The browser never reads or expands files;
+  one `core.ExpandAtMentions` law (`core/atmention.go`). The browser
+  never reads or expands files;
   unresolvable tokens stay literal in the message.
+
+## The Files tab
+
+- **The tree is chevronless** (t_63582d1f): expand/collapse triangles
+  do not exist. The folder icon alone carries the state — the glyph
+  flips `lucide-folder` / `lucide-folder-open` and the row carries
+  `aria-expanded`. Keyboard parity: focus + Enter toggles. Hover
+  indent guides: one hairline `::before` per nesting level, revealed
+  purely by CSS `:hover` on the root tree (0.15s opacity fade) — zero
+  listeners, zero layout shift; no narrow exemption.
+- **The path guard is the traversal set** (t_ccd4a000): every file
+  surface (browse, read, raw) rejects absolute paths, empty segments,
+  and ONLY the `.` / `..` traversal segments — dotfiles and dot-folders
+  (`.git`, `.worktrees`, ...) list and read like everything else.
+  Listed rows carry no error state; a failed read is a one-line
+  notice, not a phantom row.
+- **The viewer renders images** (t_08d822bb): `GET /files/read`
+  carries a `mime` field; on an `image/*` mime the viewer tab swaps
+  the text body for an `<img>` served by `GET /files/raw` (raw bytes
+  under the read surface's exact root jail). Every other binary keeps
+  the honest "binary file - no preview" notice. The raw route serves
+  image/* ONLY — non-image and binary reads answer 400.
+
+## The Agents tab
+
+- The continuous roster is a flat list (no grouping) over
+  `GET /continuous/roster`: the row law with a live dot + short word
+  on the subtitle (green active, dim sleeping), the right-anchored
+  toggle per the pill law, and NO wake control anywhere — waking is
+  the scheduler's job, the tab never spawns a wake.
+- **The default agent is locked** (t_2d8deb8c): it must always be on.
+  The row's pill is locked-on and non-interactive; `PUT
+  /disabled/agents` answers 409 for the default agent at the handler
+  level and config.yaml stays untouched.
+- **Expansion = details + edit**: expanding a row seats the config
+  summary and the `PUT /agents/{name}` layer editor (description,
+  provider host/type/model_name/api_key, system_prompt; nil = leave
+  alone). Session rows are dead on this tab — sessions live in the
+  sidebar, never in the roster.
+
+## Terminal and browser panes
+
+Two module capsules complete the main surface (t_55a3fc4b terminal +
+t_95c91f9c browser): the terminal module hosts a PTY in the
+bottom pane (`TerminalTab`, journey 95), and the browser module hosts
+an any-origin iframe tab in the main area (`BrowserTab` over
+GET/PUT /browser/last, the resume URL; sites refusing embedding get
+an explicit fallback panel, journey 96). Both are in-process capsules
+of the module table (docs/architecture.md).
 
 ## Component map
 
@@ -229,24 +376,37 @@ design):
 - Shell: `MenuBar` (brand, toggles), `StatusBar` (health dot,
   token/ctx/rate telemetry, build version + uptime), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,
-  actions right, outside every scrollport).
+  actions right, outside every scrollport), `TogglePill` (the one
+  switch, see above), `BandSelect` (the themed select — chip button +
+  role="listbox" pop, generalized over short option ladders: band
+  toggles, the board switcher, the drawer status, settings knobs, the
+  composer's reasoning-effort chip).
 - Chat: `AppComposer` (auto-grow textarea, ONE morphing action button -
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the
   msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
   picker, see below),
-  `ModelSelect` + `ThinkingSelect` (custom listboxes — a native
-  `<select>` popup is OS chrome that cannot be themed), `ChatMessage`,
+  `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
+  ThinkingSelect retired — the BandSelect owns the select grammar; the
+  model+effort pair is one nowrap wrap unit), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
   result), `ChatTab` (transcript + composer, live-pin layout),
   `ChatItem`.
-- Sessions: `AppSidebar` (search, pinned section, day buckets, per-row
-  pin/status affordance, archive/trash hover actions, branch/rename/
-  export row actions, archived group).
-- Files: `FileTree`, `FilesTab`, `InspectorPanel` (module panels slot
-  in). Settings: `SettingsTab` (the config knobs as a dock-tab
-  singleton). Canvas (arc 3c): `composables/canvas.ts` is the store —
+- Sessions: `AppSidebar` (band head with the in-band search, the
+  full-width new-session row, pinned section, day buckets, per-row
+  pin/status affordance, archive/trash hover actions,
+  branch/rename/export row actions, archived group, order law above).
+- Files: `FileTree` + `FilesTab` + `InspectorPanel` (module panels slot
+  in). See the Files tab section below. Settings: `SettingsTab` (the
+  config knobs as a dock-tab singleton; the theme picker is TWO knobs —
+  color mode and the custom theme, t_a94b1cda; model slots ride
+  `ModelField`, the BandSelect listbox with capability filters).
+  Terminal: `TerminalTab` (the bottom-host PTY over the terminal
+  module's ws). Browser: `BrowserTab` (URL bar + iframe over
+  GET/PUT /browser/last; X-Frame-Options refusals render the fallback
+  panel, never a silent blank frame).
+- Canvas (arc 3c): `composables/canvas.ts` is the store —
   snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
   by the chat host's `canvasDelta` dep) + the action pipe POST
   (optimistic pending, error state on 4xx/5xx); the standalone
@@ -318,4 +478,4 @@ out clean. A grep against the `.vue` sources will lie to you.
 ## Related
 
 - [api.md](api.md) — the HTTP wire the webui rides
-- [tui.md](tui.md) — the TUI equivalent of this surface
+- [configuration.md](configuration.md) — the knobs the settings pane renders
