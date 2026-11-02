@@ -126,6 +126,23 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			},
 		},
 		{
+			Key:   "sessions",
+			Label: "sessions",
+			Knobs: []core.SettingsKnob{
+				{Key: "sessions.retention_days", Label: "retention (days)", Type: "number",
+					Min: ptrF(0), Step: ptrF(1),
+					Value: cfg.Sessions.RetentionDays,
+					Help:  "the hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt); 0 = never prune; applies on restart"},
+				{Key: "sessions.summarize_after_hours", Label: "summarize after (h)", Type: "number",
+					Min: ptrF(0), Step: ptrF(1),
+					Value: cfg.Sessions.SummarizeAfterHours,
+					Help:  "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies on restart"},
+				{Key: "sessions.summarizer_model", Label: "summarizer model", Type: "model",
+					Value: cfg.Sessions.SummarizerModel,
+					Help:  "model the hygiene job consults for session summaries; empty = the session provider model; applies on restart"},
+			},
+		},
+		{
 			Key:   "compaction",
 			Label: "compaction",
 			Knobs: compactionKnobs(cfg),
@@ -339,7 +356,13 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setStringField(cfg, key, raw)
 		case "skills.nudge_interval":
 			err = setInt(&cfg.Skills.NudgeInterval, key, raw, 0, math.MaxInt32) // 0 = off
+		case "sessions.retention_days":
+			err = setInt(&cfg.Sessions.RetentionDays, key, raw, 0, math.MaxInt32) // 0 = never prune
+		case "sessions.summarize_after_hours":
+			err = setInt(&cfg.Sessions.SummarizeAfterHours, key, raw, 0, math.MaxInt32) // 0 = the default
 		case "skills.curator_model":
+			err = setStringField(cfg, key, raw)
+		case "sessions.summarizer_model":
 			err = setStringField(cfg, key, raw)
 		case "compaction.enabled", "memory.enabled", "memory.user_profile_enabled",
 			"logging.enabled":
@@ -410,6 +433,8 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.Skills.Dir = v
 	case "skills.curator_model":
 		cfg.Skills.CuratorModel = v
+	case "sessions.summarizer_model":
+		cfg.Sessions.SummarizerModel = v
 	case "memory.file":
 		cfg.Memory.File = v
 	case "memory.user_file":

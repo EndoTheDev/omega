@@ -39,6 +39,8 @@ type insightsPayload struct {
 	NotableMsgs    insightsNotableRow `json:"notable_msgs"`
 	NotableTokens  insightsNotableRow `json:"notable_tokens"`
 	NotableTools   insightsNotableRow `json:"notable_tools"`
+	DBSizeBytes    int64              `json:"db_size_bytes"`
+	WALSizeBytes   int64              `json:"wal_size_bytes"`
 }
 
 type insightsToolRow struct {
@@ -79,6 +81,11 @@ func insightsPayloadOf(in *core.Insights) insightsPayload {
 		NotableMsgs:   insightsNotableRow{Value: in.NotableMsgs.Value, Detail: in.NotableMsgs.Detail},
 		NotableTokens: insightsNotableRow{Value: in.NotableTokens.Value, Detail: in.NotableTokens.Detail},
 		NotableTools:  insightsNotableRow{Value: in.NotableTools.Value, Detail: in.NotableTools.Detail},
+		// Store file sizes ride every response (the webui's insights
+		// pane renders them when non-zero - a ":memory:" test store
+		// sends 0/0 and that is honest).
+		DBSizeBytes:  in.DBSizeBytes,
+		WALSizeBytes: in.WALSizeBytes,
 	}
 	for _, t := range in.Tools {
 		p.Tools = append(p.Tools, insightsToolRow{Name: t.Name, Count: t.Count})
