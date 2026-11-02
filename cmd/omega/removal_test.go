@@ -809,31 +809,26 @@ func TestDelegateRemovalProof(t *testing.T) {
 		}
 	}
 	t.Setenv("OMEGA_BIN", echo)
-	drained := make(chan core.InjectedMessage, 1)
-	go func() {
-		select {
-		case m := <-ctx.InjectedMessages:
-			drained <- m
-		case <-time.After(10 * time.Second):
-		}
-	}()
 	res, runErr = delegateTool.Run(context.Background(), map[string]any{"action": "task", "prompt": "arc 6 proof"})
 	if runErr != nil || !strings.Contains(res, "task-1") {
 		t.Fatalf("FULL MOUNT: delegate task spawn failed (res=%s err=%v)", res, runErr)
 	}
-	select {
-	case m := <-drained:
-		if m.Source != "delegate:task-1" {
-			t.Fatalf("FULL MOUNT: injected message source = %q, want delegate:task-1", m.Source)
-		}
-		// the echo child's stdout is its argv (echo echoes the flag
-		// vector too); the pin is that the child's output - the prompt
-		// among it - rides the summary, trimmed, not lost.
-		if !strings.Contains(m.Text, "arc 6 proof") {
-			t.Fatalf("FULL MOUNT: injected result lost the child output: %.80q", m.Text)
-		}
-	case <-time.After(9 * time.Second):
-		t.Fatal("FULL MOUNT: the spawn result never landed on the inject channel")
+	// The spawn ctx carries no run affinity, so the result queues under
+	// the unaddressed "" key - Wait on it (10s deadline).
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer drainCancel()
+	m, ok := ctx.InjectedMessages.Wait(drainCtx, "")
+	if !ok {
+		t.Fatal("FULL MOUNT: the spawn result never landed on the inject stream")
+	}
+	if m.Source != "delegate:task-1" {
+		t.Fatalf("FULL MOUNT: injected message source = %q, want delegate:task-1", m.Source)
+	}
+	// the echo child's stdout is its argv (echo echoes the flag
+	// vector too); the pin is that the child's output - the prompt
+	// among it - rides the summary, trimmed, not lost.
+	if !strings.Contains(m.Text, "arc 6 proof") {
+		t.Fatalf("FULL MOUNT: injected result lost the child output: %.80q", m.Text)
 	}
 	// finish() emits after it injects - the record may land a beat
 	// after the drain, so poll the store briefly

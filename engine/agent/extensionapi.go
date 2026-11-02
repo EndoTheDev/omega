@@ -777,8 +777,11 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 }
 
 // RegisterDelegation maps the delegation pipe (both fields of the
-// classic delegate seam in one registration).
-func (api *ExtensionAPI) RegisterDelegation(injected <-chan core.InjectedMessage, pending func() int) error {
+// classic delegate seam in one registration). The injected side is the
+// run-affinity InjectedStream (t_f3fb7c52) - results are queued per run
+// and drained by the run's own affinity key; the pending side counts
+// THIS run's running tasks.
+func (api *ExtensionAPI) RegisterDelegation(injected core.InjectedStream, pending func(affinity string) int) error {
 	prevInj := api.ctx.InjectedMessages
 	api.writeSlot(
 		func(c *core.Context) { c.InjectedMessages = injected },

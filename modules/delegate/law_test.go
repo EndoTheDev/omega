@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/engine/agent"
@@ -208,14 +207,15 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 		t.Fatalf("runDelegateTask: %v (%s)", err, out)
 	}
 
-	select {
-	case msg := <-d.InjectedChannel():
-		// the child saw the flag: its argv echo rides the summary
-		if !strings.Contains(msg.text, "--session") {
-			t.Fatalf("child argv missing --session: %q", msg.text)
-		}
-	case <-time.After(15 * time.Second):
+	// The result rides the spawning run's affinity queue: this test's
+	// ctx carries no affinity key, so drain the unaddressed "" queue.
+	msg, ok := d.Wait(ctx15(t), "")
+	if !ok {
 		t.Fatalf("no injected result: %s", out)
+	}
+	// the child saw the flag: its argv echo rides the summary
+	if !strings.Contains(msg.Text, "--session") {
+		t.Fatalf("child argv missing --session: %q", msg.Text)
 	}
 
 	if len(store.created) != 1 {
@@ -254,16 +254,16 @@ func TestSessionCreateFailureDegradesToPlainRun(t *testing.T) {
 	if strings.Contains(out, "(session ") {
 		t.Fatalf("degraded spawn leaked a session handle: %q", out)
 	}
-	select {
-	case msg := <-d.InjectedChannel():
-		if !strings.Contains(msg.text, "args=") {
-			t.Fatalf("plain-run result not injected: %q", msg.text)
-		}
-		if strings.Contains(msg.text, "--session") {
-			t.Fatalf("degraded spawn still carried --session: %q", msg.text)
-		}
-	case <-time.After(15 * time.Second):
+	// The degraded spawn has no affinity key either - drain "".
+	msg, ok := d.Wait(ctx15(t), "")
+	if !ok {
 		t.Fatalf("no injected result: %s", out)
+	}
+	if !strings.Contains(msg.Text, "args=") {
+		t.Fatalf("plain-run result not injected: %q", msg.Text)
+	}
+	if strings.Contains(msg.Text, "--session") {
+		t.Fatalf("degraded spawn still carried --session: %q", msg.Text)
 	}
 }
 

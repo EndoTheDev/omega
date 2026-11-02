@@ -68,12 +68,11 @@ func TestFinishWithoutNotifierIsHarmless(t *testing.T) {
 	d := NewDelegate()
 	registerTask(d, "task-9")
 	d.finish("task-9", nil) // no panic, no emission
-	select {
-	case msg := <-d.InjectedChannel():
-		if msg.text == "" {
-			t.Fatalf("empty injection without the notifier")
-		}
-	default:
-		t.Fatalf("injection lost without the notifier")
+	msgs := d.Poll("")
+	if len(msgs) == 0 {
+		t.Fatal("injection lost without the notifier")
+	}
+	if msgs[0].Text == "" {
+		t.Fatalf("empty injection without the notifier")
 	}
 }
