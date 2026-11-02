@@ -44,7 +44,7 @@ type LoopOptions struct {
 	// consults it before every tool run and turns a non-nil error
 	// into the tool result (the command never executes).
 	Approvals ApprovalProvider
-	Nudge     TurnNudger       // learning-loop reminder seam (t_9972dfd0; nil = off)
+	Nudge     TurnNudger     // learning-loop reminder seam (t_9972dfd0; nil = off)
 	Logger    LoggerProvider // optional logger; nil = no logging
 }
 
