@@ -316,7 +316,25 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
     [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
     DISPATCH_MAX=$(( ${#RUNNING[@]} + SLOTS ))
   fi
-  hermes kanban dispatch --max "$DISPATCH_MAX" >"$DOUT" 2>&1 || true
+  # FENCE STAMP (card t_8b32a09a, Endo ruling 2026-11-02 "bake + fence"):
+  # every worker spawned through this call is stamped OMEGA_WORKER=1 and
+  # gets repo bin/shims at the FRONT of PATH, so bare `git` inside a
+  # worker shell is the fence shim (push + dev/master landings refuse;
+  # everything else forwards). Env-scoped BY RULING: the stamp lives only
+  # inside this invocation - the tick shell and the main session read no
+  # marker and keep landing + pushing by law. The worker env is built
+  # from this command's environment, so the stamp and the shim dir
+  # survive into the spawned session.
+  SHIMDIR="$PWD/bin/shims"
+  if [ -x "$SHIMDIR/git" ]; then
+    OMEGA_WORKER=1 PATH="$SHIMDIR:$PATH" hermes kanban dispatch --max "$DISPATCH_MAX" >"$DOUT" 2>&1 || true
+  else
+    # Loud, not silent: an unstamped dispatch here runs the full
+    # forbidden tick cycle inside a worker again - the exact failure the
+    # fence exists to make impossible (t_529628d5, t_5782d11e).
+    echo "FENCE STAMP MISSING: $SHIMDIR/git absent - dispatch ABORTED, pass runs unfenced (restore bin/shims/git)" >&2
+    exit 1
+  fi
   grep -E "Spawned|assigned" "$DOUT" || true
   # guard bug #8 (2026-10-28, proven twice in one night): the inner dispatcher
   # spawned past the requested total (guard snapshot 1 running, slots 1, --max 2,
