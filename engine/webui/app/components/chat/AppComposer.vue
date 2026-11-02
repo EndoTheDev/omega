@@ -325,11 +325,17 @@
 
   function toggleExpand() {
     expanded.value = !expanded.value;
-    resize();
-    // fullscreen hands the canvas to the input immediately: the cursor
-    // waits in the grown region the moment the toggle lands (card
-    // t_08ef793b ruling 1 - the big space is typeable canvas)
-    if (expanded.value) ta.value?.focus();
+    // the height math reads state-dependent layout: the class must land in
+    // the DOM first. Measuring synchronously (the old shape) read the
+    // STRETCHED textarea's scrollHeight on collapse - the compact height
+    // pinned to the old 84px cap instead of the content's own height.
+    nextTick(() => {
+      resize();
+      // fullscreen hands the canvas to the input immediately: the cursor
+      // waits in the grown region the moment the toggle lands (card
+      // t_08ef793b ruling 1 - the big space is typeable canvas)
+      if (expanded.value) ta.value?.focus();
+    });
   }
 
   // fullscreen canvas law (card t_08ef793b): a click on empty composer
