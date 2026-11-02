@@ -30,6 +30,13 @@ type AtMentionEnv struct {
 	// Dir is the base for relative file paths and globs. Empty means
 	// the process working directory - the original shell behavior.
 	Dir string
+	// ReferenceOnly turns the file branches literal (card t_7f09bd0c):
+	// a file or glob token rides through AS the path - a reference the
+	// model follows with its own tools, never an inline read or an
+	// image attach. The @session:/@skill: injections stay live; the
+	// webui submit path sets this (its composer attaches PATHS), the
+	// CLI loop keeps the inline law.
+	ReferenceOnly bool
 }
 
 // AtFilePattern matches @<non-space> tokens in a text string.
@@ -105,6 +112,8 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 	path := token[1:] // strip @
 
 	// @skill:<name> - inject skill content.
+	// (the @session:/@skill: injections stay live under ReferenceOnly -
+	// card t_7f09bd0c turns only the FILE branches literal.)
 	if strings.HasPrefix(path, "skill:") {
 		skillName := path[6:]
 		for _, s := range env.Skills {
@@ -130,6 +139,14 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 			sb.WriteString(fmt.Sprintf("[%s] %s\n", role, env.MessageText(msg)))
 		}
 		return sb.String(), nil, atResolved, nil
+	}
+
+	// ReferenceOnly (card t_7f09bd0c): every FILE-shaped token
+	// (plain path or glob) is a path reference on this path - it rides
+	// through as written and reports unresolved. No inline, no image
+	// attach, no mime work.
+	if env.ReferenceOnly {
+		return token, nil, atLiteral, nil
 	}
 
 	resolved := atMentionResolve(env.Dir, path)

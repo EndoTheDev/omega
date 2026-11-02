@@ -21,8 +21,9 @@ export interface PaletteItem {
   // shell = webui-native local action; extension = a module's
   // registered command (dispatched server-side, never the agent);
   // skill = content injection on the next send; file/session =
-  // @-mention inserts
-  kind: "shell" | "extension" | "skill" | "file" | "session";
+  // @-mention inserts; dir (t_7f09bd0c) is the @ path list's drill row -
+  // picking it never completes a token, it opens the folder's own list
+  kind: "shell" | "extension" | "skill" | "file" | "dir" | "session";
 }
 
 // The one set the ChatTab + host use to route a "/" draft: these run

@@ -8,7 +8,20 @@
         ref="mdEl"
         class="md"
         v-html="rendered" />
-      <template v-else>{{ content }}</template>
+      <template v-else-if="msgParts">
+        <!-- the user bubble's reference pills (t_7f09bd0c): the tokens
+             the composer produced, scanned straight off the message
+             text - the pill is inline, text around it stays verbatim -->
+        <template
+          v-for="(seg, i) in msgParts"
+          :key="i">
+          <template v-if="seg.text">{{ seg.text }}</template>
+          <ReferencePill
+            v-else-if="seg.token"
+            :pill="seg.token"
+            @open="openRef(seg.token!)" />
+        </template>
+      </template>
       <!-- uploaded/attached images: thumbnails, click opens full size -->
       <div
         v-if="images?.length"
@@ -79,10 +92,16 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../../composables/codeblocks";
   import VariantSwitcher from "./VariantSwitcher.vue";
+  import ReferencePill from "./ReferencePill.vue";
+  import {
+    splitRefSegments,
+    type RefToken,
+  } from "../../composables/pills";
+  import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
   import {
     createRenderScheduler,
     dataUrl,
@@ -123,6 +142,23 @@
     (e: "fork"): void;
     (e: "retry"): void;
   }>();
+
+  // --- the sent-message pills (card t_7f09bd0c) ---
+  // USER bubbles only: the message text is scanned for the pill tokens
+  // the composer inserts (a leading /<skill-name>, a standalone
+  // @<path>) - the assistant bubble keeps the markdown render. The
+  // scan is the shared token model (pills.ts), not a transcript
+  // heuristic: pills exist exactly where the invocation grammar is.
+  const msgParts = computed(() =>
+    props.role === "user" ? splitRefSegments(props.content) : null,
+  );
+  // the pill's open: the app always provides the viewer opener (FilesTab
+  // rides it) - a file ref opens in the Files pane, a skill ref opens
+  // its SKILL.md. Same renderer, same targets as the composer's strip.
+  const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
+  function openRef(t: RefToken) {
+    openViewerRef?.({ kind: t.kind, name: t.name });
+  }
 
   // Click-to-open: a data URL in a new browser tab is the plain full
   // view (no lightbox infrastructure for v1).

@@ -483,12 +483,21 @@
   function onSend() {
     const text = draft.value.trim();
     if (!text) return;
+    const fork = forkAnchor.value;
     // slash commands run locally and never hit the agent (the TUI's
     // law, card t_07aed3f9): the host routes shell verbs to the app's
-    // local handler and module/skill commands to the dispatch surface
+    // local handler and module/skill commands to the dispatch surface.
+    // A /<skill-name> is a reference pill now (t_7f09bd0c): the send
+    // ctx tells the host the dispatch resolves into a MESSAGE - the
+    // skill arms and the token posts, so the pill lives in the
+    // transcript. The fork anchor rides it like any send.
     if (text.startsWith("/")) {
       draft.value = "";
-      void host.command(stateKey, text);
+      void host.command(stateKey, text, {
+        model: modelValue.value,
+        thinking: thinkingLevelWire(props.thinking),
+        fork: fork ?? undefined,
+      });
       return;
     }
     draft.value = "";
@@ -496,7 +505,6 @@
     // rendered transcript); a stale anchor degrades to a plain send,
     // exactly as before - and consumes on send (the next send is a
     // plain one unless the chip is armed again)
-    const fork = forkAnchor.value;
     if (fork) host.setFork(stateKey, null);
     host.submit(stateKey, text, modelValue.value, thinkingLevelWire(props.thinking), fork ?? undefined);
   }

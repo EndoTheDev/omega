@@ -1631,6 +1631,58 @@ labels stopped short of the right edge. */
 }
 .fork-clear:hover { color: var(--text); }
 
+/* the reference pills (card t_7f09bd0c): the composer's strip rides the
+   same family as the fork chip above; the sent bubble carries the same
+   pill inline. File pills read dim on the stroke; skill pills read the
+   accent - the invocation glyph is the zap. */
+.ref-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 0;
+}
+.ref-pill-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+.ref-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--z2);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.ref-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ref-pill.skill {
+  color: var(--accent);
+}
+.ref-pill .ref-pill-name {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.ref-remove {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px 0 4px;
+}
+.ref-remove:hover { color: var(--accent); }
+/* the sent bubble's inline pill: it rides the pre-wrap text flow */
+.bubble .ref-pill { vertical-align: middle; }
+
 /* image attachments in a transcript bubble: inline thumbnails,
    click opens the full-size data URL in a new tab */
 .msg-images {
