@@ -2059,14 +2059,22 @@ labels stopped short of the right edge. */
   display: block;
 }
 
-/* appears once content exceeds the 4-row cap - grows the composer further */
+/* appears once content exceeds the 4-row cap (or in fullscreen - the
+   collapse affordance never disappears there). A real button: >=24px hit
+   target, inset from the card's corner - the old 15px glyph-chip read as
+   chrome and collided with the textarea scrollbar's sliver (card
+   t_08ef793b). Opaque fill: it sits OVER its gutter cleanly. */
 .expand-btn {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  top: 6px;
+  right: 8px;
   z-index: 5;
-  padding: 2px 7px;
-  font-size: 11px;
+  min-width: 24px;
+  min-height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 2px 8px;
+  font-size: 12px;
   font-family: var(--mono);
   color: var(--text-dim);
   background: var(--z1-raised);
@@ -2077,16 +2085,41 @@ labels stopped short of the right edge. */
 .expand-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .composer:focus-within { border-color: rgba(232, 131, 58, 0.55); }
 
-/* expanded: the composer takes over the chat pane - grows past the
-   messages area to the top of the pane, textarea stretches and scrolls */
+/* expanded/fullscreen (card t_08ef793b, Endo ruling 2026-11-02): a floating
+   CARD that owns the pane - "a floating card, not a focus ring". Column
+   anatomy: the TEXT region is the tall element (the row grows, the textarea
+   stretches to fill it - the canvas is typeable with the placeholder and
+   the cursor in it) and the control row (+ joins the chips, send anchors
+   right) pins to the card's bottom edge with the compact padding rhythm. */
 .composer.expanded {
   flex-grow: 1000; /* outgrow .messages (flex 1) almost entirely */
+  margin: 12px; /* card geometry: inset on all four sides, kept radius */
+}
+/* the focus ring is a compact-composer affordance: fullscreen keeps the
+   card's own stroke - the pane-sized orange border dies here */
+.composer.expanded:focus-within { border-color: var(--stroke); }
+.composer.expanded .composer-row {
+  flex: 1; /* the tall element: the row eats the card's free height */
+  align-items: stretch; /* the textarea fills the grown row's height */
 }
 .composer.expanded textarea {
   flex: 1;
   height: auto;
   min-height: 0;
+  /* the collapse chevron's gutter: the textarea's scrollbar ends left of
+     the right edge strip the button lives in - no sliver collision */
+  margin-right: 40px;
 }
+
+/* the fullscreen bottom control row (.composer-bottom on .toolbar):
+   one row, one baseline - chips and send share the row's center like the
+   compact toolbar; the send keeps its accent fill at NORMAL contrast
+   (ruling 4: the empty-draft dim washed the accent out in fullscreen). */
+.composer-bottom { align-items: center; }
+.composer-bottom .plus-btn {
+  margin: 0; /* the row's first-line seat (8px top) is a compact trait */
+}
+.composer-bottom .send:disabled { opacity: 1; }
 
 .composer textarea {
   flex: 1 1 auto; /* the row's content: shrink-able, scrollable */

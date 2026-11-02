@@ -1,7 +1,8 @@
 <template>
   <div
     class="composer"
-    :class="{ expanded: expanded }">
+    :class="{ expanded: expanded }"
+    @click="onCanvasClick">
     <div
       v-if="attachments.length"
       class="attach-strip">
@@ -55,6 +56,7 @@
     </div>
     <div class="composer-row">
       <button
+        v-if="!expanded"
         class="plus-btn"
         type="button"
         title="attach images"
@@ -121,14 +123,27 @@
       style="display: none"
       @change="onFilesPicked" />
     <button
-      v-if="overflowing"
+      v-if="overflowing || expanded"
       class="expand-btn"
       type="button"
       :title="expanded ? 'collapse composer' : 'expand composer'"
       @click="toggleExpand">
       {{ expanded ? "▾" : "▴" }}
     </button>
-    <div class="toolbar">
+    <!-- the fullscreen bottom control row (card t_08ef793b): the + joins
+         the chips and send here - the expanded state's one bottom row.
+         v-if keeps the two + seats exclusive: compact keeps the row seat,
+         fullscreen the toolbar seat - the compact DOM never changes. -->
+    <div
+      class="toolbar"
+      :class="{ 'composer-bottom': expanded }">
+      <button
+        v-if="expanded"
+        class="plus-btn"
+        type="button"
+        title="attach images"
+        aria-label="attach images"
+        @click="fileInput?.click()">+</button>
       <!-- control row order (v0.14.3, user ruling): workspace FIRST,
            then the model name, then the effort pill - the folder the
            session runs in is the row's first citizen -->
@@ -279,7 +294,9 @@
 
   // grow with content: 1 row at rest, up to 4 rows (COMPOSER_MAX), then the
   // textarea scrolls. Past the cap an expand button appears (top right) to
-  // grow the composer beyond it, up to 60% of the viewport.
+  // grow the composer beyond it - the FULLSCREEN state (card t_08ef793b): a
+  // floating card where the text region is the tall element and the control
+  // row (+, chips, send) pins to the card's bottom edge.
   // Explicit 21px line-height in CSS makes the row math deterministic:
   // 4 rows = 84px of content height.
   const COMPOSER_MAX = 84;
@@ -309,6 +326,28 @@
   function toggleExpand() {
     expanded.value = !expanded.value;
     resize();
+    // fullscreen hands the canvas to the input immediately: the cursor
+    // waits in the grown region the moment the toggle lands (card
+    // t_08ef793b ruling 1 - the big space is typeable canvas)
+    if (expanded.value) ta.value?.focus();
+  }
+
+  // fullscreen canvas law (card t_08ef793b): a click on empty composer
+  // space - the grown region's background, the chevron's gutter - lands the
+  // caret. Control clicks (chips, send, pills, strips, palette) pass
+  // through untouched, so chip menus and the palette behave as usual.
+  function onCanvasClick(e: MouseEvent) {
+    if (!expanded.value) return;
+    const el = e.target as HTMLElement | null;
+    if (!el || el === ta.value) return;
+    if (
+      el.closest(
+        "button, input, textarea, [role=listbox], .composer-palette, .attach-strip, .fork-chip, .ref-strip, .model-select, .thinking-select, .workspace-select, .toolbar",
+      )
+    ) {
+      return;
+    }
+    ta.value?.focus();
   }
 
   // draft clears after send (parent) - shrink back on the next tick
