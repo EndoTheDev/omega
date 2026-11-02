@@ -23,9 +23,9 @@ import (
 
 // Ledger actions.
 const (
-	LedgerArchive = "archive"
-	LedgerMerge   = "merge"
-	LedgerDistill = "distill"
+	LedgerArchive  = "archive"
+	LedgerMerge    = "merge"
+	LedgerDistill  = "distill"
 	LedgerRollback = "rollback"
 )
 
@@ -267,6 +267,9 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		if rerr == nil && string(cur) != f.After {
 			return "", fmt.Errorf("rollback: %s changed since entry %s - restore it by hand", f.Path, id)
 		}
+		if err := os.MkdirAll(filepath.Dir(f.Path), 0o755); err != nil {
+			return "", fmt.Errorf("rollback: %w", err)
+		}
 		switch target.Action {
 		case LedgerArchive:
 			// The folder moved to .archive; every recorded file goes
@@ -285,7 +288,10 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 			report.WriteString("restored " + f.Path + "\n")
 		}
 	}
-	if target.Action == LedgerArchive {
+	// Merge rollbacks un-archive too: the source moved to .archive as
+	// part of the absorb, so the undo takes the folder back the same
+	// way an archive undo does.
+	if target.Action == LedgerArchive || target.Action == LedgerMerge {
 		arch, err := sp.archiveDir()
 		if err == nil {
 			_ = os.RemoveAll(filepath.Join(arch, target.Skill))

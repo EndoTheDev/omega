@@ -34,13 +34,13 @@ type SkillsProvider struct {
 	// swaps the list live.
 	Disabled []string
 
-	// Curator plumbing (card t_9972dfd0). prov is the provider seam,
-	// pinned at mount (Requires("provider") orders the mount; module
-	// toggles that drop the provider leave a stale pointer - the
-	// curator consult fails loudly and the pass reports it instead of
-	// rewriting anything). CuratorModel overrides the consult model;
-	// empty = the session provider's own model.
-	prov         core.Provider
+	// Curator plumbing (card t_9972dfd0). providerFn reads the
+	// provider seam LIVE at every consult (api.Provider()) - a module
+	// toggle that swaps the provider is seen the next pass, and a
+	// missing provider skips the LLM proposals instead of rewriting
+	// anything. CuratorModel overrides the consult model; empty = the
+	// session provider's own model.
+	providerFn   func() core.Provider
 	CuratorModel string
 
 	disableMu sync.RWMutex
@@ -54,9 +54,17 @@ func (sp *SkillsProvider) SetDisabled(names []string) {
 	sp.Disabled = names
 }
 
-// SetProvider pins the provider seam at mount (the compactor's
-// pattern - requires("provider"), then capture).
-func (sp *SkillsProvider) SetProvider(p core.Provider) { sp.prov = p }
+// SetProviderFn installs the live provider reader (the plugin passes
+// api.Provider); the CLI passes a config-built provider.
+func (sp *SkillsProvider) SetProviderFn(fn func() core.Provider) { sp.providerFn = fn }
+
+// provider returns the consult provider for one pass, nil-safe.
+func (sp *SkillsProvider) provider() core.Provider {
+	if sp.providerFn == nil {
+		return nil
+	}
+	return sp.providerFn()
+}
 
 // disabledNames returns the live disable list snapshot (nil when none).
 func (sp *SkillsProvider) disabledNames() []string {
@@ -498,7 +506,7 @@ func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string)
 	}
 	switch verb {
 	case "", "run":
-		rep, err := sp.RunCurator(ctx, sp.prov, sp.CuratorModel)
+		rep, err := sp.RunCurator(ctx, sp.provider(), sp.CuratorModel)
 		if err != nil {
 			return formatReport(rep), err
 		}

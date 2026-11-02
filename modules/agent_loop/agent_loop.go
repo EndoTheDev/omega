@@ -308,8 +308,11 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 				completed[idx] = time.Now()
 				// The learning-loop seam (t_9972dfd0): every executed
 				// tool call is one iteration; a skills write/update is
-				// the persisted lesson. Concurrent-safe by contract.
-				opts.Nudge.ObserveToolRun(c.Name, c.Arguments, err)
+				// the persisted lesson. Concurrent-safe by contract; a
+				// nil seam is the off case.
+				if opts.Nudge != nil {
+					opts.Nudge.ObserveToolRun(c.Name, c.Arguments, err)
+				}
 				if err != nil {
 					res := core.NewToolResult(err.Error(), c.ID, true)
 					res.Gate = gateLine

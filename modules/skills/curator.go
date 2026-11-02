@@ -43,14 +43,14 @@ const (
 
 // CuratorReport is the pass's outcome, one row per applied mutation.
 type CuratorReport struct {
-	MarkedStale  int      `json:"marked_stale"`
-	Reactivated  int      `json:"reactivated"`
-	Archived     int      `json:"archived"`
-	Merges       int      `json:"merges"`
-	Distills     int      `json:"distills"`
-	Skipped      []string `json:"skipped,omitempty"`
-	LedgerIDs    []string `json:"ledger_ids"`
-	ProposalsSeen string  `json:"proposals_seen,omitempty"`
+	MarkedStale   int      `json:"marked_stale"`
+	Reactivated   int      `json:"reactivated"`
+	Archived      int      `json:"archived"`
+	Merges        int      `json:"merges"`
+	Distills      int      `json:"distills"`
+	Skipped       []string `json:"skipped,omitempty"`
+	LedgerIDs     []string `json:"ledger_ids"`
+	ProposalsSeen string   `json:"proposals_seen,omitempty"`
 }
 
 // RunCurator executes one pass against the provider's own skills dir.
@@ -127,6 +127,12 @@ func (sp *SkillsProvider) applyStaleness(rep *CuratorReport) error {
 		fresh := rec == UsageRecord{}
 		if fresh {
 			rec = UsageRecord{CreatedAt: now.Format(time.RFC3339), State: StateActive}
+		}
+		if rec.State == "" {
+			// A seeded record without a phase rides as active - the
+			// staleness ladder's entry state (TouchUsage normalizes
+			// the same way).
+			rec.State = StateActive
 		}
 		anchor := anchorTime(rec, now)
 		// never-used: absence of evidence is not staleness (Hermes);
