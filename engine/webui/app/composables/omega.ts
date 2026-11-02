@@ -1396,16 +1396,6 @@ export async function fetchWorkspaceFiles(path: string): Promise<FilesBrowsePayl
   };
 }
 
-// fetchMentionFiles resolves the @ mention picker's file rows (card
-// t_ea7e6a58): a workspace - the draft intent pre-session, the pinned
-// row's folder after - lists ITS files, because "@name" expands
-// SERVER-side against the session workspace at run time. Rootless
-// stays on the process-CWD read as before.
-export async function fetchMentionFiles(workspace?: string): Promise<FilesBrowsePayload> {
-  if (!workspace) return fetchFilesBrowse("");
-  return fetchWorkspaceFiles(workspace);
-}
-
 // fetchFilesRead previews one file: up to 64 KiB, truncated flag, and
 // binary=true (empty content) for bytes the viewer cannot render as
 // text; mime carries the server's sniffed type so the viewer can spot an

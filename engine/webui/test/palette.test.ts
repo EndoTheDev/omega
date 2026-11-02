@@ -19,7 +19,6 @@ import {
   filterCommands,
   mentionQueryAt,
   mentionPrefixOf,
-  mentionInnerQuery,
   replaceMentionToken,
   clampIndex,
 } from "../app/composables/commands.ts";
@@ -97,9 +96,6 @@ describe("mention token parsing", () => {
     assert.equal(mentionPrefixOf("@session:abc"), "session:");
     assert.equal(mentionPrefixOf("@skill:foo"), "skill:");
     assert.equal(mentionPrefixOf("@notes.txt"), "");
-    assert.equal(mentionInnerQuery("@session:sess-1"), "sess-1");
-    assert.equal(mentionInnerQuery("@skill:"), "");
-    assert.equal(mentionInnerQuery("@notes"), "notes");
   });
 
   it("replaces the token span at the caret, preserving the rest", () => {

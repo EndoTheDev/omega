@@ -117,12 +117,6 @@ export function mentionPrefixOf(token: string): MentionPrefix {
   return "";
 }
 
-// mentionInnerQuery strips the @ and the prefix: what's left filters
-// the list the prefix opened.
-export function mentionInnerQuery(token: string): string {
-  return token.slice(1).replace(/^session:|^skill:/i, "");
-}
-
 // pickList classifies the mention dropdown rows for a token: a bare
 // "@" or a non-prefix query lists files PLUS the two prefix rows; a
 // prefixed token lists only that prefix's rows.
