@@ -586,7 +586,24 @@ for MOD in "${MODULES[@]}"; do
   # (string constants live in rodata, not in symbol names - this is a
   # TYPE/FUNC symbol check, not a string scan)
   grep -E 'github\.com/EndoTheDev/omega/|(^|[^/])main\.' "$TMP/$MOD.nm" > "$TMP/$MOD.own" 2>/dev/null || true
-  if grep -w "$MOD" "$TMP/$MOD.own" > "$TMP/$MOD.noun.log" 2>&1; then
+  # Another capsule's package vocabulary is not the host's: terminal
+  # owns terminal.process and its OWN capsule scrub proves that
+  # vocabulary dies with the terminal capsule. The go1.26.10 runner
+  # emits terminal's ptyProcess->process itab as a NAMED symbol the
+  # 1.27 lane never sees (the nightly red on the runner toolchain),
+  # and a bare noun grep over Omega-owned symbols counts the
+  # DIFFERENT module's type name against the process check. Strip
+  # every omega modules/<name> segment out of the symbol names before
+  # the noun grep: an itab whose type operands all live under
+  # modules/<other> falls out of scope, while a host operand
+  # (github.com/EndoTheDev/omega/core or main-package vocabulary)
+  # survives the strip and still reds. The segment swallow runs to the
+  # next comma or whitespace - comma-bearing mangled generic names can
+  # over-strip, which only widens the exclusion across another
+  # capsule's own text, never across the host's.
+  sed -E 's|github\.com/EndoTheDev/omega/modules/[A-Za-z0-9_][^, ]*||g' \
+    "$TMP/$MOD.own" > "$TMP/$MOD.own.host" 2>/dev/null || true
+  if grep -w "$MOD" "$TMP/$MOD.own.host" > "$TMP/$MOD.noun.log" 2>&1; then
     echo "nm-purity [$MOD]: FAIL - the module noun survives as an omega-owned symbol:" >&2
     sed 's/^/    /' "$TMP/$MOD.noun.log" | head -10 >&2
     fails=$((fails+1)); continue

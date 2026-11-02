@@ -49,10 +49,10 @@ if ! grep -q 'EndoTheDev/omega/' "$PURITY"; then
 else
   ok
 fi
-if grep -q 'grep -E .*EndoTheDev.*MOD\.own' "$PURITY" || grep -q 'grep -w "$MOD" "$TMP/$MOD.own"' "$PURITY"; then
+if grep -q 'grep -E .*EndoTheDev.*MOD\.own' "$PURITY" || grep -q 'grep -w "$MOD" "$TMP/$MOD.own.host"' "$PURITY"; then
   ok
 else
-  bad "noun check does not grep the owned-symbols file"
+  bad "noun check does not grep the host-scoped owned-symbols file"
 fi
 
 # 5. nm output is read once into a file, never piped straight into
@@ -87,6 +87,61 @@ grep -E "$SCOPE_PAT" "$OWNFILE" > "$OWNFILE.out" 2>/dev/null || true
 grep -q 'EndoTheDev\|main\.' "$OWNFILE.out" && ! grep -q 'robfig\|modernc\|crypto/internal\|Verdict string' "$OWNFILE.out" \
   && ok || bad "scope filter keeps third-party nouns or drops omega-owned ones"
 rm -f "$OWNFILE" "$OWNFILE.out"
+
+# 6b. the noun check excludes another capsule's package vocabulary, so
+# the go1.26.10 runner's NAMED terminal itab (t_1b96003f nightly red)
+# cannot count a DIFFERENT module's type name against this capsule.
+# The full pipeline on a synthetic table: scope filter, host strip,
+# then the word-grep. The exact failing itab is green for --module
+# process; a host-scope noun still reds, and it reds where it lives -
+# an itab with a mixed shape (modules operand + main.process operand)
+# keeps the host operand after the strip. The -w word law is unchanged:
+# main.processRunner is a substring, not the word, and stays green.
+STRIP_SED="$(grep "sed -E 's|" "$PURITY" | sed -e "s/^.*sed -E '//" -e "s/'.*//" | head -1)"
+if [ -z "$STRIP_SED" ]; then
+  bad "noun check has no host-strip sed to extract"
+else
+  NOUNFILE="$(mktemp)"
+  NOUNLINE='d17070 R go:itab.*github.com/EndoTheDev/omega/modules/terminal.ptyProcess,github.com/EndoTheDev/omega/modules/terminal.process'
+  case_green() {
+    printf '%s\n' \
+      "$NOUNLINE" \
+      '0 T github.com/robfig/cron/v3.Cron.Run' \
+      '0 T github.com/EndoTheDev/omega/cmd/omega/config.(*Server).run' \
+      '0 T main.runtimeArgs' \
+      '0 T main.processRunner' \
+    > "$NOUNFILE.nm"
+    grep -E 'github\.com/EndoTheDev/omega/|(^|[^/])main\.' "$NOUNFILE.nm" > "$NOUNFILE.own" 2>/dev/null || true
+    sed -E "$STRIP_SED" "$NOUNFILE.own" > "$NOUNFILE.host" 2>/dev/null || true
+    if grep -w process "$NOUNFILE.host" > "$NOUNFILE.log" 2>&1; then
+      bad "the terminal itab still counts against the process noun check: $(cat "$NOUNFILE.log")"
+    else
+      ok
+    fi
+    grep -q 'main.processRunner' "$NOUNFILE.host" \
+      && ! grep -wq process "$NOUNFILE.host" \
+      && ok || bad "host scope lost from the noun check (processRunner fixture vanished)"
+  }
+  case_green
+  case_red() {
+    printf '%s\n' \
+      'd17071 R go:itab.*main.shell,main.process' \
+      '0 R go:itab.*github.com/EndoTheDev/omega/modules/terminal.ptyProcess,main.process' \
+      '0 T main.(*agent).process' \
+    > "$NOUNFILE.nm"
+    grep -E 'github\.com/EndoTheDev/omega/|(^|[^/])main\.' "$NOUNFILE.nm" > "$NOUNFILE.own" 2>/dev/null || true
+    sed -E "$STRIP_SED" "$NOUNFILE.own" > "$NOUNFILE.host" 2>/dev/null || true
+    if grep -wq process "$NOUNFILE.host"; then
+      ok
+      grep -wq 'main\.process' "$NOUNFILE.host" \
+        && ok || bad "host operand did not survive the strip: $(grep -w process "$NOUNFILE.host")"
+    else
+      bad "host-scope process noun read GREEN (the exclusion over-stripped)"
+    fi
+  }
+  case_red
+fi
+rm -f "$NOUNFILE.nm" "$NOUNFILE.own" "$NOUNFILE.host" "$NOUNFILE.log"
 
 # 7. the scrubber kills a composite-literal element WHOLE when its
 # wire is the tail line: `Value: cfg.Memory.File, Help: "..."},`
