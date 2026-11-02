@@ -154,6 +154,13 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "skills.dir", Label: "skills directory", Type: "text",
 					Value: cfg.Skills.Dir,
 					Help:  "loaded at startup; applies on restart"},
+				{Key: "skills.nudge_interval", Label: "nudge interval", Type: "number",
+					Min: ptrF(0), Step: ptrF(1),
+					Value: cfg.Skills.NudgeInterval,
+					Help:  "learning-loop reminder cadence: tool iterations without a persisted lesson before the next turn prep carries one reminder line; 0 = off; applies on restart"},
+				{Key: "skills.curator_model", Label: "curator model", Type: "model",
+					Value: cfg.Skills.CuratorModel,
+					Help:  "model the weekly curator pass consults for merge/distill proposals; empty = the session provider model; applies on restart"},
 			},
 		},
 		{
@@ -330,6 +337,10 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "store.db_path", "system_prompt", "theme",
 			"skills.dir", "memory.file", "memory.user_file", "logging.file":
 			err = setStringField(cfg, key, raw)
+		case "skills.nudge_interval":
+			err = setInt(&cfg.Skills.NudgeInterval, key, raw, 0, math.MaxInt32) // 0 = off
+		case "skills.curator_model":
+			err = setStringField(cfg, key, raw)
 		case "compaction.enabled", "memory.enabled", "memory.user_profile_enabled",
 			"logging.enabled":
 			err = setBool(cfg, key, raw)
@@ -397,6 +408,8 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.SystemPrompt = v
 	case "skills.dir":
 		cfg.Skills.Dir = v
+	case "skills.curator_model":
+		cfg.Skills.CuratorModel = v
 	case "memory.file":
 		cfg.Memory.File = v
 	case "memory.user_file":

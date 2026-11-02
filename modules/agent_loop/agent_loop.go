@@ -306,6 +306,10 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 				}
 				result, err := t.Run(ctx, c.Arguments)
 				completed[idx] = time.Now()
+				// The learning-loop seam (t_9972dfd0): every executed
+				// tool call is one iteration; a skills write/update is
+				// the persisted lesson. Concurrent-safe by contract.
+				opts.Nudge.ObserveToolRun(c.Name, c.Arguments, err)
 				if err != nil {
 					res := core.NewToolResult(err.Error(), c.ID, true)
 					res.Gate = gateLine
@@ -342,6 +346,18 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 
 		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
 		opts.Events <- turnEnd
+
+		// Nudge delivery (t_9972dfd0): after the tool batch lands in
+		// the history exactly one reminder may be due - consume it and
+		// ride it as the next turn prep's prompt line. Ephemeral by
+		// law: the line is turn-prep scaffolding, not a persisted turn
+		// (restored sessions replay the work, not the reminder). A
+		// no-tool turn ends the run here unhinted.
+		if opts.Nudge != nil && executed > 0 {
+			if line := opts.Nudge.NudgeLine(); line != "" {
+				messages = append(messages, core.NewUser(line))
+			}
+		}
 
 		// Non-blocking: drain all buffered subagent results and
 		// batch them into one user message. Runs after every turn

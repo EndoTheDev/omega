@@ -31,12 +31,12 @@ func (p *Plugin) Description() string {
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "skills" }
 
-func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
+func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudge"} }
 
-// Requires names the logging seam: Mount runs WarnLegacyShape, which
-// reads ctx.Logger to mirror the legacy-format boot warning into the
-// log file. Logging must mount first or the edge is meaningless.
-func (p *Plugin) Requires() []string { return []string{"logging"} }
+// Requires names logging (the legacy-shape boot warning reads it)
+// and the provider seam: the curator pins ctx.Provider at mount
+// (requires-before-capture, the compactor's law, card t_9972dfd0).
+func (p *Plugin) Requires() []string { return []string{"logging", "provider"} }
 
 // MountWithAPI implements agent.APIPlugin. Populates the skills seam,
 // the skills domain tool (read/write/update), the prompt section, and
@@ -55,14 +55,24 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	sp := NewSkillsProvider(dir)
 	sp.SharedDir = cfg.SharedDir
 	sp.SetDisabled(cfg.Disabled)
+	sp.SetProvider(ctx.Provider)
+	sp.CuratorModel = cfg.CuratorModel
 	// Legacy-format visibility (card t_5baad951): a folder holding
 	// <name>.md without SKILL.md is invisible to discovery - one boot
 	// warning per hit, never a silent skip. Reading the logging seam
 	// here is why Requires names it.
 	sp.WarnLegacyShape(ctx.Logger)
 
+	interval := cfg.NudgeInterval
+	if interval < 0 {
+		interval = 0
+	}
+
 	steps := []func() error{
 		func() error { return api.RegisterSkills(sp) },
+		// The learning-loop reminder seam (t_9972dfd0): the loop
+		// injects one line per elapsed interval; 0 = off.
+		func() error { return api.RegisterTurnNudger(NewTurnNudger(interval)) },
 		func() error {
 			for name, t := range sp.Tools() {
 				if err := api.RegisterTool(name, t); err != nil {

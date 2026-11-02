@@ -181,6 +181,15 @@ type SkillsConfig struct {
 	// SharedDir is the root skills/shared home, scanned first (card
 	// t_7e2b7002): every agent sees it; an agent's own dir shadows.
 	SharedDir string `yaml:"shared_dir"`
+	// NudgeInterval is the learning-loop reminder cadence (card
+	// t_9972dfd0): tool iterations between "persist a lesson"
+	// reminders in turn prep. 0 = nudging off. Default 15.
+	NudgeInterval int `yaml:"nudge_interval"`
+	// CuratorModel is the model the weekly skills curator pass
+	// consults for merge/distill proposals. Empty = the session
+	// provider model (Endo's ruling: default the session model,
+	// configurable in the settings).
+	CuratorModel string `yaml:"curator_model"`
 }
 
 // MemoryConfig controls the persistent memory system.
@@ -282,7 +291,8 @@ func DefaultConfig() Config {
 			MaxToolOutput: 32768,
 		},
 		Skills: SkillsConfig{
-			Dir: "skills",
+			Dir:           "skills",
+			NudgeInterval: skills.DefaultNudgeInterval,
 		},
 		Memory: MemoryConfig{
 			Enabled:              true,
@@ -720,7 +730,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "http_channel":
 		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
-		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.Skills)}, true
+		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.Skills), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
 	case "memory":
 		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
 	case "logging":

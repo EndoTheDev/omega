@@ -34,6 +34,15 @@ type SkillsProvider struct {
 	// swaps the list live.
 	Disabled []string
 
+	// Curator plumbing (card t_9972dfd0). prov is the provider seam,
+	// pinned at mount (Requires("provider") orders the mount; module
+	// toggles that drop the provider leave a stale pointer - the
+	// curator consult fails loudly and the pass reports it instead of
+	// rewriting anything). CuratorModel overrides the consult model;
+	// empty = the session provider's own model.
+	prov         core.Provider
+	CuratorModel string
+
 	disableMu sync.RWMutex
 }
 
@@ -44,6 +53,10 @@ func (sp *SkillsProvider) SetDisabled(names []string) {
 	defer sp.disableMu.Unlock()
 	sp.Disabled = names
 }
+
+// SetProvider pins the provider seam at mount (the compactor's
+// pattern - requires("provider"), then capture).
+func (sp *SkillsProvider) SetProvider(p core.Provider) { sp.prov = p }
 
 // disabledNames returns the live disable list snapshot (nil when none).
 func (sp *SkillsProvider) disabledNames() []string {
@@ -155,8 +168,9 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 // and the /tools inventory - the one-domain tool law, t_e06b38bc).
 var skillsActions = []core.ToolAction{
 	{Name: "read", Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live."},
-	{Name: "write", Description: "Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description) over the body. The frontmatter shape must parse exactly the way the loader parses it."},
+	{Name: "write", Description: "Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description, author: agent) over the body. The frontmatter shape must parse exactly the way the loader parses it."},
 	{Name: "update", Description: "Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md."},
+	{Name: "curate", Description: "Run one learning-loop curator pass: the deterministic staleness pass (stale at 14d, archive at 30d) plus LLM-proposed merges/distills applied with backup and audit ledger. Returns the report and ledger ids."},
 }
 
 // skillsActionNames returns the action names from the metadata.
@@ -179,12 +193,13 @@ func (sp *SkillsProvider) Tools() map[string]core.Tool {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"action":      map[string]any{"type": "string", "description": "read, write, or update."},
+					"action":      map[string]any{"type": "string", "description": "read, write, update, or curate."},
 					"name":        map[string]any{"type": "string", "description": "The skill name (read); the new skill's folder name (write); the skill to patch (update)."},
 					"description": map[string]any{"type": "string", "description": "One-line frontmatter description (write; becomes the Available Skills line)."},
 					"body":        map[string]any{"type": "string", "description": "Full markdown body under the frontmatter (write; do not repeat the --- fences)."},
 					"old_text":    map[string]any{"type": "string", "description": "Exact text to find in SKILL.md, occurring exactly once (update)."},
 					"new_text":    map[string]any{"type": "string", "description": "Replacement text (update)."},
+					"verb":        map[string]any{"type": "string", "description": "curate sub-verb: run (default), rollback <ledger-id>, stale, ledger (recent rows)."},
 				},
 				"required": []string{"action", "name"},
 			},
@@ -202,9 +217,21 @@ func (sp *SkillsProvider) runTool(ctx context.Context, args map[string]any) (str
 		return sp.runWrite(ctx, args)
 	case "update":
 		return sp.runUpdate(ctx, args)
+	case "curate":
+		return sp.runCurate(ctx, args)
 	default:
 		return "", fmt.Errorf("action is required: one of %v", skillsActionNames())
 	}
+}
+
+// runCurate is the curate-action handler: one full pass plus a
+// rollback/report sub-verb over the same audit ledger.
+func (sp *SkillsProvider) runCurate(ctx context.Context, args map[string]any) (string, error) {
+	out, err := sp.HandleCommand(ctx, "/curator", strArg(args["verb"]))
+	if out == "" && err == nil {
+		return "", fmt.Errorf("curate: nothing to do")
+	}
+	return out, err
 }
 
 // validSkillName enforces the loader's folder-name law (card
@@ -260,7 +287,7 @@ func (sp *SkillsProvider) runWrite(ctx context.Context, args map[string]any) (st
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
-	content := fmt.Sprintf("---\ndescription: %s\n---\n%s", description, body)
+	content := fmt.Sprintf("---\ndescription: %s\nauthor: agent\n---\n%s", description, body)
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		return "", fmt.Errorf("create skill dir: %w", err)
 	}
@@ -273,6 +300,10 @@ func (sp *SkillsProvider) runWrite(ctx context.Context, args map[string]any) (st
 	if err != nil || s.Description != description {
 		return "", fmt.Errorf("write: composed SKILL.md failed the loader's frontmatter parse (description %q)", description)
 	}
+	// Provenance (card t_9972dfd0): skills.write stamps the
+	// agent-created class - frontmatter carries `author: agent`, and
+	// the usage record anchors the staleness clock at creation.
+	TouchUsage(dir, name, "write", "agent")
 	return "created skill " + name + " at " + skillDir, nil
 }
 
@@ -316,6 +347,10 @@ func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return "", err
 	}
+	// The persisted lesson resets the nudge counter (ObserveToolRun)
+	// and ages the record; "write" here is a patch - a write action on
+	// an existing skill is still activity, not a new author stamp.
+	TouchUsage(filepath.Dir(filepath.Dir(skillFile)), name, "write", "")
 	return "updated skill " + name + " (" + skillFile + "): replaced one occurrence", nil
 }
 
@@ -403,6 +438,7 @@ func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (str
 		}
 		s.Name = name
 		s.Dir = filepath.Join(dir, name)
+		TouchUsage(dir, name, "read", s.Author)
 		return formatSkill(s), nil
 	}
 	if lastIsNotExist {
@@ -416,11 +452,19 @@ func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (str
 	return "", fmt.Errorf("skill %q could not be read", name)
 }
 
-// HandleCommand processes the /skills slash command.
+// HandleCommand processes the /skills and /curator slash commands.
 func (sp *SkillsProvider) HandleCommand(ctx context.Context, name, args string) (string, error) {
-	if name != "/skills" {
-		return "", fmt.Errorf("unknown command: %s", name)
+	switch name {
+	case "/skills":
+		return sp.handleSkillsCommand()
+	case "/curator":
+		return sp.handleCuratorCommand(ctx, args)
 	}
+	return "", fmt.Errorf("unknown command: %s", name)
+}
+
+// handleSkillsCommand is the /skills listing.
+func (sp *SkillsProvider) handleSkillsCommand() (string, error) {
 	skills, err := sp.LoadSkills("")
 	if err != nil {
 		return "", err
@@ -443,10 +487,80 @@ func (sp *SkillsProvider) HandleCommand(ctx context.Context, name, args string) 
 	return sb.String(), nil
 }
 
+// handleCuratorCommand is /curator: a pass ("" or "run"), the audit
+// ledger surface ("ledger"), staleness ("stale"), and the
+// single-edit revert ("rollback <id>").
+func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string) (string, error) {
+	verb, rest := strings.TrimSpace(args), ""
+	if i := strings.IndexAny(verb, " 	"); i >= 0 {
+		rest = strings.TrimSpace(verb[i:])
+		verb = verb[:i]
+	}
+	switch verb {
+	case "", "run":
+		rep, err := sp.RunCurator(ctx, sp.prov, sp.CuratorModel)
+		if err != nil {
+			return formatReport(rep), err
+		}
+		return formatReport(rep), nil
+	case "rollback":
+		if rest == "" {
+			return "", fmt.Errorf("rollback needs a ledger id - /curator ledger lists them")
+		}
+		out, err := sp.Rollback(rest)
+		if err != nil {
+			return "", err
+		}
+		return "rolled back " + rest + "\n" + out, nil
+	case "stale":
+		names := sp.StaleSkillNames()
+		if len(names) == 0 {
+			return "no stale skills", nil
+		}
+		return "stale: " + strings.Join(names, ", "), nil
+	case "ledger":
+		entries, err := sp.readLedger()
+		if err != nil {
+			return "", err
+		}
+		if len(entries) == 0 {
+			return "ledger is empty", nil
+		}
+		var sb strings.Builder
+		for _, e := range entries {
+			// id | ts | action | skill | reason
+			fmt.Fprintf(&sb, "%s  %s  %-8s %-16s %s\n", e.ID, e.TS, e.Action, e.Skill, e.Evidence["reason"])
+		}
+		return strings.TrimRight(sb.String(), "\n"), nil
+	default:
+		return "", fmt.Errorf("unknown /curator verb %q - run | rollback <id> | stale | ledger", verb)
+	}
+}
+
+// formatReport renders one pass's outcome as the report text.
+func formatReport(rep CuratorReport) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "curator pass: %d marked stale, %d reactivated, %d archived, %d merges, %d distills",
+		rep.MarkedStale, rep.Reactivated, rep.Archived, rep.Merges, rep.Distills)
+	if len(rep.LedgerIDs) > 0 {
+		fmt.Fprintf(&sb, "\nledger: %s", strings.Join(rep.LedgerIDs, ", "))
+	} else {
+		sb.WriteString("\nledger: (no mutations)")
+	}
+	for _, s := range rep.Skipped {
+		sb.WriteString("\nskipped: " + s)
+	}
+	if rep.ProposalsSeen != "" {
+		fmt.Fprintf(&sb, "\nproposals: %d chars consulted", len(rep.ProposalsSeen))
+	}
+	return sb.String()
+}
+
 // Commands returns the slash command definitions.
 func (sp *SkillsProvider) Commands() []core.ExtensionCommand {
 	return []core.ExtensionCommand{
 		{Name: "/skills", Description: "List loaded skills with name and description"},
+		{Name: "/curator", Description: "Run the weekly skills curator pass (or: rollback <id> | stale | ledger)"},
 	}
 }
 
@@ -557,6 +671,9 @@ func loadSkill(path string) (core.Skill, error) {
 		val := strings.TrimSpace(parts[1])
 		if key == "description" {
 			s.Description = val
+		}
+		if key == "author" {
+			s.Author = val
 		}
 	}
 	s.Content = readRemaining(scanner)
