@@ -5,7 +5,7 @@ package main
 // in an empty home drops straight into this wizard. Stdlib stdin/fmt
 // only - the loop law keeps the terminal one-dimensional, so nothing
 // here draws a screen. The live connection test goes through the real
-// provider transport (modules/provider), so "it works" is the same
+// provider transport (harness/provider), so "it works" is the same
 // code path a chat run uses.
 
 import (
@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/modules/provider"
+	"github.com/EndoTheDev/omega/harness/provider"
 )
 
 // modelsLister is the one provider surface setup touches: the live

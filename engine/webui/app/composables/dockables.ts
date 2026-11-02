@@ -297,7 +297,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     // bridge sees them (name, transport, mount-time connection state,
     // per-server failure, discovered server-qualified tools), listed
     // from GET /mcp/servers. The panel body is the module's own
-    // (modules/mcp/ui, the composition mount); the registry entry only
+    // (harness/mcp/ui, the composition mount); the registry entry only
     // opens the inspector tab - no mcp vocabulary beyond that. Read-
     // only: enable/disable stays config.yaml domain. Unclosable like
     // every inspector view.
@@ -332,7 +332,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     // like chat and the viewer. Singleton (one browser in the shell: the
     // menu opener FOCUSES it - two live iframes are two sites one pane
     // should own), closable like chat. The panel body is the shell's
-    // components/browser/BrowserTab.vue over modules/browser's GET/PUT
+    // components/browser/BrowserTab.vue over harness/browser's GET/PUT
     // /browser/last (the resume URL); sites that refuse embedding get
     // the tab's fallback panel, never a silent blank frame.
     id: "browser",

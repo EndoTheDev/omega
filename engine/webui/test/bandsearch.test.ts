@@ -23,10 +23,10 @@ const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 // the shared component + the five SFC seats (paths root-relative; the
 // modules' paths leave engine/webui - the repo-relative convention)
 const TABS: Array<{ file: string; placeholder: string }> = [
-  { file: "../../modules/cron/ui/CronJobs.vue", placeholder: "Search cron jobs" },
-  { file: "../../modules/skills/ui/SkillsList.vue", placeholder: "Search skills" },
-  { file: "../../modules/tools/ui/ToolsList.vue", placeholder: "Search tools" },
-  { file: "../../modules/mcp/ui/McpServers.vue", placeholder: "Search MCP servers" },
+  { file: "../../harness/cron/ui/CronJobs.vue", placeholder: "Search cron jobs" },
+  { file: "../../harness/skills/ui/SkillsList.vue", placeholder: "Search skills" },
+  { file: "../../harness/tools/ui/ToolsList.vue", placeholder: "Search tools" },
+  { file: "../../harness/mcp/ui/McpServers.vue", placeholder: "Search MCP servers" },
   { file: "app/components/settings/SettingsTab.vue", placeholder: "filter settings" },
 ];
 
@@ -105,10 +105,10 @@ describe("every registry tab seats its search in the band", () => {
 
 // --- the pure filters (the node suite runs them without compiling SFCs)
 
-import { filterCronJobs } from "../../../modules/cron/ui/search.ts";
-import { filterSearchableRows } from "../../../modules/skills/ui/search.ts";
-import { filterToolRows } from "../../../modules/tools/ui/search.ts";
-import { filterMcpServers } from "../../../modules/mcp/ui/search.ts";
+import { filterCronJobs } from "../../../harness/cron/ui/search.ts";
+import { filterSearchableRows } from "../../../harness/skills/ui/search.ts";
+import { filterToolRows } from "../../../harness/tools/ui/search.ts";
+import { filterMcpServers } from "../../../harness/mcp/ui/search.ts";
 
 describe("cron: the band search filters by name / schedule", () => {
   const jobs = [

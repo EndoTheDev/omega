@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/modules/verdict"
+	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
 // vo builds pick rows from labels: the test shorthand for

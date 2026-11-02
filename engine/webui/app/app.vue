@@ -137,7 +137,7 @@
         </template>
         <!-- card t_95c91f9c: the general web browser tab - shell-owned
              main-pane content (like chat/viewer), the URL bar + iframe
-             embed over modules/browser's /browser/last. Singleton: the
+             embed over harness/browser's /browser/last. Singleton: the
              opener FOCUSES the one instance. -->
         <template #pane-browser>
           <BrowserTab

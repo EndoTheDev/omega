@@ -238,7 +238,7 @@ func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 // tool, the one-domain law t_e06b38bc; the deny line names the tool,
 // and it rides the run context too; this copy is the registry the
 // /chat loop passes in, so the two layers agree even before the loop
-// filter). The name matches modules/memory's registered tool.
+// filter). The name matches harness/memory's registered tool.
 func withoutMemory(tools map[string]core.Tool) map[string]core.Tool {
 	if _, has := tools["memory"]; !has {
 		return tools

@@ -34,9 +34,9 @@ new_repo() {
 	git -C "$TMP" init -q
 	git -C "$TMP" config user.email t@t
 	git -C "$TMP" config user.name t
-	mkdir -p "$TMP/engine/webui/app" "$TMP/modules/tools/ui" "$TMP/cmd"
+	mkdir -p "$TMP/engine/webui/app" "$TMP/harness/tools/ui" "$TMP/cmd"
 	echo "source v1" >"$TMP/engine/webui/app/Foo.vue"
-	echo "tool v1" >"$TMP/modules/tools/ui/Bar.vue"
+	echo "tool v1" >"$TMP/harness/tools/ui/Bar.vue"
 	echo 'package main' >"$TMP/cmd/omega.go"
 	mk_mock
 	(cd "$TMP" && MOCK_STAMP=s0 "$MOCK")
@@ -133,12 +133,12 @@ check "volatile-only regen: exit 0 on skip" test "$rc" -eq 0
 check "volatile-only regen: no extra commit" test "$(git -C "$TMP" rev-parse HEAD)" = "$lane_sha"
 check "volatile-only regen: skip logged" contains "hash gate" "$TMP/run.out"
 
-# modules/*/ui (module-shipped UI) also counts as webui source
+# harness/*/ui (module-shipped UI) also counts as webui source
 STAMP="s2"
-echo "tool v2" >"$TMP/modules/tools/ui/Bar.vue"
+echo "tool v2" >"$TMP/harness/tools/ui/Bar.vue"
 git -C "$TMP" commit -qam "ui change: tools panel v2"
 run --base "$lane_sha" "card t_test2"
-check "modules/*/ui change: lane commit created" contains "embed-lane: rebuild webui bundle for card t_test2" <(git -C "$TMP" log -1 --pretty=%s)
+check "harness/*/ui change: lane commit created" contains "embed-lane: rebuild webui bundle for card t_test2" <(git -C "$TMP" log -1 --pretty=%s)
 
 # fail-loud: broken build aborts, static/ untouched, no commit
 STAMP="s3"
@@ -174,7 +174,7 @@ check "linear HEAD: change gate saw the ui commit (lane commit created)" contain
 # true merge commit: default base = first parent (the pre-merge tip)
 git -C "$TMP" checkout -q -b webui-a "$BASE"
 STAMP="s1"
-echo "panel v3" >"$TMP/modules/tools/ui/Bar.vue"
+echo "panel v3" >"$TMP/harness/tools/ui/Bar.vue"
 git -C "$TMP" commit -qam "branch A: webui source v3"
 git -C "$TMP" checkout -q "$MAIN_BRANCH"
 git -C "$TMP" merge -q --no-ff --no-edit webui-a >/dev/null
@@ -191,7 +191,7 @@ echo "aa: source" >"$TMP/engine/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "branch A: component 1"
 git -C "$TMP" checkout -q "$MAIN_BRANCH"
 git -C "$TMP" checkout -q -b wui-b "$BASE"
-echo "bb: source" >"$TMP/modules/tools/ui/Bar.vue"
+echo "bb: source" >"$TMP/harness/tools/ui/Bar.vue"
 git -C "$TMP" commit -qam "branch B: component 2"
 git -C "$TMP" checkout -q "$MAIN_BRANCH"
 git -C "$TMP" merge -q --no-edit wui-a >/dev/null

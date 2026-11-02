@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { nativeTools, toolRows, type ToolWire } from "../../../modules/tools/ui/toolRows.ts";
+import { nativeTools, toolRows, type ToolWire } from "../../../harness/tools/ui/toolRows.ts";
 
 // --- nativeTools: the exclusion (mandate 1 - MCP shows in the MCP tab alone) ---
 

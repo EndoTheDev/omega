@@ -101,7 +101,7 @@ type TurnNudger interface {
 }
 
 // StoreProvider is the session persistence seam. The default
-// implementation is SQLite (store.Store in modules/store/), provided via the store
+// implementation is SQLite (store.Store in harness/store/), provided via the store
 // plugin. All session and message operations go through this interface.
 type StoreProvider interface {
 	Open(dsn string) error
@@ -475,7 +475,7 @@ type ChannelDeps struct {
 }
 
 // CronProvider schedules omega prompts on cron expressions. The
-// default implementation is the cron extension (modules/cron/),
+// default implementation is the cron extension (harness/cron/),
 // backed by crons.yaml in OMEGA_HOME. Each fire is one full agent
 // turn in a session labeled cron:<name>.
 //
@@ -742,7 +742,7 @@ type Notification struct {
 }
 
 // NotificationsProvider is the finished-things store seam. The default
-// implementation is modules/notifications (a small SQLite db in the
+// implementation is harness/notifications (a small SQLite db in the
 // data dir, same family as the board). Emitters (kanban, cron,
 // delegate) call Emit; the HTTP channel serves List/Mark* to the webui
 // bell and live-forwards Emit traffic to Subscribe clients (toasts).

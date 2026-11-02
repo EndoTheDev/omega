@@ -19,7 +19,7 @@ import {
 import {
   refreshSkills,
   type SkillInfo,
-} from "../../../modules/skills/ui/refresh.ts";
+} from "../../../harness/skills/ui/refresh.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
@@ -73,11 +73,11 @@ test("arming a skill disable names the prompt-build consequence; enable is silen
 test("SkillsList consumes the shared component and the fold wire", () => {
   // module UI source lives at the repo root, engine/webui/test is three
   // levels under it
-  const src = readFileSync(join(root, "modules", "skills", "ui", "SkillsList.vue"), "utf8");
+  const src = readFileSync(join(root, "harness", "skills", "ui", "SkillsList.vue"), "utf8");
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes("kind=\"skills\""), "the skills namespace rides to the note law");
   assert.ok(src.includes('from "./refresh"'), "the fetch chain rides the refresh helper (card t_ec57d5b8)");
-  const refreshTs = readFileSync(join(root, "modules", "skills", "ui", "refresh.ts"), "utf8");
+  const refreshTs = readFileSync(join(root, "harness", "skills", "ui", "refresh.ts"), "utf8");
   assert.ok(refreshTs.includes('fetch("/skills")') && refreshTs.includes('fetch("/disabled")'), "self-contained inventory + fold fetch");
   assert.ok(!src.includes('fetch("/skills"'), "the inventory GET lives in the helper, not the SFC");
   assert.ok(src.includes("/disabled/skills"), "the toggle PUTs the skills namespace");
@@ -94,7 +94,7 @@ test("SkillsList consumes the shared component and the fold wire", () => {
 // the tab renders empty. The rows binding must hand RegistryList an
 // array (computed, the AgentsPanel shape), not a function.
 test("SkillsList builds rows as a computed (arity trap: a plain function rows() renders empty)", () => {
-  const src = readFileSync(join(root, "modules", "skills", "ui", "SkillsList.vue"), "utf8");
+  const src = readFileSync(join(root, "harness", "skills", "ui", "SkillsList.vue"), "utf8");
   assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");
   assert.ok(!src.includes("function rows()"), "no plain-function row builder under :rows");
   assert.ok(src.includes(':rows="visibleRows"'), "the shared component gets the rows binding (the band filter's survivors - card t_529628d5)");
@@ -247,7 +247,7 @@ test("refreshSkills: a missed /disabled read never guesses the fold", async () =
 // toolbar shape; the button contract unchanged).
 test("the skills tab refresh button renders in the tab band", () => {
   const src = readFileSync(
-    join(root, "modules", "skills", "ui", "SkillsList.vue"),
+    join(root, "harness", "skills", "ui", "SkillsList.vue"),
     "utf8",
   );
   const band = readFileSync(

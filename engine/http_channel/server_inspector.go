@@ -52,7 +52,7 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 // module's own one-line description (agent.Describer, omitted when the
 // module doesn't implement it). has-ui does NOT ride this wire: the
 // webui derives it at build time from the composition manifest
-// (modules/<name>/ui/dockable.json - compose.ts), the runtime doesn't
+// (harness/<name>/ui/dockable.json - compose.ts), the runtime doesn't
 // ship module source. Extensions carry no versions.
 type extensionListing struct {
 	Name        string   `json:"name"`
@@ -196,7 +196,7 @@ func parseLogLines(raw string) int {
 }
 
 // logPathOf extracts the log file path from the logger seam. The
-// FileLogger carries its own path (modules/logging); any other logger
+// FileLogger carries its own path (harness/logging); any other logger
 // implementation, including NopLogger for logging-disabled installs,
 // has none and the /logs endpoint 404s.
 func logPathOf(logger core.LoggerProvider) string {

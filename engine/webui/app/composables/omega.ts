@@ -37,7 +37,7 @@ hljs.registerLanguage("cpp", cpp);
 hljs.registerLanguage("diff", diff);
 
 // omega webui: typed client for the http_channel API.
-// Endpoints verified live 2026-10-13 against modules/http_channel.
+// Endpoints verified live 2026-10-13 against harness/http_channel.
 // SSE events: agent_start, turn_start, response_chunk, thinking_chunk,
 // tool_call, stream_end, assistant_message, turn_end, agent_end, error.
 
@@ -194,7 +194,7 @@ export interface ToolItem {
 // renders as an interactive card, NOT a tool line. Live items come from
 // the chat panel's tool_call rows; restored items from the persisted
 // assistant tool_call row. The matching tool_result's JSON content
-// (built by modules/verdict resultMap) carries the settled verdict.
+// (built by harness/verdict resultMap) carries the settled verdict.
 export interface VerdictItem {
   kind: "verdict";
   // the tool_call id - settles the card against its tool_result
@@ -550,7 +550,7 @@ export function verdictCardFromToolArgs(args: unknown): VerdictItem {
 }
 
 // verdictFromResultText parses the verdict tool result's JSON
-// (modules/verdict resultMap). Non-JSON content (a refusal, an error
+// (harness/verdict resultMap). Non-JSON content (a refusal, an error
 // string) means the card never issued: the card is dead, no verdict.
 export function verdictFromResultText(text: string): {
   verdictKind: "" | "answer" | "skip" | "expired";
@@ -2042,7 +2042,7 @@ export async function fetchSessions(): Promise<Session[]> {
 // tool + command counts, seams) plus the module's own one-line
 // description (omitted when the module doesn't implement agent.Describer).
 // has-ui is NOT on the wire - the shell derives it from the composition
-// manifest (modules/<name>/ui/dockable.json) at build time.
+// manifest (harness/<name>/ui/dockable.json) at build time.
 // tool_names / command_names (card t_210a0d19) carry the EXPANSION
 // detail - the verbatim tools the module provides and the slash
 // commands it registered. Optional on the type: a pre-210a0d19 host

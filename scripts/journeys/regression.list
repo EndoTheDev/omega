@@ -16,7 +16,7 @@
 #     the shared-fold toggle race - lost updates under concurrent
 #     toggles through the shared mutex (v0.14.0 release-gate must-fix).
 #   - cmd/omega/purity_wires_test.go: the nm-purity wire-shape pins -
-#     the verdict answer exchange stays in modules/verdict (no inline
+#     the verdict answer exchange stays in harness/verdict (no inline
 #     ParseCardAnswer in cmd/, loop.go keeps the named-return wire) and
 #     the wizard provider hook keeps its named return (bea6abc rotations).
 #   - scripts/fence-test.sh: the worker fence eval - a worker session's

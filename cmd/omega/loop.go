@@ -23,7 +23,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
-	"github.com/EndoTheDev/omega/modules/verdict"
+	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
 // ANSI basics only - the loop law caps the palette here. NO_COLOR and

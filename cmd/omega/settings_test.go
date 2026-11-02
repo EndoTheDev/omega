@@ -11,7 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/llm"
-	"github.com/EndoTheDev/omega/modules/compactor"
+	"github.com/EndoTheDev/omega/harness/compactor"
 	"gopkg.in/yaml.v3"
 )
 

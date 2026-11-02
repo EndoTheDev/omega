@@ -100,9 +100,9 @@ move_paths() {  # stdin -> both sides of every move-shaped line, path tokens onl
 }
 
 tokens_of() {  # extract repo paths from free text (body or diff)
-  # Brace lists (modules/{a,b}/) expand first: a FILES surface naming a
+  # Brace lists (harness/{a,b}/) expand first: a FILES surface naming a
   # brace list must cover every member (proven 2026-10-26: the c2 card's
-  # FILES line collapsed to a bare modules/ token and hid modules/cron
+  # FILES line collapsed to a bare harness/ token and hid harness/cron
   # from the overlap check, guard read a colliding card false-legal).
   # The regex gate bounds eval to path-shaped words: no $, backticks,
   # parens or quotes pass it, so eval can only emit path strings.
@@ -123,7 +123,7 @@ tokens_of() {  # extract repo paths from free text (body or diff)
     fi
   done <<<"$stream")
   # move law pass 2 on the expanded stream - brace-listed moves
-  # ("modules/{cron,memory}/ -> core/") surface their members' sides
+  # ("harness/{cron,memory}/ -> core/") surface their members' sides
   move_paths <<<"$expanded"
   # The rooted scan must watch every top-level code dir. The list predates
   # the engine-ring reorg: engine/ and core/ were missing, so engine/webui
@@ -132,7 +132,7 @@ tokens_of() {  # extract repo paths from free text (body or diff)
   # card read false-legal beside a running webui card (proven 2026-10-28:
   # dry-run called t_210a0d19 legal beside running t_372b9e9a while both
   # name engine/webui/app/components/ and engine/webui/test/).
-  printf '%s\n' "$expanded" | grep -oE '\b(modules|cmd|docs|scripts|agent|ai|engine|core|deploy|diag|\.github|internal)/[a-zA-Z0-9_./-]+' || true
+  printf '%s\n' "$expanded" | grep -oE '\b(harness|modules|cmd|docs|scripts|agent|ai|engine|core|deploy|diag|\.github|internal)/[a-zA-Z0-9_./-]+' || true
 }
 
 candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
@@ -177,8 +177,8 @@ class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
 
 overlaps() {  # candidate tokens, running tokens -> hit if any token pair overlaps
   # a token matches if the strings are equal, or one is a directory prefix of
-  # the other. Trailing slashes are normalized first - "modules/http_channel/"
-  # as a dir token made the prefix pattern "modules/http_channel//*" (double
+  # the other. Trailing slashes are normalized first - "harness/http_channel/"
+  # as a dir token made the prefix pattern "harness/http_channel//*" (double
   # slash, never matches) and the guard went token-blind on exactly the
   # ephemeral x bottom-panel server.go overlap (proven 2026-10-22).
   local ctok rtok ct rt

@@ -10,7 +10,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> llm (provi
 | Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | LLM      | `llm`       | The `llm.Provider`/`llm.ToolSchema`/`llm.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
 | CLI      | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `modules/`  | In-process Go packages: provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process (detached background-process registry), terminal, browser, trust + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
+| Modules  | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process (detached background-process registry), terminal, browser, trust + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -34,10 +34,10 @@ llm/               Provider contract (llm.Provider aliases core.Provider), retry
                   HTTP client, think-level ladder, image sniffing
 agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
                   canvas runtime, insights/caption/compaction helpers
-modules/          In-process module packages (21 packages: 20 plugins +
-                  datadir, an imported leaf + engine/webui, the webui
-                  SPA source; compiled into omega)
-  modules/continuous  Continuous-agent machinery: agent homes (folder-as-
+harness/          In-process module packages (21 packages: 20 plugins +
+                  datadir, an imported leaf; every capsule removable -
+                  compiled into omega)
+  harness/continuous  Continuous-agent machinery: agent homes (folder-as-
                   registration under agents/), wake subprocesses, the
                   canonical chat, the evidence ledger, the roster REST + webui pane
 engine/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)

@@ -167,7 +167,7 @@ itself.
 
 ## The approval gate
 
-The approval capsule (`modules/approval/`, ship-dark default
+The approval capsule (`harness/approval/`, ship-dark default
 `manual`) takes three config.yaml knobs (full story:
 [approvals.md](approvals.md)):
 
@@ -179,7 +179,7 @@ The approval capsule (`modules/approval/`, ship-dark default
 
 ## The process registry
 
-The process capsule (`modules/process/`) runs detached, long-running
+The process capsule (`harness/process/`) runs detached, long-running
 shell commands (builds, transfers, servers) and manages them by
 handle. The synchronous shell stays the tool for anything expected to
 finish in seconds; `process.*` exists so long ops never block a turn

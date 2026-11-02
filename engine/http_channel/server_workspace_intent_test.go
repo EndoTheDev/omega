@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 func sessionRowWorkspace(t *testing.T, s *Server, id string) (found bool, workspace string) {

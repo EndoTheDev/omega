@@ -80,7 +80,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    `engine/http_channel/module_routes.go` serves exactly the patterns the
    capsules registered (missing pattern answers 404, no seam-nil
    guard). Kanban moved `/tasks*` and `/boards` onto
-   `api.RegisterRoute` in `modules/kanban/rest.go` - the reference.
+   `api.RegisterRoute` in `harness/kanban/rest.go` - the reference.
    A capsule whose engine handler already exists and degrades to an
    empty list registers nothing.
 
@@ -96,7 +96,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    module-CLI mount runs on config defaults when the home's config.yaml
    is missing or invalid: a module subcommand keeps the pre-migration
    CLI contract of never requiring a valid global config.
-   Kanban (`modules/kanban/cli.go`) is the reference.
+   Kanban (`harness/kanban/cli.go`) is the reference.
 
 ## How the proof works
 

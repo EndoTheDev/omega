@@ -7,7 +7,7 @@
 // the listing (it aggregates every module, including the modules that
 // carry no panel UI). has-ui and the panel list derive at shell build
 // time from the composition manifest (modulePanels: a module shipped
-// modules/<name>/ui/ with at least one panel component = it has UI);
+// harness/<name>/ui/ with at least one panel component = it has UI);
 // the endpoint itself stays source-agnostic for the runtime.
 //
 // Lifecycle (card t_210a0d19): the row model MERGES three sources into

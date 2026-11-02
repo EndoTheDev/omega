@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 // cmdInsights handles the `omega insights` subcommand.

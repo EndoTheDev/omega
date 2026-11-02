@@ -217,9 +217,9 @@ Everything else animates through `transition`, not keyframes.
   shell with the persisted layout untouched (the repair count is
   logged), so a fresh tab host survives old shells.
 - **Module-owned UI (build-time composition)**: modules ship UI in
-  `modules/<name>/ui/`; `nuxt.config.ts` composes them by array —
+  `harness/<name>/ui/`; `nuxt.config.ts` composes them by array —
   `app/composables/module-panels.generated.ts` is generated at build
-  time and there is NO runtime registry. `modules/tools/ui/ToolsList.vue`
+  time and there is NO runtime registry. `harness/tools/ui/ToolsList.vue`
   is the canary.
 
 ## Streaming + rendering rules

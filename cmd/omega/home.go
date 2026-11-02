@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/EndoTheDev/omega/modules/trust"
+	"github.com/EndoTheDev/omega/harness/trust"
 )
 
 //go:embed examples/config.yaml.example examples/mcp.yaml.example examples/crons.yaml.example
@@ -57,7 +57,7 @@ func isPathBinInstall(dir, userHome string) bool {
 // 2026-10-18): config.yaml, mcp.yaml, crons.yaml. memory.md, user.md,
 // skills/, and log files stay at the home root; the databases
 // (omega.db, kanban.db) live in the home's data/ subdirectory (Endo
-// 2026-10-20 layout, migrated on boot - see modules/datadir).
+// 2026-10-20 layout, migrated on boot - see harness/datadir).
 // Resolution of
 // the live yamls checks the home root first (legacy installs keep
 // working unchanged), then config/ - see resolveConfigPath and the
