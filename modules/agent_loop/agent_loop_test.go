@@ -219,3 +219,70 @@ func TestLoopDeniedTool(t *testing.T) {
 		t.Fatal("no tool result event - the call path never ran")
 	}
 }
+
+// TestLoopToolless pins the toolless run (agent.WithToolless): the merged
+// registry - the caller's map PLUS every tool provider's contribution -
+// is replaced wholesale, so a side-effectful tool (delegate.task is the
+// live case: the title turn spawned real subagents) is absent from the
+// schema list and the dispatch map, and a model that still cannot help
+// calling it errors as an IsError result instead of executing. Unlike
+// the deny list, no name is enumerated: the run is toolless, period.
+func TestLoopToolless(t *testing.T) {
+	provider := ai.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "delegate.task", Arguments: map[string]any{"goal": "spawn"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	providerTools := map[string]core.Tool{
+		"delegate.task": {
+			Description: "Delegate a task",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				t.Fatal("the toolless run executed a tool")
+				return "", nil
+			},
+		},
+	}
+	callerTools := map[string]core.Tool{
+		"shell": {
+			Description: "Run a shell command",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				t.Fatal("the toolless run executed a tool")
+				return "", nil
+			},
+		},
+	}
+
+	events := make(chan core.Event, 64)
+	ctx := agent.WithToolless(context.Background())
+	go func() {
+		defer close(events)
+		Loop{}.Run(ctx, core.LoopOptions{
+			Provider: provider,
+			Messages: []core.Message{core.NewUser("go")},
+			Tools:    callerTools,
+			ToolProviders: []core.ToolProvider{
+				core.DefaultToolProvider{ToolsMap: providerTools},
+			},
+			Events: events,
+		})
+	}()
+
+	sawError := false
+	for e := range events {
+		if te, ok := e.(core.ToolResultEvent); ok {
+			sawError = true
+			if !te.Message.IsError {
+				t.Errorf("toolless run result not an error: %+v", te.Message)
+			}
+		}
+	}
+	if !sawError {
+		t.Fatal("no tool result event - the call path never ran")
+	}
+}

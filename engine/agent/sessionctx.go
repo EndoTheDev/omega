@@ -55,7 +55,29 @@ func DeniedTools(ctx context.Context) map[string]bool {
 	return set
 }
 
+// WithToolless marks the run as deliberately toolless: the loop replaces
+// the fully merged tool registry (the caller's map plus every tool
+// provider's contribution) with an empty map, so the model sees no
+// schemas and no dispatch entry exists - a stray tool call is an error
+// result, never an execution. For metadata turns: the session-title call
+// is generated from user content that can invite tool use, and nothing
+// it does outlives the title, so nothing may execute - present or
+// future. Explicit beats a deny list: a new side-effectful module cannot
+// resurrect an execution path for a toolless run by registering under a
+// fresh name the way WithDeniedTools would allow.
+func WithToolless(ctx context.Context) context.Context {
+	return context.WithValue(ctx, toollessKey{}, true)
+}
+
+// Toolless reports whether the run is explicitly toolless.
+func Toolless(ctx context.Context) bool {
+	v, _ := ctx.Value(toollessKey{}).(bool)
+	return v
+}
+
 type deniedToolsKey struct{}
+
+type toollessKey struct{}
 
 type sessionIDKey struct{}
 

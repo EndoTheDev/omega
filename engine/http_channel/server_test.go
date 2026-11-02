@@ -1556,6 +1556,36 @@ func TestMaybeTitleSessionTitleModelRouting(t *testing.T) {
 	}
 }
 
+// TestMaybeTitleSessionToolless pins the live defect t_381ae0d2: the title
+// turn is metadata, not a conversation. Its first user message can invite
+// tool use ("Use the delegate.task tool..."), and before agent.WithToolless
+// the title turn ran the FULL merged tool table - the title model spawned
+// REAL subagents (delegate:task-3/6, one parentless). The run reaching the
+// provider must be marked toolless: no schema, no dispatch entry, present
+// or future. The real conversation turn is untouched - it carries no
+// WithToolless (the loop drops the registry only when the mark is present).
+func TestMaybeTitleSessionToolless(t *testing.T) {
+	ctx := context.Background()
+	s, st, prov := newTitleTestServerWithStore(t)
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	req := chatRequest{
+		SessionID: "s1",
+		Messages:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"Use the delegate.task tool to spawn a research subagent while you read the title."}`)},
+	}
+	s.maybeTitleSession(ctx, prov, req, "", false)
+
+	prov.mu.Lock()
+	defer prov.mu.Unlock()
+	if len(prov.toollessRun) != 1 {
+		t.Fatalf("title stream calls = %d, want exactly one title turn", len(prov.toollessRun))
+	}
+	if !prov.toollessRun[0] {
+		t.Fatal("title turn reached the provider with a live tool table (agent.Toolless(ctx) = false)")
+	}
+}
+
 func TestSessionByIDNotFound(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	req := httptest.NewRequest(http.MethodGet, "/sessions/nonexistent", nil)
@@ -1570,8 +1600,9 @@ func TestSessionByIDNotFound(t *testing.T) {
 // to every Stream call, so the title prompt shape is directly checked.
 type captureProvider struct {
 	mockProvider
-	mu      sync.Mutex
-	prompts []string
+	mu          sync.Mutex
+	prompts     []string
+	toollessRun []bool // agent.Toolless(ctx) of each Stream call
 }
 
 func newCaptureProvider(scripts ...[]core.ProviderStreamEvent) *captureProvider {
@@ -1587,6 +1618,7 @@ func (c *captureProvider) Stream(ctx context.Context, msgs []core.Message, tools
 			}
 		}
 	}
+	c.toollessRun = append(c.toollessRun, agent.Toolless(ctx))
 	c.mu.Unlock()
 	return c.mockProvider.Stream(ctx, msgs, tools)
 }
