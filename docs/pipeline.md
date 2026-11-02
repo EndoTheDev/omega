@@ -65,8 +65,24 @@ bare `git` in a worker shell is the fence shim.
   module's child env (omega subagents). Unstamped sessions forward to
   real git byte-for-byte.
 
-Revert: remove `bin/shims/`, the dispatch env prefix, and the delegate
-stamp. Nothing persists; sessions without the stamp run unfenced.
+The dispatch invocation's env dies at the gateway boundary: the worker
+client only submits a claim, and the owner builds the repo-writing
+session's env itself in the worker interpreter
+(`gateway.session_kanban.bind_worker_context`). The stamp therefore
+lands THERE, driven by the hermes config knob
+`kanban.worker_fence_shim_dir` (the shim dir; unset -> no stamp, so
+the main session and any other board on the host stay unfenced). It
+applies `OMEGA_WORKER=1`, `OMEGA_WORKER_CARD=<task id>` and prepends
+the shim dir ahead of system git on PATH of every bound kanban worker
+session - the tick dispatch, the dashboard dispatch, retries included.
+`scripts/fence-test.sh` proves the bound env by /proc and the refusal
+through bare `git` resolved from exactly that env. The dispatch CLI's
+own env prefix stays as a second belt: one spawn funnel, two writes.
+
+Revert: remove `bin/shims/`, the dispatch env prefix, the delegate
+stamp, and the bind stamp in the hermes checkout
+(`ops/omega-worker-fence`, gateway/session_kanban.py). Nothing
+persists; sessions without the stamp run unfenced.
 
 ## Failure laws
 
