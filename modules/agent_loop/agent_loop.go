@@ -80,6 +80,15 @@ func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
 		tools = filtered
 	}
 
+	// Toolless run (agent.WithToolless): a metadata turn - the title
+	// call is generated from user content that invites tool use, and
+	// nothing it does outlives the title. The fully merged registry
+	// above is replaced wholesale: no schema, no dispatch entry, and
+	// no future module registration can resurrect one for this run.
+	if agent.Toolless(ctx) {
+		tools = map[string]core.Tool{}
+	}
+
 	maxTurns := opts.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns

@@ -1426,15 +1426,18 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov ai.Provider, req ch
 		prompt += "\nAssistant: " + truncate(lastAssistant, 400)
 	}
 
-	// the title turn reuses the FULL tool table (nil Tools falls back
-	// to the registered set) and the incoming user content can invite
-	// tool use. A title turn must never hard-pause on the card (no
-	// session, nobody answering): deny the verdict tool by name - the
-	// registered identity is the bare domain name (the one-domain tool
-	// law, t_e06b38bc); the loop filters it
-	// after every provider merge, the same mechanism the ephemeral
-	// path denies memory with.
-	ctx = agent.WithDeniedTools(ctx, "verdict")
+	// The title turn is metadata, not a conversation - it must never
+	// call a tool. Before the toolless run this was exactly the live
+	// defect t_77e27ef8 shipped with: the user content invited tool use
+	// and the title model SPAWNED REAL subagents (delegate:task-3/6),
+	// one parentless - the title ctx carries no WithSessionID. A run
+	// marked toolless (agent.WithToolless) drops the whole merged
+	// registry - delegate.task, process.spawn, shell, verdict, all of
+	// it, present or future: no schema reaches the model, no dispatch
+	// entry survives the merge, and a stray call is an error result.
+	// The run-scoped mechanism mirrors WithDeniedTools (t_e06b38bc,
+	// t_77e27ef8's verdict denial - subsumed here).
+	ctx = agent.WithToolless(ctx)
 
 	events := s.agent.RunWithProvider(ctx, prov, []core.Message{core.NewUser(prompt)}, nil)
 	title := ""
