@@ -584,7 +584,7 @@
         return;
       }
     }
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       emit("send");
     }
