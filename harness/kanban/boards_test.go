@@ -381,11 +381,12 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedLegacy(t, filepath.Join(boards, "legacy-crew", "kanban.db"), "crew")
-	// journey junk: never migrates, dies with the layout
-	if err := os.MkdirAll(filepath.Join(boards, "j78nov-a"), 0755); err != nil {
+	// a recipe-PINNED journey board: never migrates (the recipes
+	// re-create it fresh), but its dir is archived - never destroyed
+	if err := os.MkdirAll(filepath.Join(boards, "j78-a"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	seedLegacy(t, filepath.Join(boards, "j78nov-a", "kanban.db"), "junk")
+	seedLegacy(t, filepath.Join(boards, "j78-a", "kanban.db"), "junk")
 	// the pointer names the real board
 	if err := os.WriteFile(filepath.Join(boards, "current"), []byte("legacy-crew\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -425,9 +426,17 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	if err != nil || len(events) != 2 {
 		t.Fatalf("legacy events = %+v err %v", events, err)
 	}
-	// old dirs gone - migrated board, junk boards, pointer file, all of it
+	// old dirs gone - migrated board, pointer file, all of it; the
+	// pinned journey board did NOT become a row and did NOT die: it is
+	// archived under data/boards-junk with its data intact
 	if _, serr := os.Stat(boards); !os.IsNotExist(serr) {
 		t.Fatalf("legacy boards dir survives migration: %v", serr)
+	}
+	if s.BoardExists("j78-a") {
+		t.Fatal("pinned journey board became a row")
+	}
+	if _, serr := os.Stat(filepath.Join(home, "data", "boards-junk", "j78-a", "kanban.db")); serr != nil {
+		t.Fatalf("pinned journey board not archived with its data: %v", serr)
 	}
 	// the old main db file (now the single db) keeps the full shape:
 	// unknown ids answer not-found on the migrated board
@@ -488,5 +497,112 @@ func TestMigrateAbortsOnUnreadableSource(t *testing.T) {
 	boardsRows, _ := s.Boards(context.Background())
 	if len(boardsRows) != 1 {
 		t.Fatalf("boards = %+v, want just main", boardsRows)
+	}
+}
+
+// reseedLegacyBoardDir replants one legacy board directory after the
+// migration already ran: the poisoned state the fold used to mint
+// (commit landed, the layout delete never did) re-runs the migration
+// against rows that are already in the single database.
+func reseedLegacyBoardDir(t *testing.T, boards, name, prefix string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(boards, name), 0755); err != nil {
+		t.Fatal(err)
+	}
+	seedLegacy(t, filepath.Join(boards, name, "kanban.db"), prefix)
+}
+
+func TestMigrateReRunAfterCommittedFoldIsNoOp(t *testing.T) {
+	home := tempHome(t)
+	boards := datadirBoards(home)
+	mainDSN := filepath.Join(home, "data", "kanban.db")
+	if err := os.MkdirAll(filepath.Dir(mainDSN), 0755); err != nil {
+		t.Fatal(err)
+	}
+	seedLegacy(t, mainDSN, "main")
+	reseedLegacyBoardDir(t, boards, "legacy-crew", "crew")
+	if err := os.WriteFile(filepath.Join(boards, "current"), []byte("legacy-crew\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// boot 1: migration commits the fold and retires the layout
+	s, err := MountRegistry(home)
+	if err != nil {
+		t.Fatalf("first mount: %v", err)
+	}
+	s.Close()
+
+	// the poisoned state: the layout delete never happened (crash,
+	// detach on the wrong pooled connection, partial RemoveAll). The
+	// boards/ dir reappears with the same legacy content. Every boot
+	// from here re-enters the migration against committed rows.
+	reseedLegacyBoardDir(t, boards, "legacy-crew", "crew")
+	if err := os.WriteFile(filepath.Join(boards, "current"), []byte("legacy-crew\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// boot 2 must be a no-op SUCCESS: no UNIQUE refusal, no duplicated
+	// rows, mount does not boot-fail
+	s2, err := MountRegistry(home)
+	if err != nil {
+		t.Fatalf("re-run mount failed - migration not re-runnable: %v", err)
+	}
+	defer s2.Close()
+	ctx := context.Background()
+	names, err := s2.Boards(ctx)
+	if err != nil || len(names) != 2 || names[1].Name != "legacy-crew" || !names[1].Current {
+		t.Fatalf("re-run boards = %+v err %v", names, err)
+	}
+	if ct, err := s2.ListTasks(ctx, "legacy-crew", ""); err != nil || len(ct) != 2 {
+		t.Fatalf("re-run crew tasks = %d err %v (duplicated rows?)", len(ct), err)
+	}
+	comments, err := s2.GetTaskComments(ctx, "legacy-crew", "crew1")
+	if err != nil || len(comments) != 1 {
+		t.Fatalf("re-run comments = %d err %v (duplicated rows?)", len(comments), err)
+	}
+	if events, err := s2.GetTaskEvents(ctx, "legacy-crew", "crew2"); err != nil || len(events) != 2 {
+		t.Fatalf("re-run events = %d err %v (duplicated rows?)", len(events), err)
+	}
+	// and the re-run still retires the layout
+	if _, serr := os.Stat(boards); !os.IsNotExist(serr) {
+		t.Fatalf("re-run left the legacy boards dir: %v", serr)
+	}
+}
+
+func TestMigrateKeepsJourneyLookalikeBoard(t *testing.T) {
+	home := tempHome(t)
+	boards := datadirBoards(home)
+	mainDSN := filepath.Join(home, "data", "kanban.db")
+	if err := os.MkdirAll(filepath.Dir(mainDSN), 0755); err != nil {
+		t.Fatal(err)
+	}
+	seedLegacy(t, mainDSN, "main")
+	// a LEGAL user board the old shape-signature (^j\d+) silently
+	// destroyed: never backed up, never ledgered, gone with the layout
+	if err := os.MkdirAll(filepath.Join(boards, "j2026-planning"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	seedLegacy(t, filepath.Join(boards, "j2026-planning", "kanban.db"), "plan")
+
+	s, err := MountRegistry(home)
+	if err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	names, err := s.Boards(ctx)
+	if err != nil || len(names) != 2 || names[1].Name != "j2026-planning" {
+		t.Fatalf("boards = %+v err %v (lookalike board destroyed?)", names, err)
+	}
+	if planTasks, err := s.ListTasks(ctx, "j2026-planning", ""); err != nil || len(planTasks) != 2 {
+		t.Fatalf("j2026-planning tasks = %d err %v", len(planTasks), err)
+	}
+	// data intact AND in the live registry: the dir folded, nothing
+	// was shipped off to the archive
+	if _, serr := os.Stat(filepath.Join(home, "data", "boards-junk", "j2026-planning")); !os.IsNotExist(serr) {
+		t.Fatalf("lookalike board archived instead of migrated: %v", serr)
+	}
+	if _, serr := os.Stat(boards); !os.IsNotExist(serr) {
+		t.Fatalf("legacy boards dir survives migration: %v", serr)
 	}
 }
