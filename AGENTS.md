@@ -92,8 +92,8 @@ Terse operational rules. Layer references live in `docs/` (map below);
   No module imports another module - shared shapes live in core
   (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26;
   TUI retired 2026-11-01, card t_0744eb8e):
-  `engine/http_channel/` is ENGINE ring, not modules - a module
-  importing it is module-imports-engine, not module-imports-module.
+  `api/` is the shell ring, not modules - a module importing it is
+  module-imports-shell, not module-imports-module.
 - **New extension recipe.** Create `harness/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
   `buildPlugins()` in `cmd/omega/main.go`; append tools to
@@ -106,10 +106,10 @@ Terse operational rules. Layer references live in `docs/` (map below);
   with known removal dependencies live in scripts/nm-purity.modules
   and leave the manifest only by a green removal.
 - **Module REST.** module REST is capsule-registered (api.RegisterRoute,
-  core.ModuleRoute) and served by engine/http_channel/module_routes.go from the
+  core.ModuleRoute) and served by api/module_routes.go from the
   live Context; a module-rooted miss answers 404, an absent module's
   paths ride the SPA catch-all. Seam-nil 501 guards survive only for
-  engine-served seams (store, settings, notifications).
+  shell-served seams (store, settings, notifications).
 - **http_channel.** Persistence order is provider-correct and old
   baked sessions are never rewritten: user -> assistant(A + thinking +
   calls) -> tool results -> assistant(B). List-row concerns
