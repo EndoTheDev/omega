@@ -97,12 +97,12 @@ rm -f "$OWNFILE" "$OWNFILE.out"
 # an itab with a mixed shape (modules operand + main.process operand)
 # keeps the host operand after the strip. The -w word law is unchanged:
 # main.processRunner is a substring, not the word, and stays green.
-STRIP_SED="$(grep "sed -E 's|" "$PURITY" | sed -e "s/^.*sed -E '//" -e "s/'.*//" | head -1)"
+STRIP_SED="$(grep "sed -E 's" "$PURITY" | sed -e "s/^.*sed -E '//" -e "s/'.*//" | head -1)"
 if [ -z "$STRIP_SED" ]; then
   bad "noun check has no host-strip sed to extract"
 else
   NOUNFILE="$(mktemp)"
-  NOUNLINE='d17070 R go:itab.*github.com/EndoTheDev/omega/modules/terminal.ptyProcess,github.com/EndoTheDev/omega/modules/terminal.process'
+  NOUNLINE='d17070 R go:itab.*github.com/EndoTheDev/omega/harness/terminal.ptyProcess,github.com/EndoTheDev/omega/harness/terminal.process'
   case_green() {
     printf '%s\n' \
       "$NOUNLINE" \
@@ -126,7 +126,7 @@ else
   case_red() {
     printf '%s\n' \
       'd17071 R go:itab.*main.shell,main.process' \
-      '0 R go:itab.*github.com/EndoTheDev/omega/modules/terminal.ptyProcess,main.process' \
+      '0 R go:itab.*github.com/EndoTheDev/omega/harness/terminal.ptyProcess,main.process' \
       '0 T main.(*agent).process' \
     > "$NOUNFILE.nm"
     grep -E 'github\.com/EndoTheDev/omega/|(^|[^/])main\.' "$NOUNFILE.nm" > "$NOUNFILE.own" 2>/dev/null || true

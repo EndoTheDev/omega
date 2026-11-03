@@ -9,7 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ICONS } from "../app/composables/icons.ts";
-import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "../../../modules/cron/ui/emptyState.ts";
+import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "../../../harness/cron/ui/emptyState.ts";
 
 // module UI source lives at the repo root (engine/webui/test is three
 // levels under it)
@@ -27,7 +27,7 @@ test("the cron empty-state copy is the designed voice: headline + activation hin
 });
 
 test("CronJobs renders the empty-state pattern only when the jobs list is empty", () => {
-  const src = read(root, "modules", "cron", "ui", "CronJobs.vue");
+  const src = read(root, "harness", "cron", "ui", "CronJobs.vue");
   // the branch order: error -> loading -> jobs (the band search's
   // survivors, card t_529628d5) -> the search-miss line -> empty
   const ok = src.includes('v-else-if="filteredJobs.length"');
@@ -50,7 +50,7 @@ test("CronJobs renders the empty-state pattern only when the jobs list is empty"
 });
 
 test("the empty state is centered in the panel body via the component's own styles", () => {
-  const src = read(root, "modules", "cron", "ui", "CronJobs.vue");
+  const src = read(root, "harness", "cron", "ui", "CronJobs.vue");
   // card t_308e6d9b: the band anchors above; the scroll body (.cron-body)
   // owns the panel height, so centering still has its room
   assert.ok(src.includes(".cron-body"), "the tab's scroll body is the centering context");

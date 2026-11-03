@@ -2,7 +2,7 @@ package http_channel
 
 // GET /tools origin provenance (card t_c2da3379): the wire carries each
 // tool's origin field - "mcp" for MCP-bridge tools, omitted (empty) for
-// native ones. The Tools TAB's filter (modules/tools/ui/toolRows.ts)
+// native ones. The Tools TAB's filter (harness/tools/ui/toolRows.ts)
 // reads this field; the wire itself stays the agent's full executable
 // registry, truthful about what the agent can call. The test feeds one
 // native dotted tool (sessions.search) and one MCP-stamped tool
@@ -25,7 +25,7 @@ func TestToolsListingCarriesOrigin(t *testing.T) {
 		"sessions.search": {Description: "search past sessions"},
 		"shell.run":       {Description: "run a shell command"},
 		// the MCP-stamped shape: exactly what bridgeToolProvider.Tools()
-		// produces (modules/mcp/plugin.go stamps core.ToolOriginMCP)
+		// produces (harness/mcp/plugin.go stamps core.ToolOriginMCP)
 		"sequential-thinking.sequentialthinking": {
 			Description: "sequential thinking",
 			Origin:      core.ToolOriginMCP,

@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/modules/kanban"
-	"github.com/EndoTheDev/omega/modules/process"
-	"github.com/EndoTheDev/omega/modules/terminal"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness/kanban"
+	"github.com/EndoTheDev/omega/harness/process"
+	"github.com/EndoTheDev/omega/harness/terminal"
 )
 
 // TestNotificationsRemovalProof is the arc 4b removal proof (card
@@ -932,7 +932,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 // t_cf6b7795), the sixth worked proof in this file. MCP is the
 // additive-seam born-capsule: the bridge (stdio + Streamable HTTP MCP
 // servers), its server-qualified discovered tools ("server.tool"), and
-// the whole env/mcp.yaml config load ship from files in modules/mcp,
+// the whole env/mcp.yaml config load ship from files in harness/mcp,
 // and the single Mount is the module's whole surface - no command, no
 // REST route, no skills, no prompt section, no canvas panel (nothing
 // rendered mcp before the arc; adding one is a behavior change, not a
@@ -1770,7 +1770,7 @@ func TestTerminalRemovalProof(t *testing.T) {
 //     Q10 provably zero-cost: the loop consults nothing, no audit
 //     file is created, no calls or rows exist.
 //  3. REMOVED: the module is out of buildPlugins - the seam is nil,
-//     nothing Requires it, and removing modules/approval takes the
+//     nothing Requires it, and removing harness/approval takes the
 //     feature whole (the capsule law).
 func TestApprovalRemovalProof(t *testing.T) {
 	home := t.TempDir()
@@ -1872,7 +1872,7 @@ func TestApprovalRemovalProof(t *testing.T) {
 //     spawn→read→wait round-trip answers through the tool face.
 //  2. WITHOUT process: the module is out of buildPlugins - no verb
 //     survives anywhere in the mounted tool set, nothing Requires it,
-//     and removing modules/process takes the registry, the state file
+//     and removing harness/process takes the registry, the state file
 //     and the log directory whole (the capsule law).
 func TestProcessRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
@@ -1962,5 +1962,5 @@ func TestProcessRemovalProof(t *testing.T) {
 			t.Fatalf("REMOVED MOUNT: %s survived the removal", verb)
 		}
 	}
-	t.Log("PROOF removed: zero process.* verbs in the mounted tool set - removing modules/process takes the registry, the state file and the log dir whole")
+	t.Log("PROOF removed: zero process.* verbs in the mounted tool set - removing harness/process takes the registry, the state file and the log dir whole")
 }

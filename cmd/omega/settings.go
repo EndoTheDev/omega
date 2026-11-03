@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
-	"github.com/EndoTheDev/omega/modules/approval"
-	"github.com/EndoTheDev/omega/modules/compactor"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/llm"
+	"github.com/EndoTheDev/omega/harness/approval"
+	"github.com/EndoTheDev/omega/harness/compactor"
 	"gopkg.in/yaml.v3"
 )
 
@@ -575,7 +575,7 @@ func writeConfigFile(path string, cfg *Config) error {
 // on-disk reload goes through the same path, so a hand edit and a
 // settings-pane save behave identically.
 func hotApply(cfg Config, pctx *agent.Context) {
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
 	}

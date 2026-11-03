@@ -1,4 +1,4 @@
-PKG github.com/EndoTheDev/omega/engine/agent|github.com/EndoTheDev/omega/engine/ai||
-PKG github.com/EndoTheDev/omega/engine/ai|encoding/json||
-github.com/EndoTheDev/omega/engine/ai
-github.com/EndoTheDev/omega/engine/agent
+PKG github.com/EndoTheDev/omega/agent|github.com/EndoTheDev/omega/llm||
+PKG github.com/EndoTheDev/omega/llm|encoding/json||
+github.com/EndoTheDev/omega/llm
+github.com/EndoTheDev/omega/agent

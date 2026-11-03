@@ -6,7 +6,7 @@ and capability seams to omega. Each module implements the
 There are no separate processes, no JSON-RPC, and no stdio.
 
 For the full list of modules and how to write new ones, see
-[modules/README.md](../modules/README.md).
+[harness/README.md](../harness/README.md).
 
 For the module system architecture (Context, Plugin, MountAll),
 see [architecture.md](architecture.md).

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # embed-lane.sh - the ONE lane that owns engine/http_channel/static/.
 #
-# Webui cards commit SOURCE ONLY (engine/webui/ and modules/<name>/ui/).
+# Webui cards commit SOURCE ONLY (engine/webui/ and harness/<name>/ui/).
 # The committed SPA bundle is regenerated and committed here, right
 # after a source merge lands, so no branch ever diverges static/ and
 # parallel webui cards can never collide on it. go build = complete
@@ -21,7 +21,7 @@ set -euo pipefail
 #
 # Guards:
 #   - change gate: if <base>..HEAD touches no webui source (engine/webui/
-#     or modules/*/ui/), skip regeneration entirely - Go-only merges
+#     or harness/*/ui/), skip regeneration entirely - Go-only merges
 #     pay nothing.
 #   - hash gate: after the build, a bundle that is CONTENT-identical to
 #     the committed one is not committed - the lane never writes no-op
@@ -45,7 +45,7 @@ LANE_PREFIX="embed-lane: rebuild webui bundle for"
 # webui source (additions, edits, renames AND deletions - removing a
 # component changes the bundle too).
 ui_changed() {
-	git diff --name-only "$1" "$2" -- "engine/webui" ":(glob)modules/*/ui/**"
+	git diff --name-only "$1" "$2" -- "engine/webui" ":(glob)harness/*/ui/**"
 }
 
 # strip_volatile: nuxt build ids (uuids) and epoch-millisecond build

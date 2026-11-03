@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 func newLockTestRegistries(t *testing.T) *omegaRegistries {

@@ -331,7 +331,7 @@ func TestLogsMissingFileIs404(t *testing.T) {
 	}
 }
 
-// nopTestLogger mirrors modules/logging.NopLogger: LoggerProvider only.
+// nopTestLogger mirrors harness/logging.NopLogger: LoggerProvider only.
 type nopTestLogger struct{}
 
 func (nopTestLogger) Printf(string, ...any) {}

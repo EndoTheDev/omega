@@ -18,31 +18,31 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/llm"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
-	"github.com/EndoTheDev/omega/modules/agent_loop"
-	browserModule "github.com/EndoTheDev/omega/modules/browser"
-	"github.com/EndoTheDev/omega/modules/compactor"
-	"github.com/EndoTheDev/omega/modules/continuous"
-	"github.com/EndoTheDev/omega/modules/cron"
-	"github.com/EndoTheDev/omega/modules/datadir"
-	"github.com/EndoTheDev/omega/modules/delegate"
-	kanbanModule "github.com/EndoTheDev/omega/modules/kanban"
-	"github.com/EndoTheDev/omega/modules/approval"
-	"github.com/EndoTheDev/omega/modules/logging"
-	"github.com/EndoTheDev/omega/modules/mcp"
-	"github.com/EndoTheDev/omega/modules/memory"
-	"github.com/EndoTheDev/omega/modules/notifications"
-	"github.com/EndoTheDev/omega/modules/prompt"
-	"github.com/EndoTheDev/omega/modules/process"
-	"github.com/EndoTheDev/omega/modules/provider"
-	"github.com/EndoTheDev/omega/modules/skills"
-	"github.com/EndoTheDev/omega/modules/store"
-	"github.com/EndoTheDev/omega/modules/terminal"
-	"github.com/EndoTheDev/omega/modules/tools"
-	"github.com/EndoTheDev/omega/modules/trust"
-	"github.com/EndoTheDev/omega/modules/verdict"
+	"github.com/EndoTheDev/omega/agent/loop"
+	browserModule "github.com/EndoTheDev/omega/harness/browser"
+	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/harness/continuous"
+	"github.com/EndoTheDev/omega/harness/cron"
+	"github.com/EndoTheDev/omega/harness/datadir"
+	"github.com/EndoTheDev/omega/harness/delegate"
+	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
+	"github.com/EndoTheDev/omega/harness/approval"
+	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/harness/mcp"
+	"github.com/EndoTheDev/omega/harness/memory"
+	"github.com/EndoTheDev/omega/harness/notifications"
+	"github.com/EndoTheDev/omega/harness/prompt"
+	"github.com/EndoTheDev/omega/harness/process"
+	"github.com/EndoTheDev/omega/harness/provider"
+	"github.com/EndoTheDev/omega/harness/skills"
+	"github.com/EndoTheDev/omega/harness/store"
+	"github.com/EndoTheDev/omega/harness/terminal"
+	"github.com/EndoTheDev/omega/harness/tools"
+	"github.com/EndoTheDev/omega/harness/trust"
+	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
 func main() {
@@ -456,7 +456,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 	}
 	return []agent.Plugin{
 		logging.NewPlugin(),
-		agent_loop.NewPlugin(),
+		loop.NewPlugin(),
 		&provider.Plugin{},
 		store.NewPlugin(),
 		skills.NewPlugin(),
@@ -616,7 +616,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	if err := resolveHomePaths(&cfg); err != nil {
 		return err
 	}
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, pctx, reg, setAgents, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
@@ -812,7 +812,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		// defaulting law): the layer's model IS the session model.
 		applyModelEnvOverride(&cfg)
 	}
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, _, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err

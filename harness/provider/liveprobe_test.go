@@ -1,0 +1,259 @@
+package provider
+
+// Live probes against the keypool gateway surface. Skipped unless
+// KEYPOOL_CLIENT_KEY is set - no secrets in the tree, the key travels
+// via env. Base URL defaults to the standard keypool port.
+//
+//	KEYPOOL_CLIENT_KEY=<key> KEYPOOL_HOST=http://127.0.0.1:11435 \
+//	  go test ./modules/provider/ -run TestLive -v
+
+import (
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/llm"
+)
+
+const keypoolModel = "glm-5.3"
+
+// keypoolDefaultHost is the standard keypool surface: the openai and
+// anthropic lanes live under /v1, the ollama-native lane at the root.
+const keypoolDefaultHost = "http://127.0.0.1:11435/v1"
+
+func keypoolProvider(t *testing.T, typ string) (*Provider, string) {
+	t.Helper()
+	host := os.Getenv("KEYPOOL_HOST")
+	if host == "" {
+		host = keypoolDefaultHost
+	}
+	return &Provider{typ: typ, baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}, host
+}
+
+// TestLiveKeypoolAnthropic drives the anthropic lane end to end: auth,
+// streaming with thinking chunks, a full tool loop (tool_use -> folded
+// tool_result -> final text), usage counters, and rotation across
+// repeated requests (each request is a separate HTTP connection).
+func TestLiveKeypoolAnthropic(t *testing.T) {
+	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
+		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
+	}
+	p, host := keypoolProvider(t, "anthropic")
+	tools := []llm.ToolSchema{{
+		Name:        "get_weather",
+		Description: "Get current weather for a city",
+		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
+	}}
+
+	// Turn 1: expect a get_weather tool call.
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
+	text, thinking := "", ""
+	var callID string
+	var end core.StreamEnd
+	for _, e := range got {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			text += ev.Content
+		case core.ThinkingChunk:
+			thinking += ev.Content
+		case core.ToolCallEvent:
+			t.Logf("tool call: id=%s name=%s args=%v", ev.ToolCall.ID, ev.ToolCall.Name, ev.ToolCall.Arguments)
+			if callID != "" {
+				t.Logf("second tool call event; keeping first id")
+			}
+			callID = ev.ToolCall.ID
+		case core.StreamEnd:
+			end = ev
+		}
+	}
+	if end.Error != "" {
+		t.Fatalf("turn 1 stream error: %s", end.Error)
+	}
+	if callID == "" {
+		t.Fatalf("turn 1: no tool call event (finish_reason=%q)", end.FinishReason)
+	}
+	if end.FinishReason != "tool_use" {
+		t.Errorf("turn 1 finish_reason = %q, want tool_use", end.FinishReason)
+	}
+	t.Logf("turn 1: thinking %d chars, stop=%s", len(thinking), end.FinishReason)
+
+	// Turn 2: send assistant tool_use + folded tool_result back.
+	messages := []core.Message{
+		core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
+		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: callID, Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}},
+		core.NewToolResult("22C, sunny", callID, false),
+	}
+	p2, _ := keypoolProvider(t, "anthropic") // fresh provider: separate request, same client key (rotation)
+	got2 := collectEvents(t, p2.Stream(testContext(), messages, tools))
+	text2, end2 := "", core.StreamEnd{}
+	for _, e := range got2 {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			text2 += ev.Content
+		case core.StreamEnd:
+			end2 = ev
+		}
+	}
+	if end2.Error != "" {
+		t.Fatalf("turn 2 stream error: %s", end2.Error)
+	}
+	if end2.FinishReason != "end_turn" {
+		t.Errorf("turn 2 finish_reason = %q, want end_turn", end2.FinishReason)
+	}
+	if text2 == "" {
+		t.Error("turn 2: no response text")
+	}
+	t.Logf("turn 2: %d chars, usage in=%v out=%v cached=%v",
+		len(text2), deref(end2.PromptEvalCount), deref(end2.EvalCount), deref(end2.CachedCount),
+	)
+	_ = host // logged below for the transcript
+	t.Logf("lane=%s host=%s", "anthropic", host)
+}
+
+// TestLiveKeypoolOpenAI drives the openai lane end to end: auth,
+// streaming, reasoning chunks, tool-call round trip, usage counters.
+func TestLiveKeypoolOpenAI(t *testing.T) {
+	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
+		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
+	}
+	p, host := keypoolProvider(t, "openai")
+	tools := []llm.ToolSchema{{
+		Name:        "get_weather",
+		Description: "Get current weather for a city",
+		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
+	}}
+
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo.")}, tools))
+	text, thinking := "", ""
+	var calls []core.ToolCallEvent
+	end := core.StreamEnd{}
+	for _, e := range got {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			text += ev.Content
+		case core.ThinkingChunk:
+			thinking += ev.Content
+		case core.ToolCallEvent:
+			calls = append(calls, ev)
+		case core.StreamEnd:
+			end = ev
+		}
+	}
+	if end.Error != "" {
+		t.Fatalf("stream error: %s", end.Error)
+	}
+	if len(calls) == 0 {
+		t.Fatalf("no tool call event (finish_reason=%q)", end.FinishReason)
+	}
+	if end.FinishReason != "tool_calls" {
+		t.Errorf("finish_reason = %q, want tool_calls", end.FinishReason)
+	}
+	if thinking == "" {
+		t.Log("note: no reasoning deltas on this lane/model")
+	}
+	t.Logf("openai lane host=%s: %d tool call(s), thinking %d chars, usage in=%v out=%v cached=%v",
+		host, len(calls), len(thinking), deref(end.PromptEvalCount), deref(end.EvalCount), deref(end.CachedCount))
+
+	// Tool result round trip.
+	messages := []core.Message{
+		core.NewUser("Use the get_weather tool for Tokyo."),
+		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
+		core.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
+	}
+	got2 := collectEvents(t, p.Stream(testContext(), messages, tools))
+	text2, end2 := "", core.StreamEnd{}
+	for _, e := range got2 {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			text2 += ev.Content
+		case core.StreamEnd:
+			end2 = ev
+		}
+	}
+	if end2.Error != "" {
+		t.Fatalf("round-trip stream error: %s", end2.Error)
+	}
+	if text2 == "" {
+		t.Error("round trip: no response text")
+	}
+}
+
+// TestLiveKeypoolOllama drives the ollama-native lane end to end:
+// tool call (arguments arrive as an object), then the tool result
+// folded back (role "tool") and the model answering from it.
+func TestLiveKeypoolOllama(t *testing.T) {
+	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
+		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
+	}
+	// The ollama-native lane serves at the root, not under /v1.
+	host := strings.TrimSuffix(os.Getenv("KEYPOOL_HOST"), "/v1")
+	if host == "" {
+		host = strings.TrimSuffix(keypoolDefaultHost, "/v1")
+	}
+	p := &Provider{typ: "ollama", baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}
+	tools := []llm.ToolSchema{{
+		Name:        "get_weather",
+		Description: "Get current weather for a city",
+		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
+	}}
+
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
+	var calls []core.ToolCallEvent
+	end := core.StreamEnd{}
+	for _, e := range got {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			t.Logf("turn 1 text: %s", ev.Content)
+		case core.ToolCallEvent:
+			calls = append(calls, ev)
+		case core.StreamEnd:
+			end = ev
+		}
+	}
+	if end.Error != "" {
+		t.Fatalf("turn 1 stream error: %s", end.Error)
+	}
+	if len(calls) == 0 {
+		t.Fatalf("turn 1: no tool call event (finish_reason=%q)", end.FinishReason)
+	}
+	if end.FinishReason != "tool_call" {
+		t.Errorf("turn 1 finish_reason = %q, want tool_call", end.FinishReason)
+	}
+	if _, ok := calls[0].ToolCall.Arguments["city"]; !ok {
+		t.Errorf("turn 1: arguments decoded without \"city\" key: %v", calls[0].ToolCall.Arguments)
+	}
+	t.Logf("turn 1: tool call id=%s name=%s args=%v", calls[0].ToolCall.ID, calls[0].ToolCall.Name, calls[0].ToolCall.Arguments)
+
+	// Turn 2: tool result folds back (role "tool" + tool_call_id).
+	messages := []core.Message{
+		core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge."),
+		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
+		core.NewToolResult("22C, sunny", calls[0].ToolCall.ID, false),
+	}
+	got2 := collectEvents(t, p.Stream(testContext(), messages, tools))
+	text2, end2 := "", core.StreamEnd{}
+	for _, e := range got2 {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			text2 += ev.Content
+		case core.StreamEnd:
+			end2 = ev
+		}
+	}
+	if end2.Error != "" {
+		t.Fatalf("turn 2 stream error: %s", end2.Error)
+	}
+	if text2 == "" {
+		t.Error("turn 2: no response text")
+	}
+	t.Logf("turn 2: %d chars, finish=%s, usage in=%v out=%v cached=%v",
+		len(text2), end2.FinishReason, deref(end2.PromptEvalCount), deref(end2.EvalCount), deref(end2.CachedCount))
+}
+
+func deref(n *int) any {
+	if n == nil {
+		return "nil"
+	}
+	return *n
+}

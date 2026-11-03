@@ -21,9 +21,9 @@ import (
 	"syscall"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
-	"github.com/EndoTheDev/omega/modules/verdict"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/llm"
+	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
 // ANSI basics only - the loop law caps the palette here. NO_COLOR and
@@ -101,7 +101,7 @@ func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error 
 	if err := resolveHomePaths(&cfg); err != nil {
 		return err
 	}
-	ai.SetHTTPTimeout(cfg.HTTPTimeout)
+	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if name := resolveAgentName(); name != "" {
 		if err := ApplyAgentLayer(&cfg, omegaHome(), name); err != nil {
 			return fmt.Errorf("agent layer %s: %w", name, err)

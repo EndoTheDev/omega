@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // runFrame is one prepared SSE frame: the event type plus its JSON data.
@@ -320,7 +320,7 @@ func (h *runHub) finish(run *activeRun) {
 // path (the tool result errors out, the next turn boundary emits a
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
-func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
+func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov llm.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
 	// Branch pin (t_19c100dd): BEFORE beginRun's first delta - the
 	// opening push must already compose with the old sibling's rows
 	// cut, so the retry's first paint is in place. Plain sends pin
@@ -353,7 +353,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 		// Ephemeral (card t_d96a5cd5): the loop filters the denied name
 		// AFTER every provider merge, so a tool an extension re-adds
 		// under the same name never runs in a no-persist session.
-		// The denied name is modules/memory's registered identity
+		// The denied name is harness/memory's registered identity
 		// (the bare domain "memory", the one-domain tool law t_e06b38bc).
 		if req.Ephemeral {
 			ctx = agent.WithDeniedTools(ctx, "memory")
@@ -410,7 +410,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov ai.Provi
 // into a broadcast error frame instead of a write to one request's wire
 // - nobody in particular is listening when persistence fails, and every
 // attached wire should learn about the failure the same way.
-func (s *Server) persistRun(ctx context.Context, run *activeRun, prov ai.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
+func (s *Server) persistRun(ctx context.Context, run *activeRun, prov llm.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
 	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
 		s.runs.broadcast(run, runFrame{event: "error", data: []byte(err.Error())})
 	}

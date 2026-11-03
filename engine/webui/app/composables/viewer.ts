@@ -11,7 +11,7 @@ import type { InjectionKey, Ref } from "vue";
 import type { ViewerRef } from "./dockables.ts";
 
 /** the module->shell open event. THE LITERAL IS COPIED in
-    modules/skills/ui/SkillsList.vue (module UI import law); the viewer
+    harness/skills/ui/SkillsList.vue (module UI import law); the viewer
     test pins both spellings identical. Detail payload: ViewerRef. The
     module side dispatches its own CustomEvent against this literal -
     emitViewerOpen died with the v0.14.1 review lens (zero production

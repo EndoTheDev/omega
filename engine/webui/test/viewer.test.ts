@@ -39,7 +39,7 @@ import {
 } from "../app/composables/viewer.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-// the repo root (engine/webui is two levels deep - modules/ lives beside engine/)
+// the repo root (engine/webui is two levels deep - harness/ lives beside engine/)
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const readRepo = (rel: string) => readFileSync(`${repo}${rel}`, "utf8");
@@ -209,7 +209,7 @@ describe("the viewer wiring contracts", () => {
   const viewer = read("app/components/ViewerTab.vue");
   const filesTab = read("app/components/files/FilesTab.vue");
   const registry = read("app/components/RegistryList.vue");
-  const skillsList = readRepo("modules/skills/ui/SkillsList.vue");
+  const skillsList = readRepo("harness/skills/ui/SkillsList.vue");
   const viewerComposable = read("app/composables/viewer.ts");
 
   it("ViewerTab reads BOTH surfaces and renders line-numbered text", () => {

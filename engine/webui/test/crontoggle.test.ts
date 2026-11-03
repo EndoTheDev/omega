@@ -14,7 +14,7 @@ import {
   cronKeyOf,
   setCronJobEnabled,
   type CronJobWire,
-} from "../../../modules/cron/ui/toggle.ts";
+} from "../../../harness/cron/ui/toggle.ts";
 
 let savedFetch: typeof globalThis.fetch;
 

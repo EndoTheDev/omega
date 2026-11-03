@@ -186,8 +186,8 @@ esac
 d="$tmp/s8-e2e-goonly"
 make_repo "$d"
 git -C "$d/dev" checkout -qb card
-card_commit "$d/dev" "engine/agent/x.go" "package agent" "card: go one"
-card_commit "$d/dev" "engine/agent/y.go" "package agent" "card: go two"
+card_commit "$d/dev" "agent/x.go" "package agent" "card: go one"
+card_commit "$d/dev" "agent/y.go" "package agent" "card: go two"
 git -C "$d/dev" checkout -q dev
 git -C "$d/dev" merge -q --ff-only card
 premerge="$(git -C "$d/dev" rev-parse --short origin/dev)"

@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // WebTools is the web search/fetch tool pair the channel mounts
@@ -212,7 +212,7 @@ func (t *webTools) doSearch(ctx context.Context, query string, maxResults int) (
 	req.Header.Set("Authorization", "Bearer "+t.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := ai.RetryHTTP(req)
+	resp, err := llm.RetryHTTP(req)
 	if err != nil {
 		return fmt.Sprintf("error: search request failed: %v", err), nil
 	}
@@ -258,7 +258,7 @@ func (t *webTools) doFetch(ctx context.Context, url string) (string, error) {
 	req.Header.Set("Authorization", "Bearer "+t.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := ai.RetryHTTP(req)
+	resp, err := llm.RetryHTTP(req)
 	if err != nil {
 		return fmt.Sprintf("error: fetch request failed: %v", err), nil
 	}

@@ -11,14 +11,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { isNarrowWidth, NARROW_MAX_PX } from "../app/composables/narrow.ts";
-import { isNarrowWidth as cronIsNarrowWidth } from "../../../modules/cron/ui/narrow.ts";
+import { isNarrowWidth as cronIsNarrowWidth } from "../../../harness/cron/ui/narrow.ts";
 import { isNarrowWidth as logsIsNarrowWidth } from "../../http_channel/ui/narrow.ts";
-import { isNarrowWidth as skillsIsNarrowWidth } from "../../../modules/skills/ui/narrow.ts";
-import { isNarrowWidth as toolsIsNarrowWidth } from "../../../modules/tools/ui/narrow.ts";
+import { isNarrowWidth as skillsIsNarrowWidth } from "../../../harness/skills/ui/narrow.ts";
+import { isNarrowWidth as toolsIsNarrowWidth } from "../../../harness/tools/ui/narrow.ts";
 // the recipe's original: the Board's module-owned copy must stay in the
 // fold too (a drag between hosts must show one adaptation, not two)
-import { isNarrowWidth as boardIsNarrowWidth } from "../../../modules/kanban/ui/board/boardLogic.ts";
-import { isNarrowWidth as mcpIsNarrowWidth } from "../../../modules/mcp/ui/narrow.ts";
+import { isNarrowWidth as boardIsNarrowWidth } from "../../../harness/kanban/ui/board/boardLogic.ts";
+import { isNarrowWidth as mcpIsNarrowWidth } from "../../../harness/mcp/ui/narrow.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."); // the repo root (engine/webui/test up to root)
 const modules = root; // the RETROFIT rel paths are repo-root relative
@@ -56,7 +56,7 @@ const RETROFIT: Array<{
   rules: RegExp[];
 }> = [
   {
-    rel: "modules/cron/ui/CronJobs.vue",
+    rel: "harness/cron/ui/CronJobs.vue",
     label: "cron",
     module: "cron",
     // card t_308e6d9b: the narrow padding rides the scroll body now.
@@ -71,14 +71,14 @@ const RETROFIT: Array<{
     rules: [/\.logs-list\.narrow \./],
   },
   {
-    rel: "modules/skills/ui/SkillsList.vue",
+    rel: "harness/skills/ui/SkillsList.vue",
     label: "skills",
     module: "skills",
     // card t_308e6d9b: the narrow padding rides the scroll body now
     rules: [/\.skills-list\.narrow \.skills-body \{/],
   },
   {
-    rel: "modules/tools/ui/ToolsList.vue",
+    rel: "harness/tools/ui/ToolsList.vue",
     label: "tools",
     module: "tools",
     // card t_308e6d9b + t_ffab9823: the narrow padding rides the scroll
@@ -87,7 +87,7 @@ const RETROFIT: Array<{
     rules: [/\.tools-list\.narrow \.tools-body \{/],
   },
   {
-    rel: "modules/mcp/ui/McpServers.vue",
+    rel: "harness/mcp/ui/McpServers.vue",
     label: "mcp",
     module: "mcp",
     // card t_83f37525 rebuilt the rows (mcp-server-head -> mcp-row/
@@ -161,6 +161,6 @@ test("the sweep's inventory is explicit - settings and the Board keep their adap
   // views are not shipped yet (checked at round start, 2026-10-21).
   const settings = read(modules, "engine", "webui", "app", "components", "settings", "SettingsTab.vue");
   assert.match(settings, /narrow: narrow/, "settings keeps its narrow adaptation (card t_49d0b308)");
-  const board = read(modules, "modules", "kanban", "ui", "Board.vue");
+  const board = read(modules, "harness", "kanban", "ui", "Board.vue");
   assert.match(board, /narrow: narrow/, "the Board IS the recipe");
 });

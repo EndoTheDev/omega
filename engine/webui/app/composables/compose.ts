@@ -1,5 +1,5 @@
 // Module-UI composition scan. THE WHOLE MECHANISM: a module ships UI by
-// putting Vue single-file components in modules/<name>/ui/. No manifest,
+// putting Vue single-file components in harness/<name>/ui/. No manifest,
 // no runtime registry, no plugin protocol - a directory is the
 // registration, and only the top-level .vue files of that directory are
 // panels. The build reads this at nuxt-config-eval time; the shell has
@@ -32,14 +32,14 @@ export interface ModuleUI {
 // scanModuleUIs returns every candidate dir under ANY of the given
 // parent roots that carries a <name>/ui/ directory with at least one
 // .vue file, sorted by module name. The tier law scan (card t_ae5423d2):
-// opinionated modules live in modules/, the engine ring sits under
+// opinionated modules live in harness/, the engine ring sits under
 // engine/ - both roots are passed and both follow the same rule
 // ("a directory is the registration"). A nonexistent root yields
 // nothing (the tree never sees it; the clean-clone build is what runs
 // the scan for real). "modules" is skipped on engine roots: the shell
 // tree is scanned via its own root, re-registering it under a parent
 // scan would double-count the shell's own webui. A module name
-// found in an earlier root wins - modules/ is passed first, so an
+// found in an earlier root wins - harness/ is passed first, so an
 // engine dir can never shadow an opinionated module's panel.
 // Sorted twice - directory entries AND results - so the generated panel
 // list is stable regardless of readdir order.

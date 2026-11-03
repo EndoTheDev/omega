@@ -75,21 +75,21 @@ omega update
 ## Architecture
 
 ```txt
-HTTP channel -> agent (loop + tools) -> ai (provider streaming)
+HTTP channel -> agent (loop + tools) -> llm (provider streaming)
 ```
 
 | Layer    | Responsibility                                             |
 | -------- | ---------------------------------------------------------- |
-| Agent    | Multi-turn loop, tools, compaction, modules               |
-| Provider | Ollama + OpenAI + Anthropic streaming                      |
+| Agent    | Multi-turn loop, tools, compaction, harness capsules       |
+| LLM      | Ollama + OpenAI + Anthropic streaming                      |
 | CLI      | Entry point, CLI agent loop + setup, config loading, trust gate |
 
 See [docs/architecture.md](docs/architecture.md) for details.
 
 ## Modules
 
-All modules are in-process Go packages under `modules/`. See
-[modules/README.md](modules/README.md) for the full list.
+All modules are in-process Go packages under `harness/`. See
+[harness/README.md](harness/README.md) for the full list.
 
 ## Documentation
 

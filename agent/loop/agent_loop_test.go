@@ -1,0 +1,288 @@
+package loop
+
+import (
+	"context"
+	"testing"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/llm"
+)
+
+// Compile-time assertions.
+var _ core.LoopProvider = Loop{}
+var _ agent.Plugin = (*Plugin)(nil)
+
+// TestLoopBasic verifies the loop runs a simple one-turn conversation.
+func TestLoopBasic(t *testing.T) {
+	provider := llm.NewFakeProvider("test",
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		Loop{}.Run(context.Background(), core.LoopOptions{
+			Provider: provider,
+			Messages: []core.Message{core.NewUser("hi")},
+			Events:   events,
+		})
+	}()
+
+	var got []string
+	for e := range events {
+		switch v := e.(type) {
+		case core.AgentStart:
+			got = append(got, "agent_start")
+		case core.TurnStart:
+			got = append(got, "turn_start")
+		case core.StreamEvent:
+			switch v.Event.(type) {
+			case core.ResponseChunk:
+				got = append(got, "response_chunk")
+			case core.StreamEnd:
+				got = append(got, "stream_end")
+			}
+		case core.AgentEnd:
+			got = append(got, "agent_end")
+			if v.FinishReason != "stop" {
+				t.Errorf("FinishReason = %s, want stop", v.FinishReason)
+			}
+		}
+	}
+
+	want := []string{"agent_start", "turn_start", "response_chunk", "stream_end", "agent_end"}
+	if len(got) != len(want) {
+		t.Fatalf("event count = %d, want %d (got %v)", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("event %d = %s, want %s", i, got[i], w)
+		}
+	}
+}
+
+// TestLoopNilProvider verifies the loop handles a nil provider gracefully.
+func TestLoopNilProvider(t *testing.T) {
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		Loop{}.Run(context.Background(), core.LoopOptions{
+			Provider: nil,
+			Messages: []core.Message{core.NewUser("hi")},
+			Events:   events,
+		})
+	}()
+
+	for e := range events {
+		if end, ok := e.(core.AgentEnd); ok {
+			if end.FinishReason != "error" {
+				t.Errorf("FinishReason = %s, want error", end.FinishReason)
+			}
+			if end.Error != "no provider configured" {
+				t.Errorf("Error = %s, want 'no provider configured'", end.Error)
+			}
+			return
+		}
+	}
+	t.Fatal("expected AgentEnd event")
+}
+
+// TestPluginMount verifies the plugin sets ctx.Loop.
+func TestPluginMount(t *testing.T) {
+	p := NewPlugin()
+	if p.Name() != "agent-loop" {
+		t.Errorf("Name = %q, want %q", p.Name(), "agent-loop")
+	}
+	provides := p.Provides()
+	if len(provides) != 1 || provides[0] != "loop" {
+		t.Errorf("Provides = %v, want [loop]", provides)
+	}
+
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+	if ctx.Loop == nil {
+		t.Fatal("ctx.Loop not set after Mount")
+	}
+}
+
+// TestLoopWithToolCalls verifies a two-turn loop with a tool call.
+func TestLoopWithToolCalls(t *testing.T) {
+	provider := llm.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	tools := map[string]core.Tool{
+		"echo": {
+			Description: "Echo back",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{"msg": map[string]any{"type": "string"}}},
+			Run: func(_ context.Context, args map[string]any) (string, error) {
+				msg, _ := args["msg"].(string)
+				return msg, nil
+			},
+		},
+	}
+
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		Loop{}.Run(context.Background(), core.LoopOptions{
+			Provider: provider,
+			Messages: []core.Message{core.NewUser("go")},
+			Tools:    tools,
+			Events:   events,
+		})
+	}()
+
+	var got []string
+	for e := range events {
+		switch v := e.(type) {
+		case core.AgentEnd:
+			got = append(got, "agent_end")
+			if v.Turns != 2 {
+				t.Errorf("Turns = %d, want 2", v.Turns)
+			}
+			if v.FinishReason != "stop" {
+				t.Errorf("FinishReason = %s, want stop", v.FinishReason)
+			}
+		}
+	}
+	if len(got) == 0 {
+		t.Fatal("no events received")
+	}
+}
+
+// TestLoopDeniedTool pins the run-scoped tool deny (agent.WithDeniedTools):
+// a provider-merged registry drops the denied name BEFORE the model sees
+// schemas or dispatch - a memory tool riding a ToolProvider vanishes for
+// a denied run, and a tool the model still cannot help calling errors as
+// an IsError result instead of executing.
+func TestLoopDeniedTool(t *testing.T) {
+	provider := llm.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "memory", Arguments: map[string]any{"action": "add"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	// memory rides a PROVIDER (the real mount shape): filtering the
+	// caller's Tools map alone would not reach it
+	providerTools := map[string]core.Tool{
+		"memory": {
+			Description: "Save a memory",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				t.Fatal("the denied tool executed")
+				return "", nil
+			},
+		},
+	}
+
+	events := make(chan core.Event, 64)
+	ctx := agent.WithDeniedTools(context.Background(), "memory")
+	go func() {
+		defer close(events)
+		Loop{}.Run(ctx, core.LoopOptions{
+			Provider: provider,
+			Messages: []core.Message{core.NewUser("go")},
+			Tools:    map[string]core.Tool{},
+			ToolProviders: []core.ToolProvider{
+				core.DefaultToolProvider{ToolsMap: providerTools},
+			},
+			Events: events,
+		})
+	}()
+
+	sawResult := false
+	for e := range events {
+		if te, ok := e.(core.ToolResultEvent); ok {
+			sawResult = true
+			if !te.Message.IsError {
+				t.Errorf("denied tool result not an error: %+v", te.Message)
+			}
+		}
+	}
+	if !sawResult {
+		t.Fatal("no tool result event - the call path never ran")
+	}
+}
+
+// TestLoopToolless pins the toolless run (agent.WithToolless): the merged
+// registry - the caller's map PLUS every tool provider's contribution -
+// is replaced wholesale, so a side-effectful tool (delegate.task is the
+// live case: the title turn spawned real subagents) is absent from the
+// schema list and the dispatch map, and a model that still cannot help
+// calling it errors as an IsError result instead of executing. Unlike
+// the deny list, no name is enumerated: the run is toolless, period.
+func TestLoopToolless(t *testing.T) {
+	provider := llm.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "delegate.task", Arguments: map[string]any{"goal": "spawn"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+
+	providerTools := map[string]core.Tool{
+		"delegate.task": {
+			Description: "Delegate a task",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				t.Fatal("the toolless run executed a tool")
+				return "", nil
+			},
+		},
+	}
+	callerTools := map[string]core.Tool{
+		"shell": {
+			Description: "Run a shell command",
+			Run: func(_ context.Context, _ map[string]any) (string, error) {
+				t.Fatal("the toolless run executed a tool")
+				return "", nil
+			},
+		},
+	}
+
+	events := make(chan core.Event, 64)
+	ctx := agent.WithToolless(context.Background())
+	go func() {
+		defer close(events)
+		Loop{}.Run(ctx, core.LoopOptions{
+			Provider: provider,
+			Messages: []core.Message{core.NewUser("go")},
+			Tools:    callerTools,
+			ToolProviders: []core.ToolProvider{
+				core.DefaultToolProvider{ToolsMap: providerTools},
+			},
+			Events: events,
+		})
+	}()
+
+	sawError := false
+	for e := range events {
+		if te, ok := e.(core.ToolResultEvent); ok {
+			sawError = true
+			if !te.Message.IsError {
+				t.Errorf("toolless run result not an error: %+v", te.Message)
+			}
+		}
+	}
+	if !sawError {
+		t.Fatal("no tool result event - the call path never ran")
+	}
+}
