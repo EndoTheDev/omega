@@ -646,7 +646,7 @@ body {
   border-radius: 6px;
   box-shadow: var(--shadow-1);
 }
-.dock-menu-btn, .dock-empty-btn {
+.dock-menu-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -663,7 +663,7 @@ body {
 /* card t_30ee04fb: the dockable registry's inventory glyphs (14px, muted
    until hover so the label leads) */
 .dock-item-icon { flex: none; opacity: 0.75; }
-.dock-menu-btn:hover .dock-item-icon, .dock-empty-btn:hover .dock-item-icon { opacity: 1; }
+.dock-menu-btn:hover .dock-item-icon { opacity: 1; }
 /* card t_502b8e81: the icon-only sidebar tab chip - dim at rest, the
    active tab's icon lights with the orange state like the old label */
 .dock-tab-ic { flex: none; opacity: 0.75; }
@@ -700,7 +700,7 @@ body {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.dock-menu-btn:hover, .dock-empty-btn:hover { background: var(--z2); color: var(--text); }
+.dock-menu-btn:hover { background: var(--z2); color: var(--text); }
 .dock-menu-btn.danger:hover { color: var(--err, var(--accent)); }
 
 
@@ -718,9 +718,7 @@ body {
   /* the left sidebar is the LAST squeeze victim: it can grow as wide as the
      user drags but never past what the pane area can show, and the right
      divider can squeeze it - the chat's 320px floor is a hard wall in both
-     directions, nothing pushes it out of view.
-     (the max-width wall lives on .pane-group - a percentage here would
-     resolve against the group, crushing the pane to its min-width) */
+     directions, nothing pushes it out of view. */
   flex: 0 1 auto;
   min-width: 128px;
   display: flex;
@@ -784,13 +782,6 @@ button.bucket-label:focus-visible { outline: 1px solid var(--accent); }
   min-height: 0;
 }
 .session-list li.bucket-empty:hover { background: transparent; }
-
-.head-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .brand {
   font-family: var(--mono);
   color: var(--accent);
@@ -1088,9 +1079,7 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 
 /* ---- inspector pane (right sidebar) ---- */
 /* the squeeze victim: flexes below its natural width when the left sidebar
-   claims space, down to the 128px floor (then app.vue collapses it).
-   (the hard-wall max-width lives on .pane-group - a percentage here would
-   resolve against the group and crush the pane) */
+   claims space, down to the 128px floor (then app.vue collapses it). */
 .aside {
   flex: 0 1 auto;
   min-width: 128px;
@@ -1204,63 +1193,6 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   cursor: default;
 }
 
-/* read-only preview: mono content block pinned under the listing, same
-   raised-border voice as the tool output block in chat */
-.file-preview {
-  border-top: 1px solid var(--stroke);
-  padding: 8px 10px 10px;
-  max-height: 45%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.preview-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-.preview-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.preview-close {
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 2px;
-  cursor: pointer;
-}
-.preview-close:hover { color: var(--text); }
-.preview-notice {
-  margin: 0 0 6px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--text-dim);
-}
-.preview-body {
-  margin: 0;
-  overflow: auto;
-  background: var(--z1-raised);
-  border: 1px solid var(--stroke);
-  border-radius: var(--r-card);
-  padding: 8px 10px;
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 /* ---- resize divider between sidebar and chat ---- */
 .divider {
   width: 4px;
@@ -1319,13 +1251,6 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   display: flex;
   flex-direction: column;
   position: relative;
-}
-
-/* drag & drop attach affordance: the drop surface highlights */
-.messages-wrap.drop-target {
-  outline: 2px dashed rgba(232, 131, 58, 0.6);
-  outline-offset: -4px;
-  border-radius: var(--r-card);
 }
 
 /* ---- stacked chat appearance (card t_84e4653c) ----
@@ -2567,19 +2492,6 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
    card t_8ac225f1: the head is a button.settings-group-head now (it
    rides the shared group-head rules - chevron, hover, focus-visible);
    nothing modules-specific is left in the head styles. */
-.module-row {
-  flex-wrap: nowrap;
-  max-width: 100%;
-}
-.module-row .module-label { flex: 0 1 auto; }
-.module-row input[type="checkbox"] { flex: 0 0 auto; }
-.module-row.module-off .module-label { color: var(--text-dim); }
-.module-state {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
 .module-note {
   flex-basis: 100%;
   margin-left: 24px;
@@ -2625,8 +2537,6 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 
 /* ---- mobile ---- */
 @media (max-width: 768px) {
-  .menubar .menu-only { display: none; }
-
   .pane-area { padding: 0; gap: 0; }
 
   /* dock cells: the pinned sidebars host the slide-in overlays - the
