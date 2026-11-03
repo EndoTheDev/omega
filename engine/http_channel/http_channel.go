@@ -11,8 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // sharedCanvas builds the process's ONE canvas on first use and hands
@@ -52,7 +53,7 @@ type HTTPChannel struct {
 	// a second hub - the action pipe's launchRun registers on the
 	// capsule's pinned last-started server, and with per-bind hubs the
 	// transcript/events reads on the other mirrors go blind to that run.
-	hub *runHub
+	hub *agentapi.RunHub
 	// canvas is the per-process canvas builder every bind shares
 	// (t_1c9793a8): one panel state behind every mirror's snapshot
 	// GET, action pipe and delta fan-out - the canvas is per-process,
@@ -61,7 +62,7 @@ type HTTPChannel struct {
 	// chat is the canvas capsule the plugin registered (chat-last 1/3):
 	// Start binds it to this channel's server before the canvas runtime
 	// builds - the snapshot and the action pipe meet the served state.
-	chat *chatCapsule
+	chat *agentapi.ChatCapsule
 }
 
 // Start creates an agent from deps.Ctx and serves HTTP/SSE until the
@@ -102,16 +103,16 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// the registration is idempotent, the capsule follows the
 	// last-started server - one frontend is live per process.
 	if c.chat != nil {
-		c.srv.chat = c.chat
-		c.srv.chat.registerAt(deps.Ctx)
+		c.srv.BindChatCapsule(c.chat)
+		c.srv.RegisterChatPanel(deps.Ctx)
 	}
 	// Multi-bind mirror (t_c6f13a82): every bind's server joins the one
 	// process-wide run registry, so a run launched through the action
 	// pipe on any mirror is visible to the transcript/events reads and
-	// the SSE attach on every other - the runHub is the reattach
+	// the SSE attach on every other - the agentapi.RunHub is the reattach
 	// surface's source of truth and it is per-process, not per-bind.
 	if c.hub != nil {
-		c.srv.runs = c.hub
+		c.srv.BindRunHub(c.hub)
 	}
 	// Canvas transport (arc 3b): the runtime is built from the fully
 	// mounted Context after MountAllAPI - the same registration point
@@ -122,11 +123,11 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	if c.canvas == nil {
 		c.canvas = &sharedCanvas{}
 	}
-	canvas, err := c.canvas.build(deps.Ctx, c.srv.canvasEmit)
+	canvas, err := c.canvas.build(deps.Ctx, c.srv.CanvasEmit)
 	if err != nil {
 		return fmt.Errorf("http_channel: canvas: %w", err)
 	}
-	c.srv.canvas = canvas
+	c.srv.BindCanvas(canvas)
 	// Optional-module seams ride the shared rewire (v0.12 E2): the same
 	// field set the old mount-time copies set, now read live per
 	// request and re-readable after every toggle.
@@ -134,8 +135,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// Inspector seams (card t_db430fea): read-only views for the
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
 	// handlers degrade to empty lists / 404 when a module is absent.
-	c.srv.runTimeout = c.runTimeout
-	c.srv.titleModel = c.titleModel
+	c.srv.SetChannelKnobs(c.runTimeout, c.titleModel)
 	c.srv.SetDefaultWorkspace(c.defaultWorkspace)
 	c.srv.version = deps.Version
 	// The capsule pin goes live LAST, after every server field above
@@ -145,7 +145,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// read this server's fields while wire still wrote them
 	// (t_1c9793a8). Last wire finished wins, same one-frontend law.
 	if c.chat != nil {
-		c.chat.srv.Store(c.srv)
+		c.chat.PinServer(c.srv.Server)
 	}
 	return nil
 }

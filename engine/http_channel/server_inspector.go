@@ -16,16 +16,6 @@ import (
 // could use to change cron, skills or the log. The tool inventory
 // behind the Tools tab already lives in server.go (GET /tools).
 
-// GET-only guard shared by the inspector handlers. The rest of the API
-// answers 405 the same way.
-func getOnly(w http.ResponseWriter, r *http.Request) bool {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return false
-	}
-	return true
-}
-
 // handleCronJobs serves GET /cron/jobs: the cron runner's job set as a
 // name/schedule/enabled/next array, sorted by name. When the cron
 // module is unmounted (or a mounted CronProvider predates the
@@ -89,7 +79,7 @@ func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
 	}
-	info := s.agent.ExtensionInfos()
+	info := s.Agent().ExtensionInfos()
 	out := make([]extensionListing, 0, len(info))
 	for _, e := range info {
 		seams := e.Seams

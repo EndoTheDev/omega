@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
@@ -56,7 +56,7 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 		t.Fatalf("wire: %v", err)
 	}
 
-	canvas := chans[0].srv.canvas
+	canvas := chans[0].srv.Canvas()
 	if canvas == nil {
 		t.Fatalf("wire left the server without a canvas")
 	}

@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"gopkg.in/yaml.v3"
 )
 

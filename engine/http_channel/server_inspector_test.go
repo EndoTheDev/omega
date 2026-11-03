@@ -91,9 +91,9 @@ func TestCronJobsUnconfiguredIsEmptyList(t *testing.T) {
 
 func TestCronJobsListsRowsFromSeam(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.cron = &fakeCronLister{jobs: []core.CronJobInfo{
+	s.BindInspectSeams(nil, &fakeCronLister{jobs: []core.CronJobInfo{
 		{Name: "daily-journal", Schedule: "0 8 * * *", Enabled: true, Next: "2026-10-19T08:00:00+07:00"},
-	}}
+	}}, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/cron/jobs")
 	if err != nil {
@@ -111,7 +111,7 @@ func TestCronJobsListsRowsFromSeam(t *testing.T) {
 
 func TestCronJobsProviderWithoutListerIsEmpty(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.cron = &cronProviderNoLister{}
+	s.BindInspectSeams(nil, &cronProviderNoLister{}, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/cron/jobs")
 	if err != nil {
@@ -159,10 +159,10 @@ func TestSkillsUnconfiguredIsEmptyList(t *testing.T) {
 
 func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.skills = &fakeSkillLister{skills: []core.Skill{
+	s.BindInspectSeams(&fakeSkillLister{skills: []core.Skill{
 		{Name: "a-skill", Description: "first", Content: "SECRET-BODY", Dir: "/home/endo/.omega/skills/a"},
 		{Name: "b-skill", Description: "second", Content: "SECRET-BODY", Dir: "/home/endo/.omega/skills/b"},
-	}}
+	}}, nil, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills")
 	if err != nil {
@@ -191,7 +191,7 @@ func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 
 func TestSkillsScanErrorSurfaces(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.skills = &fakeSkillLister{err: os.ErrPermission}
+	s.BindInspectSeams(&fakeSkillLister{err: os.ErrPermission}, nil, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills")
 	if err != nil {
@@ -218,7 +218,7 @@ func TestLogsTailRealFile(t *testing.T) {
 	}
 
 	s := inspectorServer(t)
-	s.seams.logger = &fakePathLogger{path: path}
+	s.BindInspectSeams(nil, nil, &fakePathLogger{path: path})
 	ts := serveInspector(t, s)
 
 	// default: 200 lines
@@ -305,7 +305,7 @@ func TestLogsUnconfiguredIs404(t *testing.T) {
 
 func TestLogsLoggerWithoutPathIs404(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.logger = nopTestLogger{} // NopLogger twin: LoggerProvider, no Path
+ // NopLogger twin: LoggerProvider, no Path
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/logs")
 	if err != nil {
@@ -319,7 +319,7 @@ func TestLogsLoggerWithoutPathIs404(t *testing.T) {
 
 func TestLogsMissingFileIs404(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.logger = &fakePathLogger{path: filepath.Join(t.TempDir(), "gone.log")}
+	s.BindInspectSeams(nil, nil, &fakePathLogger{path: filepath.Join(t.TempDir(), "gone.log")})
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/logs")
 	if err != nil {

@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin implements agent.Plugin for the HTTP channel. It reads the
@@ -15,12 +16,12 @@ type Plugin struct {
 	// by every bind's channel start. Multi-bind mirrors serve one
 	// logical frontend - a run started on any mirror must be visible to
 	// the reads and reattach on all of them.
-	hub *runHub
+	hub *agentapi.RunHub
 	// chat is the conversation's canvas capsule (chat-last 1/3): one
 	// instance per plugin, registered with the canvas seam below and
 	// shared by every bind's channel start (multi-bind: the last
 	// started server serves it - one frontend is live per process).
-	chat *chatCapsule
+	chat *agentapi.ChatCapsule
 	// canvas is the per-process canvas builder (t_1c9793a8): one
 	// canvas behind every bind's server - the panel state the snapshot
 	// GET serves, the action pipe routes and the deltas carry must be
@@ -67,7 +68,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// (HTTPChannel.Start, below). One chat panel per live frontend: a
 	// serve-less process never reaches Start, so its canvas stays free of
 	// the dead "chat channel not started" duplicate.
-	p.chat = newChatCapsule()
+	p.chat = agentapi.NewChatCapsule()
 
 	// Bind loopback only by default: the API is unauthenticated and /chat
 	// can execute shell commands via the tool registry — it must not be
@@ -83,7 +84,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// One run registry per process (t_c6f13a82): every mirror joins it
 	// at channel start, so action-pipe launches, reattach reads and the
 	// SSE attach agree on what is live regardless of which bind speaks.
-	p.hub = &runHub{}
+	p.hub = &agentapi.RunHub{}
 	p.canvas = &sharedCanvas{}
 	for _, b := range binds {
 		ch := &HTTPChannel{
@@ -107,7 +108,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// its natural names (web.search, web.fetch - the builtin tier
 	// registers natural names, no namespace pairing), never in the
 	// disable list.
-	wt := newWebTools(cfg.WebTools)
+	wt := agentapi.NewWebTools(cfg.WebTools)
 	for name, tool := range wt.Tools() {
 		if err := api.RegisterTool(name, tool); err != nil {
 			return err

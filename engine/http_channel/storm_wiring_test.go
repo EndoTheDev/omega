@@ -20,8 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
@@ -98,7 +98,7 @@ func TestToggleStormLeavesEngineRingPushing(t *testing.T) {
 	if err := hch.wire(core.ChannelDeps{Ctx: ctx, Store: st, Version: "test"}); err != nil {
 		t.Fatalf("wire: %v", err)
 	}
-	canvas := hch.srv.canvas
+	canvas := hch.srv.Canvas()
 	assertChatRoutes(t, canvas, "after boot")
 
 	// disable the early module live (the storm's kanban step), then

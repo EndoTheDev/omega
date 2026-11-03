@@ -20,8 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
@@ -45,18 +46,18 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	// hub, one shared capsule, ONE canvas behind every mirror
 	// (t_1c9793a8); the LAST-started bind holds the capsule's server
 	// pin.
-	hub := &runHub{}
-	chat := newChatCapsule()
-	chat.srv.Store(sB)
+	hub := &agentapi.RunHub{}
+	chat := agentapi.NewChatCapsule()
+	chat.PinServer(sB.Server)
 	shared := &sharedCanvas{}
 	for _, s := range []*Server{sA, sB} {
-		s.runs = hub
-		s.chat = chat
-		canvas, err := shared.build(&core.Context{PanelProviders: []core.PanelProvider{chat}}, s.canvasEmit)
+		s.BindRunHub(hub)
+		s.BindChatCapsule(chat)
+		canvas, err := shared.build(&core.Context{PanelProviders: []core.PanelProvider{chat}}, s.CanvasEmit)
 		if err != nil {
 			t.Fatalf("canvas: %v", err)
 		}
-		s.canvas = canvas
+		s.BindCanvas(canvas)
 	}
 	tsA := httptest.NewServer(sA.Handler())
 	t.Cleanup(tsA.Close)
@@ -73,12 +74,12 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	// pins mirror B: prepareRun + launchRun execute on B (chat.srv).
 	// The pin under test - A's hub sees the run (per-bind wiring answered
 	// "session not active" here, journey 30's exact failure).
-	call := fmt.Sprintf(`{"module":%q,"action":%q,"args":{"session":"mb1"}}`, chatModuleNamespace, chatActionRetry)
+	call := fmt.Sprintf(`{"module":%q,"action":%q,"args":{"session":"mb1"}}`, agentapi.ChatModuleNamespace, agentapi.ChatActionRetry)
 	code, resp := postJSON(t, tsA.URL+"/ui/actions", call)
 	if code != http.StatusOK {
 		t.Fatalf("retry action status %d: %v", code, resp)
 	}
-	waitFor(t, "retry run live on mirror A", func() bool { return sA.runs.active("mb1") })
+	waitFor(t, "retry run live on mirror A", func() bool { return sA.ActiveRun("mb1") })
 	_, tx := transcriptOf(t, tsA, "mb1")
 	if tx["running"] != true {
 		t.Fatalf("transcript through mirror A: running = %v, want true", tx["running"])
@@ -87,7 +88,7 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	// provider is shared, so either scripter drives it)
 	prov.send(finalStep("second answer")...)
 	prov.done()
-	waitFor(t, "retry replay done", func() bool { return !sA.runs.active("mb1") })
+	waitFor(t, "retry replay done", func() bool { return !sA.ActiveRun("mb1") })
 	_, tx = transcriptOf(t, tsA, "mb1")
 	if tx["running"] != false {
 		t.Fatalf("transcript through mirror A post-run: running = %v, want false", tx["running"])
@@ -150,8 +151,8 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 
 	// One push through the capsule - the same face beginRun, endRun
 	// and the variant-select re-push ride. Every mirror must serve it.
-	p.chat.push(core.Panel{
-		ID:      chatPanelID,
+	p.chat.Push(core.Panel{
+		ID:      agentapi.ChatPanelID,
 		Title:   "Chat",
 		Kind:    core.PanelKindChat,
 		Payload: core.ChatPayload{Session: "pin-session", Running: false},
@@ -199,7 +200,7 @@ func canvasChatSession(t *testing.T, base string) string {
 		t.Fatalf("snapshot %s: decode: %v", base, err)
 	}
 	for _, pn := range panels {
-		if pn.ID == chatPanelID {
+		if pn.ID == agentapi.ChatPanelID {
 			payload, _ := pn.Payload.(map[string]any)
 			sess, _ := payload["session"].(string)
 			return sess

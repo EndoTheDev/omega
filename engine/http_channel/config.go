@@ -1,5 +1,9 @@
 package http_channel
 
+import (
+	agentapi "github.com/EndoTheDev/omega/agent/api"
+)
+
 // Config configures the HTTP channel extension.
 type Config struct {
 	Port int `yaml:"port"`
@@ -22,7 +26,7 @@ type Config struct {
 	// law 1: the former modules/web capsule dissolved into the
 	// channel). The host's ConfigSection derives both fields; an
 	// empty BaseURL falls back to the default upstream mirror.
-	WebTools WebToolsConfig
+	WebTools agentapi.WebToolsConfig
 	// DefaultWorkspace (config key default_workspace) is the Files
 	// surface's middle step in the root resolution law: no session
 	// workspace on the focused session -> root here. Empty = the cwd
